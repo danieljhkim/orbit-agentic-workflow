@@ -29,12 +29,14 @@ impl OrbitRuntime {
 
                 let next_run_at = now + Duration::minutes(1);
                 let completed = self.with_mutation(|tx| {
-                    let completed = tx.complete_job(&job.id, next_run_at, true)?;
+                    let success = true;
+                    let _final_status = crate::job::state_machine::next_after_run(success);
+                    let completed = tx.complete_job(&job.id, next_run_at, success)?;
                     Ok((
                         completed,
                         OrbitEvent::JobCompleted {
                             id: job.id.clone(),
-                            success: true,
+                            success,
                         },
                     ))
                 })?;

@@ -1,0 +1,79 @@
+use std::time::Instant;
+
+use orbit_types::{ExecutionResult, OrbitError};
+
+use crate::sandbox::Sandbox;
+
+#[derive(Debug, Clone)]
+pub struct ExecRequest {
+    pub program: String,
+    pub args: Vec<String>,
+    pub timeout_ms: Option<u64>,
+}
+
+pub fn run_process(
+    req: &ExecRequest,
+    sandbox: &dyn Sandbox,
+) -> Result<ExecutionResult, OrbitError> {
+    sandbox.validate(req)?;
+
+    let started = Instant::now();
+    let child = crate::process::spawn(req)?;
+    let (timed_out, output) = crate::timeout::wait_with_optional_timeout(child, req.timeout_ms)?;
+
+    let mut stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if timed_out {
+        if !stderr.is_empty() {
+            stderr.push('\n');
+        }
+        stderr.push_str("process timed out");
+    }
+
+    Ok(ExecutionResult {
+        success: output.status.success() && !timed_out,
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr,
+        exit_code: output.status.code(),
+        duration_ms: started.elapsed().as_millis() as u64,
+        output: None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sandbox::NoSandbox;
+
+    use super::*;
+
+    #[test]
+    fn captures_stdout() {
+        let result = run_process(
+            &ExecRequest {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string(), "printf hello".to_string()],
+                timeout_ms: Some(1000),
+            },
+            &NoSandbox,
+        )
+        .expect("process succeeds");
+
+        assert!(result.success);
+        assert_eq!(result.stdout, "hello");
+    }
+
+    #[test]
+    fn enforces_timeout() {
+        let result = run_process(
+            &ExecRequest {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string(), "sleep 1".to_string()],
+                timeout_ms: Some(100),
+            },
+            &NoSandbox,
+        )
+        .expect("process returns timed out result");
+
+        assert!(!result.success);
+        assert!(result.stderr.contains("timed out"));
+    }
+}

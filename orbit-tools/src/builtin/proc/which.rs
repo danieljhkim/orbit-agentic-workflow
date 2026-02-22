@@ -1,0 +1,38 @@
+use orbit_exec::{ExecRequest, NoSandbox, run_process};
+use orbit_types::{OrbitError, ToolSchema};
+use serde_json::{Value, json};
+
+use crate::{Tool, ToolContext};
+
+pub struct ProcWhichTool;
+
+impl Tool for ProcWhichTool {
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "proc.which".to_string(),
+            description: "Resolve a command path using shell lookup".to_string(),
+        }
+    }
+
+    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let command = input
+            .get("command")
+            .and_then(Value::as_str)
+            .ok_or_else(|| OrbitError::InvalidInput("missing `command`".to_string()))?;
+
+        let result = run_process(
+            &ExecRequest {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string(), format!("command -v {command}")],
+                timeout_ms: Some(1_000),
+            },
+            &NoSandbox,
+        )?;
+
+        Ok(json!({
+            "command": command,
+            "path": result.stdout.trim(),
+            "found": result.success,
+        }))
+    }
+}
