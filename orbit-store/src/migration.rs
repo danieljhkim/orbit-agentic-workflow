@@ -42,39 +42,6 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 last_error TEXT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
-            CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs(task_id);
-            CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(state, next_run_at);
-
-            CREATE TABLE IF NOT EXISTS job_sessions (
-                session_id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
-                task_id TEXT NOT NULL,
-                trigger TEXT NOT NULL,
-                trigger_time TEXT NOT NULL,
-                started_at TEXT,
-                finished_at TEXT,
-                status TEXT NOT NULL,
-                exit_code INTEGER,
-                error TEXT,
-                composed_context_hash TEXT,
-                effective_allowlist_hash TEXT,
-                created_by_role TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                cancel_requested_at TEXT,
-                FOREIGN KEY(job_id) REFERENCES jobs(job_id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_job_sessions_job
-            ON job_sessions(job_id, created_at);
-
-            CREATE INDEX IF NOT EXISTS idx_job_sessions_status
-            ON job_sessions(status);
-
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_job_sessions_single_running
-            ON job_sessions(job_id)
-            WHERE status = 'running';
-
             CREATE TABLE IF NOT EXISTS watches (
                 id TEXT PRIMARY KEY,
                 path TEXT NOT NULL,
@@ -182,6 +149,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
         "ALTER TABLE tasks ADD COLUMN context_files TEXT NOT NULL DEFAULT '[]'",
     )?;
     migrate_legacy_jobs_table(conn)?;
+    ensure_job_schema(conn)?;
 
     Ok(())
 }
@@ -255,14 +223,51 @@ fn migrate_legacy_jobs_table(conn: &Connection) -> Result<(), OrbitError> {
             FROM jobs_legacy;
 
             DROP TABLE jobs_legacy;
-            CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
-            CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs(task_id);
-            CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(state, next_run_at);
         "#,
     )
     .map_err(|e| OrbitError::Store(format!("failed legacy jobs migration: {e}")))?;
 
     Ok(())
+}
+
+fn ensure_job_schema(conn: &Connection) -> Result<(), OrbitError> {
+    conn.execute_batch(
+        r#"
+            CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
+            CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs(task_id);
+            CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(state, next_run_at);
+
+            CREATE TABLE IF NOT EXISTS job_sessions (
+                session_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                trigger TEXT NOT NULL,
+                trigger_time TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                status TEXT NOT NULL,
+                exit_code INTEGER,
+                error TEXT,
+                composed_context_hash TEXT,
+                effective_allowlist_hash TEXT,
+                created_by_role TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                cancel_requested_at TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_job_sessions_job
+            ON job_sessions(job_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_job_sessions_status
+            ON job_sessions(status);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_job_sessions_single_running
+            ON job_sessions(job_id)
+            WHERE status = 'running';
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))
 }
 
 fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, OrbitError> {
@@ -281,4 +286,55 @@ fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_schema;
+    use rusqlite::Connection;
+
+    #[test]
+    fn apply_schema_migrates_legacy_jobs_before_index_creation() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE jobs (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    next_run_at TEXT,
+                    last_run_at TEXT,
+                    last_status TEXT
+                );
+            "#,
+        )
+        .expect("legacy jobs");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let mut stmt = conn.prepare("PRAGMA table_info(jobs)").expect("table info");
+        let mut rows = stmt.query([]).expect("query");
+        let mut saw_job_id = false;
+        let mut saw_state = false;
+        while let Some(row) = rows.next().expect("row") {
+            let name: String = row.get(1).expect("name");
+            if name == "job_id" {
+                saw_job_id = true;
+            }
+            if name == "state" {
+                saw_state = true;
+            }
+        }
+        assert!(saw_job_id);
+        assert!(saw_state);
+
+        let session_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='job_sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query job_sessions");
+        assert_eq!(session_table_exists, 1);
+    }
 }
