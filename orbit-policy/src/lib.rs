@@ -10,6 +10,7 @@ pub use engine::{PolicyContext, PolicyEngine};
 #[cfg(test)]
 mod tests {
     use crate::{PolicyContext, PolicyDecision, PolicyEngine};
+    use orbit_types::Role;
 
     #[test]
     fn allows_by_default_for_local_runtime() {
@@ -17,6 +18,7 @@ mod tests {
         let decision = engine.evaluate(&PolicyContext {
             entrypoint: "cli".to_string(),
             tool_name: Some("fs.read".to_string()),
+            role: Role::Admin,
         });
 
         assert_eq!(decision, PolicyDecision::Allow);
@@ -28,6 +30,7 @@ mod tests {
         let decision = engine.evaluate(&PolicyContext {
             entrypoint: "cli".to_string(),
             tool_name: Some("fs.read".to_string()),
+            role: Role::Admin,
         });
 
         assert!(matches!(decision, PolicyDecision::Deny { .. }));

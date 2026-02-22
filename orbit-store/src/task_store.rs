@@ -16,30 +16,42 @@ fn parse_task_type(raw: &str) -> TaskType {
     raw.parse().unwrap_or(TaskType::Task)
 }
 
+fn parse_context_files(raw: &str) -> rusqlite::Result<Vec<String>> {
+    serde_json::from_str(raw).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            raw.len(),
+            rusqlite::types::Type::Text,
+            Box::new(e),
+        )
+    })
+}
+
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
-    let status_raw: String = row.get(3)?;
-    let priority_raw: String = row.get(4)?;
-    let task_type_raw: String = row.get(5)?;
-    let parent_id: Option<String> = row.get(7)?;
-    let created_at_raw: String = row.get(8)?;
-    let updated_at_raw: String = row.get(9)?;
+    let context_files_raw: String = row.get(4)?;
+    let status_raw: String = row.get(5)?;
+    let priority_raw: String = row.get(6)?;
+    let task_type_raw: String = row.get(7)?;
+    let parent_id: Option<String> = row.get(9)?;
+    let created_at_raw: String = row.get(10)?;
+    let updated_at_raw: String = row.get(11)?;
 
     Ok(Task {
         id: row.get(0)?,
         title: row.get(1)?,
         description: row.get(2)?,
+        instructions: row.get(3)?,
+        context_files: parse_context_files(&context_files_raw)?,
         status: parse_status(&status_raw),
         priority: parse_priority(&priority_raw),
         task_type: parse_task_type(&task_type_raw),
-        owner: row.get(6)?,
+        owner: row.get(8)?,
         parent_id,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,
     })
 }
 
-const SELECT_COLS: &str =
-    "id, title, description, status, priority, task_type, owner, parent_id, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, context_files, status, priority, task_type, owner, parent_id, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -145,6 +157,8 @@ impl Store {
 pub struct TaskInsertParams {
     pub title: String,
     pub description: String,
+    pub instructions: String,
+    pub context_files: Vec<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -156,6 +170,8 @@ impl Default for TaskInsertParams {
         Self {
             title: String::new(),
             description: String::new(),
+            instructions: String::new(),
+            context_files: Vec::new(),
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
             owner: String::new(),
@@ -168,6 +184,8 @@ impl Default for TaskInsertParams {
 pub struct TaskUpdateFields {
     pub title: Option<String>,
     pub description: Option<String>,
+    pub instructions: Option<String>,
+    pub context_files: Option<Vec<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -178,10 +196,14 @@ pub struct TaskUpdateFields {
 impl<'a> StoreTx<'a> {
     pub fn insert_task(&mut self, params: &TaskInsertParams) -> Result<Task, OrbitError> {
         let now = Utc::now();
+        let context_files_json = serde_json::to_string(&params.context_files)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
         let task = Task {
             id: new_id("task"),
             title: params.title.clone(),
             description: params.description.clone(),
+            instructions: params.instructions.clone(),
+            context_files: params.context_files.clone(),
             status: TaskStatus::Todo,
             priority: params.priority,
             task_type: params.task_type,
@@ -193,11 +215,13 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO tasks(id, title, description, instructions, context_files, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     task.id,
                     task.title,
                     task.description,
+                    task.instructions,
+                    context_files_json,
                     task.status.to_string(),
                     task.priority.to_string(),
                     task.task_type.to_string(),
@@ -223,6 +247,15 @@ impl<'a> StoreTx<'a> {
         if let Some(ref v) = fields.description {
             sets.push("description = ?");
             param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.instructions {
+            sets.push("instructions = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.context_files {
+            sets.push("context_files = ?");
+            let as_json = serde_json::to_string(v).map_err(|e| OrbitError::Store(e.to_string()))?;
+            param_values.push(Box::new(as_json));
         }
         if let Some(v) = fields.status {
             sets.push("status = ?");
@@ -312,6 +345,8 @@ mod tests {
                 tx.insert_task(&TaskInsertParams {
                     title: "test task".to_string(),
                     description: "a description".to_string(),
+                    instructions: "step one".to_string(),
+                    context_files: vec!["ARCHITECTURE.md".to_string()],
                     priority: TaskPriority::High,
                     task_type: TaskType::Bug,
                     owner: "alice".to_string(),
@@ -323,6 +358,8 @@ mod tests {
         let found = store.get_task(&task.id).expect("get").expect("some");
         assert_eq!(found.title, "test task");
         assert_eq!(found.description, "a description");
+        assert_eq!(found.instructions, "step one");
+        assert_eq!(found.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(found.priority, TaskPriority::High);
         assert_eq!(found.task_type, TaskType::Bug);
         assert_eq!(found.owner, "alice");

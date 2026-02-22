@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod command;
 pub mod context;
 pub mod job;
@@ -6,7 +7,7 @@ pub mod watch;
 
 pub use context::OrbitContext;
 pub use orbit_types::OrbitError;
-pub use orbit_types::{Task, TaskPriority, TaskStatus, TaskType};
+pub use orbit_types::{AgentSessionStatus, Role, Skill, Task, TaskPriority, TaskStatus, TaskType};
 pub use runtime::OrbitRuntime;
 
 #[cfg(test)]
@@ -263,6 +264,8 @@ mod tests {
             .add_task(TaskAddParams {
                 title: "full task".to_string(),
                 description: "detailed".to_string(),
+                instructions: "steps".to_string(),
+                context_files: vec!["ARCHITECTURE.md".to_string()],
                 priority: TaskPriority::High,
                 task_type: TaskType::Bug,
                 owner: "alice".to_string(),
@@ -272,6 +275,8 @@ mod tests {
 
         assert_eq!(task.title, "full task");
         assert_eq!(task.description, "detailed");
+        assert_eq!(task.instructions, "steps");
+        assert_eq!(task.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(task.priority, TaskPriority::High);
         assert_eq!(task.task_type, TaskType::Bug);
         assert_eq!(task.owner, "alice");
@@ -365,6 +370,8 @@ mod tests {
                 TaskUpdateParams {
                     title: Some("changed".to_string()),
                     description: Some("new desc".to_string()),
+                    instructions: None,
+                    context_files: None,
                     status: None,
                     priority: Some(TaskPriority::High),
                     task_type: None,

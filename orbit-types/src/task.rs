@@ -117,6 +117,8 @@ pub struct Task {
     pub id: OrbitId,
     pub title: String,
     pub description: String,
+    pub instructions: String,
+    pub context_files: Vec<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub task_type: TaskType,

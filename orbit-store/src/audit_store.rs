@@ -76,6 +76,14 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::ToolRemoved { .. } => "ToolRemoved",
         OrbitEvent::ToolEnabled { .. } => "ToolEnabled",
         OrbitEvent::ToolDisabled { .. } => "ToolDisabled",
+        OrbitEvent::SkillAdded { .. } => "SkillAdded",
+        OrbitEvent::SkillUpdated { .. } => "SkillUpdated",
+        OrbitEvent::SkillDeleted { .. } => "SkillDeleted",
+        OrbitEvent::SkillAttached { .. } => "SkillAttached",
+        OrbitEvent::SkillDetached { .. } => "SkillDetached",
+        OrbitEvent::AgentSessionStarted { .. } => "AgentSessionStarted",
+        OrbitEvent::AgentToolCall { .. } => "AgentToolCall",
+        OrbitEvent::AgentSessionCompleted { .. } => "AgentSessionCompleted",
     }
 }
 
@@ -97,5 +105,34 @@ fn event_message(event: &OrbitEvent) -> String {
         OrbitEvent::ToolRemoved { name } => format!("tool removed: {name}"),
         OrbitEvent::ToolEnabled { name } => format!("tool enabled: {name}"),
         OrbitEvent::ToolDisabled { name } => format!("tool disabled: {name}"),
+        OrbitEvent::SkillAdded { name } => format!("skill added: {name}"),
+        OrbitEvent::SkillUpdated { name } => format!("skill updated: {name}"),
+        OrbitEvent::SkillDeleted { name } => format!("skill deleted: {name}"),
+        OrbitEvent::SkillAttached {
+            task_id,
+            skill_name,
+        } => format!("skill attached: {skill_name} -> {task_id}"),
+        OrbitEvent::SkillDetached {
+            task_id,
+            skill_name,
+        } => format!("skill detached: {skill_name} -> {task_id}"),
+        OrbitEvent::AgentSessionStarted {
+            session_id,
+            task_id,
+            ..
+        } => {
+            format!("agent session started: {session_id} task={task_id}")
+        }
+        OrbitEvent::AgentToolCall {
+            session_id,
+            tool_name,
+            success,
+            ..
+        } => format!("agent tool call: session={session_id} tool={tool_name} success={success}"),
+        OrbitEvent::AgentSessionCompleted {
+            session_id,
+            task_id,
+            status,
+        } => format!("agent session completed: {session_id} task={task_id} status={status}"),
     }
 }

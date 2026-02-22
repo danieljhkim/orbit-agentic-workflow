@@ -62,6 +62,12 @@ pub struct TaskAddArgs {
     /// Task description
     #[arg(long, default_value = "")]
     pub description: String,
+    /// Task instructions payload (agent planning input)
+    #[arg(long, default_value = "")]
+    pub instructions: String,
+    /// Comma-separated context file paths
+    #[arg(long, default_value = "")]
+    pub context: String,
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
@@ -81,6 +87,8 @@ impl Execute for TaskAddArgs {
         let task = runtime.add_task(TaskAddParams {
             title: self.title,
             description: self.description,
+            instructions: self.instructions,
+            context_files: parse_context_csv(&self.context),
             priority: self.priority,
             task_type: self.task_type,
             owner: self.owner,
@@ -160,6 +168,12 @@ impl Execute for TaskShowArgs {
             if !task.description.is_empty() {
                 println!("Description: {}", task.description);
             }
+            if !task.instructions.is_empty() {
+                println!("Instructions: {}", task.instructions);
+            }
+            if !task.context_files.is_empty() {
+                println!("Context:     {}", task.context_files.join(", "));
+            }
             if !task.owner.is_empty() {
                 println!("Owner:       {}", task.owner);
             }
@@ -185,6 +199,12 @@ pub struct TaskUpdateArgs {
     /// New description
     #[arg(long)]
     pub description: Option<String>,
+    /// New instructions payload
+    #[arg(long)]
+    pub instructions: Option<String>,
+    /// New comma-separated context files (empty string clears all)
+    #[arg(long)]
+    pub context: Option<String>,
     /// New status
     #[arg(long, value_enum)]
     pub status: Option<TaskStatus>,
@@ -213,6 +233,8 @@ impl Execute for TaskUpdateArgs {
             TaskUpdateParams {
                 title: self.title,
                 description: self.description,
+                instructions: self.instructions,
+                context_files: self.context.map(|raw| parse_context_csv(&raw)),
                 status: self.status,
                 priority: self.priority,
                 task_type: self.task_type,
@@ -315,6 +337,8 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "id": task.id,
         "title": task.title,
         "description": task.description,
+        "instructions": task.instructions,
+        "context_files": task.context_files,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
         "type": task.task_type.to_string(),
@@ -323,4 +347,12 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
+}
+
+fn parse_context_csv(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }

@@ -1,17 +1,27 @@
 use orbit_policy::PolicyContext;
 use orbit_tools::ToolContext;
-use orbit_types::{OrbitEvent, PolicyDecision};
+use orbit_types::{OrbitEvent, PolicyDecision, Role};
 use serde_json::Value;
 
 use crate::{OrbitError, OrbitRuntime};
 
 impl OrbitRuntime {
     pub fn run_tool(&self, name: &str, input: Value) -> Result<Value, OrbitError> {
+        self.run_tool_with_role(name, input, Role::Admin)
+    }
+
+    pub(crate) fn run_tool_with_role(
+        &self,
+        name: &str,
+        input: Value,
+        role: Role,
+    ) -> Result<Value, OrbitError> {
         self.check_tool_enabled(name)?;
 
         let decision = self.context.policy.evaluate(&PolicyContext {
             entrypoint: "cli".to_string(),
             tool_name: Some(name.to_string()),
+            role,
         });
 
         match decision {
@@ -58,6 +68,7 @@ impl OrbitRuntime {
         let decision = self.context.policy.evaluate(&PolicyContext {
             entrypoint: "cli".to_string(),
             tool_name: Some(name.to_string()),
+            role: Role::Admin,
         });
 
         let policy_allowed = matches!(decision, PolicyDecision::Allow);

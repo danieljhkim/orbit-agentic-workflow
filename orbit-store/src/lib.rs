@@ -4,6 +4,7 @@ mod job_store;
 mod lock;
 mod memo_store;
 mod migration;
+mod skill_store;
 pub mod task_store;
 mod tool_store;
 mod watch_store;

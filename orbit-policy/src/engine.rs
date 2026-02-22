@@ -1,11 +1,14 @@
 use std::collections::HashSet;
 
+use orbit_types::Role;
+
 use crate::{PolicyDecision, evaluator};
 
 #[derive(Debug, Clone, Default)]
 pub struct PolicyContext {
     pub entrypoint: String,
     pub tool_name: Option<String>,
+    pub role: Role,
 }
 
 #[derive(Debug, Clone)]

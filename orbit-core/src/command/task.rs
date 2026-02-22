@@ -6,6 +6,8 @@ use crate::OrbitRuntime;
 pub struct TaskAddParams {
     pub title: String,
     pub description: String,
+    pub instructions: String,
+    pub context_files: Vec<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -17,6 +19,8 @@ impl Default for TaskAddParams {
         Self {
             title: String::new(),
             description: String::new(),
+            instructions: String::new(),
+            context_files: Vec::new(),
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
             owner: String::new(),
@@ -28,6 +32,8 @@ impl Default for TaskAddParams {
 pub struct TaskUpdateParams {
     pub title: Option<String>,
     pub description: Option<String>,
+    pub instructions: Option<String>,
+    pub context_files: Option<Vec<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -50,6 +56,8 @@ impl OrbitRuntime {
             let task = tx.insert_task(&TaskInsertParams {
                 title: params.title.clone(),
                 description: params.description.clone(),
+                instructions: params.instructions.clone(),
+                context_files: params.context_files.clone(),
                 priority: params.priority,
                 task_type: params.task_type,
                 owner: params.owner.clone(),
@@ -102,6 +110,8 @@ impl OrbitRuntime {
                 &TaskUpdateFields {
                     title: params.title,
                     description: params.description,
+                    instructions: params.instructions,
+                    context_files: params.context_files,
                     status: params.status,
                     priority: params.priority,
                     task_type: params.task_type,

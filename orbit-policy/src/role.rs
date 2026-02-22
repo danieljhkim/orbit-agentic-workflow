@@ -1,4 +1,1 @@
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Role {
-    LocalUser,
-}
+pub use orbit_types::Role;

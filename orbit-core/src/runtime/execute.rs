@@ -1,6 +1,6 @@
 use orbit_exec::{ExecRequest, NoSandbox, run_process};
 use orbit_policy::PolicyContext;
-use orbit_types::{ExecutionResult, OrbitEvent, PolicyDecision};
+use orbit_types::{ExecutionResult, OrbitEvent, PolicyDecision, Role};
 
 use crate::{OrbitError, OrbitRuntime};
 
@@ -16,6 +16,7 @@ impl OrbitRuntime {
         let decision = self.context.policy.evaluate(&PolicyContext {
             entrypoint: entrypoint.to_string(),
             tool_name: Some(PROCESS_TOOL_NAME.to_string()),
+            role: Role::Admin,
         });
 
         if let PolicyDecision::Deny { reason } = decision {

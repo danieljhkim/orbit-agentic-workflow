@@ -4,6 +4,8 @@ pub mod event;
 pub mod id;
 pub mod job;
 pub mod memo;
+pub mod role;
+pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
@@ -14,13 +16,17 @@ pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use job::{Job, JobStatus};
 pub use memo::Memo;
+pub use role::Role;
+pub use skill::{AgentSession, AgentSessionStatus, AgentToolCall, Skill, TaskSkillAttachment};
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
 
 #[cfg(test)]
 mod tests {
-    use crate::{ExecutionResult, OrbitEvent};
+    use chrono::Utc;
+
+    use crate::{ExecutionResult, OrbitEvent, Role, Skill};
 
     #[test]
     fn orbit_event_shape_is_stable() {
@@ -48,5 +54,34 @@ mod tests {
         let decoded: ExecutionResult = serde_json::from_str(&json).expect("deserialize result");
 
         assert_eq!(decoded, result);
+    }
+
+    #[test]
+    fn role_round_trips() {
+        let role = Role::Agent;
+        let json = serde_json::to_string(&role).expect("serialize role");
+        assert_eq!(json, "\"agent\"");
+        let decoded: Role = serde_json::from_str(&json).expect("deserialize role");
+        assert_eq!(decoded, Role::Agent);
+    }
+
+    #[test]
+    fn skill_shape_is_stable() {
+        let skill = Skill {
+            schema_version: 1,
+            name: "refactor-rust-module".to_string(),
+            description: Some("test".to_string()),
+            instructions: "Do things".to_string(),
+            context_files: vec!["ARCHITECTURE.md".to_string()],
+            allowed_tools: vec!["fs.read".to_string()],
+            role: Role::Agent,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let value = serde_json::to_value(skill).expect("serialize skill");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["name"], "refactor-rust-module");
+        assert_eq!(value["role"], "agent");
     }
 }

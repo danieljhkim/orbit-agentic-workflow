@@ -1,0 +1,57 @@
+use assert_cmd::Command;
+use predicates::prelude::*;
+use std::path::Path;
+
+fn orbit_in(dir: &Path) -> Command {
+    #[allow(deprecated)]
+    let mut cmd = Command::cargo_bin("orbit").expect("binary exists");
+    cmd.current_dir(dir);
+    cmd
+}
+
+fn add_task_with_instructions(dir: &Path, title: &str, instructions: &str) -> String {
+    let output = orbit_in(dir)
+        .args([
+            "task",
+            "add",
+            "--title",
+            title,
+            "--instructions",
+            instructions,
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("utf8").trim().to_string()
+}
+
+#[test]
+fn agent_run_executes_task_instruction_payload() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let task_id = add_task_with_instructions(
+        dir.path(),
+        "agent task",
+        r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#,
+    );
+
+    orbit_in(dir.path())
+        .args(["agent", "run", "--task", &task_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("session_id="))
+        .stdout(predicate::str::contains("status=completed"));
+}
+
+#[test]
+fn agent_run_fails_for_invalid_task_instruction_payload() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let task_id = add_task_with_instructions(dir.path(), "bad payload", "not-json");
+
+    orbit_in(dir.path())
+        .args(["agent", "run", "--task", &task_id])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("agent run failed"));
+}
