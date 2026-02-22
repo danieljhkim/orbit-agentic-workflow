@@ -1,5 +1,5 @@
 use orbit_exec::{ExecRequest, NoSandbox, run_process};
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -11,6 +11,13 @@ impl Tool for ProcWhichTool {
         ToolSchema {
             name: "proc.which".to_string(),
             description: "Resolve a command path using shell lookup".to_string(),
+            parameters: vec![ToolParam {
+                name: "command".to_string(),
+                description: "Command name to look up".to_string(),
+                param_type: "string".to_string(),
+                required: true,
+            }],
+            builtin: true,
         }
     }
 

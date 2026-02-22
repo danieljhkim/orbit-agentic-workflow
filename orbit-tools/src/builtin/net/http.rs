@@ -10,6 +10,8 @@ impl Tool for NetHttpTool {
         ToolSchema {
             name: "net.http".to_string(),
             description: "HTTP tool placeholder for v2.1".to_string(),
+            parameters: vec![],
+            builtin: true,
         }
     }
 

@@ -5,6 +5,7 @@ mod lock;
 mod memo_store;
 mod migration;
 mod task_store;
+mod tool_store;
 mod watch_store;
 
 use chrono::{DateTime, Utc};

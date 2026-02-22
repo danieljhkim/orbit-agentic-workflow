@@ -7,3 +7,7 @@ edition.workspace = true
 clap.workspace = true
 orbit-core = { path = "../orbit-core" }
 serde_json.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

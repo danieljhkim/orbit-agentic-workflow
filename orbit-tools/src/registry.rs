@@ -40,6 +40,18 @@ impl ToolRegistry {
         tool.execute(ctx, input)
     }
 
+    pub fn get_schema(&self, name: &str) -> Option<ToolSchema> {
+        self.tools.get(name).map(|t| t.schema())
+    }
+
+    pub fn has(&self, name: &str) -> bool {
+        self.tools.contains_key(name)
+    }
+
+    pub fn unregister(&mut self, name: &str) -> bool {
+        self.tools.remove(name).is_some()
+    }
+
     pub fn schemas(&self) -> Vec<ToolSchema> {
         self.tools.values().map(|t| t.schema()).collect()
     }

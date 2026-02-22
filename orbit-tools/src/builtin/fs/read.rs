@@ -1,6 +1,6 @@
 use std::fs;
 
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -12,6 +12,13 @@ impl Tool for FsReadTool {
         ToolSchema {
             name: "fs.read".to_string(),
             description: "Read a UTF-8 text file from disk".to_string(),
+            parameters: vec![ToolParam {
+                name: "path".to_string(),
+                description: "Path to the file to read".to_string(),
+                param_type: "string".to_string(),
+                required: true,
+            }],
+            builtin: true,
         }
     }
 

@@ -15,7 +15,7 @@ pub use id::OrbitId;
 pub use job::{Job, JobStatus};
 pub use memo::Memo;
 pub use task::Task;
-pub use tool::{ExecutionResult, PolicyDecision, ToolSchema};
+pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
 
 #[cfg(test)]

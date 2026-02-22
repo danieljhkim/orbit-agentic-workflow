@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", content = "data")]
 pub enum OrbitEvent {
     ToolExecuted { name: String },
+    ToolAdded { name: String },
+    ToolRemoved { name: String },
+    ToolEnabled { name: String },
+    ToolDisabled { name: String },
     JobStarted { id: String },
     JobCompleted { id: String, success: bool },
     WatchTriggered { path: String },

@@ -1,6 +1,6 @@
 use std::fs;
 
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -12,6 +12,13 @@ impl Tool for FsListTool {
         ToolSchema {
             name: "fs.list".to_string(),
             description: "List directory entries".to_string(),
+            parameters: vec![ToolParam {
+                name: "path".to_string(),
+                description: "Path to the directory to list".to_string(),
+                param_type: "string".to_string(),
+                required: true,
+            }],
+            builtin: true,
         }
     }
 

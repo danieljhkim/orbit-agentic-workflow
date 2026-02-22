@@ -46,6 +46,16 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 owner TEXT NOT NULL,
                 acquired_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS tools (
+                name TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                builtin INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;

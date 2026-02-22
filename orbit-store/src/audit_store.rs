@@ -68,6 +68,10 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::WatchTriggered { .. } => "WatchTriggered",
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
         OrbitEvent::TaskAdded { .. } => "TaskAdded",
+        OrbitEvent::ToolAdded { .. } => "ToolAdded",
+        OrbitEvent::ToolRemoved { .. } => "ToolRemoved",
+        OrbitEvent::ToolEnabled { .. } => "ToolEnabled",
+        OrbitEvent::ToolDisabled { .. } => "ToolDisabled",
     }
 }
 
@@ -81,5 +85,9 @@ fn event_message(event: &OrbitEvent) -> String {
         OrbitEvent::WatchTriggered { path } => format!("watch triggered: {path}"),
         OrbitEvent::PolicyDenied { tool } => format!("policy denied: {tool}"),
         OrbitEvent::TaskAdded { id } => format!("task added: {id}"),
+        OrbitEvent::ToolAdded { name } => format!("tool added: {name}"),
+        OrbitEvent::ToolRemoved { name } => format!("tool removed: {name}"),
+        OrbitEvent::ToolEnabled { name } => format!("tool enabled: {name}"),
+        OrbitEvent::ToolDisabled { name } => format!("tool disabled: {name}"),
     }
 }

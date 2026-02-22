@@ -1,5 +1,5 @@
 use orbit_exec::{ExecRequest, NoSandbox, run_process};
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::Value;
 
 use crate::{Tool, ToolContext};
@@ -11,6 +11,27 @@ impl Tool for ProcSpawnTool {
         ToolSchema {
             name: "proc.spawn".to_string(),
             description: "Spawn a process with timeout and capture output".to_string(),
+            parameters: vec![
+                ToolParam {
+                    name: "program".to_string(),
+                    description: "Program to execute".to_string(),
+                    param_type: "string".to_string(),
+                    required: true,
+                },
+                ToolParam {
+                    name: "args".to_string(),
+                    description: "Arguments to pass to the program".to_string(),
+                    param_type: "array".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "timeout_ms".to_string(),
+                    description: "Execution timeout in milliseconds".to_string(),
+                    param_type: "u64".to_string(),
+                    required: false,
+                },
+            ],
+            builtin: true,
         }
     }
 

@@ -10,6 +10,8 @@ impl Tool for TimeNowTool {
         ToolSchema {
             name: "time.now".to_string(),
             description: "Return current UTC timestamp".to_string(),
+            parameters: vec![],
+            builtin: true,
         }
     }
 

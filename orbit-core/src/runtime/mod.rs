@@ -10,6 +10,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use orbit_policy::PolicyEngine;
 use orbit_tools::ToolRegistry;
+use orbit_tools::external::ExternalTool;
 use orbit_types::{Audit, Job, JobStatus, OrbitEvent, Task};
 
 use crate::{OrbitContext, OrbitError};
@@ -32,6 +33,7 @@ impl OrbitRuntime {
 
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
+        Self::load_external_tools(&store, &mut registry)?;
 
         Ok(Self {
             context: OrbitContext {
@@ -47,6 +49,7 @@ impl OrbitRuntime {
         let store = orbit_store::Store::open_in_memory()?;
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
+        Self::load_external_tools(&store, &mut registry)?;
 
         Ok(Self {
             context: OrbitContext {
@@ -56,6 +59,23 @@ impl OrbitRuntime {
             },
             event_bus: event_bus::EventBus::default(),
         })
+    }
+
+    fn load_external_tools(
+        store: &orbit_store::Store,
+        registry: &mut ToolRegistry,
+    ) -> Result<(), OrbitError> {
+        let stored_tools = store.list_tools()?;
+        for tool in stored_tools {
+            if !tool.builtin && tool.enabled && !registry.has(&tool.name) {
+                registry.register(ExternalTool {
+                    name: tool.name,
+                    path: tool.path,
+                    description: tool.description,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn with_policy(mut self, policy: PolicyEngine) -> Self {

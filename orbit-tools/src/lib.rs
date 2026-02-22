@@ -1,4 +1,5 @@
 pub mod builtin;
+pub mod external;
 pub mod registry;
 
 use serde_json::{Map, Value};

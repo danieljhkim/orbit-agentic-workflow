@@ -1,6 +1,8 @@
-use clap::{Args, Subcommand};
+use std::path::Path;
+
+use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{OrbitError, OrbitRuntime};
-use serde_json::{Map, Value};
+use serde_json::{Value, json};
 
 use crate::command::Execute;
 
@@ -18,55 +20,287 @@ impl Execute for ToolCommand {
 
 #[derive(Subcommand)]
 pub enum ToolSubcommand {
+    /// List all registered tools
+    List(ToolListArgs),
+    /// Show detailed information about a tool
+    Show(ToolShowArgs),
+    /// Execute a tool
     Run(ToolRunArgs),
+    /// Register an external tool
+    Add(ToolAddArgs),
+    /// Remove an external tool
+    Remove(ToolRemoveArgs),
+    /// Enable a disabled tool
+    Enable(ToolEnableArgs),
+    /// Disable a tool
+    Disable(ToolDisableArgs),
+    /// Validate tool health
+    Doctor,
 }
 
 impl Execute for ToolSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
+            ToolSubcommand::List(args) => args.execute(runtime),
+            ToolSubcommand::Show(args) => args.execute(runtime),
             ToolSubcommand::Run(args) => args.execute(runtime),
+            ToolSubcommand::Add(args) => args.execute(runtime),
+            ToolSubcommand::Remove(args) => args.execute(runtime),
+            ToolSubcommand::Enable(args) => args.execute(runtime),
+            ToolSubcommand::Disable(args) => args.execute(runtime),
+            ToolSubcommand::Doctor => execute_doctor(runtime),
         }
     }
+}
+
+// --- List ---
+
+#[derive(Args)]
+pub struct ToolListArgs {
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for ToolListArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let tools = runtime.list_tools()?;
+
+        if self.json {
+            let json_tools: Vec<Value> = tools
+                .iter()
+                .map(|t| {
+                    json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "enabled": t.enabled,
+                        "builtin": t.builtin,
+                    })
+                })
+                .collect();
+            crate::output::json::print_pretty(&Value::Array(json_tools))
+        } else {
+            println!(
+                "{:<20} {:<8} {:<8} DESCRIPTION",
+                "NAME", "ENABLED", "BUILTIN"
+            );
+            for tool in &tools {
+                let enabled = if tool.enabled { "yes" } else { "no" };
+                let builtin = if tool.builtin { "yes" } else { "no" };
+                println!(
+                    "{:<20} {:<8} {:<8} {}",
+                    tool.name, enabled, builtin, tool.description
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+// --- Show ---
+
+#[derive(Args)]
+pub struct ToolShowArgs {
+    /// Tool name
+    pub name: String,
+}
+
+impl Execute for ToolShowArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let tool = runtime.show_tool(&self.name)?;
+
+        println!("Name:        {}", tool.name);
+        println!("Description: {}", tool.description);
+        println!("Builtin:     {}", if tool.builtin { "yes" } else { "no" });
+        println!("Enabled:     {}", if tool.enabled { "yes" } else { "no" });
+
+        if tool.parameters.is_empty() {
+            println!("Parameters:  (none)");
+        } else {
+            println!("Parameters:");
+            for p in &tool.parameters {
+                let req = if p.required { "required" } else { "optional" };
+                println!(
+                    "  {:<16} {:<10} {:<10} {}",
+                    p.name, p.param_type, req, p.description
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// --- Run ---
+
+#[derive(Clone, ValueEnum, Default)]
+pub enum OutputFormat {
+    #[default]
+    Json,
+    Text,
 }
 
 #[derive(Args)]
 pub struct ToolRunArgs {
+    /// Tool name
     pub name: String,
+    /// JSON input for the tool
     #[arg(long)]
-    pub path: Option<String>,
+    pub input: Option<String>,
+    /// Execution timeout (e.g. "30s", "5000ms")
     #[arg(long)]
-    pub content: Option<String>,
+    pub timeout: Option<String>,
+    /// Validate without executing
     #[arg(long)]
-    pub program: Option<String>,
-    #[arg(long = "arg")]
-    pub args: Vec<String>,
-    #[arg(long)]
-    pub timeout_ms: Option<u64>,
+    pub dry_run: bool,
+    /// Output format
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub output: OutputFormat,
 }
 
 impl Execute for ToolRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let mut input = Map::new();
-        if let Some(path) = self.path {
-            input.insert("path".to_string(), Value::String(path));
-        }
-        if let Some(content) = self.content {
-            input.insert("content".to_string(), Value::String(content));
-        }
-        if let Some(program) = self.program {
-            input.insert("program".to_string(), Value::String(program));
-        }
-        if !self.args.is_empty() {
-            input.insert(
-                "args".to_string(),
-                Value::Array(self.args.into_iter().map(Value::String).collect()),
+        let input: Value = match &self.input {
+            Some(raw) => serde_json::from_str(raw)
+                .map_err(|e| OrbitError::InvalidInput(format!("invalid JSON input: {e}")))?,
+            None => Value::Object(Default::default()),
+        };
+
+        if self.dry_run {
+            let result = runtime.run_tool_dry_run(&self.name, &input)?;
+            println!("Tool:           {}", result.tool_name);
+            println!(
+                "Policy:         {}",
+                if result.policy_allowed {
+                    "allowed"
+                } else {
+                    "denied"
+                }
             );
-        }
-        if let Some(timeout_ms) = self.timeout_ms {
-            input.insert("timeout_ms".to_string(), Value::Number(timeout_ms.into()));
+            if result.missing_params.is_empty() {
+                println!("Missing params: (none)");
+            } else {
+                println!("Missing params: {}", result.missing_params.join(", "));
+            }
+            return Ok(());
         }
 
-        let output = runtime.execute_tool_command(&self.name, Value::Object(input))?;
-        crate::output::json::print_pretty(&output)
+        let output = runtime.execute_tool_command(&self.name, input)?;
+
+        match self.output {
+            OutputFormat::Json => crate::output::json::print_pretty(&output),
+            OutputFormat::Text => {
+                println!("{}", output);
+                Ok(())
+            }
+        }
     }
+}
+
+// --- Add ---
+
+#[derive(Args)]
+pub struct ToolAddArgs {
+    /// Path to the external tool executable
+    pub path: String,
+    /// Tool name (inferred from filename if omitted)
+    #[arg(long)]
+    pub name: Option<String>,
+    /// Tool description
+    #[arg(long, default_value = "")]
+    pub description: String,
+}
+
+impl Execute for ToolAddArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let name = self.name.unwrap_or_else(|| {
+            Path::new(&self.path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string()
+        });
+
+        runtime.add_tool(&name, &self.path, &self.description)?;
+        println!("Added tool '{name}' from {}", self.path);
+        Ok(())
+    }
+}
+
+// --- Remove ---
+
+#[derive(Args)]
+pub struct ToolRemoveArgs {
+    /// Tool name to remove
+    pub name: String,
+}
+
+impl Execute for ToolRemoveArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.remove_tool(&self.name)?;
+        println!("Removed tool '{}'", self.name);
+        Ok(())
+    }
+}
+
+// --- Enable ---
+
+#[derive(Args)]
+pub struct ToolEnableArgs {
+    /// Tool name to enable
+    pub name: String,
+}
+
+impl Execute for ToolEnableArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.enable_tool(&self.name)?;
+        println!("Enabled tool '{}'", self.name);
+        Ok(())
+    }
+}
+
+// --- Disable ---
+
+#[derive(Args)]
+pub struct ToolDisableArgs {
+    /// Tool name to disable
+    pub name: String,
+}
+
+impl Execute for ToolDisableArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.disable_tool(&self.name)?;
+        println!("Disabled tool '{}'", self.name);
+        Ok(())
+    }
+}
+
+// --- Doctor ---
+
+fn execute_doctor(runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+    use orbit_core::command::tool::DoctorStatus;
+
+    let results = runtime.doctor()?;
+    let mut issues = 0;
+
+    println!("{:<20} {:<10} DETAILS", "TOOL", "STATUS");
+    for r in &results {
+        let status_str = match r.status {
+            DoctorStatus::Ok => "ok",
+            DoctorStatus::Warning => "warning",
+            DoctorStatus::Error => "ERROR",
+        };
+        if r.status != DoctorStatus::Ok {
+            issues += 1;
+        }
+        println!("{:<20} {:<10} {}", r.tool_name, status_str, r.message);
+    }
+
+    if issues == 0 {
+        println!("\nAll tools healthy.");
+    } else {
+        println!("\n{issues} issue(s) found.");
+    }
+
+    Ok(())
 }
