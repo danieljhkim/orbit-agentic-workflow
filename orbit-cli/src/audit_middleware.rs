@@ -15,63 +15,102 @@ pub struct CommandMeta {
     pub arguments_json: Option<String>,
 }
 
-pub fn execute_with_audit<F>(
-    runtime: &OrbitRuntime,
+/// RAII audit guard that writes an audit record on scope exit via `Drop`.
+///
+/// Guarantees exactly one audit record per command execution — even on
+/// early returns or panics (with `panic = "unwind"`).
+///
+/// Status defaults to `Failure` with exit code -1 if never explicitly marked.
+pub struct AuditGuard<'a> {
+    runtime: &'a OrbitRuntime,
+    execution_id: String,
     meta: CommandMeta,
-    f: F,
-) -> Result<(), OrbitError>
-where
-    F: FnOnce() -> Result<(), OrbitError>,
-{
-    let start = Instant::now();
-    let result = f();
-    let duration_ms = start.elapsed().as_millis() as i64;
+    start: Instant,
+    status: AuditEventStatus,
+    exit_code: i32,
+    error_message: Option<String>,
+}
 
-    let (status, exit_code, error_message) = match &result {
-        Ok(()) => (AuditEventStatus::Success, 0, None),
-        Err(OrbitError::PolicyDenied(msg)) => (AuditEventStatus::Denied, 1, Some(msg.to_string())),
-        Err(err) => (AuditEventStatus::Failure, 1, Some(err.to_string())),
-    };
+impl<'a> AuditGuard<'a> {
+    pub fn new(runtime: &'a OrbitRuntime, meta: CommandMeta) -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
 
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let execution_id = format!("exec-{nanos}");
-
-    let working_directory = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".to_string());
-
-    let host = std::env::var("HOSTNAME").ok();
-    let pid = std::process::id();
-
-    let params = AuditEventInsertParams {
-        execution_id,
-        command: meta.command,
-        subcommand: meta.subcommand,
-        tool_name: meta.tool_name,
-        target_type: meta.target_type,
-        target_id: meta.target_id,
-        role: meta.role,
-        status,
-        exit_code,
-        duration_ms,
-        working_directory,
-        arguments_json: meta.arguments_json,
-        stdout_truncated: None,
-        stderr_truncated: None,
-        error_message,
-        host,
-        pid,
-        session_id: None,
-    };
-
-    if let Err(audit_err) = runtime.record_audit_event(&params) {
-        eprintln!("warning: failed to write audit event: {audit_err}");
+        Self {
+            runtime,
+            execution_id: format!("exec-{nanos}"),
+            meta,
+            start: Instant::now(),
+            status: AuditEventStatus::Failure,
+            exit_code: -1,
+            error_message: None,
+        }
     }
 
-    result
+    pub fn mark_success(&mut self) {
+        self.status = AuditEventStatus::Success;
+        self.exit_code = 0;
+        self.error_message = None;
+    }
+
+    pub fn mark_failure(&mut self, error: &OrbitError) {
+        self.status = AuditEventStatus::Failure;
+        self.exit_code = 1;
+        self.error_message = Some(error.to_string());
+    }
+
+    pub fn mark_denied(&mut self, msg: &str) {
+        self.status = AuditEventStatus::Denied;
+        self.exit_code = 1;
+        self.error_message = Some(msg.to_string());
+    }
+}
+
+impl Drop for AuditGuard<'_> {
+    fn drop(&mut self) {
+        let duration_ms = self.start.elapsed().as_millis() as i64;
+
+        let working_directory = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+
+        let params = AuditEventInsertParams {
+            execution_id: self.execution_id.clone(),
+            command: self.meta.command.clone(),
+            subcommand: self.meta.subcommand.clone(),
+            tool_name: self.meta.tool_name.clone(),
+            target_type: self.meta.target_type.clone(),
+            target_id: self.meta.target_id.clone(),
+            role: self.meta.role.clone(),
+            status: self.status,
+            exit_code: self.exit_code,
+            duration_ms,
+            working_directory,
+            arguments_json: self.meta.arguments_json.clone(),
+            stdout_truncated: None,
+            stderr_truncated: None,
+            error_message: self.error_message.clone(),
+            host: std::env::var("HOSTNAME").ok(),
+            pid: std::process::id(),
+            session_id: None,
+        };
+
+        let write_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.runtime.record_audit_event(&params)
+        }));
+
+        match write_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("warning: failed to write audit event: {e}");
+            }
+            Err(_) => {
+                eprintln!("critical: audit panic during drop");
+            }
+        }
+    }
 }
 
 pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {

@@ -22,7 +22,14 @@ fn main() {
         Commands::Audit(cmd) => cmd.execute(&runtime),
         other => {
             let meta = audit_middleware::extract_command_meta(&other);
-            audit_middleware::execute_with_audit(&runtime, meta, || other.execute(&runtime))
+            let mut guard = audit_middleware::AuditGuard::new(&runtime, meta);
+            let result = other.execute(&runtime);
+            match &result {
+                Ok(()) => guard.mark_success(),
+                Err(orbit_core::OrbitError::PolicyDenied(msg)) => guard.mark_denied(msg),
+                Err(err) => guard.mark_failure(err),
+            }
+            result
         }
     };
 
