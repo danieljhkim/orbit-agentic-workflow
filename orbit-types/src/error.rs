@@ -6,6 +6,8 @@ pub enum OrbitError {
     PolicyDenied(String),
     #[error("tool not found: {0}")]
     ToolNotFound(String),
+    #[error("task not found: {0}")]
+    TaskNotFound(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("execution failed: {0}")]

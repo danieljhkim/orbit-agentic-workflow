@@ -4,7 +4,7 @@ mod job_store;
 mod lock;
 mod memo_store;
 mod migration;
-mod task_store;
+pub mod task_store;
 mod tool_store;
 mod watch_store;
 
@@ -52,6 +52,7 @@ mod tests {
     use orbit_types::OrbitEvent;
 
     use crate::Store;
+    use crate::task_store::TaskInsertParams;
 
     #[test]
     fn lock_is_advisory_and_exclusive() {
@@ -69,7 +70,10 @@ mod tests {
 
         let task = store
             .with_transaction(|tx| {
-                let task = tx.insert_task("buy milk")?;
+                let task = tx.insert_task(&TaskInsertParams {
+                    title: "buy milk".to_string(),
+                    ..Default::default()
+                })?;
                 tx.insert_audit_event(&OrbitEvent::TaskAdded {
                     id: task.id.clone(),
                 })?;

@@ -13,4 +13,8 @@ pub enum OrbitEvent {
     WatchTriggered { path: String },
     PolicyDenied { tool: String },
     TaskAdded { id: String },
+    TaskUpdated { id: String },
+    TaskClosed { id: String },
+    TaskReopened { id: String },
+    TaskDeleted { id: String },
 }

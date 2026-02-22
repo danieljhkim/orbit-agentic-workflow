@@ -6,17 +6,19 @@ pub mod watch;
 
 pub use context::OrbitContext;
 pub use orbit_types::OrbitError;
+pub use orbit_types::{Task, TaskPriority, TaskStatus, TaskType};
 pub use runtime::OrbitRuntime;
 
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
     use orbit_policy::PolicyEngine;
-    use orbit_types::{JobStatus, OrbitEvent};
+    use orbit_types::{JobStatus, OrbitEvent, TaskPriority, TaskStatus, TaskType};
     use serde_json::json;
     use tempfile::tempdir;
 
     use crate::OrbitRuntime;
+    use crate::command::task::{TaskAddParams, TaskUpdateParams};
 
     #[test]
     fn policy_denied_records_audit_and_no_side_effects() {
@@ -59,7 +61,12 @@ mod tests {
     #[test]
     fn mutation_boundary_always_emits_audit() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let _ = runtime.add_task("ship orbit").expect("add task");
+        let _ = runtime
+            .add_task(TaskAddParams {
+                title: "ship orbit".to_string(),
+                ..Default::default()
+            })
+            .expect("add task");
 
         let tasks = runtime.list_tasks().expect("tasks");
         let audits = runtime.list_audits(10).expect("audits");
@@ -245,6 +252,281 @@ mod tests {
                 r.message
             );
         }
+    }
+
+    // --- Task lifecycle tests ---
+
+    #[test]
+    fn add_task_with_all_fields() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "full task".to_string(),
+                description: "detailed".to_string(),
+                priority: TaskPriority::High,
+                task_type: TaskType::Bug,
+                owner: "alice".to_string(),
+                parent_id: None,
+            })
+            .expect("add");
+
+        assert_eq!(task.title, "full task");
+        assert_eq!(task.description, "detailed");
+        assert_eq!(task.priority, TaskPriority::High);
+        assert_eq!(task.task_type, TaskType::Bug);
+        assert_eq!(task.owner, "alice");
+        assert_eq!(task.status, TaskStatus::Todo);
+    }
+
+    #[test]
+    fn get_task_returns_task() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "find me".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let found = runtime.get_task(&task.id).expect("get");
+        assert_eq!(found.id, task.id);
+        assert_eq!(found.title, "find me");
+    }
+
+    #[test]
+    fn get_task_not_found() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let result = runtime.get_task("task-nonexistent");
+        assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
+    }
+
+    #[test]
+    fn list_tasks_filters_by_status() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        runtime
+            .add_task(TaskAddParams {
+                title: "open".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+        let t2 = runtime
+            .add_task(TaskAddParams {
+                title: "closed".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+        runtime.close_task(&t2.id).expect("close");
+
+        let todos = runtime
+            .list_tasks_filtered(Some(TaskStatus::Todo), None)
+            .expect("filter");
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].title, "open");
+    }
+
+    #[test]
+    fn list_tasks_filters_by_priority() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        runtime
+            .add_task(TaskAddParams {
+                title: "low".to_string(),
+                priority: TaskPriority::Low,
+                ..Default::default()
+            })
+            .expect("add");
+        runtime
+            .add_task(TaskAddParams {
+                title: "high".to_string(),
+                priority: TaskPriority::High,
+                ..Default::default()
+            })
+            .expect("add");
+
+        let high = runtime
+            .list_tasks_filtered(None, Some(TaskPriority::High))
+            .expect("filter");
+        assert_eq!(high.len(), 1);
+        assert_eq!(high[0].title, "high");
+    }
+
+    #[test]
+    fn update_task_changes_fields() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "original".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let updated = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: Some("changed".to_string()),
+                    description: Some("new desc".to_string()),
+                    status: None,
+                    priority: Some(TaskPriority::High),
+                    task_type: None,
+                    owner: Some("bob".to_string()),
+                    parent_id: None,
+                },
+            )
+            .expect("update");
+
+        assert_eq!(updated.title, "changed");
+        assert_eq!(updated.description, "new desc");
+        assert_eq!(updated.priority, TaskPriority::High);
+        assert_eq!(updated.owner, "bob");
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskUpdated"));
+    }
+
+    #[test]
+    fn close_task_sets_done() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "closable".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        runtime.close_task(&task.id).expect("close");
+        let closed = runtime.get_task(&task.id).expect("get");
+        assert_eq!(closed.status, TaskStatus::Done);
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskClosed"));
+    }
+
+    #[test]
+    fn close_already_done_returns_error() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "already done".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        runtime.close_task(&task.id).expect("close");
+        let result = runtime.close_task(&task.id);
+        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn reopen_task_sets_todo() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "reopen me".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        runtime.close_task(&task.id).expect("close");
+        runtime.reopen_task(&task.id).expect("reopen");
+
+        let reopened = runtime.get_task(&task.id).expect("get");
+        assert_eq!(reopened.status, TaskStatus::Todo);
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskReopened"));
+    }
+
+    #[test]
+    fn reopen_non_closed_returns_error() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "not closed".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let result = runtime.reopen_task(&task.id);
+        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn delete_task_removes_it() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "delete me".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        runtime.delete_task(&task.id).expect("delete");
+        let result = runtime.get_task(&task.id);
+        assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskDeleted"));
+    }
+
+    #[test]
+    fn delete_nonexistent_returns_error() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let result = runtime.delete_task("task-nonexistent");
+        assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
+    }
+
+    #[test]
+    fn search_tasks_matches_title() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        runtime
+            .add_task(TaskAddParams {
+                title: "fix login bug".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+        runtime
+            .add_task(TaskAddParams {
+                title: "add feature".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let results = runtime.search_tasks("login").expect("search");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "fix login bug");
+    }
+
+    #[test]
+    fn search_tasks_matches_description() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        runtime
+            .add_task(TaskAddParams {
+                title: "task one".to_string(),
+                description: "needs database migration".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+        runtime
+            .add_task(TaskAddParams {
+                title: "task two".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let results = runtime.search_tasks("migration").expect("search");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "task one");
+    }
+
+    #[test]
+    fn add_task_with_parent_validates_parent_exists() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let result = runtime.add_task(TaskAddParams {
+            title: "child".to_string(),
+            parent_id: Some("task-nonexistent".to_string()),
+            ..Default::default()
+        });
+        assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
     }
 
     #[test]

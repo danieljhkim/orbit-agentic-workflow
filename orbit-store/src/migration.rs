@@ -7,7 +7,14 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             CREATE TABLE IF NOT EXISTS tasks (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                description TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'todo',
+                priority TEXT NOT NULL DEFAULT 'medium',
+                task_type TEXT NOT NULL DEFAULT 'task',
+                owner TEXT NOT NULL DEFAULT '',
+                parent_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS memos (

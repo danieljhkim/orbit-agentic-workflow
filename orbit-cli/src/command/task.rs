@@ -1,5 +1,7 @@
 use clap::{Args, Subcommand};
-use orbit_core::{OrbitError, OrbitRuntime};
+use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
+use orbit_core::{OrbitError, OrbitRuntime, TaskPriority, TaskStatus, TaskType};
+use serde_json::{Value, json};
 
 use crate::command::Execute;
 
@@ -17,33 +19,308 @@ impl Execute for TaskCommand {
 
 #[derive(Subcommand)]
 pub enum TaskSubcommand {
+    /// Create a new task
     Add(TaskAddArgs),
-    List,
+    /// List tasks with optional filters
+    List(TaskListArgs),
+    /// Show detailed information about a task
+    Show(TaskShowArgs),
+    /// Update task fields
+    Update(TaskUpdateArgs),
+    /// Close a task (set status to done)
+    Close(TaskCloseArgs),
+    /// Reopen a closed task
+    Reopen(TaskReopenArgs),
+    /// Delete a task permanently
+    Delete(TaskDeleteArgs),
+    /// Search tasks by title or description
+    Search(TaskSearchArgs),
 }
 
 impl Execute for TaskSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
             TaskSubcommand::Add(args) => args.execute(runtime),
-            TaskSubcommand::List => {
-                for task in runtime.list_tasks()? {
-                    crate::output::table::print_line(task.to_string());
-                }
-                Ok(())
-            }
+            TaskSubcommand::List(args) => args.execute(runtime),
+            TaskSubcommand::Show(args) => args.execute(runtime),
+            TaskSubcommand::Update(args) => args.execute(runtime),
+            TaskSubcommand::Close(args) => args.execute(runtime),
+            TaskSubcommand::Reopen(args) => args.execute(runtime),
+            TaskSubcommand::Delete(args) => args.execute(runtime),
+            TaskSubcommand::Search(args) => args.execute(runtime),
         }
     }
 }
 
+// --- Add ---
+
 #[derive(Args)]
 pub struct TaskAddArgs {
+    /// Task title
+    #[arg(long)]
     pub title: String,
+    /// Task description
+    #[arg(long, default_value = "")]
+    pub description: String,
+    /// Priority level
+    #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
+    pub priority: TaskPriority,
+    /// Task type
+    #[arg(long = "type", value_enum, default_value_t = TaskType::Task)]
+    pub task_type: TaskType,
+    /// Task owner
+    #[arg(long, default_value = "")]
+    pub owner: String,
+    /// Parent task ID
+    #[arg(long)]
+    pub parent: Option<String>,
 }
 
 impl Execute for TaskAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let task = runtime.add_task(&self.title)?;
-        crate::output::table::print_line(task.to_string());
+        let task = runtime.add_task(TaskAddParams {
+            title: self.title,
+            description: self.description,
+            priority: self.priority,
+            task_type: self.task_type,
+            owner: self.owner,
+            parent_id: self.parent,
+        })?;
+
+        println!("{}", task.id);
         Ok(())
     }
+}
+
+// --- List ---
+
+#[derive(Args)]
+pub struct TaskListArgs {
+    /// Filter by status
+    #[arg(long, value_enum)]
+    pub status: Option<TaskStatus>,
+    /// Filter by priority
+    #[arg(long, value_enum)]
+    pub priority: Option<TaskPriority>,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for TaskListArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let tasks = if self.status.is_some() || self.priority.is_some() {
+            runtime.list_tasks_filtered(self.status, self.priority)?
+        } else {
+            runtime.list_tasks()?
+        };
+
+        if self.json {
+            let json_tasks: Vec<Value> = tasks.iter().map(task_to_json).collect();
+            crate::output::json::print_pretty(&Value::Array(json_tasks))
+        } else {
+            println!(
+                "{:<28} {:<12} {:<8} {:<8} TITLE",
+                "ID", "STATUS", "PRI", "TYPE"
+            );
+            for task in &tasks {
+                println!(
+                    "{:<28} {:<12} {:<8} {:<8} {}",
+                    task.id, task.status, task.priority, task.task_type, task.title
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+// --- Show ---
+
+#[derive(Args)]
+pub struct TaskShowArgs {
+    /// Task ID
+    pub id: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for TaskShowArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let task = runtime.get_task(&self.id)?;
+
+        if self.json {
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("ID:          {}", task.id);
+            println!("Title:       {}", task.title);
+            println!("Status:      {}", task.status);
+            println!("Priority:    {}", task.priority);
+            println!("Type:        {}", task.task_type);
+            if !task.description.is_empty() {
+                println!("Description: {}", task.description);
+            }
+            if !task.owner.is_empty() {
+                println!("Owner:       {}", task.owner);
+            }
+            if let Some(ref parent) = task.parent_id {
+                println!("Parent:      {}", parent);
+            }
+            println!("Created:     {}", task.created_at.to_rfc3339());
+            println!("Updated:     {}", task.updated_at.to_rfc3339());
+            Ok(())
+        }
+    }
+}
+
+// --- Update ---
+
+#[derive(Args)]
+pub struct TaskUpdateArgs {
+    /// Task ID
+    pub id: String,
+    /// New title
+    #[arg(long)]
+    pub title: Option<String>,
+    /// New description
+    #[arg(long)]
+    pub description: Option<String>,
+    /// New status
+    #[arg(long, value_enum)]
+    pub status: Option<TaskStatus>,
+    /// New priority
+    #[arg(long, value_enum)]
+    pub priority: Option<TaskPriority>,
+    /// New type
+    #[arg(long = "type", value_enum)]
+    pub task_type: Option<TaskType>,
+    /// New owner
+    #[arg(long)]
+    pub owner: Option<String>,
+    /// New parent task ID (use empty string to clear)
+    #[arg(long)]
+    pub parent: Option<String>,
+}
+
+impl Execute for TaskUpdateArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let parent_id = self
+            .parent
+            .map(|p| if p.is_empty() { None } else { Some(p) });
+
+        let task = runtime.update_task(
+            &self.id,
+            TaskUpdateParams {
+                title: self.title,
+                description: self.description,
+                status: self.status,
+                priority: self.priority,
+                task_type: self.task_type,
+                owner: self.owner,
+                parent_id,
+            },
+        )?;
+
+        println!("Updated task '{}'", task.id);
+        Ok(())
+    }
+}
+
+// --- Close ---
+
+#[derive(Args)]
+pub struct TaskCloseArgs {
+    /// Task ID
+    pub id: String,
+}
+
+impl Execute for TaskCloseArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.close_task(&self.id)?;
+        println!("Closed task '{}'", self.id);
+        Ok(())
+    }
+}
+
+// --- Reopen ---
+
+#[derive(Args)]
+pub struct TaskReopenArgs {
+    /// Task ID
+    pub id: String,
+}
+
+impl Execute for TaskReopenArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.reopen_task(&self.id)?;
+        println!("Reopened task '{}'", self.id);
+        Ok(())
+    }
+}
+
+// --- Delete ---
+
+#[derive(Args)]
+pub struct TaskDeleteArgs {
+    /// Task ID
+    pub id: String,
+}
+
+impl Execute for TaskDeleteArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.delete_task(&self.id)?;
+        println!("Deleted task '{}'", self.id);
+        Ok(())
+    }
+}
+
+// --- Search ---
+
+#[derive(Args)]
+pub struct TaskSearchArgs {
+    /// Search query
+    pub query: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for TaskSearchArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let tasks = runtime.search_tasks(&self.query)?;
+
+        if self.json {
+            let json_tasks: Vec<Value> = tasks.iter().map(task_to_json).collect();
+            crate::output::json::print_pretty(&Value::Array(json_tasks))
+        } else {
+            println!(
+                "{:<28} {:<12} {:<8} {:<8} TITLE",
+                "ID", "STATUS", "PRI", "TYPE"
+            );
+            for task in &tasks {
+                println!(
+                    "{:<28} {:<12} {:<8} {:<8} {}",
+                    task.id, task.status, task.priority, task.task_type, task.title
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+// --- Helpers ---
+
+fn task_to_json(task: &orbit_core::Task) -> Value {
+    json!({
+        "id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "status": task.status.to_string(),
+        "priority": task.priority.to_string(),
+        "type": task.task_type.to_string(),
+        "owner": task.owner,
+        "parent_id": task.parent_id,
+        "created_at": task.created_at.to_rfc3339(),
+        "updated_at": task.updated_at.to_rfc3339(),
+    })
 }

@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use orbit_policy::PolicyEngine;
 use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
-use orbit_types::{Audit, Job, JobStatus, OrbitEvent, Task};
+use orbit_types::{Audit, Job, JobStatus, OrbitEvent};
 
 use crate::{OrbitContext, OrbitError};
 
@@ -81,22 +81,6 @@ impl OrbitRuntime {
     pub fn with_policy(mut self, policy: PolicyEngine) -> Self {
         self.context.policy = policy;
         self
-    }
-
-    pub fn add_task(&self, title: &str) -> Result<Task, OrbitError> {
-        self.with_mutation(|tx| {
-            let task = tx.insert_task(title)?;
-            Ok((
-                task.clone(),
-                OrbitEvent::TaskAdded {
-                    id: task.id.clone(),
-                },
-            ))
-        })
-    }
-
-    pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
-        self.context.store.list_tasks()
     }
 
     pub fn list_audits(&self, limit: usize) -> Result<Vec<Audit>, OrbitError> {

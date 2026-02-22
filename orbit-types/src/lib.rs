@@ -14,7 +14,7 @@ pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use job::{Job, JobStatus};
 pub use memo::Memo;
-pub use task::Task;
+pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
 

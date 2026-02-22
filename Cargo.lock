@@ -591,6 +591,7 @@ dependencies = [
  "orbit-core",
  "predicates",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -651,6 +652,7 @@ name = "orbit-types"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "clap",
  "serde",
  "serde_json",
  "thiserror",
