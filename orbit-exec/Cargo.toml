@@ -1,0 +1,8 @@
+[package]
+name = "orbit-exec"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+orbit-types = { path = "../orbit-types" }
+wait-timeout.workspace = true

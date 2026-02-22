@@ -1,0 +1,13 @@
+[package]
+name = "orbit-tools"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono.workspace = true
+orbit-exec = { path = "../orbit-exec" }
+orbit-types = { path = "../orbit-types" }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
