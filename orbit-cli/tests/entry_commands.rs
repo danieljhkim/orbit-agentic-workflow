@@ -125,6 +125,27 @@ fn entry_list_json_is_deterministic_by_sequence() {
 }
 
 #[test]
+fn entry_list_allows_no_filters() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let task_a = add_task(dir.path(), "entry-a");
+    let task_b = add_task(dir.path(), "entry-b");
+    let _ = add_task_entry(dir.path(), &task_a, "a-1");
+    let _ = add_task_entry(dir.path(), &task_b, "b-1");
+
+    let output = orbit_in(dir.path())
+        .args(["entry", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let parsed: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    let arr = parsed.as_array().expect("array");
+    assert_eq!(arr.len(), 2);
+}
+
+#[test]
 fn entry_add_rejects_workflow_entity_type_in_v1() {
     let dir = tempfile::tempdir().expect("tempdir");
     orbit_in(dir.path())

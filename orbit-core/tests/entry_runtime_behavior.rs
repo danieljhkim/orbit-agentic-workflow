@@ -189,3 +189,52 @@ fn successful_append_emits_entry_created_audit_and_event() {
         "EntryCreated should be audited"
     );
 }
+
+#[test]
+fn list_entries_supports_optional_filters() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let task_a = add_task(&runtime, "entry-a");
+    let task_b = add_task(&runtime, "entry-b");
+
+    runtime
+        .add_entry(EntryAddParams {
+            entity_type: EntityType::Task,
+            entity_id: task_a.clone(),
+            session_id: None,
+            entry_type: EntryType::Comment,
+            author_type: AuthorType::Human,
+            author_id: "daniel".to_string(),
+            author_model: None,
+            body: "a-1".to_string(),
+        })
+        .expect("entry");
+    runtime
+        .add_entry(EntryAddParams {
+            entity_type: EntityType::Task,
+            entity_id: task_b.clone(),
+            session_id: None,
+            entry_type: EntryType::Comment,
+            author_type: AuthorType::Human,
+            author_id: "daniel".to_string(),
+            author_model: None,
+            body: "b-1".to_string(),
+        })
+        .expect("entry");
+
+    let all = runtime
+        .list_entries_filtered(None, None)
+        .expect("list all entries");
+    assert_eq!(all.len(), 2);
+
+    let by_type = runtime
+        .list_entries_filtered(Some(EntityType::Task), None)
+        .expect("list by type");
+    assert_eq!(by_type.len(), 2);
+
+    let by_id_only = runtime
+        .list_entries_filtered(None, Some(task_a.as_str()))
+        .expect("list by id only");
+    assert_eq!(by_id_only.len(), 1);
+    assert_eq!(by_id_only[0].entity_id, task_a);
+}

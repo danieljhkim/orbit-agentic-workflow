@@ -72,14 +72,35 @@ impl OrbitRuntime {
         entity_type: EntityType,
         entity_id: &str,
     ) -> Result<Vec<Entry>, OrbitError> {
-        if entity_id.trim().is_empty() {
+        self.list_entries_filtered(Some(entity_type), Some(entity_id))
+    }
+
+    pub fn list_entries_filtered(
+        &self,
+        entity_type: Option<EntityType>,
+        entity_id: Option<&str>,
+    ) -> Result<Vec<Entry>, OrbitError> {
+        if matches!(entity_type, Some(EntityType::Workflow)) {
+            return Err(OrbitError::EntryValidation(
+                "unsupported entity type in v1: workflow".to_string(),
+            ));
+        }
+
+        if let Some(id) = entity_id
+            && id.trim().is_empty()
+        {
             return Err(OrbitError::EntryValidation(
                 "entity_id must not be empty".to_string(),
             ));
         }
 
-        self.validate_entry_entity_exists(entity_type, entity_id)?;
-        self.context.store.list_entries(entity_type, entity_id)
+        if let (Some(entry_type), Some(id)) = (entity_type, entity_id) {
+            self.validate_entry_entity_exists(entry_type, id)?;
+        }
+
+        self.context
+            .store
+            .list_entries_filtered(entity_type, entity_id)
     }
 
     pub fn list_entries_by_session(&self, session_id: &str) -> Result<Vec<Entry>, OrbitError> {

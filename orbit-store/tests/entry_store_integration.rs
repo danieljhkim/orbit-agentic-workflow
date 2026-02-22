@@ -153,3 +153,50 @@ fn list_entries_by_session_returns_cross_entity_records() {
     assert!(entries.iter().any(|entry| entry.body == "task-note"));
     assert!(entries.iter().any(|entry| entry.body == "session-note"));
 }
+
+#[test]
+fn list_entries_filtered_allows_optional_filters() {
+    let store = Store::open_in_memory().expect("store");
+    let task_a = create_task(&store, "task-a");
+    let task_b = create_task(&store, "task-b");
+
+    store
+        .with_transaction(|tx| {
+            tx.append_entry(
+                EntityType::Task,
+                &task_a,
+                None,
+                EntryType::Comment,
+                AuthorType::Human,
+                "daniel",
+                None,
+                "a-1",
+            )?;
+            tx.append_entry(
+                EntityType::Task,
+                &task_b,
+                None,
+                EntryType::Comment,
+                AuthorType::Human,
+                "daniel",
+                None,
+                "b-1",
+            )?;
+            Ok(())
+        })
+        .expect("append");
+
+    let all = store.list_entries_filtered(None, None).expect("list all");
+    assert_eq!(all.len(), 2);
+
+    let task_only = store
+        .list_entries_filtered(Some(EntityType::Task), None)
+        .expect("list type");
+    assert_eq!(task_only.len(), 2);
+
+    let one_entity = store
+        .list_entries_filtered(None, Some(task_a.as_str()))
+        .expect("list entity id only");
+    assert_eq!(one_entity.len(), 1);
+    assert_eq!(one_entity[0].body, "a-1");
+}

@@ -5,10 +5,10 @@ use rusqlite::{OptionalExtension, params};
 use crate::{Store, StoreTx, new_id, parse_timestamp};
 
 impl Store {
-    pub fn list_entries(
+    pub fn list_entries_filtered(
         &self,
-        entity_type: EntityType,
-        entity_id: &str,
+        entity_type: Option<EntityType>,
+        entity_id: Option<&str>,
     ) -> Result<Vec<Entry>, OrbitError> {
         let conn = self
             .conn
@@ -19,17 +19,27 @@ impl Store {
             .prepare(
                 "SELECT id, entity_type, entity_id, session_id, sequence_number, entry_type, author_type, author_id, author_model, body, created_at
                  FROM entries
-                 WHERE entity_type = ?1 AND entity_id = ?2
-                 ORDER BY sequence_number ASC",
+                 WHERE (?1 IS NULL OR entity_type = ?1)
+                   AND (?2 IS NULL OR entity_id = ?2)
+                 ORDER BY entity_type ASC, entity_id ASC, sequence_number ASC",
             )
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
+        let entity_type_value = entity_type.map(|value| value.to_string());
         let rows = stmt
-            .query_map(params![entity_type.to_string(), entity_id], row_to_entry)
+            .query_map(params![entity_type_value, entity_id], row_to_entry)
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    pub fn list_entries(
+        &self,
+        entity_type: EntityType,
+        entity_id: &str,
+    ) -> Result<Vec<Entry>, OrbitError> {
+        self.list_entries_filtered(Some(entity_type), Some(entity_id))
     }
 
     pub fn list_entries_by_session(&self, session_id: &str) -> Result<Vec<Entry>, OrbitError> {

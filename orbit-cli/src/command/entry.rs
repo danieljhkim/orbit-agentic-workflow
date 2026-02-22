@@ -21,7 +21,7 @@ impl Execute for EntryCommand {
 pub enum EntrySubcommand {
     /// Append a new entry to an entity journal
     Add(EntryAddArgs),
-    /// List entries for an entity in deterministic sequence order
+    /// List entries in deterministic sequence order with optional filters
     List(EntryListArgs),
 }
 
@@ -82,9 +82,9 @@ impl Execute for EntryAddArgs {
 #[derive(Args)]
 pub struct EntryListArgs {
     #[arg(long, value_enum)]
-    pub entity_type: EntityType,
+    pub entity_type: Option<EntityType>,
     #[arg(long)]
-    pub entity_id: String,
+    pub entity_id: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -92,7 +92,7 @@ pub struct EntryListArgs {
 
 impl Execute for EntryListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let entries = runtime.list_entries(self.entity_type, &self.entity_id)?;
+        let entries = runtime.list_entries_filtered(self.entity_type, self.entity_id.as_deref())?;
 
         if self.json {
             let rows = entries.iter().map(entry_to_json).collect::<Vec<_>>();
