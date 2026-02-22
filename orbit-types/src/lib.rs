@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod audit_event;
 pub mod entry;
 pub mod error;
 pub mod event;
@@ -12,6 +13,7 @@ pub mod tool;
 pub mod watch;
 
 pub use audit::Audit;
+pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use entry::{AuthorType, EntityType, Entry, EntryType};
 pub use error::OrbitError;
 pub use event::OrbitEvent;

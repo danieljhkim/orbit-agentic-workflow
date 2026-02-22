@@ -1,4 +1,6 @@
 pub mod agent;
+pub mod audit_event;
+pub mod duration;
 pub mod entry;
 pub mod job;
 pub mod skill;

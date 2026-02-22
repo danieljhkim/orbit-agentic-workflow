@@ -5,7 +5,9 @@ edition.workspace = true
 
 [dependencies]
 clap.workspace = true
+csv = "1"
 orbit-core = { path = "../orbit-core" }
+orbit-types = { path = "../orbit-types" }
 serde_json.workspace = true
 
 [dev-dependencies]

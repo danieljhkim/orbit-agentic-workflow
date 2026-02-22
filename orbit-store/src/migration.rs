@@ -150,6 +150,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     )?;
     migrate_legacy_jobs_table(conn)?;
     ensure_job_schema(conn)?;
+    ensure_audit_events_schema(conn)?;
 
     Ok(())
 }
@@ -265,6 +266,54 @@ fn ensure_job_schema(conn: &Connection) -> Result<(), OrbitError> {
             CREATE UNIQUE INDEX IF NOT EXISTS uq_job_sessions_single_running
             ON job_sessions(job_id)
             WHERE status = 'running';
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))
+}
+
+fn ensure_audit_events_schema(conn: &Connection) -> Result<(), OrbitError> {
+    conn.execute_batch(
+        r#"
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                command TEXT NOT NULL,
+                subcommand TEXT,
+                tool_name TEXT,
+                target_type TEXT,
+                target_id TEXT,
+                role TEXT NOT NULL,
+                status TEXT NOT NULL,
+                exit_code INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                working_directory TEXT NOT NULL,
+                arguments_json TEXT,
+                stdout_truncated TEXT,
+                stderr_truncated TEXT,
+                error_message TEXT,
+                host TEXT,
+                pid INTEGER NOT NULL,
+                session_id TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_timestamp
+            ON audit_events(timestamp);
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_tool_name
+            ON audit_events(tool_name);
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_status
+            ON audit_events(status);
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_role
+            ON audit_events(role);
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_target
+            ON audit_events(target_type, target_id);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_events_execution_id
+            ON audit_events(execution_id);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))

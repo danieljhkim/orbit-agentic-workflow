@@ -1,10 +1,11 @@
+mod audit_middleware;
 mod command;
 mod output;
 
 use clap::Parser;
 use orbit_core::OrbitRuntime;
 
-use crate::command::Execute;
+use crate::command::{Commands, Execute};
 
 fn main() {
     let _config = command::config::CliConfig;
@@ -17,7 +18,15 @@ fn main() {
         }
     };
 
-    if let Err(err) = cli.command.execute(&runtime) {
+    let result = match cli.command {
+        Commands::Audit(cmd) => cmd.execute(&runtime),
+        other => {
+            let meta = audit_middleware::extract_command_meta(&other);
+            audit_middleware::execute_with_audit(&runtime, meta, || other.execute(&runtime))
+        }
+    };
+
+    if let Err(err) = result {
         eprintln!("error: {err}");
         std::process::exit(1);
     }

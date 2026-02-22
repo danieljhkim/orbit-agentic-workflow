@@ -1,3 +1,4 @@
+mod audit_event_store;
 mod audit_store;
 mod connection;
 mod entry_store;
@@ -12,6 +13,7 @@ mod watch_store;
 
 use chrono::{DateTime, Utc};
 
+pub use audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 pub use connection::{Store, StoreTx};
 pub use job_store::{ClaimedJobRun, DueJobsClaim};
 

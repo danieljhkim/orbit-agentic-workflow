@@ -6,6 +6,7 @@ pub mod runtime;
 pub mod watch;
 
 pub use context::OrbitContext;
+pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
     AgentSessionStatus, AuthorType, EntityType, Entry, EntryType, Job, JobScheduleState,
@@ -571,5 +572,131 @@ mod tests {
             .expect("fs.read in results");
         assert_eq!(fs_read.status, DoctorStatus::Warning);
         assert!(fs_read.message.contains("disabled"));
+    }
+
+    // --- Audit event tests ---
+
+    #[test]
+    fn audit_event_record_list_round_trip() {
+        use orbit_store::AuditEventInsertParams;
+        use orbit_types::AuditEventStatus;
+
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        runtime
+            .record_audit_event(&AuditEventInsertParams {
+                execution_id: "exec-integ-1".to_string(),
+                command: "tool".to_string(),
+                subcommand: Some("run".to_string()),
+                tool_name: Some("fs.read".to_string()),
+                target_type: None,
+                target_id: None,
+                role: "admin".to_string(),
+                status: AuditEventStatus::Success,
+                exit_code: 0,
+                duration_ms: 42,
+                working_directory: "/tmp".to_string(),
+                arguments_json: None,
+                stdout_truncated: None,
+                stderr_truncated: None,
+                error_message: None,
+                host: None,
+                pid: 1,
+                session_id: None,
+            })
+            .expect("record");
+
+        let events = runtime
+            .list_audit_events(None, None, None, None, 10)
+            .expect("list");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].command, "tool");
+        assert_eq!(events[0].status, AuditEventStatus::Success);
+    }
+
+    #[test]
+    fn audit_event_show_not_found() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let result = runtime.show_audit_event(999);
+        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn audit_event_prune_via_runtime() {
+        use orbit_store::AuditEventInsertParams;
+        use orbit_types::AuditEventStatus;
+
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        runtime
+            .record_audit_event(&AuditEventInsertParams {
+                execution_id: "exec-prune-integ".to_string(),
+                command: "tool".to_string(),
+                subcommand: None,
+                tool_name: None,
+                target_type: None,
+                target_id: None,
+                role: "admin".to_string(),
+                status: AuditEventStatus::Success,
+                exit_code: 0,
+                duration_ms: 10,
+                working_directory: "/tmp".to_string(),
+                arguments_json: None,
+                stdout_truncated: None,
+                stderr_truncated: None,
+                error_message: None,
+                host: None,
+                pid: 1,
+                session_id: None,
+            })
+            .expect("record");
+
+        let future = chrono::Utc::now() + chrono::Duration::days(1);
+        let pruned = runtime.prune_audit_events(&future).expect("prune");
+        assert_eq!(pruned, 1);
+    }
+
+    #[test]
+    fn audit_event_stats_via_runtime() {
+        use orbit_store::AuditEventInsertParams;
+        use orbit_types::AuditEventStatus;
+
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+
+        for (i, status) in [
+            AuditEventStatus::Success,
+            AuditEventStatus::Failure,
+            AuditEventStatus::Denied,
+        ]
+        .iter()
+        .enumerate()
+        {
+            runtime
+                .record_audit_event(&AuditEventInsertParams {
+                    execution_id: format!("exec-stats-integ-{i}"),
+                    command: "tool".to_string(),
+                    subcommand: None,
+                    tool_name: None,
+                    target_type: None,
+                    target_id: None,
+                    role: "admin".to_string(),
+                    status: *status,
+                    exit_code: 0,
+                    duration_ms: (i as i64 + 1) * 100,
+                    working_directory: "/tmp".to_string(),
+                    arguments_json: None,
+                    stdout_truncated: None,
+                    stderr_truncated: None,
+                    error_message: None,
+                    host: None,
+                    pid: 1,
+                    session_id: None,
+                })
+                .expect("record");
+        }
+
+        let stats = runtime.audit_event_stats(None, None).expect("stats");
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.success_count, 1);
+        assert_eq!(stats.failure_count, 1);
+        assert_eq!(stats.denied_count, 1);
     }
 }
