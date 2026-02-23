@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, JobTrigger,
-    OrbitError, Role,
+    Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
 };
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
@@ -165,23 +164,6 @@ impl Store {
         )
         .optional()
         .map_err(|e| OrbitError::Store(e.to_string()))
-    }
-
-    // Backward compatibility aliases.
-    pub fn list_job_sessions(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.list_job_runs(job_id)
-    }
-
-    pub fn get_job_session(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.get_job_run(run_id)
-    }
-
-    pub fn get_running_job_session(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.get_running_job_run(job_id)
-    }
-
-    pub fn is_job_session_cancel_requested(&self, _run_id: &str) -> Result<bool, OrbitError> {
-        Ok(false)
     }
 }
 
@@ -445,102 +427,6 @@ impl<'a> StoreTx<'a> {
         }
 
         Ok(result)
-    }
-
-    // Backward compatibility wrappers.
-    pub fn mark_job_deleted(&mut self, job_id: &str) -> Result<bool, OrbitError> {
-        self.mark_job_disabled(job_id)
-    }
-
-    // Backward compatibility wrappers used by v2.1 runtime paths.
-    pub fn insert_job(
-        &mut self,
-        _name: &str,
-        task_id: &str,
-        schedule_spec: &str,
-        _timezone: &str,
-        next_run_at: Option<DateTime<Utc>>,
-    ) -> Result<Job, OrbitError> {
-        self.insert_job_v2(
-            JobTargetType::ExecutionSpec,
-            task_id,
-            schedule_spec,
-            "claude",
-            300,
-            0,
-            JobRetryBackoffStrategy::None,
-            0,
-            next_run_at.unwrap_or_else(Utc::now),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn insert_job_session(
-        &mut self,
-        job_id: &str,
-        _task_id: &str,
-        _trigger: JobTrigger,
-        _created_by_role: Role,
-        trigger_time: DateTime<Utc>,
-        _composed_context_hash: Option<&str>,
-        _effective_allowlist_hash: Option<&str>,
-    ) -> Result<JobRun, OrbitError> {
-        let attempt = self.next_job_run_attempt(job_id, trigger_time)?;
-        let run = self.insert_job_run(job_id, attempt, trigger_time)?;
-        let _ = self.mark_job_run_running(&run.run_id, Utc::now())?;
-        self.get_job_run_from_tx(&run.run_id)?
-            .ok_or_else(|| OrbitError::JobRunNotFound(run.run_id.clone()))
-    }
-
-    pub fn finish_job_session(
-        &mut self,
-        run_id: &str,
-        state: JobRunState,
-        exit_code: Option<i32>,
-        error: Option<&str>,
-    ) -> Result<bool, OrbitError> {
-        let mapped_state = match state {
-            JobRunState::Cancelled => JobRunState::Failed,
-            JobRunState::Succeeded => JobRunState::Success,
-            other => other,
-        };
-        self.complete_job_run(
-            run_id,
-            mapped_state,
-            Utc::now(),
-            None,
-            exit_code,
-            None,
-            None,
-            error,
-        )
-    }
-
-    pub fn request_cancel_running_session(
-        &mut self,
-        job_id: &str,
-    ) -> Result<Option<String>, OrbitError> {
-        let run_id: Option<String> = self
-            .tx
-            .query_row(
-                "SELECT id FROM job_runs WHERE job_id = ?1 AND state = 'running' ORDER BY created_at DESC LIMIT 1",
-                [job_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| OrbitError::Store(e.to_string()))?;
-        Ok(run_id)
-    }
-
-    fn get_job_run_from_tx(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.tx
-            .query_row(
-                &format!("SELECT {JOB_RUN_COLS} FROM job_runs WHERE id = ?1"),
-                [run_id],
-                row_to_job_run,
-            )
-            .optional()
-            .map_err(|e| OrbitError::Store(e.to_string()))
     }
 }
 

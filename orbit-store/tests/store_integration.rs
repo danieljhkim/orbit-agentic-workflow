@@ -1,6 +1,7 @@
 use chrono::Utc;
 use orbit_store::Store;
 use orbit_store::task_store::TaskInsertParams;
+use orbit_types::{JobRetryBackoffStrategy, JobTargetType};
 
 #[test]
 fn due_jobs_query_returns_scheduled_jobs() {
@@ -13,7 +14,17 @@ fn due_jobs_query_returns_scheduled_jobs() {
                 title: "job task".to_string(),
                 ..Default::default()
             })?;
-            let _job = tx.insert_job("nightly", &task.id, "every 1h", "UTC", Some(next_run))?;
+            let _job = tx.insert_job_v2(
+                JobTargetType::ExecutionSpec,
+                &task.id,
+                "every 1h",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                next_run,
+            )?;
             Ok(())
         })
         .expect("insert job");

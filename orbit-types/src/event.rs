@@ -54,30 +54,9 @@ pub enum OrbitEvent {
         run_id: String,
         message: String,
     },
-    JobSessionStarted {
-        job_id: String,
-        session_id: String,
-        trigger: String,
-    },
-    JobSessionCompleted {
-        job_id: String,
-        session_id: String,
-        status: String,
-    },
-    JobSessionCancelled {
-        job_id: String,
-        session_id: String,
-    },
     JobSkipped {
         job_id: String,
         reason: String,
-    },
-    JobStarted {
-        id: String,
-    },
-    JobCompleted {
-        id: String,
-        success: bool,
     },
     WatchTriggered {
         path: String,

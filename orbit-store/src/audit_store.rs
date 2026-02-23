@@ -71,13 +71,8 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::JobRunCompleted { .. } => "JobRunCompleted",
         OrbitEvent::JobRetryScheduled { .. } => "JobRetryScheduled",
         OrbitEvent::JobProtocolViolation { .. } => "JobProtocolViolation",
-        OrbitEvent::JobSessionStarted { .. } => "JobSessionStarted",
-        OrbitEvent::JobSessionCompleted { .. } => "JobSessionCompleted",
-        OrbitEvent::JobSessionCancelled { .. } => "JobSessionCancelled",
         OrbitEvent::JobSkipped { .. } => "JobSkipped",
         OrbitEvent::ToolExecuted { .. } => "ToolExecuted",
-        OrbitEvent::JobStarted { .. } => "JobStarted",
-        OrbitEvent::JobCompleted { .. } => "JobCompleted",
         OrbitEvent::WatchTriggered { .. } => "WatchTriggered",
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
         OrbitEvent::TaskAdded { .. } => "TaskAdded",
@@ -132,27 +127,10 @@ fn event_message(event: &OrbitEvent) -> String {
             run_id,
             message,
         } => format!("job protocol violation: job={job_id} run={run_id} message={message}"),
-        OrbitEvent::JobSessionStarted {
-            job_id,
-            session_id,
-            trigger,
-        } => format!("job session started: job={job_id} session={session_id} trigger={trigger}"),
-        OrbitEvent::JobSessionCompleted {
-            job_id,
-            session_id,
-            status,
-        } => format!("job session completed: job={job_id} session={session_id} status={status}"),
-        OrbitEvent::JobSessionCancelled { job_id, session_id } => {
-            format!("job session cancelled: job={job_id} session={session_id}")
-        }
         OrbitEvent::JobSkipped { job_id, reason } => {
             format!("job skipped: job={job_id} reason={reason}")
         }
         OrbitEvent::ToolExecuted { name } => format!("tool executed: {name}"),
-        OrbitEvent::JobStarted { id } => format!("job started: {id}"),
-        OrbitEvent::JobCompleted { id, success } => {
-            format!("job completed: {id} (success={success})")
-        }
         OrbitEvent::WatchTriggered { path } => format!("watch triggered: {path}"),
         OrbitEvent::PolicyDenied { tool } => format!("policy denied: {tool}"),
         OrbitEvent::TaskAdded { id } => format!("task added: {id}"),

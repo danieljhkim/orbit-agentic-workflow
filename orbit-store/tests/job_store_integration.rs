@@ -1,8 +1,6 @@
 use chrono::Utc;
 use orbit_store::Store;
-use orbit_types::{
-    JobRetryBackoffStrategy, JobRunState, JobScheduleState, JobTargetType, JobTrigger, Role,
-};
+use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobScheduleState, JobTargetType};
 
 #[test]
 fn job_state_transitions_and_disabled_visibility() {
@@ -93,7 +91,7 @@ fn claim_due_jobs_skips_when_pending_or_running_run_exists() {
 }
 
 #[test]
-fn legacy_session_wrappers_map_to_v2_job_runs() {
+fn complete_job_run_updates_terminal_state_and_error_fields() {
     let store = Store::open_in_memory().expect("store");
     let now = Utc::now();
 
@@ -114,26 +112,25 @@ fn legacy_session_wrappers_map_to_v2_job_runs() {
         .expect("insert job");
 
     let run = store
-        .with_transaction(|tx| {
-            tx.insert_job_session(
-                &job.job_id,
-                "task-unused",
-                JobTrigger::Manual,
-                Role::Admin,
-                now,
-                None,
-                None,
-            )
-        })
-        .expect("insert session");
-    assert_eq!(run.state, JobRunState::Running);
+        .with_transaction(|tx| tx.insert_job_run(&job.job_id, 1, now))
+        .expect("insert run");
+    assert_eq!(run.state, JobRunState::Pending);
+
+    let started_at = Utc::now();
+    store
+        .with_transaction(|tx| tx.mark_job_run_running(&run.run_id, started_at))
+        .expect("mark running");
 
     store
         .with_transaction(|tx| {
-            tx.finish_job_session(
+            tx.complete_job_run(
                 &run.run_id,
-                JobRunState::Cancelled,
+                JobRunState::Failed,
+                Utc::now(),
+                Some(1200),
                 Some(130),
+                None,
+                Some("RUN_FAILED"),
                 Some("cancel requested"),
             )
         })
@@ -144,6 +141,8 @@ fn legacy_session_wrappers_map_to_v2_job_runs() {
         .expect("get run")
         .expect("run");
     assert_eq!(finished.state, JobRunState::Failed);
+    assert_eq!(finished.duration_ms, Some(1200));
     assert_eq!(finished.exit_code, Some(130));
+    assert_eq!(finished.error_code.as_deref(), Some("RUN_FAILED"));
     assert_eq!(finished.error_message.as_deref(), Some("cancel requested"));
 }

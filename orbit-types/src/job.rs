@@ -106,12 +106,8 @@ pub enum JobRunState {
     Pending,
     Running,
     Success,
-    // Compatibility alias while migrating from v2.1 naming.
-    Succeeded,
     Failed,
     Timeout,
-    // Compatibility state retained for compile-time transition only.
-    Cancelled,
 }
 
 impl Display for JobRunState {
@@ -119,10 +115,9 @@ impl Display for JobRunState {
         match self {
             JobRunState::Pending => write!(f, "pending"),
             JobRunState::Running => write!(f, "running"),
-            JobRunState::Success | JobRunState::Succeeded => write!(f, "success"),
+            JobRunState::Success => write!(f, "success"),
             JobRunState::Failed => write!(f, "failed"),
             JobRunState::Timeout => write!(f, "timeout"),
-            JobRunState::Cancelled => write!(f, "failed"),
         }
     }
 }
@@ -135,39 +130,9 @@ impl FromStr for JobRunState {
             "pending" => Ok(JobRunState::Pending),
             "running" => Ok(JobRunState::Running),
             "success" => Ok(JobRunState::Success),
-            "succeeded" => Ok(JobRunState::Succeeded),
             "failed" => Ok(JobRunState::Failed),
             "timeout" => Ok(JobRunState::Timeout),
-            "cancelled" => Ok(JobRunState::Cancelled),
             other => Err(format!("unknown job run state: {other}")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
-#[serde(rename_all = "snake_case")]
-pub enum JobTrigger {
-    Schedule,
-    Manual,
-}
-
-impl Display for JobTrigger {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JobTrigger::Schedule => write!(f, "schedule"),
-            JobTrigger::Manual => write!(f, "manual"),
-        }
-    }
-}
-
-impl FromStr for JobTrigger {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "schedule" => Ok(JobTrigger::Schedule),
-            "manual" => Ok(JobTrigger::Manual),
-            other => Err(format!("unknown job trigger: {other}")),
         }
     }
 }
@@ -226,7 +191,3 @@ pub struct JobRun {
     pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
 }
-
-// Backward compatibility aliases while v2 rolls through dependent crates.
-pub type JobSession = JobRun;
-pub type JobSessionStatus = JobRunState;

@@ -14,8 +14,6 @@ pub enum OrbitError {
     JobNotFound(String),
     #[error("job run not found: {0}")]
     JobRunNotFound(String),
-    #[error("job session not found: {0}")]
-    JobSessionNotFound(String),
     #[error("execution spec not found: {0}")]
     ExecutionSpecNotFound(String),
     #[error("workflow not found: {0}")]

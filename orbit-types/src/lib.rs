@@ -23,7 +23,7 @@ pub use execution_spec::ExecutionSpec;
 pub use id::OrbitId;
 pub use job::{
     AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
-    JobScheduleState, JobSession, JobSessionStatus, JobTargetType, JobTrigger,
+    JobScheduleState, JobTargetType,
 };
 pub use memo::Memo;
 pub use role::Role;
