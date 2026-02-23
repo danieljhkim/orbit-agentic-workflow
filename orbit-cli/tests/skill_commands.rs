@@ -9,139 +9,137 @@ fn orbit_in(dir: &Path) -> Command {
     cmd
 }
 
-fn write_instructions(dir: &Path, name: &str, content: &str) -> String {
-    let path = dir.join(name);
-    std::fs::write(&path, content).expect("write instructions");
-    path.to_string_lossy().to_string()
-}
-
-fn add_task(dir: &Path, title: &str) -> String {
-    let output = orbit_in(dir)
-        .args(["task", "add", "--title", title])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    String::from_utf8(output).expect("utf8").trim().to_string()
+fn write_skill(dir: &Path, id: &str, skill_md: &str, meta_json: Option<&str>) {
+    let skill_dir = dir.join(".orbit").join("skills").join(id);
+    std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+    std::fs::write(skill_dir.join("SKILL.md"), skill_md).expect("write skill");
+    if let Some(meta) = meta_json {
+        std::fs::write(skill_dir.join("meta.json"), meta).expect("write meta");
+    }
 }
 
 #[test]
-fn skill_add_list_show_update_delete_flow() {
+fn skill_list_and_show_read_file_based_skills() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let instructions = write_instructions(dir.path(), "skill.txt", "Always verify invariants");
+    write_skill(
+        dir.path(),
+        "assess-codebase",
+        r#"# assess-codebase
 
-    orbit_in(dir.path())
-        .args([
-            "skill",
-            "add",
-            "--name",
-            "refactor-rust",
-            "--description",
-            "Refactor helper",
-            "--instructions",
-            &instructions,
-            "--allowed-tools",
-            "fs.read,fs.write",
-            "--role",
-            "agent",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Added skill 'refactor-rust'"));
+## Purpose
+Perform architectural boundary and invariant analysis.
+
+## Behavioral Constraints
+- Must return JSON only.
+
+## Output Requirements
+- severity_summary
+"#,
+        Some(
+            r#"{
+  "name": "Assess Codebase",
+  "summary": "Architectural review",
+  "tags": ["architecture"],
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["severity_summary"],
+  "properties": {
+    "severity_summary": { "type": "string" }
+  }
+}"#,
+        ),
+    );
 
     orbit_in(dir.path())
         .args(["skill", "list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("refactor-rust"));
+        .stdout(predicate::str::contains("assess-codebase"));
 
     orbit_in(dir.path())
-        .args(["skill", "show", "refactor-rust"])
+        .args(["skill", "show", "assess-codebase"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Name:"))
-        .stdout(predicate::str::contains("refactor-rust"))
-        .stdout(predicate::str::contains("agent"));
-
-    let updated = write_instructions(dir.path(), "skill-update.txt", "Updated instructions");
-    orbit_in(dir.path())
-        .args([
-            "skill",
-            "update",
-            "refactor-rust",
-            "--instructions",
-            &updated,
-            "--allowed-tools",
-            "fs.read",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Updated skill 'refactor-rust'"));
-
-    orbit_in(dir.path())
-        .args(["skill", "delete", "refactor-rust"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Deleted skill 'refactor-rust'"));
+        .stdout(predicate::str::contains("Behavioral Contract"))
+        .stdout(predicate::str::contains("Structured Metadata"))
+        .stdout(predicate::str::contains("assess-codebase"));
 }
 
 #[test]
-fn skill_attach_and_detach_to_task() {
+fn skill_list_and_show_json_are_valid() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let instructions = write_instructions(dir.path(), "attach-skill.txt", "Attach skill");
-    let task_id = add_task(dir.path(), "needs-skill");
+    write_skill(
+        dir.path(),
+        "lint-review",
+        r#"# lint-review
+
+## Purpose
+Review lint trends.
+
+## Behavioral Constraints
+- Deterministic output.
+
+## Output Requirements
+- findings
+"#,
+        None,
+    );
 
     orbit_in(dir.path())
-        .args([
-            "skill",
-            "add",
-            "--name",
-            "attachable",
-            "--instructions",
-            &instructions,
-        ])
-        .assert()
-        .success();
-
-    orbit_in(dir.path())
-        .args(["skill", "attach", &task_id, "attachable"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Attached skill"));
-
-    orbit_in(dir.path())
-        .args(["skill", "detach", &task_id, "attachable"])
+        .args(["skill", "list", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Detached skill"));
+        .stdout(predicate::str::contains("\"id\": \"lint-review\""));
+
+    orbit_in(dir.path())
+        .args(["skill", "show", "lint-review", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"sections\""))
+        .stdout(predicate::str::contains("\"purpose\""));
 }
 
 #[test]
-fn skill_doctor_reports_health() {
+fn skill_doctor_reports_invalid_skill() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let instructions = write_instructions(dir.path(), "doctor-skill.txt", "Doctor skill");
-    let ctx = dir.path().join("ARCHITECTURE.md");
-    std::fs::write(&ctx, "ok").expect("write context");
+    write_skill(
+        dir.path(),
+        "broken",
+        r#"# broken
 
-    orbit_in(dir.path())
-        .args([
-            "skill",
-            "add",
-            "--name",
-            "doctor-ok",
-            "--instructions",
-            &instructions,
-            "--context",
-            &ctx.to_string_lossy(),
-        ])
-        .assert()
-        .success();
+## Purpose
+Missing required sections.
+"#,
+        None,
+    );
 
     orbit_in(dir.path())
         .args(["skill", "doctor"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("doctor-ok"))
-        .stdout(predicate::str::contains("All skills healthy"));
+        .stdout(predicate::str::contains("broken"))
+        .stdout(predicate::str::contains("ERROR"));
+
+    orbit_in(dir.path())
+        .args(["skill", "doctor", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"status\": \"error\""));
+}
+
+#[test]
+fn legacy_mutation_subcommands_are_not_exposed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    orbit_in(dir.path())
+        .args(["skill", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("show"))
+        .stdout(predicate::str::contains("doctor"))
+        .stdout(predicate::str::contains("add").not())
+        .stdout(predicate::str::contains("update").not())
+        .stdout(predicate::str::contains("delete").not())
+        .stdout(predicate::str::contains("attach").not())
+        .stdout(predicate::str::contains("detach").not());
 }

@@ -20,7 +20,7 @@ impl OrbitRuntime {
 
     pub fn run_agent_task(&self, task_id: &str) -> Result<AgentRunResult, OrbitError> {
         let task = self.get_task(task_id)?;
-        let skills = self.list_task_skills(task_id)?;
+        let skills = Vec::new();
         let session_id = format!(
             "session-{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()

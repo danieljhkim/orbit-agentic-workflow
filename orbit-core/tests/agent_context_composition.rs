@@ -1,9 +1,29 @@
+use chrono::Utc;
 use orbit_core::OrbitRuntime;
 use orbit_core::agent::context::{compose_agent_context, parse_planned_tool_calls};
-use orbit_core::command::skill::SkillAddParams;
 use orbit_core::command::task::TaskAddParams;
-use orbit_types::Role;
+use orbit_types::{Role, Skill};
 use tempfile::tempdir;
+
+fn sample_skill(
+    name: &str,
+    tools: &[&str],
+    role: Role,
+    context_files: &[&str],
+    instructions: &str,
+) -> Skill {
+    Skill {
+        schema_version: 1,
+        name: name.to_string(),
+        description: None,
+        instructions: instructions.to_string(),
+        context_files: context_files.iter().map(|v| v.to_string()).collect(),
+        allowed_tools: tools.iter().map(|v| v.to_string()).collect(),
+        role,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    }
+}
 
 #[test]
 fn composition_merges_in_deterministic_order_and_hash_is_stable() {
@@ -21,36 +41,23 @@ fn composition_merges_in_deterministic_order_and_hash_is_stable() {
         })
         .expect("task");
 
-    runtime
-        .add_skill(SkillAddParams {
-            name: "s1".to_string(),
-            description: None,
-            instructions: "skill 1".to_string(),
-            context_files: vec!["B.md".to_string(), "C.md".to_string()],
-            allowed_tools: vec!["fs.read".to_string(), "fs.write".to_string()],
-            role: Role::Admin,
-        })
-        .expect("skill s1");
-    runtime
-        .add_skill(SkillAddParams {
-            name: "s2".to_string(),
-            description: None,
-            instructions: "skill 2".to_string(),
-            context_files: vec!["C.md".to_string(), "D.md".to_string()],
-            allowed_tools: vec!["fs.read".to_string()],
-            role: Role::Agent,
-        })
-        .expect("skill s2");
-
-    runtime
-        .attach_skill_to_task(&task.id, "s1")
-        .expect("attach s1");
-    runtime
-        .attach_skill_to_task(&task.id, "s2")
-        .expect("attach s2");
-
     let task = runtime.get_task(&task.id).expect("task");
-    let skills = runtime.list_task_skills(&task.id).expect("skills");
+    let skills = vec![
+        sample_skill(
+            "s1",
+            &["fs.read", "fs.write"],
+            Role::Admin,
+            &["B.md", "C.md"],
+            "skill 1",
+        ),
+        sample_skill(
+            "s2",
+            &["fs.read"],
+            Role::Agent,
+            &["C.md", "D.md"],
+            "skill 2",
+        ),
+    ];
     let c1 = compose_agent_context(&runtime, &task, &skills, Role::Admin).expect("compose");
     let c2 = compose_agent_context(&runtime, &task, &skills, Role::Admin).expect("compose");
 
@@ -105,46 +112,11 @@ fn empty_effective_allowlist_is_rejected() {
         })
         .expect("task");
 
-    runtime
-        .add_skill(SkillAddParams {
-            name: "deny-all".to_string(),
-            description: None,
-            instructions: "strict".to_string(),
-            context_files: vec![],
-            allowed_tools: vec!["does.not.exist".to_string()],
-            role: Role::Agent,
-        })
-        .expect_err("unknown tool should fail at creation");
-
-    runtime
-        .add_skill(SkillAddParams {
-            name: "only-write".to_string(),
-            description: None,
-            instructions: "only write".to_string(),
-            context_files: vec![],
-            allowed_tools: vec!["fs.write".to_string()],
-            role: Role::Agent,
-        })
-        .expect("skill");
-    runtime
-        .add_skill(SkillAddParams {
-            name: "only-read".to_string(),
-            description: None,
-            instructions: "only read".to_string(),
-            context_files: vec![],
-            allowed_tools: vec!["fs.read".to_string()],
-            role: Role::Agent,
-        })
-        .expect("skill");
-    runtime
-        .attach_skill_to_task(&task.id, "only-write")
-        .expect("attach");
-    runtime
-        .attach_skill_to_task(&task.id, "only-read")
-        .expect("attach");
-
     let task = runtime.get_task(&task.id).expect("task");
-    let skills = runtime.list_task_skills(&task.id).expect("skills");
+    let skills = vec![
+        sample_skill("only-write", &["fs.write"], Role::Agent, &[], "only write"),
+        sample_skill("only-read", &["fs.read"], Role::Agent, &[], "only read"),
+    ];
     let result = compose_agent_context(&runtime, &task, &skills, Role::Agent);
     assert!(
         result.is_err(),

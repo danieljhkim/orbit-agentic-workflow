@@ -25,6 +25,23 @@ fn add_work(runtime: &OrbitRuntime, id: &str) {
         .expect("add work");
 }
 
+#[test]
+fn add_work_rejects_missing_skill_ref() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+
+    let result = runtime.add_work(WorkAddParams {
+        id: "spec-missing-skill".to_string(),
+        spec_type: "analysis".to_string(),
+        description: "missing skill".to_string(),
+        input_schema_json: json!({}),
+        output_schema_json: json!({}),
+        artifact_path_template: None,
+        skill_refs: vec!["does-not-exist".to_string()],
+    });
+    assert!(result.is_err());
+}
+
 fn add_scheduled_job(
     runtime: &OrbitRuntime,
     target_id: &str,
@@ -60,10 +77,12 @@ fn scheduled_job_run_executes_agent_and_records_success_run() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let args_capture = dir.path().join("args.txt");
+    let stdin_capture = dir.path().join("stdin.json");
     let script_path = dir.path().join("mock-agent");
     let script = format!(
-        "#!/bin/sh\nprintf '%s' \"$@\" > \"{}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
-        args_capture.to_string_lossy()
+        "#!/bin/sh\nprintf '%s' \"$@\" > \"{args}\"\ncat > \"{stdin}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        args = args_capture.to_string_lossy(),
+        stdin = stdin_capture.to_string_lossy(),
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
@@ -91,6 +110,13 @@ fn scheduled_job_run_executes_agent_and_records_success_run() {
     assert!(args_raw.contains("--output"));
     assert!(args_raw.contains("json"));
     assert!(args_raw.contains("--target-type"));
+
+    let stdin_raw = std::fs::read_to_string(stdin_capture).expect("stdin capture");
+    assert!(stdin_raw.contains("\"schemaVersion\":1"));
+    assert!(stdin_raw.contains("\"work\""));
+    assert!(stdin_raw.contains("\"skills\""));
+    assert!(stdin_raw.contains("\"input\""));
+    assert!(stdin_raw.contains("\"memory\""));
 }
 
 #[test]
@@ -221,5 +247,79 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
                 && audit.payload["data"]["job_id"].as_str() == Some(job_id.as_str())
         }),
         "job run completion should be recorded in audits"
+    );
+}
+
+#[test]
+fn skill_meta_output_schema_violation_marks_run_failed() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let skill_dir = dir.path().join("skills").join("strict-schema");
+    std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        r#"# strict-schema
+
+## Purpose
+Validate output shape.
+
+## Behavioral Constraints
+- Deterministic output only.
+
+## Output Requirements
+- ok
+"#,
+    )
+    .expect("write skill");
+    std::fs::write(
+        skill_dir.join("meta.json"),
+        r#"{
+  "name": "Strict Schema",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["ok"],
+  "properties": {
+    "ok": { "type": "boolean" }
+  }
+}"#,
+    )
+    .expect("write meta");
+
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{\"wrong\":1},\"error\":null,\"durationMs\":1}'\n",
+    );
+
+    let _ = runtime
+        .add_work(WorkAddParams {
+            id: "spec-schema".to_string(),
+            spec_type: "analysis".to_string(),
+            description: "schema validation".to_string(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({}),
+            artifact_path_template: None,
+            skill_refs: vec!["strict-schema".to_string()],
+        })
+        .expect("add work");
+    let job_id = add_scheduled_job(
+        &runtime,
+        "spec-schema",
+        &agent_cli,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
+    );
+
+    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
+    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    assert_eq!(ran, 1);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].state, JobRunState::Failed);
+    assert_eq!(
+        history[0].error_code.as_deref(),
+        Some("AGENT_PROTOCOL_VIOLATION")
     );
 }

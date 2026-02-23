@@ -5,6 +5,7 @@ use chrono::Utc;
 use orbit_types::{OrbitError, OrbitEvent, Role, Skill};
 
 use crate::OrbitRuntime;
+use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};
 
 pub struct SkillAddParams {
     pub name: String,
@@ -39,6 +40,44 @@ pub struct SkillDoctorResult {
 }
 
 impl OrbitRuntime {
+    pub fn list_file_skills(&self) -> Result<Vec<LoadedSkill>, OrbitError> {
+        self.context.skill_catalog.list()
+    }
+
+    pub fn show_file_skill(&self, name: &str) -> Result<LoadedSkill, OrbitError> {
+        self.context.skill_catalog.load(name)
+    }
+
+    pub fn doctor_file_skills(&self) -> Result<Vec<SkillDoctorResult>, OrbitError> {
+        let rows = self.context.skill_catalog.doctor()?;
+        Ok(rows
+            .into_iter()
+            .map(|row| SkillDoctorResult {
+                skill_name: row.skill_id,
+                status: match row.status {
+                    SkillCatalogDoctorStatus::Ok => SkillDoctorStatus::Ok,
+                    SkillCatalogDoctorStatus::Error => SkillDoctorStatus::Error,
+                },
+                message: row.message,
+            })
+            .collect())
+    }
+
+    pub(crate) fn resolve_work_skill_refs(
+        &self,
+        refs: &[String],
+    ) -> Result<Vec<LoadedSkill>, OrbitError> {
+        let mut dedup = HashSet::new();
+        let mut output = Vec::new();
+        for skill_id in refs {
+            if !dedup.insert(skill_id.clone()) {
+                continue;
+            }
+            output.push(self.context.skill_catalog.load(skill_id)?);
+        }
+        Ok(output)
+    }
+
     pub fn add_skill(&self, params: SkillAddParams) -> Result<Skill, OrbitError> {
         self.validate_skill_fields(
             &params.instructions,

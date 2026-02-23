@@ -3,6 +3,7 @@ pub mod command;
 pub mod context;
 pub mod job;
 pub mod runtime;
+pub mod skill_catalog;
 mod task_file_store;
 pub mod watch;
 

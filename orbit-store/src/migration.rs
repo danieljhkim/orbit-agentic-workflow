@@ -813,9 +813,7 @@ fn table_has_foreign_key_to(
 }
 
 fn is_safe_identifier(value: &str) -> bool {
-    value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 #[cfg(test)]
@@ -1114,9 +1112,11 @@ mod tests {
         apply_schema(&conn).expect("apply schema");
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM works WHERE id = 'work-1'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM works WHERE id = 'work-1'",
+                [],
+                |row| row.get(0),
+            )
             .expect("query works");
         assert_eq!(count, 1);
     }

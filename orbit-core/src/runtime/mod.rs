@@ -13,6 +13,7 @@ use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
 use orbit_types::{Audit, Job};
 
+use crate::skill_catalog::SkillCatalog;
 use crate::task_file_store::TaskFileStore;
 use crate::{OrbitContext, OrbitError};
 
@@ -36,6 +37,10 @@ impl OrbitRuntime {
         task_store.ensure_layout()?;
         let legacy_tasks = store.list_tasks()?;
         let _ = task_store.migrate_from_sqlite_tasks(&legacy_tasks)?;
+        let skill_root = Self::skill_root_path(data_root);
+        let skill_catalog = SkillCatalog::new(skill_root);
+        skill_catalog.ensure_layout()?;
+        Self::export_legacy_skills_to_files(&store, &skill_catalog)?;
 
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
@@ -47,6 +52,7 @@ impl OrbitRuntime {
                 policy: PolicyEngine::new_local_default_allow(),
                 registry: Arc::new(registry),
                 task_store,
+                skill_catalog,
             },
             event_bus: event_bus::EventBus::default(),
         })
@@ -60,6 +66,12 @@ impl OrbitRuntime {
         ));
         let task_store = TaskFileStore::new(task_root);
         task_store.ensure_layout()?;
+        let skill_root = std::env::temp_dir().join(format!(
+            "orbit-skill-store-{}",
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let skill_catalog = SkillCatalog::new(skill_root);
+        skill_catalog.ensure_layout()?;
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
         Self::load_external_tools(&store, &mut registry)?;
@@ -70,6 +82,7 @@ impl OrbitRuntime {
                 policy: PolicyEngine::new_local_default_allow(),
                 registry: Arc::new(registry),
                 task_store,
+                skill_catalog,
             },
             event_bus: event_bus::EventBus::default(),
         })
@@ -126,5 +139,40 @@ impl OrbitRuntime {
             return PathBuf::from(value);
         }
         data_root.join("tasks")
+    }
+
+    fn skill_root_path(data_root: &Path) -> PathBuf {
+        if let Ok(value) = std::env::var("ORBIT_SKILL_ROOT")
+            && !value.trim().is_empty()
+        {
+            return PathBuf::from(value);
+        }
+        data_root.join("skills")
+    }
+
+    fn export_legacy_skills_to_files(
+        store: &orbit_store::Store,
+        skill_catalog: &SkillCatalog,
+    ) -> Result<(), OrbitError> {
+        let legacy_skills = store.list_skills()?;
+        for skill in legacy_skills {
+            let skill_dir = skill_catalog.root().join(&skill.name);
+            if skill_dir.join("SKILL.md").exists() {
+                continue;
+            }
+            std::fs::create_dir_all(&skill_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+            let purpose = skill
+                .description
+                .clone()
+                .unwrap_or_else(|| format!("Migrated legacy skill '{}'", skill.name));
+            let content = format!(
+                "# {id}\n\n## Purpose\n{purpose}\n\n## Behavioral Constraints\n{instructions}\n\n## Output Requirements\n- Return structured output that matches the execution contract.\n",
+                id = skill.name,
+                instructions = skill.instructions.trim(),
+            );
+            std::fs::write(skill_dir.join("SKILL.md"), content)
+                .map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+        Ok(())
     }
 }

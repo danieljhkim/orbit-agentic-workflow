@@ -5,10 +5,11 @@ use chrono::{DateTime, Utc};
 use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
 use orbit_types::{
-    Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
-    OrbitEvent,
+    AgentResponseEnvelope, Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState,
+    JobTargetType, OrbitError, OrbitEvent,
 };
-use serde_json::Value;
+use serde::Serialize;
+use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
 const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
@@ -44,6 +45,25 @@ struct AttemptOutcome {
     error_message: Option<String>,
     retryable: bool,
     protocol_violation: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScheduledExecutionEnvelope {
+    #[serde(rename = "schemaVersion")]
+    schema_version: u32,
+    work: Value,
+    skills: Vec<ScheduledSkillEnvelope>,
+    input: Value,
+    memory: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScheduledSkillEnvelope {
+    id: String,
+    content_hash: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    meta: Option<Value>,
 }
 
 impl OrbitRuntime {
@@ -355,13 +375,28 @@ impl OrbitRuntime {
                 };
             }
         };
+        let stdin_payload = match self.build_stdin_envelope_payload(job) {
+            Ok(payload) => payload,
+            Err(err) => {
+                return AttemptOutcome {
+                    state: JobRunState::Failed,
+                    exit_code: Some(1),
+                    duration_ms: None,
+                    response_json: None,
+                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                    error_message: Some(err.to_string()),
+                    retryable: false,
+                    protocol_violation: false,
+                };
+            }
+        };
 
         let exec_result = match run_process(
             &ExecRequest {
                 program: invocation.program,
                 args: invocation.args,
                 timeout_ms: Some(job.timeout_seconds.saturating_mul(1000)),
-                stdin_mode: StdinMode::Null,
+                stdin_mode: StdinMode::Bytes(stdin_payload),
             },
             &NoSandbox,
         ) {
@@ -381,16 +416,32 @@ impl OrbitRuntime {
         };
 
         match crate::job::agent_protocol::parse_and_validate_response(&exec_result) {
-            Ok((envelope, state)) => AttemptOutcome {
-                state,
-                exit_code: exec_result.exit_code,
-                duration_ms: Some(exec_result.duration_ms),
-                response_json: serde_json::to_value(envelope).ok(),
-                error_code: None,
-                error_message: None,
-                retryable: state == JobRunState::Failed || state == JobRunState::Timeout,
-                protocol_violation: false,
-            },
+            Ok((envelope, state)) => {
+                if state == JobRunState::Success
+                    && let Err(err) = self.validate_skill_output_schema(job, &envelope)
+                {
+                    return AttemptOutcome {
+                        state: JobRunState::Failed,
+                        exit_code: exec_result.exit_code,
+                        duration_ms: Some(exec_result.duration_ms),
+                        response_json: None,
+                        error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
+                        error_message: Some(err.to_string()),
+                        retryable: false,
+                        protocol_violation: true,
+                    };
+                }
+                AttemptOutcome {
+                    state,
+                    exit_code: exec_result.exit_code,
+                    duration_ms: Some(exec_result.duration_ms),
+                    response_json: serde_json::to_value(envelope).ok(),
+                    error_code: None,
+                    error_message: None,
+                    retryable: state == JobRunState::Failed || state == JobRunState::Timeout,
+                    protocol_violation: false,
+                }
+            }
             Err(OrbitError::AgentProtocolViolation(message)) => AttemptOutcome {
                 state: JobRunState::Failed,
                 exit_code: exec_result.exit_code,
@@ -414,6 +465,99 @@ impl OrbitRuntime {
         }
     }
 
+    fn build_stdin_envelope_payload(&self, job: &Job) -> Result<Vec<u8>, OrbitError> {
+        let envelope = match job.target_type {
+            JobTargetType::Work => {
+                let work = self
+                    .context
+                    .store
+                    .get_work(&job.target_id)?
+                    .ok_or_else(|| OrbitError::WorkNotFound(job.target_id.clone()))?;
+                let skills = self.resolve_work_skill_refs(&work.skill_refs)?;
+                ScheduledExecutionEnvelope {
+                    schema_version: 1,
+                    work: json!({
+                        "id": work.id,
+                        "type": work.spec_type,
+                        "description": work.description,
+                        "input_schema_json": work.input_schema_json,
+                        "output_schema_json": work.output_schema_json,
+                        "artifact_path_template": work.artifact_path_template,
+                        "skill_refs": work.skill_refs,
+                    }),
+                    skills: skills
+                        .into_iter()
+                        .map(|skill| ScheduledSkillEnvelope {
+                            id: skill.id,
+                            content_hash: skill.content_hash,
+                            content: skill.content,
+                            meta: skill.meta_raw,
+                        })
+                        .collect(),
+                    input: json!({}),
+                    memory: json!({}),
+                }
+            }
+            JobTargetType::Workflow => {
+                let workflow = self
+                    .context
+                    .store
+                    .get_workflow(&job.target_id)?
+                    .ok_or_else(|| OrbitError::WorkflowNotFound(job.target_id.clone()))?;
+                ScheduledExecutionEnvelope {
+                    schema_version: 1,
+                    work: json!({
+                        "id": workflow.id,
+                        "type": "workflow",
+                        "name": workflow.name,
+                        "definition_json": workflow.definition_json,
+                    }),
+                    skills: Vec::new(),
+                    input: json!({}),
+                    memory: json!({}),
+                }
+            }
+        };
+
+        serde_json::to_vec(&envelope)
+            .map_err(|e| OrbitError::Execution(format!("failed to serialize stdin envelope: {e}")))
+    }
+
+    fn validate_skill_output_schema(
+        &self,
+        job: &Job,
+        envelope: &AgentResponseEnvelope,
+    ) -> Result<(), OrbitError> {
+        if job.target_type != JobTargetType::Work {
+            return Ok(());
+        }
+        let work = self
+            .context
+            .store
+            .get_work(&job.target_id)?
+            .ok_or_else(|| OrbitError::WorkNotFound(job.target_id.clone()))?;
+        let skills = self.resolve_work_skill_refs(&work.skill_refs)?;
+        let Some(result) = envelope.result.as_ref() else {
+            return Err(OrbitError::AgentProtocolViolation(
+                "success response must include result payload".to_string(),
+            ));
+        };
+
+        for skill in skills {
+            let Some(schema) = skill.output_schema.as_ref() else {
+                continue;
+            };
+            if let Err(message) = validate_json_schema_subset(result, schema, "$") {
+                return Err(OrbitError::AgentProtocolViolation(format!(
+                    "result does not match skill '{}' output schema: {}",
+                    skill.id, message
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     fn validate_job_target_exists(
         &self,
         target_type: JobTargetType,
@@ -421,9 +565,10 @@ impl OrbitRuntime {
     ) -> Result<(), OrbitError> {
         match target_type {
             JobTargetType::Work => {
-                if self.context.store.get_work(target_id)?.is_none() {
+                let Some(work) = self.context.store.get_work(target_id)? else {
                     return Err(OrbitError::WorkNotFound(target_id.to_string()));
-                }
+                };
+                let _ = self.resolve_work_skill_refs(&work.skill_refs)?;
             }
             JobTargetType::Workflow => {
                 if self.context.store.get_workflow(target_id)?.is_none() {
@@ -433,4 +578,74 @@ impl OrbitRuntime {
         }
         Ok(())
     }
+}
+
+fn validate_json_schema_subset(value: &Value, schema: &Value, path: &str) -> Result<(), String> {
+    let Some(schema_obj) = schema.as_object() else {
+        return Ok(());
+    };
+
+    if let Some(expected) = schema_obj.get("const")
+        && value != expected
+    {
+        return Err(format!("{} must equal const value", path));
+    }
+
+    if let Some(enum_values) = schema_obj.get("enum").and_then(Value::as_array)
+        && !enum_values.iter().any(|item| item == value)
+    {
+        return Err(format!("{} must match one of enum values", path));
+    }
+
+    if let Some(expected_type) = schema_obj.get("type").and_then(Value::as_str) {
+        let matches_type = match expected_type {
+            "object" => value.is_object(),
+            "array" => value.is_array(),
+            "string" => value.is_string(),
+            "number" => value.is_number(),
+            "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+            "boolean" => value.is_boolean(),
+            "null" => value.is_null(),
+            _ => true,
+        };
+        if !matches_type {
+            return Err(format!("{} must be {}", path, expected_type));
+        }
+    }
+
+    if let Some(required) = schema_obj.get("required").and_then(Value::as_array) {
+        let Some(value_obj) = value.as_object() else {
+            return Err(format!("{} must be object for required keys", path));
+        };
+        for key in required {
+            let Some(key) = key.as_str() else {
+                continue;
+            };
+            if !value_obj.contains_key(key) {
+                return Err(format!("{} missing required key '{}'", path, key));
+            }
+        }
+    }
+
+    if let Some(properties) = schema_obj.get("properties").and_then(Value::as_object)
+        && let Some(value_obj) = value.as_object()
+    {
+        for (key, prop_schema) in properties {
+            if let Some(prop_value) = value_obj.get(key) {
+                let child_path = format!("{}.{}", path, key);
+                validate_json_schema_subset(prop_value, prop_schema, &child_path)?;
+            }
+        }
+    }
+
+    if let Some(items_schema) = schema_obj.get("items")
+        && let Some(items) = value.as_array()
+    {
+        for (idx, item) in items.iter().enumerate() {
+            let child_path = format!("{}[{}]", path, idx);
+            validate_json_schema_subset(item, items_schema, &child_path)?;
+        }
+    }
+
+    Ok(())
 }

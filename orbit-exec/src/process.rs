@@ -18,6 +18,9 @@ pub(crate) fn spawn(req: &ExecRequest) -> Result<Child, OrbitError> {
         StdinMode::Null => {
             command.stdin(Stdio::null());
         }
+        StdinMode::Bytes(_) => {
+            command.stdin(Stdio::piped());
+        }
     }
 
     command

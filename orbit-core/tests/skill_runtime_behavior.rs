@@ -116,3 +116,26 @@ fn skill_doctor_reports_missing_context_file() {
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, SkillDoctorStatus::Warning);
 }
+
+#[test]
+fn legacy_sql_skill_rows_are_exported_to_file_catalog() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    runtime
+        .add_skill(SkillAddParams {
+            name: "legacy-export".to_string(),
+            description: Some("legacy desc".to_string()),
+            instructions: "legacy instructions".to_string(),
+            context_files: vec![],
+            allowed_tools: vec![],
+            role: Role::Agent,
+        })
+        .expect("add skill");
+
+    let restarted = OrbitRuntime::from_data_root(dir.path()).expect("runtime restart");
+    let file_skills = restarted.list_file_skills().expect("file skills");
+    assert!(
+        file_skills.iter().any(|skill| skill.id == "legacy-export"),
+        "legacy sqlite row should be exported into file skill catalog"
+    );
+}

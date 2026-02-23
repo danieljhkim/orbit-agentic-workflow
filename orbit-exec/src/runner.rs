@@ -1,14 +1,16 @@
+use std::io::Write;
 use std::time::Instant;
 
 use orbit_types::{ExecutionResult, OrbitError};
 
 use crate::sandbox::Sandbox;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum StdinMode {
     #[default]
     Inherit,
     Null,
+    Bytes(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +28,18 @@ pub fn run_process(
     sandbox.validate(req)?;
 
     let started = Instant::now();
-    let child = crate::process::spawn(req)?;
+    let mut child = crate::process::spawn(req)?;
+    if let StdinMode::Bytes(bytes) = &req.stdin_mode {
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(bytes).map_err(|e| {
+                OrbitError::Execution(format!("failed to write process stdin: {e}"))
+            })?;
+        } else {
+            return Err(OrbitError::Execution(
+                "stdin requested but no stdin pipe available".to_string(),
+            ));
+        }
+    }
     let (timed_out, output) = crate::timeout::wait_with_optional_timeout(child, req.timeout_ms)?;
 
     let mut stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -68,6 +81,23 @@ mod tests {
 
         assert!(result.success);
         assert_eq!(result.stdout, "hello");
+    }
+
+    #[test]
+    fn supports_stdin_bytes() {
+        let result = run_process(
+            &ExecRequest {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string(), "cat".to_string()],
+                timeout_ms: Some(1000),
+                stdin_mode: StdinMode::Bytes(b"hello-stdin".to_vec()),
+            },
+            &NoSandbox,
+        )
+        .expect("process succeeds");
+
+        assert!(result.success);
+        assert_eq!(result.stdout, "hello-stdin");
     }
 
     #[test]

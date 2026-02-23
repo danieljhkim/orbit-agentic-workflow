@@ -237,15 +237,23 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Skill(_) => CommandMeta {
-            command: "skill".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: None,
-            target_id: None,
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
+        Commands::Skill(cmd) => {
+            use crate::command::skill::SkillSubcommand;
+            let (sub, target_id) = match &cmd.command {
+                SkillSubcommand::List(_) => ("list", None),
+                SkillSubcommand::Show(args) => ("show", Some(args.name.as_str())),
+                SkillSubcommand::Doctor(_) => ("doctor", None),
+            };
+            CommandMeta {
+                command: "skill".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("skill".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Workflow(cmd) => {
             use crate::command::workflow::WorkflowSubcommand;
             let (sub, target_id) = match &cmd.command {

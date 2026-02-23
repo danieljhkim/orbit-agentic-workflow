@@ -1,8 +1,8 @@
-use std::fs;
-
 use clap::{Args, Subcommand};
-use orbit_core::command::skill::{SkillAddParams, SkillDoctorStatus, SkillUpdateParams};
-use orbit_core::{OrbitError, OrbitRuntime, Role};
+use orbit_core::command::skill::{SkillDoctorResult, SkillDoctorStatus};
+use orbit_core::skill_catalog::LoadedSkill;
+use orbit_core::{OrbitError, OrbitRuntime};
+use serde_json::{Value, json};
 
 use crate::command::Execute;
 
@@ -20,227 +20,161 @@ impl Execute for SkillCommand {
 
 #[derive(Subcommand)]
 pub enum SkillSubcommand {
-    Add(SkillAddArgs),
-    List,
+    List(SkillListArgs),
     Show(SkillShowArgs),
-    Update(SkillUpdateArgs),
-    Delete(SkillDeleteArgs),
-    Attach(SkillAttachArgs),
-    Detach(SkillDetachArgs),
-    Doctor,
+    Doctor(SkillDoctorArgs),
 }
 
 impl Execute for SkillSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            SkillSubcommand::Add(args) => args.execute(runtime),
-            SkillSubcommand::List => execute_list(runtime),
+            SkillSubcommand::List(args) => args.execute(runtime),
             SkillSubcommand::Show(args) => args.execute(runtime),
-            SkillSubcommand::Update(args) => args.execute(runtime),
-            SkillSubcommand::Delete(args) => args.execute(runtime),
-            SkillSubcommand::Attach(args) => args.execute(runtime),
-            SkillSubcommand::Detach(args) => args.execute(runtime),
-            SkillSubcommand::Doctor => execute_doctor(runtime),
+            SkillSubcommand::Doctor(args) => args.execute(runtime),
         }
     }
 }
 
 #[derive(Args)]
-pub struct SkillAddArgs {
+pub struct SkillListArgs {
     #[arg(long)]
-    pub name: String,
-    #[arg(long)]
-    pub description: Option<String>,
-    /// Path to instructions file
-    #[arg(long)]
-    pub instructions: Option<String>,
-    /// Comma-separated context file paths
-    #[arg(long, default_value = "")]
-    pub context: String,
-    /// Comma-separated tool names
-    #[arg(long = "allowed-tools", default_value = "")]
-    pub allowed_tools: String,
-    #[arg(long, value_enum, default_value_t = Role::Agent)]
-    pub role: Role,
+    pub json: bool,
 }
 
-impl Execute for SkillAddArgs {
+impl Execute for SkillListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let instructions = read_text_file_opt(self.instructions)?;
-        let created = runtime.add_skill(SkillAddParams {
-            name: self.name,
-            description: self.description,
-            instructions,
-            context_files: parse_csv(self.context),
-            allowed_tools: parse_csv(self.allowed_tools),
-            role: self.role,
-        })?;
-        println!("Added skill '{}'", created.name);
-        Ok(())
+        let skills = runtime.list_file_skills()?;
+        if self.json {
+            let values = skills.iter().map(skill_summary_json).collect::<Vec<_>>();
+            crate::output::json::print_pretty(&Value::Array(values))
+        } else {
+            println!("{:<24} {:<10} {:<8} SUMMARY", "ID", "HASH", "TAGS");
+            for skill in skills {
+                let summary = skill
+                    .meta
+                    .as_ref()
+                    .and_then(|meta| meta.summary.clone())
+                    .unwrap_or_default();
+                let tags = skill.meta.as_ref().map(|meta| meta.tags.len()).unwrap_or(0);
+                println!(
+                    "{:<24} {:<10} {:<8} {}",
+                    skill.id,
+                    &skill.content_hash[..10],
+                    tags,
+                    summary
+                );
+            }
+            Ok(())
+        }
     }
 }
 
 #[derive(Args)]
 pub struct SkillShowArgs {
     pub name: String,
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for SkillShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let skill = runtime.show_skill(&self.name)?;
-        println!("Name:          {}", skill.name);
-        println!("Schema:        {}", skill.schema_version);
-        println!("Role:          {}", skill.role);
-        println!(
-            "Description:   {}",
-            skill.description.clone().unwrap_or_default()
-        );
-        println!("Instructions:  {}", skill.instructions);
-        println!("Context files: {}", skill.context_files.join(", "));
-        println!("Allowed tools: {}", skill.allowed_tools.join(", "));
-        Ok(())
+        let skill = runtime.show_file_skill(&self.name)?;
+        if self.json {
+            crate::output::json::print_pretty(&skill_to_json(&skill))
+        } else {
+            println!("Skill:         {}", skill.id);
+            println!("Path:          {}", skill.path.display());
+            println!("Content hash:  {}", skill.content_hash);
+            println!("\nBehavioral Contract (SKILL.md):");
+            println!("{}", skill.content);
+            println!("\nStructured Metadata (meta.json):");
+            match &skill.meta_raw {
+                Some(value) => println!(
+                    "{}",
+                    serde_json::to_string_pretty(value)
+                        .map_err(|e| OrbitError::Execution(e.to_string()))?
+                ),
+                None => println!("(none)"),
+            }
+            Ok(())
+        }
     }
 }
 
 #[derive(Args)]
-pub struct SkillUpdateArgs {
-    pub name: String,
+pub struct SkillDoctorArgs {
     #[arg(long)]
-    pub description: Option<String>,
-    /// Path to instructions file
-    #[arg(long)]
-    pub instructions: Option<String>,
-    /// Comma-separated context file paths
-    #[arg(long)]
-    pub context: Option<String>,
-    /// Comma-separated tool names
-    #[arg(long = "allowed-tools")]
-    pub allowed_tools: Option<String>,
-    #[arg(long, value_enum)]
-    pub role: Option<Role>,
+    pub json: bool,
 }
 
-impl Execute for SkillUpdateArgs {
+impl Execute for SkillDoctorArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let instructions = match self.instructions {
-            Some(path) => Some(read_text_file(path)?),
-            None => None,
-        };
+        let rows = runtime.doctor_file_skills()?;
+        if self.json {
+            let values = rows.iter().map(doctor_row_json).collect::<Vec<_>>();
+            return crate::output::json::print_pretty(&Value::Array(values));
+        }
 
-        let updated = runtime.update_skill(
-            &self.name,
-            SkillUpdateParams {
-                description: self.description.map(Some),
-                instructions,
-                context_files: self.context.map(parse_csv),
-                allowed_tools: self.allowed_tools.map(parse_csv),
-                role: self.role,
-            },
-        )?;
-        println!("Updated skill '{}'", updated.name);
+        let mut issues = 0usize;
+        println!("{:<24} {:<10} DETAILS", "SKILL", "STATUS");
+        for row in &rows {
+            let status = match row.status {
+                SkillDoctorStatus::Ok => "ok",
+                SkillDoctorStatus::Warning => "warning",
+                SkillDoctorStatus::Error => "ERROR",
+            };
+            if row.status != SkillDoctorStatus::Ok {
+                issues += 1;
+            }
+            println!("{:<24} {:<10} {}", row.skill_name, status, row.message);
+        }
+
+        if issues == 0 {
+            println!("\nAll skills healthy.");
+        } else {
+            println!("\n{} issue(s) found.", issues);
+        }
         Ok(())
     }
 }
 
-#[derive(Args)]
-pub struct SkillDeleteArgs {
-    pub name: String,
+fn skill_summary_json(skill: &LoadedSkill) -> Value {
+    json!({
+        "id": skill.id,
+        "content_hash": skill.content_hash,
+        "path": skill.path,
+        "meta": skill.meta,
+    })
 }
 
-impl Execute for SkillDeleteArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.delete_skill(&self.name)?;
-        println!("Deleted skill '{}'", self.name);
-        Ok(())
-    }
+fn skill_to_json(skill: &LoadedSkill) -> Value {
+    json!({
+        "id": skill.id,
+        "path": skill.path,
+        "content_hash": skill.content_hash,
+        "content": skill.content,
+        "sections": {
+            "purpose": skill.sections.purpose,
+            "behavioral_constraints": skill.sections.behavioral_constraints,
+            "output_requirements": skill.sections.output_requirements,
+            "evaluation_focus": skill.sections.evaluation_focus,
+            "prohibitions": skill.sections.prohibitions,
+            "examples": skill.sections.examples,
+        },
+        "meta": skill.meta,
+        "meta_raw": skill.meta_raw,
+        "output_schema": skill.output_schema,
+    })
 }
 
-#[derive(Args)]
-pub struct SkillAttachArgs {
-    pub task_id: String,
-    pub skill_name: String,
-}
-
-impl Execute for SkillAttachArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.attach_skill_to_task(&self.task_id, &self.skill_name)?;
-        println!("Attached skill '{}' to '{}'", self.skill_name, self.task_id);
-        Ok(())
-    }
-}
-
-#[derive(Args)]
-pub struct SkillDetachArgs {
-    pub task_id: String,
-    pub skill_name: String,
-}
-
-impl Execute for SkillDetachArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.detach_skill_from_task(&self.task_id, &self.skill_name)?;
-        println!(
-            "Detached skill '{}' from '{}'",
-            self.skill_name, self.task_id
-        );
-        Ok(())
-    }
-}
-
-fn execute_list(runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-    let skills = runtime.list_skills()?;
-    println!("{:<24} {:<8} {:<8} DESCRIPTION", "NAME", "ROLE", "TOOLS");
-    for skill in &skills {
-        println!(
-            "{:<24} {:<8} {:<8} {}",
-            skill.name,
-            skill.role.to_string(),
-            skill.allowed_tools.len(),
-            skill.description.clone().unwrap_or_default()
-        );
-    }
-    Ok(())
-}
-
-fn execute_doctor(runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-    let rows = runtime.doctor_skills()?;
-    let mut issues = 0usize;
-    println!("{:<24} {:<10} DETAILS", "SKILL", "STATUS");
-    for row in &rows {
-        let status = match row.status {
+fn doctor_row_json(row: &SkillDoctorResult) -> Value {
+    json!({
+        "skill_id": row.skill_name,
+        "status": match row.status {
             SkillDoctorStatus::Ok => "ok",
             SkillDoctorStatus::Warning => "warning",
-            SkillDoctorStatus::Error => "ERROR",
-        };
-        if row.status != SkillDoctorStatus::Ok {
-            issues += 1;
-        }
-        println!("{:<24} {:<10} {}", row.skill_name, status, row.message);
-    }
-
-    if issues == 0 {
-        println!("\nAll skills healthy.");
-    } else {
-        println!("\n{} issue(s) found.", issues);
-    }
-    Ok(())
-}
-
-fn parse_csv(raw: String) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(ToString::to_string)
-        .collect()
-}
-
-fn read_text_file(path: String) -> Result<String, OrbitError> {
-    fs::read_to_string(&path)
-        .map_err(|e| OrbitError::InvalidInput(format!("failed to read `{path}`: {e}")))
-}
-
-fn read_text_file_opt(path: Option<String>) -> Result<String, OrbitError> {
-    match path {
-        Some(path) => read_text_file(path),
-        None => Ok(String::new()),
-    }
+            SkillDoctorStatus::Error => "error",
+        },
+        "message": row.message,
+    })
 }

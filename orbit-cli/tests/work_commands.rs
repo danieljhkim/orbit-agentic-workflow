@@ -9,9 +9,23 @@ fn orbit_in(dir: &Path) -> Command {
     cmd
 }
 
+fn write_skill(dir: &Path, id: &str) {
+    let skill_dir = dir.join(".orbit").join("skills").join(id);
+    std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        format!(
+            "# {id}\n\n## Purpose\nTest skill.\n\n## Behavioral Constraints\n- deterministic\n\n## Output Requirements\n- json\n"
+        ),
+    )
+    .expect("write skill");
+}
+
 #[test]
 fn work_add_show_list_delete_json_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
+    write_skill(dir.path(), "assess-codebase");
+    write_skill(dir.path(), "execution-audit");
 
     orbit_in(dir.path())
         .args([

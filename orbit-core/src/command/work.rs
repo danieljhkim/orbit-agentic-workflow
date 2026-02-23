@@ -17,6 +17,7 @@ pub struct WorkAddParams {
 impl OrbitRuntime {
     pub fn add_work(&self, params: WorkAddParams) -> Result<Work, OrbitError> {
         validate_work_params(&params)?;
+        let _ = self.resolve_work_skill_refs(&params.skill_refs)?;
 
         self.with_mutation(|tx| {
             let spec = tx.insert_work(&WorkInsertParams {

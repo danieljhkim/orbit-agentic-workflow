@@ -1,7 +1,6 @@
 use orbit_core::OrbitRuntime;
-use orbit_core::command::skill::SkillAddParams;
 use orbit_core::command::task::TaskAddParams;
-use orbit_types::{AgentSessionStatus, Role};
+use orbit_types::AgentSessionStatus;
 use tempfile::tempdir;
 
 fn session_id_from_audits(audits: &[orbit_types::Audit]) -> Option<String> {
@@ -40,20 +39,6 @@ fn agent_run_executes_sequentially_and_stops_on_first_failure() {
             ..Default::default()
         })
         .expect("task");
-
-    runtime
-        .add_skill(SkillAddParams {
-            name: "read-only".to_string(),
-            description: None,
-            instructions: "read only".to_string(),
-            context_files: vec![],
-            allowed_tools: vec!["fs.read".to_string()],
-            role: Role::Agent,
-        })
-        .expect("skill");
-    runtime
-        .attach_skill_to_task(&task.id, "read-only")
-        .expect("attach");
 
     let result = runtime.run_agent_task(&task.id);
     assert!(result.is_err(), "second call should fail and stop session");
