@@ -96,10 +96,10 @@ pub enum OrbitEvent {
         task_id: String,
         skill_name: String,
     },
-    ExecutionSpecAdded {
+    WorkAdded {
         id: String,
     },
-    ExecutionSpecDisabled {
+    WorkDisabled {
         id: String,
     },
     WorkflowAdded {

@@ -15,7 +15,7 @@ fn due_jobs_query_returns_scheduled_jobs() {
                 ..Default::default()
             })?;
             let _job = tx.insert_job_v2(
-                JobTargetType::ExecutionSpec,
+                JobTargetType::Work,
                 &task.id,
                 "every 1h",
                 "mock-agent",

@@ -6,7 +6,7 @@ fn expected_args() -> Vec<String> {
     vec![
         "run".to_string(),
         "--target-type".to_string(),
-        "execution_spec".to_string(),
+        "work".to_string(),
         "--target-id".to_string(),
         "spec-123".to_string(),
         "--mode".to_string(),
@@ -18,8 +18,8 @@ fn expected_args() -> Vec<String> {
 
 #[test]
 fn provider_mapper_supports_claude() {
-    let invocation = build_invocation("claude", JobTargetType::ExecutionSpec, "spec-123")
-        .expect("claude mapper");
+    let invocation =
+        build_invocation("claude", JobTargetType::Work, "spec-123").expect("claude mapper");
     assert_eq!(invocation.program, "claude");
     assert_eq!(invocation.args, expected_args());
 }
@@ -27,34 +27,30 @@ fn provider_mapper_supports_claude() {
 #[test]
 fn provider_mapper_supports_codex() {
     let invocation =
-        build_invocation("codex", JobTargetType::ExecutionSpec, "spec-123").expect("codex mapper");
+        build_invocation("codex", JobTargetType::Work, "spec-123").expect("codex mapper");
     assert_eq!(invocation.program, "codex");
     assert_eq!(invocation.args, expected_args());
 }
 
 #[test]
 fn provider_mapper_supports_mock_agent() {
-    let invocation = build_invocation("mock-agent", JobTargetType::ExecutionSpec, "spec-123")
-        .expect("mock-agent mapper");
+    let invocation =
+        build_invocation("mock-agent", JobTargetType::Work, "spec-123").expect("mock-agent mapper");
     assert_eq!(invocation.program, "mock-agent");
     assert_eq!(invocation.args, expected_args());
 }
 
 #[test]
 fn provider_mapper_uses_binary_basename_for_paths() {
-    let invocation = build_invocation(
-        "/usr/local/bin/claude",
-        JobTargetType::ExecutionSpec,
-        "spec-123",
-    )
-    .expect("path-based claude mapper");
+    let invocation = build_invocation("/usr/local/bin/claude", JobTargetType::Work, "spec-123")
+        .expect("path-based claude mapper");
     assert_eq!(invocation.program, "/usr/local/bin/claude");
     assert_eq!(invocation.args, expected_args());
 }
 
 #[test]
 fn provider_mapper_rejects_unsupported_provider() {
-    let err = build_invocation("custom-agent", JobTargetType::ExecutionSpec, "spec-123")
+    let err = build_invocation("custom-agent", JobTargetType::Work, "spec-123")
         .expect_err("unsupported provider must fail");
     assert!(matches!(
         err,

@@ -1,10 +1,10 @@
-use orbit_store::ExecutionSpecInsertParams;
-use orbit_types::{ExecutionSpec, OrbitError, OrbitEvent};
+use orbit_store::WorkInsertParams;
+use orbit_types::{OrbitError, OrbitEvent, Work};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
 
-pub struct ExecutionSpecAddParams {
+pub struct WorkAddParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
@@ -15,14 +15,11 @@ pub struct ExecutionSpecAddParams {
 }
 
 impl OrbitRuntime {
-    pub fn add_execution_spec(
-        &self,
-        params: ExecutionSpecAddParams,
-    ) -> Result<ExecutionSpec, OrbitError> {
-        validate_execution_spec_params(&params)?;
+    pub fn add_work(&self, params: WorkAddParams) -> Result<Work, OrbitError> {
+        validate_work_params(&params)?;
 
         self.with_mutation(|tx| {
-            let spec = tx.insert_execution_spec(&ExecutionSpecInsertParams {
+            let spec = tx.insert_work(&WorkInsertParams {
                 id: params.id.clone(),
                 spec_type: params.spec_type.clone(),
                 description: params.description.clone(),
@@ -31,49 +28,46 @@ impl OrbitRuntime {
                 artifact_path_template: params.artifact_path_template.clone(),
                 skill_refs: params.skill_refs.clone(),
             })?;
-            Ok((spec.clone(), OrbitEvent::ExecutionSpecAdded { id: spec.id }))
+            Ok((spec.clone(), OrbitEvent::WorkAdded { id: spec.id }))
         })
     }
 
-    pub fn list_execution_specs(
-        &self,
-        include_inactive: bool,
-    ) -> Result<Vec<ExecutionSpec>, OrbitError> {
-        self.context.store.list_execution_specs(include_inactive)
+    pub fn list_works(&self, include_inactive: bool) -> Result<Vec<Work>, OrbitError> {
+        self.context.store.list_works(include_inactive)
     }
 
-    pub fn show_execution_spec(&self, id: &str) -> Result<ExecutionSpec, OrbitError> {
+    pub fn show_work(&self, id: &str) -> Result<Work, OrbitError> {
         self.context
             .store
-            .get_execution_spec(id)?
-            .ok_or_else(|| OrbitError::ExecutionSpecNotFound(id.to_string()))
+            .get_work(id)?
+            .ok_or_else(|| OrbitError::WorkNotFound(id.to_string()))
     }
 
-    pub fn delete_execution_spec(&self, id: &str) -> Result<(), OrbitError> {
+    pub fn delete_work(&self, id: &str) -> Result<(), OrbitError> {
         self.with_mutation(|tx| {
-            let changed = tx.disable_execution_spec(id)?;
+            let changed = tx.disable_work(id)?;
             if !changed {
-                return Err(OrbitError::ExecutionSpecNotFound(id.to_string()));
+                return Err(OrbitError::WorkNotFound(id.to_string()));
             }
-            Ok(((), OrbitEvent::ExecutionSpecDisabled { id: id.to_string() }))
+            Ok(((), OrbitEvent::WorkDisabled { id: id.to_string() }))
         })
     }
 }
 
-fn validate_execution_spec_params(params: &ExecutionSpecAddParams) -> Result<(), OrbitError> {
+fn validate_work_params(params: &WorkAddParams) -> Result<(), OrbitError> {
     if params.id.trim().is_empty() {
         return Err(OrbitError::InvalidInput(
-            "execution spec id must not be empty".to_string(),
+            "work id must not be empty".to_string(),
         ));
     }
     if params.spec_type.trim().is_empty() {
         return Err(OrbitError::InvalidInput(
-            "execution spec type must not be empty".to_string(),
+            "work type must not be empty".to_string(),
         ));
     }
     if params.description.trim().is_empty() {
         return Err(OrbitError::InvalidInput(
-            "execution spec description must not be empty".to_string(),
+            "work description must not be empty".to_string(),
         ));
     }
     if !params.input_schema_json.is_object() {

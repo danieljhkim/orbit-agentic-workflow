@@ -13,7 +13,7 @@ fn orbit_in(dir: &Path) -> Command {
     cmd
 }
 
-fn add_execution_spec(dir: &Path, id: &str) -> String {
+fn add_work(dir: &Path, id: &str) -> String {
     let output = orbit_in(dir)
         .args([
             "work",
@@ -43,7 +43,7 @@ fn add_job(dir: &Path, target_id: &str, schedule: &str, agent_cli: &str) -> Stri
             "job",
             "add",
             "--target-type",
-            "execution_spec",
+            "work",
             "--target-id",
             target_id,
             "--schedule",
@@ -77,7 +77,7 @@ fn write_mock_agent(dir: &Path) -> String {
 #[test]
 fn job_add_list_show_json_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let spec_id = add_execution_spec(dir.path(), "spec-cli-list");
+    let spec_id = add_work(dir.path(), "spec-cli-list");
 
     let job_id = add_job(dir.path(), &spec_id, "every 1m", "mock-agent");
     assert!(job_id.starts_with("job-"), "unexpected job id: {job_id}");
@@ -102,7 +102,7 @@ fn job_add_list_show_json_flow() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["job_id"], job_id);
-    assert_eq!(show["target_type"], "execution_spec");
+    assert_eq!(show["target_type"], "work");
     assert_eq!(show["target_id"], spec_id);
     assert_eq!(show["schedule"], "every 1m");
     assert_eq!(show["state"], "enabled");
@@ -111,7 +111,7 @@ fn job_add_list_show_json_flow() {
 #[test]
 fn job_run_creates_run_and_history_json() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let spec_id = add_execution_spec(dir.path(), "spec-cli-run");
+    let spec_id = add_work(dir.path(), "spec-cli-run");
     let agent_cli = write_mock_agent(dir.path());
     let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
 
@@ -145,7 +145,7 @@ fn job_run_creates_run_and_history_json() {
 #[test]
 fn job_pause_resume_delete_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let spec_id = add_execution_spec(dir.path(), "spec-cli-state");
+    let spec_id = add_work(dir.path(), "spec-cli-state");
     let job_id = add_job(dir.path(), &spec_id, "every 1m", "mock-agent");
 
     orbit_in(dir.path())

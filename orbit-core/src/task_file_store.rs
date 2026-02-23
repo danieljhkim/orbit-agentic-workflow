@@ -115,7 +115,7 @@ struct TaskFileDocument {
     #[serde(default)]
     comments: Vec<TaskComment>,
     #[serde(default)]
-    execution_spec_id: Option<String>,
+    work_id: Option<String>,
     #[serde(default)]
     job_id: Option<String>,
     #[serde(default)]
@@ -185,7 +185,7 @@ impl TaskFileStore {
                     event: "created".to_string(),
                 }],
                 comments: Vec::new(),
-                execution_spec_id: None,
+                work_id: None,
                 job_id: None,
                 job_run_id: None,
                 auto_escalated: None,
@@ -228,7 +228,7 @@ impl TaskFileStore {
                 event: "created".to_string(),
             }],
             comments: Vec::new(),
-            execution_spec_id: None,
+            work_id: None,
             job_id: None,
             job_run_id: None,
             auto_escalated: None,

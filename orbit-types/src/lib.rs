@@ -2,7 +2,6 @@ pub mod audit;
 pub mod audit_event;
 pub mod error;
 pub mod event;
-pub mod execution_spec;
 pub mod id;
 pub mod job;
 pub mod memo;
@@ -11,13 +10,13 @@ pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
+pub mod work;
 pub mod workflow;
 
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use error::OrbitError;
 pub use event::OrbitEvent;
-pub use execution_spec::ExecutionSpec;
 pub use id::OrbitId;
 pub use job::{
     AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
@@ -29,6 +28,7 @@ pub use skill::{AgentSession, AgentSessionStatus, AgentToolCall, Skill, TaskSkil
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
+pub use work::Work;
 pub use workflow::Workflow;
 
 #[cfg(test)]
@@ -36,8 +36,8 @@ mod tests {
     use chrono::Utc;
 
     use crate::{
-        AgentResponseEnvelope, ExecutionResult, ExecutionSpec, Job, JobRetryBackoffStrategy,
-        JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, Workflow,
+        AgentResponseEnvelope, ExecutionResult, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
+        JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, Work, Workflow,
     };
 
     #[test]
@@ -101,7 +101,7 @@ mod tests {
     fn job_shapes_are_stable() {
         let job = Job {
             job_id: "job-1".to_string(),
-            target_type: JobTargetType::ExecutionSpec,
+            target_type: JobTargetType::Work,
             target_id: "exec-1".to_string(),
             schedule: "0 * * * *".to_string(),
             agent_cli: "claude".to_string(),
@@ -116,7 +116,7 @@ mod tests {
         };
         let job_value = serde_json::to_value(job).expect("serialize job");
         assert_eq!(job_value["state"], "enabled");
-        assert_eq!(job_value["target_type"], "execution_spec");
+        assert_eq!(job_value["target_type"], "work");
 
         let run = JobRun {
             run_id: "run-1".to_string(),
@@ -139,8 +139,8 @@ mod tests {
     }
 
     #[test]
-    fn execution_spec_and_workflow_shapes_are_stable() {
-        let spec = ExecutionSpec {
+    fn work_and_workflow_shapes_are_stable() {
+        let spec = Work {
             id: "exec-1".to_string(),
             spec_type: "analysis".to_string(),
             description: "Analyze repository".to_string(),
@@ -166,7 +166,7 @@ mod tests {
             id: "wf-1".to_string(),
             name: "Weekly Review".to_string(),
             definition_json: serde_json::json!({
-                "steps": [{ "execution_spec_id": "exec-1" }]
+                "steps": [{ "work_id": "exec-1" }]
             }),
             is_active: true,
             created_at: Utc::now(),

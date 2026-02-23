@@ -98,8 +98,10 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     ensure_task_metadata_schema(conn)?;
     ensure_tools_schema(conn)?;
     migrate_jobs_table_to_v2(conn)?;
+    normalize_job_targets_to_work(conn)?;
     ensure_job_schema_v2(conn)?;
     ensure_execution_targets_schema(conn)?;
+    migrate_legacy_work_rows(conn)?;
     ensure_audit_events_schema(conn)?;
 
     Ok(())
@@ -245,7 +247,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
             r#"
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('execution_spec','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -275,7 +277,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
 
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('execution_spec','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -296,7 +298,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
                 )
                 SELECT
                     job_id,
-                    'execution_spec',
+                    'work',
                     CASE WHEN task_id = '' THEN job_id ELSE task_id END,
                     schedule_spec,
                     'claude',
@@ -332,7 +334,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
 
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('execution_spec','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -353,7 +355,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
                 )
                 SELECT
                     id,
-                    'execution_spec',
+                    'work',
                     id,
                     '@daily',
                     'claude',
@@ -463,6 +465,88 @@ fn ensure_job_schema_v2(conn: &Connection) -> Result<(), OrbitError> {
     .map_err(|e| OrbitError::Store(e.to_string()))
 }
 
+fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
+    if !table_exists(conn, "jobs")? || !table_has_column(conn, "jobs", "target_type")? {
+        return Ok(());
+    }
+
+    let sql: String = conn
+        .query_row(
+            "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name='jobs'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    let non_work_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM jobs WHERE target_type NOT IN ('work', 'workflow')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    let supports_work = sql.to_lowercase().contains("'work'");
+    if supports_work && non_work_count == 0 {
+        return Ok(());
+    }
+
+    conn.execute_batch("PRAGMA foreign_keys=OFF;")
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    let rewrite_result = conn.execute_batch(
+        r#"
+            CREATE TABLE jobs_rewrite (
+                id TEXT PRIMARY KEY,
+                target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
+                target_id TEXT NOT NULL,
+                schedule TEXT NOT NULL,
+                agent_cli TEXT NOT NULL,
+                timeout_seconds INTEGER NOT NULL,
+                retry_max_attempts INTEGER NOT NULL DEFAULT 0,
+                retry_backoff_strategy TEXT NOT NULL DEFAULT 'none',
+                retry_initial_delay_seconds INTEGER NOT NULL DEFAULT 0,
+                state TEXT NOT NULL CHECK (state IN ('enabled','paused','disabled')),
+                next_run_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            INSERT INTO jobs_rewrite(
+                id, target_type, target_id, schedule, agent_cli, timeout_seconds,
+                retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
+                state, next_run_at, created_at, updated_at
+            )
+            SELECT
+                id,
+                CASE
+                    WHEN target_type = 'workflow' THEN 'workflow'
+                    ELSE 'work'
+                END,
+                target_id,
+                schedule,
+                agent_cli,
+                timeout_seconds,
+                retry_max_attempts,
+                retry_backoff_strategy,
+                retry_initial_delay_seconds,
+                state,
+                next_run_at,
+                created_at,
+                updated_at
+            FROM jobs;
+
+            DROP TABLE jobs;
+            ALTER TABLE jobs_rewrite RENAME TO jobs;
+        "#,
+    );
+    let fk_enable_result = conn.execute_batch("PRAGMA foreign_keys=ON;");
+
+    rewrite_result.map_err(|e| OrbitError::Store(e.to_string()))?;
+    fk_enable_result.map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    Ok(())
+}
+
 fn ensure_tools_schema(conn: &Connection) -> Result<(), OrbitError> {
     add_column_if_missing(
         conn,
@@ -526,7 +610,7 @@ fn ensure_tools_schema(conn: &Connection) -> Result<(), OrbitError> {
 fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> {
     conn.execute_batch(
         r#"
-            CREATE TABLE IF NOT EXISTS execution_specs (
+            CREATE TABLE IF NOT EXISTS works (
                 id TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
                 description TEXT NOT NULL,
@@ -539,11 +623,11 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
                 updated_at TEXT NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_execution_specs_type
-            ON execution_specs(type);
+            CREATE INDEX IF NOT EXISTS idx_works_type
+            ON works(type);
 
-            CREATE INDEX IF NOT EXISTS idx_execution_specs_active
-            ON execution_specs(is_active);
+            CREATE INDEX IF NOT EXISTS idx_works_active
+            ON works(is_active);
 
             CREATE TABLE IF NOT EXISTS workflows (
                 id TEXT PRIMARY KEY,
@@ -559,6 +643,74 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))
+}
+
+fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
+    if !table_exists(conn, "works")? {
+        return Ok(());
+    }
+
+    let works_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM works", [], |row| row.get(0))
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    if works_count > 0 {
+        return Ok(());
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name != 'works'")
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| OrbitError::Store(e.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    let required_cols = [
+        "id",
+        "type",
+        "description",
+        "input_schema_json",
+        "output_schema_json",
+        "artifact_path_template",
+        "skill_refs_json",
+        "is_active",
+        "created_at",
+        "updated_at",
+    ];
+
+    for table in names {
+        if !is_safe_identifier(&table) {
+            continue;
+        }
+
+        let mut all_present = true;
+        for col in required_cols {
+            if !table_has_column(conn, &table, col)? {
+                all_present = false;
+                break;
+            }
+        }
+        if !all_present {
+            continue;
+        }
+
+        let sql = format!(
+            "INSERT OR IGNORE INTO works(
+                id, type, description, input_schema_json, output_schema_json,
+                artifact_path_template, skill_refs_json, is_active, created_at, updated_at
+            )
+            SELECT
+                id, type, description, input_schema_json, output_schema_json,
+                artifact_path_template, skill_refs_json, is_active, created_at, updated_at
+            FROM {table}"
+        );
+        conn.execute_batch(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        break;
+    }
+
+    Ok(())
 }
 
 fn ensure_audit_events_schema(conn: &Connection) -> Result<(), OrbitError> {
@@ -660,6 +812,12 @@ fn table_has_foreign_key_to(
     Ok(false)
 }
 
+fn is_safe_identifier(value: &str) -> bool {
+    value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 #[cfg(test)]
 mod tests {
     use super::{apply_schema, table_has_foreign_key_to};
@@ -747,7 +905,7 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("query migrated job");
-        assert_eq!(target_type, "execution_spec");
+        assert_eq!(target_type, "work");
         assert_eq!(state, "enabled");
     }
 
@@ -876,5 +1034,90 @@ mod tests {
 
         assert!(!task_skills_has_fk);
         assert!(!agent_sessions_has_fk);
+    }
+
+    #[test]
+    fn apply_schema_normalizes_non_work_job_targets() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE jobs (
+                    id TEXT PRIMARY KEY,
+                    target_type TEXT NOT NULL CHECK (target_type IN ('legacy_target','workflow')),
+                    target_id TEXT NOT NULL,
+                    schedule TEXT NOT NULL,
+                    agent_cli TEXT NOT NULL,
+                    timeout_seconds INTEGER NOT NULL,
+                    retry_max_attempts INTEGER NOT NULL DEFAULT 0,
+                    retry_backoff_strategy TEXT NOT NULL DEFAULT 'none',
+                    retry_initial_delay_seconds INTEGER NOT NULL DEFAULT 0,
+                    state TEXT NOT NULL CHECK (state IN ('enabled','paused','disabled')),
+                    next_run_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO jobs(
+                    id, target_type, target_id, schedule, agent_cli, timeout_seconds,
+                    retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
+                    state, next_run_at, created_at, updated_at
+                ) VALUES (
+                    'job-legacy', 'legacy_target', 'w-1', '@daily', 'claude', 300,
+                    0, 'none', 0, 'enabled', '2026-02-23T01:00:00Z',
+                    '2026-02-23T00:00:00Z', '2026-02-23T00:00:00Z'
+                );
+            "#,
+        )
+        .expect("legacy jobs");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let target: String = conn
+            .query_row(
+                "SELECT target_type FROM jobs WHERE id = 'job-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query target");
+        assert_eq!(target, "work");
+    }
+
+    #[test]
+    fn apply_schema_migrates_legacy_work_like_table_into_works() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE work_legacy (
+                    id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    input_schema_json TEXT NOT NULL,
+                    output_schema_json TEXT NOT NULL,
+                    artifact_path_template TEXT,
+                    skill_refs_json TEXT,
+                    is_active INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO work_legacy(
+                    id, type, description, input_schema_json, output_schema_json,
+                    artifact_path_template, skill_refs_json, is_active, created_at, updated_at
+                ) VALUES (
+                    'work-1', 'analysis', 'legacy work',
+                    '{}', '{}', NULL, '[]', 1, '2026-02-23T00:00:00Z', '2026-02-23T00:00:00Z'
+                );
+            "#,
+        )
+        .expect("legacy works");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM works WHERE id = 'work-1'", [], |row| {
+                row.get(0)
+            })
+            .expect("query works");
+        assert_eq!(count, 1);
     }
 }

@@ -11,8 +11,8 @@ use crate::OrbitId;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum JobTargetType {
-    #[value(name = "execution_spec", alias = "execution-spec")]
-    ExecutionSpec,
+    #[value(name = "work", alias = "work")]
+    Work,
     #[value(name = "workflow")]
     Workflow,
 }
@@ -20,7 +20,7 @@ pub enum JobTargetType {
 impl Display for JobTargetType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            JobTargetType::ExecutionSpec => write!(f, "execution_spec"),
+            JobTargetType::Work => write!(f, "work"),
             JobTargetType::Workflow => write!(f, "workflow"),
         }
     }
@@ -31,7 +31,7 @@ impl FromStr for JobTargetType {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "execution_spec" => Ok(JobTargetType::ExecutionSpec),
+            "work" => Ok(JobTargetType::Work),
             "workflow" => Ok(JobTargetType::Workflow),
             other => Err(format!("unknown job target type: {other}")),
         }

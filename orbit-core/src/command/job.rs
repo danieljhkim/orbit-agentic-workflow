@@ -420,9 +420,9 @@ impl OrbitRuntime {
         target_id: &str,
     ) -> Result<(), OrbitError> {
         match target_type {
-            JobTargetType::ExecutionSpec => {
-                if self.context.store.get_execution_spec(target_id)?.is_none() {
-                    return Err(OrbitError::ExecutionSpecNotFound(target_id.to_string()));
+            JobTargetType::Work => {
+                if self.context.store.get_work(target_id)?.is_none() {
+                    return Err(OrbitError::WorkNotFound(target_id.to_string()));
                 }
             }
             JobTargetType::Workflow => {

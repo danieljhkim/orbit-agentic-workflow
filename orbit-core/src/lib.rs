@@ -10,9 +10,9 @@ pub use context::OrbitContext;
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
-    AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, ExecutionSpec, Job,
-    JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill,
-    Task, TaskPriority, TaskStatus, TaskType, Workflow,
+    AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, Job, JobRetryBackoffStrategy,
+    JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill, Task, TaskPriority,
+    TaskStatus, TaskType, Work, Workflow,
 };
 pub use runtime::OrbitRuntime;
 
@@ -22,7 +22,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_store::ExecutionSpecInsertParams;
+    use orbit_store::WorkInsertParams;
     use orbit_types::{
         JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
         TaskType,
@@ -108,7 +108,7 @@ mod tests {
             .context
             .store
             .with_transaction(|tx| {
-                tx.insert_execution_spec(&ExecutionSpecInsertParams {
+                tx.insert_work(&WorkInsertParams {
                     id: "spec-core-double-run".to_string(),
                     spec_type: "analysis".to_string(),
                     description: "spec for scheduler test".to_string(),
@@ -118,11 +118,11 @@ mod tests {
                     skill_refs: Vec::new(),
                 })
             })
-            .expect("insert execution spec");
+            .expect("insert work");
 
         let job = runtime
             .add_job(JobAddParams {
-                target_type: JobTargetType::ExecutionSpec,
+                target_type: JobTargetType::Work,
                 target_id: "spec-core-double-run".to_string(),
                 schedule: "every 1m".to_string(),
                 agent_cli: agent_path.to_string_lossy().to_string(),

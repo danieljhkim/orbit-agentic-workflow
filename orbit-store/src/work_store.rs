@@ -1,12 +1,12 @@
 use chrono::Utc;
-use orbit_types::{ExecutionSpec, OrbitError};
+use orbit_types::{OrbitError, Work};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
 use crate::{Store, StoreTx, now_string, parse_timestamp};
 
 #[derive(Debug, Clone)]
-pub struct ExecutionSpecInsertParams {
+pub struct WorkInsertParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
@@ -17,41 +17,38 @@ pub struct ExecutionSpecInsertParams {
 }
 
 impl Store {
-    pub fn list_execution_specs(
-        &self,
-        include_inactive: bool,
-    ) -> Result<Vec<ExecutionSpec>, OrbitError> {
+    pub fn list_works(&self, include_inactive: bool) -> Result<Vec<Work>, OrbitError> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         let sql = if include_inactive {
-            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM execution_specs ORDER BY created_at DESC"
+            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM works ORDER BY created_at DESC"
         } else {
-            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM execution_specs WHERE is_active = 1 ORDER BY created_at DESC"
+            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM works WHERE is_active = 1 ORDER BY created_at DESC"
         };
 
         let mut stmt = conn
             .prepare(sql)
             .map_err(|e| OrbitError::Store(e.to_string()))?;
         let rows = stmt
-            .query_map([], row_to_execution_spec)
+            .query_map([], row_to_work)
             .map_err(|e| OrbitError::Store(e.to_string()))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| OrbitError::Store(e.to_string()))
     }
 
-    pub fn get_execution_spec(&self, id: &str) -> Result<Option<ExecutionSpec>, OrbitError> {
+    pub fn get_work(&self, id: &str) -> Result<Option<Work>, OrbitError> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         conn.query_row(
-            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM execution_specs WHERE id = ?1",
+            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM works WHERE id = ?1",
             [id],
-            row_to_execution_spec,
+            row_to_work,
         )
         .optional()
         .map_err(|e| OrbitError::Store(e.to_string()))
@@ -59,10 +56,7 @@ impl Store {
 }
 
 impl<'a> StoreTx<'a> {
-    pub fn insert_execution_spec(
-        &mut self,
-        params: &ExecutionSpecInsertParams,
-    ) -> Result<ExecutionSpec, OrbitError> {
+    pub fn insert_work(&mut self, params: &WorkInsertParams) -> Result<Work, OrbitError> {
         let input_schema_raw = serde_json::to_string(&params.input_schema_json)
             .map_err(|e| OrbitError::Store(format!("serialize input schema: {e}")))?;
         let output_schema_raw = serde_json::to_string(&params.output_schema_json)
@@ -72,7 +66,7 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO execution_specs(
+                "INSERT INTO works(
                     id, type, description, input_schema_json, output_schema_json,
                     artifact_path_template, skill_refs_json, is_active, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?8)",
@@ -89,7 +83,7 @@ impl<'a> StoreTx<'a> {
             )
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
-        Ok(ExecutionSpec {
+        Ok(Work {
             id: params.id.clone(),
             spec_type: params.spec_type.clone(),
             description: params.description.clone(),
@@ -103,11 +97,11 @@ impl<'a> StoreTx<'a> {
         })
     }
 
-    pub fn disable_execution_spec(&mut self, id: &str) -> Result<bool, OrbitError> {
+    pub fn disable_work(&mut self, id: &str) -> Result<bool, OrbitError> {
         let changed = self
             .tx
             .execute(
-                "UPDATE execution_specs SET is_active = 0, updated_at = ?1 WHERE id = ?2",
+                "UPDATE works SET is_active = 0, updated_at = ?1 WHERE id = ?2",
                 params![now_string(), id],
             )
             .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -115,7 +109,7 @@ impl<'a> StoreTx<'a> {
     }
 }
 
-fn row_to_execution_spec(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExecutionSpec> {
+fn row_to_work(row: &rusqlite::Row<'_>) -> rusqlite::Result<Work> {
     let input_raw: String = row.get(3)?;
     let output_raw: String = row.get(4)?;
     let skill_refs_raw: Option<String> = row.get(6)?;
@@ -150,7 +144,7 @@ fn row_to_execution_spec(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExecutionS
         None => Vec::new(),
     };
 
-    Ok(ExecutionSpec {
+    Ok(Work {
         id: row.get(0)?,
         spec_type: row.get(1)?,
         description: row.get(2)?,

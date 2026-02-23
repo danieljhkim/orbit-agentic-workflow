@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::OrbitId;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ExecutionSpec {
+pub struct Work {
     pub id: OrbitId,
     pub spec_type: String,
     pub description: String,

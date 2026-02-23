@@ -220,18 +220,18 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             arguments_json: None,
         },
         Commands::Work(cmd) => {
-            use crate::command::execution_spec::ExecutionSpecSubcommand;
+            use crate::command::work::WorkSubcommand;
             let (sub, target_id) = match &cmd.command {
-                ExecutionSpecSubcommand::Add(args) => ("add", Some(args.id.as_str())),
-                ExecutionSpecSubcommand::List(_) => ("list", None),
-                ExecutionSpecSubcommand::Show(args) => ("show", Some(args.id.as_str())),
-                ExecutionSpecSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
+                WorkSubcommand::Add(args) => ("add", Some(args.id.as_str())),
+                WorkSubcommand::List(_) => ("list", None),
+                WorkSubcommand::Show(args) => ("show", Some(args.id.as_str())),
+                WorkSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
             };
             CommandMeta {
                 command: "work".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
-                target_type: Some("execution_spec".to_string()),
+                target_type: Some("work".to_string()),
                 target_id: target_id.map(String::from),
                 role: "admin".to_string(),
                 arguments_json: None,

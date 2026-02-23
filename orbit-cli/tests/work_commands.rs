@@ -10,7 +10,7 @@ fn orbit_in(dir: &Path) -> Command {
 }
 
 #[test]
-fn execution_spec_add_show_list_delete_json_flow() {
+fn work_add_show_list_delete_json_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
@@ -22,7 +22,7 @@ fn execution_spec_add_show_list_delete_json_flow() {
             "--type",
             "analysis",
             "--description",
-            "CLI execution spec test",
+            "CLI work test",
             "--input-schema",
             "{\"type\":\"object\"}",
             "--output-schema",
@@ -97,7 +97,7 @@ fn workflow_add_show_list_delete_json_flow() {
             "--name",
             "workflow cli",
             "--definition-json",
-            "{\"steps\":[{\"execution_spec_id\":\"spec-a\"}]}",
+            "{\"steps\":[{\"work_id\":\"spec-a\"}]}",
             "--json",
         ])
         .assert()

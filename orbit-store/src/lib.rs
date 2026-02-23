@@ -1,7 +1,6 @@
 mod audit_event_store;
 mod audit_store;
 mod connection;
-mod execution_spec_store;
 mod job_store;
 mod lock;
 mod memo_store;
@@ -10,14 +9,15 @@ mod skill_store;
 pub mod task_store;
 mod tool_store;
 mod watch_store;
+mod work_store;
 mod workflow_store;
 
 use chrono::{DateTime, Utc};
 
 pub use audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 pub use connection::{Store, StoreTx};
-pub use execution_spec_store::ExecutionSpecInsertParams;
 pub use job_store::{ClaimedJobRun, DueJobsClaim};
+pub use work_store::WorkInsertParams;
 pub use workflow_store::WorkflowInsertParams;
 
 pub(crate) fn parse_timestamp(raw: &str) -> rusqlite::Result<DateTime<Utc>> {

@@ -1,12 +1,12 @@
 pub mod agent;
 pub mod audit;
 pub mod config;
-pub mod execution_spec;
 pub mod job;
 pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
+pub mod work;
 pub mod workflow;
 
 use clap::{Parser, Subcommand};
@@ -30,7 +30,7 @@ pub enum Commands {
     Task(task::TaskCommand),
     Agent(agent::AgentCommand),
     Audit(audit::AuditCommand),
-    Work(execution_spec::ExecutionSpecCommand),
+    Work(work::WorkCommand),
     Skill(skill::SkillCommand),
     Workflow(workflow::WorkflowCommand),
     Job(job::JobCommand),

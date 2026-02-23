@@ -1,43 +1,43 @@
 use clap::{Args, Subcommand};
-use orbit_core::command::execution_spec::ExecutionSpecAddParams;
-use orbit_core::{ExecutionSpec, OrbitError, OrbitRuntime};
+use orbit_core::command::work::WorkAddParams;
+use orbit_core::{OrbitError, OrbitRuntime, Work};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
 
 #[derive(Args)]
-pub struct ExecutionSpecCommand {
+pub struct WorkCommand {
     #[command(subcommand)]
-    pub command: ExecutionSpecSubcommand,
+    pub command: WorkSubcommand,
 }
 
-impl Execute for ExecutionSpecCommand {
+impl Execute for WorkCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         self.command.execute(runtime)
     }
 }
 
 #[derive(Subcommand)]
-pub enum ExecutionSpecSubcommand {
-    Add(ExecutionSpecAddArgs),
-    List(ExecutionSpecListArgs),
-    Show(ExecutionSpecShowArgs),
-    Delete(ExecutionSpecDeleteArgs),
+pub enum WorkSubcommand {
+    Add(WorkAddArgs),
+    List(WorkListArgs),
+    Show(WorkShowArgs),
+    Delete(WorkDeleteArgs),
 }
 
-impl Execute for ExecutionSpecSubcommand {
+impl Execute for WorkSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            ExecutionSpecSubcommand::Add(args) => args.execute(runtime),
-            ExecutionSpecSubcommand::List(args) => args.execute(runtime),
-            ExecutionSpecSubcommand::Show(args) => args.execute(runtime),
-            ExecutionSpecSubcommand::Delete(args) => args.execute(runtime),
+            WorkSubcommand::Add(args) => args.execute(runtime),
+            WorkSubcommand::List(args) => args.execute(runtime),
+            WorkSubcommand::Show(args) => args.execute(runtime),
+            WorkSubcommand::Delete(args) => args.execute(runtime),
         }
     }
 }
 
 #[derive(Args)]
-pub struct ExecutionSpecAddArgs {
+pub struct WorkAddArgs {
     #[arg(long)]
     pub id: String,
     #[arg(long = "type")]
@@ -56,13 +56,13 @@ pub struct ExecutionSpecAddArgs {
     pub json: bool,
 }
 
-impl Execute for ExecutionSpecAddArgs {
+impl Execute for WorkAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let input_schema_json = parse_json_object(&self.input_schema, "input_schema")?;
         let output_schema_json = parse_json_object(&self.output_schema, "output_schema")?;
         let skill_refs = parse_csv(&self.skill_refs);
 
-        let spec = runtime.add_execution_spec(ExecutionSpecAddParams {
+        let spec = runtime.add_work(WorkAddParams {
             id: self.id,
             spec_type: self.spec_type,
             description: self.description,
@@ -73,7 +73,7 @@ impl Execute for ExecutionSpecAddArgs {
         })?;
 
         if self.json {
-            crate::output::json::print_pretty(&execution_spec_to_json(&spec))
+            crate::output::json::print_pretty(&work_to_json(&spec))
         } else {
             println!("{}", spec.id);
             Ok(())
@@ -82,18 +82,18 @@ impl Execute for ExecutionSpecAddArgs {
 }
 
 #[derive(Args)]
-pub struct ExecutionSpecListArgs {
+pub struct WorkListArgs {
     #[arg(long)]
     pub all: bool,
     #[arg(long)]
     pub json: bool,
 }
 
-impl Execute for ExecutionSpecListArgs {
+impl Execute for WorkListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let specs = runtime.list_execution_specs(self.all)?;
+        let specs = runtime.list_works(self.all)?;
         if self.json {
-            let values = specs.iter().map(execution_spec_to_json).collect::<Vec<_>>();
+            let values = specs.iter().map(work_to_json).collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!("{:<24} {:<14} {:<8} DESCRIPTION", "ID", "TYPE", "ACTIVE");
@@ -109,17 +109,17 @@ impl Execute for ExecutionSpecListArgs {
 }
 
 #[derive(Args)]
-pub struct ExecutionSpecShowArgs {
+pub struct WorkShowArgs {
     pub id: String,
     #[arg(long)]
     pub json: bool,
 }
 
-impl Execute for ExecutionSpecShowArgs {
+impl Execute for WorkShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let spec = runtime.show_execution_spec(&self.id)?;
+        let spec = runtime.show_work(&self.id)?;
         if self.json {
-            crate::output::json::print_pretty(&execution_spec_to_json(&spec))
+            crate::output::json::print_pretty(&work_to_json(&spec))
         } else {
             println!("ID:                  {}", spec.id);
             println!("Type:                {}", spec.spec_type);
@@ -138,13 +138,13 @@ impl Execute for ExecutionSpecShowArgs {
 }
 
 #[derive(Args)]
-pub struct ExecutionSpecDeleteArgs {
+pub struct WorkDeleteArgs {
     pub id: String,
 }
 
-impl Execute for ExecutionSpecDeleteArgs {
+impl Execute for WorkDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.delete_execution_spec(&self.id)?;
+        runtime.delete_work(&self.id)?;
         println!("Deleted work '{}'", self.id);
         Ok(())
     }
@@ -169,7 +169,7 @@ fn parse_csv(raw: &str) -> Vec<String> {
         .collect()
 }
 
-fn execution_spec_to_json(spec: &ExecutionSpec) -> Value {
+fn work_to_json(spec: &Work) -> Value {
     json!({
         "id": spec.id,
         "type": spec.spec_type,

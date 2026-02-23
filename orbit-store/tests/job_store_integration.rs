@@ -10,7 +10,7 @@ fn job_state_transitions_and_disabled_visibility() {
     let job = store
         .with_transaction(|tx| {
             tx.insert_job_v2(
-                JobTargetType::ExecutionSpec,
+                JobTargetType::Work,
                 "spec-demo",
                 "every 1h",
                 "mock-agent",
@@ -62,7 +62,7 @@ fn claim_due_jobs_skips_when_pending_or_running_run_exists() {
     let job = store
         .with_transaction(|tx| {
             tx.insert_job_v2(
-                JobTargetType::ExecutionSpec,
+                JobTargetType::Work,
                 "spec-claim",
                 "every 1m",
                 "mock-agent",
@@ -98,7 +98,7 @@ fn complete_job_run_updates_terminal_state_and_error_fields() {
     let job = store
         .with_transaction(|tx| {
             tx.insert_job_v2(
-                JobTargetType::ExecutionSpec,
+                JobTargetType::Work,
                 "spec-legacy",
                 "every 1m",
                 "mock-agent",

@@ -2,8 +2,8 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 
 use orbit_core::OrbitRuntime;
-use orbit_core::command::execution_spec::ExecutionSpecAddParams;
 use orbit_core::command::job::JobAddParams;
+use orbit_core::command::work::WorkAddParams;
 use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobTargetType};
 use serde_json::json;
 use tempfile::tempdir;
@@ -11,9 +11,9 @@ use tempfile::tempdir;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-fn add_execution_spec(runtime: &OrbitRuntime, id: &str) {
+fn add_work(runtime: &OrbitRuntime, id: &str) {
     let _ = runtime
-        .add_execution_spec(ExecutionSpecAddParams {
+        .add_work(WorkAddParams {
             id: id.to_string(),
             spec_type: "analysis".to_string(),
             description: "runtime test spec".to_string(),
@@ -22,7 +22,7 @@ fn add_execution_spec(runtime: &OrbitRuntime, id: &str) {
             artifact_path_template: None,
             skill_refs: Vec::new(),
         })
-        .expect("add execution spec");
+        .expect("add work");
 }
 
 fn add_scheduled_job(
@@ -35,7 +35,7 @@ fn add_scheduled_job(
 ) -> String {
     runtime
         .add_job(JobAddParams {
-            target_type: JobTargetType::ExecutionSpec,
+            target_type: JobTargetType::Work,
             target_id: target_id.to_string(),
             schedule: "every 1s".to_string(),
             agent_cli: agent_cli.to_string(),
@@ -67,7 +67,7 @@ fn scheduled_job_run_executes_agent_and_records_success_run() {
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
-    add_execution_spec(&runtime, "spec-success");
+    add_work(&runtime, "spec-success");
     let job_id = add_scheduled_job(
         &runtime,
         "spec-success",
@@ -100,7 +100,7 @@ fn invalid_agent_json_marks_run_failed_with_protocol_violation() {
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nprintf 'not-json'\n");
 
-    add_execution_spec(&runtime, "spec-protocol");
+    add_work(&runtime, "spec-protocol");
     let job_id = add_scheduled_job(
         &runtime,
         "spec-protocol",
@@ -143,7 +143,7 @@ fn run_job_now_applies_retry_policy_and_second_attempt_can_succeed() {
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
-    add_execution_spec(&runtime, "spec-retry");
+    add_work(&runtime, "spec-retry");
     let job_id = add_scheduled_job(
         &runtime,
         "spec-retry",
@@ -175,7 +175,7 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
         "#!/bin/sh\nsleep 0.2\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_execution_spec(&runtime, "spec-concurrent");
+    add_work(&runtime, "spec-concurrent");
     let job_id = add_scheduled_job(
         &runtime,
         "spec-concurrent",

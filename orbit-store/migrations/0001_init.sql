@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS memos (
 
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
-    target_type TEXT NOT NULL CHECK (target_type IN ('execution_spec','workflow')),
+    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
     target_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     agent_cli TEXT NOT NULL,
@@ -72,7 +72,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_job_runs_single_running
 ON job_runs(job_id)
 WHERE state = 'running';
 
-CREATE TABLE IF NOT EXISTS execution_specs (
+CREATE TABLE IF NOT EXISTS works (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -85,11 +85,11 @@ CREATE TABLE IF NOT EXISTS execution_specs (
     updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_execution_specs_type
-ON execution_specs(type);
+CREATE INDEX IF NOT EXISTS idx_works_type
+ON works(type);
 
-CREATE INDEX IF NOT EXISTS idx_execution_specs_active
-ON execution_specs(is_active);
+CREATE INDEX IF NOT EXISTS idx_works_active
+ON works(is_active);
 
 CREATE TABLE IF NOT EXISTS workflows (
     id TEXT PRIMARY KEY,
