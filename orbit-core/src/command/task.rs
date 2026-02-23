@@ -1,7 +1,7 @@
-use orbit_store::task_store::{TaskInsertParams, TaskUpdateFields};
 use orbit_types::{OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
 
 use crate::OrbitRuntime;
+use crate::task_file_store::{FileTaskInsert, FileTaskUpdate};
 
 pub struct TaskAddParams {
     pub title: String,
@@ -44,7 +44,7 @@ pub struct TaskUpdateParams {
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
         if let Some(ref parent) = params.parent_id {
-            let exists = self.context.store.get_task(parent)?;
+            let exists = self.context.task_store.get_task(parent)?;
             if exists.is_none() {
                 return Err(OrbitError::TaskNotFound(format!(
                     "parent task not found: {parent}"
@@ -52,8 +52,8 @@ impl OrbitRuntime {
             }
         }
 
-        self.with_mutation(|tx| {
-            let task = tx.insert_task(&TaskInsertParams {
+        self.with_mutation(|_| {
+            let task = self.context.task_store.create_task(FileTaskInsert {
                 title: params.title.clone(),
                 description: params.description.clone(),
                 instructions: params.instructions.clone(),
@@ -74,13 +74,13 @@ impl OrbitRuntime {
 
     pub fn get_task(&self, id: &str) -> Result<Task, OrbitError> {
         self.context
-            .store
+            .task_store
             .get_task(id)?
             .ok_or_else(|| OrbitError::TaskNotFound(id.to_string()))
     }
 
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
-        self.context.store.list_tasks()
+        self.context.task_store.list_tasks()
     }
 
     pub fn list_tasks_filtered(
@@ -88,7 +88,9 @@ impl OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.context.store.list_tasks_filtered(status, priority)
+        self.context
+            .task_store
+            .list_tasks_filtered(status, priority)
     }
 
     pub fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
@@ -96,7 +98,7 @@ impl OrbitRuntime {
         self.get_task(id)?;
 
         if let Some(Some(ref parent)) = params.parent_id {
-            let exists = self.context.store.get_task(parent)?;
+            let exists = self.context.task_store.get_task(parent)?;
             if exists.is_none() {
                 return Err(OrbitError::TaskNotFound(format!(
                     "parent task not found: {parent}"
@@ -104,10 +106,10 @@ impl OrbitRuntime {
             }
         }
 
-        self.with_mutation(|tx| {
-            tx.update_task(
+        let task = self.with_mutation(|_| {
+            let task = self.context.task_store.update_task(
                 id,
-                &TaskUpdateFields {
+                &FileTaskUpdate {
                     title: params.title,
                     description: params.description,
                     instructions: params.instructions,
@@ -119,10 +121,10 @@ impl OrbitRuntime {
                     parent_id: params.parent_id,
                 },
             )?;
-            Ok(((), OrbitEvent::TaskUpdated { id: id.to_string() }))
+            Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
         })?;
 
-        self.get_task(id)
+        Ok(task)
     }
 
     pub fn close_task(&self, id: &str) -> Result<(), OrbitError> {
@@ -135,8 +137,14 @@ impl OrbitRuntime {
             )));
         }
 
-        self.with_mutation(|tx| {
-            tx.set_task_status(id, TaskStatus::Done)?;
+        self.with_mutation(|_| {
+            let _ = self.context.task_store.update_task(
+                id,
+                &FileTaskUpdate {
+                    status: Some(TaskStatus::Done),
+                    ..Default::default()
+                },
+            )?;
             Ok(((), OrbitEvent::TaskClosed { id: id.to_string() }))
         })
     }
@@ -151,15 +159,21 @@ impl OrbitRuntime {
             )));
         }
 
-        self.with_mutation(|tx| {
-            tx.set_task_status(id, TaskStatus::Todo)?;
+        self.with_mutation(|_| {
+            let _ = self.context.task_store.update_task(
+                id,
+                &FileTaskUpdate {
+                    status: Some(TaskStatus::Todo),
+                    ..Default::default()
+                },
+            )?;
             Ok(((), OrbitEvent::TaskReopened { id: id.to_string() }))
         })
     }
 
     pub fn delete_task(&self, id: &str) -> Result<(), OrbitError> {
-        self.with_mutation(|tx| {
-            let deleted = tx.delete_task(id)?;
+        self.with_mutation(|_| {
+            let deleted = self.context.task_store.delete_task(id)?;
             if !deleted {
                 return Err(OrbitError::TaskNotFound(id.to_string()));
             }
@@ -168,6 +182,6 @@ impl OrbitRuntime {
     }
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
-        self.context.store.search_tasks(query)
+        self.context.task_store.search_tasks(query)
     }
 }

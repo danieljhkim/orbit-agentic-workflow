@@ -27,10 +27,6 @@ impl OrbitRuntime {
                         },
                     ))
                 })?;
-                let _ = self.append_job_system_entry(
-                    skipped_job_id,
-                    "scheduler skipped run: pending/running job run already exists".to_string(),
-                );
             }
 
             let mut ran = 0usize;

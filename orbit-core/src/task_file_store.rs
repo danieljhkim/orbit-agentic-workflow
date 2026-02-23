@@ -1,0 +1,488 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use chrono::{DateTime, Duration, Utc};
+use orbit_types::{OrbitError, Task, TaskPriority, TaskStatus, TaskType};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone)]
+pub(crate) struct TaskFileStore {
+    root: PathBuf,
+}
+
+#[derive(Clone)]
+pub(crate) struct FileTaskInsert {
+    pub title: String,
+    pub description: String,
+    pub instructions: String,
+    pub context_files: Vec<String>,
+    pub priority: TaskPriority,
+    pub task_type: TaskType,
+    pub owner: String,
+    pub parent_id: Option<String>,
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct FileTaskUpdate {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub instructions: Option<String>,
+    pub context_files: Option<Vec<String>>,
+    pub status: Option<TaskStatus>,
+    pub priority: Option<TaskPriority>,
+    pub task_type: Option<TaskType>,
+    pub owner: Option<String>,
+    pub parent_id: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskStateDir {
+    Todo,
+    InProgress,
+    Blocked,
+    Done,
+    Archived,
+}
+
+impl TaskStateDir {
+    fn as_dir(self) -> &'static str {
+        match self {
+            TaskStateDir::Todo => "todo",
+            TaskStateDir::InProgress => "in_progress",
+            TaskStateDir::Blocked => "blocked",
+            TaskStateDir::Done => "done",
+            TaskStateDir::Archived => "archived",
+        }
+    }
+
+    fn to_status(self) -> TaskStatus {
+        match self {
+            TaskStateDir::Todo => TaskStatus::Todo,
+            TaskStateDir::InProgress => TaskStatus::InProgress,
+            TaskStateDir::Blocked => TaskStatus::Blocked,
+            TaskStateDir::Done => TaskStatus::Done,
+            TaskStateDir::Archived => TaskStatus::Cancelled,
+        }
+    }
+
+    fn from_status(status: TaskStatus) -> Self {
+        match status {
+            TaskStatus::Todo => TaskStateDir::Todo,
+            TaskStatus::InProgress => TaskStateDir::InProgress,
+            TaskStatus::Blocked => TaskStateDir::Blocked,
+            TaskStatus::Done => TaskStateDir::Done,
+            TaskStatus::Cancelled => TaskStateDir::Archived,
+        }
+    }
+
+    fn all() -> [TaskStateDir; 5] {
+        [
+            TaskStateDir::Todo,
+            TaskStateDir::InProgress,
+            TaskStateDir::Blocked,
+            TaskStateDir::Done,
+            TaskStateDir::Archived,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskFileDocument {
+    schema_version: u8,
+    id: String,
+    title: String,
+    description: String,
+    #[serde(default)]
+    instructions: String,
+    #[serde(default)]
+    context_files: Vec<String>,
+    priority: TaskPriority,
+    #[serde(rename = "type", default = "default_task_type")]
+    task_type: TaskType,
+    #[serde(default)]
+    owner: String,
+    #[serde(default)]
+    parent_id: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    acceptance_criteria: Vec<String>,
+    #[serde(default)]
+    history: Vec<TaskHistoryEntry>,
+    #[serde(default)]
+    comments: Vec<TaskComment>,
+    #[serde(default)]
+    execution_spec_id: Option<String>,
+    #[serde(default)]
+    job_id: Option<String>,
+    #[serde(default)]
+    job_run_id: Option<String>,
+    #[serde(default)]
+    auto_escalated: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskHistoryEntry {
+    at: DateTime<Utc>,
+    by: String,
+    event: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskComment {
+    at: DateTime<Utc>,
+    by: String,
+    message: String,
+}
+
+fn default_task_type() -> TaskType {
+    TaskType::Task
+}
+
+impl TaskFileStore {
+    pub(crate) fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    pub(crate) fn ensure_layout(&self) -> Result<(), OrbitError> {
+        for state in TaskStateDir::all() {
+            fs::create_dir_all(self.root.join(state.as_dir()))
+                .map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn migrate_from_sqlite_tasks(&self, tasks: &[Task]) -> Result<usize, OrbitError> {
+        self.ensure_layout()?;
+        let mut migrated = 0usize;
+        for task in tasks {
+            if self.locate_task(&task.id)?.is_some() {
+                continue;
+            }
+
+            let state = TaskStateDir::from_status(task.status);
+            let doc = TaskFileDocument {
+                schema_version: 1,
+                id: task.id.clone(),
+                title: task.title.clone(),
+                description: task.description.clone(),
+                instructions: task.instructions.clone(),
+                context_files: task.context_files.clone(),
+                priority: task.priority,
+                task_type: task.task_type,
+                owner: task.owner.clone(),
+                parent_id: task.parent_id.clone(),
+                created_at: task.created_at,
+                updated_at: task.updated_at,
+                tags: Vec::new(),
+                acceptance_criteria: Vec::new(),
+                history: vec![TaskHistoryEntry {
+                    at: task.created_at,
+                    by: "agent".to_string(),
+                    event: "created".to_string(),
+                }],
+                comments: Vec::new(),
+                execution_spec_id: None,
+                job_id: None,
+                job_run_id: None,
+                auto_escalated: None,
+            };
+
+            self.write_doc_for_state(state, &doc)?;
+            migrated += 1;
+        }
+        Ok(migrated)
+    }
+
+    pub(crate) fn create_task(&self, params: FileTaskInsert) -> Result<Task, OrbitError> {
+        self.ensure_layout()?;
+        if params.title.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "task title must not be empty".to_string(),
+            ));
+        }
+
+        let now = Utc::now();
+        let id = self.next_task_id(now)?;
+        let doc = TaskFileDocument {
+            schema_version: 1,
+            id,
+            title: params.title,
+            description: params.description,
+            instructions: params.instructions,
+            context_files: params.context_files,
+            priority: params.priority,
+            task_type: params.task_type,
+            owner: params.owner,
+            parent_id: params.parent_id,
+            created_at: now,
+            updated_at: now,
+            tags: Vec::new(),
+            acceptance_criteria: Vec::new(),
+            history: vec![TaskHistoryEntry {
+                at: now,
+                by: "human".to_string(),
+                event: "created".to_string(),
+            }],
+            comments: Vec::new(),
+            execution_spec_id: None,
+            job_id: None,
+            job_run_id: None,
+            auto_escalated: None,
+        };
+
+        self.write_doc_for_state(TaskStateDir::Todo, &doc)?;
+        Ok(doc_to_task(TaskStateDir::Todo, doc))
+    }
+
+    pub(crate) fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
+        let mut tasks = Vec::new();
+        for state in TaskStateDir::all() {
+            let dir = self.state_dir_path(state);
+            if !dir.exists() {
+                continue;
+            }
+            let mut paths = fs::read_dir(&dir)
+                .map_err(|e| OrbitError::Io(e.to_string()))?
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| is_yaml(path))
+                .collect::<Vec<_>>();
+            paths.sort();
+
+            for path in paths {
+                let doc = self.read_doc_at(&path)?;
+                tasks.push(doc_to_task(state, doc));
+            }
+        }
+
+        tasks.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        Ok(tasks)
+    }
+
+    pub(crate) fn list_tasks_filtered(
+        &self,
+        status: Option<TaskStatus>,
+        priority: Option<TaskPriority>,
+    ) -> Result<Vec<Task>, OrbitError> {
+        let tasks = self.list_tasks()?;
+        Ok(tasks
+            .into_iter()
+            .filter(|task| status.is_none_or(|value| task.status == value))
+            .filter(|task| priority.is_none_or(|value| task.priority == value))
+            .collect())
+    }
+
+    pub(crate) fn get_task(&self, id: &str) -> Result<Option<Task>, OrbitError> {
+        let Some((state, path)) = self.locate_task(id)? else {
+            return Ok(None);
+        };
+        let doc = self.read_doc_at(&path)?;
+        Ok(Some(doc_to_task(state, doc)))
+    }
+
+    pub(crate) fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
+        let lowered = query.to_lowercase();
+        let tasks = self.list_tasks()?;
+        Ok(tasks
+            .into_iter()
+            .filter(|task| {
+                task.title.to_lowercase().contains(&lowered)
+                    || task.description.to_lowercase().contains(&lowered)
+            })
+            .collect())
+    }
+
+    pub(crate) fn update_task(
+        &self,
+        id: &str,
+        fields: &FileTaskUpdate,
+    ) -> Result<Task, OrbitError> {
+        let Some((current_state, current_path)) = self.locate_task(id)? else {
+            return Err(OrbitError::TaskNotFound(id.to_string()));
+        };
+        let mut doc = self.read_doc_at(&current_path)?;
+
+        if let Some(value) = &fields.title {
+            doc.title = value.clone();
+        }
+        if let Some(value) = &fields.description {
+            doc.description = value.clone();
+        }
+        if let Some(value) = &fields.instructions {
+            doc.instructions = value.clone();
+        }
+        if let Some(value) = &fields.context_files {
+            doc.context_files = value.clone();
+        }
+        if let Some(value) = fields.priority {
+            doc.priority = value;
+        }
+        if let Some(value) = fields.task_type {
+            doc.task_type = value;
+        }
+        if let Some(value) = &fields.owner {
+            doc.owner = value.clone();
+        }
+        if let Some(value) = &fields.parent_id {
+            doc.parent_id = value.clone();
+        }
+
+        let target_state = fields
+            .status
+            .map(TaskStateDir::from_status)
+            .unwrap_or(current_state);
+
+        let event = if target_state == current_state {
+            None
+        } else if target_state == TaskStateDir::Done {
+            Some("closed".to_string())
+        } else {
+            Some("moved".to_string())
+        };
+
+        doc.updated_at = Utc::now();
+        if let Some(event) = event {
+            doc.history.push(TaskHistoryEntry {
+                at: doc.updated_at,
+                by: "human".to_string(),
+                event,
+            });
+        }
+
+        self.validate_doc(&doc)?;
+        let target_path = self.task_path(target_state, &doc.id);
+        self.write_doc_at(&target_path, &doc)?;
+        if target_path != current_path {
+            fs::remove_file(&current_path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+
+        Ok(doc_to_task(target_state, doc))
+    }
+
+    pub(crate) fn delete_task(&self, id: &str) -> Result<bool, OrbitError> {
+        let Some((_, path)) = self.locate_task(id)? else {
+            return Ok(false);
+        };
+        fs::remove_file(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        Ok(true)
+    }
+
+    fn next_task_id(&self, now: DateTime<Utc>) -> Result<String, OrbitError> {
+        for offset in 0_i64..180_i64 {
+            let candidate = format!(
+                "T{}",
+                (now + Duration::seconds(offset)).format("%Y%m%d-%H%M%S")
+            );
+            if self.locate_task(&candidate)?.is_none() {
+                return Ok(candidate);
+            }
+        }
+        Err(OrbitError::Execution(
+            "unable to allocate unique task id".to_string(),
+        ))
+    }
+
+    fn locate_task(&self, id: &str) -> Result<Option<(TaskStateDir, PathBuf)>, OrbitError> {
+        for state in TaskStateDir::all() {
+            let path = self.task_path(state, id);
+            if path.exists() {
+                return Ok(Some((state, path)));
+            }
+        }
+        Ok(None)
+    }
+
+    fn write_doc_for_state(
+        &self,
+        state: TaskStateDir,
+        doc: &TaskFileDocument,
+    ) -> Result<(), OrbitError> {
+        self.validate_doc(doc)?;
+        let path = self.task_path(state, &doc.id);
+        self.write_doc_at(&path, doc)
+    }
+
+    fn write_doc_at(&self, path: &Path, doc: &TaskFileDocument) -> Result<(), OrbitError> {
+        self.validate_doc(doc)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+
+        let yaml = serde_yaml::to_string(doc).map_err(|e| OrbitError::Store(e.to_string()))?;
+        let tmp_path = path.with_extension("yaml.tmp");
+        fs::write(&tmp_path, yaml).map_err(|e| OrbitError::Io(e.to_string()))?;
+        if path.exists() {
+            fs::remove_file(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+        fs::rename(&tmp_path, path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        Ok(())
+    }
+
+    fn read_doc_at(&self, path: &Path) -> Result<TaskFileDocument, OrbitError> {
+        let raw = fs::read_to_string(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        let doc = serde_yaml::from_str::<TaskFileDocument>(&raw)
+            .map_err(|e| OrbitError::Store(format!("invalid task file {}: {e}", path.display())))?;
+        self.validate_doc(&doc)?;
+        Ok(doc)
+    }
+
+    fn validate_doc(&self, doc: &TaskFileDocument) -> Result<(), OrbitError> {
+        if doc.schema_version != 1 {
+            return Err(OrbitError::InvalidInput(format!(
+                "unsupported task schema version: {}",
+                doc.schema_version
+            )));
+        }
+        if doc.id.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "task id must not be empty".to_string(),
+            ));
+        }
+        if doc.title.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "task title must not be empty".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn state_dir_path(&self, state: TaskStateDir) -> PathBuf {
+        self.root.join(state.as_dir())
+    }
+
+    fn task_path(&self, state: TaskStateDir, id: &str) -> PathBuf {
+        self.state_dir_path(state).join(format!("{id}.yaml"))
+    }
+}
+
+fn is_yaml(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|s| s.to_str()),
+        Some("yaml") | Some("yml")
+    )
+}
+
+fn doc_to_task(state: TaskStateDir, doc: TaskFileDocument) -> Task {
+    Task {
+        id: doc.id,
+        title: doc.title,
+        description: doc.description,
+        instructions: doc.instructions,
+        context_files: doc.context_files,
+        status: state.to_status(),
+        priority: doc.priority,
+        task_type: doc.task_type,
+        owner: doc.owner,
+        parent_id: doc.parent_id,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+    }
+}

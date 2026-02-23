@@ -75,7 +75,6 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 attachment_order INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (task_id, skill_name),
-                FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
                 FOREIGN KEY(skill_name) REFERENCES skills(name) ON DELETE CASCADE
             );
 
@@ -89,52 +88,83 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 outcome TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                updated_at TEXT NOT NULL
             );
-
-            CREATE TABLE IF NOT EXISTS entries (
-                id TEXT PRIMARY KEY,
-                entity_type TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
-                session_id TEXT,
-                sequence_number INTEGER NOT NULL,
-                entry_type TEXT NOT NULL,
-                author_type TEXT NOT NULL,
-                author_id TEXT NOT NULL,
-                author_model TEXT,
-                body TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_entity_seq
-            ON entries(entity_type, entity_id, sequence_number);
-
-            CREATE INDEX IF NOT EXISTS idx_entries_entity
-            ON entries(entity_type, entity_id);
-
-            CREATE INDEX IF NOT EXISTS idx_entries_session
-            ON entries(session_id);
-
-            CREATE INDEX IF NOT EXISTS idx_entries_author
-            ON entries(author_type, author_id);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
 
-    add_column_if_missing(
-        conn,
-        "ALTER TABLE tasks ADD COLUMN instructions TEXT NOT NULL DEFAULT ''",
-    )?;
-    add_column_if_missing(
-        conn,
-        "ALTER TABLE tasks ADD COLUMN context_files TEXT NOT NULL DEFAULT '[]'",
-    )?;
-
+    ensure_tasks_schema(conn)?;
+    ensure_task_metadata_schema(conn)?;
+    ensure_tools_schema(conn)?;
     migrate_jobs_table_to_v2(conn)?;
     ensure_job_schema_v2(conn)?;
     ensure_execution_targets_schema(conn)?;
     ensure_audit_events_schema(conn)?;
+
+    Ok(())
+}
+
+fn ensure_task_metadata_schema(conn: &Connection) -> Result<(), OrbitError> {
+    if table_exists(conn, "task_skills")? && table_has_foreign_key_to(conn, "task_skills", "tasks")?
+    {
+        conn.execute_batch(
+            r#"
+                ALTER TABLE task_skills RENAME TO task_skills_legacy;
+
+                CREATE TABLE task_skills (
+                    task_id TEXT NOT NULL,
+                    skill_name TEXT NOT NULL,
+                    attachment_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (task_id, skill_name),
+                    FOREIGN KEY(skill_name) REFERENCES skills(name) ON DELETE CASCADE
+                );
+
+                INSERT INTO task_skills(task_id, skill_name, attachment_order, created_at)
+                SELECT task_id, skill_name, attachment_order, created_at
+                FROM task_skills_legacy;
+
+                DROP TABLE task_skills_legacy;
+            "#,
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    }
+
+    if table_exists(conn, "agent_sessions")?
+        && table_has_foreign_key_to(conn, "agent_sessions", "tasks")?
+    {
+        conn.execute_batch(
+            r#"
+                ALTER TABLE agent_sessions RENAME TO agent_sessions_legacy;
+
+                CREATE TABLE agent_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    skill_names TEXT NOT NULL,
+                    composed_context_hash TEXT NOT NULL,
+                    effective_allowed_tools TEXT NOT NULL,
+                    tool_calls TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO agent_sessions(
+                    session_id, task_id, skill_names, composed_context_hash, effective_allowed_tools,
+                    tool_calls, outcome, status, created_at, updated_at
+                )
+                SELECT
+                    session_id, task_id, skill_names, composed_context_hash, effective_allowed_tools,
+                    tool_calls, outcome, status, created_at, updated_at
+                FROM agent_sessions_legacy;
+
+                DROP TABLE agent_sessions_legacy;
+            "#,
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    }
 
     Ok(())
 }
@@ -145,6 +175,68 @@ fn add_column_if_missing(conn: &Connection, sql: &str) -> Result<(), OrbitError>
         Err(e) if e.to_string().contains("duplicate column name") => Ok(()),
         Err(e) => Err(OrbitError::Store(e.to_string())),
     }
+}
+
+fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN instructions TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN context_files TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'todo'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'task'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN parent_id TEXT")?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
+    )?;
+
+    if table_has_column(conn, "tasks", "type")? {
+        conn.execute(
+            r#"
+                UPDATE tasks
+                SET task_type = type
+                WHERE task_type = 'task'
+                  AND trim(COALESCE(type, '')) != ''
+            "#,
+            [],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    }
+
+    conn.execute(
+        "UPDATE tasks SET created_at = datetime('now') WHERE created_at = ''",
+        [],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+    conn.execute(
+        "UPDATE tasks SET updated_at = datetime('now') WHERE updated_at = ''",
+        [],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    Ok(())
 }
 
 fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
@@ -371,6 +463,66 @@ fn ensure_job_schema_v2(conn: &Connection) -> Result<(), OrbitError> {
     .map_err(|e| OrbitError::Store(e.to_string()))
 }
 
+fn ensure_tools_schema(conn: &Connection) -> Result<(), OrbitError> {
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tools ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tools ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tools ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tools ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
+    )?;
+
+    if table_has_column(conn, "tools", "is_enabled")? {
+        conn.execute(
+            r#"
+                UPDATE tools
+                SET enabled = CASE
+                    WHEN lower(CAST(is_enabled AS TEXT)) IN ('0', 'false', 'f', 'no') THEN 0
+                    ELSE 1
+                END
+            "#,
+            [],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    }
+
+    if table_has_column(conn, "tools", "is_builtin")? {
+        conn.execute(
+            r#"
+                UPDATE tools
+                SET builtin = CASE
+                    WHEN lower(CAST(is_builtin AS TEXT)) IN ('1', 'true', 't', 'yes') THEN 1
+                    ELSE 0
+                END
+            "#,
+            [],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    }
+
+    conn.execute(
+        "UPDATE tools SET created_at = datetime('now') WHERE created_at = ''",
+        [],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+    conn.execute(
+        "UPDATE tools SET updated_at = datetime('now') WHERE updated_at = ''",
+        [],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    Ok(())
+}
+
 fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> {
     conn.execute_batch(
         r#"
@@ -486,9 +638,31 @@ fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool
     Ok(false)
 }
 
+fn table_has_foreign_key_to(
+    conn: &Connection,
+    table: &str,
+    referenced_table: &str,
+) -> Result<bool, OrbitError> {
+    let pragma = format!("PRAGMA foreign_key_list({table})");
+    let mut stmt = conn
+        .prepare(&pragma)
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(2))
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    for name in rows {
+        let name = name.map_err(|e| OrbitError::Store(e.to_string()))?;
+        if name == referenced_table {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::apply_schema;
+    use super::{apply_schema, table_has_foreign_key_to};
     use rusqlite::Connection;
 
     #[test]
@@ -575,5 +749,132 @@ mod tests {
             .expect("query migrated job");
         assert_eq!(target_type, "execution_spec");
         assert_eq!(state, "enabled");
+    }
+
+    #[test]
+    fn apply_schema_backfills_legacy_tools_columns() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE tools (
+                    name TEXT PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    is_enabled INTEGER NOT NULL DEFAULT 1
+                );
+
+                INSERT INTO tools(name, path, description, is_enabled)
+                VALUES ('legacy', '/bin/echo', 'legacy tool', 0);
+            "#,
+        )
+        .expect("legacy tools");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let enabled: i64 = conn
+            .query_row(
+                "SELECT enabled FROM tools WHERE name = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("select enabled");
+        let builtin: i64 = conn
+            .query_row(
+                "SELECT builtin FROM tools WHERE name = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("select builtin");
+
+        assert_eq!(enabled, 0);
+        assert_eq!(builtin, 0);
+    }
+
+    #[test]
+    fn apply_schema_backfills_legacy_tasks_columns() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE tasks (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    type TEXT NOT NULL DEFAULT 'feature'
+                );
+
+                INSERT INTO tasks(id, title, description, type)
+                VALUES ('task-legacy', 'legacy task', 'legacy desc', 'feature');
+            "#,
+        )
+        .expect("legacy tasks");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let (task_type, owner, has_status): (String, String, i64) = conn
+            .query_row(
+                "SELECT task_type, owner, CASE WHEN status = 'todo' THEN 1 ELSE 0 END FROM tasks WHERE id = 'task-legacy'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("query migrated task");
+        assert_eq!(task_type, "feature");
+        assert_eq!(owner, "");
+        assert_eq!(has_status, 1);
+    }
+
+    #[test]
+    fn apply_schema_removes_task_foreign_keys_from_task_metadata_tables() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE tasks (
+                    id TEXT PRIMARY KEY
+                );
+                CREATE TABLE skills (
+                    schema_version INTEGER NOT NULL,
+                    name TEXT PRIMARY KEY,
+                    description TEXT,
+                    instructions TEXT NOT NULL,
+                    context_files TEXT NOT NULL,
+                    allowed_tools TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE task_skills (
+                    task_id TEXT NOT NULL,
+                    skill_name TEXT NOT NULL,
+                    attachment_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (task_id, skill_name),
+                    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY(skill_name) REFERENCES skills(name) ON DELETE CASCADE
+                );
+                CREATE TABLE agent_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    skill_names TEXT NOT NULL,
+                    composed_context_hash TEXT NOT NULL,
+                    effective_allowed_tools TEXT NOT NULL,
+                    tool_calls TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+            "#,
+        )
+        .expect("legacy metadata tables");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let task_skills_has_fk =
+            table_has_foreign_key_to(&conn, "task_skills", "tasks").expect("task_skills pragma");
+        let agent_sessions_has_fk = table_has_foreign_key_to(&conn, "agent_sessions", "tasks")
+            .expect("agent_sessions pragma");
+
+        assert!(!task_skills_has_fk);
+        assert!(!agent_sessions_has_fk);
     }
 }

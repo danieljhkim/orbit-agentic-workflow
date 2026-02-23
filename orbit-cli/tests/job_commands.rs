@@ -16,7 +16,7 @@ fn orbit_in(dir: &Path) -> Command {
 fn add_execution_spec(dir: &Path, id: &str) -> String {
     let output = orbit_in(dir)
         .args([
-            "execution-spec",
+            "work",
             "add",
             "--id",
             id,

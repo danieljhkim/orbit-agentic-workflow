@@ -15,7 +15,7 @@ fn execution_spec_add_show_list_delete_json_flow() {
 
     orbit_in(dir.path())
         .args([
-            "execution-spec",
+            "work",
             "add",
             "--id",
             "spec-cli-1",
@@ -35,7 +35,7 @@ fn execution_spec_add_show_list_delete_json_flow() {
         .success();
 
     let show_output = orbit_in(dir.path())
-        .args(["execution-spec", "show", "spec-cli-1", "--json"])
+        .args(["work", "show", "spec-cli-1", "--json"])
         .assert()
         .success()
         .get_output()
@@ -47,7 +47,7 @@ fn execution_spec_add_show_list_delete_json_flow() {
     assert_eq!(show["is_active"], true);
 
     let list_output = orbit_in(dir.path())
-        .args(["execution-spec", "list", "--json"])
+        .args(["work", "list", "--json"])
         .assert()
         .success()
         .get_output()
@@ -62,12 +62,12 @@ fn execution_spec_add_show_list_delete_json_flow() {
     );
 
     orbit_in(dir.path())
-        .args(["execution-spec", "delete", "spec-cli-1"])
+        .args(["work", "delete", "spec-cli-1"])
         .assert()
         .success();
 
     let list_after_delete = orbit_in(dir.path())
-        .args(["execution-spec", "list", "--json"])
+        .args(["work", "list", "--json"])
         .assert()
         .success()
         .get_output()

@@ -20,8 +20,6 @@ pub enum OrbitError {
     WorkflowNotFound(String),
     #[error("agent session not found: {0}")]
     AgentSessionNotFound(String),
-    #[error("entry not found: {0}")]
-    EntryNotFound(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("skill validation failed: {0}")]
@@ -34,8 +32,6 @@ pub enum OrbitError {
     AgentProtocolViolation(String),
     #[error("unsupported agent provider: {0}")]
     UnsupportedAgentProvider(String),
-    #[error("entry validation failed: {0}")]
-    EntryValidation(String),
     #[error("execution failed: {0}")]
     Execution(String),
     #[error("store error: {0}")]

@@ -24,7 +24,7 @@ fn add_task(dir: &Path, title: &str) -> String {
 fn task_add_prints_id() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "test task");
-    assert!(id.starts_with("task-"), "id should start with task-: {id}");
+    assert!(id.starts_with("T"), "id should start with T: {id}");
 }
 
 #[test]

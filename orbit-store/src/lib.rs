@@ -1,7 +1,6 @@
 mod audit_event_store;
 mod audit_store;
 mod connection;
-mod entry_store;
 mod execution_spec_store;
 mod job_store;
 mod lock;

@@ -51,6 +51,7 @@ pub enum TaskPriority {
     Low,
     Medium,
     High,
+    Critical,
 }
 
 impl Display for TaskPriority {
@@ -59,6 +60,7 @@ impl Display for TaskPriority {
             TaskPriority::Low => "low",
             TaskPriority::Medium => "medium",
             TaskPriority::High => "high",
+            TaskPriority::Critical => "critical",
         };
         write!(f, "{s}")
     }
@@ -72,6 +74,7 @@ impl FromStr for TaskPriority {
             "low" => Ok(TaskPriority::Low),
             "medium" => Ok(TaskPriority::Medium),
             "high" => Ok(TaskPriority::High),
+            "critical" => Ok(TaskPriority::Critical),
             other => Err(format!("unknown task priority: {other}")),
         }
     }

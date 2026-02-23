@@ -145,7 +145,7 @@ pub struct ExecutionSpecDeleteArgs {
 impl Execute for ExecutionSpecDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.delete_execution_spec(&self.id)?;
-        println!("Deleted execution spec '{}'", self.id);
+        println!("Deleted work '{}'", self.id);
         Ok(())
     }
 }

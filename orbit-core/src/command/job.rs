@@ -5,15 +5,12 @@ use chrono::{DateTime, Utc};
 use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
 use orbit_types::{
-    AuthorType, EntityType, EntryType, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
-    JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
+    Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
+    OrbitEvent,
 };
 use serde_json::Value;
 
 use crate::OrbitRuntime;
-use crate::command::entry::EntryAddParams;
-
-const SYSTEM_ENTRY_AUTHOR_ID: &str = "runtime";
 const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
 const AGENT_INVOCATION_FAILED: &str = "AGENT_INVOCATION_FAILED";
 
@@ -280,14 +277,6 @@ impl OrbitRuntime {
                 })?;
             }
 
-            let _ = self.append_job_system_entry(
-                &job.job_id,
-                format!(
-                    "job run completed: run_id={} attempt={} state={}",
-                    run.run_id, run.attempt, outcome.state
-                ),
-            );
-
             last_result = Some(JobRunResult {
                 job_id: job.job_id.clone(),
                 run_id: run.run_id.clone(),
@@ -423,24 +412,6 @@ impl OrbitRuntime {
                 protocol_violation: false,
             },
         }
-    }
-
-    pub(crate) fn append_job_system_entry(
-        &self,
-        job_id: &str,
-        body: String,
-    ) -> Result<(), OrbitError> {
-        let _entry = self.add_entry(EntryAddParams {
-            entity_type: EntityType::Job,
-            entity_id: job_id.to_string(),
-            session_id: None,
-            entry_type: EntryType::System,
-            author_type: AuthorType::System,
-            author_id: SYSTEM_ENTRY_AUTHOR_ID.to_string(),
-            author_model: None,
-            body,
-        })?;
-        Ok(())
     }
 
     fn validate_job_target_exists(

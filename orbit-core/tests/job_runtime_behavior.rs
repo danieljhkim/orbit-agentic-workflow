@@ -4,7 +4,7 @@ use std::thread;
 use orbit_core::OrbitRuntime;
 use orbit_core::command::execution_spec::ExecutionSpecAddParams;
 use orbit_core::command::job::JobAddParams;
-use orbit_types::{EntityType, JobRetryBackoffStrategy, JobRunState, JobTargetType};
+use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobTargetType};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -214,13 +214,12 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Success);
 
-    let entries = runtime
-        .list_entries(EntityType::Job, &job_id)
-        .expect("job entries");
+    let audits = runtime.list_audits(25).expect("audits");
     assert!(
-        entries
-            .iter()
-            .any(|entry| entry.body.contains("job run completed")),
-        "job run completion should be recorded in job entries"
+        audits.iter().any(|audit| {
+            audit.event_type == "JobRunCompleted"
+                && audit.payload["data"]["job_id"].as_str() == Some(job_id.as_str())
+        }),
+        "job run completion should be recorded in audits"
     );
 }

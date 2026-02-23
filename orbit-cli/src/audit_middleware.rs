@@ -219,16 +219,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
-        Commands::Entry(_) => CommandMeta {
-            command: "entry".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: None,
-            target_id: None,
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
-        Commands::ExecutionSpec(cmd) => {
+        Commands::Work(cmd) => {
             use crate::command::execution_spec::ExecutionSpecSubcommand;
             let (sub, target_id) = match &cmd.command {
                 ExecutionSpecSubcommand::Add(args) => ("add", Some(args.id.as_str())),
@@ -237,7 +228,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 ExecutionSpecSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
             };
             CommandMeta {
-                command: "execution-spec".to_string(),
+                command: "work".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
                 target_type: Some("execution_spec".to_string()),

@@ -13,6 +13,7 @@ use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
 use orbit_types::{Audit, Job};
 
+use crate::task_file_store::TaskFileStore;
 use crate::{OrbitContext, OrbitError};
 
 #[derive(Clone)]
@@ -30,6 +31,11 @@ impl OrbitRuntime {
     pub fn from_data_root(data_root: &Path) -> Result<Self, OrbitError> {
         let db_path = data_root.join("orbit.db");
         let store = orbit_store::Store::open(&db_path)?;
+        let task_root = Self::task_root_path(data_root);
+        let task_store = TaskFileStore::new(task_root);
+        task_store.ensure_layout()?;
+        let legacy_tasks = store.list_tasks()?;
+        let _ = task_store.migrate_from_sqlite_tasks(&legacy_tasks)?;
 
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
@@ -40,6 +46,7 @@ impl OrbitRuntime {
                 store,
                 policy: PolicyEngine::new_local_default_allow(),
                 registry: Arc::new(registry),
+                task_store,
             },
             event_bus: event_bus::EventBus::default(),
         })
@@ -47,6 +54,12 @@ impl OrbitRuntime {
 
     pub fn in_memory() -> Result<Self, OrbitError> {
         let store = orbit_store::Store::open_in_memory()?;
+        let task_root = std::env::temp_dir().join(format!(
+            "orbit-task-store-{}",
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let task_store = TaskFileStore::new(task_root);
+        task_store.ensure_layout()?;
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
         Self::load_external_tools(&store, &mut registry)?;
@@ -56,6 +69,7 @@ impl OrbitRuntime {
                 store,
                 policy: PolicyEngine::new_local_default_allow(),
                 registry: Arc::new(registry),
+                task_store,
             },
             event_bus: event_bus::EventBus::default(),
         })
@@ -103,5 +117,14 @@ impl OrbitRuntime {
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(".orbit")
+    }
+
+    fn task_root_path(data_root: &Path) -> PathBuf {
+        if let Ok(value) = std::env::var("ORBIT_TASK_ROOT")
+            && !value.trim().is_empty()
+        {
+            return PathBuf::from(value);
+        }
+        data_root.join("tasks")
     }
 }

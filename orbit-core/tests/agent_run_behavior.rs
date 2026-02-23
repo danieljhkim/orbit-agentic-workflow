@@ -1,7 +1,7 @@
 use orbit_core::OrbitRuntime;
 use orbit_core::command::skill::SkillAddParams;
 use orbit_core::command::task::TaskAddParams;
-use orbit_types::{AgentSessionStatus, AuthorType, EntityType, EntryType, Role};
+use orbit_types::{AgentSessionStatus, Role};
 use tempfile::tempdir;
 
 fn session_id_from_audits(audits: &[orbit_types::Audit]) -> Option<String> {
@@ -70,20 +70,12 @@ fn agent_run_executes_sequentially_and_stops_on_first_failure() {
     assert!(session.tool_calls[0].success);
     assert!(!session.tool_calls[1].success);
 
-    let entries = runtime
-        .list_entries(EntityType::Session, &session_id)
-        .expect("session entries");
+    let audits = runtime.list_audits(50).expect("audits");
     assert!(
-        entries
+        audits
             .iter()
-            .any(|entry| entry.entry_type == EntryType::Reasoning),
-        "failed sessions should include reasoning entries"
-    );
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.entry_type == EntryType::System),
-        "failed sessions should include system entries"
+            .any(|a| a.event_type == "AgentSessionCompleted"),
+        "failed sessions should record completion event"
     );
 }
 
@@ -111,32 +103,6 @@ fn successful_agent_run_records_session_and_audits() {
     assert_eq!(session.status, AgentSessionStatus::Completed);
     assert_eq!(session.tool_calls.len(), 1);
     assert!(session.tool_calls[0].success);
-
-    let entries = runtime
-        .list_entries(EntityType::Session, &result.session_id)
-        .expect("session entries");
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.entry_type == EntryType::Reasoning),
-        "successful sessions should include reasoning entries"
-    );
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.entry_type == EntryType::System),
-        "successful sessions should include system entries"
-    );
-    assert!(
-        entries
-            .iter()
-            .all(|entry| { entry.session_id.as_deref() == Some(result.session_id.as_str()) })
-    );
-    assert!(entries.iter().any(|entry| {
-        entry.entry_type == EntryType::Reasoning
-            && entry.author_type == AuthorType::Agent
-            && entry.author_model.is_some()
-    }));
 
     let audits = runtime.list_audits(20).expect("audits");
     assert!(
