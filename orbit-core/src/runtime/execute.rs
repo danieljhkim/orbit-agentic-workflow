@@ -1,4 +1,4 @@
-use orbit_exec::{ExecRequest, NoSandbox, run_process};
+use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_policy::PolicyContext;
 use orbit_types::{ExecutionResult, OrbitEvent, PolicyDecision, Role};
 
@@ -36,6 +36,7 @@ impl OrbitRuntime {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), command.to_string()],
                 timeout_ms: Some(DEFAULT_TIMEOUT_MS),
+                stdin_mode: StdinMode::Inherit,
             },
             &NoSandbox,
         )?;

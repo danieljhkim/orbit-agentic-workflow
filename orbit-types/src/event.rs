@@ -31,6 +31,29 @@ pub enum OrbitEvent {
     JobDeleted {
         job_id: String,
     },
+    JobTriggered {
+        job_id: String,
+    },
+    JobRunStarted {
+        job_id: String,
+        run_id: String,
+        attempt: u32,
+    },
+    JobRunCompleted {
+        job_id: String,
+        run_id: String,
+        state: String,
+    },
+    JobRetryScheduled {
+        job_id: String,
+        run_id: String,
+        next_run_at: String,
+    },
+    JobProtocolViolation {
+        job_id: String,
+        run_id: String,
+        message: String,
+    },
     JobSessionStarted {
         job_id: String,
         session_id: String,
@@ -93,6 +116,18 @@ pub enum OrbitEvent {
     SkillDetached {
         task_id: String,
         skill_name: String,
+    },
+    ExecutionSpecAdded {
+        id: String,
+    },
+    ExecutionSpecDisabled {
+        id: String,
+    },
+    WorkflowAdded {
+        id: String,
+    },
+    WorkflowDisabled {
+        id: String,
     },
     AgentSessionStarted {
         session_id: String,

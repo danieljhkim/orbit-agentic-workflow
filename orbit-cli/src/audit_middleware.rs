@@ -1,7 +1,6 @@
 use std::time::Instant;
 
-use orbit_core::{AuditEventInsertParams, OrbitError, OrbitRuntime};
-use orbit_types::AuditEventStatus;
+use orbit_core::{AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime};
 
 use crate::command::Commands;
 
@@ -198,7 +197,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
                 JobSubcommand::Pause(args) => ("pause", Some(args.job_id.as_str())),
                 JobSubcommand::Resume(args) => ("resume", Some(args.job_id.as_str())),
-                JobSubcommand::Cancel(args) => ("cancel", Some(args.job_id.as_str())),
                 JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
                 JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
             };
@@ -230,6 +228,24 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
+        Commands::ExecutionSpec(cmd) => {
+            use crate::command::execution_spec::ExecutionSpecSubcommand;
+            let (sub, target_id) = match &cmd.command {
+                ExecutionSpecSubcommand::Add(args) => ("add", Some(args.id.as_str())),
+                ExecutionSpecSubcommand::List(_) => ("list", None),
+                ExecutionSpecSubcommand::Show(args) => ("show", Some(args.id.as_str())),
+                ExecutionSpecSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
+            };
+            CommandMeta {
+                command: "execution-spec".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("execution_spec".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Skill(_) => CommandMeta {
             command: "skill".to_string(),
             subcommand: None,
@@ -239,6 +255,24 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
+        Commands::Workflow(cmd) => {
+            use crate::command::workflow::WorkflowSubcommand;
+            let (sub, target_id) = match &cmd.command {
+                WorkflowSubcommand::Add(args) => ("add", Some(args.id.as_str())),
+                WorkflowSubcommand::List(_) => ("list", None),
+                WorkflowSubcommand::Show(args) => ("show", Some(args.id.as_str())),
+                WorkflowSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
+            };
+            CommandMeta {
+                command: "workflow".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("workflow".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Watch(_) => CommandMeta {
             command: "watch".to_string(),
             subcommand: None,

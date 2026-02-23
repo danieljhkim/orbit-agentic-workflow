@@ -1,28 +1,28 @@
 use chrono::Utc;
 use orbit_store::Store;
-use orbit_store::task_store::TaskInsertParams;
-use orbit_types::{JobScheduleState, JobSessionStatus, JobTrigger, Role};
-
-fn create_task_id(store: &Store, title: &str) -> String {
-    store
-        .with_transaction(|tx| {
-            tx.insert_task(&TaskInsertParams {
-                title: title.to_string(),
-                ..Default::default()
-            })
-        })
-        .expect("insert task")
-        .id
-}
+use orbit_types::{
+    JobRetryBackoffStrategy, JobRunState, JobScheduleState, JobTargetType, JobTrigger, Role,
+};
 
 #[test]
-fn job_state_transitions_and_soft_delete_visibility() {
+fn job_state_transitions_and_disabled_visibility() {
     let store = Store::open_in_memory().expect("store");
-    let task_id = create_task_id(&store, "job task");
     let now = Utc::now();
 
     let job = store
-        .with_transaction(|tx| tx.insert_job("nightly", &task_id, "every 1h", "UTC", Some(now)))
+        .with_transaction(|tx| {
+            tx.insert_job_v2(
+                JobTargetType::ExecutionSpec,
+                "spec-demo",
+                "every 1h",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+        })
         .expect("insert job");
 
     let due = store.due_jobs(now).expect("due jobs");
@@ -37,35 +37,44 @@ fn job_state_transitions_and_soft_delete_visibility() {
         .expect("get paused")
         .expect("job");
     assert_eq!(paused.state, JobScheduleState::Paused);
-    assert!(paused.paused_at.is_some());
 
     store
-        .with_transaction(|tx| tx.set_job_state(&job.job_id, JobScheduleState::Active))
+        .with_transaction(|tx| tx.set_job_state(&job.job_id, JobScheduleState::Enabled))
         .expect("resume job");
     store
-        .with_transaction(|tx| tx.mark_job_deleted(&job.job_id))
-        .expect("delete job");
+        .with_transaction(|tx| tx.mark_job_disabled(&job.job_id))
+        .expect("disable job");
 
-    let default_list = store.list_jobs(false).expect("list active");
+    let default_list = store.list_jobs(false).expect("list enabled/paused");
     assert!(default_list.iter().all(|item| item.job_id != job.job_id));
 
     let all_list = store.list_jobs(true).expect("list all");
-    let deleted = all_list
+    let disabled = all_list
         .iter()
         .find(|item| item.job_id == job.job_id)
-        .expect("deleted present");
-    assert_eq!(deleted.state, JobScheduleState::Deleted);
-    assert!(deleted.deleted_at.is_some());
+        .expect("disabled present");
+    assert_eq!(disabled.state, JobScheduleState::Disabled);
 }
 
 #[test]
-fn claim_due_jobs_skips_when_running_session_exists() {
+fn claim_due_jobs_skips_when_pending_or_running_run_exists() {
     let store = Store::open_in_memory().expect("store");
-    let task_id = create_task_id(&store, "job task");
     let now = Utc::now();
 
     let job = store
-        .with_transaction(|tx| tx.insert_job("claim-test", &task_id, "every 1m", "UTC", Some(now)))
+        .with_transaction(|tx| {
+            tx.insert_job_v2(
+                JobTargetType::ExecutionSpec,
+                "spec-claim",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+        })
         .expect("insert job");
 
     let first = store
@@ -74,7 +83,7 @@ fn claim_due_jobs_skips_when_running_session_exists() {
     assert_eq!(first.claimed.len(), 1);
     assert!(first.skipped.is_empty());
     assert_eq!(first.claimed[0].job.job_id, job.job_id);
-    assert_eq!(first.claimed[0].session.trigger, JobTrigger::Schedule);
+    assert_eq!(first.claimed[0].run.state, JobRunState::Pending);
 
     let second = store
         .with_transaction(|tx| tx.claim_due_jobs(now))
@@ -84,20 +93,31 @@ fn claim_due_jobs_skips_when_running_session_exists() {
 }
 
 #[test]
-fn cancel_request_sets_flag_on_running_session() {
+fn legacy_session_wrappers_map_to_v2_job_runs() {
     let store = Store::open_in_memory().expect("store");
-    let task_id = create_task_id(&store, "job task");
     let now = Utc::now();
 
     let job = store
-        .with_transaction(|tx| tx.insert_job("cancel-test", &task_id, "every 1m", "UTC", Some(now)))
+        .with_transaction(|tx| {
+            tx.insert_job_v2(
+                JobTargetType::ExecutionSpec,
+                "spec-legacy",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+        })
         .expect("insert job");
 
-    let session = store
+    let run = store
         .with_transaction(|tx| {
             tx.insert_job_session(
                 &job.job_id,
-                &task_id,
+                "task-unused",
                 JobTrigger::Manual,
                 Role::Admin,
                 now,
@@ -106,33 +126,24 @@ fn cancel_request_sets_flag_on_running_session() {
             )
         })
         .expect("insert session");
-
-    let requested = store
-        .with_transaction(|tx| tx.request_cancel_running_session(&job.job_id))
-        .expect("request cancel")
-        .expect("running session");
-    assert_eq!(requested, session.session_id);
-    assert!(
-        store
-            .is_job_session_cancel_requested(&session.session_id)
-            .expect("cancel requested")
-    );
+    assert_eq!(run.state, JobRunState::Running);
 
     store
         .with_transaction(|tx| {
             tx.finish_job_session(
-                &session.session_id,
-                JobSessionStatus::Cancelled,
+                &run.run_id,
+                JobRunState::Cancelled,
                 Some(130),
                 Some("cancel requested"),
             )
         })
-        .expect("finish cancelled");
+        .expect("finish session");
 
     let finished = store
-        .get_job_session(&session.session_id)
-        .expect("get session")
-        .expect("session");
-    assert_eq!(finished.status, JobSessionStatus::Cancelled);
+        .get_job_run(&run.run_id)
+        .expect("get run")
+        .expect("run");
+    assert_eq!(finished.state, JobRunState::Failed);
     assert_eq!(finished.exit_code, Some(130));
+    assert_eq!(finished.error_message.as_deref(), Some("cancel requested"));
 }

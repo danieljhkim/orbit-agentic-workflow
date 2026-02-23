@@ -9,16 +9,24 @@ pub use context::OrbitContext;
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
-    AgentSessionStatus, AuthorType, EntityType, Entry, EntryType, Job, JobScheduleState,
-    JobSession, JobSessionStatus, JobTrigger, Role, Skill, Task, TaskPriority, TaskStatus,
-    TaskType,
+    AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, AuthorType, EntityType, Entry,
+    EntryType, ExecutionSpec, Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState,
+    JobSession, JobSessionStatus, JobTargetType, JobTrigger, Role, Skill, Task, TaskPriority,
+    TaskStatus, TaskType, Workflow,
 };
 pub use runtime::OrbitRuntime;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use orbit_policy::PolicyEngine;
-    use orbit_types::{JobSessionStatus, OrbitEvent, TaskPriority, TaskStatus, TaskType};
+    use orbit_store::ExecutionSpecInsertParams;
+    use orbit_types::{
+        JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
+        TaskType,
+    };
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -85,30 +93,47 @@ mod tests {
     #[test]
     fn job_run_does_not_double_execute_due_job() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let task = runtime
-            .add_task(TaskAddParams {
-                title: "job task".to_string(),
-                instructions: json!([
-                    {
-                        "name": "time.now",
-                        "input": {}
-                    }
-                ])
-                .to_string(),
-                ..Default::default()
+        let dir = tempdir().expect("temp dir");
+        let agent_path = dir.path().join("mock-agent");
+        std::fs::write(
+            &agent_path,
+            "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
+        )
+        .expect("write mock agent");
+        #[cfg(unix)]
+        std::fs::set_permissions(&agent_path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod mock agent");
+
+        runtime
+            .context
+            .store
+            .with_transaction(|tx| {
+                tx.insert_execution_spec(&ExecutionSpecInsertParams {
+                    id: "spec-core-double-run".to_string(),
+                    spec_type: "analysis".to_string(),
+                    description: "spec for scheduler test".to_string(),
+                    input_schema_json: json!({}),
+                    output_schema_json: json!({}),
+                    artifact_path_template: None,
+                    skill_refs: Vec::new(),
+                })
             })
-            .expect("add task");
+            .expect("insert execution spec");
 
         let job = runtime
             .add_job(JobAddParams {
-                name: "demo".to_string(),
-                task_id: task.id.clone(),
-                schedule_spec: "every 1m".to_string(),
-                timezone: Some("UTC".to_string()),
+                target_type: JobTargetType::ExecutionSpec,
+                target_id: "spec-core-double-run".to_string(),
+                schedule: "every 1m".to_string(),
+                agent_cli: agent_path.to_string_lossy().to_string(),
+                timeout_seconds: 30,
+                retry_max_attempts: 0,
+                retry_backoff_strategy: JobRetryBackoffStrategy::None,
+                retry_initial_delay_seconds: 0,
             })
             .expect("add job");
 
-        let due_at = job.next_run_at.expect("next run exists");
+        let due_at = job.next_run_at;
         let first = runtime.run_due_jobs(due_at).expect("first run");
         let second = runtime.run_due_jobs(due_at).expect("second run");
 
@@ -117,7 +142,7 @@ mod tests {
 
         let sessions = runtime.job_history(&job.job_id).expect("history");
         assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].status, JobSessionStatus::Succeeded);
+        assert_eq!(sessions[0].state, JobRunState::Success);
     }
 
     #[test]

@@ -12,8 +12,14 @@ pub enum OrbitError {
     SkillNotFound(String),
     #[error("job not found: {0}")]
     JobNotFound(String),
+    #[error("job run not found: {0}")]
+    JobRunNotFound(String),
     #[error("job session not found: {0}")]
     JobSessionNotFound(String),
+    #[error("execution spec not found: {0}")]
+    ExecutionSpecNotFound(String),
+    #[error("workflow not found: {0}")]
+    WorkflowNotFound(String),
     #[error("agent session not found: {0}")]
     AgentSessionNotFound(String),
     #[error("entry not found: {0}")]
@@ -26,6 +32,10 @@ pub enum OrbitError {
     JobValidation(String),
     #[error("agent run failed: {0}")]
     AgentRun(String),
+    #[error("agent protocol violation: {0}")]
+    AgentProtocolViolation(String),
+    #[error("unsupported agent provider: {0}")]
+    UnsupportedAgentProvider(String),
     #[error("entry validation failed: {0}")]
     EntryValidation(String),
     #[error("execution failed: {0}")]

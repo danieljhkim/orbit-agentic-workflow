@@ -2,13 +2,25 @@ use std::process::{Child, Command, Stdio};
 
 use orbit_types::OrbitError;
 
-use crate::runner::ExecRequest;
+use crate::runner::{ExecRequest, StdinMode};
 
 pub(crate) fn spawn(req: &ExecRequest) -> Result<Child, OrbitError> {
-    Command::new(&req.program)
+    let mut command = Command::new(&req.program);
+    command
         .args(&req.args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    match req.stdin_mode {
+        StdinMode::Inherit => {
+            command.stdin(Stdio::inherit());
+        }
+        StdinMode::Null => {
+            command.stdin(Stdio::null());
+        }
+    }
+
+    command
         .spawn()
         .map_err(|e| OrbitError::Execution(format!("failed to spawn `{}`: {e}", req.program)))
 }

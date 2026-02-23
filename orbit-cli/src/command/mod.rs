@@ -2,11 +2,13 @@ pub mod agent;
 pub mod audit;
 pub mod config;
 pub mod entry;
+pub mod execution_spec;
 pub mod job;
 pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
+pub mod workflow;
 
 use clap::{Parser, Subcommand};
 use orbit_core::{OrbitError, OrbitRuntime};
@@ -30,7 +32,9 @@ pub enum Commands {
     Agent(agent::AgentCommand),
     Audit(audit::AuditCommand),
     Entry(entry::EntryCommand),
+    ExecutionSpec(execution_spec::ExecutionSpecCommand),
     Skill(skill::SkillCommand),
+    Workflow(workflow::WorkflowCommand),
     Job(job::JobCommand),
     Watch(watch::WatchCommand),
 }
@@ -43,7 +47,9 @@ impl Execute for Commands {
             Commands::Agent(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Entry(cmd) => cmd.execute(runtime),
+            Commands::ExecutionSpec(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),
+            Commands::Workflow(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::Watch(cmd) => cmd.execute(runtime),
         }

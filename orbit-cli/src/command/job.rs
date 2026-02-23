@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use orbit_core::command::job::JobAddParams;
-use orbit_core::{Job, JobSession, OrbitError, OrbitRuntime};
+use orbit_core::{Job, JobRetryBackoffStrategy, JobRun, JobTargetType, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -25,7 +25,6 @@ pub enum JobSubcommand {
     Run(JobRunArgs),
     Pause(JobPauseArgs),
     Resume(JobResumeArgs),
-    Cancel(JobCancelArgs),
     History(JobHistoryArgs),
     Delete(JobDeleteArgs),
 }
@@ -39,7 +38,6 @@ impl Execute for JobSubcommand {
             JobSubcommand::Run(args) => args.execute(runtime),
             JobSubcommand::Pause(args) => args.execute(runtime),
             JobSubcommand::Resume(args) => args.execute(runtime),
-            JobSubcommand::Cancel(args) => args.execute(runtime),
             JobSubcommand::History(args) => args.execute(runtime),
             JobSubcommand::Delete(args) => args.execute(runtime),
         }
@@ -48,26 +46,42 @@ impl Execute for JobSubcommand {
 
 #[derive(Args)]
 pub struct JobAddArgs {
+    #[arg(long, value_enum)]
+    pub target_type: JobTargetType,
     #[arg(long)]
-    pub task: String,
+    pub target_id: String,
     #[arg(long)]
     pub schedule: String,
     #[arg(long)]
-    pub name: String,
-    #[arg(long)]
-    pub timezone: Option<String>,
+    pub agent_cli: String,
+    #[arg(long, default_value = "5m")]
+    pub timeout: String,
+    #[arg(long, default_value_t = 0)]
+    pub retry_max_attempts: u32,
+    #[arg(long, value_enum, default_value_t = JobRetryBackoffStrategy::None)]
+    pub retry_backoff: JobRetryBackoffStrategy,
+    #[arg(long, default_value = "0s")]
+    pub retry_initial_delay: String,
     #[arg(long)]
     pub json: bool,
 }
 
 impl Execute for JobAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let timeout_seconds = parse_duration_seconds(&self.timeout)?;
+        let retry_initial_delay_seconds = parse_duration_seconds(&self.retry_initial_delay)?;
+
         let job = runtime.add_job(JobAddParams {
-            name: self.name,
-            task_id: self.task,
-            schedule_spec: self.schedule,
-            timezone: self.timezone,
+            target_type: self.target_type,
+            target_id: self.target_id,
+            schedule: self.schedule,
+            agent_cli: self.agent_cli,
+            timeout_seconds,
+            retry_max_attempts: self.retry_max_attempts,
+            retry_backoff_strategy: self.retry_backoff,
+            retry_initial_delay_seconds,
         })?;
+
         if self.json {
             crate::output::json::print_pretty(&job_to_json(&job))
         } else {
@@ -93,19 +107,17 @@ impl Execute for JobListArgs {
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!(
-                "{:<26} {:<8} {:<26} {:<20} NAME",
-                "JOB_ID", "STATE", "TASK_ID", "NEXT_RUN_AT"
+                "{:<26} {:<15} {:<28} {:<9} {:<20}",
+                "JOB_ID", "TARGET_TYPE", "TARGET_ID", "STATE", "NEXT_RUN_AT"
             );
             for job in &jobs {
                 println!(
-                    "{:<26} {:<8} {:<26} {:<20} {}",
+                    "{:<26} {:<15} {:<28} {:<9} {:<20}",
                     job.job_id,
+                    job.target_type,
+                    job.target_id,
                     job.state,
-                    job.task_id,
-                    job.next_run_at
-                        .map(|v| v.to_rfc3339())
-                        .unwrap_or_else(|| "-".to_string()),
-                    job.name
+                    job.next_run_at.to_rfc3339(),
                 );
             }
             Ok(())
@@ -126,31 +138,19 @@ impl Execute for JobShowArgs {
         if self.json {
             crate::output::json::print_pretty(&job_to_json(&job))
         } else {
-            println!("Job ID:       {}", job.job_id);
-            println!("Name:         {}", job.name);
-            println!("Task:         {}", job.task_id);
-            println!("Schedule:     {}", job.schedule_spec);
-            println!("Timezone:     {}", job.timezone);
-            println!("State:        {}", job.state);
-            println!(
-                "Next run:     {}",
-                job.next_run_at
-                    .map(|v| v.to_rfc3339())
-                    .unwrap_or_else(|| "-".to_string())
-            );
-            println!(
-                "Last run:     {}",
-                job.last_run_at
-                    .map(|v| v.to_rfc3339())
-                    .unwrap_or_else(|| "-".to_string())
-            );
-            println!(
-                "Last session: {}",
-                job.last_run_session_id.unwrap_or_else(|| "-".to_string())
-            );
-            if let Some(ref err) = job.last_error {
-                println!("Last error:   {err}");
-            }
+            println!("Job ID:              {}", job.job_id);
+            println!("Target Type:         {}", job.target_type);
+            println!("Target ID:           {}", job.target_id);
+            println!("Schedule:            {}", job.schedule);
+            println!("Agent CLI:           {}", job.agent_cli);
+            println!("Timeout (seconds):   {}", job.timeout_seconds);
+            println!("Retry Max Attempts:  {}", job.retry_max_attempts);
+            println!("Retry Backoff:       {}", job.retry_backoff_strategy);
+            println!("Retry Initial Delay: {}", job.retry_initial_delay_seconds);
+            println!("State:               {}", job.state);
+            println!("Next Run:            {}", job.next_run_at.to_rfc3339());
+            println!("Created:             {}", job.created_at.to_rfc3339());
+            println!("Updated:             {}", job.updated_at.to_rfc3339());
             Ok(())
         }
     }
@@ -169,13 +169,14 @@ impl Execute for JobRunArgs {
         if self.json {
             crate::output::json::print_pretty(&json!({
                 "job_id": run.job_id,
-                "session_id": run.session_id,
-                "status": run.status.to_string()
+                "run_id": run.run_id,
+                "state": run.state.to_string(),
+                "attempt": run.attempt,
             }))
         } else {
             println!(
-                "job_id={};session_id={};status={}",
-                run.job_id, run.session_id, run.status
+                "job_id={};run_id={};state={};attempt={}",
+                run.job_id, run.run_id, run.state, run.attempt
             );
             Ok(())
         }
@@ -209,22 +210,6 @@ impl Execute for JobResumeArgs {
 }
 
 #[derive(Args)]
-pub struct JobCancelArgs {
-    pub job_id: String,
-}
-
-impl Execute for JobCancelArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let session_id = runtime.cancel_job(&self.job_id)?;
-        println!(
-            "Cancellation requested for job '{}' session '{}'",
-            self.job_id, session_id
-        );
-        Ok(())
-    }
-}
-
-#[derive(Args)]
 pub struct JobHistoryArgs {
     pub job_id: String,
     #[arg(long)]
@@ -233,27 +218,25 @@ pub struct JobHistoryArgs {
 
 impl Execute for JobHistoryArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let sessions = runtime.job_history(&self.job_id)?;
+        let runs = runtime.job_history(&self.job_id)?;
         if self.json {
-            let values = sessions.iter().map(job_session_to_json).collect::<Vec<_>>();
+            let values = runs.iter().map(job_run_to_json).collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!(
-                "{:<30} {:<10} {:<12} {:<26} {:<26}",
-                "SESSION_ID", "TRIGGER", "STATUS", "STARTED_AT", "FINISHED_AT"
+                "{:<30} {:<7} {:<10} {:<26} {:<26}",
+                "RUN_ID", "ATTEMPT", "STATE", "STARTED_AT", "FINISHED_AT"
             );
-            for session in &sessions {
+            for run in &runs {
                 println!(
-                    "{:<30} {:<10} {:<12} {:<26} {:<26}",
-                    session.session_id,
-                    session.trigger,
-                    session.status,
-                    session
-                        .started_at
+                    "{:<30} {:<7} {:<10} {:<26} {:<26}",
+                    run.run_id,
+                    run.attempt,
+                    run.state,
+                    run.started_at
                         .map(|v| v.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
-                    session
-                        .finished_at
+                    run.finished_at
                         .map(|v| v.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
                 );
@@ -279,38 +262,68 @@ impl Execute for JobDeleteArgs {
 fn job_to_json(job: &Job) -> Value {
     json!({
         "job_id": job.job_id,
-        "name": job.name,
-        "task_id": job.task_id,
-        "schedule_spec": job.schedule_spec,
-        "timezone": job.timezone,
+        "target_type": job.target_type.to_string(),
+        "target_id": job.target_id,
+        "schedule": job.schedule,
+        "agent_cli": job.agent_cli,
+        "timeout_seconds": job.timeout_seconds,
+        "retry_max_attempts": job.retry_max_attempts,
+        "retry_backoff_strategy": job.retry_backoff_strategy.to_string(),
+        "retry_initial_delay_seconds": job.retry_initial_delay_seconds,
         "state": job.state.to_string(),
+        "next_run_at": job.next_run_at.to_rfc3339(),
         "created_at": job.created_at.to_rfc3339(),
         "updated_at": job.updated_at.to_rfc3339(),
-        "paused_at": job.paused_at.map(|v| v.to_rfc3339()),
-        "deleted_at": job.deleted_at.map(|v| v.to_rfc3339()),
-        "last_run_session_id": job.last_run_session_id,
-        "last_run_at": job.last_run_at.map(|v| v.to_rfc3339()),
-        "next_run_at": job.next_run_at.map(|v| v.to_rfc3339()),
-        "last_error": job.last_error
     })
 }
 
-fn job_session_to_json(session: &JobSession) -> Value {
+fn job_run_to_json(run: &JobRun) -> Value {
     json!({
-        "session_id": session.session_id,
-        "job_id": session.job_id,
-        "task_id": session.task_id,
-        "trigger": session.trigger.to_string(),
-        "trigger_time": session.trigger_time.to_rfc3339(),
-        "started_at": session.started_at.map(|v| v.to_rfc3339()),
-        "finished_at": session.finished_at.map(|v| v.to_rfc3339()),
-        "status": session.status.to_string(),
-        "exit_code": session.exit_code,
-        "error": session.error,
-        "composed_context_hash": session.composed_context_hash,
-        "effective_allowlist_hash": session.effective_allowlist_hash,
-        "created_by_role": session.created_by_role.to_string(),
-        "created_at": session.created_at.to_rfc3339(),
-        "cancel_requested_at": session.cancel_requested_at.map(|v| v.to_rfc3339()),
+        "run_id": run.run_id,
+        "job_id": run.job_id,
+        "attempt": run.attempt,
+        "state": run.state.to_string(),
+        "scheduled_at": run.scheduled_at.to_rfc3339(),
+        "started_at": run.started_at.map(|v| v.to_rfc3339()),
+        "finished_at": run.finished_at.map(|v| v.to_rfc3339()),
+        "duration_ms": run.duration_ms,
+        "exit_code": run.exit_code,
+        "agent_response_json": run.agent_response_json,
+        "error_code": run.error_code,
+        "error_message": run.error_message,
+        "created_at": run.created_at.to_rfc3339(),
     })
+}
+
+fn parse_duration_seconds(raw: &str) -> Result<u64, OrbitError> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "duration must not be empty".to_string(),
+        ));
+    }
+
+    let split_at = value
+        .find(|c: char| c.is_alphabetic())
+        .ok_or_else(|| OrbitError::InvalidInput(format!("invalid duration: {raw}")))?;
+    let (num_raw, unit_raw) = value.split_at(split_at);
+
+    let num: u64 = num_raw
+        .parse()
+        .map_err(|_| OrbitError::InvalidInput(format!("invalid duration number: {raw}")))?;
+
+    let seconds = match unit_raw {
+        "s" => num,
+        "m" => num.saturating_mul(60),
+        "h" => num.saturating_mul(3600),
+        "d" => num.saturating_mul(86400),
+        "w" => num.saturating_mul(604800),
+        _ => {
+            return Err(OrbitError::InvalidInput(format!(
+                "invalid duration unit: {unit_raw} (expected s/m/h/d/w)"
+            )));
+        }
+    };
+
+    Ok(seconds)
 }

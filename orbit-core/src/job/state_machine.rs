@@ -1,25 +1,35 @@
 use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
-use orbit_types::{JobSessionStatus, OrbitError};
-
-pub fn next_session_status(success: bool) -> JobSessionStatus {
-    if success {
-        JobSessionStatus::Succeeded
-    } else {
-        JobSessionStatus::Failed
-    }
-}
+use orbit_types::{JobRetryBackoffStrategy, OrbitError};
 
 pub fn compute_next_run_at(
-    schedule_spec: &str,
-    _timezone: &str,
+    schedule: &str,
     from_utc: DateTime<Utc>,
 ) -> Result<DateTime<Utc>, OrbitError> {
-    let trimmed = schedule_spec.trim();
+    let trimmed = schedule.trim();
     if let Some(duration) = parse_interval_alias(trimmed)? {
         return Ok(from_utc + duration);
     }
 
     compute_next_cron_utc(trimmed, from_utc)
+}
+
+pub fn compute_retry_delay_seconds(
+    strategy: JobRetryBackoffStrategy,
+    initial_delay_seconds: u64,
+    retry_index: u32,
+) -> u64 {
+    if initial_delay_seconds == 0 {
+        return 0;
+    }
+
+    match strategy {
+        JobRetryBackoffStrategy::None => 0,
+        JobRetryBackoffStrategy::Fixed => initial_delay_seconds,
+        JobRetryBackoffStrategy::Exponential => {
+            let exponent = retry_index.saturating_sub(1);
+            initial_delay_seconds.saturating_mul(2u64.saturating_pow(exponent))
+        }
+    }
 }
 
 fn parse_interval_alias(spec: &str) -> Result<Option<Duration>, OrbitError> {
@@ -96,7 +106,6 @@ fn compute_next_cron_utc(spec: &str, from_utc: DateTime<Utc>) -> Result<DateTime
     let month = parse_cron_field(month.unwrap_or_default(), 1, 12, "month")?;
     let weekday = parse_cron_field(weekday.unwrap_or_default(), 0, 6, "day-of-week")?;
 
-    // Round to the next minute boundary and search deterministically.
     let mut candidate = from_utc + Duration::minutes(1);
     candidate = candidate
         .with_second(0)

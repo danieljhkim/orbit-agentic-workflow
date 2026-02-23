@@ -2,8 +2,7 @@ use std::io::Write;
 
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::command::duration::parse_since;
-use orbit_core::{OrbitError, OrbitRuntime};
-use orbit_types::{AuditEvent, AuditEventStatus, AuditStats};
+use orbit_core::{AuditEvent, AuditEventStatus, AuditStats, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;

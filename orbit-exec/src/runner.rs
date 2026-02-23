@@ -4,11 +4,19 @@ use orbit_types::{ExecutionResult, OrbitError};
 
 use crate::sandbox::Sandbox;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StdinMode {
+    #[default]
+    Inherit,
+    Null,
+}
+
 #[derive(Debug, Clone)]
 pub struct ExecRequest {
     pub program: String,
     pub args: Vec<String>,
     pub timeout_ms: Option<u64>,
+    pub stdin_mode: StdinMode,
 }
 
 pub fn run_process(
@@ -52,6 +60,7 @@ mod tests {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "printf hello".to_string()],
                 timeout_ms: Some(1000),
+                stdin_mode: StdinMode::Inherit,
             },
             &NoSandbox,
         )
@@ -68,6 +77,7 @@ mod tests {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "sleep 1".to_string()],
                 timeout_ms: Some(100),
+                stdin_mode: StdinMode::Inherit,
             },
             &NoSandbox,
         )

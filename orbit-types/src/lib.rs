@@ -3,6 +3,7 @@ pub mod audit_event;
 pub mod entry;
 pub mod error;
 pub mod event;
+pub mod execution_spec;
 pub mod id;
 pub mod job;
 pub mod memo;
@@ -11,28 +12,34 @@ pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
+pub mod workflow;
 
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use entry::{AuthorType, EntityType, Entry, EntryType};
 pub use error::OrbitError;
 pub use event::OrbitEvent;
+pub use execution_spec::ExecutionSpec;
 pub use id::OrbitId;
-pub use job::{Job, JobScheduleState, JobSession, JobSessionStatus, JobTrigger};
+pub use job::{
+    AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
+    JobScheduleState, JobSession, JobSessionStatus, JobTargetType, JobTrigger,
+};
 pub use memo::Memo;
 pub use role::Role;
 pub use skill::{AgentSession, AgentSessionStatus, AgentToolCall, Skill, TaskSkillAttachment};
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
+pub use workflow::Workflow;
 
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
 
     use crate::{
-        ExecutionResult, Job, JobScheduleState, JobSession, JobSessionStatus, JobTrigger,
-        OrbitEvent, Role, Skill,
+        AgentResponseEnvelope, ExecutionResult, ExecutionSpec, Job, JobRetryBackoffStrategy,
+        JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, Workflow,
     };
 
     #[test]
@@ -119,42 +126,94 @@ mod tests {
     fn job_shapes_are_stable() {
         let job = Job {
             job_id: "job-1".to_string(),
-            name: "Hourly Check".to_string(),
-            task_id: "task-1".to_string(),
-            schedule_spec: "0 * * * *".to_string(),
-            timezone: "UTC".to_string(),
-            state: JobScheduleState::Active,
+            target_type: JobTargetType::ExecutionSpec,
+            target_id: "exec-1".to_string(),
+            schedule: "0 * * * *".to_string(),
+            agent_cli: "claude".to_string(),
+            timeout_seconds: 300,
+            retry_max_attempts: 2,
+            retry_backoff_strategy: JobRetryBackoffStrategy::Exponential,
+            retry_initial_delay_seconds: 10,
+            state: JobScheduleState::Enabled,
+            next_run_at: Utc::now(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            paused_at: None,
-            deleted_at: None,
-            last_run_session_id: None,
-            last_run_at: None,
-            next_run_at: None,
-            last_error: None,
         };
         let job_value = serde_json::to_value(job).expect("serialize job");
-        assert_eq!(job_value["state"], "active");
+        assert_eq!(job_value["state"], "enabled");
+        assert_eq!(job_value["target_type"], "execution_spec");
 
-        let session = JobSession {
-            session_id: "session-1".to_string(),
+        let run = JobRun {
+            run_id: "run-1".to_string(),
             job_id: "job-1".to_string(),
-            task_id: "task-1".to_string(),
-            trigger: JobTrigger::Manual,
-            trigger_time: Utc::now(),
+            attempt: 1,
+            state: JobRunState::Running,
+            scheduled_at: Utc::now(),
             started_at: None,
             finished_at: None,
-            status: JobSessionStatus::Running,
+            duration_ms: None,
             exit_code: None,
-            error: None,
-            composed_context_hash: None,
-            effective_allowlist_hash: None,
-            created_by_role: Role::Admin,
+            agent_response_json: None,
+            error_code: None,
+            error_message: None,
             created_at: Utc::now(),
-            cancel_requested_at: None,
         };
-        let session_value = serde_json::to_value(session).expect("serialize session");
-        assert_eq!(session_value["trigger"], "manual");
-        assert_eq!(session_value["status"], "running");
+        let run_value = serde_json::to_value(run).expect("serialize run");
+        assert_eq!(run_value["state"], "running");
+        assert_eq!(run_value["attempt"], 1);
+    }
+
+    #[test]
+    fn execution_spec_and_workflow_shapes_are_stable() {
+        let spec = ExecutionSpec {
+            id: "exec-1".to_string(),
+            spec_type: "analysis".to_string(),
+            description: "Analyze repository".to_string(),
+            input_schema_json: serde_json::json!({
+                "type": "object",
+                "properties": { "path": { "type": "string" } }
+            }),
+            output_schema_json: serde_json::json!({
+                "type": "object",
+                "properties": { "score": { "type": "number" } }
+            }),
+            artifact_path_template: Some("agentspace/reports/{{date}}/out.md".to_string()),
+            skill_refs: vec!["assess-codebase".to_string()],
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let spec_json = serde_json::to_value(spec).expect("serialize spec");
+        assert_eq!(spec_json["spec_type"], "analysis");
+        assert_eq!(spec_json["is_active"], true);
+
+        let workflow = Workflow {
+            id: "wf-1".to_string(),
+            name: "Weekly Review".to_string(),
+            definition_json: serde_json::json!({
+                "steps": [{ "execution_spec_id": "exec-1" }]
+            }),
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let workflow_json = serde_json::to_value(workflow).expect("serialize workflow");
+        assert_eq!(workflow_json["name"], "Weekly Review");
+        assert!(workflow_json["definition_json"]["steps"].is_array());
+    }
+
+    #[test]
+    fn agent_response_envelope_shape_is_stable() {
+        let envelope = AgentResponseEnvelope {
+            schema_version: 1,
+            status: "success".to_string(),
+            result: Some(serde_json::json!({ "k": "v" })),
+            error: None,
+            duration_ms: 1234,
+        };
+        let value = serde_json::to_value(envelope).expect("serialize envelope");
+        assert_eq!(value["schemaVersion"], 1);
+        assert_eq!(value["status"], "success");
+        assert_eq!(value["durationMs"], 1234);
     }
 }

@@ -23,27 +23,19 @@ impl OrbitRuntime {
                         (),
                         OrbitEvent::JobSkipped {
                             job_id: skipped_job_id.clone(),
-                            reason: "running session already exists".to_string(),
+                            reason: "pending/running job run already exists".to_string(),
                         },
                     ))
                 })?;
                 let _ = self.append_job_system_entry(
                     skipped_job_id,
-                    "scheduler skipped run: running session already exists".to_string(),
+                    "scheduler skipped run: pending/running job run already exists".to_string(),
                 );
             }
 
-            for run in &claim.claimed {
-                self.event_bus.publish(OrbitEvent::JobSessionStarted {
-                    job_id: run.job.job_id.clone(),
-                    session_id: run.session.session_id.clone(),
-                    trigger: run.session.trigger.to_string(),
-                });
-            }
-
             let mut ran = 0usize;
-            for run in claim.claimed {
-                self.execute_claimed_job(&run)?;
+            for claimed in claim.claimed {
+                self.execute_claimed_job(&claimed)?;
                 ran += 1;
             }
             Ok(ran)

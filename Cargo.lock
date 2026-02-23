@@ -659,7 +659,6 @@ dependencies = [
  "clap",
  "csv",
  "orbit-core",
- "orbit-types",
  "predicates",
  "serde_json",
  "tempfile",

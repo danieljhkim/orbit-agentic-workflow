@@ -1,152 +1,191 @@
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::Duration;
 
 use orbit_core::OrbitRuntime;
+use orbit_core::command::execution_spec::ExecutionSpecAddParams;
 use orbit_core::command::job::JobAddParams;
-use orbit_core::command::task::TaskAddParams;
-use orbit_policy::PolicyEngine;
-use orbit_types::{EntityType, JobSessionStatus};
+use orbit_types::{EntityType, JobRetryBackoffStrategy, JobRunState, JobTargetType};
 use serde_json::json;
 use tempfile::tempdir;
 
-fn add_task_with_tool_calls(
-    runtime: &OrbitRuntime,
-    title: &str,
-    calls: serde_json::Value,
-) -> String {
-    runtime
-        .add_task(TaskAddParams {
-            title: title.to_string(),
-            instructions: json!({ "tool_calls": calls }).to_string(),
-            ..Default::default()
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+fn add_execution_spec(runtime: &OrbitRuntime, id: &str) {
+    let _ = runtime
+        .add_execution_spec(ExecutionSpecAddParams {
+            id: id.to_string(),
+            spec_type: "analysis".to_string(),
+            description: "runtime test spec".to_string(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({}),
+            artifact_path_template: None,
+            skill_refs: Vec::new(),
         })
-        .expect("add task")
-        .id
+        .expect("add execution spec");
 }
 
-fn add_scheduled_job(runtime: &OrbitRuntime, task_id: &str, name: &str) -> String {
+fn add_scheduled_job(
+    runtime: &OrbitRuntime,
+    target_id: &str,
+    agent_cli: &str,
+    retry_max_attempts: u32,
+    retry_backoff_strategy: JobRetryBackoffStrategy,
+    retry_initial_delay_seconds: u64,
+) -> String {
     runtime
         .add_job(JobAddParams {
-            name: name.to_string(),
-            task_id: task_id.to_string(),
-            schedule_spec: "every 1s".to_string(),
-            timezone: Some("UTC".to_string()),
+            target_type: JobTargetType::ExecutionSpec,
+            target_id: target_id.to_string(),
+            schedule: "every 1s".to_string(),
+            agent_cli: agent_cli.to_string(),
+            timeout_seconds: 10,
+            retry_max_attempts,
+            retry_backoff_strategy,
+            retry_initial_delay_seconds,
         })
         .expect("add job")
         .job_id
 }
 
-#[test]
-fn scheduled_job_run_executes_task_tool_calls_and_records_succeeded_session() {
-    let dir = tempdir().expect("tempdir");
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let output_file = dir.path().join("job-success.txt");
-
-    let task_id = add_task_with_tool_calls(
-        &runtime,
-        "job-success",
-        json!([
-            {
-                "name": "fs.write",
-                "input": {
-                    "path": output_file.to_string_lossy(),
-                    "content": "ok"
-                }
-            }
-        ]),
-    );
-
-    let job_id = add_scheduled_job(&runtime, &task_id, "success");
-    let due_at = runtime
-        .show_job(&job_id)
-        .expect("show job")
-        .next_run_at
-        .expect("next run");
-
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
-    assert_eq!(ran, 1);
-
-    let history = runtime.job_history(&job_id).expect("history");
-    assert_eq!(history.len(), 1);
-    assert_eq!(history[0].status, JobSessionStatus::Succeeded);
-    assert_eq!(history[0].trigger.to_string(), "schedule");
-
-    let output = std::fs::read_to_string(&output_file).expect("output");
-    assert_eq!(output, "ok");
+fn write_agent_script(path: &std::path::Path, body: &str) -> String {
+    std::fs::write(path, body).expect("write script");
+    #[cfg(unix)]
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod script");
+    path.to_string_lossy().to_string()
 }
 
 #[test]
-fn denied_job_execution_emits_policy_denied_and_failed_session() {
+fn scheduled_job_run_executes_agent_and_records_success_run() {
     let dir = tempdir().expect("tempdir");
-    let runtime = OrbitRuntime::from_data_root(dir.path())
-        .expect("runtime")
-        .with_policy(PolicyEngine::new_local_default_allow().deny_tool("fs.write"));
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let args_capture = dir.path().join("args.txt");
+    let script_path = dir.path().join("mock-agent");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s' \"$@\" > \"{}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        args_capture.to_string_lossy()
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
 
-    let denied_file = dir.path().join("should-not-exist.txt");
-    let task_id = add_task_with_tool_calls(
+    add_execution_spec(&runtime, "spec-success");
+    let job_id = add_scheduled_job(
         &runtime,
-        "job-denied",
-        json!([
-            {
-                "name": "fs.write",
-                "input": {
-                    "path": denied_file.to_string_lossy(),
-                    "content": "no"
-                }
-            }
-        ]),
+        "spec-success",
+        &agent_cli,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
     );
 
-    let job_id = add_scheduled_job(&runtime, &task_id, "denied");
-    let due_at = runtime
-        .show_job(&job_id)
-        .expect("show job")
-        .next_run_at
-        .expect("next run");
-
+    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
     let ran = runtime.run_due_jobs(due_at).expect("run jobs");
     assert_eq!(ran, 1);
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].status, JobSessionStatus::Failed);
-    assert!(!denied_file.exists(), "denied job must not write file");
+    assert_eq!(history[0].state, JobRunState::Success);
+    assert_eq!(history[0].attempt, 1);
+    assert!(history[0].agent_response_json.is_some());
 
-    let audits = runtime.list_audits(20).expect("audits");
-    assert!(
-        audits.iter().any(|a| a.event_type == "PolicyDenied"),
-        "policy denied must be audited"
+    let args_raw = std::fs::read_to_string(args_capture).expect("args capture");
+    assert!(args_raw.contains("--output"));
+    assert!(args_raw.contains("json"));
+    assert!(args_raw.contains("--target-type"));
+}
+
+#[test]
+fn invalid_agent_json_marks_run_failed_with_protocol_violation() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nprintf 'not-json'\n");
+
+    add_execution_spec(&runtime, "spec-protocol");
+    let job_id = add_scheduled_job(
+        &runtime,
+        "spec-protocol",
+        &agent_cli,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
     );
+
+    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
+    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    assert_eq!(ran, 1);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].state, JobRunState::Failed);
+    assert_eq!(
+        history[0].error_code.as_deref(),
+        Some("AGENT_PROTOCOL_VIOLATION")
+    );
+
+    let audits = runtime.list_audits(25).expect("audits");
+    assert!(
+        audits
+            .iter()
+            .any(|audit| audit.event_type == "JobProtocolViolation"),
+        "protocol violations must be auditable"
+    );
+}
+
+#[test]
+fn run_job_now_applies_retry_policy_and_second_attempt_can_succeed() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let marker = dir.path().join("retry.marker");
+    let script_path = dir.path().join("mock-agent");
+    let script = format!(
+        "#!/bin/sh\nif [ -f \"{marker}\" ]; then\n  printf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n  exit 0\nfi\ntouch \"{marker}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"failed\",\"result\":null,\"error\":{{\"code\":\"FIRST_FAIL\",\"message\":\"first attempt fails\",\"details\":{{}}}},\"durationMs\":1}}'\nexit 1\n",
+        marker = marker.to_string_lossy()
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    add_execution_spec(&runtime, "spec-retry");
+    let job_id = add_scheduled_job(
+        &runtime,
+        "spec-retry",
+        &agent_cli,
+        1,
+        JobRetryBackoffStrategy::Fixed,
+        0,
+    );
+
+    let result = runtime.run_job_now(&job_id).expect("run now");
+    assert_eq!(result.state, JobRunState::Success);
+    assert_eq!(result.attempt, 2);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].attempt, 2);
+    assert_eq!(history[0].state, JobRunState::Success);
+    assert_eq!(history[1].attempt, 1);
+    assert_eq!(history[1].state, JobRunState::Failed);
 }
 
 #[test]
 fn concurrent_job_run_invocations_do_not_double_run_job() {
     let dir = tempdir().expect("tempdir");
     let runtime = Arc::new(OrbitRuntime::from_data_root(dir.path()).expect("runtime"));
-
-    let task_id = add_task_with_tool_calls(
-        &runtime,
-        "job-concurrent",
-        json!([
-            {
-                "name": "proc.spawn",
-                "input": {
-                    "program": "sleep",
-                    "args": ["0.2"],
-                    "timeout_ms": 2000
-                }
-            }
-        ]),
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\nsleep 0.2\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    let job_id = add_scheduled_job(&runtime, &task_id, "concurrent");
-    let due_at = runtime
-        .show_job(&job_id)
-        .expect("show job")
-        .next_run_at
-        .expect("next run");
+    add_execution_spec(&runtime, "spec-concurrent");
+    let job_id = add_scheduled_job(
+        &runtime,
+        "spec-concurrent",
+        &agent_cli,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
+    );
 
+    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
     let barrier = Arc::new(Barrier::new(3));
 
     let r1 = Arc::clone(&runtime);
@@ -173,76 +212,7 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].status, JobSessionStatus::Succeeded);
-}
-
-#[test]
-fn cancel_job_is_cooperative_and_marks_session_cancelled() {
-    let dir = tempdir().expect("tempdir");
-    let runtime = Arc::new(OrbitRuntime::from_data_root(dir.path()).expect("runtime"));
-    let output_file = dir.path().join("cancelled-write.txt");
-
-    let task_id = add_task_with_tool_calls(
-        &runtime,
-        "job-cancel",
-        json!([
-            {
-                "name": "proc.spawn",
-                "input": {
-                    "program": "sleep",
-                    "args": ["0.2"],
-                    "timeout_ms": 2000
-                }
-            },
-            {
-                "name": "fs.write",
-                "input": {
-                    "path": output_file.to_string_lossy(),
-                    "content": "should-not-write"
-                }
-            }
-        ]),
-    );
-
-    let job_id = add_scheduled_job(&runtime, &task_id, "cancel-me");
-    let due_at = runtime
-        .show_job(&job_id)
-        .expect("show job")
-        .next_run_at
-        .expect("next run");
-
-    let runner = {
-        let runtime = Arc::clone(&runtime);
-        thread::spawn(move || runtime.run_due_jobs(due_at).expect("run jobs"))
-    };
-
-    let mut observed_running = false;
-    for _ in 0..80 {
-        let history = runtime.job_history(&job_id).expect("history");
-        if history
-            .iter()
-            .any(|session| session.status == JobSessionStatus::Running)
-        {
-            observed_running = true;
-            break;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        observed_running,
-        "expected to observe running session before cancel"
-    );
-
-    let cancelled_session = runtime.cancel_job(&job_id).expect("cancel job");
-    let ran = runner.join().expect("runner join");
-    assert_eq!(ran, 1);
-
-    let history = runtime.job_history(&job_id).expect("history");
-    assert_eq!(history.len(), 1);
-    assert_eq!(history[0].session_id, cancelled_session);
-    assert_eq!(history[0].status, JobSessionStatus::Cancelled);
-    assert!(history[0].cancel_requested_at.is_some());
-    assert!(!output_file.exists(), "second tool call should be skipped");
+    assert_eq!(history[0].state, JobRunState::Success);
 
     let entries = runtime
         .list_entries(EntityType::Job, &job_id)
@@ -250,12 +220,7 @@ fn cancel_job_is_cooperative_and_marks_session_cancelled() {
     assert!(
         entries
             .iter()
-            .any(|entry| { entry.body.contains("job cancellation requested: session=") })
-    );
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.body.contains("status=cancelled")),
-        "completion entry should record cancelled status"
+            .any(|entry| entry.body.contains("job run completed")),
+        "job run completion should be recorded in job entries"
     );
 }
