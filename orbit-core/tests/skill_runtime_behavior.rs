@@ -134,7 +134,7 @@ Review codebase architecture.
     assert_eq!(shown.sections.purpose, "Review codebase architecture.");
     assert_eq!(
         shown.meta.and_then(|meta| meta.name).as_deref(),
-        Some("assess-codebase")
+        Some("Assess Codebase")
     );
 
     let doctor = runtime.doctor_file_skills().expect("doctor");

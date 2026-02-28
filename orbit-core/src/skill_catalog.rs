@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use orbit_types::OrbitError;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -50,18 +50,6 @@ struct ParsedMetaJson {
     meta: Option<SkillMeta>,
     meta_raw: Option<Value>,
     output_schema: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SkillFrontmatter {
-    name: String,
-    description: String,
-}
-
-#[derive(Debug)]
-struct ParsedSkillMarkdown {
-    frontmatter: SkillFrontmatter,
-    sections: SkillSections,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -154,18 +142,15 @@ impl SkillCatalog {
         }
         let content =
             fs::read_to_string(&skill_md_path).map_err(|e| OrbitError::Io(e.to_string()))?;
-        validate_skill_content_safety(&content)?;
-        let parsed_skill = parse_skill_markdown(&content)?;
-        if parsed_skill.frontmatter.name != skill_id {
-            return Err(OrbitError::SkillValidation(format!(
-                "skill front matter name '{}' must match directory '{}'",
-                parsed_skill.frontmatter.name, skill_id
-            )));
-        }
+        let sections = parse_skill_markdown(&content)?;
 
         let content_hash = sha256_hex(content.as_bytes());
         let meta_path = dir.join("meta.json");
-        let parsed_meta = if meta_path.exists() {
+        let ParsedMetaJson {
+            meta,
+            meta_raw,
+            output_schema,
+        } = if meta_path.exists() {
             parse_meta_json(&meta_path)?
         } else {
             ParsedMetaJson {
@@ -174,30 +159,14 @@ impl SkillCatalog {
                 output_schema: None,
             }
         };
-        let ParsedMetaJson {
-            meta,
-            meta_raw,
-            output_schema,
-        } = parsed_meta;
-        let mut tags = Vec::new();
-        let mut version = None;
-        if let Some(existing) = meta {
-            tags = existing.tags;
-            version = existing.version;
-        }
 
         Ok(LoadedSkill {
             id: skill_id.to_string(),
             path: dir,
             content_hash,
             content,
-            sections: parsed_skill.sections,
-            meta: Some(SkillMeta {
-                name: Some(parsed_skill.frontmatter.name),
-                summary: Some(parsed_skill.frontmatter.description),
-                tags,
-                version,
-            }),
+            sections,
+            meta,
             meta_raw,
             output_schema,
         })
@@ -224,86 +193,20 @@ impl SkillCatalog {
     }
 }
 
-fn validate_skill_content_safety(content: &str) -> Result<(), OrbitError> {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("```") {
-            return Err(OrbitError::SkillValidation(
-                "code blocks are not allowed in SKILL.md".to_string(),
-            ));
-        }
-        if trimmed.starts_with("$ ") {
-            return Err(OrbitError::SkillValidation(
-                "shell commands are not allowed in SKILL.md".to_string(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn parse_skill_markdown(raw: &str) -> Result<ParsedSkillMarkdown, OrbitError> {
-    let lines = raw.lines().collect::<Vec<_>>();
-    let mut cursor = 0usize;
-    while cursor < lines.len() && lines[cursor].trim().is_empty() {
-        cursor += 1;
-    }
-    if cursor >= lines.len() || lines[cursor].trim() != "---" {
-        return Err(OrbitError::SkillValidation(
-            "SKILL.md must start with YAML front matter ('---')".to_string(),
-        ));
-    }
-    cursor += 1;
-    let frontmatter_start = cursor;
-    while cursor < lines.len() && lines[cursor].trim() != "---" {
-        cursor += 1;
-    }
-    if cursor >= lines.len() {
-        return Err(OrbitError::SkillValidation(
-            "SKILL.md front matter must end with '---'".to_string(),
-        ));
-    }
-    let frontmatter_raw = lines[frontmatter_start..cursor].join("\n");
-    let frontmatter = parse_skill_frontmatter(&frontmatter_raw)?;
-    cursor += 1;
-
-    let mut saw_heading = false;
+fn parse_skill_markdown(raw: &str) -> Result<SkillSections, OrbitError> {
     let mut current_section: Option<String> = None;
     let mut section_map: BTreeMap<String, String> = BTreeMap::new();
 
-    for line in lines.into_iter().skip(cursor) {
+    for line in raw.lines() {
         let trimmed = line.trim_end();
-        if let Some(rest) = trimmed.trim().strip_prefix("# ") {
-            if !saw_heading {
-                let heading = rest.trim();
-                if heading.is_empty() {
-                    return Err(OrbitError::SkillValidation(
-                        "skill heading must not be empty".to_string(),
-                    ));
-                }
-                saw_heading = true;
-                continue;
-            }
-        }
-        if let Some(rest) = trimmed.trim().strip_prefix("## ") {
-            let section_name = rest.trim().to_string();
-            if section_map.contains_key(&section_name) {
-                return Err(OrbitError::SkillValidation(format!(
-                    "duplicate section header '{}'",
-                    section_name
-                )));
-            }
-            let _ = section_map.insert(section_name.clone(), String::new());
+        if let Some(section_name) = parse_section_heading(trimmed.trim()) {
+            let _ = section_map.entry(section_name.clone()).or_default();
             current_section = Some(section_name);
             continue;
         }
 
         let Some(section_name) = current_section.clone() else {
-            if trimmed.trim().is_empty() {
-                continue;
-            }
-            return Err(OrbitError::SkillValidation(
-                "content outside named sections is not allowed".to_string(),
-            ));
+            continue;
         };
 
         let entry = section_map
@@ -326,46 +229,38 @@ fn parse_skill_markdown(raw: &str) -> Result<ParsedSkillMarkdown, OrbitError> {
         )));
     }
 
-    Ok(ParsedSkillMarkdown {
-        frontmatter,
-        sections: SkillSections {
-            purpose: section_map
-                .get(PURPOSE_SECTION)
-                .map(|v| v.trim().to_string())
-                .unwrap_or_default(),
-            behavioral_constraints: section_map
-                .get("Behavioral Constraints")
-                .map(|v| v.trim().to_string())
-                .unwrap_or_default(),
-            output_requirements: section_map
-                .get("Output Requirements")
-                .map(|v| v.trim().to_string())
-                .unwrap_or_default(),
-            evaluation_focus: section_map
-                .get("Evaluation Focus")
-                .map(|v| v.trim().to_string()),
-            prohibitions: section_map
-                .get("Prohibitions")
-                .map(|v| v.trim().to_string()),
-            examples: section_map.get("Examples").map(|v| v.trim().to_string()),
-        },
+    Ok(SkillSections {
+        purpose: section_map
+            .get(PURPOSE_SECTION)
+            .map(|v| v.trim().to_string())
+            .unwrap_or_default(),
+        behavioral_constraints: section_map
+            .get("Behavioral Constraints")
+            .map(|v| v.trim().to_string())
+            .unwrap_or_default(),
+        output_requirements: section_map
+            .get("Output Requirements")
+            .map(|v| v.trim().to_string())
+            .unwrap_or_default(),
+        evaluation_focus: section_map
+            .get("Evaluation Focus")
+            .map(|v| v.trim().to_string()),
+        prohibitions: section_map
+            .get("Prohibitions")
+            .map(|v| v.trim().to_string()),
+        examples: section_map.get("Examples").map(|v| v.trim().to_string()),
     })
 }
 
-fn parse_skill_frontmatter(raw: &str) -> Result<SkillFrontmatter, OrbitError> {
-    let parsed: SkillFrontmatter = serde_yaml::from_str(raw)
-        .map_err(|e| OrbitError::SkillValidation(format!("invalid skill front matter: {e}")))?;
-    if parsed.name.trim().is_empty() {
-        return Err(OrbitError::SkillValidation(
-            "front matter field 'name' must not be empty".to_string(),
-        ));
+fn parse_section_heading(raw: &str) -> Option<String> {
+    if !raw.starts_with('#') {
+        return None;
     }
-    if parsed.description.trim().is_empty() {
-        return Err(OrbitError::SkillValidation(
-            "front matter field 'description' must not be empty".to_string(),
-        ));
+    let title = raw.trim_start_matches('#').trim();
+    if title.is_empty() {
+        return None;
     }
-    Ok(parsed)
+    Some(title.to_string())
 }
 
 fn parse_meta_json(path: &Path) -> Result<ParsedMetaJson, OrbitError> {

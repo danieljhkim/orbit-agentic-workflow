@@ -72,7 +72,7 @@ nope
 }
 
 #[test]
-fn load_rejects_mismatched_frontmatter_name_and_directory() {
+fn load_allows_mismatched_frontmatter_name_and_directory() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path().join("skills");
     let catalog = SkillCatalog::new(root.clone());
@@ -93,8 +93,8 @@ Analyze architecture.
 "#,
     );
 
-    let err = catalog.load("dir-id").expect_err("must fail");
-    assert!(err.to_string().contains("front matter name"));
+    let loaded = catalog.load("dir-id").expect("must load");
+    assert_eq!(loaded.id, "dir-id");
 }
 
 #[test]
@@ -136,7 +136,7 @@ Analyze architecture.
 
     let loaded = catalog.load("with-meta").expect("load");
     let meta = loaded.meta.expect("meta");
-    assert_eq!(meta.name.as_deref(), Some("with-meta"));
+    assert_eq!(meta.name.as_deref(), Some("Assess Codebase"));
     assert_eq!(meta.summary.as_deref(), Some("Deep architecture review"));
     assert_eq!(
         meta.tags,
