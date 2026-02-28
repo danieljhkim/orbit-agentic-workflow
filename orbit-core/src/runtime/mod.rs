@@ -165,9 +165,17 @@ impl OrbitRuntime {
                 .description
                 .clone()
                 .unwrap_or_else(|| format!("Migrated legacy skill '{}'", skill.name));
+            let description = purpose
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let description = description.replace('\\', "\\\\").replace('"', "\\\"");
             let content = format!(
-                "# {id}\n\n## Purpose\n{purpose}\n\n## Behavioral Constraints\n{instructions}\n\n## Output Requirements\n- Return structured output that matches the execution contract.\n",
+                "---\nname: {id}\ndescription: {description}\n---\n\n# {id}\n\n## Purpose\n{purpose}\n\n## Behavioral Constraints\n{instructions}\n\n## Output Requirements\n- Return structured output that matches the execution contract.\n",
                 id = skill.name,
+                description = format!("\"{description}\""),
                 instructions = skill.instructions.trim(),
             );
             std::fs::write(skill_dir.join("SKILL.md"), content)

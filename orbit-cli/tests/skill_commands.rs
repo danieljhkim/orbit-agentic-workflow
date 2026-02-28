@@ -24,7 +24,12 @@ fn skill_list_and_show_read_file_based_skills() {
     write_skill(
         dir.path(),
         "assess-codebase",
-        r#"# assess-codebase
+        r#"---
+name: assess-codebase
+description: Perform architectural boundary and invariant analysis.
+---
+
+# Assess Codebase
 
 ## Purpose
 Perform architectural boundary and invariant analysis.
@@ -71,7 +76,12 @@ fn skill_list_and_show_json_are_valid() {
     write_skill(
         dir.path(),
         "lint-review",
-        r#"# lint-review
+        r#"---
+name: lint-review
+description: Review lint trends.
+---
+
+# Lint Review
 
 ## Purpose
 Review lint trends.
@@ -105,10 +115,15 @@ fn skill_doctor_reports_invalid_skill() {
     write_skill(
         dir.path(),
         "broken",
-        r#"# broken
+        r#"---
+name: broken
+description: Broken fixture.
+---
+
+# Broken
 
 ## Purpose
-Missing required sections.
+
 "#,
         None,
     );

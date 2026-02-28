@@ -258,7 +258,12 @@ fn skill_meta_output_schema_violation_marks_run_failed() {
     std::fs::create_dir_all(&skill_dir).expect("create skill dir");
     std::fs::write(
         skill_dir.join("SKILL.md"),
-        r#"# strict-schema
+        r#"---
+name: strict-schema
+description: Validate output shape.
+---
+
+# Strict Schema
 
 ## Purpose
 Validate output shape.
@@ -332,7 +337,12 @@ fn skill_meta_complex_schema_keywords_are_enforced() {
     std::fs::create_dir_all(&skill_dir).expect("create skill dir");
     std::fs::write(
         skill_dir.join("SKILL.md"),
-        r#"# strict-complex
+        r#"---
+name: strict-complex
+description: Validate advanced schema behavior.
+---
+
+# Strict Complex
 
 ## Purpose
 Validate advanced schema behavior.

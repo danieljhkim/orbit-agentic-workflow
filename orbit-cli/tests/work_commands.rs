@@ -15,7 +15,7 @@ fn write_skill(dir: &Path, id: &str) {
     std::fs::write(
         skill_dir.join("SKILL.md"),
         format!(
-            "# {id}\n\n## Purpose\nTest skill.\n\n## Behavioral Constraints\n- deterministic\n\n## Output Requirements\n- json\n"
+            "---\nname: {id}\ndescription: Test skill.\n---\n\n# {id}\n\n## Purpose\nTest skill.\n\n## Behavioral Constraints\n- deterministic\n\n## Output Requirements\n- json\n"
         ),
     )
     .expect("write skill");
@@ -96,6 +96,37 @@ fn work_add_show_list_delete_json_flow() {
             .iter()
             .any(|spec| spec["id"] == "spec-cli-1")
     );
+}
+
+#[test]
+fn work_add_defaults_type_and_schemas_when_omitted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "work",
+            "add",
+            "--id",
+            "spec-cli-defaults",
+            "--description",
+            "CLI work defaults test",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["work", "show", "spec-cli-defaults", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["id"], "spec-cli-defaults");
+    assert_eq!(show["type"], "general");
+    assert_eq!(show["input_schema_json"], serde_json::json!({}));
+    assert_eq!(show["output_schema_json"], serde_json::json!({}));
 }
 
 #[test]

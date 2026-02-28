@@ -19,25 +19,21 @@ fn list_returns_only_valid_skills() {
     write_skill(
         &root,
         "valid",
-        r#"# valid
+        r#"---
+name: valid
+description: Analyze architecture.
+---
+
+# Valid
 
 ## Purpose
 Analyze architecture.
-
-## Behavioral Constraints
-- Must be deterministic.
-
-## Output Requirements
-- JSON output.
 "#,
     );
     write_skill(
         &root,
         "invalid",
         r#"# invalid
-
-## Purpose
-Oops.
 "#,
     );
 
@@ -47,7 +43,7 @@ Oops.
 }
 
 #[test]
-fn load_rejects_unknown_section() {
+fn load_allows_unknown_section_headers() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path().join("skills");
     let catalog = SkillCatalog::new(root.clone());
@@ -55,29 +51,28 @@ fn load_rejects_unknown_section() {
 
     write_skill(
         &root,
-        "bad",
-        r#"# bad
+        "extensible",
+        r#"---
+name: extensible
+description: Analyze architecture.
+---
+
+# Extensible
 
 ## Purpose
 Analyze architecture.
-
-## Behavioral Constraints
-- Must be deterministic.
-
-## Output Requirements
-- JSON output.
 
 ## Unknown
 nope
 "#,
     );
 
-    let err = catalog.load("bad").expect_err("must fail");
-    assert!(err.to_string().contains("unknown section header"));
+    let loaded = catalog.load("extensible").expect("must load");
+    assert_eq!(loaded.id, "extensible");
 }
 
 #[test]
-fn load_rejects_mismatched_heading_and_directory() {
+fn load_rejects_mismatched_frontmatter_name_and_directory() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path().join("skills");
     let catalog = SkillCatalog::new(root.clone());
@@ -86,21 +81,20 @@ fn load_rejects_mismatched_heading_and_directory() {
     write_skill(
         &root,
         "dir-id",
-        r#"# heading-id
+        r#"---
+name: heading-id
+description: Analyze architecture.
+---
+
+# Heading Id
 
 ## Purpose
 Analyze architecture.
-
-## Behavioral Constraints
-- Must be deterministic.
-
-## Output Requirements
-- JSON output.
 "#,
     );
 
     let err = catalog.load("dir-id").expect_err("must fail");
-    assert!(err.to_string().contains("must match directory"));
+    assert!(err.to_string().contains("front matter name"));
 }
 
 #[test]
@@ -113,16 +107,15 @@ fn load_parses_meta_and_output_schema() {
     write_skill(
         &root,
         "with-meta",
-        r#"# with-meta
+        r#"---
+name: with-meta
+description: Deep architecture review
+---
+
+# With Meta
 
 ## Purpose
 Analyze architecture.
-
-## Behavioral Constraints
-- Must be deterministic.
-
-## Output Requirements
-- JSON output.
 "#,
     );
     fs::write(
@@ -143,7 +136,8 @@ Analyze architecture.
 
     let loaded = catalog.load("with-meta").expect("load");
     let meta = loaded.meta.expect("meta");
-    assert_eq!(meta.name.as_deref(), Some("Assess Codebase"));
+    assert_eq!(meta.name.as_deref(), Some("with-meta"));
+    assert_eq!(meta.summary.as_deref(), Some("Deep architecture review"));
     assert_eq!(
         meta.tags,
         vec!["architecture".to_string(), "audit".to_string()]
@@ -162,17 +156,22 @@ fn doctor_reports_invalid_skill() {
     write_skill(
         &root,
         "broken",
-        r#"# broken
+        r#"---
+name: broken
+description: Broken skill fixture.
+---
+
+# Broken
 
 ## Purpose
-Missing required sections.
+
 "#,
     );
 
     let report = catalog.doctor().expect("doctor");
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, SkillCatalogDoctorStatus::Error);
-    assert!(report[0].message.contains("missing required section"));
+    assert!(report[0].message.contains("must not be empty"));
 }
 
 #[test]
@@ -185,16 +184,15 @@ fn load_rejects_invalid_meta_schema_document() {
     write_skill(
         &root,
         "bad-meta",
-        r#"# bad-meta
+        r#"---
+name: bad-meta
+description: Analyze architecture.
+---
+
+# Bad Meta
 
 ## Purpose
 Analyze architecture.
-
-## Behavioral Constraints
-- Must be deterministic.
-
-## Output Requirements
-- JSON output.
 "#,
     );
     fs::write(

@@ -93,7 +93,12 @@ fn file_skill_catalog_commands_work() {
     std::fs::create_dir_all(&skill_dir).expect("create skill dir");
     std::fs::write(
         skill_dir.join("SKILL.md"),
-        r#"# assess-codebase
+        r#"---
+name: assess-codebase
+description: Review codebase architecture.
+---
+
+# Assess Codebase
 
 ## Purpose
 Review codebase architecture.
@@ -129,7 +134,7 @@ Review codebase architecture.
     assert_eq!(shown.sections.purpose, "Review codebase architecture.");
     assert_eq!(
         shown.meta.and_then(|meta| meta.name).as_deref(),
-        Some("Assess Codebase")
+        Some("assess-codebase")
     );
 
     let doctor = runtime.doctor_file_skills().expect("doctor");

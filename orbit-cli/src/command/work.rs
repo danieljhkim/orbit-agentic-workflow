@@ -40,14 +40,14 @@ impl Execute for WorkSubcommand {
 pub struct WorkAddArgs {
     #[arg(long)]
     pub id: String,
-    #[arg(long = "type")]
+    #[arg(long = "type", default_value = "general")]
     pub spec_type: String,
     #[arg(long)]
     pub description: String,
     #[arg(long)]
-    pub input_schema: String,
+    pub input_schema: Option<String>,
     #[arg(long)]
-    pub output_schema: String,
+    pub output_schema: Option<String>,
     #[arg(long)]
     pub artifact_path_template: Option<String>,
     #[arg(long, default_value = "")]
@@ -58,8 +58,9 @@ pub struct WorkAddArgs {
 
 impl Execute for WorkAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input_schema_json = parse_json_object(&self.input_schema, "input_schema")?;
-        let output_schema_json = parse_json_object(&self.output_schema, "output_schema")?;
+        let input_schema_json = parse_optional_json_object(self.input_schema.as_deref(), "input_schema")?;
+        let output_schema_json =
+            parse_optional_json_object(self.output_schema.as_deref(), "output_schema")?;
         let skill_refs = parse_csv(&self.skill_refs);
 
         let spec = runtime.add_work(WorkAddParams {
@@ -159,6 +160,14 @@ fn parse_json_object(raw: &str, field: &str) -> Result<Value, OrbitError> {
         )));
     }
     Ok(value)
+}
+
+fn parse_optional_json_object(raw: Option<&str>, field: &str) -> Result<Value, OrbitError> {
+    match raw {
+        None => Ok(json!({})),
+        Some(value) if value.trim().is_empty() => Ok(json!({})),
+        Some(value) => parse_json_object(value, field),
+    }
 }
 
 fn parse_csv(raw: &str) -> Vec<String> {
