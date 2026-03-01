@@ -23,13 +23,16 @@ fn mcp_init_creates_codex_and_claude_configs() {
         .assert()
         .success()
         .stdout(predicate::str::contains("codex: updated"))
-        .stdout(predicate::str::contains("claude: updated"));
+        .stdout(predicate::str::contains("claude: updated"))
+        .stdout(predicate::str::contains("claude-code: updated"));
 
     let codex_path = codex_home.path().join("config.toml");
     let claude_path = home.path().join(".claude.json");
+    let claude_code_path = home.path().join(".claude").join(".mcp.json");
 
     assert!(codex_path.exists());
     assert!(claude_path.exists());
+    assert!(claude_code_path.exists());
 
     let codex_raw = std::fs::read_to_string(codex_path).expect("read codex");
     assert!(codex_raw.contains("[mcp_servers.orbit]"));
@@ -59,6 +62,23 @@ fn mcp_init_creates_codex_and_claude_configs() {
             .is_some(),
         "claude config must include ORBIT_DATA_ROOT in env"
     );
+
+    // Verify Claude Code config
+    let cc_raw = std::fs::read_to_string(&claude_code_path).expect("read claude-code");
+    let cc_json: serde_json::Value = serde_json::from_str(&cc_raw).expect("claude-code json");
+    let cc_command = cc_json["mcpServers"]["orbit"]["command"]
+        .as_str()
+        .expect("command must be a string");
+    assert!(
+        std::path::Path::new(cc_command).is_absolute(),
+        "claude-code config command must be absolute path, got: {cc_command}"
+    );
+    assert!(
+        cc_json["mcpServers"]["orbit"]["env"]["ORBIT_DATA_ROOT"]
+            .as_str()
+            .is_some(),
+        "claude-code config must include ORBIT_DATA_ROOT in env"
+    );
 }
 
 #[test]
@@ -77,6 +97,7 @@ fn mcp_init_dry_run_does_not_write_files() {
 
     assert!(!codex_home.path().join("config.toml").exists());
     assert!(!home.path().join(".claude.json").exists());
+    assert!(!home.path().join(".claude").join(".mcp.json").exists());
 }
 
 #[test]

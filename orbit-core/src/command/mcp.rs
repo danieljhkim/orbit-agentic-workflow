@@ -18,28 +18,43 @@ pub struct McpConfigMutation {
 pub struct McpInitResult {
     pub codex: McpConfigMutation,
     pub claude: McpConfigMutation,
+    pub claude_code: McpConfigMutation,
 }
 
 impl OrbitRuntime {
     pub fn init_mcp_configs(&self, dry_run: bool) -> Result<McpInitResult, OrbitError> {
         let codex_path = codex_config_path()?;
         let claude_path = claude_config_path()?;
+        let claude_code_path = claude_code_config_path()?;
         let command = resolve_orbit_command()?;
         let data_root = Self::default_data_root();
-        upsert_mcp_configs(&codex_path, &claude_path, &command, &data_root, dry_run)
+        upsert_mcp_configs(
+            &codex_path,
+            &claude_path,
+            &claude_code_path,
+            &command,
+            &data_root,
+            dry_run,
+        )
     }
 }
 
 pub fn upsert_mcp_configs(
     codex_path: &Path,
     claude_path: &Path,
+    claude_code_path: &Path,
     command: &str,
     data_root: &Path,
     dry_run: bool,
 ) -> Result<McpInitResult, OrbitError> {
     let codex = upsert_codex_config(codex_path, command, data_root, dry_run)?;
     let claude = upsert_claude_config(claude_path, command, data_root, dry_run)?;
-    Ok(McpInitResult { codex, claude })
+    let claude_code = upsert_claude_config(claude_code_path, command, data_root, dry_run)?;
+    Ok(McpInitResult {
+        codex,
+        claude,
+        claude_code,
+    })
 }
 
 fn upsert_codex_config(
@@ -287,6 +302,10 @@ fn codex_config_path() -> Result<PathBuf, OrbitError> {
     Ok(home_dir()?.join(".codex").join("config.toml"))
 }
 
+fn claude_code_config_path() -> Result<PathBuf, OrbitError> {
+    Ok(home_dir()?.join(".claude").join(".mcp.json"))
+}
+
 fn claude_config_path() -> Result<PathBuf, OrbitError> {
     #[cfg(windows)]
     {
@@ -331,11 +350,20 @@ mod tests {
         std::path::PathBuf::from("/home/test/.orbit")
     }
 
+    fn test_paths(
+        dir: &tempfile::TempDir,
+    ) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+        (
+            dir.path().join("codex.toml"),
+            dir.path().join("claude.json"),
+            dir.path().join("claude-code.json"),
+        )
+    }
+
     #[test]
     fn preserves_unrelated_settings_when_upserting() {
         let dir = tempdir().expect("tempdir");
-        let codex_path = dir.path().join("codex.toml");
-        let claude_path = dir.path().join("claude.json");
+        let (codex_path, claude_path, claude_code_path) = test_paths(&dir);
         let data_root = test_data_root();
 
         fs::write(
@@ -353,11 +381,18 @@ mod tests {
         )
         .expect("write claude");
 
-        let result =
-            upsert_mcp_configs(&codex_path, &claude_path, TEST_COMMAND, &data_root, false)
-                .expect("upsert");
+        let result = upsert_mcp_configs(
+            &codex_path,
+            &claude_path,
+            &claude_code_path,
+            TEST_COMMAND,
+            &data_root,
+            false,
+        )
+        .expect("upsert");
         assert!(result.codex.changed);
         assert!(result.claude.changed);
+        assert!(result.claude_code.changed);
 
         let codex = fs::read_to_string(&codex_path).expect("read codex");
         assert!(codex.contains("[profile]"));
@@ -374,30 +409,44 @@ mod tests {
     #[test]
     fn dry_run_does_not_write() {
         let dir = tempdir().expect("tempdir");
-        let codex_path = dir.path().join("codex.toml");
-        let claude_path = dir.path().join("claude.json");
+        let (codex_path, claude_path, claude_code_path) = test_paths(&dir);
         let data_root = test_data_root();
 
-        let result = upsert_mcp_configs(&codex_path, &claude_path, TEST_COMMAND, &data_root, true)
-            .expect("dry run");
+        let result = upsert_mcp_configs(
+            &codex_path,
+            &claude_path,
+            &claude_code_path,
+            TEST_COMMAND,
+            &data_root,
+            true,
+        )
+        .expect("dry run");
         assert!(result.codex.changed);
         assert!(result.claude.changed);
+        assert!(result.claude_code.changed);
         assert!(!codex_path.exists());
         assert!(!claude_path.exists());
+        assert!(!claude_code_path.exists());
     }
 
     #[test]
     fn writes_absolute_command_and_env() {
         let dir = tempdir().expect("tempdir");
-        let codex_path = dir.path().join("codex.toml");
-        let claude_path = dir.path().join("claude.json");
+        let (codex_path, claude_path, claude_code_path) = test_paths(&dir);
         let data_root = test_data_root();
 
-        let result =
-            upsert_mcp_configs(&codex_path, &claude_path, TEST_COMMAND, &data_root, false)
-                .expect("upsert");
+        let result = upsert_mcp_configs(
+            &codex_path,
+            &claude_path,
+            &claude_code_path,
+            TEST_COMMAND,
+            &data_root,
+            false,
+        )
+        .expect("upsert");
         assert!(result.codex.changed);
         assert!(result.claude.changed);
+        assert!(result.claude_code.changed);
 
         // Verify codex config has absolute command and ORBIT_DATA_ROOT env
         let codex = fs::read_to_string(&codex_path).expect("read codex");
@@ -416,6 +465,15 @@ mod tests {
         assert_eq!(claude["mcpServers"]["orbit"]["command"], TEST_COMMAND);
         assert_eq!(
             claude["mcpServers"]["orbit"]["env"]["ORBIT_DATA_ROOT"],
+            data_root.to_string_lossy().as_ref()
+        );
+
+        // Verify claude code config has absolute command and env
+        let cc_raw = fs::read_to_string(&claude_code_path).expect("read claude-code");
+        let cc: serde_json::Value = serde_json::from_str(&cc_raw).expect("parse claude-code");
+        assert_eq!(cc["mcpServers"]["orbit"]["command"], TEST_COMMAND);
+        assert_eq!(
+            cc["mcpServers"]["orbit"]["env"]["ORBIT_DATA_ROOT"],
             data_root.to_string_lossy().as_ref()
         );
     }

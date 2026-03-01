@@ -44,6 +44,7 @@ impl Execute for McpInitArgs {
         let result = runtime.init_mcp_configs(self.dry_run)?;
         print_summary("codex", &result.codex, self.dry_run);
         print_summary("claude", &result.claude, self.dry_run);
+        print_summary("claude-code", &result.claude_code, self.dry_run);
         Ok(())
     }
 }
