@@ -166,17 +166,32 @@ pub struct JobRunArgs {
 impl Execute for JobRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let run = runtime.run_job_now(&self.job_id)?;
+        let run_details = runtime
+            .job_history(&self.job_id)?
+            .into_iter()
+            .find(|entry| entry.run_id == run.run_id);
         if self.json {
             crate::output::json::print_pretty(&json!({
                 "job_id": run.job_id,
                 "run_id": run.run_id,
                 "state": run.state.to_string(),
                 "attempt": run.attempt,
+                "error_code": run_details.as_ref().and_then(|entry| entry.error_code.clone()),
+                "error_message": run_details.as_ref().and_then(|entry| entry.error_message.clone()),
             }))
         } else {
+            let error_code = run_details
+                .as_ref()
+                .and_then(|entry| entry.error_code.clone())
+                .unwrap_or_else(|| "-".to_string());
+            let error_message = run_details
+                .as_ref()
+                .and_then(|entry| entry.error_message.clone())
+                .unwrap_or_else(|| "-".to_string())
+                .replace('\n', " ");
             println!(
-                "job_id={};run_id={};state={};attempt={}",
-                run.job_id, run.run_id, run.state, run.attempt
+                "job_id={};run_id={};state={};attempt={};error_code={};error_message={}",
+                run.job_id, run.run_id, run.state, run.attempt, error_code, error_message
             );
             Ok(())
         }
@@ -224,12 +239,18 @@ impl Execute for JobHistoryArgs {
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!(
-                "{:<30} {:<7} {:<10} {:<26} {:<26}",
-                "RUN_ID", "ATTEMPT", "STATE", "STARTED_AT", "FINISHED_AT"
+                "{:<30} {:<7} {:<10} {:<26} {:<26} {:<24} {}",
+                "RUN_ID",
+                "ATTEMPT",
+                "STATE",
+                "STARTED_AT",
+                "FINISHED_AT",
+                "ERROR_CODE",
+                "ERROR_MESSAGE"
             );
             for run in &runs {
                 println!(
-                    "{:<30} {:<7} {:<10} {:<26} {:<26}",
+                    "{:<30} {:<7} {:<10} {:<26} {:<26} {:<24} {}",
                     run.run_id,
                     run.attempt,
                     run.state,
@@ -239,6 +260,8 @@ impl Execute for JobHistoryArgs {
                     run.finished_at
                         .map(|v| v.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
+                    run.error_code.clone().unwrap_or_else(|| "-".to_string()),
+                    summarize_error_message(run.error_message.as_deref()),
                 );
             }
             Ok(())
@@ -326,4 +349,13 @@ fn parse_duration_seconds(raw: &str) -> Result<u64, OrbitError> {
     };
 
     Ok(seconds)
+}
+
+fn summarize_error_message(raw: Option<&str>) -> String {
+    let value = raw.unwrap_or("-").replace('\n', " ");
+    if value.chars().count() <= 120 {
+        return value;
+    }
+    let truncated = value.chars().take(120).collect::<String>();
+    format!("{truncated}...")
 }

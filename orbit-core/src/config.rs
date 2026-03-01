@@ -147,8 +147,8 @@ fn is_valid_env_var_name(value: &str) -> bool {
 
 fn required_env_vars_for_provider(provider: &str) -> &'static [&'static str] {
     match provider {
-        "codex" => &["OPENAI_API_KEY", "HOME", "PATH"],
-        "claude" => &["ANTHROPIC_API_KEY", "HOME", "PATH"],
+        "codex" => &[ "HOME", "PATH"],
+        "claude" => &["HOME", "PATH"],
         _ => &[],
     }
 }

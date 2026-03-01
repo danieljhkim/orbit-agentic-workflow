@@ -74,6 +74,16 @@ fn write_mock_agent(dir: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
+fn write_failing_agent(dir: &Path) -> String {
+    let path = dir.join("mock-agent");
+    std::fs::write(&path, "#!/bin/sh\necho 'network down' 1>&2\nexit 1\n")
+        .expect("write failing agent");
+    #[cfg(unix)]
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod failing agent");
+    path.to_string_lossy().to_string()
+}
+
 #[test]
 fn job_add_list_show_json_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -196,4 +206,30 @@ fn job_pause_resume_delete_flow() {
     let list: Value = serde_json::from_slice(&list_output).expect("list json");
     let arr = list.as_array().expect("array");
     assert!(!arr.iter().any(|job| job["job_id"] == job_id));
+}
+
+#[test]
+fn job_run_failure_json_includes_error_details() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_work(dir.path(), "spec-cli-run-fail");
+    let agent_cli = write_failing_agent(dir.path());
+    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+
+    let run_output = orbit_in(dir.path())
+        .args(["job", "run", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&run_output).expect("run json");
+    assert_eq!(run["job_id"], job_id);
+    assert_eq!(run["state"], "failed");
+    assert_eq!(run["error_code"], "AGENT_INVOCATION_FAILED");
+    assert!(
+        run["error_message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("network down")
+    );
 }
