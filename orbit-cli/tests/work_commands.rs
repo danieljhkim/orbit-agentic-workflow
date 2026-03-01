@@ -130,70 +130,11 @@ fn work_add_defaults_type_and_schemas_when_omitted() {
 }
 
 #[test]
-fn workflow_add_show_list_delete_json_flow() {
+fn workflow_command_is_not_supported() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
-        .args([
-            "workflow",
-            "add",
-            "--id",
-            "wf-cli-1",
-            "--name",
-            "workflow cli",
-            "--definition-json",
-            "{\"steps\":[{\"work_id\":\"spec-a\"}]}",
-            "--json",
-        ])
+        .args(["workflow", "list"])
         .assert()
-        .success();
-
-    let show_output = orbit_in(dir.path())
-        .args(["workflow", "show", "wf-cli-1", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["id"], "wf-cli-1");
-    assert_eq!(show["name"], "workflow cli");
-    assert_eq!(show["is_active"], true);
-
-    let list_output = orbit_in(dir.path())
-        .args(["workflow", "list", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let list: Value = serde_json::from_slice(&list_output).expect("list json");
-    assert!(
-        list.as_array()
-            .expect("array")
-            .iter()
-            .any(|workflow| workflow["id"] == "wf-cli-1")
-    );
-
-    orbit_in(dir.path())
-        .args(["workflow", "delete", "wf-cli-1"])
-        .assert()
-        .success();
-
-    let list_after_delete = orbit_in(dir.path())
-        .args(["workflow", "list", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let list_after_delete: Value =
-        serde_json::from_slice(&list_after_delete).expect("list json after delete");
-    assert!(
-        !list_after_delete
-            .as_array()
-            .expect("array")
-            .iter()
-            .any(|workflow| workflow["id"] == "wf-cli-1")
-    );
+        .failure();
 }

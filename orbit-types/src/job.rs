@@ -13,15 +13,12 @@ use crate::OrbitId;
 pub enum JobTargetType {
     #[value(name = "work", alias = "work")]
     Work,
-    #[value(name = "workflow")]
-    Workflow,
 }
 
 impl Display for JobTargetType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             JobTargetType::Work => write!(f, "work"),
-            JobTargetType::Workflow => write!(f, "workflow"),
         }
     }
 }
@@ -32,7 +29,6 @@ impl FromStr for JobTargetType {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "work" => Ok(JobTargetType::Work),
-            "workflow" => Ok(JobTargetType::Workflow),
             other => Err(format!("unknown job target type: {other}")),
         }
     }

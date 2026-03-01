@@ -39,6 +39,7 @@ impl Execute for ConfigShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let config_path = OrbitRuntime::default_data_root().join("config.toml");
         let (inherit, pass) = runtime.execution_env_config();
+        let persistence = runtime.persistence_config_json();
         if self.json {
             crate::output::json::print_pretty(&json!({
                 "path": config_path.to_string_lossy(),
@@ -48,13 +49,15 @@ impl Execute for ConfigShowArgs {
                         "inherit": inherit,
                         "pass": pass,
                     }
-                }
+                },
+                "persistence": persistence,
             }))
         } else {
             println!("Path:                {}", config_path.to_string_lossy());
             println!("Exists:              {}", config_path.exists());
             println!("Execution env inherit: {}", inherit);
             println!("Execution env pass:  {}", pass.join(","));
+            println!("Persistence:         {}", persistence);
             Ok(())
         }
     }

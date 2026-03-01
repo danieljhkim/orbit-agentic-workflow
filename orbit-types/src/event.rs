@@ -102,12 +102,6 @@ pub enum OrbitEvent {
     WorkDisabled {
         id: String,
     },
-    WorkflowAdded {
-        id: String,
-    },
-    WorkflowDisabled {
-        id: String,
-    },
     AgentSessionStarted {
         session_id: String,
         task_id: String,

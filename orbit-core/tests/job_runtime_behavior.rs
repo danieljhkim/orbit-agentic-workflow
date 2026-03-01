@@ -78,6 +78,14 @@ fn write_runtime_config(data_root: &std::path::Path, content: &str) {
     std::fs::write(data_root.join("config.toml"), content).expect("write config");
 }
 
+fn write_sqlite_job_config(data_root: &std::path::Path) {
+    let db_path = data_root.join("orbit.db").to_string_lossy().to_string();
+    write_runtime_config(
+        data_root,
+        &format!("[job]\npersistence = {{ type = \"sqlite\", path = \"{db_path}\" }}\n"),
+    );
+}
+
 fn insert_stale_running_run(data_root: &std::path::Path, job_id: &str) -> String {
     let store = Store::open(&data_root.join("orbit.db")).expect("open store");
     store
@@ -223,7 +231,7 @@ fn codex_job_fails_fast_when_required_env_var_is_not_allowlisted() {
         dir.path(),
         r#"[execution.env]
 inherit = false
-pass = ["HOME","PATH"]
+pass = ["PATH"]
 "#,
     );
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
@@ -252,7 +260,7 @@ pass = ["HOME","PATH"]
         Some("AGENT_INVOCATION_FAILED")
     );
     let message = history[0].error_message.as_deref().unwrap_or_default();
-    assert!(message.contains("OPENAI_API_KEY"));
+    assert!(message.contains("HOME"));
     assert!(message.contains("config.toml"));
 }
 
@@ -263,7 +271,7 @@ fn claude_job_fails_fast_when_required_env_var_is_not_allowlisted() {
         dir.path(),
         r#"[execution.env]
 inherit = false
-pass = ["HOME","PATH"]
+pass = ["PATH"]
 "#,
     );
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
@@ -292,7 +300,7 @@ pass = ["HOME","PATH"]
         Some("AGENT_INVOCATION_FAILED")
     );
     let message = history[0].error_message.as_deref().unwrap_or_default();
-    assert!(message.contains("ANTHROPIC_API_KEY"));
+    assert!(message.contains("HOME"));
     assert!(message.contains("config.toml"));
 }
 
@@ -417,6 +425,7 @@ fn run_job_now_rejects_when_active_run_exists() {
 #[test]
 fn job_history_recovers_stale_running_run_to_failed() {
     let dir = tempdir().expect("tempdir");
+    write_sqlite_job_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(
@@ -454,6 +463,7 @@ fn job_history_recovers_stale_running_run_to_failed() {
 #[test]
 fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
     let dir = tempdir().expect("tempdir");
+    write_sqlite_job_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(
@@ -495,6 +505,7 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
 #[test]
 fn run_due_jobs_recovers_stale_running_run_and_reclaims_job() {
     let dir = tempdir().expect("tempdir");
+    write_sqlite_job_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(

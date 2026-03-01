@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS memos (
 
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
-    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
+    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
     target_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     agent_cli TEXT NOT NULL,
@@ -90,18 +90,6 @@ ON works(type);
 
 CREATE INDEX IF NOT EXISTS idx_works_active
 ON works(is_active);
-
-CREATE TABLE IF NOT EXISTS workflows (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    definition_json TEXT NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_workflows_active
-ON workflows(is_active);
 
 CREATE TABLE IF NOT EXISTS watches (
     id TEXT PRIMARY KEY,

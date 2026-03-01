@@ -46,8 +46,6 @@ impl Execute for JobSubcommand {
 
 #[derive(Args)]
 pub struct JobAddArgs {
-    #[arg(long, value_enum)]
-    pub target_type: JobTargetType,
     #[arg(long)]
     pub target_id: String,
     #[arg(long)]
@@ -72,7 +70,7 @@ impl Execute for JobAddArgs {
         let retry_initial_delay_seconds = parse_duration_seconds(&self.retry_initial_delay)?;
 
         let job = runtime.add_job(JobAddParams {
-            target_type: self.target_type,
+            target_type: JobTargetType::Work,
             target_id: self.target_id,
             schedule: self.schedule,
             agent_cli: self.agent_cli,
@@ -239,14 +237,8 @@ impl Execute for JobHistoryArgs {
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!(
-                "{:<30} {:<7} {:<10} {:<26} {:<26} {:<24} {}",
-                "RUN_ID",
-                "ATTEMPT",
-                "STATE",
-                "STARTED_AT",
-                "FINISHED_AT",
-                "ERROR_CODE",
-                "ERROR_MESSAGE"
+                "{:<30} {:<7} {:<10} {:<26} {:<26} {:<24} ERROR_MESSAGE",
+                "RUN_ID", "ATTEMPT", "STATE", "STARTED_AT", "FINISHED_AT", "ERROR_CODE"
             );
             for run in &runs {
                 println!(

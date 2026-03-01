@@ -42,8 +42,6 @@ fn add_job(dir: &Path, target_id: &str, schedule: &str, agent_cli: &str) -> Stri
         .args([
             "job",
             "add",
-            "--target-type",
-            "work",
             "--target-id",
             target_id,
             "--schedule",
@@ -232,4 +230,27 @@ fn job_run_failure_json_includes_error_details() {
             .unwrap_or_default()
             .contains("network down")
     );
+}
+
+#[test]
+fn job_add_rejects_workflow_target_type() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "job",
+            "add",
+            "--target-type",
+            "workflow",
+            "--target-id",
+            "wf-1",
+            "--schedule",
+            "every 1m",
+            "--agent-cli",
+            "mock-agent",
+            "--timeout",
+            "30s",
+        ])
+        .assert()
+        .failure();
 }

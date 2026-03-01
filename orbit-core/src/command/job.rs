@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
+use crate::config::PersistenceType;
 use crate::json_schema::validate_instance_against_schema;
 const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
 const AGENT_INVOCATION_FAILED: &str = "AGENT_INVOCATION_FAILED";
@@ -98,8 +99,8 @@ impl OrbitRuntime {
         let next_run_at =
             crate::job::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
 
-        self.with_mutation(|tx| {
-            let job = tx.insert_job_v2(
+        if self.context.job_persistence_type == PersistenceType::File {
+            let job = self.context.job_file_store.insert_job_v2(
                 params.target_type,
                 &params.target_id,
                 &params.schedule,
@@ -110,40 +111,69 @@ impl OrbitRuntime {
                 params.retry_initial_delay_seconds,
                 next_run_at,
             )?;
-            Ok((
-                job.clone(),
-                OrbitEvent::JobAdded {
-                    job_id: job.job_id.clone(),
-                },
-            ))
-        })
+            self.record_event(OrbitEvent::JobAdded {
+                job_id: job.job_id.clone(),
+            })?;
+            Ok(job)
+        } else {
+            self.with_mutation(|tx| {
+                let job = tx.insert_job_v2(
+                    params.target_type,
+                    &params.target_id,
+                    &params.schedule,
+                    &params.agent_cli,
+                    params.timeout_seconds,
+                    params.retry_max_attempts,
+                    params.retry_backoff_strategy,
+                    params.retry_initial_delay_seconds,
+                    next_run_at,
+                )?;
+                Ok((
+                    job.clone(),
+                    OrbitEvent::JobAdded {
+                        job_id: job.job_id.clone(),
+                    },
+                ))
+            })
+        }
     }
 
     pub fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        self.context.store.list_jobs(include_disabled)
+        self.list_jobs_backend(include_disabled)
     }
 
     pub fn show_job(&self, job_id: &str) -> Result<Job, OrbitError> {
-        self.context
-            .store
-            .get_job(job_id)?
+        self.get_job_backend(job_id)?
             .ok_or_else(|| OrbitError::JobNotFound(job_id.to_string()))
     }
 
     pub fn pause_job(&self, job_id: &str) -> Result<(), OrbitError> {
         let _ = self.show_job(job_id)?;
-        self.with_mutation(|tx| {
-            let changed = tx.set_job_state(job_id, JobScheduleState::Paused)?;
+        if self.context.job_persistence_type == PersistenceType::File {
+            let changed = self
+                .context
+                .job_file_store
+                .set_job_state(job_id, JobScheduleState::Paused)?;
             if !changed {
                 return Err(OrbitError::JobNotFound(job_id.to_string()));
             }
-            Ok((
-                (),
-                OrbitEvent::JobPaused {
-                    job_id: job_id.to_string(),
-                },
-            ))
-        })
+            self.record_event(OrbitEvent::JobPaused {
+                job_id: job_id.to_string(),
+            })
+        } else {
+            self.with_mutation(|tx| {
+                let changed = tx.set_job_state(job_id, JobScheduleState::Paused)?;
+                if !changed {
+                    return Err(OrbitError::JobNotFound(job_id.to_string()));
+                }
+                Ok((
+                    (),
+                    OrbitEvent::JobPaused {
+                        job_id: job_id.to_string(),
+                    },
+                ))
+            })
+        }
     }
 
     pub fn resume_job(&self, job_id: &str) -> Result<(), OrbitError> {
@@ -151,58 +181,80 @@ impl OrbitRuntime {
         let next_run_at =
             crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
 
-        self.with_mutation(|tx| {
-            let changed = tx.set_job_state(job_id, JobScheduleState::Enabled)?;
+        if self.context.job_persistence_type == PersistenceType::File {
+            let changed = self
+                .context
+                .job_file_store
+                .set_job_state(job_id, JobScheduleState::Enabled)?;
             if !changed {
                 return Err(OrbitError::JobNotFound(job_id.to_string()));
             }
-            let _ = tx.update_job_next_run(job_id, next_run_at)?;
-            Ok((
-                (),
-                OrbitEvent::JobResumed {
-                    job_id: job_id.to_string(),
-                },
-            ))
-        })
+            let _ = self
+                .context
+                .job_file_store
+                .update_job_next_run(job_id, next_run_at)?;
+            self.record_event(OrbitEvent::JobResumed {
+                job_id: job_id.to_string(),
+            })
+        } else {
+            self.with_mutation(|tx| {
+                let changed = tx.set_job_state(job_id, JobScheduleState::Enabled)?;
+                if !changed {
+                    return Err(OrbitError::JobNotFound(job_id.to_string()));
+                }
+                let _ = tx.update_job_next_run(job_id, next_run_at)?;
+                Ok((
+                    (),
+                    OrbitEvent::JobResumed {
+                        job_id: job_id.to_string(),
+                    },
+                ))
+            })
+        }
     }
 
     pub fn delete_job(&self, job_id: &str) -> Result<(), OrbitError> {
-        self.with_mutation(|tx| {
-            let changed = tx.mark_job_disabled(job_id)?;
+        if self.context.job_persistence_type == PersistenceType::File {
+            let changed = self.context.job_file_store.mark_job_disabled(job_id)?;
             if !changed {
                 return Err(OrbitError::JobNotFound(job_id.to_string()));
             }
-            Ok((
-                (),
-                OrbitEvent::JobDeleted {
-                    job_id: job_id.to_string(),
-                },
-            ))
-        })
+            self.record_event(OrbitEvent::JobDeleted {
+                job_id: job_id.to_string(),
+            })
+        } else {
+            self.with_mutation(|tx| {
+                let changed = tx.mark_job_disabled(job_id)?;
+                if !changed {
+                    return Err(OrbitError::JobNotFound(job_id.to_string()));
+                }
+                Ok((
+                    (),
+                    OrbitEvent::JobDeleted {
+                        job_id: job_id.to_string(),
+                    },
+                ))
+            })
+        }
     }
 
     pub fn job_history(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
         let job = self.show_job(job_id)?;
         let _ = self.recover_stale_active_run_for_job(&job, Utc::now())?;
-        self.context.store.list_job_runs(job_id)
+        self.list_job_runs_backend(job_id)
     }
 
     pub fn run_job_now(&self, job_id: &str) -> Result<JobRunResult, OrbitError> {
         let job = self.show_job(job_id)?;
         let _ = self.recover_stale_active_run_for_job(&job, Utc::now())?;
-        if let Some(active_run) = self.context.store.get_pending_or_running_job_run(job_id)? {
+        if let Some(active_run) = self.get_pending_or_running_job_run_backend(job_id)? {
             return Err(OrbitError::JobValidation(format!(
                 "job '{}' already has an active run '{}' in state '{}'",
                 job_id, active_run.run_id, active_run.state
             )));
         }
-        self.with_mutation(|_| {
-            Ok((
-                (),
-                OrbitEvent::JobTriggered {
-                    job_id: job.job_id.clone(),
-                },
-            ))
+        self.record_event(OrbitEvent::JobTriggered {
+            job_id: job.job_id.clone(),
         })?;
 
         self.execute_job_with_retries(job, Utc::now(), None)
@@ -232,33 +284,25 @@ impl OrbitRuntime {
             let mut run = if let Some(existing) = pending_initial.take() {
                 existing
             } else {
-                self.with_mutation(|tx| {
-                    let run = tx.insert_job_run(&job.job_id, current_attempt, scheduled_at)?;
-                    Ok((
-                        run,
-                        OrbitEvent::JobRunStarted {
-                            job_id: job.job_id.clone(),
-                            run_id: String::new(),
-                            attempt: current_attempt,
-                        },
-                    ))
-                })?
+                let run =
+                    self.insert_job_run_backend(&job.job_id, current_attempt, scheduled_at)?;
+                self.record_event(OrbitEvent::JobRunStarted {
+                    job_id: job.job_id.clone(),
+                    run_id: String::new(),
+                    attempt: current_attempt,
+                })?;
+                run
             };
 
             let started_at = Utc::now();
-            self.with_mutation(|tx| {
-                let changed = tx.mark_job_run_running(&run.run_id, started_at)?;
-                if !changed {
-                    return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
-                }
-                Ok((
-                    (),
-                    OrbitEvent::JobRunStarted {
-                        job_id: job.job_id.clone(),
-                        run_id: run.run_id.clone(),
-                        attempt: run.attempt,
-                    },
-                ))
+            let changed = self.mark_job_run_running_backend(&run.run_id, started_at)?;
+            if !changed {
+                return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+            }
+            self.record_event(OrbitEvent::JobRunStarted {
+                job_id: job.job_id.clone(),
+                run_id: run.run_id.clone(),
+                attempt: run.attempt,
             })?;
             run.state = JobRunState::Running;
             run.started_at = Some(started_at);
@@ -266,44 +310,33 @@ impl OrbitRuntime {
             let outcome = self.execute_single_attempt(&job);
             let finished_at = Utc::now();
 
-            self.with_mutation(|tx| {
-                let changed = tx.complete_job_run(
-                    &run.run_id,
-                    outcome.state,
-                    finished_at,
-                    outcome.duration_ms,
-                    outcome.exit_code,
-                    outcome.response_json.as_ref(),
-                    outcome.error_code.as_deref(),
-                    outcome.error_message.as_deref(),
-                )?;
-                if !changed {
-                    return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
-                }
-
-                Ok((
-                    (),
-                    OrbitEvent::JobRunCompleted {
-                        job_id: job.job_id.clone(),
-                        run_id: run.run_id.clone(),
-                        state: outcome.state.to_string(),
-                    },
-                ))
+            let changed = self.complete_job_run_backend(
+                &run.run_id,
+                outcome.state,
+                finished_at,
+                outcome.duration_ms,
+                outcome.exit_code,
+                outcome.response_json.as_ref(),
+                outcome.error_code.as_deref(),
+                outcome.error_message.as_deref(),
+            )?;
+            if !changed {
+                return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+            }
+            self.record_event(OrbitEvent::JobRunCompleted {
+                job_id: job.job_id.clone(),
+                run_id: run.run_id.clone(),
+                state: outcome.state.to_string(),
             })?;
 
             if outcome.protocol_violation {
-                self.with_mutation(|_| {
-                    Ok((
-                        (),
-                        OrbitEvent::JobProtocolViolation {
-                            job_id: job.job_id.clone(),
-                            run_id: run.run_id.clone(),
-                            message: outcome
-                                .error_message
-                                .clone()
-                                .unwrap_or_else(|| "agent protocol violation".to_string()),
-                        },
-                    ))
+                self.record_event(OrbitEvent::JobProtocolViolation {
+                    job_id: job.job_id.clone(),
+                    run_id: run.run_id.clone(),
+                    message: outcome
+                        .error_message
+                        .clone()
+                        .unwrap_or_else(|| "agent protocol violation".to_string()),
                 })?;
             }
 
@@ -327,16 +360,11 @@ impl OrbitRuntime {
                 );
                 let next_retry_at = Utc::now() + chrono::Duration::seconds(delay_seconds as i64);
 
-                self.with_mutation(|tx| {
-                    let _ = tx.update_job_next_run(&job.job_id, next_retry_at)?;
-                    Ok((
-                        (),
-                        OrbitEvent::JobRetryScheduled {
-                            job_id: job.job_id.clone(),
-                            run_id: run.run_id.clone(),
-                            next_run_at: next_retry_at.to_rfc3339(),
-                        },
-                    ))
+                let _ = self.update_job_next_run_backend(&job.job_id, next_retry_at)?;
+                self.record_event(OrbitEvent::JobRetryScheduled {
+                    job_id: job.job_id.clone(),
+                    run_id: run.run_id.clone(),
+                    next_run_at: next_retry_at.to_rfc3339(),
                 })?;
 
                 if delay_seconds > 0 {
@@ -352,14 +380,9 @@ impl OrbitRuntime {
 
         let next_run_at =
             crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
-        let _ = self.with_mutation(|tx| {
-            let _ = tx.update_job_next_run(&job.job_id, next_run_at)?;
-            Ok((
-                (),
-                OrbitEvent::JobTriggered {
-                    job_id: job.job_id.clone(),
-                },
-            ))
+        let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
+        let _ = self.record_event(OrbitEvent::JobTriggered {
+            job_id: job.job_id.clone(),
         });
 
         last_result.ok_or(OrbitError::JobRunNotFound(job.job_id))
@@ -370,11 +393,7 @@ impl OrbitRuntime {
         job: &Job,
         now: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        let Some(active_run) = self
-            .context
-            .store
-            .get_pending_or_running_job_run(&job.job_id)?
-        else {
+        let Some(active_run) = self.get_pending_or_running_job_run_backend(&job.job_id)? else {
             return Ok(false);
         };
 
@@ -400,29 +419,23 @@ impl OrbitRuntime {
             STALE_RUN_GRACE_SECONDS
         );
 
-        self.with_mutation(|tx| {
-            let changed = tx.complete_job_run(
-                &active_run.run_id,
-                JobRunState::Failed,
-                now,
-                duration_ms,
-                Some(1),
-                None,
-                Some(AGENT_INVOCATION_FAILED),
-                Some(&message),
-            )?;
-            if !changed {
-                return Err(OrbitError::JobRunNotFound(active_run.run_id.clone()));
-            }
-
-            Ok((
-                (),
-                OrbitEvent::JobRunCompleted {
-                    job_id: job.job_id.clone(),
-                    run_id: active_run.run_id.clone(),
-                    state: JobRunState::Failed.to_string(),
-                },
-            ))
+        let changed = self.complete_job_run_backend(
+            &active_run.run_id,
+            JobRunState::Failed,
+            now,
+            duration_ms,
+            Some(1),
+            None,
+            Some(AGENT_INVOCATION_FAILED),
+            Some(&message),
+        )?;
+        if !changed {
+            return Err(OrbitError::JobRunNotFound(active_run.run_id.clone()));
+        }
+        self.record_event(OrbitEvent::JobRunCompleted {
+            job_id: job.job_id.clone(),
+            run_id: active_run.run_id.clone(),
+            state: JobRunState::Failed.to_string(),
         })?;
 
         Ok(true)
@@ -568,56 +581,31 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
     }
 
     fn build_stdin_envelope_payload(&self, job: &Job) -> Result<Vec<u8>, OrbitError> {
-        let envelope = match job.target_type {
-            JobTargetType::Work => {
-                let work = self
-                    .context
-                    .store
-                    .get_work(&job.target_id)?
-                    .ok_or_else(|| OrbitError::WorkNotFound(job.target_id.clone()))?;
-                let skills = self.resolve_work_skill_refs(&work.skill_refs)?;
-                ScheduledExecutionEnvelope {
-                    schema_version: 1,
-                    work: json!({
-                        "id": work.id,
-                        "type": work.spec_type,
-                        "description": work.description,
-                        "input_schema_json": work.input_schema_json,
-                        "output_schema_json": work.output_schema_json,
-                        "artifact_path_template": work.artifact_path_template,
-                        "skill_refs": work.skill_refs,
-                    }),
-                    skills: skills
-                        .into_iter()
-                        .map(|skill| ScheduledSkillEnvelope {
-                            id: skill.id,
-                            content_hash: skill.content_hash,
-                            content: skill.content,
-                            meta: skill.meta_raw,
-                        })
-                        .collect(),
-                    input: json!({}),
-                    memory: json!({}),
-                }
-            }
-            JobTargetType::Workflow => {
-                let workflow = self
-                    .context
-                    .store
-                    .get_workflow(&job.target_id)?
-                    .ok_or_else(|| OrbitError::WorkflowNotFound(job.target_id.clone()))?;
-                ScheduledExecutionEnvelope {
-                    schema_version: 1,
-                    work: json!({
-                        "id": workflow.id,
-                        "type": "workflow",
-                        "name": workflow.name,
-                        "definition_json": workflow.definition_json,
-                    }),
-                    skills: Vec::new(),
-                    input: json!({}),
-                    memory: json!({}),
-                }
+        let envelope = {
+            let work = self.show_work(&job.target_id)?;
+            let skills = self.resolve_work_skill_refs(&work.skill_refs)?;
+            ScheduledExecutionEnvelope {
+                schema_version: 1,
+                work: json!({
+                    "id": work.id,
+                    "type": work.spec_type,
+                    "description": work.description,
+                    "input_schema_json": work.input_schema_json,
+                    "output_schema_json": work.output_schema_json,
+                    "artifact_path_template": work.artifact_path_template,
+                    "skill_refs": work.skill_refs,
+                }),
+                skills: skills
+                    .into_iter()
+                    .map(|skill| ScheduledSkillEnvelope {
+                        id: skill.id,
+                        content_hash: skill.content_hash,
+                        content: skill.content,
+                        meta: skill.meta_raw,
+                    })
+                    .collect(),
+                input: json!({}),
+                memory: json!({}),
             }
         };
 
@@ -633,11 +621,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         if job.target_type != JobTargetType::Work {
             return Ok(());
         }
-        let work = self
-            .context
-            .store
-            .get_work(&job.target_id)?
-            .ok_or_else(|| OrbitError::WorkNotFound(job.target_id.clone()))?;
+        let work = self.show_work(&job.target_id)?;
         let skills = self.resolve_work_skill_refs(&work.skill_refs)?;
         let Some(result) = envelope.result.as_ref() else {
             return Err(OrbitError::AgentProtocolViolation(
@@ -668,20 +652,135 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         target_type: JobTargetType,
         target_id: &str,
     ) -> Result<(), OrbitError> {
-        match target_type {
-            JobTargetType::Work => {
-                let Some(work) = self.context.store.get_work(target_id)? else {
-                    return Err(OrbitError::WorkNotFound(target_id.to_string()));
-                };
-                let _ = self.resolve_work_skill_refs(&work.skill_refs)?;
-            }
-            JobTargetType::Workflow => {
-                if self.context.store.get_workflow(target_id)?.is_none() {
-                    return Err(OrbitError::WorkflowNotFound(target_id.to_string()));
-                }
-            }
-        }
+        let _ = target_type;
+        let work = self.show_work(target_id)?;
+        let _ = self.resolve_work_skill_refs(&work.skill_refs)?;
         Ok(())
+    }
+
+    fn list_jobs_backend(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context.job_file_store.list_jobs(include_disabled)
+        } else {
+            self.context.store.list_jobs(include_disabled)
+        }
+    }
+
+    fn get_job_backend(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context.job_file_store.get_job(job_id)
+        } else {
+            self.context.store.get_job(job_id)
+        }
+    }
+
+    fn list_job_runs_backend(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context.job_file_store.list_job_runs(job_id)
+        } else {
+            self.context.store.list_job_runs(job_id)
+        }
+    }
+
+    fn get_pending_or_running_job_run_backend(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<JobRun>, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context
+                .job_file_store
+                .get_pending_or_running_job_run(job_id)
+        } else {
+            self.context.store.get_pending_or_running_job_run(job_id)
+        }
+    }
+
+    fn insert_job_run_backend(
+        &self,
+        job_id: &str,
+        attempt: u32,
+        scheduled_at: DateTime<Utc>,
+    ) -> Result<JobRun, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context
+                .job_file_store
+                .insert_job_run(job_id, attempt, scheduled_at)
+        } else {
+            self.context
+                .store
+                .with_transaction(|tx| tx.insert_job_run(job_id, attempt, scheduled_at))
+        }
+    }
+
+    fn mark_job_run_running_backend(
+        &self,
+        run_id: &str,
+        started_at: DateTime<Utc>,
+    ) -> Result<bool, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context
+                .job_file_store
+                .mark_job_run_running(run_id, started_at)
+        } else {
+            self.context
+                .store
+                .with_transaction(|tx| tx.mark_job_run_running(run_id, started_at))
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn complete_job_run_backend(
+        &self,
+        run_id: &str,
+        state: JobRunState,
+        finished_at: DateTime<Utc>,
+        duration_ms: Option<u64>,
+        exit_code: Option<i32>,
+        agent_response_json: Option<&Value>,
+        error_code: Option<&str>,
+        error_message: Option<&str>,
+    ) -> Result<bool, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context.job_file_store.complete_job_run(
+                run_id,
+                state,
+                finished_at,
+                duration_ms,
+                exit_code,
+                agent_response_json,
+                error_code,
+                error_message,
+            )
+        } else {
+            self.context.store.with_transaction(|tx| {
+                tx.complete_job_run(
+                    run_id,
+                    state,
+                    finished_at,
+                    duration_ms,
+                    exit_code,
+                    agent_response_json,
+                    error_code,
+                    error_message,
+                )
+            })
+        }
+    }
+
+    fn update_job_next_run_backend(
+        &self,
+        job_id: &str,
+        next_run_at: DateTime<Utc>,
+    ) -> Result<bool, OrbitError> {
+        if self.context.job_persistence_type == PersistenceType::File {
+            self.context
+                .job_file_store
+                .update_job_next_run(job_id, next_run_at)
+        } else {
+            self.context
+                .store
+                .with_transaction(|tx| tx.update_job_next_run(job_id, next_run_at))
+        }
     }
 }
 

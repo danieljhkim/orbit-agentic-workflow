@@ -11,7 +11,6 @@ pub mod task;
 pub mod tool;
 pub mod watch;
 pub mod work;
-pub mod workflow;
 
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
@@ -29,7 +28,6 @@ pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
 pub use work::Work;
-pub use workflow::Workflow;
 
 #[cfg(test)]
 mod tests {
@@ -37,7 +35,7 @@ mod tests {
 
     use crate::{
         AgentResponseEnvelope, ExecutionResult, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
-        JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, Work, Workflow,
+        JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, Work,
     };
 
     #[test]
@@ -139,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn work_and_workflow_shapes_are_stable() {
+    fn work_shape_is_stable() {
         let spec = Work {
             id: "exec-1".to_string(),
             spec_type: "analysis".to_string(),
@@ -161,20 +159,6 @@ mod tests {
         let spec_json = serde_json::to_value(spec).expect("serialize spec");
         assert_eq!(spec_json["spec_type"], "analysis");
         assert_eq!(spec_json["is_active"], true);
-
-        let workflow = Workflow {
-            id: "wf-1".to_string(),
-            name: "Weekly Review".to_string(),
-            definition_json: serde_json::json!({
-                "steps": [{ "work_id": "exec-1" }]
-            }),
-            is_active: true,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
-        let workflow_json = serde_json::to_value(workflow).expect("serialize workflow");
-        assert_eq!(workflow_json["name"], "Weekly Review");
-        assert!(workflow_json["definition_json"]["steps"].is_array());
     }
 
     #[test]

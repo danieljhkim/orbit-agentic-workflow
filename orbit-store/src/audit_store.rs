@@ -91,8 +91,6 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::SkillDetached { .. } => "SkillDetached",
         OrbitEvent::WorkAdded { .. } => "WorkAdded",
         OrbitEvent::WorkDisabled { .. } => "WorkDisabled",
-        OrbitEvent::WorkflowAdded { .. } => "WorkflowAdded",
-        OrbitEvent::WorkflowDisabled { .. } => "WorkflowDisabled",
         OrbitEvent::AgentSessionStarted { .. } => "AgentSessionStarted",
         OrbitEvent::AgentToolCall { .. } => "AgentToolCall",
         OrbitEvent::AgentSessionCompleted { .. } => "AgentSessionCompleted",
@@ -154,8 +152,6 @@ fn event_message(event: &OrbitEvent) -> String {
         } => format!("skill detached: {skill_name} -> {task_id}"),
         OrbitEvent::WorkAdded { id } => format!("work added: {id}"),
         OrbitEvent::WorkDisabled { id } => format!("work disabled: {id}"),
-        OrbitEvent::WorkflowAdded { id } => format!("workflow added: {id}"),
-        OrbitEvent::WorkflowDisabled { id } => format!("workflow disabled: {id}"),
         OrbitEvent::AgentSessionStarted {
             session_id,
             task_id,

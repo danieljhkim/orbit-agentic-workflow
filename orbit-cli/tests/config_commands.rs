@@ -26,13 +26,23 @@ fn config_show_json_uses_defaults_when_config_file_missing() {
     assert_eq!(value["execution"]["env"]["inherit"], false);
     assert_eq!(
         value["execution"]["env"]["pass"],
-        serde_json::json!([
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "HOME",
-            "PATH",
-            "CODEX_HOME"
-        ])
+        serde_json::json!(["HOME", "PATH", "CODEX_HOME"])
+    );
+    assert_eq!(
+        value["persistence"]["job"]["persistence"]["type"],
+        serde_json::json!("file")
+    );
+    assert_eq!(
+        value["persistence"]["work"]["persistence"]["type"],
+        serde_json::json!("file")
+    );
+    assert_eq!(
+        value["persistence"]["watch"]["persistence"]["type"],
+        serde_json::json!("sqlite")
+    );
+    assert_eq!(
+        value["persistence"]["audit"]["persistence"]["type"],
+        serde_json::json!("sqlite")
     );
 }
 
@@ -43,7 +53,7 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
     std::fs::write(
         orbit_dir.join("config.toml"),
-        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n",
+        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[job]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
     )
     .expect("write config");
 
@@ -61,5 +71,9 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     assert_eq!(
         value["execution"]["env"]["pass"],
         serde_json::json!(["HOME", "PATH"])
+    );
+    assert_eq!(
+        value["persistence"]["job"]["persistence"]["type"],
+        serde_json::json!("sqlite")
     );
 }

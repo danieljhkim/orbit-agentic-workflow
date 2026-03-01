@@ -269,24 +269,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Workflow(cmd) => {
-            use crate::command::workflow::WorkflowSubcommand;
-            let (sub, target_id) = match &cmd.command {
-                WorkflowSubcommand::Add(args) => ("add", Some(args.id.as_str())),
-                WorkflowSubcommand::List(_) => ("list", None),
-                WorkflowSubcommand::Show(args) => ("show", Some(args.id.as_str())),
-                WorkflowSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
-            };
-            CommandMeta {
-                command: "workflow".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("workflow".to_string()),
-                target_id: target_id.map(String::from),
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
         Commands::Watch(_) => CommandMeta {
             command: "watch".to_string(),
             subcommand: None,

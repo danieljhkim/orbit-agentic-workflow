@@ -247,7 +247,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
             r#"
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -277,7 +277,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
 
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -334,7 +334,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
 
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -480,7 +480,7 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
 
     let non_work_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM jobs WHERE target_type NOT IN ('work', 'workflow')",
+            "SELECT COUNT(*) FROM jobs WHERE target_type NOT IN ('work')",
             [],
             |row| row.get(0),
         )
@@ -497,7 +497,7 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
         r#"
             CREATE TABLE jobs_rewrite (
                 id TEXT PRIMARY KEY,
-                target_type TEXT NOT NULL CHECK (target_type IN ('work','workflow')),
+                target_type TEXT NOT NULL CHECK (target_type IN ('work')),
                 target_id TEXT NOT NULL,
                 schedule TEXT NOT NULL,
                 agent_cli TEXT NOT NULL,
@@ -518,10 +518,7 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
             )
             SELECT
                 id,
-                CASE
-                    WHEN target_type = 'workflow' THEN 'workflow'
-                    ELSE 'work'
-                END,
+                'work',
                 target_id,
                 schedule,
                 agent_cli,
@@ -610,6 +607,8 @@ fn ensure_tools_schema(conn: &Connection) -> Result<(), OrbitError> {
 fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> {
     conn.execute_batch(
         r#"
+            DROP TABLE IF EXISTS workflows;
+
             CREATE TABLE IF NOT EXISTS works (
                 id TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
@@ -628,18 +627,6 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
 
             CREATE INDEX IF NOT EXISTS idx_works_active
             ON works(is_active);
-
-            CREATE TABLE IF NOT EXISTS workflows (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                definition_json TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_workflows_active
-            ON workflows(is_active);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))
@@ -1041,7 +1028,7 @@ mod tests {
             r#"
                 CREATE TABLE jobs (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('legacy_target','workflow')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('legacy_target','work')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,

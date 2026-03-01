@@ -7,7 +7,6 @@ pub mod task;
 pub mod tool;
 pub mod watch;
 pub mod work;
-pub mod workflow;
 
 use clap::{Parser, Subcommand};
 use orbit_core::{OrbitError, OrbitRuntime};
@@ -33,7 +32,6 @@ pub enum Commands {
     Audit(audit::AuditCommand),
     Work(work::WorkCommand),
     Skill(skill::SkillCommand),
-    Workflow(workflow::WorkflowCommand),
     Job(job::JobCommand),
     Watch(watch::WatchCommand),
 }
@@ -48,7 +46,6 @@ impl Execute for Commands {
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Work(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),
-            Commands::Workflow(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::Watch(cmd) => cmd.execute(runtime),
         }
