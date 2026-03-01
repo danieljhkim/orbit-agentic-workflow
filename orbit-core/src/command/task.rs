@@ -1,4 +1,5 @@
 use orbit_types::{OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
+use std::path::Path;
 
 use crate::OrbitRuntime;
 use crate::task_file_store::{FileTaskInsert, FileTaskUpdate};
@@ -8,6 +9,7 @@ pub struct TaskAddParams {
     pub description: String,
     pub instructions: String,
     pub context_files: Vec<String>,
+    pub workspace_path: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -21,6 +23,7 @@ impl Default for TaskAddParams {
             description: String::new(),
             instructions: String::new(),
             context_files: Vec::new(),
+            workspace_path: None,
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
             owner: String::new(),
@@ -34,6 +37,7 @@ pub struct TaskUpdateParams {
     pub description: Option<String>,
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
+    pub workspace_path: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -52,12 +56,15 @@ impl OrbitRuntime {
             }
         }
 
+        let workspace_path = normalize_workspace_path(params.workspace_path)?;
+
         self.with_mutation(|_| {
             let task = self.context.task_store.create_task(FileTaskInsert {
                 title: params.title.clone(),
                 description: params.description.clone(),
                 instructions: params.instructions.clone(),
                 context_files: params.context_files.clone(),
+                workspace_path: workspace_path.clone(),
                 priority: params.priority,
                 task_type: params.task_type,
                 owner: params.owner.clone(),
@@ -106,6 +113,11 @@ impl OrbitRuntime {
             }
         }
 
+        let workspace_path = match params.workspace_path {
+            Some(value) => Some(normalize_workspace_path(value)?),
+            None => None,
+        };
+
         let task = self.with_mutation(|_| {
             let task = self.context.task_store.update_task(
                 id,
@@ -114,6 +126,7 @@ impl OrbitRuntime {
                     description: params.description,
                     instructions: params.instructions,
                     context_files: params.context_files,
+                    workspace_path,
                     status: params.status,
                     priority: params.priority,
                     task_type: params.task_type,
@@ -184,4 +197,32 @@ impl OrbitRuntime {
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.context.task_store.search_tasks(query)
     }
+}
+
+fn normalize_workspace_path(raw: Option<String>) -> Result<Option<String>, OrbitError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let path = Path::new(trimmed);
+    if !path.exists() {
+        return Err(OrbitError::InvalidInput(format!(
+            "workspace path does not exist: {trimmed}"
+        )));
+    }
+    if !path.is_dir() {
+        return Err(OrbitError::InvalidInput(format!(
+            "workspace path is not a directory: {trimmed}"
+        )));
+    }
+
+    let canonical = path.canonicalize().map_err(|e| {
+        OrbitError::InvalidInput(format!("failed to canonicalize workspace path '{trimmed}': {e}"))
+    })?;
+    Ok(Some(canonical.to_string_lossy().to_string()))
 }

@@ -68,6 +68,9 @@ pub struct TaskAddArgs {
     /// Comma-separated context file paths
     #[arg(long, default_value = "")]
     pub context: String,
+    /// Repository workspace path
+    #[arg(long)]
+    pub workspace: Option<String>,
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
@@ -89,6 +92,7 @@ impl Execute for TaskAddArgs {
             description: self.description,
             instructions: self.instructions,
             context_files: parse_context_csv(&self.context),
+            workspace_path: self.workspace,
             priority: self.priority,
             task_type: self.task_type,
             owner: self.owner,
@@ -174,6 +178,9 @@ impl Execute for TaskShowArgs {
             if !task.context_files.is_empty() {
                 println!("Context:     {}", task.context_files.join(", "));
             }
+            if let Some(ref workspace_path) = task.workspace_path {
+                println!("Workspace:   {}", workspace_path);
+            }
             if !task.owner.is_empty() {
                 println!("Owner:       {}", task.owner);
             }
@@ -205,6 +212,9 @@ pub struct TaskUpdateArgs {
     /// New comma-separated context files (empty string clears all)
     #[arg(long)]
     pub context: Option<String>,
+    /// New workspace path (use empty string to clear)
+    #[arg(long)]
+    pub workspace: Option<String>,
     /// New status
     #[arg(long, value_enum)]
     pub status: Option<TaskStatus>,
@@ -227,6 +237,9 @@ impl Execute for TaskUpdateArgs {
         let parent_id = self
             .parent
             .map(|p| if p.is_empty() { None } else { Some(p) });
+        let workspace_path = self
+            .workspace
+            .map(|value| if value.trim().is_empty() { None } else { Some(value) });
 
         let task = runtime.update_task(
             &self.id,
@@ -235,6 +248,7 @@ impl Execute for TaskUpdateArgs {
                 description: self.description,
                 instructions: self.instructions,
                 context_files: self.context.map(|raw| parse_context_csv(&raw)),
+                workspace_path,
                 status: self.status,
                 priority: self.priority,
                 task_type: self.task_type,
@@ -339,6 +353,7 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "description": task.description,
         "instructions": task.instructions,
         "context_files": task.context_files,
+        "workspace_path": task.workspace_path,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
         "type": task.task_type.to_string(),

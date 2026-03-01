@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use orbit_types::OrbitError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -50,6 +50,12 @@ struct ParsedMetaJson {
     meta: Option<SkillMeta>,
     meta_raw: Option<Value>,
     output_schema: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SkillFrontmatter {
+    name: Option<String>,
+    description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -194,6 +200,8 @@ impl SkillCatalog {
 }
 
 fn parse_skill_markdown(raw: &str) -> Result<SkillSections, OrbitError> {
+    validate_required_frontmatter(raw)?;
+
     let mut current_section: Option<String> = None;
     let mut section_map: BTreeMap<String, String> = BTreeMap::new();
 
@@ -216,19 +224,6 @@ fn parse_skill_markdown(raw: &str) -> Result<SkillSections, OrbitError> {
         entry.push('\n');
     }
 
-    let Some(value) = section_map.get(PURPOSE_SECTION) else {
-        return Err(OrbitError::SkillValidation(format!(
-            "missing required section '{}'",
-            PURPOSE_SECTION
-        )));
-    };
-    if value.trim().is_empty() {
-        return Err(OrbitError::SkillValidation(format!(
-            "section '{}' must not be empty",
-            PURPOSE_SECTION
-        )));
-    }
-
     Ok(SkillSections {
         purpose: section_map
             .get(PURPOSE_SECTION)
@@ -249,6 +244,69 @@ fn parse_skill_markdown(raw: &str) -> Result<SkillSections, OrbitError> {
             .get("Prohibitions")
             .map(|v| v.trim().to_string()),
         examples: section_map.get("Examples").map(|v| v.trim().to_string()),
+    })
+}
+
+fn validate_required_frontmatter(raw: &str) -> Result<(), OrbitError> {
+    let fm = parse_frontmatter(raw)?;
+
+    let Some(name) = fm.name else {
+        return Err(OrbitError::SkillValidation(
+            "missing required frontmatter field 'name'".to_string(),
+        ));
+    };
+    if name.trim().is_empty() {
+        return Err(OrbitError::SkillValidation(
+            "frontmatter field 'name' must not be empty".to_string(),
+        ));
+    }
+
+    let Some(description) = fm.description else {
+        return Err(OrbitError::SkillValidation(
+            "missing required frontmatter field 'description'".to_string(),
+        ));
+    };
+    if description.trim().is_empty() {
+        return Err(OrbitError::SkillValidation(
+            "frontmatter field 'description' must not be empty".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn parse_frontmatter(raw: &str) -> Result<SkillFrontmatter, OrbitError> {
+    let mut lines = raw.lines();
+    let Some(first_line) = lines.next() else {
+        return Err(OrbitError::SkillValidation(
+            "missing frontmatter block".to_string(),
+        ));
+    };
+    if first_line.trim() != "---" {
+        return Err(OrbitError::SkillValidation(
+            "missing frontmatter block".to_string(),
+        ));
+    }
+
+    let mut fm_lines: Vec<&str> = Vec::new();
+    let mut found_end = false;
+    for line in lines {
+        if line.trim() == "---" {
+            found_end = true;
+            break;
+        }
+        fm_lines.push(line);
+    }
+
+    if !found_end {
+        return Err(OrbitError::SkillValidation(
+            "unterminated frontmatter block".to_string(),
+        ));
+    }
+
+    let fm_raw = fm_lines.join("\n");
+    serde_yaml::from_str::<SkillFrontmatter>(&fm_raw).map_err(|e| {
+        OrbitError::SkillValidation(format!("invalid skill frontmatter: {e}"))
     })
 }
 

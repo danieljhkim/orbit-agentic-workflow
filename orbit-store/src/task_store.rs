@@ -28,12 +28,13 @@ fn parse_context_files(raw: &str) -> rusqlite::Result<Vec<String>> {
 
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let context_files_raw: String = row.get(4)?;
-    let status_raw: String = row.get(5)?;
-    let priority_raw: String = row.get(6)?;
-    let task_type_raw: String = row.get(7)?;
-    let parent_id: Option<String> = row.get(9)?;
-    let created_at_raw: String = row.get(10)?;
-    let updated_at_raw: String = row.get(11)?;
+    let workspace_path: Option<String> = row.get(5)?;
+    let status_raw: String = row.get(6)?;
+    let priority_raw: String = row.get(7)?;
+    let task_type_raw: String = row.get(8)?;
+    let parent_id: Option<String> = row.get(10)?;
+    let created_at_raw: String = row.get(11)?;
+    let updated_at_raw: String = row.get(12)?;
 
     Ok(Task {
         id: row.get(0)?,
@@ -41,17 +42,18 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         description: row.get(2)?,
         instructions: row.get(3)?,
         context_files: parse_context_files(&context_files_raw)?,
+        workspace_path,
         status: parse_status(&status_raw),
         priority: parse_priority(&priority_raw),
         task_type: parse_task_type(&task_type_raw),
-        owner: row.get(8)?,
+        owner: row.get(9)?,
         parent_id,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,
     })
 }
 
-const SELECT_COLS: &str = "id, title, description, instructions, context_files, status, priority, task_type, owner, parent_id, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, status, priority, task_type, owner, parent_id, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -159,6 +161,7 @@ pub struct TaskInsertParams {
     pub description: String,
     pub instructions: String,
     pub context_files: Vec<String>,
+    pub workspace_path: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -172,6 +175,7 @@ impl Default for TaskInsertParams {
             description: String::new(),
             instructions: String::new(),
             context_files: Vec::new(),
+            workspace_path: None,
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
             owner: String::new(),
@@ -186,6 +190,7 @@ pub struct TaskUpdateFields {
     pub description: Option<String>,
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
+    pub workspace_path: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -204,6 +209,7 @@ impl<'a> StoreTx<'a> {
             description: params.description.clone(),
             instructions: params.instructions.clone(),
             context_files: params.context_files.clone(),
+            workspace_path: params.workspace_path.clone(),
             status: TaskStatus::Todo,
             priority: params.priority,
             task_type: params.task_type,
@@ -215,13 +221,14 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, instructions, context_files, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     task.id,
                     task.title,
                     task.description,
                     task.instructions,
                     context_files_json,
+                    task.workspace_path,
                     task.status.to_string(),
                     task.priority.to_string(),
                     task.task_type.to_string(),
@@ -256,6 +263,10 @@ impl<'a> StoreTx<'a> {
             sets.push("context_files = ?");
             let as_json = serde_json::to_string(v).map_err(|e| OrbitError::Store(e.to_string()))?;
             param_values.push(Box::new(as_json));
+        }
+        if let Some(ref v) = fields.workspace_path {
+            sets.push("workspace_path = ?");
+            param_values.push(Box::new(v.clone()));
         }
         if let Some(v) = fields.status {
             sets.push("status = ?");
@@ -347,8 +358,9 @@ mod tests {
                     description: "a description".to_string(),
                     instructions: "step one".to_string(),
                     context_files: vec!["ARCHITECTURE.md".to_string()],
+                    workspace_path: None,
                     priority: TaskPriority::High,
-                    task_type: TaskType::Bug,
+                    task_type: TaskType::Issue,
                     owner: "alice".to_string(),
                     parent_id: None,
                 })
@@ -361,7 +373,7 @@ mod tests {
         assert_eq!(found.instructions, "step one");
         assert_eq!(found.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(found.priority, TaskPriority::High);
-        assert_eq!(found.task_type, TaskType::Bug);
+        assert_eq!(found.task_type, TaskType::Issue);
         assert_eq!(found.owner, "alice");
         assert_eq!(found.status, TaskStatus::Todo);
     }

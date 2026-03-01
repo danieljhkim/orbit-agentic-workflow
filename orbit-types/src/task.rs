@@ -85,7 +85,8 @@ impl FromStr for TaskPriority {
 pub enum TaskType {
     Task,
     Feature,
-    Bug,
+    #[value(alias = "bug")]
+    Issue,
     Other,
 }
 
@@ -94,7 +95,7 @@ impl Display for TaskType {
         let s = match self {
             TaskType::Task => "task",
             TaskType::Feature => "feature",
-            TaskType::Bug => "bug",
+            TaskType::Issue => "issue",
             TaskType::Other => "other",
         };
         write!(f, "{s}")
@@ -108,7 +109,8 @@ impl FromStr for TaskType {
         match s {
             "task" => Ok(TaskType::Task),
             "feature" => Ok(TaskType::Feature),
-            "bug" => Ok(TaskType::Bug),
+            "issue" => Ok(TaskType::Issue),
+            "bug" => Ok(TaskType::Issue),
             "other" => Ok(TaskType::Other),
             other => Err(format!("unknown task type: {other}")),
         }
@@ -122,6 +124,8 @@ pub struct Task {
     pub description: String,
     pub instructions: String,
     pub context_files: Vec<String>,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub task_type: TaskType,

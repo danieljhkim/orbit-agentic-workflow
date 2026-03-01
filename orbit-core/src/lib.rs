@@ -318,8 +318,9 @@ mod tests {
                 description: "detailed".to_string(),
                 instructions: "steps".to_string(),
                 context_files: vec!["ARCHITECTURE.md".to_string()],
+                workspace_path: None,
                 priority: TaskPriority::High,
-                task_type: TaskType::Bug,
+                task_type: TaskType::Issue,
                 owner: "alice".to_string(),
                 parent_id: None,
             })
@@ -330,7 +331,7 @@ mod tests {
         assert_eq!(task.instructions, "steps");
         assert_eq!(task.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(task.priority, TaskPriority::High);
-        assert_eq!(task.task_type, TaskType::Bug);
+        assert_eq!(task.task_type, TaskType::Issue);
         assert_eq!(task.owner, "alice");
         assert_eq!(task.status, TaskStatus::Todo);
     }
@@ -355,6 +356,17 @@ mod tests {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let result = runtime.get_task("task-nonexistent");
         assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
+    }
+
+    #[test]
+    fn add_task_rejects_nonexistent_workspace() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let result = runtime.add_task(TaskAddParams {
+            title: "invalid workspace".to_string(),
+            workspace_path: Some("/path/does/not/exist".to_string()),
+            ..Default::default()
+        });
+        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
     }
 
     #[test]
@@ -424,6 +436,7 @@ mod tests {
                     description: Some("new desc".to_string()),
                     instructions: None,
                     context_files: None,
+                    workspace_path: None,
                     status: None,
                     priority: Some(TaskPriority::High),
                     task_type: None,

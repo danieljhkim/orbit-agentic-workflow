@@ -10,6 +10,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 description TEXT NOT NULL DEFAULT '',
                 instructions TEXT NOT NULL DEFAULT '',
                 context_files TEXT NOT NULL DEFAULT '[]',
+                workspace_path TEXT,
                 status TEXT NOT NULL DEFAULT 'todo',
                 priority TEXT NOT NULL DEFAULT 'medium',
                 task_type TEXT NOT NULL DEFAULT 'task',
@@ -188,6 +189,7 @@ fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
         conn,
         "ALTER TABLE tasks ADD COLUMN context_files TEXT NOT NULL DEFAULT '[]'",
     )?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN workspace_path TEXT")?;
     add_column_if_missing(
         conn,
         "ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'todo'",

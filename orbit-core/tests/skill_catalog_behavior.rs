@@ -158,7 +158,7 @@ fn doctor_reports_invalid_skill() {
         "broken",
         r#"---
 name: broken
-description: Broken skill fixture.
+description:
 ---
 
 # Broken
@@ -171,7 +171,7 @@ description: Broken skill fixture.
     let report = catalog.doctor().expect("doctor");
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, SkillCatalogDoctorStatus::Error);
-    assert!(report[0].message.contains("must not be empty"));
+    assert!(report[0].message.contains("description"));
 }
 
 #[test]

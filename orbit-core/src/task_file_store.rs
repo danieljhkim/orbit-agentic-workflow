@@ -16,6 +16,7 @@ pub(crate) struct FileTaskInsert {
     pub description: String,
     pub instructions: String,
     pub context_files: Vec<String>,
+    pub workspace_path: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -28,6 +29,7 @@ pub(crate) struct FileTaskUpdate {
     pub description: Option<String>,
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
+    pub workspace_path: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -97,6 +99,8 @@ struct TaskFileDocument {
     instructions: String,
     #[serde(default)]
     context_files: Vec<String>,
+    #[serde(default)]
+    workspace_path: Option<String>,
     priority: TaskPriority,
     #[serde(rename = "type", default = "default_task_type")]
     task_type: TaskType,
@@ -171,6 +175,7 @@ impl TaskFileStore {
                 description: task.description.clone(),
                 instructions: task.instructions.clone(),
                 context_files: task.context_files.clone(),
+                workspace_path: task.workspace_path.clone(),
                 priority: task.priority,
                 task_type: task.task_type,
                 owner: task.owner.clone(),
@@ -214,6 +219,7 @@ impl TaskFileStore {
             description: params.description,
             instructions: params.instructions,
             context_files: params.context_files,
+            workspace_path: params.workspace_path,
             priority: params.priority,
             task_type: params.task_type,
             owner: params.owner,
@@ -321,6 +327,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.context_files {
             doc.context_files = value.clone();
+        }
+        if let Some(value) = &fields.workspace_path {
+            doc.workspace_path = value.clone();
         }
         if let Some(value) = fields.priority {
             doc.priority = value;
@@ -477,6 +486,7 @@ fn doc_to_task(state: TaskStateDir, doc: TaskFileDocument) -> Task {
         description: doc.description,
         instructions: doc.instructions,
         context_files: doc.context_files,
+        workspace_path: doc.workspace_path,
         status: state.to_status(),
         priority: doc.priority,
         task_type: doc.task_type,
