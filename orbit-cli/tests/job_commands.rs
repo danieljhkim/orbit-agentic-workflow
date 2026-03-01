@@ -132,7 +132,7 @@ fn job_add_defaults_type_and_schemas_when_omitted() {
 }
 
 #[test]
-fn workflow_command_is_not_supported() {
+fn legacy_workflow_command_is_not_supported() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())

@@ -235,7 +235,7 @@ fn scheduler_run_failure_json_includes_error_details() {
 }
 
 #[test]
-fn scheduler_add_rejects_workflow_target_type() {
+fn scheduler_add_rejects_legacy_workflow_target_type() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())

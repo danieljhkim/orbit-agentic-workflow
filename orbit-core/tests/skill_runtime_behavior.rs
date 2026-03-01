@@ -86,7 +86,7 @@ fn legacy_task_skill_attachment_commands_are_disabled() {
 }
 
 #[test]
-fn file_skill_catalog_commands_work() {
+fn file_skill_catalog_commands_succeed() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let skill_dir = dir.path().join("skills").join("orbit-assess-codebase");

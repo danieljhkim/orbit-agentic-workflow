@@ -31,7 +31,7 @@ fn add_job(runtime: &OrbitRuntime, id: &str) {
 }
 
 #[test]
-fn add_work_rejects_missing_skill_ref() {
+fn add_job_rejects_missing_skill_ref() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
 
@@ -84,7 +84,7 @@ fn write_runtime_config(data_root: &std::path::Path, content: &str) {
     std::fs::write(data_root.join("config.toml"), content).expect("write config");
 }
 
-fn write_sqlite_job_config(data_root: &std::path::Path) {
+fn write_sqlite_scheduler_config(data_root: &std::path::Path) {
     let db_path = data_root.join("orbit.db").to_string_lossy().to_string();
     write_runtime_config(
         data_root,
@@ -106,7 +106,7 @@ fn insert_stale_running_run(data_root: &std::path::Path, scheduler_id: &str) -> 
 }
 
 #[test]
-fn scheduled_job_run_executes_agent_and_records_success_run() {
+fn scheduled_run_executes_agent_and_records_success_run() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let args_capture = dir.path().join("args.txt");
@@ -231,7 +231,7 @@ fn invocation_failure_with_stderr_marks_run_failed_with_invocation_error() {
 }
 
 #[test]
-fn codex_job_fails_fast_when_required_env_var_is_not_allowlisted() {
+fn codex_scheduler_run_fails_fast_when_required_env_var_is_not_allowlisted() {
     let dir = tempdir().expect("tempdir");
     write_runtime_config(
         dir.path(),
@@ -271,7 +271,7 @@ pass = ["PATH"]
 }
 
 #[test]
-fn claude_job_fails_fast_when_required_env_var_is_not_allowlisted() {
+fn claude_scheduler_run_fails_fast_when_required_env_var_is_not_allowlisted() {
     let dir = tempdir().expect("tempdir");
     write_runtime_config(
         dir.path(),
@@ -352,7 +352,7 @@ fn provider_required_env_present_reaches_protocol_validation() {
 }
 
 #[test]
-fn run_job_now_applies_retry_policy_and_second_attempt_can_succeed() {
+fn run_scheduler_now_applies_retry_policy_and_second_attempt_can_succeed() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let marker = dir.path().join("retry.marker");
@@ -386,7 +386,7 @@ fn run_job_now_applies_retry_policy_and_second_attempt_can_succeed() {
 }
 
 #[test]
-fn run_job_now_rejects_when_active_run_exists() {
+fn run_scheduler_now_rejects_when_active_run_exists() {
     let dir = tempdir().expect("tempdir");
     let runtime = Arc::new(OrbitRuntime::from_data_root(dir.path()).expect("runtime"));
     let script_path = dir.path().join("mock-agent");
@@ -431,7 +431,7 @@ fn run_job_now_rejects_when_active_run_exists() {
 #[test]
 fn scheduler_history_recovers_stale_running_run_to_failed() {
     let dir = tempdir().expect("tempdir");
-    write_sqlite_job_config(dir.path());
+    write_sqlite_scheduler_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(
@@ -467,9 +467,9 @@ fn scheduler_history_recovers_stale_running_run_to_failed() {
 }
 
 #[test]
-fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
+fn run_scheduler_now_recovers_stale_running_run_and_executes_new_attempt() {
     let dir = tempdir().expect("tempdir");
-    write_sqlite_job_config(dir.path());
+    write_sqlite_scheduler_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(
@@ -509,9 +509,9 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
 }
 
 #[test]
-fn run_due_jobs_recovers_stale_running_run_and_reclaims_job() {
+fn run_due_schedulers_recovers_stale_running_run_and_reclaims_scheduler() {
     let dir = tempdir().expect("tempdir");
-    write_sqlite_job_config(dir.path());
+    write_sqlite_scheduler_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(
@@ -547,7 +547,7 @@ fn run_due_jobs_recovers_stale_running_run_and_reclaims_job() {
 }
 
 #[test]
-fn concurrent_job_run_invocations_do_not_double_run_job() {
+fn concurrent_scheduler_run_invocations_do_not_double_run_scheduler() {
     let dir = tempdir().expect("tempdir");
     let runtime = Arc::new(OrbitRuntime::from_data_root(dir.path()).expect("runtime"));
     let script_path = dir.path().join("mock-agent");

@@ -4,7 +4,7 @@ use orbit_store::task_store::TaskInsertParams;
 use orbit_types::{SchedulerRetryBackoffStrategy, SchedulerTargetType};
 
 #[test]
-fn due_jobs_query_returns_scheduled_jobs() {
+fn due_schedulers_query_returns_scheduled_entries() {
     let store = Store::open_in_memory().expect("store");
     let next_run = Utc::now();
 

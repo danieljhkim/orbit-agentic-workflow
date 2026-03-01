@@ -55,7 +55,7 @@ fn scheduler_state_transitions_and_disabled_visibility() {
 }
 
 #[test]
-fn claim_due_jobs_skips_when_pending_or_running_run_exists() {
+fn claim_due_schedulers_skips_when_pending_or_running_run_exists() {
     let store = Store::open_in_memory().expect("store");
     let now = Utc::now();
 
@@ -91,7 +91,7 @@ fn claim_due_jobs_skips_when_pending_or_running_run_exists() {
 }
 
 #[test]
-fn complete_job_run_updates_terminal_state_and_error_fields() {
+fn complete_scheduler_run_updates_terminal_state_and_error_fields() {
     let store = Store::open_in_memory().expect("store");
     let now = Utc::now();
 
