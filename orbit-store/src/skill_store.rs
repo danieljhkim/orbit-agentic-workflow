@@ -1,6 +1,7 @@
 use chrono::Utc;
 use orbit_types::{
-    AgentSession, AgentSessionStatus, AgentToolCall, OrbitError, Skill, TaskSkillAttachment,
+    AgentSession, AgentSessionStatus, AgentToolCall, IdentityRole, OrbitError, Skill,
+    TaskSkillAttachment,
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -152,16 +153,28 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         conn.query_row(
-            "SELECT session_id, task_id, skill_names, composed_context_hash, effective_allowed_tools, tool_calls, outcome, status, created_at, updated_at
+            "SELECT session_id, task_id, identity_id, identity_name, identity_role, identity_block, skill_names, composed_context_hash, effective_allowed_tools, tool_calls, outcome, status, created_at, updated_at
              FROM agent_sessions WHERE session_id = ?1",
             [session_id],
             |row| {
-                let skill_names_raw: String = row.get(2)?;
-                let effective_allowed_tools_raw: String = row.get(4)?;
-                let tool_calls_raw: String = row.get(5)?;
-                let status_raw: String = row.get(7)?;
-                let created_at_raw: String = row.get(8)?;
-                let updated_at_raw: String = row.get(9)?;
+                let identity_role_raw: Option<String> = row.get(4)?;
+                let skill_names_raw: String = row.get(6)?;
+                let effective_allowed_tools_raw: String = row.get(8)?;
+                let tool_calls_raw: String = row.get(9)?;
+                let status_raw: String = row.get(11)?;
+                let created_at_raw: String = row.get(12)?;
+                let updated_at_raw: String = row.get(13)?;
+                let identity_role = identity_role_raw
+                    .as_deref()
+                    .map(|v| v.parse::<IdentityRole>())
+                    .transpose()
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+                        )
+                    })?;
 
                 let skill_names = serde_json::from_str(&skill_names_raw).map_err(|e| {
                     rusqlite::Error::FromSqlConversionFailure(
@@ -189,11 +202,15 @@ impl Store {
                 Ok(AgentSession {
                     session_id: row.get(0)?,
                     task_id: row.get(1)?,
+                    identity_id: row.get(2)?,
+                    identity_name: row.get(3)?,
+                    identity_role,
+                    identity_block: row.get(5)?,
                     skill_names,
-                    composed_context_hash: row.get(3)?,
+                    composed_context_hash: row.get(7)?,
                     effective_allowed_tools,
                     tool_calls,
-                    outcome: row.get(6)?,
+                    outcome: row.get(10)?,
                     status: parse_agent_status(&status_raw),
                     created_at: crate::parse_timestamp(&created_at_raw)?,
                     updated_at: crate::parse_timestamp(&updated_at_raw)?,
@@ -254,11 +271,15 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO agent_sessions(session_id, task_id, skill_names, composed_context_hash, effective_allowed_tools, tool_calls, outcome, status, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO agent_sessions(session_id, task_id, identity_id, identity_name, identity_role, identity_block, skill_names, composed_context_hash, effective_allowed_tools, tool_calls, outcome, status, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     session.session_id,
                     session.task_id,
+                    session.identity_id,
+                    session.identity_name,
+                    session.identity_role.map(|v| v.to_string()),
+                    session.identity_block,
                     skill_names,
                     session.composed_context_hash,
                     effective_allowed_tools,
@@ -394,6 +415,12 @@ mod tests {
         let session = AgentSession {
             session_id: "session-1".to_string(),
             task_id: task.id.clone(),
+            identity_id: Some("linus".to_string()),
+            identity_name: Some("Linus".to_string()),
+            identity_role: Some(orbit_types::IdentityRole::Leader),
+            identity_block: Some(
+                "<agent_identity>\nName: Linus\nRole: leader\n</agent_identity>".to_string(),
+            ),
             skill_names: vec!["alpha".to_string()],
             composed_context_hash: "hash".to_string(),
             effective_allowed_tools: vec!["fs.read".to_string()],

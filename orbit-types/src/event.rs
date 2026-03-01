@@ -109,6 +109,10 @@ pub enum OrbitEvent {
     AgentSessionStarted {
         session_id: String,
         task_id: String,
+        identity_id: Option<String>,
+        identity_name: Option<String>,
+        identity_role: Option<String>,
+        identity_block: Option<String>,
         skill_names: Vec<String>,
         composed_context_hash: String,
         effective_allowed_tools: Vec<String>,

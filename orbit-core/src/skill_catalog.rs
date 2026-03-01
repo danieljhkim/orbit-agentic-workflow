@@ -305,9 +305,8 @@ fn parse_frontmatter(raw: &str) -> Result<SkillFrontmatter, OrbitError> {
     }
 
     let fm_raw = fm_lines.join("\n");
-    serde_yaml::from_str::<SkillFrontmatter>(&fm_raw).map_err(|e| {
-        OrbitError::SkillValidation(format!("invalid skill frontmatter: {e}"))
-    })
+    serde_yaml::from_str::<SkillFrontmatter>(&fm_raw)
+        .map_err(|e| OrbitError::SkillValidation(format!("invalid skill frontmatter: {e}")))
 }
 
 fn parse_section_heading(raw: &str) -> Option<String> {

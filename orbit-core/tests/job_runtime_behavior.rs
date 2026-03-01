@@ -23,6 +23,9 @@ fn add_work(runtime: &OrbitRuntime, id: &str) {
             output_schema_json: json!({}),
             artifact_path_template: None,
             skill_refs: Vec::new(),
+            identity_id: None,
+            assigned_to: None,
+            created_by: None,
         })
         .expect("add work");
 }
@@ -40,6 +43,9 @@ fn add_work_rejects_missing_skill_ref() {
         output_schema_json: json!({}),
         artifact_path_template: None,
         skill_refs: vec!["does-not-exist".to_string()],
+        identity_id: None,
+        assigned_to: None,
+        created_by: None,
     });
     assert!(result.is_err());
 }
@@ -654,6 +660,9 @@ Validate output shape.
             output_schema_json: json!({}),
             artifact_path_template: None,
             skill_refs: vec!["strict-schema".to_string()],
+            identity_id: None,
+            assigned_to: None,
+            created_by: None,
         })
         .expect("add work");
     let job_id = add_scheduled_job(
@@ -746,6 +755,9 @@ Validate advanced schema behavior.
             output_schema_json: json!({}),
             artifact_path_template: None,
             skill_refs: vec!["strict-complex".to_string()],
+            identity_id: None,
+            assigned_to: None,
+            created_by: None,
         })
         .expect("add work");
     let job_id = add_scheduled_job(

@@ -19,6 +19,9 @@ pub(crate) struct FileWorkInsert {
     pub output_schema_json: serde_json::Value,
     pub artifact_path_template: Option<String>,
     pub skill_refs: Vec<String>,
+    pub identity_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub created_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +35,12 @@ struct WorkFileDocument {
     output_schema_json: serde_json::Value,
     artifact_path_template: Option<String>,
     skill_refs: Vec<String>,
+    #[serde(default)]
+    identity_id: Option<String>,
+    #[serde(default)]
+    assigned_to: Option<String>,
+    #[serde(default)]
+    created_by: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -63,6 +72,9 @@ impl WorkFileStore {
                 output_schema_json: work.output_schema_json.clone(),
                 artifact_path_template: work.artifact_path_template.clone(),
                 skill_refs: work.skill_refs.clone(),
+                identity_id: work.identity_id.clone(),
+                assigned_to: work.assigned_to.clone(),
+                created_by: work.created_by.clone(),
                 created_at: work.created_at,
                 updated_at: work.updated_at,
             };
@@ -96,6 +108,9 @@ impl WorkFileStore {
             output_schema_json: params.output_schema_json.clone(),
             artifact_path_template: params.artifact_path_template.clone(),
             skill_refs: params.skill_refs.clone(),
+            identity_id: params.identity_id.clone(),
+            assigned_to: params.assigned_to.clone(),
+            created_by: params.created_by.clone(),
             created_at: now,
             updated_at: now,
         };
@@ -210,6 +225,9 @@ fn doc_to_work(doc: WorkFileDocument, is_active: bool) -> Work {
         output_schema_json: doc.output_schema_json,
         artifact_path_template: doc.artifact_path_template,
         skill_refs: doc.skill_refs,
+        identity_id: doc.identity_id,
+        assigned_to: doc.assigned_to,
+        created_by: doc.created_by,
         is_active,
         created_at: doc.created_at,
         updated_at: doc.updated_at,

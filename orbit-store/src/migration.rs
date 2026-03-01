@@ -11,6 +11,9 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 instructions TEXT NOT NULL DEFAULT '',
                 context_files TEXT NOT NULL DEFAULT '[]',
                 workspace_path TEXT,
+                identity_id TEXT,
+                assigned_to TEXT,
+                created_by TEXT,
                 approved_at TEXT,
                 approved_by TEXT,
                 approval_note TEXT,
@@ -85,6 +88,10 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 session_id TEXT PRIMARY KEY,
                 task_id TEXT NOT NULL,
+                identity_id TEXT,
+                identity_name TEXT,
+                identity_role TEXT,
+                identity_block TEXT,
                 skill_names TEXT NOT NULL,
                 composed_context_hash TEXT NOT NULL,
                 effective_allowed_tools TEXT NOT NULL,
@@ -147,6 +154,10 @@ fn ensure_task_metadata_schema(conn: &Connection) -> Result<(), OrbitError> {
                 CREATE TABLE agent_sessions (
                     session_id TEXT PRIMARY KEY,
                     task_id TEXT NOT NULL,
+                    identity_id TEXT,
+                    identity_name TEXT,
+                    identity_role TEXT,
+                    identity_block TEXT,
                     skill_names TEXT NOT NULL,
                     composed_context_hash TEXT NOT NULL,
                     effective_allowed_tools TEXT NOT NULL,
@@ -158,11 +169,11 @@ fn ensure_task_metadata_schema(conn: &Connection) -> Result<(), OrbitError> {
                 );
 
                 INSERT INTO agent_sessions(
-                    session_id, task_id, skill_names, composed_context_hash, effective_allowed_tools,
+                    session_id, task_id, identity_id, identity_name, identity_role, identity_block, skill_names, composed_context_hash, effective_allowed_tools,
                     tool_calls, outcome, status, created_at, updated_at
                 )
                 SELECT
-                    session_id, task_id, skill_names, composed_context_hash, effective_allowed_tools,
+                    session_id, task_id, NULL, NULL, NULL, NULL, skill_names, composed_context_hash, effective_allowed_tools,
                     tool_calls, outcome, status, created_at, updated_at
                 FROM agent_sessions_legacy;
 
@@ -171,6 +182,23 @@ fn ensure_task_metadata_schema(conn: &Connection) -> Result<(), OrbitError> {
         )
         .map_err(|e| OrbitError::Store(e.to_string()))?;
     }
+
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE agent_sessions ADD COLUMN identity_id TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE agent_sessions ADD COLUMN identity_name TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE agent_sessions ADD COLUMN identity_role TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE agent_sessions ADD COLUMN identity_block TEXT",
+    )?;
 
     Ok(())
 }
@@ -193,6 +221,9 @@ fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
         "ALTER TABLE tasks ADD COLUMN context_files TEXT NOT NULL DEFAULT '[]'",
     )?;
     add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN workspace_path TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN identity_id TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN assigned_to TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN created_by TEXT")?;
     add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN approved_at TEXT")?;
     add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN approved_by TEXT")?;
     add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN approval_note TEXT")?;
@@ -625,6 +656,9 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
                 output_schema_json TEXT NOT NULL,
                 artifact_path_template TEXT,
                 skill_refs_json TEXT,
+                identity_id TEXT,
+                assigned_to TEXT,
+                created_by TEXT,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -637,7 +671,11 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
             ON works(is_active);
         "#,
     )
-    .map_err(|e| OrbitError::Store(e.to_string()))
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+    add_column_if_missing(conn, "ALTER TABLE works ADD COLUMN identity_id TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE works ADD COLUMN assigned_to TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE works ADD COLUMN created_by TEXT")?;
+    Ok(())
 }
 
 fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
@@ -693,11 +731,11 @@ fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
         let sql = format!(
             "INSERT OR IGNORE INTO works(
                 id, type, description, input_schema_json, output_schema_json,
-                artifact_path_template, skill_refs_json, is_active, created_at, updated_at
+                artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at
             )
             SELECT
                 id, type, description, input_schema_json, output_schema_json,
-                artifact_path_template, skill_refs_json, is_active, created_at, updated_at
+                artifact_path_template, skill_refs_json, NULL, NULL, NULL, is_active, created_at, updated_at
             FROM {table}"
         );
         conn.execute_batch(&sql)

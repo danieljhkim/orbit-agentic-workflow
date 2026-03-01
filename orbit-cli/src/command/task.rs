@@ -74,6 +74,15 @@ pub struct TaskAddArgs {
     /// Repository workspace path
     #[arg(long)]
     pub workspace: Option<String>,
+    /// Optional agent identity id
+    #[arg(long)]
+    pub identity: Option<String>,
+    /// Optional assignee display name
+    #[arg(long)]
+    pub assigned_to: Option<String>,
+    /// Optional creator display name
+    #[arg(long)]
+    pub created_by: Option<String>,
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
@@ -96,6 +105,9 @@ impl Execute for TaskAddArgs {
             instructions: self.instructions,
             context_files: parse_context_csv(&self.context),
             workspace_path: self.workspace,
+            identity_id: self.identity,
+            assigned_to: self.assigned_to,
+            created_by: self.created_by,
             priority: self.priority,
             task_type: self.task_type,
             owner: self.owner,
@@ -189,6 +201,15 @@ impl Execute for TaskShowArgs {
             if let Some(ref workspace_path) = task.workspace_path {
                 println!("Workspace:   {}", workspace_path);
             }
+            if let Some(ref identity_id) = task.identity_id {
+                println!("Identity:    {}", identity_id);
+            }
+            if let Some(ref assigned_to) = task.assigned_to {
+                println!("Assigned To: {}", assigned_to);
+            }
+            if let Some(ref created_by) = task.created_by {
+                println!("Created By:  {}", created_by);
+            }
             println!("Approved:    {}", yes_no(task.approved_at.is_some()));
             if let Some(ref approved_by) = task.approved_by {
                 println!("Approved By: {}", approved_by);
@@ -233,6 +254,15 @@ pub struct TaskUpdateArgs {
     /// New workspace path (use empty string to clear)
     #[arg(long)]
     pub workspace: Option<String>,
+    /// New identity id (empty string clears)
+    #[arg(long)]
+    pub identity: Option<String>,
+    /// New assignee (empty string clears)
+    #[arg(long)]
+    pub assigned_to: Option<String>,
+    /// New creator (empty string clears)
+    #[arg(long)]
+    pub created_by: Option<String>,
     /// New status
     #[arg(long, value_enum)]
     pub status: Option<TaskStatus>,
@@ -255,9 +285,34 @@ impl Execute for TaskUpdateArgs {
         let parent_id = self
             .parent
             .map(|p| if p.is_empty() { None } else { Some(p) });
-        let workspace_path = self
-            .workspace
-            .map(|value| if value.trim().is_empty() { None } else { Some(value) });
+        let workspace_path = self.workspace.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
+        let identity_id = self.identity.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
+        let assigned_to = self.assigned_to.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
+        let created_by = self.created_by.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
 
         let task = runtime.update_task(
             &self.id,
@@ -267,6 +322,9 @@ impl Execute for TaskUpdateArgs {
                 instructions: self.instructions,
                 context_files: self.context.map(|raw| parse_context_csv(&raw)),
                 workspace_path,
+                identity_id,
+                assigned_to,
+                created_by,
                 status: self.status,
                 priority: self.priority,
                 task_type: self.task_type,
@@ -399,6 +457,9 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "instructions": task.instructions,
         "context_files": task.context_files,
         "workspace_path": task.workspace_path,
+        "identity_id": task.identity_id,
+        "assigned_to": task.assigned_to,
+        "created_by": task.created_by,
         "approved_at": task.approved_at.as_ref().map(|value| value.to_rfc3339()),
         "approved_by": task.approved_by,
         "approval_note": task.approval_note,
@@ -421,9 +482,5 @@ fn parse_context_csv(raw: &str) -> Vec<String> {
 }
 
 fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
+    if value { "yes" } else { "no" }
 }

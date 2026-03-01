@@ -53,6 +53,12 @@ pub struct WorkAddArgs {
     #[arg(long, default_value = "")]
     pub skill_refs: String,
     #[arg(long)]
+    pub identity: Option<String>,
+    #[arg(long)]
+    pub assigned_to: Option<String>,
+    #[arg(long)]
+    pub created_by: Option<String>,
+    #[arg(long)]
     pub json: bool,
 }
 
@@ -72,6 +78,9 @@ impl Execute for WorkAddArgs {
             output_schema_json,
             artifact_path_template: self.artifact_path_template,
             skill_refs,
+            identity_id: self.identity,
+            assigned_to: self.assigned_to,
+            created_by: self.created_by,
         })?;
 
         if self.json {
@@ -131,6 +140,15 @@ impl Execute for WorkShowArgs {
                 spec.artifact_path_template.unwrap_or_default()
             );
             println!("Skill Refs:          {}", spec.skill_refs.join(","));
+            if let Some(ref identity_id) = spec.identity_id {
+                println!("Identity:            {}", identity_id);
+            }
+            if let Some(ref assigned_to) = spec.assigned_to {
+                println!("Assigned To:         {}", assigned_to);
+            }
+            if let Some(ref created_by) = spec.created_by {
+                println!("Created By:          {}", created_by);
+            }
             println!("Active:              {}", spec.is_active);
             println!("Created:             {}", spec.created_at.to_rfc3339());
             println!("Updated:             {}", spec.updated_at.to_rfc3339());
@@ -188,6 +206,9 @@ fn work_to_json(spec: &Work) -> Value {
         "output_schema_json": spec.output_schema_json,
         "artifact_path_template": spec.artifact_path_template,
         "skill_refs": spec.skill_refs,
+        "identity_id": spec.identity_id,
+        "assigned_to": spec.assigned_to,
+        "created_by": spec.created_by,
         "is_active": spec.is_active,
         "created_at": spec.created_at.to_rfc3339(),
         "updated_at": spec.updated_at.to_rfc3339(),

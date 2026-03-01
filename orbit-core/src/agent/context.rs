@@ -24,9 +24,10 @@ pub fn compose_agent_context(
     task: &Task,
     skills: &[Skill],
     runtime_role: Role,
+    identity_block: Option<&str>,
 ) -> Result<AgentComposedContext, OrbitError> {
     let skill_names = skills.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
-    let instructions = compose_instructions(task, skills);
+    let instructions = compose_instructions(task, skills, identity_block);
     let context_files = compose_context_files(task, skills);
     let allowed_tools_raw = compose_skill_allowlist(skills);
     let role = compose_role(runtime_role, skills);
@@ -112,8 +113,13 @@ pub fn parse_planned_tool_calls(
     Ok(calls)
 }
 
-fn compose_instructions(task: &Task, skills: &[Skill]) -> String {
+fn compose_instructions(task: &Task, skills: &[Skill], identity_block: Option<&str>) -> String {
     let mut parts = Vec::new();
+    if let Some(block) = identity_block
+        && !block.trim().is_empty()
+    {
+        parts.push(block.trim().to_string());
+    }
     if !task.description.trim().is_empty() {
         parts.push(task.description.trim().to_string());
     }

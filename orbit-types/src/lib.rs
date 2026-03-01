@@ -3,6 +3,7 @@ pub mod audit_event;
 pub mod error;
 pub mod event;
 pub mod id;
+pub mod identity;
 pub mod job;
 pub mod memo;
 pub mod role;
@@ -17,6 +18,7 @@ pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use id::OrbitId;
+pub use identity::{IdentityRole, ResolvedIdentity};
 pub use job::{
     AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
     JobScheduleState, JobTargetType,
@@ -152,6 +154,9 @@ mod tests {
             }),
             artifact_path_template: Some("agentspace/reports/{{date}}/out.md".to_string()),
             skill_refs: vec!["assess-codebase".to_string()],
+            identity_id: Some("linus-leader".to_string()),
+            assigned_to: Some("Linus Torvalds (Maintainer)".to_string()),
+            created_by: Some("human".to_string()),
             is_active: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),

@@ -2,6 +2,7 @@ pub mod agent;
 pub mod command;
 mod config;
 pub mod context;
+pub mod identity_catalog;
 pub mod job;
 mod job_file_store;
 mod json_schema;
@@ -121,6 +122,9 @@ mod tests {
                     output_schema_json: json!({}),
                     artifact_path_template: None,
                     skill_refs: Vec::new(),
+                    identity_id: None,
+                    assigned_to: None,
+                    created_by: None,
                 })
             })
             .expect("insert work");
@@ -319,6 +323,9 @@ mod tests {
                 instructions: "steps".to_string(),
                 context_files: vec!["ARCHITECTURE.md".to_string()],
                 workspace_path: None,
+                identity_id: None,
+                assigned_to: None,
+                created_by: None,
                 priority: TaskPriority::High,
                 task_type: TaskType::Issue,
                 owner: "alice".to_string(),
@@ -437,6 +444,9 @@ mod tests {
                     instructions: None,
                     context_files: None,
                     workspace_path: None,
+                    identity_id: None,
+                    assigned_to: None,
+                    created_by: None,
                     status: None,
                     priority: Some(TaskPriority::High),
                     task_type: None,

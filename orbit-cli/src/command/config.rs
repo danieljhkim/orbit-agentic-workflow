@@ -41,6 +41,9 @@ impl Execute for ConfigShowArgs {
         let (inherit, pass) = runtime.execution_env_config();
         let persistence = runtime.persistence_config_json();
         let task_approval_required_for_agent = runtime.task_approval_required_for_agent();
+        let task_delegate_approval = runtime.task_delegate_approval();
+        let identity_root = runtime.identity_root();
+        let identity_role_overrides = runtime.identity_role_overrides();
         if self.json {
             crate::output::json::print_pretty(&json!({
                 "path": config_path.to_string_lossy(),
@@ -53,8 +56,13 @@ impl Execute for ConfigShowArgs {
                 },
                 "task": {
                     "approval": {
-                        "required_for_agent": task_approval_required_for_agent
+                        "required_for_agent": task_approval_required_for_agent,
+                        "delegate_approval": task_delegate_approval
                     }
+                },
+                "identity": {
+                    "root": identity_root.to_string_lossy(),
+                    "roles": identity_role_overrides,
                 },
                 "persistence": persistence,
             }))
@@ -67,6 +75,8 @@ impl Execute for ConfigShowArgs {
                 "Task approval required for agent: {}",
                 task_approval_required_for_agent
             );
+            println!("Task delegate approval: {}", task_delegate_approval);
+            println!("Identity root:         {}", identity_root.to_string_lossy());
             println!("Persistence:         {}", persistence);
             Ok(())
         }

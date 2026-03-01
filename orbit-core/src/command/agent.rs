@@ -1,5 +1,7 @@
 use chrono::Utc;
-use orbit_types::{AgentSession, AgentSessionStatus, AgentToolCall, OrbitError, OrbitEvent, Role};
+use orbit_types::{
+    AgentSession, AgentSessionStatus, AgentToolCall, IdentityRole, OrbitError, OrbitEvent, Role,
+};
 use serde_json::json;
 
 use crate::OrbitRuntime;
@@ -18,6 +20,7 @@ pub struct AgentRunOptions {
     pub approve_on_verbal: bool,
     pub approved_by: Option<String>,
     pub approval_note: Option<String>,
+    pub identity_id: Option<String>,
 }
 
 impl OrbitRuntime {
@@ -35,21 +38,17 @@ impl OrbitRuntime {
         options: AgentRunOptions,
     ) -> Result<AgentRunResult, OrbitError> {
         let mut task = self.get_task(task_id)?;
-        if self.context.task_approval_required_for_agent && task.approved_at.is_none() {
-            if options.approve_on_verbal {
-                let approved_by = options
-                    .approved_by
-                    .unwrap_or_else(|| "agent".to_string());
-                let approval_note = options.approval_note.or_else(|| {
-                    Some("Approved on explicit verbal confirmation from user".to_string())
-                });
-                task = self.approve_task(task_id, &approved_by, approval_note)?;
-            } else {
-                return Err(OrbitError::TaskApprovalRequired(format!(
-                    "task '{task_id}' is not approved; run `orbit task approve {task_id}` or `orbit agent run --task {task_id} --approve-on-verbal`"
-                )));
-            }
-        }
+        let identity_id = options
+            .identity_id
+            .clone()
+            .or_else(|| task.identity_id.clone());
+        let resolved_identity = identity_id
+            .as_deref()
+            .map(|id| self.resolve_identity(id))
+            .transpose()?;
+        let identity_block = resolved_identity
+            .as_ref()
+            .map(|identity| self.compile_identity_block(identity));
 
         let skills = Vec::new();
         let session_id = format!(
@@ -57,7 +56,13 @@ impl OrbitRuntime {
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         );
 
-        let composed = match compose_agent_context(self, &task, &skills, Role::Agent) {
+        let composed = match compose_agent_context(
+            self,
+            &task,
+            &skills,
+            Role::Agent,
+            identity_block.as_deref(),
+        ) {
             Ok(composed) => composed,
             Err(err) => {
                 let _ = self.with_mutation(|_| {
@@ -99,6 +104,10 @@ impl OrbitRuntime {
         let session = AgentSession {
             session_id: session_id.clone(),
             task_id: task.id.clone(),
+            identity_id: resolved_identity.as_ref().map(|value| value.id.clone()),
+            identity_name: resolved_identity.as_ref().map(|value| value.name.clone()),
+            identity_role: resolved_identity.as_ref().map(|value| value.role),
+            identity_block: identity_block.clone(),
             skill_names: skill_names.clone(),
             composed_context_hash: composed.composed_context_hash.clone(),
             effective_allowed_tools: composed.effective_allowed_tools.clone(),
@@ -116,12 +125,50 @@ impl OrbitRuntime {
                 OrbitEvent::AgentSessionStarted {
                     session_id: session_id.clone(),
                     task_id: task.id.clone(),
+                    identity_id: session.identity_id.clone(),
+                    identity_name: session.identity_name.clone(),
+                    identity_role: session.identity_role.map(|v| v.to_string()),
+                    identity_block: session.identity_block.clone(),
                     skill_names: skill_names.clone(),
                     composed_context_hash: composed.composed_context_hash.clone(),
                     effective_allowed_tools: composed.effective_allowed_tools.clone(),
                 },
             ))
         })?;
+
+        if self.context.task_approval_required_for_agent && task.approved_at.is_none() {
+            if options.approve_on_verbal {
+                task = if resolved_identity
+                    .as_ref()
+                    .is_some_and(|identity| identity.role == IdentityRole::Leader)
+                {
+                    let approval_note = options.approval_note.or_else(|| {
+                        Some(
+                            "Approved on explicit verbal confirmation from user by leader identity"
+                                .to_string(),
+                        )
+                    });
+                    self.approve_task_from_session(task_id, &session_id, approval_note)?
+                } else {
+                    let approved_by = options.approved_by.unwrap_or_else(|| "agent".to_string());
+                    let approval_note = options.approval_note.or_else(|| {
+                        Some("Approved on explicit verbal confirmation from user".to_string())
+                    });
+                    self.approve_task(task_id, &approved_by, approval_note)?
+                };
+            } else {
+                self.finish_agent_session(
+                    &session_id,
+                    &task.id,
+                    &executed_calls,
+                    "task requires approval",
+                    AgentSessionStatus::Failed,
+                )?;
+                return Err(OrbitError::TaskApprovalRequired(format!(
+                    "task '{task_id}' is not approved; run `orbit task approve {task_id}` or `orbit agent run --task {task_id} --approve-on-verbal`"
+                )));
+            }
+        }
 
         for mut planned in planned_calls {
             if !composed.effective_allowed_tools.contains(&planned.name) {

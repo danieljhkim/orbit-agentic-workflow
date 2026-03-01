@@ -56,6 +56,8 @@ struct ScheduledExecutionEnvelope {
     schema_version: u32,
     work: Value,
     skills: Vec<ScheduledSkillEnvelope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity: Option<Value>,
     input: Value,
     memory: Value,
 }
@@ -584,6 +586,19 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         let envelope = {
             let work = self.show_work(&job.target_id)?;
             let skills = self.resolve_work_skill_refs(&work.skill_refs)?;
+            let identity = work
+                .identity_id
+                .as_deref()
+                .map(|identity_id| self.resolve_identity(identity_id))
+                .transpose()?
+                .map(|resolved| {
+                    json!({
+                        "id": resolved.id,
+                        "name": resolved.name,
+                        "role": resolved.role.to_string(),
+                        "block": self.compile_identity_block(&resolved),
+                    })
+                });
             ScheduledExecutionEnvelope {
                 schema_version: 1,
                 work: json!({
@@ -594,6 +609,9 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     "output_schema_json": work.output_schema_json,
                     "artifact_path_template": work.artifact_path_template,
                     "skill_refs": work.skill_refs,
+                    "identity_id": work.identity_id,
+                    "assigned_to": work.assigned_to,
+                    "created_by": work.created_by,
                 }),
                 skills: skills
                     .into_iter()
@@ -604,6 +622,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                         meta: skill.meta_raw,
                     })
                     .collect(),
+                identity,
                 input: json!({}),
                 memory: json!({}),
             }

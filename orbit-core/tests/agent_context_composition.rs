@@ -58,8 +58,8 @@ fn composition_merges_in_deterministic_order_and_hash_is_stable() {
             "skill 2",
         ),
     ];
-    let c1 = compose_agent_context(&runtime, &task, &skills, Role::Admin).expect("compose");
-    let c2 = compose_agent_context(&runtime, &task, &skills, Role::Admin).expect("compose");
+    let c1 = compose_agent_context(&runtime, &task, &skills, Role::Admin, None).expect("compose");
+    let c2 = compose_agent_context(&runtime, &task, &skills, Role::Admin, None).expect("compose");
 
     assert_eq!(
         c1.context_files,
@@ -117,7 +117,7 @@ fn empty_effective_allowlist_is_rejected() {
         sample_skill("only-write", &["fs.write"], Role::Agent, &[], "only write"),
         sample_skill("only-read", &["fs.read"], Role::Agent, &[], "only read"),
     ];
-    let result = compose_agent_context(&runtime, &task, &skills, Role::Agent);
+    let result = compose_agent_context(&runtime, &task, &skills, Role::Agent, None);
     assert!(
         result.is_err(),
         "disjoint skill allowlists should produce empty intersection"

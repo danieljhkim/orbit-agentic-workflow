@@ -218,6 +218,12 @@ fn task_workspace_add_update_and_clear() {
 #[test]
 fn task_approve_sets_approval_fields() {
     let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
     let id = add_task(dir.path(), "approvable");
 
     orbit_in(dir.path())

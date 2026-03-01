@@ -14,6 +14,9 @@ pub struct WorkInsertParams {
     pub output_schema_json: Value,
     pub artifact_path_template: Option<String>,
     pub skill_refs: Vec<String>,
+    pub identity_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub created_by: Option<String>,
 }
 
 impl Store {
@@ -24,9 +27,9 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         let sql = if include_inactive {
-            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM works ORDER BY created_at DESC"
+            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at FROM works ORDER BY created_at DESC"
         } else {
-            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM works WHERE is_active = 1 ORDER BY created_at DESC"
+            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at FROM works WHERE is_active = 1 ORDER BY created_at DESC"
         };
 
         let mut stmt = conn
@@ -46,7 +49,7 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         conn.query_row(
-            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, is_active, created_at, updated_at FROM works WHERE id = ?1",
+            "SELECT id, type, description, input_schema_json, output_schema_json, artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at FROM works WHERE id = ?1",
             [id],
             row_to_work,
         )
@@ -68,8 +71,8 @@ impl<'a> StoreTx<'a> {
             .execute(
                 "INSERT INTO works(
                     id, type, description, input_schema_json, output_schema_json,
-                    artifact_path_template, skill_refs_json, is_active, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?8)",
+                    artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)",
                 params![
                     params.id,
                     params.spec_type,
@@ -78,6 +81,9 @@ impl<'a> StoreTx<'a> {
                     output_schema_raw,
                     params.artifact_path_template,
                     skill_refs_raw,
+                    params.identity_id,
+                    params.assigned_to,
+                    params.created_by,
                     now_string(),
                 ],
             )
@@ -91,6 +97,9 @@ impl<'a> StoreTx<'a> {
             output_schema_json: params.output_schema_json.clone(),
             artifact_path_template: params.artifact_path_template.clone(),
             skill_refs: params.skill_refs.clone(),
+            identity_id: params.identity_id.clone(),
+            assigned_to: params.assigned_to.clone(),
+            created_by: params.created_by.clone(),
             is_active: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -113,9 +122,9 @@ fn row_to_work(row: &rusqlite::Row<'_>) -> rusqlite::Result<Work> {
     let input_raw: String = row.get(3)?;
     let output_raw: String = row.get(4)?;
     let skill_refs_raw: Option<String> = row.get(6)?;
-    let is_active_raw: i64 = row.get(7)?;
-    let created_at_raw: String = row.get(8)?;
-    let updated_at_raw: String = row.get(9)?;
+    let is_active_raw: i64 = row.get(10)?;
+    let created_at_raw: String = row.get(11)?;
+    let updated_at_raw: String = row.get(12)?;
 
     let input_schema_json = serde_json::from_str::<Value>(&input_raw).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -152,6 +161,9 @@ fn row_to_work(row: &rusqlite::Row<'_>) -> rusqlite::Result<Work> {
         output_schema_json,
         artifact_path_template: row.get(5)?,
         skill_refs,
+        identity_id: row.get(7)?,
+        assigned_to: row.get(8)?,
+        created_by: row.get(9)?,
         is_active: is_active_raw == 1,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,

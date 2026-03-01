@@ -129,6 +129,15 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Init(_) => CommandMeta {
+            command: "init".to_string(),
+            subcommand: None,
+            tool_name: None,
+            target_type: Some("config".to_string()),
+            target_id: None,
+            role: "admin".to_string(),
+            arguments_json: None,
+        },
         Commands::Tool(tool_cmd) => {
             use crate::command::tool::ToolSubcommand;
             let (sub, tool_name, target_type, target_id) = match &tool_cmd.command {
@@ -188,9 +197,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 TaskSubcommand::List(_) => ("list", None, None),
                 TaskSubcommand::Show(args) => ("show", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Update(args) => ("update", Some("task"), Some(args.id.as_str())),
-                TaskSubcommand::Approve(args) => {
-                    ("approve", Some("task"), Some(args.id.as_str()))
-                }
+                TaskSubcommand::Approve(args) => ("approve", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Close(args) => ("close", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Reopen(args) => ("reopen", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Delete(args) => ("delete", Some("task"), Some(args.id.as_str())),

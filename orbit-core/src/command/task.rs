@@ -1,5 +1,5 @@
 use chrono::Utc;
-use orbit_types::{OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
+use orbit_types::{IdentityRole, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
 use std::path::Path;
 
 use crate::OrbitRuntime;
@@ -11,6 +11,9 @@ pub struct TaskAddParams {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
+    pub identity_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub created_by: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -25,6 +28,9 @@ impl Default for TaskAddParams {
             instructions: String::new(),
             context_files: Vec::new(),
             workspace_path: None,
+            identity_id: None,
+            assigned_to: None,
+            created_by: None,
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
             owner: String::new(),
@@ -39,6 +45,9 @@ pub struct TaskUpdateParams {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
+    pub identity_id: Option<Option<String>>,
+    pub assigned_to: Option<Option<String>>,
+    pub created_by: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -58,6 +67,27 @@ impl OrbitRuntime {
         }
 
         let workspace_path = normalize_workspace_path(params.workspace_path)?;
+        let identity_id = params.identity_id.clone();
+        let mut assigned_to = params.assigned_to.clone();
+        let mut created_by = params.created_by.clone();
+        if let Some(id) = identity_id.as_ref() {
+            let resolved = self.resolve_identity(id)?;
+            if assigned_to.is_none() {
+                assigned_to = Some(resolved.name.clone());
+            }
+            if created_by.is_none() {
+                created_by = Some(resolved.name);
+            }
+        }
+        let auto_approve = !self.context.task_approval_required_for_agent;
+        let auto_approval_note = if auto_approve {
+            Some(
+                "Auto-approved by configuration (task.approval.required_for_agent=false)"
+                    .to_string(),
+            )
+        } else {
+            None
+        };
 
         self.with_mutation(|_| {
             let task = self.context.task_store.create_task(FileTaskInsert {
@@ -66,9 +96,16 @@ impl OrbitRuntime {
                 instructions: params.instructions.clone(),
                 context_files: params.context_files.clone(),
                 workspace_path: workspace_path.clone(),
-                approved_at: None,
-                approved_by: None,
-                approval_note: None,
+                identity_id: identity_id.clone(),
+                assigned_to: assigned_to.clone(),
+                created_by: created_by.clone(),
+                approved_at: auto_approve.then_some(Utc::now()),
+                approved_by: if auto_approve {
+                    Some(created_by.clone().unwrap_or_else(|| "system".to_string()))
+                } else {
+                    None
+                },
+                approval_note: auto_approval_note.clone(),
                 priority: params.priority,
                 task_type: params.task_type,
                 owner: params.owner.clone(),
@@ -117,6 +154,10 @@ impl OrbitRuntime {
             }
         }
 
+        if let Some(Some(identity_id)) = params.identity_id.as_ref() {
+            let _ = self.resolve_identity(identity_id)?;
+        }
+
         let workspace_path = match params.workspace_path {
             Some(value) => Some(normalize_workspace_path(value)?),
             None => None,
@@ -131,6 +172,9 @@ impl OrbitRuntime {
                     instructions: params.instructions,
                     context_files: params.context_files,
                     workspace_path,
+                    identity_id: params.identity_id,
+                    assigned_to: params.assigned_to,
+                    created_by: params.created_by,
                     approved_at: None,
                     approved_by: None,
                     approval_note: None,
@@ -243,6 +287,45 @@ impl OrbitRuntime {
 
         Ok(task)
     }
+
+    pub fn approve_task_from_session(
+        &self,
+        id: &str,
+        session_id: &str,
+        approval_note: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        if !self.context.task_delegate_approval {
+            return Err(OrbitError::TaskApprovalRequired(
+                "delegated approval is disabled (task.approval.delegate_approval=false)"
+                    .to_string(),
+            ));
+        }
+
+        let session = self
+            .get_agent_session(session_id)?
+            .ok_or_else(|| OrbitError::AgentSessionNotFound(session_id.to_string()))?;
+        if session.task_id != id {
+            return Err(OrbitError::TaskApprovalRequired(format!(
+                "session '{session_id}' is not attached to task '{id}'"
+            )));
+        }
+        if session.identity_role != Some(IdentityRole::Leader) {
+            return Err(OrbitError::TaskApprovalRequired(format!(
+                "session '{session_id}' identity is not authorized for delegated approval"
+            )));
+        }
+        let approver = session
+            .identity_name
+            .as_deref()
+            .or(session.identity_id.as_deref())
+            .ok_or_else(|| {
+                OrbitError::TaskApprovalRequired(format!(
+                    "session '{session_id}' has no identity attribution"
+                ))
+            })?;
+
+        self.approve_task(id, approver, approval_note)
+    }
 }
 
 fn normalize_workspace_path(raw: Option<String>) -> Result<Option<String>, OrbitError> {
@@ -268,7 +351,9 @@ fn normalize_workspace_path(raw: Option<String>) -> Result<Option<String>, Orbit
     }
 
     let canonical = path.canonicalize().map_err(|e| {
-        OrbitError::InvalidInput(format!("failed to canonicalize workspace path '{trimmed}': {e}"))
+        OrbitError::InvalidInput(format!(
+            "failed to canonicalize workspace path '{trimmed}': {e}"
+        ))
     })?;
     Ok(Some(canonical.to_string_lossy().to_string()))
 }

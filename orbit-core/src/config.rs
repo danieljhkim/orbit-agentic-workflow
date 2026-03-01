@@ -1,20 +1,23 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_types::{IdentityRole, OrbitError};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 const DEFAULT_ENV_INHERIT: bool = false;
 const DEFAULT_ENV_PASS: [&str; 3] = ["HOME", "PATH", "CODEX_HOME"];
 const DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT: bool = false;
+const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
+const DEFAULT_IDENTITY_ROOT: &str = "~/.orbit/identities";
 
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeConfig {
     pub(crate) execution_env: ExecutionEnvPolicy,
     pub(crate) persistence: PersistenceConfig,
     pub(crate) task_approval: TaskApprovalConfig,
+    pub(crate) identity: IdentityConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -32,6 +35,7 @@ impl RuntimeConfig {
             execution_env: ExecutionEnvPolicy::default(),
             persistence: PersistenceConfig::default_for_data_root(data_root),
             task_approval: TaskApprovalConfig::default(),
+            identity: IdentityConfig::default(),
         }
     }
 
@@ -60,6 +64,7 @@ impl RuntimeConfig {
             )?,
             persistence: PersistenceConfig::from_raw(data_root, &parsed)?,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
+            identity: IdentityConfig::from_raw(parsed.identity.as_ref())?,
         })
     }
 }
@@ -67,12 +72,14 @@ impl RuntimeConfig {
 #[derive(Debug, Clone)]
 pub(crate) struct TaskApprovalConfig {
     pub(crate) required_for_agent: bool,
+    pub(crate) delegate_approval: bool,
 }
 
 impl Default for TaskApprovalConfig {
     fn default() -> Self {
         Self {
             required_for_agent: DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT,
+            delegate_approval: DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL,
         }
     }
 }
@@ -83,7 +90,62 @@ impl TaskApprovalConfig {
             .and_then(|section| section.approval.as_ref())
             .and_then(|approval| approval.required_for_agent)
             .unwrap_or(DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT);
-        Ok(Self { required_for_agent })
+        let delegate_approval = raw
+            .and_then(|section| section.approval.as_ref())
+            .and_then(|approval| approval.delegate_approval)
+            .unwrap_or(DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL);
+        Ok(Self {
+            required_for_agent,
+            delegate_approval,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct IdentityConfig {
+    pub(crate) root: PathBuf,
+    pub(crate) role_overrides: BTreeMap<String, IdentityRole>,
+}
+
+impl Default for IdentityConfig {
+    fn default() -> Self {
+        let root = resolve_path(
+            Some(DEFAULT_IDENTITY_ROOT),
+            Path::new(DEFAULT_IDENTITY_ROOT),
+        )
+        .unwrap_or_else(|_| PathBuf::from(DEFAULT_IDENTITY_ROOT));
+        Self {
+            root,
+            role_overrides: BTreeMap::new(),
+        }
+    }
+}
+
+impl IdentityConfig {
+    fn from_raw(raw: Option<&RawIdentitySection>) -> Result<Self, OrbitError> {
+        let default = Self::default();
+        let root = resolve_path(raw.and_then(|v| v.root.as_deref()), &default.root)?;
+        let mut role_overrides = BTreeMap::new();
+        if let Some(roles) = raw.and_then(|v| v.roles.as_ref()) {
+            for (identity, role_raw) in roles {
+                let key = identity.trim();
+                if key.is_empty() {
+                    return Err(OrbitError::InvalidInput(
+                        "identity.roles keys must not be empty".to_string(),
+                    ));
+                }
+                let role = role_raw.parse::<IdentityRole>().map_err(|e| {
+                    OrbitError::InvalidInput(format!(
+                        "identity.roles.{key} has invalid role '{role_raw}': {e}"
+                    ))
+                })?;
+                role_overrides.insert(key.to_string(), role);
+            }
+        }
+        Ok(Self {
+            root,
+            role_overrides,
+        })
     }
 }
 
@@ -445,6 +507,7 @@ fn resolve_path(raw: Option<&str>, default: &Path) -> Result<PathBuf, OrbitError
 #[derive(Debug, Clone, Deserialize)]
 struct RawRuntimeConfig {
     execution: Option<RawExecutionConfig>,
+    identity: Option<RawIdentitySection>,
     job: Option<RawEntitySection>,
     work: Option<RawEntitySection>,
     skill: Option<RawEntitySection>,
@@ -478,6 +541,13 @@ struct RawTaskSection {
 #[derive(Debug, Clone, Deserialize)]
 struct RawTaskApprovalConfig {
     required_for_agent: Option<bool>,
+    delegate_approval: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawIdentitySection {
+    root: Option<String>,
+    roles: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

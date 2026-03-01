@@ -11,15 +11,16 @@ use chrono::Utc;
 use orbit_policy::PolicyEngine;
 use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
-use orbit_types::{Audit, Job};
+use orbit_types::{Audit, Job, OrbitError, ResolvedIdentity};
 use serde_json::Value;
 
+use crate::OrbitContext;
 use crate::config::{PersistenceType, RuntimeConfig};
+use crate::identity_catalog::{IdentityCatalog, compile_identity_block};
 use crate::job_file_store::JobFileStore;
 use crate::skill_catalog::SkillCatalog;
 use crate::task_file_store::TaskFileStore;
 use crate::work_file_store::WorkFileStore;
-use crate::{OrbitContext, OrbitError};
 
 #[derive(Clone)]
 pub struct OrbitRuntime {
@@ -100,6 +101,10 @@ impl OrbitRuntime {
         let skill_catalog = SkillCatalog::new(skill_root);
         skill_catalog.ensure_layout()?;
         Self::export_legacy_skills_to_files(&store, &skill_catalog)?;
+        let identity_catalog = IdentityCatalog::new(
+            runtime_config.identity.root.clone(),
+            runtime_config.identity.role_overrides.clone(),
+        );
 
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
@@ -107,6 +112,7 @@ impl OrbitRuntime {
         let execution_env_policy = runtime_config.execution_env.clone();
         let persistence = runtime_config.persistence.clone();
         let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
+        let task_delegate_approval = runtime_config.task_approval.delegate_approval;
         let work_persistence_type = persistence.work.persistence_type;
         let job_persistence_type = persistence.job.persistence_type;
 
@@ -119,9 +125,11 @@ impl OrbitRuntime {
                 work_file_store,
                 job_file_store,
                 skill_catalog,
+                identity_catalog,
                 execution_env_policy,
                 persistence,
                 task_approval_required_for_agent,
+                task_delegate_approval,
                 work_persistence_type,
                 job_persistence_type,
             },
@@ -155,11 +163,17 @@ impl OrbitRuntime {
         ));
         let skill_catalog = SkillCatalog::new(skill_root);
         skill_catalog.ensure_layout()?;
+        let identity_root = std::env::temp_dir().join(format!(
+            "orbit-identity-store-{}",
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let identity_catalog = IdentityCatalog::new(identity_root, Default::default());
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
         Self::load_external_tools(&store, &mut registry)?;
         let runtime_config = RuntimeConfig::default();
         let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
+        let task_delegate_approval = runtime_config.task_approval.delegate_approval;
 
         Ok(Self {
             context: OrbitContext {
@@ -170,9 +184,11 @@ impl OrbitRuntime {
                 work_file_store,
                 job_file_store,
                 skill_catalog,
+                identity_catalog,
                 execution_env_policy: runtime_config.execution_env,
                 persistence: runtime_config.persistence,
                 task_approval_required_for_agent,
+                task_delegate_approval,
                 work_persistence_type: PersistenceType::Sqlite,
                 job_persistence_type: PersistenceType::Sqlite,
             },
@@ -227,6 +243,31 @@ impl OrbitRuntime {
 
     pub fn task_approval_required_for_agent(&self) -> bool {
         self.context.task_approval_required_for_agent
+    }
+
+    pub fn task_delegate_approval(&self) -> bool {
+        self.context.task_delegate_approval
+    }
+
+    pub fn identity_root(&self) -> PathBuf {
+        self.context.identity_catalog.root().to_path_buf()
+    }
+
+    pub fn identity_role_overrides(&self) -> std::collections::BTreeMap<String, String> {
+        self.context
+            .identity_catalog
+            .role_overrides()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_string()))
+            .collect()
+    }
+
+    pub fn resolve_identity(&self, identity_id: &str) -> Result<ResolvedIdentity, OrbitError> {
+        self.context.identity_catalog.resolve(identity_id)
+    }
+
+    pub fn compile_identity_block(&self, identity: &ResolvedIdentity) -> String {
+        compile_identity_block(identity)
     }
 
     pub fn run_jobs(&self) -> Result<usize, OrbitError> {

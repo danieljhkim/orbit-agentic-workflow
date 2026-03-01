@@ -127,6 +127,12 @@ pub struct Task {
     #[serde(default)]
     pub workspace_path: Option<String>,
     #[serde(default)]
+    pub identity_id: Option<String>,
+    #[serde(default)]
+    pub assigned_to: Option<String>,
+    #[serde(default)]
+    pub created_by: Option<String>,
+    #[serde(default)]
     pub approved_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub approved_by: Option<String>,

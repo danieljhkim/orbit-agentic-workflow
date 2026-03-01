@@ -14,12 +14,27 @@ pub struct WorkAddParams {
     pub output_schema_json: Value,
     pub artifact_path_template: Option<String>,
     pub skill_refs: Vec<String>,
+    pub identity_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub created_by: Option<String>,
 }
 
 impl OrbitRuntime {
     pub fn add_work(&self, params: WorkAddParams) -> Result<Work, OrbitError> {
         validate_work_params(&params)?;
         let _ = self.resolve_work_skill_refs(&params.skill_refs)?;
+        let identity_id = params.identity_id.clone();
+        let mut assigned_to = params.assigned_to.clone();
+        let mut created_by = params.created_by.clone();
+        if let Some(id) = identity_id.as_ref() {
+            let resolved = self.resolve_identity(id)?;
+            if assigned_to.is_none() {
+                assigned_to = Some(resolved.name.clone());
+            }
+            if created_by.is_none() {
+                created_by = Some(resolved.name);
+            }
+        }
 
         if self.context.work_persistence_type == PersistenceType::File {
             let work_id = params.id.clone();
@@ -33,6 +48,9 @@ impl OrbitRuntime {
                         output_schema_json: params.output_schema_json,
                         artifact_path_template: params.artifact_path_template,
                         skill_refs: params.skill_refs,
+                        identity_id: identity_id.clone(),
+                        assigned_to: assigned_to.clone(),
+                        created_by: created_by.clone(),
                     })
                 },
                 OrbitEvent::WorkAdded { id: work_id },
@@ -47,6 +65,9 @@ impl OrbitRuntime {
                     output_schema_json: params.output_schema_json.clone(),
                     artifact_path_template: params.artifact_path_template.clone(),
                     skill_refs: params.skill_refs.clone(),
+                    identity_id: identity_id.clone(),
+                    assigned_to: assigned_to.clone(),
+                    created_by: created_by.clone(),
                 })?;
                 Ok((spec.clone(), OrbitEvent::WorkAdded { id: spec.id }))
             })

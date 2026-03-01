@@ -5,6 +5,7 @@ use orbit_store::Store;
 use orbit_tools::ToolRegistry;
 
 use crate::config::{ExecutionEnvPolicy, PersistenceConfig, PersistenceType};
+use crate::identity_catalog::IdentityCatalog;
 use crate::job_file_store::JobFileStore;
 use crate::skill_catalog::SkillCatalog;
 use crate::task_file_store::TaskFileStore;
@@ -19,9 +20,11 @@ pub struct OrbitContext {
     pub(crate) work_file_store: WorkFileStore,
     pub(crate) job_file_store: JobFileStore,
     pub(crate) skill_catalog: SkillCatalog,
+    pub(crate) identity_catalog: IdentityCatalog,
     pub(crate) execution_env_policy: ExecutionEnvPolicy,
     pub(crate) persistence: PersistenceConfig,
     pub(crate) task_approval_required_for_agent: bool,
+    pub(crate) task_delegate_approval: bool,
     pub(crate) work_persistence_type: PersistenceType,
     pub(crate) job_persistence_type: PersistenceType,
 }

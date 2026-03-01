@@ -17,6 +17,9 @@ pub(crate) struct FileTaskInsert {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
+    pub identity_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub created_by: Option<String>,
     pub approved_at: Option<DateTime<Utc>>,
     pub approved_by: Option<String>,
     pub approval_note: Option<String>,
@@ -33,6 +36,9 @@ pub(crate) struct FileTaskUpdate {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
+    pub identity_id: Option<Option<String>>,
+    pub assigned_to: Option<Option<String>>,
+    pub created_by: Option<Option<String>>,
     pub approved_at: Option<Option<DateTime<Utc>>>,
     pub approved_by: Option<Option<String>>,
     pub approval_note: Option<Option<String>>,
@@ -107,6 +113,12 @@ struct TaskFileDocument {
     context_files: Vec<String>,
     #[serde(default)]
     workspace_path: Option<String>,
+    #[serde(default)]
+    identity_id: Option<String>,
+    #[serde(default)]
+    assigned_to: Option<String>,
+    #[serde(default)]
+    created_by: Option<String>,
     #[serde(default)]
     approved_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -188,6 +200,9 @@ impl TaskFileStore {
                 instructions: task.instructions.clone(),
                 context_files: task.context_files.clone(),
                 workspace_path: task.workspace_path.clone(),
+                identity_id: task.identity_id.clone(),
+                assigned_to: task.assigned_to.clone(),
+                created_by: task.created_by.clone(),
                 approved_at: task.approved_at,
                 approved_by: task.approved_by.clone(),
                 approval_note: task.approval_note.clone(),
@@ -227,6 +242,10 @@ impl TaskFileStore {
 
         let now = Utc::now();
         let id = self.next_task_id(now)?;
+        let history_actor = params
+            .created_by
+            .clone()
+            .unwrap_or_else(|| "human".to_string());
         let doc = TaskFileDocument {
             schema_version: 1,
             id,
@@ -235,6 +254,9 @@ impl TaskFileStore {
             instructions: params.instructions,
             context_files: params.context_files,
             workspace_path: params.workspace_path,
+            identity_id: params.identity_id,
+            assigned_to: params.assigned_to,
+            created_by: params.created_by,
             approved_at: params.approved_at,
             approved_by: params.approved_by,
             approval_note: params.approval_note,
@@ -248,7 +270,7 @@ impl TaskFileStore {
             acceptance_criteria: Vec::new(),
             history: vec![TaskHistoryEntry {
                 at: now,
-                by: "human".to_string(),
+                by: history_actor,
                 event: "created".to_string(),
             }],
             comments: Vec::new(),
@@ -348,6 +370,15 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.workspace_path {
             doc.workspace_path = value.clone();
+        }
+        if let Some(value) = &fields.identity_id {
+            doc.identity_id = value.clone();
+        }
+        if let Some(value) = &fields.assigned_to {
+            doc.assigned_to = value.clone();
+        }
+        if let Some(value) = &fields.created_by {
+            doc.created_by = value.clone();
         }
         if let Some(value) = &fields.approved_at {
             doc.approved_at = *value;
@@ -514,6 +545,9 @@ fn doc_to_task(state: TaskStateDir, doc: TaskFileDocument) -> Task {
         instructions: doc.instructions,
         context_files: doc.context_files,
         workspace_path: doc.workspace_path,
+        identity_id: doc.identity_id,
+        assigned_to: doc.assigned_to,
+        created_by: doc.created_by,
         approved_at: doc.approved_at,
         approved_by: doc.approved_by,
         approval_note: doc.approval_note,

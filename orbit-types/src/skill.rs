@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{OrbitId, Role};
+use crate::{IdentityRole, OrbitId, Role};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Skill {
@@ -43,6 +43,14 @@ pub enum AgentSessionStatus {
 pub struct AgentSession {
     pub session_id: OrbitId,
     pub task_id: OrbitId,
+    #[serde(default)]
+    pub identity_id: Option<String>,
+    #[serde(default)]
+    pub identity_name: Option<String>,
+    #[serde(default)]
+    pub identity_role: Option<IdentityRole>,
+    #[serde(default)]
+    pub identity_block: Option<String>,
     pub skill_names: Vec<String>,
     pub composed_context_hash: String,
     pub effective_allowed_tools: Vec<String>,

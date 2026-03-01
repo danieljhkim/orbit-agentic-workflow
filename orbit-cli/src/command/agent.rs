@@ -34,6 +34,8 @@ pub struct AgentRunArgs {
     #[arg(long)]
     pub task: String,
     #[arg(long)]
+    pub identity: Option<String>,
+    #[arg(long)]
     pub approve_on_verbal: bool,
     #[arg(long)]
     pub approved_by: Option<String>,
@@ -49,6 +51,7 @@ impl Execute for AgentRunArgs {
                 approve_on_verbal: self.approve_on_verbal,
                 approved_by: self.approved_by,
                 approval_note: self.approval_note,
+                identity_id: self.identity,
             },
         )?;
         let status = match result.status {

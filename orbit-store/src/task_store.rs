@@ -29,15 +29,18 @@ fn parse_context_files(raw: &str) -> rusqlite::Result<Vec<String>> {
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let context_files_raw: String = row.get(4)?;
     let workspace_path: Option<String> = row.get(5)?;
-    let approved_at_raw: Option<String> = row.get(6)?;
-    let approved_by: Option<String> = row.get(7)?;
-    let approval_note: Option<String> = row.get(8)?;
-    let status_raw: String = row.get(9)?;
-    let priority_raw: String = row.get(10)?;
-    let task_type_raw: String = row.get(11)?;
-    let parent_id: Option<String> = row.get(13)?;
-    let created_at_raw: String = row.get(14)?;
-    let updated_at_raw: String = row.get(15)?;
+    let identity_id: Option<String> = row.get(6)?;
+    let assigned_to: Option<String> = row.get(7)?;
+    let created_by: Option<String> = row.get(8)?;
+    let approved_at_raw: Option<String> = row.get(9)?;
+    let approved_by: Option<String> = row.get(10)?;
+    let approval_note: Option<String> = row.get(11)?;
+    let status_raw: String = row.get(12)?;
+    let priority_raw: String = row.get(13)?;
+    let task_type_raw: String = row.get(14)?;
+    let parent_id: Option<String> = row.get(16)?;
+    let created_at_raw: String = row.get(17)?;
+    let updated_at_raw: String = row.get(18)?;
     let approved_at = match approved_at_raw {
         Some(raw) => Some(parse_timestamp(&raw)?),
         None => None,
@@ -50,20 +53,23 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         instructions: row.get(3)?,
         context_files: parse_context_files(&context_files_raw)?,
         workspace_path,
+        identity_id,
+        assigned_to,
+        created_by,
         approved_at,
         approved_by,
         approval_note,
         status: parse_status(&status_raw),
         priority: parse_priority(&priority_raw),
         task_type: parse_task_type(&task_type_raw),
-        owner: row.get(12)?,
+        owner: row.get(15)?,
         parent_id,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,
     })
 }
 
-const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, identity_id, assigned_to, created_by, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -172,6 +178,9 @@ pub struct TaskInsertParams {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
+    pub identity_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub created_by: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -186,6 +195,9 @@ impl Default for TaskInsertParams {
             instructions: String::new(),
             context_files: Vec::new(),
             workspace_path: None,
+            identity_id: None,
+            assigned_to: None,
+            created_by: None,
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
             owner: String::new(),
@@ -201,6 +213,9 @@ pub struct TaskUpdateFields {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
+    pub identity_id: Option<Option<String>>,
+    pub assigned_to: Option<Option<String>>,
+    pub created_by: Option<Option<String>>,
     pub approved_at: Option<Option<chrono::DateTime<Utc>>>,
     pub approved_by: Option<Option<String>>,
     pub approval_note: Option<Option<String>>,
@@ -223,6 +238,9 @@ impl<'a> StoreTx<'a> {
             instructions: params.instructions.clone(),
             context_files: params.context_files.clone(),
             workspace_path: params.workspace_path.clone(),
+            identity_id: params.identity_id.clone(),
+            assigned_to: params.assigned_to.clone(),
+            created_by: params.created_by.clone(),
             approved_at: None,
             approved_by: None,
             approval_note: None,
@@ -237,7 +255,7 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, identity_id, assigned_to, created_by, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
                 params![
                     task.id,
                     task.title,
@@ -245,6 +263,9 @@ impl<'a> StoreTx<'a> {
                     task.instructions,
                     context_files_json,
                     task.workspace_path,
+                    task.identity_id,
+                    task.assigned_to,
+                    task.created_by,
                     task.approved_at.map(|value| value.to_rfc3339()),
                     task.approved_by,
                     task.approval_note,
@@ -285,6 +306,18 @@ impl<'a> StoreTx<'a> {
         }
         if let Some(ref v) = fields.workspace_path {
             sets.push("workspace_path = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.identity_id {
+            sets.push("identity_id = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.assigned_to {
+            sets.push("assigned_to = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.created_by {
+            sets.push("created_by = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(ref v) = fields.approved_at {
@@ -394,6 +427,7 @@ mod tests {
                     task_type: TaskType::Issue,
                     owner: "alice".to_string(),
                     parent_id: None,
+                    ..Default::default()
                 })
             })
             .expect("insert");
