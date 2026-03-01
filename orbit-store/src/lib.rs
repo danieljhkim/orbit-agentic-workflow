@@ -1,22 +1,30 @@
-mod audit_event_store;
-mod audit_store;
-mod connection;
-mod job_store;
-mod lock;
-mod memo_store;
-mod migration;
-mod skill_store;
-pub mod task_store;
-mod tool_store;
-mod watch_store;
-mod work_store;
+pub mod backend;
+mod file;
+pub mod sqlite;
+
+pub mod identity_store {
+    pub use crate::file::identity_store::*;
+}
+
+pub mod skill_store {
+    pub use crate::file::skill_store::*;
+}
 
 use chrono::{DateTime, Utc};
 
-pub use audit_event_store::{AuditEventFilter, AuditEventInsertParams};
-pub use connection::{Store, StoreTx};
-pub use job_store::{ClaimedJobRun, DueJobsClaim};
-pub use work_store::WorkInsertParams;
+pub use backend::{
+    AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, JobCreateParams,
+    JobStoreBackend, LockStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    ToolStoreBackend, WatchStoreBackend, WorkCreateParams, WorkStoreBackend,
+    agent_session_store_sqlite, audit_event_store_sqlite, audit_store_sqlite, job_store_file,
+    job_store_sqlite, lock_store_sqlite, task_store_file, task_store_sqlite, tool_store_sqlite,
+    watch_store_sqlite, work_store_file, work_store_sqlite,
+};
+pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
+pub use sqlite::connection::{Store, StoreTx};
+pub use sqlite::job_store::{ClaimedJobRun, DueJobsClaim};
+pub use sqlite::task_store;
+pub use sqlite::work_store::WorkInsertParams;
 
 pub(crate) fn parse_timestamp(raw: &str) -> rusqlite::Result<DateTime<Utc>> {
     let parsed = DateTime::parse_from_rfc3339(raw)

@@ -1,9 +1,11 @@
 use chrono::Utc;
+use orbit_store::{
+    TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
+};
 use orbit_types::{IdentityRole, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
 use std::path::Path;
 
 use crate::OrbitRuntime;
-use crate::task_file_store::{FileTaskInsert, FileTaskUpdate};
 
 pub struct TaskAddParams {
     pub title: String,
@@ -90,7 +92,7 @@ impl OrbitRuntime {
         };
 
         self.with_mutation(|_| {
-            let task = self.context.task_store.create_task(FileTaskInsert {
+            let task = self.context.task_store.create_task(StoreTaskCreateParams {
                 title: params.title.clone(),
                 description: params.description.clone(),
                 instructions: params.instructions.clone(),
@@ -166,7 +168,7 @@ impl OrbitRuntime {
         let task = self.with_mutation(|_| {
             let task = self.context.task_store.update_task(
                 id,
-                &FileTaskUpdate {
+                StoreTaskUpdateParams {
                     title: params.title,
                     description: params.description,
                     instructions: params.instructions,
@@ -204,7 +206,7 @@ impl OrbitRuntime {
         self.with_mutation(|_| {
             let _ = self.context.task_store.update_task(
                 id,
-                &FileTaskUpdate {
+                StoreTaskUpdateParams {
                     status: Some(TaskStatus::Done),
                     ..Default::default()
                 },
@@ -226,7 +228,7 @@ impl OrbitRuntime {
         self.with_mutation(|_| {
             let _ = self.context.task_store.update_task(
                 id,
-                &FileTaskUpdate {
+                StoreTaskUpdateParams {
                     status: Some(TaskStatus::Todo),
                     ..Default::default()
                 },
@@ -269,7 +271,7 @@ impl OrbitRuntime {
         let task = self.with_mutation(|_| {
             let task = self.context.task_store.update_task(
                 id,
-                &FileTaskUpdate {
+                StoreTaskUpdateParams {
                     approved_at: Some(Some(Utc::now())),
                     approved_by: Some(Some(approver.to_string())),
                     approval_note: Some(approval_note.clone()),

@@ -97,7 +97,7 @@ impl OrbitRuntime {
     }
 
     fn check_tool_enabled(&self, name: &str) -> Result<(), OrbitError> {
-        if let Some(stored) = self.context.store.get_tool(name)?
+        if let Some(stored) = self.context.tool_store.get_tool(name)?
             && !stored.enabled
         {
             return Err(OrbitError::Execution(format!(

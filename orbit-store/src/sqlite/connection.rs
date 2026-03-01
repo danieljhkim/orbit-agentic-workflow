@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use orbit_types::OrbitError;
 use rusqlite::{Connection, Transaction};
 
-use crate::migration;
+use crate::sqlite::migration;
 
 #[derive(Clone)]
 pub struct Store {

@@ -14,15 +14,6 @@ impl OrbitRuntime {
         Ok(())
     }
 
-    pub(crate) fn with_file_mutation<F, T>(&self, f: F, event: OrbitEvent) -> Result<T, OrbitError>
-    where
-        F: FnOnce() -> Result<T, OrbitError>,
-    {
-        let result = f()?;
-        self.record_event(event)?;
-        Ok(result)
-    }
-
     pub fn with_mutation<F, T>(&self, f: F) -> Result<T, OrbitError>
     where
         F: FnOnce(&mut StoreTx<'_>) -> Result<(T, OrbitEvent), OrbitError>,

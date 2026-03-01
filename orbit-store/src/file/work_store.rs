@@ -56,39 +56,6 @@ impl WorkFileStore {
         Ok(())
     }
 
-    pub(crate) fn migrate_from_sqlite_works(&self, works: &[Work]) -> Result<usize, OrbitError> {
-        self.ensure_layout()?;
-        let mut migrated = 0usize;
-        for work in works {
-            if self.get_work(&work.id)?.is_some() {
-                continue;
-            }
-            let doc = WorkFileDocument {
-                schema_version: 1,
-                id: work.id.clone(),
-                spec_type: work.spec_type.clone(),
-                description: work.description.clone(),
-                input_schema_json: work.input_schema_json.clone(),
-                output_schema_json: work.output_schema_json.clone(),
-                artifact_path_template: work.artifact_path_template.clone(),
-                skill_refs: work.skill_refs.clone(),
-                identity_id: work.identity_id.clone(),
-                assigned_to: work.assigned_to.clone(),
-                created_by: work.created_by.clone(),
-                created_at: work.created_at,
-                updated_at: work.updated_at,
-            };
-            let target = if work.is_active {
-                self.active_doc_path(&work.id)
-            } else {
-                self.inactive_doc_path(&work.id)
-            };
-            self.write_doc_at(&target, &doc)?;
-            migrated += 1;
-        }
-        Ok(migrated)
-    }
-
     pub(crate) fn insert_work(&self, params: &FileWorkInsert) -> Result<Work, OrbitError> {
         self.ensure_layout()?;
         if self.get_work(&params.id)?.is_some() {

@@ -25,7 +25,9 @@ pub struct AgentRunOptions {
 
 impl OrbitRuntime {
     pub fn get_agent_session(&self, session_id: &str) -> Result<Option<AgentSession>, OrbitError> {
-        self.context.store.get_agent_session(session_id)
+        self.context
+            .agent_session_store
+            .get_agent_session(session_id)
     }
 
     pub fn run_agent_task(&self, task_id: &str) -> Result<AgentRunResult, OrbitError> {

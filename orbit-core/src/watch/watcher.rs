@@ -100,7 +100,7 @@ impl WatchEventSource for NotifyEventSource {
 
 impl OrbitRuntime {
     pub fn run_watch_forever(&self) -> Result<(), OrbitError> {
-        let watches = self.context.store.list_watches()?;
+        let watches = self.context.watch_store.list_watches()?;
         if watches.is_empty() {
             return Err(OrbitError::Execution(
                 "no watches configured; add watches before running watch mode".to_string(),
@@ -122,7 +122,7 @@ impl OrbitRuntime {
         source: &mut S,
         max_events: Option<usize>,
     ) -> Result<usize, OrbitError> {
-        let watches = self.context.store.list_watches()?;
+        let watches = self.context.watch_store.list_watches()?;
         self.run_watch_with_source_for_watches(&watches, source, max_events)
     }
 

@@ -13,24 +13,28 @@ impl OrbitRuntime {
         role: Option<String>,
         limit: usize,
     ) -> Result<Vec<AuditEvent>, OrbitError> {
-        self.context.store.list_audit_events(&AuditEventFilter {
-            since,
-            tool_name: tool,
-            status,
-            role,
-            limit,
-        })
+        self.context
+            .audit_event_store
+            .list_audit_events(&AuditEventFilter {
+                since,
+                tool_name: tool,
+                status,
+                role,
+                limit,
+            })
     }
 
     pub fn show_audit_event(&self, id: i64) -> Result<AuditEvent, OrbitError> {
         self.context
-            .store
+            .audit_event_store
             .get_audit_event(id)?
             .ok_or_else(|| OrbitError::InvalidInput(format!("audit event not found: {id}")))
     }
 
     pub fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
-        self.context.store.prune_audit_events(older_than)
+        self.context
+            .audit_event_store
+            .prune_audit_events(older_than)
     }
 
     pub fn audit_event_stats(
@@ -40,12 +44,12 @@ impl OrbitRuntime {
     ) -> Result<AuditStats, OrbitError> {
         let (total, success_count, failure_count, denied_count, avg_duration_ms, max_duration_ms) =
             self.context
-                .store
+                .audit_event_store
                 .get_audit_event_stats(since.as_ref(), tool.as_deref())?;
 
         let durations = self
             .context
-            .store
+            .audit_event_store
             .get_audit_event_durations(since.as_ref(), tool.as_deref())?;
 
         let p95_duration_ms = compute_p95(&durations);
@@ -62,7 +66,9 @@ impl OrbitRuntime {
     }
 
     pub fn record_audit_event(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {
-        self.context.store.insert_audit_event_record(params)
+        self.context
+            .audit_event_store
+            .insert_audit_event_record(params)
     }
 }
 

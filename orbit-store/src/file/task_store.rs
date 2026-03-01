@@ -183,55 +183,6 @@ impl TaskFileStore {
         Ok(())
     }
 
-    pub(crate) fn migrate_from_sqlite_tasks(&self, tasks: &[Task]) -> Result<usize, OrbitError> {
-        self.ensure_layout()?;
-        let mut migrated = 0usize;
-        for task in tasks {
-            if self.locate_task(&task.id)?.is_some() {
-                continue;
-            }
-
-            let state = TaskStateDir::from_status(task.status);
-            let doc = TaskFileDocument {
-                schema_version: 1,
-                id: task.id.clone(),
-                title: task.title.clone(),
-                description: task.description.clone(),
-                instructions: task.instructions.clone(),
-                context_files: task.context_files.clone(),
-                workspace_path: task.workspace_path.clone(),
-                identity_id: task.identity_id.clone(),
-                assigned_to: task.assigned_to.clone(),
-                created_by: task.created_by.clone(),
-                approved_at: task.approved_at,
-                approved_by: task.approved_by.clone(),
-                approval_note: task.approval_note.clone(),
-                priority: task.priority,
-                task_type: task.task_type,
-                owner: task.owner.clone(),
-                parent_id: task.parent_id.clone(),
-                created_at: task.created_at,
-                updated_at: task.updated_at,
-                tags: Vec::new(),
-                acceptance_criteria: Vec::new(),
-                history: vec![TaskHistoryEntry {
-                    at: task.created_at,
-                    by: "agent".to_string(),
-                    event: "created".to_string(),
-                }],
-                comments: Vec::new(),
-                work_id: None,
-                job_id: None,
-                job_run_id: None,
-                auto_escalated: None,
-            };
-
-            self.write_doc_for_state(state, &doc)?;
-            migrated += 1;
-        }
-        Ok(migrated)
-    }
-
     pub(crate) fn create_task(&self, params: FileTaskInsert) -> Result<Task, OrbitError> {
         self.ensure_layout()?;
         if params.title.trim().is_empty() {

@@ -9,7 +9,7 @@ impl OrbitRuntime {
         path: &str,
     ) -> Result<bool, OrbitError> {
         let lock_name = format!("watch/{}", watch.id);
-        if !self.context.store.try_lock(&lock_name)? {
+        if !self.context.lock_store.try_lock(&lock_name)? {
             return Ok(false);
         }
 
@@ -27,7 +27,7 @@ impl OrbitRuntime {
             Ok(matches!(execution, Ok(result) if result.success))
         })();
 
-        let _ = self.context.store.unlock(&lock_name);
+        let _ = self.context.lock_store.unlock(&lock_name);
         result
     }
 

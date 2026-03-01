@@ -14,7 +14,7 @@ impl OrbitRuntime {
 
     pub fn list_tools(&self) -> Result<Vec<ToolInfo>, OrbitError> {
         let registry_schemas = self.context.registry.schemas();
-        let stored_tools = self.context.store.list_tools()?;
+        let stored_tools = self.context.tool_store.list_tools()?;
 
         let mut tools: Vec<ToolInfo> = registry_schemas
             .into_iter()
@@ -55,7 +55,7 @@ impl OrbitRuntime {
             .get_schema(name)
             .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
 
-        let stored = self.context.store.get_tool(name)?;
+        let stored = self.context.tool_store.get_tool(name)?;
         let enabled = stored.is_none_or(|s| s.enabled);
 
         Ok(ToolInfo {
@@ -149,7 +149,7 @@ impl OrbitRuntime {
             }
 
             if !tool.builtin
-                && let Some(stored) = self.context.store.get_tool(&tool.name)?
+                && let Some(stored) = self.context.tool_store.get_tool(&tool.name)?
                 && !stored.path.is_empty()
             {
                 let path = std::path::Path::new(&stored.path);
@@ -186,7 +186,7 @@ impl OrbitRuntime {
             return Err(OrbitError::ToolNotFound(name.to_string()));
         }
 
-        let existing = self.context.store.get_tool(name)?;
+        let existing = self.context.tool_store.get_tool(name)?;
         if existing.is_none() {
             let schema = self
                 .context

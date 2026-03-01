@@ -2,7 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_store::{ClaimedJobRun, DueJobsClaim};
 use orbit_types::{
     Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
 };
@@ -37,31 +36,6 @@ impl JobFileStore {
         fs::create_dir_all(self.jobs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         fs::create_dir_all(self.runs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         Ok(())
-    }
-
-    pub(crate) fn migrate_from_sqlite(
-        &self,
-        jobs: &[Job],
-        runs_by_job: &[(String, Vec<JobRun>)],
-    ) -> Result<usize, OrbitError> {
-        self.ensure_layout()?;
-        let mut migrated = 0usize;
-        for job in jobs {
-            if self.get_job(&job.job_id)?.is_none() {
-                self.write_job(job)?;
-                migrated += 1;
-            }
-        }
-        for (job_id, runs) in runs_by_job {
-            for run in runs {
-                if self.get_job_run(&run.run_id)?.is_some() {
-                    continue;
-                }
-                self.write_run(job_id, run)?;
-                migrated += 1;
-            }
-        }
-        Ok(migrated)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -137,13 +111,6 @@ impl JobFileStore {
                 .then_with(|| a.run_id.cmp(&b.run_id))
         });
         Ok(runs)
-    }
-
-    pub(crate) fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        let Some((_, path)) = self.find_run_path(run_id)? else {
-            return Ok(None);
-        };
-        Ok(Some(self.read_run_at(&path)?))
     }
 
     pub(crate) fn get_pending_or_running_job_run(
@@ -409,3 +376,4 @@ fn is_yaml(path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
 }
+use crate::{ClaimedJobRun, DueJobsClaim};

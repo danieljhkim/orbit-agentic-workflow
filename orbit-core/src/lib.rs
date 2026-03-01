@@ -2,15 +2,13 @@ pub mod agent;
 pub mod command;
 mod config;
 pub mod context;
-pub mod identity_catalog;
 pub mod job;
-mod job_file_store;
 mod json_schema;
 pub mod runtime;
-pub mod skill_catalog;
-mod task_file_store;
 pub mod watch;
-mod work_file_store;
+
+pub use orbit_store::identity_store as identity_catalog;
+pub use orbit_store::skill_store as skill_catalog;
 
 pub use context::OrbitContext;
 pub use orbit_store::AuditEventInsertParams;

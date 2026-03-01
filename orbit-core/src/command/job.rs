@@ -4,6 +4,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
+use orbit_store::JobCreateParams as StoreJobCreateParams;
 use orbit_types::{
     AgentResponseEnvelope, Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState,
     JobTargetType, OrbitError, OrbitEvent,
@@ -12,7 +13,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
-use crate::config::PersistenceType;
 use crate::json_schema::validate_instance_against_schema;
 const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
 const AGENT_INVOCATION_FAILED: &str = "AGENT_INVOCATION_FAILED";
@@ -101,43 +101,21 @@ impl OrbitRuntime {
         let next_run_at =
             crate::job::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
 
-        if self.context.job_persistence_type == PersistenceType::File {
-            let job = self.context.job_file_store.insert_job_v2(
-                params.target_type,
-                &params.target_id,
-                &params.schedule,
-                &params.agent_cli,
-                params.timeout_seconds,
-                params.retry_max_attempts,
-                params.retry_backoff_strategy,
-                params.retry_initial_delay_seconds,
-                next_run_at,
-            )?;
-            self.record_event(OrbitEvent::JobAdded {
-                job_id: job.job_id.clone(),
-            })?;
-            Ok(job)
-        } else {
-            self.with_mutation(|tx| {
-                let job = tx.insert_job_v2(
-                    params.target_type,
-                    &params.target_id,
-                    &params.schedule,
-                    &params.agent_cli,
-                    params.timeout_seconds,
-                    params.retry_max_attempts,
-                    params.retry_backoff_strategy,
-                    params.retry_initial_delay_seconds,
-                    next_run_at,
-                )?;
-                Ok((
-                    job.clone(),
-                    OrbitEvent::JobAdded {
-                        job_id: job.job_id.clone(),
-                    },
-                ))
-            })
-        }
+        let job = self.context.job_store.add_job(StoreJobCreateParams {
+            target_type: params.target_type,
+            target_id: params.target_id,
+            schedule: params.schedule,
+            agent_cli: params.agent_cli,
+            timeout_seconds: params.timeout_seconds,
+            retry_max_attempts: params.retry_max_attempts,
+            retry_backoff_strategy: params.retry_backoff_strategy,
+            retry_initial_delay_seconds: params.retry_initial_delay_seconds,
+            next_run_at,
+        })?;
+        self.record_event(OrbitEvent::JobAdded {
+            job_id: job.job_id.clone(),
+        })?;
+        Ok(job)
     }
 
     pub fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
@@ -151,31 +129,16 @@ impl OrbitRuntime {
 
     pub fn pause_job(&self, job_id: &str) -> Result<(), OrbitError> {
         let _ = self.show_job(job_id)?;
-        if self.context.job_persistence_type == PersistenceType::File {
-            let changed = self
-                .context
-                .job_file_store
-                .set_job_state(job_id, JobScheduleState::Paused)?;
-            if !changed {
-                return Err(OrbitError::JobNotFound(job_id.to_string()));
-            }
-            self.record_event(OrbitEvent::JobPaused {
-                job_id: job_id.to_string(),
-            })
-        } else {
-            self.with_mutation(|tx| {
-                let changed = tx.set_job_state(job_id, JobScheduleState::Paused)?;
-                if !changed {
-                    return Err(OrbitError::JobNotFound(job_id.to_string()));
-                }
-                Ok((
-                    (),
-                    OrbitEvent::JobPaused {
-                        job_id: job_id.to_string(),
-                    },
-                ))
-            })
+        let changed = self
+            .context
+            .job_store
+            .set_job_state(job_id, JobScheduleState::Paused)?;
+        if !changed {
+            return Err(OrbitError::JobNotFound(job_id.to_string()));
         }
+        self.record_event(OrbitEvent::JobPaused {
+            job_id: job_id.to_string(),
+        })
     }
 
     pub fn resume_job(&self, job_id: &str) -> Result<(), OrbitError> {
@@ -183,61 +146,30 @@ impl OrbitRuntime {
         let next_run_at =
             crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
 
-        if self.context.job_persistence_type == PersistenceType::File {
-            let changed = self
-                .context
-                .job_file_store
-                .set_job_state(job_id, JobScheduleState::Enabled)?;
-            if !changed {
-                return Err(OrbitError::JobNotFound(job_id.to_string()));
-            }
-            let _ = self
-                .context
-                .job_file_store
-                .update_job_next_run(job_id, next_run_at)?;
-            self.record_event(OrbitEvent::JobResumed {
-                job_id: job_id.to_string(),
-            })
-        } else {
-            self.with_mutation(|tx| {
-                let changed = tx.set_job_state(job_id, JobScheduleState::Enabled)?;
-                if !changed {
-                    return Err(OrbitError::JobNotFound(job_id.to_string()));
-                }
-                let _ = tx.update_job_next_run(job_id, next_run_at)?;
-                Ok((
-                    (),
-                    OrbitEvent::JobResumed {
-                        job_id: job_id.to_string(),
-                    },
-                ))
-            })
+        let changed = self
+            .context
+            .job_store
+            .set_job_state(job_id, JobScheduleState::Enabled)?;
+        if !changed {
+            return Err(OrbitError::JobNotFound(job_id.to_string()));
         }
+        let _ = self
+            .context
+            .job_store
+            .update_job_next_run(job_id, next_run_at)?;
+        self.record_event(OrbitEvent::JobResumed {
+            job_id: job_id.to_string(),
+        })
     }
 
     pub fn delete_job(&self, job_id: &str) -> Result<(), OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            let changed = self.context.job_file_store.mark_job_disabled(job_id)?;
-            if !changed {
-                return Err(OrbitError::JobNotFound(job_id.to_string()));
-            }
-            self.record_event(OrbitEvent::JobDeleted {
-                job_id: job_id.to_string(),
-            })
-        } else {
-            self.with_mutation(|tx| {
-                let changed = tx.mark_job_disabled(job_id)?;
-                if !changed {
-                    return Err(OrbitError::JobNotFound(job_id.to_string()));
-                }
-                Ok((
-                    (),
-                    OrbitEvent::JobDeleted {
-                        job_id: job_id.to_string(),
-                    },
-                ))
-            })
+        let changed = self.context.job_store.mark_job_disabled(job_id)?;
+        if !changed {
+            return Err(OrbitError::JobNotFound(job_id.to_string()));
         }
+        self.record_event(OrbitEvent::JobDeleted {
+            job_id: job_id.to_string(),
+        })
     }
 
     pub fn job_history(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
@@ -678,40 +610,24 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
     }
 
     fn list_jobs_backend(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context.job_file_store.list_jobs(include_disabled)
-        } else {
-            self.context.store.list_jobs(include_disabled)
-        }
+        self.context.job_store.list_jobs(include_disabled)
     }
 
     fn get_job_backend(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context.job_file_store.get_job(job_id)
-        } else {
-            self.context.store.get_job(job_id)
-        }
+        self.context.job_store.get_job(job_id)
     }
 
     fn list_job_runs_backend(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context.job_file_store.list_job_runs(job_id)
-        } else {
-            self.context.store.list_job_runs(job_id)
-        }
+        self.context.job_store.list_job_runs(job_id)
     }
 
     fn get_pending_or_running_job_run_backend(
         &self,
         job_id: &str,
     ) -> Result<Option<JobRun>, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context
-                .job_file_store
-                .get_pending_or_running_job_run(job_id)
-        } else {
-            self.context.store.get_pending_or_running_job_run(job_id)
-        }
+        self.context
+            .job_store
+            .get_pending_or_running_job_run(job_id)
     }
 
     fn insert_job_run_backend(
@@ -720,15 +636,9 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         attempt: u32,
         scheduled_at: DateTime<Utc>,
     ) -> Result<JobRun, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context
-                .job_file_store
-                .insert_job_run(job_id, attempt, scheduled_at)
-        } else {
-            self.context
-                .store
-                .with_transaction(|tx| tx.insert_job_run(job_id, attempt, scheduled_at))
-        }
+        self.context
+            .job_store
+            .insert_job_run(job_id, attempt, scheduled_at)
     }
 
     fn mark_job_run_running_backend(
@@ -736,15 +646,9 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context
-                .job_file_store
-                .mark_job_run_running(run_id, started_at)
-        } else {
-            self.context
-                .store
-                .with_transaction(|tx| tx.mark_job_run_running(run_id, started_at))
-        }
+        self.context
+            .job_store
+            .mark_job_run_running(run_id, started_at)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -759,31 +663,16 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         error_code: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<bool, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context.job_file_store.complete_job_run(
-                run_id,
-                state,
-                finished_at,
-                duration_ms,
-                exit_code,
-                agent_response_json,
-                error_code,
-                error_message,
-            )
-        } else {
-            self.context.store.with_transaction(|tx| {
-                tx.complete_job_run(
-                    run_id,
-                    state,
-                    finished_at,
-                    duration_ms,
-                    exit_code,
-                    agent_response_json,
-                    error_code,
-                    error_message,
-                )
-            })
-        }
+        self.context.job_store.complete_job_run(
+            run_id,
+            state,
+            finished_at,
+            duration_ms,
+            exit_code,
+            agent_response_json,
+            error_code,
+            error_message,
+        )
     }
 
     fn update_job_next_run_backend(
@@ -791,15 +680,9 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         job_id: &str,
         next_run_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        if self.context.job_persistence_type == PersistenceType::File {
-            self.context
-                .job_file_store
-                .update_job_next_run(job_id, next_run_at)
-        } else {
-            self.context
-                .store
-                .with_transaction(|tx| tx.update_job_next_run(job_id, next_run_at))
-        }
+        self.context
+            .job_store
+            .update_job_next_run(job_id, next_run_at)
     }
 }
 
