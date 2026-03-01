@@ -24,21 +24,30 @@ impl OrbitRuntime {
     pub fn init_mcp_configs(&self, dry_run: bool) -> Result<McpInitResult, OrbitError> {
         let codex_path = codex_config_path()?;
         let claude_path = claude_config_path()?;
-        upsert_mcp_configs(&codex_path, &claude_path, dry_run)
+        let command = resolve_orbit_command()?;
+        let data_root = Self::default_data_root();
+        upsert_mcp_configs(&codex_path, &claude_path, &command, &data_root, dry_run)
     }
 }
 
 pub fn upsert_mcp_configs(
     codex_path: &Path,
     claude_path: &Path,
+    command: &str,
+    data_root: &Path,
     dry_run: bool,
 ) -> Result<McpInitResult, OrbitError> {
-    let codex = upsert_codex_config(codex_path, dry_run)?;
-    let claude = upsert_claude_config(claude_path, dry_run)?;
+    let codex = upsert_codex_config(codex_path, command, data_root, dry_run)?;
+    let claude = upsert_claude_config(claude_path, command, data_root, dry_run)?;
     Ok(McpInitResult { codex, claude })
 }
 
-fn upsert_codex_config(path: &Path, dry_run: bool) -> Result<McpConfigMutation, OrbitError> {
+fn upsert_codex_config(
+    path: &Path,
+    command: &str,
+    data_root: &Path,
+    dry_run: bool,
+) -> Result<McpConfigMutation, OrbitError> {
     let existed = path.exists();
 
     let mut root = if existed {
@@ -80,9 +89,16 @@ fn upsert_codex_config(path: &Path, dry_run: bool) -> Result<McpConfigMutation, 
         ))
     })?;
 
+    let data_root_str = data_root.to_string_lossy();
+
     let mut changed = false;
-    changed |= set_toml_string(orbit_table, "command", "orbit");
+    changed |= set_toml_string(orbit_table, "command", command);
     changed |= set_toml_string_array(orbit_table, "args", &["mcp", "start"]);
+    changed |= set_toml_inline_table(
+        orbit_table,
+        "env",
+        &[("ORBIT_DATA_ROOT", &data_root_str)],
+    );
 
     if changed && !dry_run {
         write_text(
@@ -98,7 +114,12 @@ fn upsert_codex_config(path: &Path, dry_run: bool) -> Result<McpConfigMutation, 
     })
 }
 
-fn upsert_claude_config(path: &Path, dry_run: bool) -> Result<McpConfigMutation, OrbitError> {
+fn upsert_claude_config(
+    path: &Path,
+    command: &str,
+    data_root: &Path,
+    dry_run: bool,
+) -> Result<McpConfigMutation, OrbitError> {
     let existed = path.exists();
 
     let mut root = if existed {
@@ -141,8 +162,13 @@ fn upsert_claude_config(path: &Path, dry_run: bool) -> Result<McpConfigMutation,
     })?;
 
     let mut changed = false;
-    changed |= set_json_string(orbit_obj, "command", "orbit");
+    changed |= set_json_string(orbit_obj, "command", command);
     changed |= set_json_string_array(orbit_obj, "args", &["mcp", "start"]);
+    changed |= set_json_object(
+        orbit_obj,
+        "env",
+        &[("ORBIT_DATA_ROOT", &data_root.to_string_lossy())],
+    );
 
     if changed && !dry_run {
         let rendered = serde_json::to_string_pretty(&root)
@@ -204,6 +230,19 @@ fn set_json_string(obj: &mut JsonMap<String, JsonValue>, key: &str, value: &str)
     }
 }
 
+fn set_json_object(obj: &mut JsonMap<String, JsonValue>, key: &str, entries: &[(&str, &str)]) -> bool {
+    let mut next = JsonMap::new();
+    for (k, v) in entries {
+        next.insert((*k).to_string(), JsonValue::String((*v).to_string()));
+    }
+    let next_value = JsonValue::Object(next);
+    if obj.get(key) == Some(&next_value) {
+        return false;
+    }
+    obj.insert(key.to_string(), next_value);
+    true
+}
+
 fn set_json_string_array(obj: &mut JsonMap<String, JsonValue>, key: &str, values: &[&str]) -> bool {
     let next = json!(values);
     if obj.get(key) == Some(&next) {
@@ -212,6 +251,30 @@ fn set_json_string_array(obj: &mut JsonMap<String, JsonValue>, key: &str, values
 
     obj.insert(key.to_string(), next);
     true
+}
+
+fn set_toml_inline_table(
+    table: &mut toml::map::Map<String, TomlValue>,
+    key: &str,
+    entries: &[(&str, &str)],
+) -> bool {
+    let mut next = toml::map::Map::new();
+    for (k, v) in entries {
+        next.insert((*k).to_string(), TomlValue::String((*v).to_string()));
+    }
+    let next_value = TomlValue::Table(next);
+    if table.get(key) == Some(&next_value) {
+        return false;
+    }
+    table.insert(key.to_string(), next_value);
+    true
+}
+
+fn resolve_orbit_command() -> Result<String, OrbitError> {
+    let current_exe = std::env::current_exe().map_err(|e| {
+        OrbitError::Execution(format!("failed to resolve current executable path: {e}"))
+    })?;
+    Ok(current_exe.to_string_lossy().into_owned())
 }
 
 fn codex_config_path() -> Result<PathBuf, OrbitError> {
@@ -262,11 +325,18 @@ mod tests {
 
     use super::upsert_mcp_configs;
 
+    const TEST_COMMAND: &str = "/usr/local/bin/orbit";
+
+    fn test_data_root() -> std::path::PathBuf {
+        std::path::PathBuf::from("/home/test/.orbit")
+    }
+
     #[test]
     fn preserves_unrelated_settings_when_upserting() {
         let dir = tempdir().expect("tempdir");
         let codex_path = dir.path().join("codex.toml");
         let claude_path = dir.path().join("claude.json");
+        let data_root = test_data_root();
 
         fs::write(
             &codex_path,
@@ -283,7 +353,9 @@ mod tests {
         )
         .expect("write claude");
 
-        let result = upsert_mcp_configs(&codex_path, &claude_path, false).expect("upsert");
+        let result =
+            upsert_mcp_configs(&codex_path, &claude_path, TEST_COMMAND, &data_root, false)
+                .expect("upsert");
         assert!(result.codex.changed);
         assert!(result.claude.changed);
 
@@ -296,7 +368,7 @@ mod tests {
         let claude: serde_json::Value = serde_json::from_str(&claude_raw).expect("parse claude");
         assert_eq!(claude["theme"], "dark");
         assert_eq!(claude["mcpServers"]["other"]["command"], "x");
-        assert_eq!(claude["mcpServers"]["orbit"]["command"], "orbit");
+        assert_eq!(claude["mcpServers"]["orbit"]["command"], TEST_COMMAND);
     }
 
     #[test]
@@ -304,11 +376,47 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let codex_path = dir.path().join("codex.toml");
         let claude_path = dir.path().join("claude.json");
+        let data_root = test_data_root();
 
-        let result = upsert_mcp_configs(&codex_path, &claude_path, true).expect("dry run");
+        let result = upsert_mcp_configs(&codex_path, &claude_path, TEST_COMMAND, &data_root, true)
+            .expect("dry run");
         assert!(result.codex.changed);
         assert!(result.claude.changed);
         assert!(!codex_path.exists());
         assert!(!claude_path.exists());
+    }
+
+    #[test]
+    fn writes_absolute_command_and_env() {
+        let dir = tempdir().expect("tempdir");
+        let codex_path = dir.path().join("codex.toml");
+        let claude_path = dir.path().join("claude.json");
+        let data_root = test_data_root();
+
+        let result =
+            upsert_mcp_configs(&codex_path, &claude_path, TEST_COMMAND, &data_root, false)
+                .expect("upsert");
+        assert!(result.codex.changed);
+        assert!(result.claude.changed);
+
+        // Verify codex config has absolute command and ORBIT_DATA_ROOT env
+        let codex = fs::read_to_string(&codex_path).expect("read codex");
+        assert!(
+            codex.contains(TEST_COMMAND),
+            "codex config must contain absolute command path"
+        );
+        assert!(
+            codex.contains("ORBIT_DATA_ROOT"),
+            "codex config must contain ORBIT_DATA_ROOT env"
+        );
+
+        // Verify claude config has absolute command and env
+        let claude_raw = fs::read_to_string(&claude_path).expect("read claude");
+        let claude: serde_json::Value = serde_json::from_str(&claude_raw).expect("parse claude");
+        assert_eq!(claude["mcpServers"]["orbit"]["command"], TEST_COMMAND);
+        assert_eq!(
+            claude["mcpServers"]["orbit"]["env"]["ORBIT_DATA_ROOT"],
+            data_root.to_string_lossy().as_ref()
+        );
     }
 }

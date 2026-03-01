@@ -115,6 +115,11 @@ impl OrbitRuntime {
 }
 
 fn resolve_initialize_data_root(cwd: &Path, default_root: &Path) -> PathBuf {
+    if let Ok(explicit) = std::env::var("ORBIT_DATA_ROOT")
+        && !explicit.trim().is_empty()
+    {
+        return PathBuf::from(explicit);
+    }
     let local_root = cwd.join(".orbit");
     if local_root.join("config.toml").exists() {
         return local_root;
@@ -160,5 +165,26 @@ mod tests {
         let default_root = dir.path().join("home").join(".orbit");
         let chosen = resolve_initialize_data_root(cwd, &default_root);
         assert_eq!(chosen, default_root);
+    }
+
+    #[test]
+    fn orbit_data_root_env_overrides_all() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let explicit = dir.path().join("explicit-data");
+        let cwd = dir.path();
+
+        // Create a local config that would normally take precedence
+        let local_root = cwd.join(".orbit");
+        std::fs::create_dir_all(&local_root).expect("create local root");
+        std::fs::write(local_root.join("config.toml"), "[task]\n").expect("write config");
+
+        let default_root = dir.path().join("home").join(".orbit");
+
+        // SAFETY: test runs in isolation; no other thread reads this var concurrently.
+        unsafe { std::env::set_var("ORBIT_DATA_ROOT", &explicit) };
+        let chosen = resolve_initialize_data_root(cwd, &default_root);
+        unsafe { std::env::remove_var("ORBIT_DATA_ROOT") };
+
+        assert_eq!(chosen, explicit);
     }
 }
