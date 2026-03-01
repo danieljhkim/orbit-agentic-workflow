@@ -204,3 +204,52 @@ fn init_force_resets_home_orbit_to_defaults() {
 
     assert!(!orbit_root.join("junk").exists());
 }
+
+#[test]
+fn init_uses_repo_local_layout_when_inside_git_repository() {
+    let repo = tempfile::tempdir().expect("repo");
+    let home = tempfile::tempdir().expect("home");
+    let repo_canonical = repo.path().canonicalize().expect("canonical repo path");
+
+    std::fs::create_dir_all(repo.path().join(".git")).expect("create git marker");
+    let nested = repo.path().join("nested").join("workdir");
+    std::fs::create_dir_all(&nested).expect("create nested workdir");
+
+    orbit_in(&nested)
+        .env("HOME", home.path())
+        .args(["init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "identities: root={}",
+            repo_canonical.join(".orbit").join("identities").display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "skills: root={}",
+            repo_canonical.join(".orbit").join("skills").display()
+        )));
+
+    let repo_orbit = repo.path().join(".orbit");
+    assert!(repo_orbit.join("identities").join("linus.yaml").exists());
+    assert!(
+        repo_orbit
+            .join("skills")
+            .join("orbit-approve-task")
+            .join("SKILL.md")
+            .exists()
+    );
+
+    let repo_skills_link_root = repo.path().join(".agents").join("skills");
+    let root_meta = std::fs::symlink_metadata(&repo_skills_link_root)
+        .expect("repo .agents skills root metadata");
+    assert!(root_meta.file_type().is_dir());
+    let skill_link_meta =
+        std::fs::symlink_metadata(repo_skills_link_root.join("orbit-approve-task"))
+            .expect("repo skill symlink metadata");
+    assert!(skill_link_meta.file_type().is_symlink());
+
+    let config_raw =
+        std::fs::read_to_string(repo_orbit.join("config.toml")).expect("read repo config");
+    assert!(config_raw.contains("path = \"skills\""));
+    assert!(config_raw.contains("path = \"orbit.db\""));
+}

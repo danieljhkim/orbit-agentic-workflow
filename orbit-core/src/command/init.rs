@@ -43,6 +43,8 @@ const DEFAULT_SKILLS: [(&str, &str); 6] = [
     ),
 ];
 const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../../assets/config/default-config.toml");
+const DEFAULT_CONFIG_TEMPLATE_REPO: &str =
+    include_str!("../../assets/config/default-config-repo.toml");
 
 #[derive(Debug, Clone)]
 pub struct InitResult {
@@ -70,14 +72,17 @@ impl OrbitRuntime {
         &self,
         options: InitOptions,
     ) -> Result<InitResult, OrbitError> {
-        let identity_root = self.identity_root();
-        let orbit_home = home_orbit_root()?;
+        let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
+        let init_target = resolve_init_target(&cwd)?;
+        let orbit_root = init_target.orbit_root.clone();
+        let identity_root = orbit_root.join("identities");
+
         if options.force {
-            remove_path_if_exists(&orbit_home)?;
+            remove_path_if_exists(&orbit_root)?;
         }
-        fs::create_dir_all(&orbit_home).map_err(|e| OrbitError::Io(e.to_string()))?;
+        fs::create_dir_all(&orbit_root).map_err(|e| OrbitError::Io(e.to_string()))?;
         fs::create_dir_all(&identity_root).map_err(|e| OrbitError::Io(e.to_string()))?;
-        let skills_root = orbit_home.join("skills");
+        let skills_root = orbit_root.join("skills");
         fs::create_dir_all(&skills_root).map_err(|e| OrbitError::Io(e.to_string()))?;
 
         let mut created = 0usize;
@@ -100,20 +105,25 @@ impl OrbitRuntime {
             created_skill_files += 1;
         }
 
-        let config_path = orbit_home.join("config.toml");
+        let config_path = orbit_root.join("config.toml");
         let created_config = if config_path.exists() {
             false
         } else {
-            write_identity_file(&config_path, DEFAULT_CONFIG_TEMPLATE)?;
+            write_identity_file(&config_path, init_target.config_template)?;
             true
         };
 
         let skill_ids = DEFAULT_SKILLS.map(|(id, _)| id);
-        let created_skills_symlink =
-            ensure_home_agents_skill_links(&skills_root, &skill_ids, options.force)?;
+        let created_skills_symlink = ensure_skill_links(
+            &skills_root,
+            &skill_ids,
+            &init_target.skills_links_root,
+            options.force,
+        )?;
 
-        let created_default_work = self.show_work(DEFAULT_APPROVAL_WORK_ID).is_err()
-            && self
+        let init_runtime = OrbitRuntime::from_data_root(&orbit_root)?;
+        let created_default_work = init_runtime.show_work(DEFAULT_APPROVAL_WORK_ID).is_err()
+            && init_runtime
                 .add_work(WorkAddParams {
                     id: DEFAULT_APPROVAL_WORK_ID.to_string(),
                     spec_type: "task_approval".to_string(),
@@ -173,6 +183,37 @@ fn home_orbit_root() -> Result<PathBuf, OrbitError> {
     Ok(home_dir()?.join(".orbit"))
 }
 
+#[derive(Debug, Clone)]
+struct InitTarget {
+    orbit_root: PathBuf,
+    skills_links_root: PathBuf,
+    config_template: &'static str,
+}
+
+fn resolve_init_target(cwd: &Path) -> Result<InitTarget, OrbitError> {
+    if let Some(repo_root) = find_git_repo_root(cwd) {
+        return Ok(InitTarget {
+            orbit_root: repo_root.join(".orbit"),
+            skills_links_root: repo_root.join(".agents").join("skills"),
+            config_template: DEFAULT_CONFIG_TEMPLATE_REPO,
+        });
+    }
+    Ok(InitTarget {
+        orbit_root: home_orbit_root()?,
+        skills_links_root: home_dir()?.join(".agents").join("skills"),
+        config_template: DEFAULT_CONFIG_TEMPLATE,
+    })
+}
+
+fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
+    for ancestor in start.ancestors() {
+        if ancestor.join(".git").exists() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
+}
+
 fn home_dir() -> Result<PathBuf, OrbitError> {
     if let Ok(home) = std::env::var("HOME")
         && !home.trim().is_empty()
@@ -189,23 +230,24 @@ fn home_dir() -> Result<PathBuf, OrbitError> {
     ))
 }
 
-fn ensure_home_agents_skill_links(
+fn ensure_skill_links(
     skills_root: &Path,
     skill_ids: &[&str],
+    skills_links_dir: &Path,
     force: bool,
 ) -> Result<bool, OrbitError> {
-    let agents_dir = home_dir()?.join(".agents");
-    fs::create_dir_all(&agents_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
-    let skills_links_dir = agents_dir.join("skills");
+    if let Some(parent) = skills_links_dir.parent() {
+        fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
+    }
 
-    if let Ok(metadata) = fs::symlink_metadata(&skills_links_dir) {
+    if let Ok(metadata) = fs::symlink_metadata(skills_links_dir) {
         if metadata.file_type().is_symlink() {
             // Migrate old behavior (~/.agents/skills -> ~/.orbit/skills) to
             // per-skill symlink entries.
-            fs::remove_file(&skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+            fs::remove_file(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         } else if !metadata.file_type().is_dir() {
             if force {
-                remove_path_if_exists(&skills_links_dir)?;
+                remove_path_if_exists(skills_links_dir)?;
             } else {
                 return Err(OrbitError::InvalidInput(format!(
                     "expected '{}' to be a directory for skill links; found non-directory path",
@@ -216,11 +258,11 @@ fn ensure_home_agents_skill_links(
     }
 
     if !skills_links_dir.exists() {
-        fs::create_dir_all(&skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+        fs::create_dir_all(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
     } else if !skills_links_dir.is_dir() {
         if force {
-            remove_path_if_exists(&skills_links_dir)?;
-            fs::create_dir_all(&skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+            remove_path_if_exists(skills_links_dir)?;
+            fs::create_dir_all(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         } else {
             return Err(OrbitError::InvalidInput(format!(
                 "expected '{}' to be a directory for skill links; found non-directory path",

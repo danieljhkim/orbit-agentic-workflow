@@ -6,7 +6,7 @@ use crate::command::Execute;
 
 #[derive(Args)]
 pub struct InitCommand {
-    /// Reset ~/.orbit to defaults before initialization
+    /// Reset the target Orbit root to defaults before initialization
     #[arg(long)]
     pub force: bool,
 }
