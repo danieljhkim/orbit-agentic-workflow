@@ -1,5 +1,5 @@
 ---
-name: orbit-manage-orbit-tasks
+name: orbit-manage-tasks
 description: Manage tasks through deterministic CLI workflows for create, update, search, and close operations. Use this skill when the user asks to create, modify, find, or close orbit tasks.
 ---
 

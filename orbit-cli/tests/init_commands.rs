@@ -69,7 +69,7 @@ fn init_creates_default_identities_under_home_orbit() {
     );
     assert!(
         skills_root
-            .join("orbit-manage-orbit-tasks")
+            .join("orbit-manage-tasks")
             .join("SKILL.md")
             .exists()
     );
@@ -94,7 +94,7 @@ fn init_creates_default_identities_under_home_orbit() {
         "orbit-assess-codebase",
         "orbit-execute-change-request",
         "orbit-maintain-system",
-        "orbit-manage-orbit-tasks",
+        "orbit-manage-tasks",
         "orbit-track-issues",
     ] {
         let link_path = skills_link_root.join(skill_id);

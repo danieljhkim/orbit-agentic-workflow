@@ -34,8 +34,8 @@ const DEFAULT_SKILLS: [(&str, &str); 6] = [
         include_str!("../../assets/skills/orbit-maintain-system/SKILL.md"),
     ),
     (
-        "orbit-manage-orbit-tasks",
-        include_str!("../../assets/skills/orbit-manage-orbit-tasks/SKILL.md"),
+        "orbit-manage-tasks",
+        include_str!("../../assets/skills/orbit-manage-tasks/SKILL.md"),
     ),
     (
         "orbit-track-issues",

@@ -111,6 +111,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     migrate_jobs_table_to_v2(conn)?;
     normalize_job_targets_to_work(conn)?;
     ensure_job_schema_v2(conn)?;
+    repair_legacy_scheduler_rows_in_jobs_table(conn)?;
     ensure_execution_targets_schema(conn)?;
     migrate_legacy_work_rows(conn)?;
     ensure_audit_events_schema(conn)?;
@@ -678,6 +679,46 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
     Ok(())
 }
 
+fn repair_legacy_scheduler_rows_in_jobs_table(conn: &Connection) -> Result<(), OrbitError> {
+    if !table_exists(conn, "jobs")? {
+        return Ok(());
+    }
+
+    let jobs_has_target_type = table_has_column(conn, "jobs", "target_type")?;
+    let jobs_has_type = table_has_column(conn, "jobs", "type")?;
+    if !jobs_has_target_type || jobs_has_type {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        r#"
+            INSERT OR IGNORE INTO schedulers(
+                id, target_type, target_id, schedule, agent_cli, timeout_seconds,
+                retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
+                state, next_run_at, created_at, updated_at
+            )
+            SELECT
+                id,
+                'job',
+                target_id,
+                schedule,
+                agent_cli,
+                timeout_seconds,
+                COALESCE(retry_max_attempts, 0),
+                COALESCE(retry_backoff_strategy, 'none'),
+                COALESCE(retry_initial_delay_seconds, 0),
+                state,
+                next_run_at,
+                created_at,
+                updated_at
+            FROM jobs;
+
+            DROP TABLE jobs;
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))
+}
+
 fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
     if !table_exists(conn, "jobs")? {
         return Ok(());
@@ -1152,5 +1193,60 @@ mod tests {
             )
             .expect("query jobs");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn apply_schema_repairs_scheduler_shaped_jobs_table() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE jobs (
+                    id TEXT PRIMARY KEY,
+                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
+                    target_id TEXT NOT NULL,
+                    schedule TEXT NOT NULL,
+                    agent_cli TEXT NOT NULL,
+                    timeout_seconds INTEGER NOT NULL,
+                    retry_max_attempts INTEGER NOT NULL DEFAULT 0,
+                    retry_backoff_strategy TEXT NOT NULL DEFAULT 'none',
+                    retry_initial_delay_seconds INTEGER NOT NULL DEFAULT 0,
+                    state TEXT NOT NULL CHECK (state IN ('enabled','paused','disabled')),
+                    next_run_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO jobs(
+                    id, target_type, target_id, schedule, agent_cli, timeout_seconds,
+                    retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
+                    state, next_run_at, created_at, updated_at
+                ) VALUES (
+                    'scheduler-legacy', 'work', 'spec-1', 'every 1m', 'mock-agent', 300,
+                    0, 'none', 0, 'enabled', '2026-02-23T01:00:00Z',
+                    '2026-02-23T00:00:00Z', '2026-02-23T00:00:00Z'
+                );
+            "#,
+        )
+        .expect("legacy scheduler-shaped jobs table");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let jobs_has_type: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'type'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("jobs schema has type");
+        assert_eq!(jobs_has_type, 1);
+
+        let migrated_target_type: String = conn
+            .query_row(
+                "SELECT target_type FROM schedulers WHERE id = 'scheduler-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migrated scheduler exists");
+        assert_eq!(migrated_target_type, "job");
     }
 }
