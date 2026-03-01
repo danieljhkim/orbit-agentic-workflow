@@ -23,7 +23,8 @@ pub struct OrbitRuntime {
 
 impl OrbitRuntime {
     pub fn initialize() -> Result<Self, OrbitError> {
-        let data_root = Self::default_data_root();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let data_root = resolve_initialize_data_root(&cwd, &Self::default_data_root());
         Self::from_data_root(&data_root)
     }
 
@@ -103,8 +104,61 @@ impl OrbitRuntime {
     }
 
     pub fn default_data_root() -> PathBuf {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(".orbit")
+        home_dir()
+            .map(|home| home.join(".orbit"))
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."))
+                    .join(".orbit")
+            })
+    }
+}
+
+fn resolve_initialize_data_root(cwd: &Path, default_root: &Path) -> PathBuf {
+    let local_root = cwd.join(".orbit");
+    if local_root.join("config.toml").exists() {
+        return local_root;
+    }
+    default_root.to_path_buf()
+}
+
+fn home_dir() -> Option<PathBuf> {
+    if let Ok(home) = std::env::var("HOME")
+        && !home.trim().is_empty()
+    {
+        return Some(PathBuf::from(home));
+    }
+    if let Ok(profile) = std::env::var("USERPROFILE")
+        && !profile.trim().is_empty()
+    {
+        return Some(PathBuf::from(profile));
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_initialize_data_root;
+
+    #[test]
+    fn local_config_has_precedence_over_default_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cwd = dir.path();
+        let local_root = cwd.join(".orbit");
+        std::fs::create_dir_all(&local_root).expect("create local root");
+        std::fs::write(local_root.join("config.toml"), "[task]\n").expect("write config");
+
+        let default_root = dir.path().join("home").join(".orbit");
+        let chosen = resolve_initialize_data_root(cwd, &default_root);
+        assert_eq!(chosen, local_root);
+    }
+
+    #[test]
+    fn default_root_used_when_local_config_missing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cwd = dir.path();
+        let default_root = dir.path().join("home").join(".orbit");
+        let chosen = resolve_initialize_data_root(cwd, &default_root);
+        assert_eq!(chosen, default_root);
     }
 }

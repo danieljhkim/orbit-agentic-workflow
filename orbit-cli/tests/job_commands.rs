@@ -10,6 +10,8 @@ fn orbit_in(dir: &Path) -> Command {
     #[allow(deprecated)]
     let mut cmd = Command::cargo_bin("orbit").expect("binary exists");
     cmd.current_dir(dir);
+    cmd.env("HOME", dir);
+    cmd.env("USERPROFILE", dir);
     cmd
 }
 
