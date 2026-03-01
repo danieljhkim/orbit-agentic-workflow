@@ -32,12 +32,12 @@ mod tests {
     #[test]
     fn persistence_defaults_to_file_for_jobs_and_works() {
         let config = PersistenceConfig::default_for_data_root(Path::new("/tmp/orbit"));
-        assert_eq!(config.job.path, std::path::PathBuf::from("/tmp/orbit/jobs"));
+        assert_eq!(config.scheduler.path, std::path::PathBuf::from("/tmp/orbit/schedulers"));
         assert_eq!(
-            config.work.path,
-            std::path::PathBuf::from("/tmp/orbit/works")
+            config.job.path,
+            std::path::PathBuf::from("/tmp/orbit/jobs")
         );
+        assert_eq!(config.scheduler.format.as_deref(), Some("yaml"));
         assert_eq!(config.job.format.as_deref(), Some("yaml"));
-        assert_eq!(config.work.format.as_deref(), Some("yaml"));
     }
 }

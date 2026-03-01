@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Job,
-    JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
-    OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus, TaskType, Watch, Work,
+    AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Scheduler,
+    SchedulerRetryBackoffStrategy, SchedulerRun, SchedulerRunState, SchedulerScheduleState, SchedulerTargetType, OrbitError,
+    OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus, TaskType, Watch, Job,
 };
 use serde_json::Value;
 
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
-use crate::sqlite::job_store::DueJobsClaim;
+use crate::sqlite::scheduler_store::DueJobsClaim;
 
 #[derive(Debug, Clone)]
 pub struct TaskCreateParams {
@@ -49,7 +49,7 @@ pub struct TaskUpdateParams {
 }
 
 #[derive(Debug, Clone)]
-pub struct WorkCreateParams {
+pub struct JobCreateParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
@@ -63,14 +63,14 @@ pub struct WorkCreateParams {
 }
 
 #[derive(Debug, Clone)]
-pub struct JobCreateParams {
-    pub target_type: JobTargetType,
+pub struct SchedulerCreateParams {
+    pub target_type: SchedulerTargetType,
     pub target_id: String,
     pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
     pub retry_max_attempts: u32,
-    pub retry_backoff_strategy: JobRetryBackoffStrategy,
+    pub retry_backoff_strategy: SchedulerRetryBackoffStrategy,
     pub retry_initial_delay_seconds: u64,
     pub next_run_at: DateTime<Utc>,
 }
@@ -89,43 +89,43 @@ pub trait TaskStoreBackend: Send + Sync {
     fn delete_task(&self, id: &str) -> Result<bool, OrbitError>;
 }
 
-pub trait WorkStoreBackend: Send + Sync {
-    fn add_work(&self, params: WorkCreateParams) -> Result<Work, OrbitError>;
-    fn list_works(&self, include_inactive: bool) -> Result<Vec<Work>, OrbitError>;
-    fn get_work(&self, id: &str) -> Result<Option<Work>, OrbitError>;
-    fn disable_work(&self, id: &str) -> Result<bool, OrbitError>;
-}
-
 pub trait JobStoreBackend: Send + Sync {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError>;
-    fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError>;
-    fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError>;
-    fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError>;
-    fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError>;
-    fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError>;
-    fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError>;
-    fn update_job_next_run(
+    fn list_jobs(&self, include_inactive: bool) -> Result<Vec<Job>, OrbitError>;
+    fn get_job(&self, id: &str) -> Result<Option<Job>, OrbitError>;
+    fn disable_job(&self, id: &str) -> Result<bool, OrbitError>;
+}
+
+pub trait SchedulerStoreBackend: Send + Sync {
+    fn add_scheduler(&self, params: SchedulerCreateParams) -> Result<Scheduler, OrbitError>;
+    fn list_schedulers(&self, include_disabled: bool) -> Result<Vec<Scheduler>, OrbitError>;
+    fn get_scheduler(&self, scheduler_id: &str) -> Result<Option<Scheduler>, OrbitError>;
+    fn due_schedulers(&self, now: DateTime<Utc>) -> Result<Vec<Scheduler>, OrbitError>;
+    fn list_scheduler_runs(&self, scheduler_id: &str) -> Result<Vec<SchedulerRun>, OrbitError>;
+    fn get_pending_or_running_scheduler_run(&self, scheduler_id: &str) -> Result<Option<SchedulerRun>, OrbitError>;
+    fn set_scheduler_state(&self, scheduler_id: &str, state: SchedulerScheduleState) -> Result<bool, OrbitError>;
+    fn mark_scheduler_disabled(&self, scheduler_id: &str) -> Result<bool, OrbitError>;
+    fn update_scheduler_next_run(
         &self,
-        job_id: &str,
+        scheduler_id: &str,
         next_run_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError>;
-    fn insert_job_run(
+    fn insert_scheduler_run(
         &self,
-        job_id: &str,
+        scheduler_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
-    ) -> Result<JobRun, OrbitError>;
-    fn mark_job_run_running(
+    ) -> Result<SchedulerRun, OrbitError>;
+    fn mark_scheduler_run_running(
         &self,
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError>;
     #[allow(clippy::too_many_arguments)]
-    fn complete_job_run(
+    fn complete_scheduler_run(
         &self,
         run_id: &str,
-        state: JobRunState,
+        state: SchedulerRunState,
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
         exit_code: Option<i32>,
@@ -133,7 +133,7 @@ pub trait JobStoreBackend: Send + Sync {
         error_code: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<bool, OrbitError>;
-    fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError>;
+    fn claim_due_schedulers(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError>;
 }
 
 pub trait ToolStoreBackend: Send + Sync {

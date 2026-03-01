@@ -61,7 +61,7 @@ impl OrbitRuntime {
             .collect())
     }
 
-    pub(crate) fn resolve_work_skill_refs(
+    pub(crate) fn resolve_job_skill_refs(
         &self,
         refs: &[String],
     ) -> Result<Vec<LoadedSkill>, OrbitError> {
@@ -116,7 +116,7 @@ impl OrbitRuntime {
         _skill_name: &str,
     ) -> Result<(), OrbitError> {
         Err(OrbitError::InvalidInput(
-            "task-attached skill runtime is disabled; use work.skill_refs".to_string(),
+            "task-attached skill runtime is disabled; use job.skill_refs".to_string(),
         ))
     }
 
@@ -126,13 +126,13 @@ impl OrbitRuntime {
         _skill_name: &str,
     ) -> Result<(), OrbitError> {
         Err(OrbitError::InvalidInput(
-            "task-attached skill runtime is disabled; use work.skill_refs".to_string(),
+            "task-attached skill runtime is disabled; use job.skill_refs".to_string(),
         ))
     }
 
     pub fn list_task_skills(&self, _task_id: &str) -> Result<Vec<Skill>, OrbitError> {
         Err(OrbitError::InvalidInput(
-            "task-attached skill runtime is disabled; use work.skill_refs".to_string(),
+            "task-attached skill runtime is disabled; use job.skill_refs".to_string(),
         ))
     }
 

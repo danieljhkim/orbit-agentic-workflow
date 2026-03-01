@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
-use orbit_types::{JobRetryBackoffStrategy, OrbitError};
+use orbit_types::{SchedulerRetryBackoffStrategy, OrbitError};
 
 pub fn compute_next_run_at(
     schedule: &str,
@@ -14,7 +14,7 @@ pub fn compute_next_run_at(
 }
 
 pub fn compute_retry_delay_seconds(
-    strategy: JobRetryBackoffStrategy,
+    strategy: SchedulerRetryBackoffStrategy,
     initial_delay_seconds: u64,
     retry_index: u32,
 ) -> u64 {
@@ -23,9 +23,9 @@ pub fn compute_retry_delay_seconds(
     }
 
     match strategy {
-        JobRetryBackoffStrategy::None => 0,
-        JobRetryBackoffStrategy::Fixed => initial_delay_seconds,
-        JobRetryBackoffStrategy::Exponential => {
+        SchedulerRetryBackoffStrategy::None => 0,
+        SchedulerRetryBackoffStrategy::Fixed => initial_delay_seconds,
+        SchedulerRetryBackoffStrategy::Exponential => {
             let exponent = retry_index.saturating_sub(1);
             initial_delay_seconds.saturating_mul(2u64.saturating_pow(exponent))
         }
@@ -50,17 +50,17 @@ fn parse_every_alias(spec: &str) -> Result<Option<Duration>, OrbitError> {
         return Ok(None);
     };
     if rest.len() < 2 {
-        return Err(OrbitError::JobValidation(format!(
+        return Err(OrbitError::SchedulerValidation(format!(
             "invalid interval alias: {spec}"
         )));
     }
 
     let (count_raw, unit_raw) = rest.split_at(rest.len() - 1);
     let count = count_raw.parse::<i64>().map_err(|_| {
-        OrbitError::JobValidation(format!("invalid interval count in schedule: {spec}"))
+        OrbitError::SchedulerValidation(format!("invalid interval count in schedule: {spec}"))
     })?;
     if count <= 0 {
-        return Err(OrbitError::JobValidation(
+        return Err(OrbitError::SchedulerValidation(
             "interval count must be positive".to_string(),
         ));
     }
@@ -72,7 +72,7 @@ fn parse_every_alias(spec: &str) -> Result<Option<Duration>, OrbitError> {
         "d" => Duration::days(count),
         "w" => Duration::weeks(count),
         _ => {
-            return Err(OrbitError::JobValidation(format!(
+            return Err(OrbitError::SchedulerValidation(format!(
                 "unsupported interval unit in schedule: {spec}"
             )));
         }
@@ -95,7 +95,7 @@ fn compute_next_cron_utc(spec: &str, from_utc: DateTime<Utc>) -> Result<DateTime
         || weekday.is_none()
         || fields.next().is_some()
     {
-        return Err(OrbitError::JobValidation(format!(
+        return Err(OrbitError::SchedulerValidation(format!(
             "invalid cron expression (expected 5 fields): {spec}"
         )));
     }
@@ -110,7 +110,7 @@ fn compute_next_cron_utc(spec: &str, from_utc: DateTime<Utc>) -> Result<DateTime
     candidate = candidate
         .with_second(0)
         .and_then(|d| d.with_nanosecond(0))
-        .ok_or_else(|| OrbitError::JobValidation("failed to normalize time".to_string()))?;
+        .ok_or_else(|| OrbitError::SchedulerValidation("failed to normalize time".to_string()))?;
 
     let search_limit_minutes: i64 = 366 * 24 * 60;
     for _ in 0..search_limit_minutes {
@@ -125,7 +125,7 @@ fn compute_next_cron_utc(spec: &str, from_utc: DateTime<Utc>) -> Result<DateTime
         candidate += Duration::minutes(1);
     }
 
-    Err(OrbitError::JobValidation(format!(
+    Err(OrbitError::SchedulerValidation(format!(
         "could not compute next run from cron expression: {spec}"
     )))
 }
@@ -155,7 +155,7 @@ fn parse_cron_field(raw: &str, min: i64, max: i64, name: &str) -> Result<CronFie
     for token in trimmed.split(',') {
         let token = token.trim();
         if token.is_empty() {
-            return Err(OrbitError::JobValidation(format!(
+            return Err(OrbitError::SchedulerValidation(format!(
                 "invalid {name} field segment in cron expression"
             )));
         }
@@ -163,7 +163,7 @@ fn parse_cron_field(raw: &str, min: i64, max: i64, name: &str) -> Result<CronFie
         if let Some(step_raw) = token.strip_prefix("*/") {
             let step = parse_i64(step_raw, name)?;
             if step <= 0 {
-                return Err(OrbitError::JobValidation(format!(
+                return Err(OrbitError::SchedulerValidation(format!(
                     "{name} step must be positive"
                 )));
             }
@@ -179,7 +179,7 @@ fn parse_cron_field(raw: &str, min: i64, max: i64, name: &str) -> Result<CronFie
             let start = parse_i64(start_raw, name)?;
             let end = parse_i64(end_raw, name)?;
             if start > end {
-                return Err(OrbitError::JobValidation(format!(
+                return Err(OrbitError::SchedulerValidation(format!(
                     "{name} range start must be <= end"
                 )));
             }
@@ -205,12 +205,12 @@ fn parse_cron_field(raw: &str, min: i64, max: i64, name: &str) -> Result<CronFie
 
 fn parse_i64(raw: &str, field_name: &str) -> Result<i64, OrbitError> {
     raw.parse::<i64>()
-        .map_err(|_| OrbitError::JobValidation(format!("invalid {field_name} value: {raw}")))
+        .map_err(|_| OrbitError::SchedulerValidation(format!("invalid {field_name} value: {raw}")))
 }
 
 fn ensure_in_range(value: i64, min: i64, max: i64, field_name: &str) -> Result<(), OrbitError> {
     if value < min || value > max {
-        return Err(OrbitError::JobValidation(format!(
+        return Err(OrbitError::SchedulerValidation(format!(
             "{field_name} value out of range ({min}-{max}): {value}"
         )));
     }

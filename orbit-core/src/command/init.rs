@@ -5,7 +5,7 @@ use orbit_types::OrbitError;
 use serde_json::json;
 
 use crate::OrbitRuntime;
-use crate::command::work::WorkAddParams;
+use crate::command::job::JobAddParams;
 
 const DEFAULT_IDENTITIES: [(&str, &str); 6] = [
     ("linus", include_str!("../../assets/identities/linus.yaml")),
@@ -122,9 +122,9 @@ impl OrbitRuntime {
         )?;
 
         let init_runtime = OrbitRuntime::from_data_root(&orbit_root)?;
-        let created_default_work = init_runtime.show_work(DEFAULT_APPROVAL_WORK_ID).is_err()
+        let created_default_work = init_runtime.show_job(DEFAULT_APPROVAL_WORK_ID).is_err()
             && init_runtime
-                .add_work(WorkAddParams {
+                .add_job(JobAddParams {
                     id: DEFAULT_APPROVAL_WORK_ID.to_string(),
                     spec_type: "task_approval".to_string(),
                     description: "Leader review and delegated task approval workflow".to_string(),

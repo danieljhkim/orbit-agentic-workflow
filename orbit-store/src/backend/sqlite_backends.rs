@@ -1,20 +1,20 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Job, JobRun, JobRunState,
-    JobScheduleState, OrbitError, OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus, Watch,
-    Work,
+    AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Scheduler, SchedulerRun, SchedulerRunState,
+    SchedulerScheduleState, OrbitError, OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus, Watch,
+    Job,
 };
 use serde_json::Value;
 
 use super::contracts::{
-    AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, JobCreateParams,
-    JobStoreBackend, LockStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
-    ToolStoreBackend, WatchStoreBackend, WorkCreateParams, WorkStoreBackend,
+    AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, SchedulerCreateParams,
+    SchedulerStoreBackend, LockStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    ToolStoreBackend, WatchStoreBackend, JobCreateParams, JobStoreBackend,
 };
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
-use crate::sqlite::job_store::DueJobsClaim;
+use crate::sqlite::scheduler_store::DueJobsClaim;
 use crate::sqlite::task_store::{TaskInsertParams, TaskUpdateFields};
-use crate::{Store, WorkInsertParams};
+use crate::{Store, JobInsertParams};
 
 #[derive(Clone)]
 pub(crate) struct SqliteTaskStoreBackend {
@@ -125,10 +125,10 @@ pub(crate) struct SqliteWorkStoreBackend {
     pub(crate) store: Store,
 }
 
-impl WorkStoreBackend for SqliteWorkStoreBackend {
-    fn add_work(&self, params: WorkCreateParams) -> Result<Work, OrbitError> {
+impl JobStoreBackend for SqliteWorkStoreBackend {
+    fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
         self.store.with_transaction(|tx| {
-            tx.insert_work(&WorkInsertParams {
+            tx.insert_work(&JobInsertParams {
                 id: params.id.clone(),
                 spec_type: params.spec_type.clone(),
                 description: params.description.clone(),
@@ -143,16 +143,16 @@ impl WorkStoreBackend for SqliteWorkStoreBackend {
         })
     }
 
-    fn list_works(&self, include_inactive: bool) -> Result<Vec<Work>, OrbitError> {
-        self.store.list_works(include_inactive)
+    fn list_jobs(&self, include_inactive: bool) -> Result<Vec<Job>, OrbitError> {
+        self.store.list_jobs(include_inactive)
     }
 
-    fn get_work(&self, id: &str) -> Result<Option<Work>, OrbitError> {
-        self.store.get_work(id)
+    fn get_job(&self, id: &str) -> Result<Option<Job>, OrbitError> {
+        self.store.get_job(id)
     }
 
-    fn disable_work(&self, id: &str) -> Result<bool, OrbitError> {
-        self.store.with_transaction(|tx| tx.disable_work(id))
+    fn disable_job(&self, id: &str) -> Result<bool, OrbitError> {
+        self.store.with_transaction(|tx| tx.disable_job(id))
     }
 }
 
@@ -161,8 +161,8 @@ pub(crate) struct SqliteJobStoreBackend {
     pub(crate) store: Store,
 }
 
-impl JobStoreBackend for SqliteJobStoreBackend {
-    fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
+impl SchedulerStoreBackend for SqliteJobStoreBackend {
+    fn add_scheduler(&self, params: SchedulerCreateParams) -> Result<Scheduler, OrbitError> {
         self.store.with_transaction(|tx| {
             tx.insert_job_v2(
                 params.target_type,
@@ -178,68 +178,68 @@ impl JobStoreBackend for SqliteJobStoreBackend {
         })
     }
 
-    fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        self.store.list_jobs(include_disabled)
+    fn list_schedulers(&self, include_disabled: bool) -> Result<Vec<Scheduler>, OrbitError> {
+        self.store.list_schedulers(include_disabled)
     }
 
-    fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        self.store.get_job(job_id)
+    fn get_scheduler(&self, scheduler_id: &str) -> Result<Option<Scheduler>, OrbitError> {
+        self.store.get_scheduler(scheduler_id)
     }
 
-    fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError> {
-        self.store.due_jobs(now)
+    fn due_schedulers(&self, now: DateTime<Utc>) -> Result<Vec<Scheduler>, OrbitError> {
+        self.store.due_schedulers(now)
     }
 
-    fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.store.list_job_runs(job_id)
+    fn list_scheduler_runs(&self, scheduler_id: &str) -> Result<Vec<SchedulerRun>, OrbitError> {
+        self.store.list_scheduler_runs(scheduler_id)
     }
 
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.store.get_pending_or_running_job_run(job_id)
+    fn get_pending_or_running_scheduler_run(&self, scheduler_id: &str) -> Result<Option<SchedulerRun>, OrbitError> {
+        self.store.get_pending_or_running_scheduler_run(scheduler_id)
     }
 
-    fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError> {
+    fn set_scheduler_state(&self, scheduler_id: &str, state: SchedulerScheduleState) -> Result<bool, OrbitError> {
         self.store
-            .with_transaction(|tx| tx.set_job_state(job_id, state))
+            .with_transaction(|tx| tx.set_scheduler_state(scheduler_id, state))
     }
 
-    fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
+    fn mark_scheduler_disabled(&self, scheduler_id: &str) -> Result<bool, OrbitError> {
         self.store
-            .with_transaction(|tx| tx.mark_job_disabled(job_id))
+            .with_transaction(|tx| tx.mark_scheduler_disabled(scheduler_id))
     }
 
-    fn update_job_next_run(
+    fn update_scheduler_next_run(
         &self,
-        job_id: &str,
+        scheduler_id: &str,
         next_run_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
         self.store
-            .with_transaction(|tx| tx.update_job_next_run(job_id, next_run_at))
+            .with_transaction(|tx| tx.update_scheduler_next_run(scheduler_id, next_run_at))
     }
 
-    fn insert_job_run(
+    fn insert_scheduler_run(
         &self,
-        job_id: &str,
+        scheduler_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
-    ) -> Result<JobRun, OrbitError> {
+    ) -> Result<SchedulerRun, OrbitError> {
         self.store
-            .with_transaction(|tx| tx.insert_job_run(job_id, attempt, scheduled_at))
+            .with_transaction(|tx| tx.insert_scheduler_run(scheduler_id, attempt, scheduled_at))
     }
 
-    fn mark_job_run_running(
+    fn mark_scheduler_run_running(
         &self,
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
         self.store
-            .with_transaction(|tx| tx.mark_job_run_running(run_id, started_at))
+            .with_transaction(|tx| tx.mark_scheduler_run_running(run_id, started_at))
     }
 
-    fn complete_job_run(
+    fn complete_scheduler_run(
         &self,
         run_id: &str,
-        state: JobRunState,
+        state: SchedulerRunState,
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
         exit_code: Option<i32>,
@@ -248,7 +248,7 @@ impl JobStoreBackend for SqliteJobStoreBackend {
         error_message: Option<&str>,
     ) -> Result<bool, OrbitError> {
         self.store.with_transaction(|tx| {
-            tx.complete_job_run(
+            tx.complete_scheduler_run(
                 run_id,
                 state,
                 finished_at,
@@ -261,8 +261,8 @@ impl JobStoreBackend for SqliteJobStoreBackend {
         })
     }
 
-    fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError> {
-        self.store.with_transaction(|tx| tx.claim_due_jobs(now))
+    fn claim_due_schedulers(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError> {
+        self.store.with_transaction(|tx| tx.claim_due_schedulers(now))
     }
 }
 

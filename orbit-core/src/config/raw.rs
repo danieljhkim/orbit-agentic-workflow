@@ -6,8 +6,8 @@ use serde::Deserialize;
 pub(super) struct RawRuntimeConfig {
     pub(super) execution: Option<RawExecutionConfig>,
     pub(super) identity: Option<RawIdentitySection>,
+    pub(super) scheduler: Option<RawEntitySection>,
     pub(super) job: Option<RawEntitySection>,
-    pub(super) work: Option<RawEntitySection>,
     pub(super) skill: Option<RawEntitySection>,
     pub(super) task: Option<RawTaskSection>,
     pub(super) watch: Option<RawEntitySection>,

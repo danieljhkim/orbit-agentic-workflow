@@ -4,14 +4,14 @@ pub mod error;
 pub mod event;
 pub mod id;
 pub mod identity;
-pub mod job;
+pub mod scheduler;
 pub mod memo;
 pub mod role;
 pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
-pub mod work;
+pub mod job;
 
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
@@ -19,9 +19,9 @@ pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use identity::{IdentityRole, ResolvedIdentity};
-pub use job::{
-    AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
-    JobScheduleState, JobTargetType,
+pub use scheduler::{
+    AgentResponseEnvelope, AgentRunError, Scheduler, SchedulerRetryBackoffStrategy, SchedulerRun, SchedulerRunState,
+    SchedulerScheduleState, SchedulerTargetType,
 };
 pub use memo::Memo;
 pub use role::Role;
@@ -29,15 +29,15 @@ pub use skill::{AgentSession, AgentSessionStatus, AgentToolCall, Skill, TaskSkil
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;
-pub use work::Work;
+pub use job::Job;
 
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
 
     use crate::{
-        AgentResponseEnvelope, ExecutionResult, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
-        JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, Work,
+        AgentResponseEnvelope, ExecutionResult, Scheduler, SchedulerRetryBackoffStrategy, SchedulerRun, SchedulerRunState,
+        SchedulerScheduleState, SchedulerTargetType, OrbitEvent, Role, Skill, Job,
     };
 
     #[test]
@@ -98,31 +98,31 @@ mod tests {
     }
 
     #[test]
-    fn job_shapes_are_stable() {
-        let job = Job {
-            job_id: "job-1".to_string(),
-            target_type: JobTargetType::Work,
+    fn scheduler_shapes_are_stable() {
+        let scheduler = Scheduler {
+            scheduler_id: "scheduler-1".to_string(),
+            target_type: SchedulerTargetType::Job,
             target_id: "exec-1".to_string(),
             schedule: "0 * * * *".to_string(),
             agent_cli: "claude".to_string(),
             timeout_seconds: 300,
             retry_max_attempts: 2,
-            retry_backoff_strategy: JobRetryBackoffStrategy::Exponential,
+            retry_backoff_strategy: SchedulerRetryBackoffStrategy::Exponential,
             retry_initial_delay_seconds: 10,
-            state: JobScheduleState::Enabled,
+            state: SchedulerScheduleState::Enabled,
             next_run_at: Utc::now(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        let job_value = serde_json::to_value(job).expect("serialize job");
-        assert_eq!(job_value["state"], "enabled");
-        assert_eq!(job_value["target_type"], "work");
+        let scheduler_value = serde_json::to_value(scheduler).expect("serialize scheduler");
+        assert_eq!(scheduler_value["state"], "enabled");
+        assert_eq!(scheduler_value["target_type"], "job");
 
-        let run = JobRun {
+        let run = SchedulerRun {
             run_id: "run-1".to_string(),
-            job_id: "job-1".to_string(),
+            scheduler_id: "scheduler-1".to_string(),
             attempt: 1,
-            state: JobRunState::Running,
+            state: SchedulerRunState::Running,
             scheduled_at: Utc::now(),
             started_at: None,
             finished_at: None,
@@ -139,8 +139,8 @@ mod tests {
     }
 
     #[test]
-    fn work_shape_is_stable() {
-        let spec = Work {
+    fn job_shape_is_stable() {
+        let spec = Job {
             id: "exec-1".to_string(),
             spec_type: "analysis".to_string(),
             description: "Analyze repository".to_string(),

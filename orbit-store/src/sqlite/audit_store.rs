@@ -62,16 +62,16 @@ impl<'a> StoreTx<'a> {
 
 fn event_type(event: &OrbitEvent) -> &'static str {
     match event {
-        OrbitEvent::JobAdded { .. } => "JobAdded",
-        OrbitEvent::JobPaused { .. } => "JobPaused",
-        OrbitEvent::JobResumed { .. } => "JobResumed",
-        OrbitEvent::JobDeleted { .. } => "JobDeleted",
-        OrbitEvent::JobTriggered { .. } => "JobTriggered",
-        OrbitEvent::JobRunStarted { .. } => "JobRunStarted",
-        OrbitEvent::JobRunCompleted { .. } => "JobRunCompleted",
-        OrbitEvent::JobRetryScheduled { .. } => "JobRetryScheduled",
-        OrbitEvent::JobProtocolViolation { .. } => "JobProtocolViolation",
-        OrbitEvent::JobSkipped { .. } => "JobSkipped",
+        OrbitEvent::SchedulerAdded { .. } => "SchedulerAdded",
+        OrbitEvent::SchedulerPaused { .. } => "SchedulerPaused",
+        OrbitEvent::SchedulerResumed { .. } => "SchedulerResumed",
+        OrbitEvent::SchedulerDeleted { .. } => "SchedulerDeleted",
+        OrbitEvent::SchedulerTriggered { .. } => "SchedulerTriggered",
+        OrbitEvent::SchedulerRunStarted { .. } => "SchedulerRunStarted",
+        OrbitEvent::SchedulerRunCompleted { .. } => "SchedulerRunCompleted",
+        OrbitEvent::SchedulerRetryScheduled { .. } => "SchedulerRetryScheduled",
+        OrbitEvent::SchedulerProtocolViolation { .. } => "SchedulerProtocolViolation",
+        OrbitEvent::SchedulerSkipped { .. } => "SchedulerSkipped",
         OrbitEvent::ToolExecuted { .. } => "ToolExecuted",
         OrbitEvent::WatchTriggered { .. } => "WatchTriggered",
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
@@ -90,8 +90,8 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::SkillDeleted { .. } => "SkillDeleted",
         OrbitEvent::SkillAttached { .. } => "SkillAttached",
         OrbitEvent::SkillDetached { .. } => "SkillDetached",
-        OrbitEvent::WorkAdded { .. } => "WorkAdded",
-        OrbitEvent::WorkDisabled { .. } => "WorkDisabled",
+        OrbitEvent::JobAdded { .. } => "JobAdded",
+        OrbitEvent::JobDisabled { .. } => "JobDisabled",
         OrbitEvent::AgentSessionStarted { .. } => "AgentSessionStarted",
         OrbitEvent::AgentToolCall { .. } => "AgentToolCall",
         OrbitEvent::AgentSessionCompleted { .. } => "AgentSessionCompleted",
@@ -100,33 +100,33 @@ fn event_type(event: &OrbitEvent) -> &'static str {
 
 fn event_message(event: &OrbitEvent) -> String {
     match event {
-        OrbitEvent::JobAdded { job_id } => format!("job added: {job_id}"),
-        OrbitEvent::JobPaused { job_id } => format!("job paused: {job_id}"),
-        OrbitEvent::JobResumed { job_id } => format!("job resumed: {job_id}"),
-        OrbitEvent::JobDeleted { job_id } => format!("job deleted: {job_id}"),
-        OrbitEvent::JobTriggered { job_id } => format!("job triggered: {job_id}"),
-        OrbitEvent::JobRunStarted {
-            job_id,
+        OrbitEvent::SchedulerAdded { scheduler_id } => format!("scheduler added: {scheduler_id}"),
+        OrbitEvent::SchedulerPaused { scheduler_id } => format!("scheduler paused: {scheduler_id}"),
+        OrbitEvent::SchedulerResumed { scheduler_id } => format!("scheduler resumed: {scheduler_id}"),
+        OrbitEvent::SchedulerDeleted { scheduler_id } => format!("scheduler deleted: {scheduler_id}"),
+        OrbitEvent::SchedulerTriggered { scheduler_id } => format!("scheduler triggered: {scheduler_id}"),
+        OrbitEvent::SchedulerRunStarted {
+            scheduler_id,
             run_id,
             attempt,
-        } => format!("job run started: job={job_id} run={run_id} attempt={attempt}"),
-        OrbitEvent::JobRunCompleted {
-            job_id,
+        } => format!("scheduler run started: scheduler={scheduler_id} run={run_id} attempt={attempt}"),
+        OrbitEvent::SchedulerRunCompleted {
+            scheduler_id,
             run_id,
             state,
-        } => format!("job run completed: job={job_id} run={run_id} state={state}"),
-        OrbitEvent::JobRetryScheduled {
-            job_id,
+        } => format!("scheduler run completed: scheduler={scheduler_id} run={run_id} state={state}"),
+        OrbitEvent::SchedulerRetryScheduled {
+            scheduler_id,
             run_id,
             next_run_at,
-        } => format!("job retry scheduled: job={job_id} run={run_id} next_run_at={next_run_at}"),
-        OrbitEvent::JobProtocolViolation {
-            job_id,
+        } => format!("scheduler retry scheduled: scheduler={scheduler_id} run={run_id} next_run_at={next_run_at}"),
+        OrbitEvent::SchedulerProtocolViolation {
+            scheduler_id,
             run_id,
             message,
-        } => format!("job protocol violation: job={job_id} run={run_id} message={message}"),
-        OrbitEvent::JobSkipped { job_id, reason } => {
-            format!("job skipped: job={job_id} reason={reason}")
+        } => format!("scheduler protocol violation: scheduler={scheduler_id} run={run_id} message={message}"),
+        OrbitEvent::SchedulerSkipped { scheduler_id, reason } => {
+            format!("scheduler skipped: scheduler={scheduler_id} reason={reason}")
         }
         OrbitEvent::ToolExecuted { name } => format!("tool executed: {name}"),
         OrbitEvent::WatchTriggered { path } => format!("watch triggered: {path}"),
@@ -154,8 +154,8 @@ fn event_message(event: &OrbitEvent) -> String {
             task_id,
             skill_name,
         } => format!("skill detached: {skill_name} -> {task_id}"),
-        OrbitEvent::WorkAdded { id } => format!("work added: {id}"),
-        OrbitEvent::WorkDisabled { id } => format!("work disabled: {id}"),
+        OrbitEvent::JobAdded { id } => format!("job added: {id}"),
+        OrbitEvent::JobDisabled { id } => format!("job disabled: {id}"),
         OrbitEvent::AgentSessionStarted {
             session_id,
             task_id,

@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS memos (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS jobs (
+CREATE TABLE IF NOT EXISTS schedulers (
     id TEXT PRIMARY KEY,
-    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
+    target_type TEXT NOT NULL CHECK (target_type IN ('job')),
     target_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     agent_cli TEXT NOT NULL,
@@ -41,17 +41,17 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_state
-ON jobs(state);
+ON schedulers(state);
 
 CREATE INDEX IF NOT EXISTS idx_jobs_target
-ON jobs(target_type, target_id);
+ON schedulers(target_type, target_id);
 
 CREATE INDEX IF NOT EXISTS idx_jobs_next_run
-ON jobs(state, next_run_at);
+ON schedulers(state, next_run_at);
 
-CREATE TABLE IF NOT EXISTS job_runs (
+CREATE TABLE IF NOT EXISTS scheduler_runs (
     id TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL,
+    scheduler_id TEXT NOT NULL,
     attempt INTEGER NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed','timeout')),
     scheduled_at TEXT NOT NULL,
@@ -63,20 +63,20 @@ CREATE TABLE IF NOT EXISTS job_runs (
     error_code TEXT,
     error_message TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(job_id) REFERENCES jobs(id)
+    FOREIGN KEY(scheduler_id) REFERENCES schedulers(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_runs_job
-ON job_runs(job_id, created_at);
+ON scheduler_runs(scheduler_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_job_runs_state
-ON job_runs(state);
+ON scheduler_runs(state);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_job_runs_single_running
-ON job_runs(job_id)
+ON scheduler_runs(scheduler_id)
 WHERE state = 'running';
 
-CREATE TABLE IF NOT EXISTS works (
+CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -90,10 +90,10 @@ CREATE TABLE IF NOT EXISTS works (
 );
 
 CREATE INDEX IF NOT EXISTS idx_works_type
-ON works(type);
+ON jobs(type);
 
 CREATE INDEX IF NOT EXISTS idx_works_active
-ON works(is_active);
+ON jobs(is_active);
 
 CREATE TABLE IF NOT EXISTS watches (
     id TEXT PRIMARY KEY,

@@ -3,19 +3,19 @@ use std::thread;
 
 use chrono::{Duration as ChronoDuration, Utc};
 use orbit_core::OrbitRuntime;
+use orbit_core::command::scheduler::SchedulerAddParams;
 use orbit_core::command::job::JobAddParams;
-use orbit_core::command::work::WorkAddParams;
 use orbit_store::Store;
-use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitError};
+use orbit_types::{SchedulerRetryBackoffStrategy, SchedulerRunState, SchedulerTargetType, OrbitError};
 use serde_json::json;
 use tempfile::tempdir;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-fn add_work(runtime: &OrbitRuntime, id: &str) {
+fn add_job(runtime: &OrbitRuntime, id: &str) {
     let _ = runtime
-        .add_work(WorkAddParams {
+        .add_job(JobAddParams {
             id: id.to_string(),
             spec_type: "analysis".to_string(),
             description: "runtime test spec".to_string(),
@@ -27,7 +27,7 @@ fn add_work(runtime: &OrbitRuntime, id: &str) {
             assigned_to: None,
             created_by: None,
         })
-        .expect("add work");
+        .expect("add job");
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn add_work_rejects_missing_skill_ref() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
 
-    let result = runtime.add_work(WorkAddParams {
+    let result = runtime.add_job(JobAddParams {
         id: "spec-missing-skill".to_string(),
         spec_type: "analysis".to_string(),
         description: "missing skill".to_string(),
@@ -55,12 +55,12 @@ fn add_scheduled_job(
     target_id: &str,
     agent_cli: &str,
     retry_max_attempts: u32,
-    retry_backoff_strategy: JobRetryBackoffStrategy,
+    retry_backoff_strategy: SchedulerRetryBackoffStrategy,
     retry_initial_delay_seconds: u64,
 ) -> String {
     runtime
-        .add_job(JobAddParams {
-            target_type: JobTargetType::Work,
+        .add_scheduler(SchedulerAddParams {
+            target_type: SchedulerTargetType::Job,
             target_id: target_id.to_string(),
             schedule: "every 1s".to_string(),
             agent_cli: agent_cli.to_string(),
@@ -69,8 +69,8 @@ fn add_scheduled_job(
             retry_backoff_strategy,
             retry_initial_delay_seconds,
         })
-        .expect("add job")
-        .job_id
+        .expect("add scheduler")
+        .scheduler_id
 }
 
 fn write_agent_script(path: &std::path::Path, body: &str) -> String {
@@ -88,17 +88,17 @@ fn write_sqlite_job_config(data_root: &std::path::Path) {
     let db_path = data_root.join("orbit.db").to_string_lossy().to_string();
     write_runtime_config(
         data_root,
-        &format!("[job]\npersistence = {{ type = \"sqlite\", path = \"{db_path}\" }}\n"),
+        &format!("[scheduler]\npersistence = {{ type = \"sqlite\", path = \"{db_path}\" }}\n"),
     );
 }
 
-fn insert_stale_running_run(data_root: &std::path::Path, job_id: &str) -> String {
+fn insert_stale_running_run(data_root: &std::path::Path, scheduler_id: &str) -> String {
     let store = Store::open(&data_root.join("orbit.db")).expect("open store");
     store
         .with_transaction(|tx| {
             let old_time = Utc::now() - ChronoDuration::hours(2);
-            let run = tx.insert_job_run(job_id, 1, old_time)?;
-            let changed = tx.mark_job_run_running(&run.run_id, old_time)?;
+            let run = tx.insert_scheduler_run(scheduler_id, 1, old_time)?;
+            let changed = tx.mark_scheduler_run_running(&run.run_id, old_time)?;
             assert!(changed, "run must be marked running");
             Ok(run.run_id)
         })
@@ -119,23 +119,23 @@ fn scheduled_job_run_executes_agent_and_records_success_run() {
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
-    add_work(&runtime, "spec-success");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-success");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-success",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
+    let ran = runtime.run_due_schedulers(due_at).expect("run schedulers");
     assert_eq!(ran, 1);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Success);
+    assert_eq!(history[0].state, SchedulerRunState::Success);
     assert_eq!(history[0].attempt, 1);
     assert!(history[0].agent_response_json.is_some());
 
@@ -146,7 +146,7 @@ fn scheduled_job_run_executes_agent_and_records_success_run() {
 
     let stdin_raw = std::fs::read_to_string(stdin_capture).expect("stdin capture");
     assert!(stdin_raw.contains("\"schemaVersion\":1"));
-    assert!(stdin_raw.contains("\"work\""));
+    assert!(stdin_raw.contains("\"job\""));
     assert!(stdin_raw.contains("\"skills\""));
     assert!(stdin_raw.contains("\"input\""));
     assert!(stdin_raw.contains("\"memory\""));
@@ -159,23 +159,23 @@ fn invalid_agent_json_marks_run_failed_with_protocol_violation() {
     let script_path = dir.path().join("mock-agent");
     let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nprintf 'not-json'\n");
 
-    add_work(&runtime, "spec-protocol");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-protocol");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-protocol",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
+    let ran = runtime.run_due_schedulers(due_at).expect("run schedulers");
     assert_eq!(ran, 1);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Failed);
+    assert_eq!(history[0].state, SchedulerRunState::Failed);
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_PROTOCOL_VIOLATION")
@@ -185,7 +185,7 @@ fn invalid_agent_json_marks_run_failed_with_protocol_violation() {
     assert!(
         audits
             .iter()
-            .any(|audit| audit.event_type == "JobProtocolViolation"),
+            .any(|audit| audit.event_type == "SchedulerProtocolViolation"),
         "protocol violations must be auditable"
     );
 }
@@ -200,23 +200,23 @@ fn invocation_failure_with_stderr_marks_run_failed_with_invocation_error() {
         "#!/bin/sh\necho 'network down' 1>&2\nexit 1\n",
     );
 
-    add_work(&runtime, "spec-invocation");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-invocation");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-invocation",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
+    let ran = runtime.run_due_schedulers(due_at).expect("run schedulers");
     assert_eq!(ran, 1);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Failed);
+    assert_eq!(history[0].state, SchedulerRunState::Failed);
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_INVOCATION_FAILED")
@@ -247,20 +247,20 @@ pass = ["PATH"]
         "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-codex-missing-env");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-codex-missing-env");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-codex-missing-env",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let run = runtime.run_job_now(&job_id).expect("run job");
-    assert_eq!(run.state, JobRunState::Failed);
+    let run = runtime.run_scheduler_now(&scheduler_id).expect("run scheduler");
+    assert_eq!(run.state, SchedulerRunState::Failed);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_INVOCATION_FAILED")
@@ -287,20 +287,20 @@ pass = ["PATH"]
         "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-claude-missing-env");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-claude-missing-env");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-claude-missing-env",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let run = runtime.run_job_now(&job_id).expect("run job");
-    assert_eq!(run.state, JobRunState::Failed);
+    let run = runtime.run_scheduler_now(&scheduler_id).expect("run scheduler");
+    assert_eq!(run.state, SchedulerRunState::Failed);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_INVOCATION_FAILED")
@@ -331,20 +331,20 @@ fn provider_required_env_present_reaches_protocol_validation() {
     let script_path = dir.path().join(provider);
     let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nprintf 'not-json'\n");
 
-    add_work(&runtime, "spec-provider-env-present");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-provider-env-present");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-provider-env-present",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let run = runtime.run_job_now(&job_id).expect("run job");
-    assert_eq!(run.state, JobRunState::Failed);
+    let run = runtime.run_scheduler_now(&scheduler_id).expect("run scheduler");
+    assert_eq!(run.state, SchedulerRunState::Failed);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_PROTOCOL_VIOLATION")
@@ -363,26 +363,26 @@ fn run_job_now_applies_retry_policy_and_second_attempt_can_succeed() {
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
-    add_work(&runtime, "spec-retry");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-retry");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-retry",
         &agent_cli,
         1,
-        JobRetryBackoffStrategy::Fixed,
+        SchedulerRetryBackoffStrategy::Fixed,
         0,
     );
 
-    let result = runtime.run_job_now(&job_id).expect("run now");
-    assert_eq!(result.state, JobRunState::Success);
+    let result = runtime.run_scheduler_now(&scheduler_id).expect("run now");
+    assert_eq!(result.state, SchedulerRunState::Success);
     assert_eq!(result.attempt, 2);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 2);
     assert_eq!(history[0].attempt, 2);
-    assert_eq!(history[0].state, JobRunState::Success);
+    assert_eq!(history[0].state, SchedulerRunState::Success);
     assert_eq!(history[1].attempt, 1);
-    assert_eq!(history[1].state, JobRunState::Failed);
+    assert_eq!(history[1].state, SchedulerRunState::Failed);
 }
 
 #[test]
@@ -395,41 +395,41 @@ fn run_job_now_rejects_when_active_run_exists() {
         "#!/bin/sh\nsleep 0.5\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-active-lock");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-active-lock");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-active-lock",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
     let r1 = Arc::clone(&runtime);
-    let job_id_thread = job_id.clone();
-    let handle = thread::spawn(move || r1.run_job_now(&job_id_thread));
+    let scheduler_id_thread = scheduler_id.clone();
+    let handle = thread::spawn(move || r1.run_scheduler_now(&scheduler_id_thread));
     thread::sleep(std::time::Duration::from_millis(100));
 
     let err = runtime
-        .run_job_now(&job_id)
+        .run_scheduler_now(&scheduler_id)
         .expect_err("second run should be rejected while first is active");
-    assert!(matches!(err, OrbitError::JobValidation(_)));
+    assert!(matches!(err, OrbitError::SchedulerValidation(_)));
     assert!(err.to_string().contains("already has an active run"));
 
     let first = handle.join().expect("join");
     assert!(first.is_ok(), "first run should complete successfully");
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(
         history.len(),
         1,
         "second invocation must not insert a pending row"
     );
-    assert_eq!(history[0].state, JobRunState::Success);
+    assert_eq!(history[0].state, SchedulerRunState::Success);
 }
 
 #[test]
-fn job_history_recovers_stale_running_run_to_failed() {
+fn scheduler_history_recovers_stale_running_run_to_failed() {
     let dir = tempdir().expect("tempdir");
     write_sqlite_job_config(dir.path());
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
@@ -439,23 +439,23 @@ fn job_history_recovers_stale_running_run_to_failed() {
         "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-history-stale");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-history-stale");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-history-stale",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
-    let stale_run_id = insert_stale_running_run(dir.path(), &job_id);
+    let stale_run_id = insert_stale_running_run(dir.path(), &scheduler_id);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     let stale = history
         .iter()
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
-    assert_eq!(stale.state, JobRunState::Failed);
+    assert_eq!(stale.state, SchedulerRunState::Failed);
     assert_eq!(stale.error_code.as_deref(), Some("AGENT_INVOCATION_FAILED"));
     assert!(
         stale
@@ -477,21 +477,21 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
         "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-run-now-stale");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-run-now-stale");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-run-now-stale",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
-    let stale_run_id = insert_stale_running_run(dir.path(), &job_id);
+    let stale_run_id = insert_stale_running_run(dir.path(), &scheduler_id);
 
-    let result = runtime.run_job_now(&job_id).expect("run now");
-    assert_eq!(result.state, JobRunState::Success);
+    let result = runtime.run_scheduler_now(&scheduler_id).expect("run now");
+    assert_eq!(result.state, SchedulerRunState::Success);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert!(
         history.iter().any(|run| run.run_id == stale_run_id),
         "stale run should still be present in history"
@@ -500,10 +500,10 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
         .iter()
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
-    assert_eq!(stale.state, JobRunState::Failed);
+    assert_eq!(stale.state, SchedulerRunState::Failed);
     assert_eq!(stale.error_code.as_deref(), Some("AGENT_INVOCATION_FAILED"));
     assert!(
-        history.iter().any(|run| run.state == JobRunState::Success),
+        history.iter().any(|run| run.state == SchedulerRunState::Success),
         "new attempt should complete successfully"
     );
 }
@@ -519,30 +519,30 @@ fn run_due_jobs_recovers_stale_running_run_and_reclaims_job() {
         "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-due-stale");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-due-stale");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-due-stale",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
-    let stale_run_id = insert_stale_running_run(dir.path(), &job_id);
+    let stale_run_id = insert_stale_running_run(dir.path(), &scheduler_id);
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run due jobs");
-    assert_eq!(ran, 1, "job should be reclaimed after stale run recovery");
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
+    let ran = runtime.run_due_schedulers(due_at).expect("run due schedulers");
+    assert_eq!(ran, 1, "scheduler should be reclaimed after stale run recovery");
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     let stale = history
         .iter()
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
-    assert_eq!(stale.state, JobRunState::Failed);
+    assert_eq!(stale.state, SchedulerRunState::Failed);
     assert!(
-        history.iter().any(|run| run.state == JobRunState::Success),
-        "reclaimed due job should complete successfully"
+        history.iter().any(|run| run.state == SchedulerRunState::Success),
+        "reclaimed due scheduler should complete successfully"
     );
 }
 
@@ -556,17 +556,17 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
         "#!/bin/sh\nsleep 0.2\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
     );
 
-    add_work(&runtime, "spec-concurrent");
-    let job_id = add_scheduled_job(
+    add_job(&runtime, "spec-concurrent");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-concurrent",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
     let barrier = Arc::new(Barrier::new(3));
 
     let r1 = Arc::clone(&runtime);
@@ -574,7 +574,7 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
     let due_one = due_at;
     let t1 = thread::spawn(move || {
         b1.wait();
-        r1.run_due_jobs(due_one).expect("thread 1 run")
+        r1.run_due_schedulers(due_one).expect("thread 1 run")
     });
 
     let r2 = Arc::clone(&runtime);
@@ -582,26 +582,26 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
     let due_two = due_at;
     let t2 = thread::spawn(move || {
         b2.wait();
-        r2.run_due_jobs(due_two).expect("thread 2 run")
+        r2.run_due_schedulers(due_two).expect("thread 2 run")
     });
 
     barrier.wait();
 
     let c1 = t1.join().expect("join t1");
     let c2 = t2.join().expect("join t2");
-    assert_eq!(c1 + c2, 1, "job should be claimed exactly once");
+    assert_eq!(c1 + c2, 1, "scheduler should be claimed exactly once");
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Success);
+    assert_eq!(history[0].state, SchedulerRunState::Success);
 
     let audits = runtime.list_audits(25).expect("audits");
     assert!(
         audits.iter().any(|audit| {
-            audit.event_type == "JobRunCompleted"
-                && audit.payload["data"]["job_id"].as_str() == Some(job_id.as_str())
+            audit.event_type == "SchedulerRunCompleted"
+                && audit.payload["data"]["scheduler_id"].as_str() == Some(scheduler_id.as_str())
         }),
-        "job run completion should be recorded in audits"
+        "scheduler run completion should be recorded in audits"
     );
 }
 
@@ -652,7 +652,7 @@ Validate output shape.
     );
 
     let _ = runtime
-        .add_work(WorkAddParams {
+        .add_job(JobAddParams {
             id: "spec-schema".to_string(),
             spec_type: "analysis".to_string(),
             description: "schema validation".to_string(),
@@ -664,23 +664,23 @@ Validate output shape.
             assigned_to: None,
             created_by: None,
         })
-        .expect("add work");
-    let job_id = add_scheduled_job(
+        .expect("add job");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-schema",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
+    let ran = runtime.run_due_schedulers(due_at).expect("run schedulers");
     assert_eq!(ran, 1);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Failed);
+    assert_eq!(history[0].state, SchedulerRunState::Failed);
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_PROTOCOL_VIOLATION")
@@ -747,7 +747,7 @@ Validate advanced schema behavior.
     );
 
     let _ = runtime
-        .add_work(WorkAddParams {
+        .add_job(JobAddParams {
             id: "spec-complex-schema".to_string(),
             spec_type: "analysis".to_string(),
             description: "schema validation".to_string(),
@@ -759,23 +759,23 @@ Validate advanced schema behavior.
             assigned_to: None,
             created_by: None,
         })
-        .expect("add work");
-    let job_id = add_scheduled_job(
+        .expect("add job");
+    let scheduler_id = add_scheduled_job(
         &runtime,
         "spec-complex-schema",
         &agent_cli,
         0,
-        JobRetryBackoffStrategy::None,
+        SchedulerRetryBackoffStrategy::None,
         0,
     );
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
+    let due_at = runtime.show_scheduler(&scheduler_id).expect("show scheduler").next_run_at;
+    let ran = runtime.run_due_schedulers(due_at).expect("run schedulers");
     assert_eq!(ran, 1);
 
-    let history = runtime.job_history(&job_id).expect("history");
+    let history = runtime.scheduler_history(&scheduler_id).expect("history");
     assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Failed);
+    assert_eq!(history[0].state, SchedulerRunState::Failed);
     assert_eq!(
         history[0].error_code.as_deref(),
         Some("AGENT_PROTOCOL_VIOLATION")

@@ -10,13 +10,13 @@ delegate_approval = true
 # Backend Instances
 # ----------------------------------
 
+[scheduler]
+# yaml + sqlite are supported for now (default = file)
+persistence = { type = "file", path = "schedulers", format = "yaml"}
+
 [job]
 # yaml + sqlite are supported for now (default = file)
-persistence = { type = "file", path = "jobs", format = "yaml"}
-
-[work]
-# yaml + sqlite are supported for now (default = file)
-persistence = { type = "file", path = "works", format = "yaml" }
+persistence = { type = "file", path = "jobs", format = "yaml" }
 
 [skill]
 # only markdown is supported for now (default = file)

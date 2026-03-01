@@ -7,7 +7,7 @@ description: Use this skill when requested to review Orbit tasks for approval, r
 
 ## Purpose
 
-Provide a deterministic, auditable approval workflow for Orbit tasks before agent execution or implementation work begins.
+Provide a deterministic, auditable approval workflow for Orbit tasks before agent execution or implementation job begins.
 
 ## Scope
 

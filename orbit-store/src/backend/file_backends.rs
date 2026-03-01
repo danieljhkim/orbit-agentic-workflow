@@ -1,17 +1,17 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Job, JobRun, JobRunState, JobScheduleState, OrbitError, Task, TaskPriority, TaskStatus, Work,
+    Scheduler, SchedulerRun, SchedulerRunState, SchedulerScheduleState, OrbitError, Task, TaskPriority, TaskStatus, Job,
 };
 use serde_json::Value;
 
 use super::contracts::{
-    JobCreateParams, JobStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
-    WorkCreateParams, WorkStoreBackend,
+    SchedulerCreateParams, SchedulerStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    JobCreateParams, JobStoreBackend,
 };
-use crate::file::job_store::JobFileStore;
+use crate::file::scheduler_store::SchedulerFileStore;
 use crate::file::task_store::{FileTaskInsert, FileTaskUpdate, TaskFileStore};
-use crate::file::work_store::{FileWorkInsert, WorkFileStore};
-use crate::sqlite::job_store::DueJobsClaim;
+use crate::file::job_store::{FileWorkInsert, JobFileStore};
+use crate::sqlite::scheduler_store::DueJobsClaim;
 
 impl TaskStoreBackend for TaskFileStore {
     fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
@@ -83,8 +83,8 @@ impl TaskStoreBackend for TaskFileStore {
     }
 }
 
-impl WorkStoreBackend for WorkFileStore {
-    fn add_work(&self, params: WorkCreateParams) -> Result<Work, OrbitError> {
+impl JobStoreBackend for JobFileStore {
+    fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
         self.insert_work(&FileWorkInsert {
             id: params.id,
             spec_type: params.spec_type,
@@ -99,21 +99,21 @@ impl WorkStoreBackend for WorkFileStore {
         })
     }
 
-    fn list_works(&self, include_inactive: bool) -> Result<Vec<Work>, OrbitError> {
-        self.list_works(include_inactive)
+    fn list_jobs(&self, include_inactive: bool) -> Result<Vec<Job>, OrbitError> {
+        self.list_jobs(include_inactive)
     }
 
-    fn get_work(&self, id: &str) -> Result<Option<Work>, OrbitError> {
-        self.get_work(id)
+    fn get_job(&self, id: &str) -> Result<Option<Job>, OrbitError> {
+        self.get_job(id)
     }
 
-    fn disable_work(&self, id: &str) -> Result<bool, OrbitError> {
-        self.disable_work(id)
+    fn disable_job(&self, id: &str) -> Result<bool, OrbitError> {
+        self.disable_job(id)
     }
 }
 
-impl JobStoreBackend for JobFileStore {
-    fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
+impl SchedulerStoreBackend for SchedulerFileStore {
+    fn add_scheduler(&self, params: SchedulerCreateParams) -> Result<Scheduler, OrbitError> {
         self.insert_job_v2(
             params.target_type,
             &params.target_id,
@@ -127,63 +127,63 @@ impl JobStoreBackend for JobFileStore {
         )
     }
 
-    fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        self.list_jobs(include_disabled)
+    fn list_schedulers(&self, include_disabled: bool) -> Result<Vec<Scheduler>, OrbitError> {
+        self.list_schedulers(include_disabled)
     }
 
-    fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        self.get_job(job_id)
+    fn get_scheduler(&self, scheduler_id: &str) -> Result<Option<Scheduler>, OrbitError> {
+        self.get_scheduler(scheduler_id)
     }
 
-    fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError> {
-        self.due_jobs(now)
+    fn due_schedulers(&self, now: DateTime<Utc>) -> Result<Vec<Scheduler>, OrbitError> {
+        self.due_schedulers(now)
     }
 
-    fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.list_job_runs(job_id)
+    fn list_scheduler_runs(&self, scheduler_id: &str) -> Result<Vec<SchedulerRun>, OrbitError> {
+        self.list_scheduler_runs(scheduler_id)
     }
 
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.get_pending_or_running_job_run(job_id)
+    fn get_pending_or_running_scheduler_run(&self, scheduler_id: &str) -> Result<Option<SchedulerRun>, OrbitError> {
+        self.get_pending_or_running_scheduler_run(scheduler_id)
     }
 
-    fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError> {
-        self.set_job_state(job_id, state)
+    fn set_scheduler_state(&self, scheduler_id: &str, state: SchedulerScheduleState) -> Result<bool, OrbitError> {
+        self.set_scheduler_state(scheduler_id, state)
     }
 
-    fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
-        self.mark_job_disabled(job_id)
+    fn mark_scheduler_disabled(&self, scheduler_id: &str) -> Result<bool, OrbitError> {
+        self.mark_scheduler_disabled(scheduler_id)
     }
 
-    fn update_job_next_run(
+    fn update_scheduler_next_run(
         &self,
-        job_id: &str,
+        scheduler_id: &str,
         next_run_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        self.update_job_next_run(job_id, next_run_at)
+        self.update_scheduler_next_run(scheduler_id, next_run_at)
     }
 
-    fn insert_job_run(
+    fn insert_scheduler_run(
         &self,
-        job_id: &str,
+        scheduler_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
-    ) -> Result<JobRun, OrbitError> {
-        self.insert_job_run(job_id, attempt, scheduled_at)
+    ) -> Result<SchedulerRun, OrbitError> {
+        self.insert_scheduler_run(scheduler_id, attempt, scheduled_at)
     }
 
-    fn mark_job_run_running(
+    fn mark_scheduler_run_running(
         &self,
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        self.mark_job_run_running(run_id, started_at)
+        self.mark_scheduler_run_running(run_id, started_at)
     }
 
-    fn complete_job_run(
+    fn complete_scheduler_run(
         &self,
         run_id: &str,
-        state: JobRunState,
+        state: SchedulerRunState,
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
         exit_code: Option<i32>,
@@ -191,7 +191,7 @@ impl JobStoreBackend for JobFileStore {
         error_code: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<bool, OrbitError> {
-        self.complete_job_run(
+        self.complete_scheduler_run(
             run_id,
             state,
             finished_at,
@@ -203,7 +203,7 @@ impl JobStoreBackend for JobFileStore {
         )
     }
 
-    fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError> {
-        self.claim_due_jobs(now)
+    fn claim_due_schedulers(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError> {
+        self.claim_due_schedulers(now)
     }
 }

@@ -7,7 +7,7 @@ use crate::schema::{
 };
 
 pub fn mcp_tools() -> Vec<ToolDescriptor> {
-    vec![
+    let mut tools = vec![
         ToolDescriptor {
             name: "orbit.agent.run".to_string(),
             description: "Run agent workflow for a task".to_string(),
@@ -28,8 +28,8 @@ pub fn mcp_tools() -> Vec<ToolDescriptor> {
             input_schema: schema_with_identity(obj(&[]), &[]),
         },
         ToolDescriptor {
-            name: "orbit.job.add".to_string(),
-            description: "Create a scheduled job".to_string(),
+            name: "orbit.scheduler.add".to_string(),
+            description: "Create a scheduled scheduler".to_string(),
             input_schema: schema_with_identity(
                 obj(&[
                     ("target_id", str_schema()),
@@ -44,39 +44,39 @@ pub fn mcp_tools() -> Vec<ToolDescriptor> {
             ),
         },
         ToolDescriptor {
-            name: "orbit.job.delete".to_string(),
-            description: "Disable an existing job".to_string(),
-            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
+            name: "orbit.scheduler.delete".to_string(),
+            description: "Disable an existing scheduler".to_string(),
+            input_schema: schema_with_identity(obj(&[("scheduler_id", str_schema())]), &["scheduler_id"]),
         },
         ToolDescriptor {
-            name: "orbit.job.history".to_string(),
-            description: "List run history for a job".to_string(),
-            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
+            name: "orbit.scheduler.history".to_string(),
+            description: "List run history for a scheduler".to_string(),
+            input_schema: schema_with_identity(obj(&[("scheduler_id", str_schema())]), &["scheduler_id"]),
         },
         ToolDescriptor {
-            name: "orbit.job.list".to_string(),
-            description: "List jobs".to_string(),
+            name: "orbit.scheduler.list".to_string(),
+            description: "List schedulers".to_string(),
             input_schema: schema_with_identity(obj(&[("include_disabled", bool_schema())]), &[]),
         },
         ToolDescriptor {
-            name: "orbit.job.pause".to_string(),
-            description: "Pause a job schedule".to_string(),
-            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
+            name: "orbit.scheduler.pause".to_string(),
+            description: "Pause a scheduler schedule".to_string(),
+            input_schema: schema_with_identity(obj(&[("scheduler_id", str_schema())]), &["scheduler_id"]),
         },
         ToolDescriptor {
-            name: "orbit.job.resume".to_string(),
-            description: "Resume a paused job".to_string(),
-            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
+            name: "orbit.scheduler.resume".to_string(),
+            description: "Resume a paused scheduler".to_string(),
+            input_schema: schema_with_identity(obj(&[("scheduler_id", str_schema())]), &["scheduler_id"]),
         },
         ToolDescriptor {
-            name: "orbit.job.run".to_string(),
-            description: "Run a job immediately".to_string(),
-            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
+            name: "orbit.scheduler.run".to_string(),
+            description: "Run a scheduler immediately".to_string(),
+            input_schema: schema_with_identity(obj(&[("scheduler_id", str_schema())]), &["scheduler_id"]),
         },
         ToolDescriptor {
-            name: "orbit.job.show".to_string(),
-            description: "Show job details".to_string(),
-            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
+            name: "orbit.scheduler.show".to_string(),
+            description: "Show scheduler details".to_string(),
+            input_schema: schema_with_identity(obj(&[("scheduler_id", str_schema())]), &["scheduler_id"]),
         },
         ToolDescriptor {
             name: "orbit.skill.doctor".to_string(),
@@ -238,40 +238,42 @@ pub fn mcp_tools() -> Vec<ToolDescriptor> {
             input_schema: schema_with_identity(obj(&[("tool_name", str_schema())]), &["tool_name"]),
         },
         ToolDescriptor {
-            name: "orbit.work.add".to_string(),
-            description: "Create a work specification".to_string(),
+            name: "orbit.job.add".to_string(),
+            description: "Create a job specification".to_string(),
             input_schema: schema_with_identity(
                 obj(&[
-                    ("work_id", str_schema()),
-                    ("work_type", str_schema()),
+                    ("job_id", str_schema()),
+                    ("job_type", str_schema()),
                     ("description", str_schema()),
                     ("input_schema_json", json!({ "type": "object" })),
                     ("output_schema_json", json!({ "type": "object" })),
                     ("artifact_path_template", str_schema()),
                     ("skill_refs", array_of_string_schema()),
-                    ("work_identity_id", str_schema()),
+                    ("job_identity_id", str_schema()),
                     ("assigned_to", str_schema()),
                     ("created_by", str_schema()),
                 ]),
-                &["work_id", "description"],
+                &["job_id", "description"],
             ),
         },
         ToolDescriptor {
-            name: "orbit.work.delete".to_string(),
-            description: "Delete a work spec".to_string(),
-            input_schema: schema_with_identity(obj(&[("work_id", str_schema())]), &["work_id"]),
+            name: "orbit.job.delete".to_string(),
+            description: "Delete a job spec".to_string(),
+            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
         },
         ToolDescriptor {
-            name: "orbit.work.list".to_string(),
-            description: "List works".to_string(),
+            name: "orbit.job.list".to_string(),
+            description: "List jobs".to_string(),
             input_schema: schema_with_identity(obj(&[("include_inactive", bool_schema())]), &[]),
         },
         ToolDescriptor {
-            name: "orbit.work.show".to_string(),
-            description: "Show work details".to_string(),
-            input_schema: schema_with_identity(obj(&[("work_id", str_schema())]), &["work_id"]),
+            name: "orbit.job.show".to_string(),
+            description: "Show job details".to_string(),
+            input_schema: schema_with_identity(obj(&[("job_id", str_schema())]), &["job_id"]),
         },
-    ]
+    ];
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
+    tools
 }
 
 pub fn find_tool(name: &str) -> Option<ToolDescriptor> {

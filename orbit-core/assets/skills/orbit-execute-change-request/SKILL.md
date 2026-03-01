@@ -18,7 +18,7 @@ This skill must manage a single Orbit task for each change request.
 1. Create task at start.
 2. Ensure task is approved before implementation or agent execution.
 3. Update task during/after execution with implementation comments.
-4. Close task when work is complete and validated.
+4. Close task when job is complete and validated.
 
 Do not skip lifecycle updates.
 

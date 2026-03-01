@@ -1,14 +1,14 @@
 use std::str::FromStr;
 
 use orbit_core::command::agent::AgentRunOptions;
-use orbit_core::command::job::{JobAddParams, JobRunResult};
+use orbit_core::command::scheduler::{SchedulerAddParams, SchedulerRunResult};
 use orbit_core::command::skill::{SkillDoctorResult, SkillDoctorStatus};
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
 use orbit_core::command::tool::{DoctorResult, DoctorStatus};
-use orbit_core::command::work::WorkAddParams;
+use orbit_core::command::job::JobAddParams;
 use orbit_core::{
-    Job, JobRetryBackoffStrategy, JobRun, JobTargetType, OrbitError, OrbitRuntime, Task,
-    TaskPriority, TaskStatus, TaskType, Work,
+    Scheduler, SchedulerRetryBackoffStrategy, SchedulerRun, SchedulerTargetType, OrbitError, OrbitRuntime, Task,
+    TaskPriority, TaskStatus, TaskType, Job,
 };
 use serde_json::{Map, Value, json};
 
@@ -64,18 +64,18 @@ fn dispatch_tool_inner(
         "orbit.task.reopen" => task_reopen(runtime, obj),
         "orbit.task.delete" => task_delete(runtime, obj),
         "orbit.task.search" => task_search(runtime, obj),
-        "orbit.work.add" => work_add(runtime, obj, &identity),
-        "orbit.work.list" => work_list(runtime, obj),
-        "orbit.work.show" => work_show(runtime, obj),
-        "orbit.work.delete" => work_delete(runtime, obj),
-        "orbit.job.add" => job_add(runtime, obj),
+        "orbit.job.add" => job_add(runtime, obj, &identity),
         "orbit.job.list" => job_list(runtime, obj),
         "orbit.job.show" => job_show(runtime, obj),
-        "orbit.job.run" => job_run(runtime, obj),
-        "orbit.job.pause" => job_pause(runtime, obj),
-        "orbit.job.resume" => job_resume(runtime, obj),
-        "orbit.job.history" => job_history(runtime, obj),
         "orbit.job.delete" => job_delete(runtime, obj),
+        "orbit.scheduler.add" => scheduler_add(runtime, obj),
+        "orbit.scheduler.list" => scheduler_list(runtime, obj),
+        "orbit.scheduler.show" => scheduler_show(runtime, obj),
+        "orbit.scheduler.run" => scheduler_run(runtime, obj),
+        "orbit.scheduler.pause" => scheduler_pause(runtime, obj),
+        "orbit.scheduler.resume" => scheduler_resume(runtime, obj),
+        "orbit.scheduler.history" => scheduler_history(runtime, obj),
+        "orbit.scheduler.delete" => scheduler_delete(runtime, obj),
         "orbit.agent.run" => agent_run(runtime, obj, &identity),
         "orbit.skill.list" => skill_list(runtime),
         "orbit.skill.show" => skill_show(runtime, obj),
@@ -288,13 +288,13 @@ fn task_search(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value
     Ok(Value::Array(tasks.iter().map(task_to_json).collect()))
 }
 
-fn work_add(
+fn job_add(
     runtime: &OrbitRuntime,
     obj: &Map<String, Value>,
     identity: &IdentityContext,
 ) -> Result<Value, OrbitError> {
-    let work_id = required_string(obj, "work_id")?;
-    let work_type = optional_string(obj, "work_type").unwrap_or_else(|| "general".to_string());
+    let job_id = required_string(obj, "job_id")?;
+    let job_type = optional_string(obj, "job_type").unwrap_or_else(|| "general".to_string());
     let description = required_string(obj, "description")?;
     let input_schema_json =
         optional_object_value(obj, "input_schema_json")?.unwrap_or_else(|| json!({}));
@@ -302,74 +302,28 @@ fn work_add(
         optional_object_value(obj, "output_schema_json")?.unwrap_or_else(|| json!({}));
     let artifact_path_template = optional_string(obj, "artifact_path_template");
     let skill_refs = optional_string_array(obj, "skill_refs")?.unwrap_or_default();
-    let work_identity =
-        optional_string(obj, "work_identity_id").or_else(|| Some(identity.id.clone()));
+    let job_identity =
+        optional_string(obj, "job_identity_id").or_else(|| Some(identity.id.clone()));
 
-    let work = runtime.add_work(WorkAddParams {
-        id: work_id,
-        spec_type: work_type,
+    let job = runtime.add_job(JobAddParams {
+        id: job_id,
+        spec_type: job_type,
         description,
         input_schema_json,
         output_schema_json,
         artifact_path_template,
         skill_refs,
-        identity_id: work_identity,
+        identity_id: job_identity,
         assigned_to: optional_string(obj, "assigned_to"),
         created_by: optional_string(obj, "created_by"),
-    })?;
-
-    Ok(work_to_json(&work))
-}
-
-fn work_list(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let include_inactive = optional_bool(obj, "include_inactive")?.unwrap_or(false);
-    let works = runtime.list_works(include_inactive)?;
-    Ok(Value::Array(works.iter().map(work_to_json).collect()))
-}
-
-fn work_show(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let work_id = required_string(obj, "work_id")?;
-    let work = runtime.show_work(&work_id)?;
-    Ok(work_to_json(&work))
-}
-
-fn work_delete(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let work_id = required_string(obj, "work_id")?;
-    runtime.delete_work(&work_id)?;
-    Ok(json!({ "work_id": work_id, "deleted": true }))
-}
-
-fn job_add(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let target_id = required_string(obj, "target_id")?;
-    let schedule = required_string(obj, "schedule")?;
-    let agent_cli = required_string(obj, "agent_cli")?;
-    let timeout = optional_string(obj, "timeout").unwrap_or_else(|| "5m".to_string());
-    let retry_initial_delay =
-        optional_string(obj, "retry_initial_delay").unwrap_or_else(|| "0s".to_string());
-
-    let retry_max_attempts = optional_u32(obj, "retry_max_attempts")?.unwrap_or(0);
-    let retry_backoff = optional_string(obj, "retry_backoff")
-        .map(|value| parse_enum::<JobRetryBackoffStrategy>("retry_backoff", &value))
-        .transpose()?
-        .unwrap_or(JobRetryBackoffStrategy::None);
-
-    let job = runtime.add_job(JobAddParams {
-        target_type: JobTargetType::Work,
-        target_id,
-        schedule,
-        agent_cli,
-        timeout_seconds: parse_duration_seconds(&timeout)?,
-        retry_max_attempts,
-        retry_backoff_strategy: retry_backoff,
-        retry_initial_delay_seconds: parse_duration_seconds(&retry_initial_delay)?,
     })?;
 
     Ok(job_to_json(&job))
 }
 
 fn job_list(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let include_disabled = optional_bool(obj, "include_disabled")?.unwrap_or(false);
-    let jobs = runtime.list_jobs(include_disabled)?;
+    let include_inactive = optional_bool(obj, "include_inactive")?.unwrap_or(false);
+    let jobs = runtime.list_jobs(include_inactive)?;
     Ok(Value::Array(jobs.iter().map(job_to_json).collect()))
 }
 
@@ -379,36 +333,82 @@ fn job_show(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, O
     Ok(job_to_json(&job))
 }
 
-fn job_run(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let job_id = required_string(obj, "job_id")?;
-    let run = runtime.run_job_now(&job_id)?;
-    job_run_result_json(runtime, &job_id, &run)
-}
-
-fn job_pause(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let job_id = required_string(obj, "job_id")?;
-    runtime.pause_job(&job_id)?;
-    let job = runtime.show_job(&job_id)?;
-    Ok(job_to_json(&job))
-}
-
-fn job_resume(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let job_id = required_string(obj, "job_id")?;
-    runtime.resume_job(&job_id)?;
-    let job = runtime.show_job(&job_id)?;
-    Ok(job_to_json(&job))
-}
-
-fn job_history(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
-    let job_id = required_string(obj, "job_id")?;
-    let runs = runtime.job_history(&job_id)?;
-    Ok(Value::Array(runs.iter().map(job_run_to_json).collect()))
-}
-
 fn job_delete(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
     let job_id = required_string(obj, "job_id")?;
     runtime.delete_job(&job_id)?;
     Ok(json!({ "job_id": job_id, "deleted": true }))
+}
+
+fn scheduler_add(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let target_id = required_string(obj, "target_id")?;
+    let schedule = required_string(obj, "schedule")?;
+    let agent_cli = required_string(obj, "agent_cli")?;
+    let timeout = optional_string(obj, "timeout").unwrap_or_else(|| "5m".to_string());
+    let retry_initial_delay =
+        optional_string(obj, "retry_initial_delay").unwrap_or_else(|| "0s".to_string());
+
+    let retry_max_attempts = optional_u32(obj, "retry_max_attempts")?.unwrap_or(0);
+    let retry_backoff = optional_string(obj, "retry_backoff")
+        .map(|value| parse_enum::<SchedulerRetryBackoffStrategy>("retry_backoff", &value))
+        .transpose()?
+        .unwrap_or(SchedulerRetryBackoffStrategy::None);
+
+    let scheduler = runtime.add_scheduler(SchedulerAddParams {
+        target_type: SchedulerTargetType::Job,
+        target_id,
+        schedule,
+        agent_cli,
+        timeout_seconds: parse_duration_seconds(&timeout)?,
+        retry_max_attempts,
+        retry_backoff_strategy: retry_backoff,
+        retry_initial_delay_seconds: parse_duration_seconds(&retry_initial_delay)?,
+    })?;
+
+    Ok(scheduler_to_json(&scheduler))
+}
+
+fn scheduler_list(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let include_disabled = optional_bool(obj, "include_disabled")?.unwrap_or(false);
+    let schedulers = runtime.list_schedulers(include_disabled)?;
+    Ok(Value::Array(schedulers.iter().map(scheduler_to_json).collect()))
+}
+
+fn scheduler_show(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let scheduler_id = required_string(obj, "scheduler_id")?;
+    let scheduler = runtime.show_scheduler(&scheduler_id)?;
+    Ok(scheduler_to_json(&scheduler))
+}
+
+fn scheduler_run(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let scheduler_id = required_string(obj, "scheduler_id")?;
+    let run = runtime.run_scheduler_now(&scheduler_id)?;
+    scheduler_run_result_json(runtime, &scheduler_id, &run)
+}
+
+fn scheduler_pause(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let scheduler_id = required_string(obj, "scheduler_id")?;
+    runtime.pause_scheduler(&scheduler_id)?;
+    let scheduler = runtime.show_scheduler(&scheduler_id)?;
+    Ok(scheduler_to_json(&scheduler))
+}
+
+fn scheduler_resume(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let scheduler_id = required_string(obj, "scheduler_id")?;
+    runtime.resume_scheduler(&scheduler_id)?;
+    let scheduler = runtime.show_scheduler(&scheduler_id)?;
+    Ok(scheduler_to_json(&scheduler))
+}
+
+fn scheduler_history(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let scheduler_id = required_string(obj, "scheduler_id")?;
+    let runs = runtime.scheduler_history(&scheduler_id)?;
+    Ok(Value::Array(runs.iter().map(scheduler_run_to_json).collect()))
+}
+
+fn scheduler_delete(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+    let scheduler_id = required_string(obj, "scheduler_id")?;
+    runtime.delete_scheduler(&scheduler_id)?;
+    Ok(json!({ "scheduler_id": scheduler_id, "deleted": true }))
 }
 
 fn agent_run(
@@ -561,18 +561,18 @@ fn tool_doctor(runtime: &OrbitRuntime) -> Result<Value, OrbitError> {
     Ok(Value::Array(rows.iter().map(tool_doctor_to_json).collect()))
 }
 
-fn job_run_result_json(
+fn scheduler_run_result_json(
     runtime: &OrbitRuntime,
-    job_id: &str,
-    run: &JobRunResult,
+    scheduler_id: &str,
+    run: &SchedulerRunResult,
 ) -> Result<Value, OrbitError> {
     let run_details = runtime
-        .job_history(job_id)?
+        .scheduler_history(scheduler_id)?
         .into_iter()
         .find(|entry| entry.run_id == run.run_id);
 
     Ok(json!({
-        "job_id": run.job_id,
+        "scheduler_id": run.scheduler_id,
         "run_id": run.run_id,
         "state": run.state.to_string(),
         "attempt": run.attempt,
@@ -815,46 +815,46 @@ fn task_to_json(task: &Task) -> Value {
     })
 }
 
-fn work_to_json(work: &Work) -> Value {
-    json!({
-        "id": work.id,
-        "type": work.spec_type,
-        "description": work.description,
-        "input_schema_json": work.input_schema_json,
-        "output_schema_json": work.output_schema_json,
-        "artifact_path_template": work.artifact_path_template,
-        "skill_refs": work.skill_refs,
-        "identity_id": work.identity_id,
-        "assigned_to": work.assigned_to,
-        "created_by": work.created_by,
-        "is_active": work.is_active,
-        "created_at": work.created_at.to_rfc3339(),
-        "updated_at": work.updated_at.to_rfc3339(),
-    })
-}
-
 fn job_to_json(job: &Job) -> Value {
     json!({
-        "job_id": job.job_id,
-        "target_type": job.target_type.to_string(),
-        "target_id": job.target_id,
-        "schedule": job.schedule,
-        "agent_cli": job.agent_cli,
-        "timeout_seconds": job.timeout_seconds,
-        "retry_max_attempts": job.retry_max_attempts,
-        "retry_backoff_strategy": job.retry_backoff_strategy.to_string(),
-        "retry_initial_delay_seconds": job.retry_initial_delay_seconds,
-        "state": job.state.to_string(),
-        "next_run_at": job.next_run_at.to_rfc3339(),
+        "id": job.id,
+        "type": job.spec_type,
+        "description": job.description,
+        "input_schema_json": job.input_schema_json,
+        "output_schema_json": job.output_schema_json,
+        "artifact_path_template": job.artifact_path_template,
+        "skill_refs": job.skill_refs,
+        "identity_id": job.identity_id,
+        "assigned_to": job.assigned_to,
+        "created_by": job.created_by,
+        "is_active": job.is_active,
         "created_at": job.created_at.to_rfc3339(),
         "updated_at": job.updated_at.to_rfc3339(),
     })
 }
 
-fn job_run_to_json(run: &JobRun) -> Value {
+fn scheduler_to_json(scheduler: &Scheduler) -> Value {
+    json!({
+        "scheduler_id": scheduler.scheduler_id,
+        "target_type": scheduler.target_type.to_string(),
+        "target_id": scheduler.target_id,
+        "schedule": scheduler.schedule,
+        "agent_cli": scheduler.agent_cli,
+        "timeout_seconds": scheduler.timeout_seconds,
+        "retry_max_attempts": scheduler.retry_max_attempts,
+        "retry_backoff_strategy": scheduler.retry_backoff_strategy.to_string(),
+        "retry_initial_delay_seconds": scheduler.retry_initial_delay_seconds,
+        "state": scheduler.state.to_string(),
+        "next_run_at": scheduler.next_run_at.to_rfc3339(),
+        "created_at": scheduler.created_at.to_rfc3339(),
+        "updated_at": scheduler.updated_at.to_rfc3339(),
+    })
+}
+
+fn scheduler_run_to_json(run: &SchedulerRun) -> Value {
     json!({
         "run_id": run.run_id,
-        "job_id": run.job_id,
+        "scheduler_id": run.scheduler_id,
         "attempt": run.attempt,
         "state": run.state.to_string(),
         "scheduled_at": run.scheduled_at.to_rfc3339(),
@@ -900,15 +900,15 @@ fn orbit_error_code(err: &OrbitError) -> &'static str {
         OrbitError::TaskNotFound(_) => "TASK_NOT_FOUND",
         OrbitError::TaskApprovalRequired(_) => "TASK_APPROVAL_REQUIRED",
         OrbitError::SkillNotFound(_) => "SKILL_NOT_FOUND",
-        OrbitError::JobNotFound(_) => "JOB_NOT_FOUND",
-        OrbitError::JobRunNotFound(_) => "JOB_RUN_NOT_FOUND",
-        OrbitError::WorkNotFound(_) => "WORK_NOT_FOUND",
+        OrbitError::SchedulerNotFound(_) => "JOB_NOT_FOUND",
+        OrbitError::SchedulerRunNotFound(_) => "JOB_RUN_NOT_FOUND",
+        OrbitError::JobNotFound(_) => "WORK_NOT_FOUND",
         OrbitError::AgentSessionNotFound(_) => "AGENT_SESSION_NOT_FOUND",
         OrbitError::IdentityNotFound(_) => "IDENTITY_NOT_FOUND",
         OrbitError::InvalidInput(_) => "INVALID_INPUT",
         OrbitError::SkillValidation(_) => "SKILL_VALIDATION_FAILED",
         OrbitError::IdentityValidation(_) => "IDENTITY_VALIDATION_FAILED",
-        OrbitError::JobValidation(_) => "JOB_VALIDATION_FAILED",
+        OrbitError::SchedulerValidation(_) => "JOB_VALIDATION_FAILED",
         OrbitError::AgentRun(_) => "AGENT_RUN_FAILED",
         OrbitError::AgentProtocolViolation(_) => "AGENT_PROTOCOL_VIOLATION",
         OrbitError::UnsupportedAgentProvider(_) => "UNSUPPORTED_AGENT_PROVIDER",

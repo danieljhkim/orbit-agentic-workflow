@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use orbit_policy::PolicyEngine;
-use orbit_types::{Audit, Job, OrbitError, ResolvedIdentity};
+use orbit_types::{Audit, Scheduler, OrbitError, ResolvedIdentity};
 use serde_json::Value;
 
 use crate::OrbitContext;
@@ -51,8 +51,8 @@ impl OrbitRuntime {
         self.context.audit_store.list_audits(limit)
     }
 
-    pub fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        self.context.job_store.get_job(job_id)
+    pub fn get_scheduler(&self, scheduler_id: &str) -> Result<Option<Scheduler>, OrbitError> {
+        self.context.scheduler_store.get_scheduler(scheduler_id)
     }
 
     pub fn execution_env_config(&self) -> (bool, Vec<String>) {
@@ -103,8 +103,8 @@ impl OrbitRuntime {
         compile_identity_block(identity)
     }
 
-    pub fn run_jobs(&self) -> Result<usize, OrbitError> {
-        self.run_due_jobs(Utc::now())
+    pub fn run_schedulers(&self) -> Result<usize, OrbitError> {
+        self.run_due_schedulers(Utc::now())
     }
 
     pub fn trigger_watch_once(&self, path: &str) -> Result<(), OrbitError> {

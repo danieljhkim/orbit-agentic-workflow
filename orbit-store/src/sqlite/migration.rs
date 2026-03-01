@@ -281,12 +281,12 @@ fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
 }
 
 fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
-    if !table_exists(conn, "jobs")? {
+    if !table_exists(conn, "schedulers")? {
         conn.execute_batch(
             r#"
-                CREATE TABLE jobs (
+                CREATE TABLE schedulers (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('job')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -305,18 +305,18 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
         return Ok(());
     }
 
-    if table_has_column(conn, "jobs", "target_type")? {
+    if table_has_column(conn, "schedulers", "target_type")? {
         return Ok(());
     }
 
-    if table_has_column(conn, "jobs", "job_id")? {
+    if table_has_column(conn, "schedulers", "scheduler_id")? {
         conn.execute_batch(
             r#"
-                ALTER TABLE jobs RENAME TO jobs_v1;
+                ALTER TABLE schedulers RENAME TO jobs_v1;
 
-                CREATE TABLE jobs (
+                CREATE TABLE schedulers (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('job')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -330,15 +330,15 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
                     updated_at TEXT NOT NULL
                 );
 
-                INSERT INTO jobs(
+                INSERT INTO schedulers(
                     id, target_type, target_id, schedule, agent_cli, timeout_seconds,
                     retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
                     state, next_run_at, created_at, updated_at
                 )
                 SELECT
-                    job_id,
-                    'work',
-                    CASE WHEN task_id = '' THEN job_id ELSE task_id END,
+                    scheduler_id,
+                    'job',
+                    CASE WHEN task_id = '' THEN scheduler_id ELSE task_id END,
                     schedule_spec,
                     'claude',
                     300,
@@ -358,22 +358,22 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
                 DROP TABLE jobs_v1;
             "#,
         )
-        .map_err(|e| OrbitError::Store(format!("failed v1 jobs migration: {e}")))?;
+        .map_err(|e| OrbitError::Store(format!("failed v1 schedulers migration: {e}")))?;
 
-        if table_exists(conn, "job_sessions")? {
+        if table_exists(conn, "scheduler_sessions")? {
             migrate_job_sessions_to_job_runs(conn)?;
         }
         return Ok(());
     }
 
-    if table_has_column(conn, "jobs", "command")? {
+    if table_has_column(conn, "schedulers", "command")? {
         conn.execute_batch(
             r#"
-                ALTER TABLE jobs RENAME TO jobs_legacy;
+                ALTER TABLE schedulers RENAME TO jobs_legacy;
 
-                CREATE TABLE jobs (
+                CREATE TABLE schedulers (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('work')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('job')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -387,14 +387,14 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
                     updated_at TEXT NOT NULL
                 );
 
-                INSERT INTO jobs(
+                INSERT INTO schedulers(
                     id, target_type, target_id, schedule, agent_cli, timeout_seconds,
                     retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
                     state, next_run_at, created_at, updated_at
                 )
                 SELECT
                     id,
-                    'work',
+                    'job',
                     id,
                     '@daily',
                     'claude',
@@ -411,7 +411,7 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
                 DROP TABLE jobs_legacy;
             "#,
         )
-        .map_err(|e| OrbitError::Store(format!("failed legacy jobs migration: {e}")))?;
+        .map_err(|e| OrbitError::Store(format!("failed legacy schedulers migration: {e}")))?;
     }
 
     Ok(())
@@ -420,9 +420,9 @@ fn migrate_jobs_table_to_v2(conn: &Connection) -> Result<(), OrbitError> {
 fn migrate_job_sessions_to_job_runs(conn: &Connection) -> Result<(), OrbitError> {
     conn.execute_batch(
         r#"
-            CREATE TABLE IF NOT EXISTS job_runs (
+            CREATE TABLE IF NOT EXISTS scheduler_runs (
                 id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
+                scheduler_id TEXT NOT NULL,
                 attempt INTEGER NOT NULL,
                 state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed','timeout')),
                 scheduled_at TEXT NOT NULL,
@@ -434,16 +434,16 @@ fn migrate_job_sessions_to_job_runs(conn: &Connection) -> Result<(), OrbitError>
                 error_code TEXT,
                 error_message TEXT,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY(job_id) REFERENCES jobs(id)
+                FOREIGN KEY(scheduler_id) REFERENCES schedulers(id)
             );
 
-            INSERT OR IGNORE INTO job_runs(
-                id, job_id, attempt, state, scheduled_at, started_at, finished_at,
+            INSERT OR IGNORE INTO scheduler_runs(
+                id, scheduler_id, attempt, state, scheduled_at, started_at, finished_at,
                 duration_ms, exit_code, agent_response_json, error_code, error_message, created_at
             )
             SELECT
                 session_id,
-                job_id,
+                scheduler_id,
                 1,
                 CASE status
                     WHEN 'running' THEN 'running'
@@ -460,22 +460,22 @@ fn migrate_job_sessions_to_job_runs(conn: &Connection) -> Result<(), OrbitError>
                 CASE WHEN status = 'failed' THEN 'LEGACY_JOB_SESSION_FAILURE' ELSE NULL END,
                 error,
                 created_at
-            FROM job_sessions;
+            FROM scheduler_sessions;
         "#,
     )
-    .map_err(|e| OrbitError::Store(format!("failed job_sessions migration: {e}")))
+    .map_err(|e| OrbitError::Store(format!("failed scheduler_sessions migration: {e}")))
 }
 
 fn ensure_job_schema_v2(conn: &Connection) -> Result<(), OrbitError> {
     conn.execute_batch(
         r#"
-            CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
-            CREATE INDEX IF NOT EXISTS idx_jobs_target ON jobs(target_type, target_id);
-            CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(state, next_run_at);
+            CREATE INDEX IF NOT EXISTS idx_jobs_state ON schedulers(state);
+            CREATE INDEX IF NOT EXISTS idx_jobs_target ON schedulers(target_type, target_id);
+            CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON schedulers(state, next_run_at);
 
-            CREATE TABLE IF NOT EXISTS job_runs (
+            CREATE TABLE IF NOT EXISTS scheduler_runs (
                 id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
+                scheduler_id TEXT NOT NULL,
                 attempt INTEGER NOT NULL,
                 state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed','timeout')),
                 scheduled_at TEXT NOT NULL,
@@ -487,17 +487,17 @@ fn ensure_job_schema_v2(conn: &Connection) -> Result<(), OrbitError> {
                 error_code TEXT,
                 error_message TEXT,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY(job_id) REFERENCES jobs(id)
+                FOREIGN KEY(scheduler_id) REFERENCES schedulers(id)
             );
 
             CREATE INDEX IF NOT EXISTS idx_job_runs_job
-            ON job_runs(job_id, created_at);
+            ON scheduler_runs(scheduler_id, created_at);
 
             CREATE INDEX IF NOT EXISTS idx_job_runs_state
-            ON job_runs(state);
+            ON scheduler_runs(state);
 
             CREATE UNIQUE INDEX IF NOT EXISTS uq_job_runs_single_running
-            ON job_runs(job_id)
+            ON scheduler_runs(scheduler_id)
             WHERE state = 'running';
         "#,
     )
@@ -505,13 +505,13 @@ fn ensure_job_schema_v2(conn: &Connection) -> Result<(), OrbitError> {
 }
 
 fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
-    if !table_exists(conn, "jobs")? || !table_has_column(conn, "jobs", "target_type")? {
+    if !table_exists(conn, "schedulers")? || !table_has_column(conn, "schedulers", "target_type")? {
         return Ok(());
     }
 
     let sql: String = conn
         .query_row(
-            "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name='jobs'",
+            "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name='schedulers'",
             [],
             |row| row.get(0),
         )
@@ -519,13 +519,13 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
 
     let non_work_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM jobs WHERE target_type NOT IN ('work')",
+            "SELECT COUNT(*) FROM schedulers WHERE target_type NOT IN ('job')",
             [],
             |row| row.get(0),
         )
         .map_err(|e| OrbitError::Store(e.to_string()))?;
 
-    let supports_work = sql.to_lowercase().contains("'work'");
+    let supports_work = sql.to_lowercase().contains("'job'");
     if supports_work && non_work_count == 0 {
         return Ok(());
     }
@@ -536,7 +536,7 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
         r#"
             CREATE TABLE jobs_rewrite (
                 id TEXT PRIMARY KEY,
-                target_type TEXT NOT NULL CHECK (target_type IN ('work')),
+                target_type TEXT NOT NULL CHECK (target_type IN ('job')),
                 target_id TEXT NOT NULL,
                 schedule TEXT NOT NULL,
                 agent_cli TEXT NOT NULL,
@@ -557,7 +557,7 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
             )
             SELECT
                 id,
-                'work',
+                'job',
                 target_id,
                 schedule,
                 agent_cli,
@@ -569,10 +569,10 @@ fn normalize_job_targets_to_work(conn: &Connection) -> Result<(), OrbitError> {
                 next_run_at,
                 created_at,
                 updated_at
-            FROM jobs;
+            FROM schedulers;
 
-            DROP TABLE jobs;
-            ALTER TABLE jobs_rewrite RENAME TO jobs;
+            DROP TABLE schedulers;
+            ALTER TABLE jobs_rewrite RENAME TO schedulers;
         "#,
     );
     let fk_enable_result = conn.execute_batch("PRAGMA foreign_keys=ON;");
@@ -648,7 +648,7 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
         r#"
             DROP TABLE IF EXISTS workflows;
 
-            CREATE TABLE IF NOT EXISTS works (
+            CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
                 description TEXT NOT NULL,
@@ -665,33 +665,33 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
             );
 
             CREATE INDEX IF NOT EXISTS idx_works_type
-            ON works(type);
+            ON jobs(type);
 
             CREATE INDEX IF NOT EXISTS idx_works_active
-            ON works(is_active);
+            ON jobs(is_active);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
-    add_column_if_missing(conn, "ALTER TABLE works ADD COLUMN identity_id TEXT")?;
-    add_column_if_missing(conn, "ALTER TABLE works ADD COLUMN assigned_to TEXT")?;
-    add_column_if_missing(conn, "ALTER TABLE works ADD COLUMN created_by TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE jobs ADD COLUMN identity_id TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE jobs ADD COLUMN assigned_to TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE jobs ADD COLUMN created_by TEXT")?;
     Ok(())
 }
 
 fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
-    if !table_exists(conn, "works")? {
+    if !table_exists(conn, "jobs")? {
         return Ok(());
     }
 
     let works_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM works", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get(0))
         .map_err(|e| OrbitError::Store(e.to_string()))?;
     if works_count > 0 {
         return Ok(());
     }
 
     let mut stmt = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name != 'works'")
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name != 'jobs'")
         .map_err(|e| OrbitError::Store(e.to_string()))?;
     let names = stmt
         .query_map([], |row| row.get::<_, String>(0))
@@ -729,7 +729,7 @@ fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
         }
 
         let sql = format!(
-            "INSERT OR IGNORE INTO works(
+            "INSERT OR IGNORE INTO jobs(
                 id, type, description, input_schema_json, output_schema_json,
                 artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at
             )
@@ -859,7 +859,7 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(
             r#"
-                CREATE TABLE jobs (
+                CREATE TABLE schedulers (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     command TEXT NOT NULL,
@@ -869,11 +869,11 @@ mod tests {
                 );
             "#,
         )
-        .expect("legacy jobs");
+        .expect("legacy schedulers");
 
         apply_schema(&conn).expect("apply schema");
 
-        let mut stmt = conn.prepare("PRAGMA table_info(jobs)").expect("table info");
+        let mut stmt = conn.prepare("PRAGMA table_info(schedulers)").expect("table info");
         let mut rows = stmt.query([]).expect("query");
         let mut saw_target_type = false;
         while let Some(row) = rows.next().expect("row") {
@@ -886,11 +886,11 @@ mod tests {
 
         let run_table_exists: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='job_runs'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='scheduler_runs'",
                 [],
                 |row| row.get(0),
             )
-            .expect("query job_runs");
+            .expect("query scheduler_runs");
         assert_eq!(run_table_exists, 1);
     }
 
@@ -899,8 +899,8 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(
             r#"
-                CREATE TABLE jobs (
-                    job_id TEXT PRIMARY KEY,
+                CREATE TABLE schedulers (
+                    scheduler_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     task_id TEXT NOT NULL,
                     schedule_spec TEXT NOT NULL,
@@ -916,27 +916,27 @@ mod tests {
                     last_error TEXT
                 );
 
-                INSERT INTO jobs(
-                    job_id, name, task_id, schedule_spec, timezone, state,
+                INSERT INTO schedulers(
+                    scheduler_id, name, task_id, schedule_spec, timezone, state,
                     created_at, updated_at, next_run_at
                 ) VALUES (
-                    'job-1', 'demo', 'task-1', '0 * * * *', 'UTC', 'active',
+                    'scheduler-1', 'demo', 'task-1', '0 * * * *', 'UTC', 'active',
                     '2026-02-23T00:00:00Z', '2026-02-23T00:00:00Z', '2026-02-23T01:00:00Z'
                 );
             "#,
         )
-        .expect("v1 jobs");
+        .expect("v1 schedulers");
 
         apply_schema(&conn).expect("apply schema");
 
         let (target_type, state): (String, String) = conn
             .query_row(
-                "SELECT target_type, state FROM jobs WHERE id = 'job-1'",
+                "SELECT target_type, state FROM schedulers WHERE id = 'scheduler-1'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .expect("query migrated job");
-        assert_eq!(target_type, "work");
+            .expect("query migrated scheduler");
+        assert_eq!(target_type, "job");
         assert_eq!(state, "enabled");
     }
 
@@ -1072,9 +1072,9 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(
             r#"
-                CREATE TABLE jobs (
+                CREATE TABLE schedulers (
                     id TEXT PRIMARY KEY,
-                    target_type TEXT NOT NULL CHECK (target_type IN ('legacy_target','work')),
+                    target_type TEXT NOT NULL CHECK (target_type IN ('legacy_target','job')),
                     target_id TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     agent_cli TEXT NOT NULL,
@@ -1088,29 +1088,29 @@ mod tests {
                     updated_at TEXT NOT NULL
                 );
 
-                INSERT INTO jobs(
+                INSERT INTO schedulers(
                     id, target_type, target_id, schedule, agent_cli, timeout_seconds,
                     retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds,
                     state, next_run_at, created_at, updated_at
                 ) VALUES (
-                    'job-legacy', 'legacy_target', 'w-1', '@daily', 'claude', 300,
+                    'scheduler-legacy', 'legacy_target', 'w-1', '@daily', 'claude', 300,
                     0, 'none', 0, 'enabled', '2026-02-23T01:00:00Z',
                     '2026-02-23T00:00:00Z', '2026-02-23T00:00:00Z'
                 );
             "#,
         )
-        .expect("legacy jobs");
+        .expect("legacy schedulers");
 
         apply_schema(&conn).expect("apply schema");
 
         let target: String = conn
             .query_row(
-                "SELECT target_type FROM jobs WHERE id = 'job-legacy'",
+                "SELECT target_type FROM schedulers WHERE id = 'scheduler-legacy'",
                 [],
                 |row| row.get(0),
             )
             .expect("query target");
-        assert_eq!(target, "work");
+        assert_eq!(target, "job");
     }
 
     #[test]
@@ -1118,7 +1118,7 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(
             r#"
-                CREATE TABLE work_legacy (
+                CREATE TABLE job_legacy (
                     id TEXT PRIMARY KEY,
                     type TEXT NOT NULL,
                     description TEXT NOT NULL,
@@ -1131,26 +1131,26 @@ mod tests {
                     updated_at TEXT NOT NULL
                 );
 
-                INSERT INTO work_legacy(
+                INSERT INTO job_legacy(
                     id, type, description, input_schema_json, output_schema_json,
                     artifact_path_template, skill_refs_json, is_active, created_at, updated_at
                 ) VALUES (
-                    'work-1', 'analysis', 'legacy work',
+                    'job-1', 'analysis', 'legacy job',
                     '{}', '{}', NULL, '[]', 1, '2026-02-23T00:00:00Z', '2026-02-23T00:00:00Z'
                 );
             "#,
         )
-        .expect("legacy works");
+        .expect("legacy jobs");
 
         apply_schema(&conn).expect("apply schema");
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM works WHERE id = 'work-1'",
+                "SELECT COUNT(*) FROM jobs WHERE id = 'job-1'",
                 [],
                 |row| row.get(0),
             )
-            .expect("query works");
+            .expect("query jobs");
         assert_eq!(count, 1);
     }
 }

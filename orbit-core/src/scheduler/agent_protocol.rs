@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use orbit_types::{AgentResponseEnvelope, ExecutionResult, JobRunState, JobTargetType, OrbitError};
+use orbit_types::{AgentResponseEnvelope, ExecutionResult, SchedulerRunState, SchedulerTargetType, OrbitError};
 use serde_json::{Deserializer, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub struct AgentInvocation {
 
 pub fn build_invocation(
     agent_cli: &str,
-    target_type: JobTargetType,
+    target_type: SchedulerTargetType,
     target_id: &str,
 ) -> Result<AgentInvocation, OrbitError> {
     let provider = provider_key(agent_cli);
@@ -63,8 +63,8 @@ pub fn build_stdin_payload(invocation: &AgentInvocation, envelope_json: &[u8]) -
         StdinAdapter::PromptWithEmbeddedEnvelope => {
             let envelope_text = String::from_utf8_lossy(envelope_json);
             format!(
-                "You are Orbit's scheduled job agent.\n\
-Read the execution envelope JSON and perform the requested work.\n\
+                "You are Orbit's scheduled scheduler agent.\n\
+Read the execution envelope JSON and perform the requested job.\n\
 Return exactly one JSON object and nothing else.\n\
 Required response schema:\n\
 {{\"schemaVersion\":1,\"status\":\"success|failed|timeout\",\"result\":{{}},\"error\":null,\"durationMs\":123}}\n\
@@ -83,7 +83,7 @@ Execution envelope:\n\
 
 pub fn parse_and_validate_response(
     exec_result: &ExecutionResult,
-) -> Result<(AgentResponseEnvelope, JobRunState), OrbitError> {
+) -> Result<(AgentResponseEnvelope, SchedulerRunState), OrbitError> {
     let stderr_hint = exec_result.stderr.trim();
     if exec_result.stdout.trim().is_empty() {
         if !stderr_hint.is_empty() {
@@ -122,7 +122,7 @@ pub fn parse_and_validate_response(
     }
 
     let state = match envelope.status.as_str() {
-        "success" => JobRunState::Success,
+        "success" => SchedulerRunState::Success,
         "failed" => {
             let Some(error) = &envelope.error else {
                 return Err(OrbitError::AgentProtocolViolation(
@@ -134,9 +134,9 @@ pub fn parse_and_validate_response(
                     "failed status requires non-empty error.code".to_string(),
                 ));
             }
-            JobRunState::Failed
+            SchedulerRunState::Failed
         }
-        "timeout" => JobRunState::Timeout,
+        "timeout" => SchedulerRunState::Timeout,
         other => {
             return Err(OrbitError::AgentProtocolViolation(format!(
                 "unknown status: {other}"
@@ -210,7 +210,7 @@ fn is_invocation_failure(exec_result: &ExecutionResult) -> bool {
     exec_result.exit_code.unwrap_or(1) != 0 && !exec_result.stderr.trim().is_empty()
 }
 
-fn default_scheduled_args(target_type: JobTargetType, target_id: &str) -> Vec<String> {
+fn default_scheduled_args(target_type: SchedulerTargetType, target_id: &str) -> Vec<String> {
     vec![
         "run".to_string(),
         "--target-type".to_string(),

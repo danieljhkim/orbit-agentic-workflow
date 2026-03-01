@@ -1,7 +1,7 @@
 use chrono::Utc;
 use orbit_store::Store;
 use orbit_store::task_store::TaskInsertParams;
-use orbit_types::{JobRetryBackoffStrategy, JobTargetType};
+use orbit_types::{SchedulerRetryBackoffStrategy, SchedulerTargetType};
 
 #[test]
 fn due_jobs_query_returns_scheduled_jobs() {
@@ -11,24 +11,24 @@ fn due_jobs_query_returns_scheduled_jobs() {
     store
         .with_transaction(|tx| {
             let task = tx.insert_task(&TaskInsertParams {
-                title: "job task".to_string(),
+                title: "scheduler task".to_string(),
                 ..Default::default()
             })?;
             let _job = tx.insert_job_v2(
-                JobTargetType::Work,
+                SchedulerTargetType::Job,
                 &task.id,
                 "every 1h",
                 "mock-agent",
                 300,
                 0,
-                JobRetryBackoffStrategy::None,
+                SchedulerRetryBackoffStrategy::None,
                 0,
                 next_run,
             )?;
             Ok(())
         })
-        .expect("insert job");
+        .expect("insert scheduler");
 
-    let due = store.due_jobs(next_run).expect("due jobs");
+    let due = store.due_schedulers(next_run).expect("due schedulers");
     assert_eq!(due.len(), 1);
 }

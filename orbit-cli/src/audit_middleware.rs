@@ -213,23 +213,23 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Job(job_cmd) => {
-            use crate::command::job::JobSubcommand;
-            let (sub, target_id) = match &job_cmd.command {
-                JobSubcommand::Add(_) => ("add", None),
-                JobSubcommand::List(_) => ("list", None),
-                JobSubcommand::Show(args) => ("show", Some(args.job_id.as_str())),
-                JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
-                JobSubcommand::Pause(args) => ("pause", Some(args.job_id.as_str())),
-                JobSubcommand::Resume(args) => ("resume", Some(args.job_id.as_str())),
-                JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
-                JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
+        Commands::Scheduler(scheduler_cmd) => {
+            use crate::command::scheduler::SchedulerSubcommand;
+            let (sub, target_id) = match &scheduler_cmd.command {
+                SchedulerSubcommand::Add(_) => ("add", None),
+                SchedulerSubcommand::List(_) => ("list", None),
+                SchedulerSubcommand::Show(args) => ("show", Some(args.scheduler_id.as_str())),
+                SchedulerSubcommand::Run(args) => ("run", Some(args.scheduler_id.as_str())),
+                SchedulerSubcommand::Pause(args) => ("pause", Some(args.scheduler_id.as_str())),
+                SchedulerSubcommand::Resume(args) => ("resume", Some(args.scheduler_id.as_str())),
+                SchedulerSubcommand::History(args) => ("history", Some(args.scheduler_id.as_str())),
+                SchedulerSubcommand::Delete(args) => ("delete", Some(args.scheduler_id.as_str())),
             };
             CommandMeta {
-                command: "job".to_string(),
+                command: "scheduler".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
-                target_type: Some("job".to_string()),
+                target_type: Some("scheduler".to_string()),
                 target_id: target_id.map(String::from),
                 role: "admin".to_string(),
                 arguments_json: None,
@@ -244,19 +244,19 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
-        Commands::Work(cmd) => {
-            use crate::command::work::WorkSubcommand;
+        Commands::Job(cmd) => {
+            use crate::command::job::JobSubcommand;
             let (sub, target_id) = match &cmd.command {
-                WorkSubcommand::Add(args) => ("add", Some(args.id.as_str())),
-                WorkSubcommand::List(_) => ("list", None),
-                WorkSubcommand::Show(args) => ("show", Some(args.id.as_str())),
-                WorkSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
+                JobSubcommand::Add(args) => ("add", Some(args.id.as_str())),
+                JobSubcommand::List(_) => ("list", None),
+                JobSubcommand::Show(args) => ("show", Some(args.id.as_str())),
+                JobSubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
             };
             CommandMeta {
-                command: "work".to_string(),
+                command: "job".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
-                target_type: Some("work".to_string()),
+                target_type: Some("job".to_string()),
                 target_id: target_id.map(String::from),
                 role: "admin".to_string(),
                 arguments_json: None,

@@ -2,13 +2,13 @@ pub mod agent;
 pub mod audit;
 pub mod config;
 pub mod init;
-pub mod job;
+pub mod scheduler;
 pub mod mcp;
 pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
-pub mod work;
+pub mod job;
 
 use clap::{Parser, Subcommand};
 use orbit_core::{OrbitError, OrbitRuntime};
@@ -33,9 +33,9 @@ pub enum Commands {
     Task(task::TaskCommand),
     Agent(agent::AgentCommand),
     Audit(audit::AuditCommand),
-    Work(work::WorkCommand),
-    Skill(skill::SkillCommand),
     Job(job::JobCommand),
+    Skill(skill::SkillCommand),
+    Scheduler(scheduler::SchedulerCommand),
     Watch(watch::WatchCommand),
     Mcp(mcp::McpCommand),
 }
@@ -49,9 +49,9 @@ impl Execute for Commands {
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Agent(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
-            Commands::Work(cmd) => cmd.execute(runtime),
-            Commands::Skill(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
+            Commands::Skill(cmd) => cmd.execute(runtime),
+            Commands::Scheduler(cmd) => cmd.execute(runtime),
             Commands::Watch(cmd) => cmd.execute(runtime),
             Commands::Mcp(cmd) => cmd.execute(runtime),
         }

@@ -247,7 +247,7 @@ impl<'a> StoreTx<'a> {
         _skill_name: &str,
     ) -> Result<bool, OrbitError> {
         Err(OrbitError::Store(
-            "task-skill attachment is disabled; use work.skill_refs".to_string(),
+            "task-skill attachment is disabled; use job.skill_refs".to_string(),
         ))
     }
 
@@ -257,7 +257,7 @@ impl<'a> StoreTx<'a> {
         _skill_name: &str,
     ) -> Result<bool, OrbitError> {
         Err(OrbitError::Store(
-            "task-skill attachment is disabled; use work.skill_refs".to_string(),
+            "task-skill attachment is disabled; use job.skill_refs".to_string(),
         ))
     }
 
