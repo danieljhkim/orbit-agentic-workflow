@@ -298,11 +298,10 @@ fn ensure_skill_links(
                         .join(target_path)
                         .to_path_buf()
                 };
-                let canonical_existing = resolved_target
-                    .canonicalize()
-                    .map_err(|e| OrbitError::Io(e.to_string()))?;
                 let canonical_expected = canonical_skills_root.join(skill_id);
-                if canonical_existing == canonical_expected {
+                if let Ok(canonical_existing) = resolved_target.canonicalize()
+                    && canonical_existing == canonical_expected
+                {
                     continue;
                 }
                 fs::remove_file(&link_path).map_err(|e| OrbitError::Io(e.to_string()))?;

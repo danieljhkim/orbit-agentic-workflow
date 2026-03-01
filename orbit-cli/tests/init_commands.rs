@@ -158,6 +158,44 @@ fn init_migrates_root_skills_symlink_to_per_skill_links() {
 }
 
 #[test]
+fn init_repairs_broken_per_skill_symlink_targets() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("home");
+
+    let skills_link_root = home.path().join(".agents").join("skills");
+    std::fs::create_dir_all(&skills_link_root).expect("create skills link root");
+    let broken_target = home
+        .path()
+        .join(".orbit")
+        .join("skills")
+        .join("does-not-exist");
+    create_dir_symlink(&broken_target, &skills_link_root.join("orbit-approve-task"));
+
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["init"])
+        .assert()
+        .success();
+
+    let repaired_link = skills_link_root.join("orbit-approve-task");
+    let repaired_link_meta = std::fs::symlink_metadata(&repaired_link).expect("repaired metadata");
+    assert!(repaired_link_meta.file_type().is_symlink());
+    assert!(repaired_link.exists());
+
+    let expected_target = home
+        .path()
+        .join(".orbit")
+        .join("skills")
+        .join("orbit-approve-task")
+        .canonicalize()
+        .expect("canonical expected target");
+    let actual_target = repaired_link
+        .canonicalize()
+        .expect("canonical repaired target");
+    assert_eq!(actual_target, expected_target);
+}
+
+#[test]
 fn init_force_resets_home_orbit_to_defaults() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("home");

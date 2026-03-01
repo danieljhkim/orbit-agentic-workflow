@@ -62,6 +62,14 @@ impl OrbitRuntime {
         )
     }
 
+    pub fn data_root(&self) -> PathBuf {
+        self.context.data_root.clone()
+    }
+
+    pub fn config_path(&self) -> PathBuf {
+        self.data_root().join("config.toml")
+    }
+
     pub fn persistence_config_json(&self) -> Value {
         self.context.persistence.as_json_value()
     }

@@ -87,3 +87,49 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
         serde_json::json!("sqlite")
     );
 }
+
+#[test]
+fn config_show_json_reports_workspace_config_path_when_local_config_is_used() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir.path().join("workspace");
+    let home = dir.path().join("home");
+    let local_orbit_dir = workspace.join(".orbit");
+    std::fs::create_dir_all(&local_orbit_dir).expect("create workspace orbit dir");
+    std::fs::create_dir_all(home.join(".orbit")).expect("create home orbit dir");
+
+    std::fs::write(
+        local_orbit_dir.join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write workspace config");
+
+    #[allow(deprecated)]
+    let mut cmd = Command::cargo_bin("orbit").expect("binary exists");
+    cmd.current_dir(&workspace);
+    cmd.env("HOME", &home);
+    cmd.env("USERPROFILE", &home);
+
+    let output = cmd
+        .args(["config", "show", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: Value = serde_json::from_slice(&output).expect("json");
+
+    let expected_path = std::fs::canonicalize(local_orbit_dir.join("config.toml"))
+        .expect("canonical workspace config");
+    let reported_path = std::fs::canonicalize(
+        value["path"]
+            .as_str()
+            .expect("path should be a string in config show json"),
+    )
+    .expect("canonical reported path");
+    assert_eq!(reported_path, expected_path);
+    assert_eq!(value["exists"], serde_json::json!(true));
+    assert_eq!(
+        value["task"]["approval"]["required_for_agent"],
+        serde_json::json!(true)
+    );
+}

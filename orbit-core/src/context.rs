@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use orbit_policy::PolicyEngine;
@@ -13,6 +14,7 @@ use crate::skill_catalog::SkillCatalog;
 
 #[derive(Clone)]
 pub struct OrbitContext {
+    pub(crate) data_root: PathBuf,
     pub(crate) task_store: Arc<dyn TaskStoreBackend>,
     pub(crate) work_store: Arc<dyn WorkStoreBackend>,
     pub(crate) job_store: Arc<dyn JobStoreBackend>,

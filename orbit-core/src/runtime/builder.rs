@@ -47,7 +47,14 @@ pub(crate) fn build_context_from_data_root(data_root: &Path) -> Result<OrbitCont
         )?),
     };
 
-    build_context_common(store, runtime_config, task_store, work_store, job_store)
+    build_context_common(
+        store,
+        data_root.to_path_buf(),
+        runtime_config,
+        task_store,
+        work_store,
+        job_store,
+    )
 }
 
 pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
@@ -59,12 +66,27 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
     let work_store = work_store_sqlite(store.clone());
     let job_store = job_store_sqlite(store.clone());
     let runtime_config = RuntimeConfig::default();
+    let data_root = runtime_config
+        .persistence
+        .task
+        .path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
 
-    build_context_common(store, runtime_config, task_store, work_store, job_store)
+    build_context_common(
+        store,
+        data_root,
+        runtime_config,
+        task_store,
+        work_store,
+        job_store,
+    )
 }
 
 fn build_context_common(
     store: Store,
+    data_root: PathBuf,
     runtime_config: RuntimeConfig,
     task_store: Arc<dyn orbit_store::TaskStoreBackend>,
     work_store: Arc<dyn orbit_store::WorkStoreBackend>,
@@ -96,6 +118,7 @@ fn build_context_common(
     let task_delegate_approval = runtime_config.task_approval.delegate_approval;
 
     Ok(OrbitContext {
+        data_root,
         task_store,
         work_store,
         job_store,

@@ -37,7 +37,7 @@ pub struct ConfigShowArgs {
 
 impl Execute for ConfigShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let config_path = OrbitRuntime::default_data_root().join("config.toml");
+        let config_path = runtime.config_path();
         let (inherit, pass) = runtime.execution_env_config();
         let persistence = runtime.persistence_config_json();
         let task_approval_required_for_agent = runtime.task_approval_required_for_agent();
