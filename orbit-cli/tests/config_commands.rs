@@ -29,6 +29,10 @@ fn config_show_json_uses_defaults_when_config_file_missing() {
         serde_json::json!(["HOME", "PATH", "CODEX_HOME"])
     );
     assert_eq!(
+        value["task"]["approval"]["required_for_agent"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
         value["persistence"]["job"]["persistence"]["type"],
         serde_json::json!("file")
     );
@@ -53,7 +57,7 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
     std::fs::write(
         orbit_dir.join("config.toml"),
-        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[job]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
+        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[task.approval]\nrequired_for_agent = true\n\n[job]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
     )
     .expect("write config");
 
@@ -71,6 +75,10 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     assert_eq!(
         value["execution"]["env"]["pass"],
         serde_json::json!(["HOME", "PATH"])
+    );
+    assert_eq!(
+        value["task"]["approval"]["required_for_agent"],
+        serde_json::json!(true)
     );
     assert_eq!(
         value["persistence"]["job"]["persistence"]["type"],

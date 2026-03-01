@@ -8,11 +8,13 @@ use serde_json::{Value, json};
 
 const DEFAULT_ENV_INHERIT: bool = false;
 const DEFAULT_ENV_PASS: [&str; 3] = ["HOME", "PATH", "CODEX_HOME"];
+const DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT: bool = false;
 
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeConfig {
     pub(crate) execution_env: ExecutionEnvPolicy,
     pub(crate) persistence: PersistenceConfig,
+    pub(crate) task_approval: TaskApprovalConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -29,6 +31,7 @@ impl RuntimeConfig {
         Self {
             execution_env: ExecutionEnvPolicy::default(),
             persistence: PersistenceConfig::default_for_data_root(data_root),
+            task_approval: TaskApprovalConfig::default(),
         }
     }
 
@@ -56,7 +59,31 @@ impl RuntimeConfig {
                 parsed.execution.clone().and_then(|v| v.env),
             )?,
             persistence: PersistenceConfig::from_raw(data_root, &parsed)?,
+            task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TaskApprovalConfig {
+    pub(crate) required_for_agent: bool,
+}
+
+impl Default for TaskApprovalConfig {
+    fn default() -> Self {
+        Self {
+            required_for_agent: DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT,
+        }
+    }
+}
+
+impl TaskApprovalConfig {
+    fn from_raw(raw: Option<&RawTaskSection>) -> Result<Self, OrbitError> {
+        let required_for_agent = raw
+            .and_then(|section| section.approval.as_ref())
+            .and_then(|approval| approval.required_for_agent)
+            .unwrap_or(DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT);
+        Ok(Self { required_for_agent })
     }
 }
 
@@ -421,7 +448,7 @@ struct RawRuntimeConfig {
     job: Option<RawEntitySection>,
     work: Option<RawEntitySection>,
     skill: Option<RawEntitySection>,
-    task: Option<RawEntitySection>,
+    task: Option<RawTaskSection>,
     watch: Option<RawEntitySection>,
     audit: Option<RawEntitySection>,
 }
@@ -440,6 +467,17 @@ struct RawExecutionEnvConfig {
 #[derive(Debug, Clone, Deserialize)]
 struct RawEntitySection {
     persistence: Option<RawPersistenceConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawTaskSection {
+    persistence: Option<RawPersistenceConfig>,
+    approval: Option<RawTaskApprovalConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawTaskApprovalConfig {
+    required_for_agent: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use orbit_core::command::agent::AgentRunOptions;
 use orbit_core::{AgentSessionStatus, OrbitError, OrbitRuntime};
 
 use crate::command::Execute;
@@ -32,11 +33,24 @@ impl Execute for AgentSubcommand {
 pub struct AgentRunArgs {
     #[arg(long)]
     pub task: String,
+    #[arg(long)]
+    pub approve_on_verbal: bool,
+    #[arg(long)]
+    pub approved_by: Option<String>,
+    #[arg(long)]
+    pub approval_note: Option<String>,
 }
 
 impl Execute for AgentRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let result = runtime.run_agent_task(&self.task)?;
+        let result = runtime.run_agent_task_with_options(
+            &self.task,
+            AgentRunOptions {
+                approve_on_verbal: self.approve_on_verbal,
+                approved_by: self.approved_by,
+                approval_note: self.approval_note,
+            },
+        )?;
         let status = match result.status {
             AgentSessionStatus::Running => "running",
             AgentSessionStatus::Completed => "completed",

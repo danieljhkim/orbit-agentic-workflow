@@ -11,6 +11,9 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 instructions TEXT NOT NULL DEFAULT '',
                 context_files TEXT NOT NULL DEFAULT '[]',
                 workspace_path TEXT,
+                approved_at TEXT,
+                approved_by TEXT,
+                approval_note TEXT,
                 status TEXT NOT NULL DEFAULT 'todo',
                 priority TEXT NOT NULL DEFAULT 'medium',
                 task_type TEXT NOT NULL DEFAULT 'task',
@@ -190,6 +193,9 @@ fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
         "ALTER TABLE tasks ADD COLUMN context_files TEXT NOT NULL DEFAULT '[]'",
     )?;
     add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN workspace_path TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN approved_at TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN approved_by TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN approval_note TEXT")?;
     add_column_if_missing(
         conn,
         "ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'todo'",

@@ -21,6 +21,7 @@ pub struct OrbitContext {
     pub(crate) skill_catalog: SkillCatalog,
     pub(crate) execution_env_policy: ExecutionEnvPolicy,
     pub(crate) persistence: PersistenceConfig,
+    pub(crate) task_approval_required_for_agent: bool,
     pub(crate) work_persistence_type: PersistenceType,
     pub(crate) job_persistence_type: PersistenceType,
 }

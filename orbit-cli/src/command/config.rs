@@ -40,6 +40,7 @@ impl Execute for ConfigShowArgs {
         let config_path = OrbitRuntime::default_data_root().join("config.toml");
         let (inherit, pass) = runtime.execution_env_config();
         let persistence = runtime.persistence_config_json();
+        let task_approval_required_for_agent = runtime.task_approval_required_for_agent();
         if self.json {
             crate::output::json::print_pretty(&json!({
                 "path": config_path.to_string_lossy(),
@@ -50,6 +51,11 @@ impl Execute for ConfigShowArgs {
                         "pass": pass,
                     }
                 },
+                "task": {
+                    "approval": {
+                        "required_for_agent": task_approval_required_for_agent
+                    }
+                },
                 "persistence": persistence,
             }))
         } else {
@@ -57,6 +63,10 @@ impl Execute for ConfigShowArgs {
             println!("Exists:              {}", config_path.exists());
             println!("Execution env inherit: {}", inherit);
             println!("Execution env pass:  {}", pass.join(","));
+            println!(
+                "Task approval required for agent: {}",
+                task_approval_required_for_agent
+            );
             println!("Persistence:         {}", persistence);
             Ok(())
         }

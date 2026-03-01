@@ -70,6 +70,10 @@ pub enum OrbitEvent {
     TaskUpdated {
         id: String,
     },
+    TaskApproved {
+        id: String,
+        approved_by: String,
+    },
     TaskClosed {
         id: String,
     },

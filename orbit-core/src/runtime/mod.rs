@@ -106,6 +106,7 @@ impl OrbitRuntime {
         Self::load_external_tools(&store, &mut registry)?;
         let execution_env_policy = runtime_config.execution_env.clone();
         let persistence = runtime_config.persistence.clone();
+        let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
         let work_persistence_type = persistence.work.persistence_type;
         let job_persistence_type = persistence.job.persistence_type;
 
@@ -120,6 +121,7 @@ impl OrbitRuntime {
                 skill_catalog,
                 execution_env_policy,
                 persistence,
+                task_approval_required_for_agent,
                 work_persistence_type,
                 job_persistence_type,
             },
@@ -157,6 +159,7 @@ impl OrbitRuntime {
         registry.register_builtins();
         Self::load_external_tools(&store, &mut registry)?;
         let runtime_config = RuntimeConfig::default();
+        let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
 
         Ok(Self {
             context: OrbitContext {
@@ -169,6 +172,7 @@ impl OrbitRuntime {
                 skill_catalog,
                 execution_env_policy: runtime_config.execution_env,
                 persistence: runtime_config.persistence,
+                task_approval_required_for_agent,
                 work_persistence_type: PersistenceType::Sqlite,
                 job_persistence_type: PersistenceType::Sqlite,
             },
@@ -219,6 +223,10 @@ impl OrbitRuntime {
 
     pub fn persistence_config_json(&self) -> Value {
         self.context.persistence.as_json_value()
+    }
+
+    pub fn task_approval_required_for_agent(&self) -> bool {
+        self.context.task_approval_required_for_agent
     }
 
     pub fn run_jobs(&self) -> Result<usize, OrbitError> {

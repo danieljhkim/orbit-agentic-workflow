@@ -1,4 +1,5 @@
 use orbit_core::OrbitRuntime;
+use orbit_core::command::agent::AgentRunOptions;
 use orbit_core::command::task::TaskAddParams;
 use orbit_types::AgentSessionStatus;
 use tempfile::tempdir;
@@ -104,4 +105,61 @@ fn successful_agent_run_records_session_and_audits() {
             .any(|a| a.event_type == "AgentSessionCompleted"),
         "session completion should be audited"
     );
+}
+
+#[test]
+fn agent_run_requires_approval_when_config_enabled() {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let task = runtime
+        .add_task(TaskAddParams {
+            title: "agent gated".to_string(),
+            instructions: r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#.to_string(),
+            ..Default::default()
+        })
+        .expect("task");
+
+    let result = runtime.run_agent_task(&task.id);
+    assert!(matches!(result, Err(orbit_types::OrbitError::TaskApprovalRequired(_))));
+}
+
+#[test]
+fn agent_run_can_approve_on_verbal_when_config_enabled() {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let task = runtime
+        .add_task(TaskAddParams {
+            title: "agent verbal approval".to_string(),
+            instructions: r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#.to_string(),
+            ..Default::default()
+        })
+        .expect("task");
+
+    let result = runtime
+        .run_agent_task_with_options(
+            &task.id,
+            AgentRunOptions {
+                approve_on_verbal: true,
+                approved_by: Some("agent".to_string()),
+                approval_note: Some("approved based on user verbal confirmation".to_string()),
+            },
+        )
+        .expect("run");
+    assert_eq!(result.status, AgentSessionStatus::Completed);
+
+    let approved_task = runtime.get_task(&task.id).expect("task");
+    assert!(approved_task.approved_at.is_some());
+    assert_eq!(approved_task.approved_by.as_deref(), Some("agent"));
 }

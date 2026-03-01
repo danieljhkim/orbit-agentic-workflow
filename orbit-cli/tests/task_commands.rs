@@ -214,3 +214,35 @@ fn task_workspace_add_update_and_clear() {
         serde_json::from_slice(&show_after_clear).expect("show json after clear");
     assert!(show_after_clear["workspace_path"].is_null());
 }
+
+#[test]
+fn task_approve_sets_approval_fields() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "approvable");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "approve",
+            &id,
+            "--by",
+            "daniel",
+            "--note",
+            "approved verbally in sync",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Approved task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["approved_by"], "daniel");
+    assert_eq!(show["approval_note"], "approved verbally in sync");
+    assert!(show["approved_at"].is_string());
+}

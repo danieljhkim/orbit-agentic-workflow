@@ -55,3 +55,61 @@ fn agent_run_fails_for_invalid_task_instruction_payload() {
         .failure()
         .stderr(predicate::str::contains("agent run failed"));
 }
+
+#[test]
+fn agent_run_requires_approval_when_enabled() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let orbit_dir = dir.path().join(".orbit");
+    std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
+    std::fs::write(
+        orbit_dir.join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let task_id = add_task_with_instructions(
+        dir.path(),
+        "needs approval",
+        r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#,
+    );
+
+    orbit_in(dir.path())
+        .args(["agent", "run", "--task", &task_id])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("task requires approval"));
+}
+
+#[test]
+fn agent_run_can_auto_approve_on_verbal_flag() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let orbit_dir = dir.path().join(".orbit");
+    std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
+    std::fs::write(
+        orbit_dir.join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let task_id = add_task_with_instructions(
+        dir.path(),
+        "verbal approval task",
+        r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#,
+    );
+
+    orbit_in(dir.path())
+        .args([
+            "agent",
+            "run",
+            "--task",
+            &task_id,
+            "--approve-on-verbal",
+            "--approved-by",
+            "agent",
+            "--approval-note",
+            "approved verbally",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status=completed"));
+}

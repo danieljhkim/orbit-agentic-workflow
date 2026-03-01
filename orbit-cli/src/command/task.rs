@@ -27,6 +27,8 @@ pub enum TaskSubcommand {
     Show(TaskShowArgs),
     /// Update task fields
     Update(TaskUpdateArgs),
+    /// Approve a task for agent execution
+    Approve(TaskApproveArgs),
     /// Close a task (set status to done)
     Close(TaskCloseArgs),
     /// Reopen a closed task
@@ -44,6 +46,7 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::List(args) => args.execute(runtime),
             TaskSubcommand::Show(args) => args.execute(runtime),
             TaskSubcommand::Update(args) => args.execute(runtime),
+            TaskSubcommand::Approve(args) => args.execute(runtime),
             TaskSubcommand::Close(args) => args.execute(runtime),
             TaskSubcommand::Reopen(args) => args.execute(runtime),
             TaskSubcommand::Delete(args) => args.execute(runtime),
@@ -132,13 +135,18 @@ impl Execute for TaskListArgs {
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else {
             println!(
-                "{:<28} {:<12} {:<8} {:<8} TITLE",
-                "ID", "STATUS", "PRI", "TYPE"
+                "{:<28} {:<12} {:<8} {:<8} {:<5} TITLE",
+                "ID", "STATUS", "PRI", "TYPE", "APPR"
             );
             for task in &tasks {
                 println!(
-                    "{:<28} {:<12} {:<8} {:<8} {}",
-                    task.id, task.status, task.priority, task.task_type, task.title
+                    "{:<28} {:<12} {:<8} {:<8} {:<5} {}",
+                    task.id,
+                    task.status,
+                    task.priority,
+                    task.task_type,
+                    yes_no(task.approved_at.is_some()),
+                    task.title
                 );
             }
             Ok(())
@@ -180,6 +188,16 @@ impl Execute for TaskShowArgs {
             }
             if let Some(ref workspace_path) = task.workspace_path {
                 println!("Workspace:   {}", workspace_path);
+            }
+            println!("Approved:    {}", yes_no(task.approved_at.is_some()));
+            if let Some(ref approved_by) = task.approved_by {
+                println!("Approved By: {}", approved_by);
+            }
+            if let Some(approved_at) = task.approved_at {
+                println!("Approved At: {}", approved_at.to_rfc3339());
+            }
+            if let Some(ref approval_note) = task.approval_note {
+                println!("Approval Note: {}", approval_note);
             }
             if !task.owner.is_empty() {
                 println!("Owner:       {}", task.owner);
@@ -262,6 +280,28 @@ impl Execute for TaskUpdateArgs {
     }
 }
 
+// --- Approve ---
+
+#[derive(Args)]
+pub struct TaskApproveArgs {
+    /// Task ID
+    pub id: String,
+    /// Approver identity
+    #[arg(long, default_value = "human")]
+    pub by: String,
+    /// Optional approval note (e.g., verbal confirmation details)
+    #[arg(long)]
+    pub note: Option<String>,
+}
+
+impl Execute for TaskApproveArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let task = runtime.approve_task(&self.id, &self.by, self.note)?;
+        println!("Approved task '{}'", task.id);
+        Ok(())
+    }
+}
+
 // --- Close ---
 
 #[derive(Args)]
@@ -330,13 +370,18 @@ impl Execute for TaskSearchArgs {
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else {
             println!(
-                "{:<28} {:<12} {:<8} {:<8} TITLE",
-                "ID", "STATUS", "PRI", "TYPE"
+                "{:<28} {:<12} {:<8} {:<8} {:<5} TITLE",
+                "ID", "STATUS", "PRI", "TYPE", "APPR"
             );
             for task in &tasks {
                 println!(
-                    "{:<28} {:<12} {:<8} {:<8} {}",
-                    task.id, task.status, task.priority, task.task_type, task.title
+                    "{:<28} {:<12} {:<8} {:<8} {:<5} {}",
+                    task.id,
+                    task.status,
+                    task.priority,
+                    task.task_type,
+                    yes_no(task.approved_at.is_some()),
+                    task.title
                 );
             }
             Ok(())
@@ -354,6 +399,9 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "instructions": task.instructions,
         "context_files": task.context_files,
         "workspace_path": task.workspace_path,
+        "approved_at": task.approved_at.as_ref().map(|value| value.to_rfc3339()),
+        "approved_by": task.approved_by,
+        "approval_note": task.approval_note,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
         "type": task.task_type.to_string(),
@@ -370,4 +418,12 @@ fn parse_context_csv(raw: &str) -> Vec<String> {
         .filter(|v| !v.is_empty())
         .map(ToString::to_string)
         .collect()
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
 }

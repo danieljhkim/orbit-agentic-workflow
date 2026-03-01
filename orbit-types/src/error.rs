@@ -8,6 +8,8 @@ pub enum OrbitError {
     ToolNotFound(String),
     #[error("task not found: {0}")]
     TaskNotFound(String),
+    #[error("task requires approval: {0}")]
+    TaskApprovalRequired(String),
     #[error("skill not found: {0}")]
     SkillNotFound(String),
     #[error("job not found: {0}")]

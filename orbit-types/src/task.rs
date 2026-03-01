@@ -126,6 +126,12 @@ pub struct Task {
     pub context_files: Vec<String>,
     #[serde(default)]
     pub workspace_path: Option<String>,
+    #[serde(default)]
+    pub approved_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub approved_by: Option<String>,
+    #[serde(default)]
+    pub approval_note: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub task_type: TaskType,

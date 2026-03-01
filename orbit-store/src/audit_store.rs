@@ -77,6 +77,7 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
         OrbitEvent::TaskAdded { .. } => "TaskAdded",
         OrbitEvent::TaskUpdated { .. } => "TaskUpdated",
+        OrbitEvent::TaskApproved { .. } => "TaskApproved",
         OrbitEvent::TaskClosed { .. } => "TaskClosed",
         OrbitEvent::TaskReopened { .. } => "TaskReopened",
         OrbitEvent::TaskDeleted { .. } => "TaskDeleted",
@@ -132,6 +133,9 @@ fn event_message(event: &OrbitEvent) -> String {
         OrbitEvent::PolicyDenied { tool } => format!("policy denied: {tool}"),
         OrbitEvent::TaskAdded { id } => format!("task added: {id}"),
         OrbitEvent::TaskUpdated { id } => format!("task updated: {id}"),
+        OrbitEvent::TaskApproved { id, approved_by } => {
+            format!("task approved: {id} by {approved_by}")
+        }
         OrbitEvent::TaskClosed { id } => format!("task closed: {id}"),
         OrbitEvent::TaskReopened { id } => format!("task reopened: {id}"),
         OrbitEvent::TaskDeleted { id } => format!("task deleted: {id}"),

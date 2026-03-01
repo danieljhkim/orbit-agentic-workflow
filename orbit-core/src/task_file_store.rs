@@ -17,6 +17,9 @@ pub(crate) struct FileTaskInsert {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub approved_by: Option<String>,
+    pub approval_note: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
     pub owner: String,
@@ -30,6 +33,9 @@ pub(crate) struct FileTaskUpdate {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
+    pub approved_at: Option<Option<DateTime<Utc>>>,
+    pub approved_by: Option<Option<String>>,
+    pub approval_note: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -101,6 +107,12 @@ struct TaskFileDocument {
     context_files: Vec<String>,
     #[serde(default)]
     workspace_path: Option<String>,
+    #[serde(default)]
+    approved_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    approved_by: Option<String>,
+    #[serde(default)]
+    approval_note: Option<String>,
     priority: TaskPriority,
     #[serde(rename = "type", default = "default_task_type")]
     task_type: TaskType,
@@ -176,6 +188,9 @@ impl TaskFileStore {
                 instructions: task.instructions.clone(),
                 context_files: task.context_files.clone(),
                 workspace_path: task.workspace_path.clone(),
+                approved_at: task.approved_at,
+                approved_by: task.approved_by.clone(),
+                approval_note: task.approval_note.clone(),
                 priority: task.priority,
                 task_type: task.task_type,
                 owner: task.owner.clone(),
@@ -220,6 +235,9 @@ impl TaskFileStore {
             instructions: params.instructions,
             context_files: params.context_files,
             workspace_path: params.workspace_path,
+            approved_at: params.approved_at,
+            approved_by: params.approved_by,
+            approval_note: params.approval_note,
             priority: params.priority,
             task_type: params.task_type,
             owner: params.owner,
@@ -330,6 +348,15 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.workspace_path {
             doc.workspace_path = value.clone();
+        }
+        if let Some(value) = &fields.approved_at {
+            doc.approved_at = *value;
+        }
+        if let Some(value) = &fields.approved_by {
+            doc.approved_by = value.clone();
+        }
+        if let Some(value) = &fields.approval_note {
+            doc.approval_note = value.clone();
         }
         if let Some(value) = fields.priority {
             doc.priority = value;
@@ -487,6 +514,9 @@ fn doc_to_task(state: TaskStateDir, doc: TaskFileDocument) -> Task {
         instructions: doc.instructions,
         context_files: doc.context_files,
         workspace_path: doc.workspace_path,
+        approved_at: doc.approved_at,
+        approved_by: doc.approved_by,
+        approval_note: doc.approval_note,
         status: state.to_status(),
         priority: doc.priority,
         task_type: doc.task_type,

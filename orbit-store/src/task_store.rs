@@ -29,12 +29,19 @@ fn parse_context_files(raw: &str) -> rusqlite::Result<Vec<String>> {
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let context_files_raw: String = row.get(4)?;
     let workspace_path: Option<String> = row.get(5)?;
-    let status_raw: String = row.get(6)?;
-    let priority_raw: String = row.get(7)?;
-    let task_type_raw: String = row.get(8)?;
-    let parent_id: Option<String> = row.get(10)?;
-    let created_at_raw: String = row.get(11)?;
-    let updated_at_raw: String = row.get(12)?;
+    let approved_at_raw: Option<String> = row.get(6)?;
+    let approved_by: Option<String> = row.get(7)?;
+    let approval_note: Option<String> = row.get(8)?;
+    let status_raw: String = row.get(9)?;
+    let priority_raw: String = row.get(10)?;
+    let task_type_raw: String = row.get(11)?;
+    let parent_id: Option<String> = row.get(13)?;
+    let created_at_raw: String = row.get(14)?;
+    let updated_at_raw: String = row.get(15)?;
+    let approved_at = match approved_at_raw {
+        Some(raw) => Some(parse_timestamp(&raw)?),
+        None => None,
+    };
 
     Ok(Task {
         id: row.get(0)?,
@@ -43,17 +50,20 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         instructions: row.get(3)?,
         context_files: parse_context_files(&context_files_raw)?,
         workspace_path,
+        approved_at,
+        approved_by,
+        approval_note,
         status: parse_status(&status_raw),
         priority: parse_priority(&priority_raw),
         task_type: parse_task_type(&task_type_raw),
-        owner: row.get(9)?,
+        owner: row.get(12)?,
         parent_id,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,
     })
 }
 
-const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, status, priority, task_type, owner, parent_id, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -191,6 +201,9 @@ pub struct TaskUpdateFields {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
+    pub approved_at: Option<Option<chrono::DateTime<Utc>>>,
+    pub approved_by: Option<Option<String>>,
+    pub approval_note: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
@@ -210,6 +223,9 @@ impl<'a> StoreTx<'a> {
             instructions: params.instructions.clone(),
             context_files: params.context_files.clone(),
             workspace_path: params.workspace_path.clone(),
+            approved_at: None,
+            approved_by: None,
+            approval_note: None,
             status: TaskStatus::Todo,
             priority: params.priority,
             task_type: params.task_type,
@@ -221,7 +237,7 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     task.id,
                     task.title,
@@ -229,6 +245,9 @@ impl<'a> StoreTx<'a> {
                     task.instructions,
                     context_files_json,
                     task.workspace_path,
+                    task.approved_at.map(|value| value.to_rfc3339()),
+                    task.approved_by,
+                    task.approval_note,
                     task.status.to_string(),
                     task.priority.to_string(),
                     task.task_type.to_string(),
@@ -266,6 +285,18 @@ impl<'a> StoreTx<'a> {
         }
         if let Some(ref v) = fields.workspace_path {
             sets.push("workspace_path = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.approved_at {
+            sets.push("approved_at = ?");
+            param_values.push(Box::new(v.map(|value| value.to_rfc3339())));
+        }
+        if let Some(ref v) = fields.approved_by {
+            sets.push("approved_by = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.approval_note {
+            sets.push("approval_note = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(v) = fields.status {

@@ -13,13 +13,44 @@ pub struct AgentRunResult {
     pub status: AgentSessionStatus,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AgentRunOptions {
+    pub approve_on_verbal: bool,
+    pub approved_by: Option<String>,
+    pub approval_note: Option<String>,
+}
+
 impl OrbitRuntime {
     pub fn get_agent_session(&self, session_id: &str) -> Result<Option<AgentSession>, OrbitError> {
         self.context.store.get_agent_session(session_id)
     }
 
     pub fn run_agent_task(&self, task_id: &str) -> Result<AgentRunResult, OrbitError> {
-        let task = self.get_task(task_id)?;
+        self.run_agent_task_with_options(task_id, AgentRunOptions::default())
+    }
+
+    pub fn run_agent_task_with_options(
+        &self,
+        task_id: &str,
+        options: AgentRunOptions,
+    ) -> Result<AgentRunResult, OrbitError> {
+        let mut task = self.get_task(task_id)?;
+        if self.context.task_approval_required_for_agent && task.approved_at.is_none() {
+            if options.approve_on_verbal {
+                let approved_by = options
+                    .approved_by
+                    .unwrap_or_else(|| "agent".to_string());
+                let approval_note = options.approval_note.or_else(|| {
+                    Some("Approved on explicit verbal confirmation from user".to_string())
+                });
+                task = self.approve_task(task_id, &approved_by, approval_note)?;
+            } else {
+                return Err(OrbitError::TaskApprovalRequired(format!(
+                    "task '{task_id}' is not approved; run `orbit task approve {task_id}` or `orbit agent run --task {task_id} --approve-on-verbal`"
+                )));
+            }
+        }
+
         let skills = Vec::new();
         let session_id = format!(
             "session-{}",

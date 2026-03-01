@@ -188,6 +188,9 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 TaskSubcommand::List(_) => ("list", None, None),
                 TaskSubcommand::Show(args) => ("show", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Update(args) => ("update", Some("task"), Some(args.id.as_str())),
+                TaskSubcommand::Approve(args) => {
+                    ("approve", Some("task"), Some(args.id.as_str()))
+                }
                 TaskSubcommand::Close(args) => ("close", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Reopen(args) => ("reopen", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Delete(args) => ("delete", Some("task"), Some(args.id.as_str())),

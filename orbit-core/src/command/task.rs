@@ -1,3 +1,4 @@
+use chrono::Utc;
 use orbit_types::{OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
 use std::path::Path;
 
@@ -65,6 +66,9 @@ impl OrbitRuntime {
                 instructions: params.instructions.clone(),
                 context_files: params.context_files.clone(),
                 workspace_path: workspace_path.clone(),
+                approved_at: None,
+                approved_by: None,
+                approval_note: None,
                 priority: params.priority,
                 task_type: params.task_type,
                 owner: params.owner.clone(),
@@ -127,6 +131,9 @@ impl OrbitRuntime {
                     instructions: params.instructions,
                     context_files: params.context_files,
                     workspace_path,
+                    approved_at: None,
+                    approved_by: None,
+                    approval_note: None,
                     status: params.status,
                     priority: params.priority,
                     task_type: params.task_type,
@@ -196,6 +203,45 @@ impl OrbitRuntime {
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.context.task_store.search_tasks(query)
+    }
+
+    pub fn approve_task(
+        &self,
+        id: &str,
+        approved_by: &str,
+        approval_note: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        let task = self.get_task(id)?;
+        let approver = approved_by.trim();
+        if approver.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "approved_by must not be empty".to_string(),
+            ));
+        }
+        if task.approved_at.is_some() {
+            return Ok(task);
+        }
+
+        let task = self.with_mutation(|_| {
+            let task = self.context.task_store.update_task(
+                id,
+                &FileTaskUpdate {
+                    approved_at: Some(Some(Utc::now())),
+                    approved_by: Some(Some(approver.to_string())),
+                    approval_note: Some(approval_note.clone()),
+                    ..Default::default()
+                },
+            )?;
+            Ok((
+                task.clone(),
+                OrbitEvent::TaskApproved {
+                    id: id.to_string(),
+                    approved_by: approver.to_string(),
+                },
+            ))
+        })?;
+
+        Ok(task)
     }
 }
 

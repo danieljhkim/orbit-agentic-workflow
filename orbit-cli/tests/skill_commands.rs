@@ -117,7 +117,6 @@ fn skill_doctor_reports_invalid_skill() {
         "broken",
         r#"---
 name: broken
-description: Broken fixture.
 ---
 
 # Broken
