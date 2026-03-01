@@ -26,7 +26,7 @@ impl OrbitRuntime {
 
         match decision {
             PolicyDecision::Deny { reason } => {
-                self.with_mutation(|_| {
+                self.with_mutation(|| {
                     Ok((
                         (),
                         OrbitEvent::PolicyDenied {
@@ -42,7 +42,7 @@ impl OrbitRuntime {
                     .registry
                     .execute(name, &ToolContext::default(), input)?;
 
-                self.with_mutation(|_| {
+                self.with_mutation(|| {
                     Ok((
                         (),
                         OrbitEvent::ToolExecuted {

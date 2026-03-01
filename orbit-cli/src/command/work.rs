@@ -19,7 +19,7 @@ impl Execute for WorkCommand {
 
 #[derive(Subcommand)]
 pub enum WorkSubcommand {
-    Add(WorkAddArgs),
+    Add(Box<WorkAddArgs>),
     List(WorkListArgs),
     Show(WorkShowArgs),
     Delete(WorkDeleteArgs),
@@ -28,7 +28,7 @@ pub enum WorkSubcommand {
 impl Execute for WorkSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            WorkSubcommand::Add(args) => args.execute(runtime),
+            WorkSubcommand::Add(args) => (*args).execute(runtime),
             WorkSubcommand::List(args) => args.execute(runtime),
             WorkSubcommand::Show(args) => args.execute(runtime),
             WorkSubcommand::Delete(args) => args.execute(runtime),

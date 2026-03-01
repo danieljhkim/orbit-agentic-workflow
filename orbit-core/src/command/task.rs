@@ -91,7 +91,7 @@ impl OrbitRuntime {
             None
         };
 
-        self.with_mutation(|_| {
+        self.with_mutation(|| {
             let task = self.context.task_store.create_task(StoreTaskCreateParams {
                 title: params.title.clone(),
                 description: params.description.clone(),
@@ -165,7 +165,7 @@ impl OrbitRuntime {
             None => None,
         };
 
-        let task = self.with_mutation(|_| {
+        let task = self.with_mutation(|| {
             let task = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
@@ -203,7 +203,7 @@ impl OrbitRuntime {
             )));
         }
 
-        self.with_mutation(|_| {
+        self.with_mutation(|| {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
@@ -225,7 +225,7 @@ impl OrbitRuntime {
             )));
         }
 
-        self.with_mutation(|_| {
+        self.with_mutation(|| {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
@@ -238,7 +238,7 @@ impl OrbitRuntime {
     }
 
     pub fn delete_task(&self, id: &str) -> Result<(), OrbitError> {
-        self.with_mutation(|_| {
+        self.with_mutation(|| {
             let deleted = self.context.task_store.delete_task(id)?;
             if !deleted {
                 return Err(OrbitError::TaskNotFound(id.to_string()));
@@ -268,7 +268,7 @@ impl OrbitRuntime {
             return Ok(task);
         }
 
-        let task = self.with_mutation(|_| {
+        let task = self.with_mutation(|| {
             let task = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {

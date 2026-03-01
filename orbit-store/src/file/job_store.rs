@@ -366,9 +366,14 @@ fn write_atomic(path: &Path, content: &str) -> Result<(), OrbitError> {
     fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
 
     let mut tmp = path.to_path_buf();
-    tmp.set_extension("yaml.tmp");
+    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    tmp.set_extension(format!("yaml.tmp.{nanos}"));
     fs::write(&tmp, content).map_err(|e| OrbitError::Io(e.to_string()))?;
-    fs::rename(&tmp, path).map_err(|e| OrbitError::Io(e.to_string()))
+    if let Err(err) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(OrbitError::Io(err.to_string()));
+    }
+    Ok(())
 }
 
 fn is_yaml(path: &Path) -> bool {

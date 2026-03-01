@@ -11,30 +11,30 @@ impl OrbitRuntime {
             return Ok(0);
         }
 
-        let result = (|| {
+        let claim_result = (|| {
             let due_jobs = self.context.job_store.due_jobs(now)?;
             for job in &due_jobs {
                 let _ = self.recover_stale_active_run_for_job(job, now)?;
             }
 
-            let claim = self.context.job_store.claim_due_jobs(now)?;
-
-            for skipped_job_id in &claim.skipped {
-                self.record_event(OrbitEvent::JobSkipped {
-                    job_id: skipped_job_id.clone(),
-                    reason: "pending/running job run already exists".to_string(),
-                })?;
-            }
-
-            let mut ran = 0usize;
-            for claimed in claim.claimed {
-                self.execute_claimed_job(&claimed)?;
-                ran += 1;
-            }
-            Ok(ran)
+            self.context.job_store.claim_due_jobs(now)
         })();
 
         let _ = self.context.lock_store.unlock(lock_name);
-        result
+        let claim = claim_result?;
+
+        for skipped_job_id in &claim.skipped {
+            self.record_event(OrbitEvent::JobSkipped {
+                job_id: skipped_job_id.clone(),
+                reason: "pending/running job run already exists".to_string(),
+            })?;
+        }
+
+        let mut ran = 0usize;
+        for claimed in claim.claimed {
+            self.execute_claimed_job(&claimed)?;
+            ran += 1;
+        }
+        Ok(ran)
     }
 }

@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use orbit_types::{OrbitError, Task, TaskPriority, TaskStatus, TaskType};
 use serde::{Deserialize, Serialize};
 
@@ -394,11 +394,13 @@ impl TaskFileStore {
     }
 
     fn next_task_id(&self, now: DateTime<Utc>) -> Result<String, OrbitError> {
-        for offset in 0_i64..180_i64 {
-            let candidate = format!(
-                "T{}",
-                (now + Duration::seconds(offset)).format("%Y%m%d-%H%M%S")
-            );
+        for attempt in 0..1024_u32 {
+            let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+            let candidate = if attempt == 0 {
+                format!("T{}-{nanos}", now.format("%Y%m%d-%H%M%S"))
+            } else {
+                format!("T{}-{nanos}-{attempt}", now.format("%Y%m%d-%H%M%S"))
+            };
             if self.locate_task(&candidate)?.is_none() {
                 return Ok(candidate);
             }
@@ -435,12 +437,13 @@ impl TaskFileStore {
         }
 
         let yaml = serde_yaml::to_string(doc).map_err(|e| OrbitError::Store(e.to_string()))?;
-        let tmp_path = path.with_extension("yaml.tmp");
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let tmp_path = path.with_extension(format!("yaml.tmp.{nanos}"));
         fs::write(&tmp_path, yaml).map_err(|e| OrbitError::Io(e.to_string()))?;
-        if path.exists() {
-            fs::remove_file(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        if let Err(err) = fs::rename(&tmp_path, path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(OrbitError::Io(err.to_string()));
         }
-        fs::rename(&tmp_path, path).map_err(|e| OrbitError::Io(e.to_string()))?;
         Ok(())
     }
 

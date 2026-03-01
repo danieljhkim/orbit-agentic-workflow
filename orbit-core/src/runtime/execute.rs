@@ -20,7 +20,7 @@ impl OrbitRuntime {
         });
 
         if let PolicyDecision::Deny { reason } = decision {
-            self.with_mutation(|_| {
+            self.with_mutation(|| {
                 Ok((
                     (),
                     OrbitEvent::PolicyDenied {
@@ -42,7 +42,7 @@ impl OrbitRuntime {
             &NoSandbox,
         )?;
 
-        self.with_mutation(|_| {
+        self.with_mutation(|| {
             Ok((
                 (),
                 OrbitEvent::ToolExecuted {

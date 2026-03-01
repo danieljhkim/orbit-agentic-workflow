@@ -1,6 +1,3 @@
-use std::thread;
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
@@ -213,6 +210,7 @@ impl OrbitRuntime {
         let mut current_attempt = initial_run.as_ref().map(|r| r.attempt).unwrap_or(1);
         let mut pending_initial = initial_run;
         let mut last_result: Option<JobRunResult> = None;
+        let mut retry_scheduled_for_future = false;
 
         while current_attempt <= max_attempts {
             let mut run = if let Some(existing) = pending_initial.take() {
@@ -302,7 +300,9 @@ impl OrbitRuntime {
                 })?;
 
                 if delay_seconds > 0 {
-                    thread::sleep(Duration::from_secs(delay_seconds));
+                    // Avoid blocking scheduler execution while waiting for delayed retries.
+                    retry_scheduled_for_future = true;
+                    break;
                 }
 
                 current_attempt = current_attempt.saturating_add(1);
@@ -312,12 +312,14 @@ impl OrbitRuntime {
             break;
         }
 
-        let next_run_at =
-            crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
-        let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
-        let _ = self.record_event(OrbitEvent::JobTriggered {
-            job_id: job.job_id.clone(),
-        });
+        if !retry_scheduled_for_future {
+            let next_run_at =
+                crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
+            let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
+            let _ = self.record_event(OrbitEvent::JobTriggered {
+                job_id: job.job_id.clone(),
+            });
+        }
 
         last_result.ok_or(OrbitError::JobRunNotFound(job.job_id))
     }

@@ -91,8 +91,8 @@ impl OrbitRuntime {
             builtin: false,
         };
 
-        self.with_mutation(|tx| {
-            tx.insert_tool(&tool)?;
+        self.with_mutation(|| {
+            self.context.tool_store.insert_tool(&tool)?;
             Ok((
                 (),
                 OrbitEvent::ToolAdded {
@@ -111,8 +111,8 @@ impl OrbitRuntime {
             )));
         }
 
-        self.with_mutation(|tx| {
-            let deleted = tx.delete_tool(name)?;
+        self.with_mutation(|| {
+            let deleted = self.context.tool_store.delete_tool(name)?;
             if !deleted {
                 return Err(OrbitError::ToolNotFound(name.to_string()));
             }
@@ -200,8 +200,8 @@ impl OrbitRuntime {
                 enabled,
                 builtin: schema.builtin,
             };
-            return self.with_mutation(|tx| {
-                tx.insert_tool(&tool)?;
+            return self.with_mutation(|| {
+                self.context.tool_store.insert_tool(&tool)?;
                 let event = if enabled {
                     OrbitEvent::ToolEnabled {
                         name: name.to_string(),
@@ -215,8 +215,8 @@ impl OrbitRuntime {
             });
         }
 
-        self.with_mutation(|tx| {
-            tx.set_tool_enabled(name, enabled)?;
+        self.with_mutation(|| {
+            self.context.tool_store.set_tool_enabled(name, enabled)?;
             let event = if enabled {
                 OrbitEvent::ToolEnabled {
                     name: name.to_string(),

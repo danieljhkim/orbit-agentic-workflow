@@ -65,7 +65,7 @@ impl RuntimeConfig {
             )?,
             persistence: PersistenceConfig::from_raw(data_root, &parsed)?,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
-            identity: IdentityConfig::from_raw(parsed.identity.as_ref())?,
+            identity: IdentityConfig::from_raw(parsed.identity.as_ref(), data_root)?,
         })
     }
 }
@@ -110,9 +110,11 @@ pub(crate) struct IdentityConfig {
 
 impl Default for IdentityConfig {
     fn default() -> Self {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let root = resolve_path(
             Some(DEFAULT_IDENTITY_ROOT),
             Path::new(DEFAULT_IDENTITY_ROOT),
+            &cwd,
         )
         .unwrap_or_else(|_| PathBuf::from(DEFAULT_IDENTITY_ROOT));
         Self {
@@ -123,9 +125,13 @@ impl Default for IdentityConfig {
 }
 
 impl IdentityConfig {
-    fn from_raw(raw: Option<&RawIdentitySection>) -> Result<Self, OrbitError> {
+    fn from_raw(raw: Option<&RawIdentitySection>, config_root: &Path) -> Result<Self, OrbitError> {
         let default = Self::default();
-        let root = resolve_path(raw.and_then(|v| v.root.as_deref()), &default.root)?;
+        let root = resolve_path(
+            raw.and_then(|v| v.root.as_deref()),
+            &default.root,
+            config_root,
+        )?;
         let mut role_overrides = BTreeMap::new();
         if let Some(roles) = raw.and_then(|v| v.roles.as_ref()) {
             for (identity, role_raw) in roles {

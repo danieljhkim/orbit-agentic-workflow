@@ -26,7 +26,6 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_store::WorkInsertParams;
     use orbit_types::{
         JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
         TaskType,
@@ -37,6 +36,7 @@ mod tests {
     use crate::OrbitRuntime;
     use crate::command::job::JobAddParams;
     use crate::command::task::{TaskAddParams, TaskUpdateParams};
+    use crate::command::work::WorkAddParams;
 
     #[test]
     fn policy_denied_records_audit_and_no_side_effects() {
@@ -109,21 +109,17 @@ mod tests {
             .expect("chmod mock agent");
 
         runtime
-            .context
-            .store
-            .with_transaction(|tx| {
-                tx.insert_work(&WorkInsertParams {
-                    id: "spec-core-double-run".to_string(),
-                    spec_type: "analysis".to_string(),
-                    description: "spec for scheduler test".to_string(),
-                    input_schema_json: json!({}),
-                    output_schema_json: json!({}),
-                    artifact_path_template: None,
-                    skill_refs: Vec::new(),
-                    identity_id: None,
-                    assigned_to: None,
-                    created_by: None,
-                })
+            .add_work(WorkAddParams {
+                id: "spec-core-double-run".to_string(),
+                spec_type: "analysis".to_string(),
+                description: "spec for scheduler test".to_string(),
+                input_schema_json: json!({}),
+                output_schema_json: json!({}),
+                artifact_path_template: None,
+                skill_refs: Vec::new(),
+                identity_id: None,
+                assigned_to: None,
+                created_by: None,
             })
             .expect("insert work");
 
@@ -155,21 +151,19 @@ mod tests {
     #[test]
     fn job_run_skips_when_global_lock_held() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let lock_name = runtime.context.lock_store.global_job_lock_name();
         assert!(
             runtime
                 .context
-                .store
-                .try_lock(orbit_store::Store::global_job_lock_name())
+                .lock_store
+                .try_lock(lock_name)
                 .expect("lock")
         );
 
         let ran = runtime.run_jobs().expect("run jobs");
         assert_eq!(ran, 0);
 
-        let _ = runtime
-            .context
-            .store
-            .unlock(orbit_store::Store::global_job_lock_name());
+        let _ = runtime.context.lock_store.unlock(lock_name);
     }
 
     #[test]

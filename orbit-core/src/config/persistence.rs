@@ -88,6 +88,7 @@ impl PersistenceConfig {
                 &defaults.job,
                 true,
                 "yaml",
+                data_root,
             )?,
             work: parse_configurable_entity(
                 "work",
@@ -95,28 +96,33 @@ impl PersistenceConfig {
                 &defaults.work,
                 true,
                 "yaml",
+                data_root,
             )?,
             skill: parse_file_only_entity(
                 "skill",
                 raw.skill.as_ref().and_then(|v| v.persistence.as_ref()),
                 &defaults.skill,
                 "md",
+                data_root,
             )?,
             task: parse_file_only_entity(
                 "task",
                 raw.task.as_ref().and_then(|v| v.persistence.as_ref()),
                 &defaults.task,
                 "yaml",
+                data_root,
             )?,
             watch: parse_sqlite_only_entity(
                 "watch",
                 raw.watch.as_ref().and_then(|v| v.persistence.as_ref()),
                 &defaults.watch,
+                data_root,
             )?,
             audit: parse_sqlite_only_entity(
                 "audit",
                 raw.audit.as_ref().and_then(|v| v.persistence.as_ref()),
                 &defaults.audit,
+                data_root,
             )?,
         })
     }
@@ -139,6 +145,7 @@ fn parse_configurable_entity(
     defaults: &EntityPersistenceConfig,
     allow_sqlite: bool,
     required_file_format: &str,
+    base_dir: &Path,
 ) -> Result<EntityPersistenceConfig, OrbitError> {
     let Some(raw) = raw else {
         return Ok(defaults.clone());
@@ -164,7 +171,7 @@ fn parse_configurable_entity(
             }
             Ok(EntityPersistenceConfig {
                 persistence_type,
-                path: resolve_path(raw.path.as_deref(), &defaults.path)?,
+                path: resolve_path(raw.path.as_deref(), &defaults.path, base_dir)?,
                 format: Some(format),
             })
         }
@@ -176,7 +183,7 @@ fn parse_configurable_entity(
             }
             Ok(EntityPersistenceConfig {
                 persistence_type,
-                path: resolve_path(raw.path.as_deref(), &defaults.path)?,
+                path: resolve_path(raw.path.as_deref(), &defaults.path, base_dir)?,
                 format: None,
             })
         }
@@ -188,14 +195,16 @@ fn parse_file_only_entity(
     raw: Option<&RawPersistenceConfig>,
     defaults: &EntityPersistenceConfig,
     required_file_format: &str,
+    base_dir: &Path,
 ) -> Result<EntityPersistenceConfig, OrbitError> {
-    parse_configurable_entity(entity, raw, defaults, false, required_file_format)
+    parse_configurable_entity(entity, raw, defaults, false, required_file_format, base_dir)
 }
 
 fn parse_sqlite_only_entity(
     entity: &str,
     raw: Option<&RawPersistenceConfig>,
     defaults: &EntityPersistenceConfig,
+    base_dir: &Path,
 ) -> Result<EntityPersistenceConfig, OrbitError> {
     let Some(raw) = raw else {
         return Ok(defaults.clone());
@@ -217,7 +226,7 @@ fn parse_sqlite_only_entity(
 
     Ok(EntityPersistenceConfig {
         persistence_type,
-        path: resolve_path(raw.path.as_deref(), &defaults.path)?,
+        path: resolve_path(raw.path.as_deref(), &defaults.path, base_dir)?,
         format: None,
     })
 }
@@ -233,7 +242,11 @@ fn parse_persistence_type(raw: Option<&str>, entity: &str) -> Result<Persistence
     }
 }
 
-pub(super) fn resolve_path(raw: Option<&str>, default: &Path) -> Result<PathBuf, OrbitError> {
+pub(super) fn resolve_path(
+    raw: Option<&str>,
+    default: &Path,
+    base_dir: &Path,
+) -> Result<PathBuf, OrbitError> {
     let Some(raw) = raw else {
         return Ok(default.to_path_buf());
     };
@@ -252,9 +265,7 @@ pub(super) fn resolve_path(raw: Option<&str>, default: &Path) -> Result<PathBuf,
     }
     let path = PathBuf::from(value);
     if path.is_relative() {
-        return Ok(std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(path));
+        return Ok(base_dir.join(path));
     }
     Ok(path)
 }

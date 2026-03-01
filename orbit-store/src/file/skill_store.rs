@@ -216,9 +216,11 @@ fn parse_skill_markdown(raw: &str) -> Result<SkillSections, OrbitError> {
             continue;
         };
 
-        let entry = section_map
-            .get_mut(&section_name)
-            .expect("section must exist before content append");
+        let Some(entry) = section_map.get_mut(&section_name) else {
+            return Err(OrbitError::SkillValidation(format!(
+                "section parsing error for heading '{section_name}'"
+            )));
+        };
         entry.push_str(trimmed);
         entry.push('\n');
     }

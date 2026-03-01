@@ -67,7 +67,7 @@ impl OrbitRuntime {
         ) {
             Ok(composed) => composed,
             Err(err) => {
-                let _ = self.with_mutation(|_| {
+                let _ = self.with_mutation(|| {
                     Ok((
                         (),
                         OrbitEvent::AgentSessionCompleted {
@@ -84,7 +84,7 @@ impl OrbitRuntime {
         let planned_calls = match parse_planned_tool_calls(&task.instructions) {
             Ok(calls) => calls,
             Err(err) => {
-                let _ = self.with_mutation(|_| {
+                let _ = self.with_mutation(|| {
                     Ok((
                         (),
                         OrbitEvent::AgentSessionCompleted {
@@ -120,8 +120,10 @@ impl OrbitRuntime {
             updated_at: now,
         };
 
-        self.with_mutation(|tx| {
-            tx.insert_agent_session(&session)?;
+        self.with_mutation(|| {
+            self.context
+                .agent_session_store
+                .insert_agent_session(&session)?;
             Ok((
                 (),
                 OrbitEvent::AgentSessionStarted {
@@ -276,8 +278,8 @@ impl OrbitRuntime {
         update: &AgentSessionUpdate<'_>,
         call: &AgentToolCall,
     ) -> Result<(), OrbitError> {
-        self.with_mutation(|tx| {
-            tx.update_agent_session(
+        self.with_mutation(|| {
+            self.context.agent_session_store.update_agent_session(
                 update.session_id,
                 update.all_calls,
                 update.outcome,
@@ -306,8 +308,13 @@ impl OrbitRuntime {
         outcome: &str,
         status: AgentSessionStatus,
     ) -> Result<(), OrbitError> {
-        self.with_mutation(|tx| {
-            tx.update_agent_session(session_id, all_calls, outcome, status.clone())?;
+        self.with_mutation(|| {
+            self.context.agent_session_store.update_agent_session(
+                session_id,
+                all_calls,
+                outcome,
+                status.clone(),
+            )?;
             Ok((
                 (),
                 OrbitEvent::AgentSessionCompleted {

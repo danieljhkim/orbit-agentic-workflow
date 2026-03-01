@@ -14,7 +14,7 @@ impl OrbitRuntime {
         }
 
         let result = (|| {
-            self.with_mutation(|_| {
+            self.with_mutation(|| {
                 Ok((
                     (),
                     OrbitEvent::WatchTriggered {
@@ -32,7 +32,7 @@ impl OrbitRuntime {
     }
 
     pub fn trigger_watch_path(&self, path: &str) -> Result<(), OrbitError> {
-        self.with_mutation(|_| {
+        self.with_mutation(|| {
             Ok((
                 (),
                 OrbitEvent::WatchTriggered {
