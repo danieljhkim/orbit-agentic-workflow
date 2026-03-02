@@ -3,11 +3,11 @@ name: orbit-manage-tasks
 description: Manage tasks through deterministic CLI workflows for create, update, search, and close operations. Use this skill when the user asks to create, modify, find, or close orbit tasks.
 ---
 
-# Manage Orbit Tasks
+# Orbit Manage Tasks
 
 ## Purpose
 
-Provide a deterministic, auditable way to create, update, search, and close Orbit tasks using the `orbit task` CLI, with explicit ID resolution and verification after mutations.
+Provide a deterministic, auditable workflow to create, update, search, approve, and close Orbit tasks via the `orbit task` CLI, with explicit ID resolution and post-mutation verification.
 
 ## Scope
 
@@ -31,13 +31,20 @@ Out of scope unless explicitly requested:
 - Use `orbit task` commands only. Do not edit backing files directly.
 - Never invent task IDs. Resolve IDs from command output or search/list results.
 - Use explicit flags for each requested change.
-- After create/update/close, verify with `orbit task show <id>`.
+- After create/update/approve/close, verify with `orbit task show <id>`.
 - Prefer `--json` for machine-readable output in automation/debug flows.
 - Avoid destructive operations unless the user explicitly asks.
+- Always set task attribution fields on create: `--assigned-to`, `--created-by`, and `--identity` when available.
+- If any attribution field is missing on an existing task, backfill via `orbit task update`.
 
 ## Command Reference
 
 ### Create
+
+Task attribution requirement:
+- If identity is available, use identity id and identity display name.
+- If identity is not available, use model name fallback for `--assigned-to` and `--created-by`.
+- Use `--identity` only when the identity id exists (identity id or model-alias identity).
 
 ```bash
 orbit task add \
@@ -46,6 +53,9 @@ orbit task add \
   --instructions "<instructions>" \
   --context "<comma,separated,context>" \
   --workspace "<absolute_or_relative_repo_path>" \
+  --identity "<identity_id_or_model_identity>" \
+  --assigned-to "<identity_display_name_or_model_name>" \
+  --created-by "<identity_display_name_or_model_name>" \
   --priority <low|medium|high|critical> \
   --type <task|feature|issue|other> \
   --owner "<owner>" \
@@ -64,6 +74,9 @@ orbit task update <id> \
   --instructions "<instructions>" \
   --context "<comma,separated,context>" \
   --workspace "<absolute_or_relative_repo_path>" \
+  --identity "<identity_id_or_model_identity>" \
+  --assigned-to "<identity_display_name_or_model_name>" \
+  --created-by "<identity_display_name_or_model_name>" \
   --status <todo|in-progress|done|blocked|cancelled> \
   --priority <low|medium|high|critical> \
   --type <task|feature|issue|other> \
@@ -81,8 +94,6 @@ Field-clearing notes:
 ```bash
 orbit task search "<query>"
 ```
-
-Machine-readable:
 
 ```bash
 orbit task search "<query>" --json
@@ -110,11 +121,12 @@ orbit task approve <id> --by "<approver>" --note "<optional note>"
 
 ### 1) Create Task
 
-1. Collect required fields from user request.
-2. Run `orbit task add ...`.
+1. Collect required fields from user request plus attribution fields (`identity`, `assigned-to`, `created-by`).
+2. Run `orbit task add ...` including attribution fields.
 3. Capture returned task ID.
 4. Run `orbit task show <id>`.
-5. Report ID and key fields (title, status, priority, owner).
+5. If attribution fields are missing, run `orbit task update <id> --identity ... --assigned-to ... --created-by ...`.
+6. Report ID and key fields (title, status, priority, owner, identity, assigned_to, created_by).
 
 ### 2) Update Task
 

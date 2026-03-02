@@ -3,11 +3,11 @@ name: orbit-approve-task
 description: Use this skill when requested to review Orbit tasks for approval, record explicit human sign-off, or allow agent execution after verbal approval.
 ---
 
-# Approve Task
+# Orbit Approve Task
 
 ## Purpose
 
-Provide a deterministic, auditable approval workflow for Orbit tasks before agent execution or implementation job begins.
+Provide a deterministic, auditable approval workflow for Orbit tasks before agent execution or implementation begins.
 
 ## Scope
 
@@ -27,20 +27,20 @@ Out of scope:
 
 ## Approval Policy
 
-Approval means the task is authorized for execution and includes traceable metadata:
+Approval authorizes execution and must record traceable metadata:
 
 - `approved_at`
 - `approved_by`
 - `approval_note` (optional but recommended)
 
-If runtime config enforces approval gate:
+If runtime config enforces an approval gate:
 
 ```toml
 [task.approval]
 required_for_agent = true
 ```
 
-then unapproved tasks must not proceed to agent execution.
+Unapproved tasks must not proceed to agent execution.
 
 ## Command Reference
 
@@ -51,7 +51,7 @@ orbit task show <TASK_ID>
 orbit task show <TASK_ID> --json
 ```
 
-Use this to confirm:
+Confirm:
 
 - task identity and scope are correct
 - current status is not terminal (`done`/`cancelled`) unless explicitly intended
@@ -95,11 +95,9 @@ Use this only when verbal confirmation is explicit and unambiguous.
 
 ### A) Explicit Human Approval
 
-1. Read task with `orbit task show <TASK_ID>`.
-2. Validate readiness and intent alignment.
-3. Run `orbit task approve ...` with `--by` and optional `--note`.
-4. Verify via `orbit task show <TASK_ID> --json`.
-5. Report approval result concisely.
+1. Inspect with `orbit task show <TASK_ID>`.
+2. Approve with `orbit task approve ... --by ... [--note ...]`.
+3. Verify via `orbit task show <TASK_ID> --json`.
 
 ### B) Verbal Approval During Run
 
@@ -112,7 +110,7 @@ Use this only when verbal confirmation is explicit and unambiguous.
 
 After approval actions, report:
 
-- action taken (`approved`, `verified`, or `verbal-approval execution`)
+- action taken (`approved` or `verbal-approval execution`)
 - task ID
 - approver identity used
 - approval note (if set)

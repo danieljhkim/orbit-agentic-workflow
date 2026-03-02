@@ -34,6 +34,7 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 6] = [
         include_str!("../../assets/skills/orbit-track-issues/SKILL.md"),
     ),
 ];
+const ORBIT_ROOT_TOKEN: &str = "{{ORBIT_ROOT}}";
 
 pub struct SkillAddParams {
     pub name: String,
@@ -71,17 +72,26 @@ pub(crate) fn default_skill_ids() -> [&'static str; 6] {
     DEFAULT_SKILL_FILES.map(|(id, _)| id)
 }
 
-pub(crate) fn seed_default_skills(skills_root: &Path) -> Result<usize, OrbitError> {
+pub(crate) fn seed_default_skills(
+    skills_root: &Path,
+    orbit_root: &Path,
+) -> Result<usize, OrbitError> {
     let mut created = 0usize;
     for (id, content) in DEFAULT_SKILL_FILES {
         let path = skills_root.join(id).join("SKILL.md");
         if path.exists() {
             continue;
         }
-        write_text_with_parent(&path, content)?;
+        let rendered = inject_skill_template_tokens(content, orbit_root);
+        write_text_with_parent(&path, &rendered)?;
         created += 1;
     }
     Ok(created)
+}
+
+fn inject_skill_template_tokens(raw: &str, orbit_root: &Path) -> String {
+    let orbit_root_value = orbit_root.to_string_lossy();
+    raw.replace(ORBIT_ROOT_TOKEN, orbit_root_value.as_ref())
 }
 
 impl OrbitRuntime {

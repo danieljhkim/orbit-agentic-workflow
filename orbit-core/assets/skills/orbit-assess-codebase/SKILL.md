@@ -1,15 +1,13 @@
 ---
 name: orbit-assess-codebase
-description: Use for a comprehensive evaluation of the codebase to identify strengths, weaknesses, risks, and improvement opportunities. This skill is typically requested periodically by scheduled orbit-scheduler, orbit-task, or human. Use this skill only when explicitly requested to "orbit-assess-codebase". 
+description: Use for a comprehensive evaluation of the codebase to identify strengths, weaknesses, risks, and improvement opportunities. This skill is typically requested periodically by scheduled orbit-job, orbit-task, or human. Use this skill only when explicitly requested to "orbit-assess-codebase". 
 ---
 
-# Assess Codebase
+# Orbit Assess Codebase
 
 ## Purpose
 
-This skill performs a holistic evaluation of the project as if conducted by a senior or principal-level engineer.
-
-It analyzes:
+Perform a holistic, senior-level evaluation of the project, focusing on:
 
 - System architecture and modularity
 - Code quality and maintainability
@@ -20,15 +18,13 @@ It analyzes:
 - Testing strategy and coverage
 - Operational readiness
 
-The goal is to provide:
+Deliver:
 
 - A structured assessment
 - Clear strengths and weaknesses
 - Risk analysis
 - Prioritized improvement roadmap
 - Thoughtful feature expansion ideas
-
-This skill does not implement changes. It evaluates and recommends.
 
 All findings of issues must be emitted and audited in a structured form suitable for issue tracking. New issues must be tracked by utilizing `orbit-track-issues` skill.
 
@@ -37,18 +33,14 @@ All findings of issues must be emitted and audited in a structured form suitable
 ## Assessment Workflow
 
 1. Understand the project’s purpose and target users.
-2. Review repository structure and architectural boundaries.
-3. Evaluate code organization and dependency flow.
-4. Analyze testing strategy and verification rigor.
-5. Evaluate performance characteristics and scaling risks.
-6. Review security considerations and threat surface.
-7. Evaluate UX and DX friction points.
-8. Identify architectural smells or technical debt.
-9. Propose improvements and new feature opportunities.
-10. Provide a prioritized roadmap.
-11. Prepare structured findings for auto issue creation.
-12. Invoke the `orbit-track-issues` skill to create or update corresponding pending issues.
-13. output the result as a markdown file in the `~/.orbit/agents/<repo_name>/reports/YYYY-MM-DD-<title>.md` directory.
+2. Review repository structure, layering boundaries, and dependency flow.
+3. Evaluate testing strategy, determinism, and failure-path coverage.
+4. Assess performance characteristics, scaling risks, and operational readiness.
+5. Review security posture and threat surface.
+6. Identify UX/DX friction, architectural smells, and technical debt.
+7. Propose a prioritized improvement roadmap and feature opportunities.
+8. Turn each issue finding into a tracked issue by invoking `orbit-track-issues` (do not create issue files directly).
+9. Write the assessment to `{{ORBIT_ROOT}}/agents/reports/YYYY-MM-DD-<title>.md`.
 
 ---
 
@@ -192,11 +184,12 @@ If NO:
 - Distinguish observation from recommendation.
 - Avoid vague statements; be concrete.
 - Identify trade-offs explicitly.
-- Do not rewrite code during assessment.
+- Do not implement or rewrite code during assessment.
 - If context is insufficient, ask focused clarifying questions.
-- Use ISO date format (YYYY-MM-DD).
+- Use ISO date format (YYYY-MM-DD) in filenames and dates.
 - Do not overwrite existing assessments unless explicitly instructed.
-- Each assessment should represent a point-in-time evaluation.
+- Treat each assessment as a point-in-time snapshot.
 - If profile.yaml enables auto issue creation, ensure all findings at or above threshold include clear Title, Severity, Impact, and Recommended Action fields.
 - Production Sign-Off must be NO if any High severity Production Blocking risk exists.
 - When creating issues from findings, the agent must delegate issue creation to the `orbit-track-issues` skill rather than writing issue files directly.
+- For delegated issue task creation, attribution should use identity details when available; otherwise use model name fallback for `assigned_to` and `created_by`, and set `identity_id` only when model-alias identity exists.

@@ -73,7 +73,7 @@ fn init_workspace_at_root(
     fs::create_dir_all(&skills_root).map_err(|e| OrbitError::Io(e.to_string()))?;
 
     let created_identity_files = seed_default_identities(&identity_root)?;
-    let created_skill_files = seed_default_skills(&skills_root)?;
+    let created_skill_files = seed_default_skills(&skills_root, &orbit_root)?;
     let config_path = orbit_root.join("config.toml");
     let created_config = seed_default_config(&config_path, init_target.config_template)?;
 

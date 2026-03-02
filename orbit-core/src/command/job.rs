@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use orbit_store::JobCreateParams as StoreWorkCreateParams;
 use orbit_types::{Job, OrbitError, OrbitEvent};
@@ -11,6 +12,7 @@ const DEFAULT_JOB_FILES: [(&str, &str); 1] = [(
     "approve-task-leader",
     include_str!("../../assets/jobs/approve-task-leader.yaml"),
 )];
+const ORBIT_ROOT_TOKEN: &str = "{{ORBIT_ROOT}}";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,15 +84,23 @@ impl OrbitRuntime {
 }
 
 pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitError> {
-    let specs = load_default_job_specs(&DEFAULT_JOB_FILES)?;
+    let orbit_root = runtime.data_root();
+    let specs = load_default_job_specs(&DEFAULT_JOB_FILES, Some(&orbit_root))?;
     seed_default_jobs_from_specs(runtime, &specs)
 }
 
-fn load_default_job_specs(raw_specs: &[(&str, &str)]) -> Result<Vec<JobAddParams>, OrbitError> {
+fn load_default_job_specs(
+    raw_specs: &[(&str, &str)],
+    orbit_root: Option<&Path>,
+) -> Result<Vec<JobAddParams>, OrbitError> {
     let mut specs = Vec::with_capacity(raw_specs.len());
     let mut ids = BTreeSet::new();
     for (expected_id, raw) in raw_specs {
-        let spec = serde_yaml::from_str::<JobAddParams>(raw).map_err(|err| {
+        let rendered = match orbit_root {
+            Some(root) => inject_job_template_tokens(raw, root),
+            None => (*raw).to_string(),
+        };
+        let spec = serde_yaml::from_str::<JobAddParams>(&rendered).map_err(|err| {
             OrbitError::InvalidInput(format!("invalid default job spec '{}': {err}", expected_id))
         })?;
         let id = spec.id.trim();
@@ -114,6 +124,11 @@ fn load_default_job_specs(raw_specs: &[(&str, &str)]) -> Result<Vec<JobAddParams
         specs.push(spec);
     }
     Ok(specs)
+}
+
+fn inject_job_template_tokens(raw: &str, orbit_root: &Path) -> String {
+    let orbit_root_value = orbit_root.to_string_lossy();
+    raw.replace(ORBIT_ROOT_TOKEN, orbit_root_value.as_ref())
 }
 
 fn seed_default_jobs_from_specs(
@@ -168,6 +183,8 @@ fn validate_job_params(params: &JobAddParams) -> Result<(), OrbitError> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::load_default_job_specs;
 
     #[test]
@@ -194,7 +211,7 @@ outputSchemaJson: {}
 "#,
             ),
         ];
-        let err = load_default_job_specs(&specs).expect_err("must fail");
+        let err = load_default_job_specs(&specs, None).expect_err("must fail");
         assert!(err.to_string().contains("duplicate job id"));
     }
 
@@ -210,7 +227,7 @@ inputSchemaJson: {}
 outputSchemaJson: {}
 "#,
         )];
-        let err = load_default_job_specs(&specs).expect_err("must fail");
+        let err = load_default_job_specs(&specs, None).expect_err("must fail");
         assert!(err.to_string().contains("empty job id"));
     }
 
@@ -226,7 +243,28 @@ inputSchemaJson: {}
 outputSchemaJson: {}
 "#,
         )];
-        let err = load_default_job_specs(&specs).expect_err("must fail");
+        let err = load_default_job_specs(&specs, None).expect_err("must fail");
         assert!(err.to_string().contains("does not match spec id"));
+    }
+
+    #[test]
+    fn parse_replaces_orbit_root_token_when_provided() {
+        let specs = [(
+            "tokenized",
+            r#"
+id: tokenized
+specType: task
+description: token replacement
+inputSchemaJson: {}
+outputSchemaJson: {}
+artifactPathTemplate: "{{ORBIT_ROOT}}/agents/executions/{{date}}-tokenized.md"
+"#,
+        )];
+        let parsed =
+            load_default_job_specs(&specs, Some(Path::new("/tmp/orbit"))).expect("must parse");
+        assert_eq!(
+            parsed[0].artifact_path_template.as_deref(),
+            Some("/tmp/orbit/agents/executions/{{date}}-tokenized.md")
+        );
     }
 }

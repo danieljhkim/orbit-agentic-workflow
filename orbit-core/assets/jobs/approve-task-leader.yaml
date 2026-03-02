@@ -32,7 +32,7 @@ outputSchemaJson:
       type: boolean
     comment:
       type: string
-artifactPathTemplate: "~/.orbit/agents/{{repo_name}}/executions/{{date}}-approve-task.md"
+artifactPathTemplate: "{{ORBIT_ROOT}}/agents/{{repo_name}}/executions/{{date}}-approve-task.md"
 skillRefs: []
 identityId: linus
 assignedTo: Linus Torvalds (Maintainer)

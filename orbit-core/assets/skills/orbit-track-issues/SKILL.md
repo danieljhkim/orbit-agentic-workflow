@@ -9,7 +9,7 @@ description: Use this skill when issues are identified by agents or humans. All 
 
 Use this skill to evaluate and maintain issue lifecycle discipline while synchronizing each issue with an Orbit task.
 
-It ensures:
+Ensure:
 
 - The issue is clearly defined
 - The implementation aligns with issue intent
@@ -19,7 +19,7 @@ It ensures:
 - Lifecycle state is disciplined
 - No duplicate issue records or duplicate Orbit issue tasks are created
 
-This skill does not implement product changes. It performs governance/tracking updates.
+This skill does not implement product changes; it performs governance and tracking updates.
 
 ---
 
@@ -27,12 +27,15 @@ This skill does not implement product changes. It performs governance/tracking u
 
 Create and manage Orbit tasks directly with `orbit task` commands.
 
-Required task contract:
+Requirements:
 
 - Every tracked issue must have one Orbit task with `--type issue`.
 - Task title should match the issue title closely.
 - Task `--context` should include relevant files and issue markdown path when available.
 - Task `--workspace` should be set to the repository path when available.
+- Task attribution fields `assigned_to` and `created_by` must be populated.
+- Set `identity_id` whenever an identity id is available.
+- If identity is unavailable, use model name fallback for `assigned_to` and `created_by`, and set `identity_id` only when model-alias identity exists.
 
 ---
 
@@ -41,8 +44,8 @@ Required task contract:
 Issues are stored as single markdown files organized by lifecycle state:
 
 ```
-.orbit/
-  agents/<repo_name>/
+{{ORBIT_ROOT}}/
+  agents/
     issues/
       pending/
         2026-02-14-add-remote-persistence.md
@@ -113,8 +116,11 @@ orbit task add \
   --title "<issue title>" \
   --description "<problem summary>" \
   --instructions "<acceptance criteria and next actions>" \
-  --context "<file1,file2,.orbit/agents/<repo>/issues/pending/<issue>.md>" \
+  --context "<file1,file2,{{ORBIT_ROOT}}/agents/issues/pending/<issue>.md>" \
   --workspace "<repo path>" \
+  --identity "<identity_id_or_model_identity>" \
+  --assigned-to "<identity_display_name_or_model_name>" \
+  --created-by "<identity_display_name_or_model_name>" \
   --type issue \
   --priority <low|medium|high|critical>
 ```
@@ -127,6 +133,9 @@ Record the returned task ID in issue markdown (`Orbit Task ID`).
 orbit task update <TASK_ID> \
   --description "<updated summary>" \
   --instructions "<updated criteria, notes, risks, next actions>" \
+  --identity "<identity_id_or_model_identity>" \
+  --assigned-to "<identity_display_name_or_model_name>" \
+  --created-by "<identity_display_name_or_model_name>" \
   --status <todo|in-progress|blocked|done|cancelled> \
   --priority <low|medium|high|critical> \
   --context "<updated file list>"
@@ -154,7 +163,7 @@ orbit task show <TASK_ID>
 When a new issue is confirmed:
 
 1. Create issue markdown under `pending/`.
-2. Run `orbit task add ... --type issue ...`.
+2. Run `orbit task add ... --type issue ... --identity ... --assigned-to ... --created-by ...`.
 3. Record returned task ID in issue markdown under `Orbit Task ID`.
 
 ### 3) Update Tracking Records
@@ -224,11 +233,12 @@ Tracking is complete when:
 - Gaps are documented.
 - Risks are surfaced.
 - Clear next actions are defined.
-- Tracking report is stored as:
+- Tracking report is stored at:
 
 ```
-~/.orbit/agents/<repo_name>/issues/<pending|resolved>/YYYY-MM-DD-<title>.md
+{{ORBIT_ROOT}}/agents/issues/<pending|resolved>/YYYY-MM-DD-<title>.md
 ```
 
 - Lifecycle transitions also move the file to the correct folder.
 - Linked Orbit task is synchronized and uses type `issue`.
+- Linked Orbit task has non-null `assigned_to` and `created_by`, and sets `identity_id` when identity is available.
