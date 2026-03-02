@@ -158,6 +158,8 @@ pub struct Task {
     pub title: String,
     pub description: String,
     pub instructions: String,
+    #[serde(default)]
+    pub execution_summary: String,
     pub context_files: Vec<String>,
     #[serde(default)]
     pub workspace_path: Option<String>,

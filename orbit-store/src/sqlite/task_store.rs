@@ -27,28 +27,30 @@ fn parse_context_files(raw: &str) -> rusqlite::Result<Vec<String>> {
 }
 
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
-    let context_files_raw: String = row.get(4)?;
-    let workspace_path: Option<String> = row.get(5)?;
-    let assigned_to: Option<String> = row.get(6)?;
-    let created_by: Option<String> = row.get(7)?;
-    let status_raw: String = row.get(8)?;
-    let priority_raw: String = row.get(9)?;
-    let task_type_raw: String = row.get(10)?;
-    let branch: Option<String> = row.get(11)?;
-    let pr_number: Option<String> = row.get(12)?;
-    let proposed_by: Option<String> = row.get(13)?;
-    let proposal_approved_by: Option<String> = row.get(14)?;
-    let proposal_decision_note: Option<String> = row.get(15)?;
-    let review_approved_by: Option<String> = row.get(16)?;
-    let review_decision_note: Option<String> = row.get(17)?;
-    let created_at_raw: String = row.get(18)?;
-    let updated_at_raw: String = row.get(19)?;
+    let execution_summary: String = row.get(4)?;
+    let context_files_raw: String = row.get(5)?;
+    let workspace_path: Option<String> = row.get(6)?;
+    let assigned_to: Option<String> = row.get(7)?;
+    let created_by: Option<String> = row.get(8)?;
+    let status_raw: String = row.get(9)?;
+    let priority_raw: String = row.get(10)?;
+    let task_type_raw: String = row.get(11)?;
+    let branch: Option<String> = row.get(12)?;
+    let pr_number: Option<String> = row.get(13)?;
+    let proposed_by: Option<String> = row.get(14)?;
+    let proposal_approved_by: Option<String> = row.get(15)?;
+    let proposal_decision_note: Option<String> = row.get(16)?;
+    let review_approved_by: Option<String> = row.get(17)?;
+    let review_decision_note: Option<String> = row.get(18)?;
+    let created_at_raw: String = row.get(19)?;
+    let updated_at_raw: String = row.get(20)?;
 
     Ok(Task {
         id: row.get(0)?,
         title: row.get(1)?,
         description: row.get(2)?,
         instructions: row.get(3)?,
+        execution_summary,
         context_files: parse_context_files(&context_files_raw)?,
         workspace_path,
         assigned_to,
@@ -68,7 +70,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     })
 }
 
-const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, execution_summary, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -175,6 +177,7 @@ pub struct TaskInsertParams {
     pub title: String,
     pub description: String,
     pub instructions: String,
+    pub execution_summary: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
     pub assigned_to: Option<String>,
@@ -193,6 +196,7 @@ impl Default for TaskInsertParams {
             title: String::new(),
             description: String::new(),
             instructions: String::new(),
+            execution_summary: String::new(),
             context_files: Vec::new(),
             workspace_path: None,
             assigned_to: None,
@@ -212,6 +216,7 @@ pub struct TaskUpdateFields {
     pub title: Option<String>,
     pub description: Option<String>,
     pub instructions: Option<String>,
+    pub execution_summary: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
@@ -238,6 +243,7 @@ impl<'a> StoreTx<'a> {
             title: params.title.clone(),
             description: params.description.clone(),
             instructions: params.instructions.clone(),
+            execution_summary: params.execution_summary.clone(),
             context_files: params.context_files.clone(),
             workspace_path: params.workspace_path.clone(),
             assigned_to: params.assigned_to.clone(),
@@ -258,12 +264,13 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                "INSERT INTO tasks(id, title, description, instructions, execution_summary, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
                 params![
                     task.id,
                     task.title,
                     task.description,
                     task.instructions,
+                    task.execution_summary,
                     context_files_json,
                     task.workspace_path,
                     task.assigned_to,
@@ -301,6 +308,10 @@ impl<'a> StoreTx<'a> {
         }
         if let Some(ref v) = fields.instructions {
             sets.push("instructions = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.execution_summary {
+            sets.push("execution_summary = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(ref v) = fields.context_files {
@@ -429,6 +440,7 @@ mod tests {
                     title: "test task".to_string(),
                     description: "a description".to_string(),
                     instructions: "step one".to_string(),
+                    execution_summary: "ran smoke checks".to_string(),
                     context_files: vec!["ARCHITECTURE.md".to_string()],
                     workspace_path: None,
                     priority: TaskPriority::High,
@@ -442,6 +454,7 @@ mod tests {
         assert_eq!(found.title, "test task");
         assert_eq!(found.description, "a description");
         assert_eq!(found.instructions, "step one");
+        assert_eq!(found.execution_summary, "ran smoke checks");
         assert_eq!(found.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(found.priority, TaskPriority::High);
         assert_eq!(found.task_type, TaskType::Issue);

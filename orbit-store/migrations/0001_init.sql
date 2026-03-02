@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     instructions TEXT NOT NULL DEFAULT '',
+    execution_summary TEXT NOT NULL DEFAULT '',
     context_files TEXT NOT NULL DEFAULT '[]',
     workspace_path TEXT,
     approved_at TEXT,

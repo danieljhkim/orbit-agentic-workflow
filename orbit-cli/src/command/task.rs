@@ -68,6 +68,9 @@ pub struct TaskAddArgs {
     /// Task instructions payload (agent planning input)
     #[arg(long, default_value = "")]
     pub instructions: String,
+    /// Task execution summary (required before in_progress -> review)
+    #[arg(long, default_value = "")]
+    pub execution_summary: String,
     /// Comma-separated context file paths
     #[arg(long, default_value = "")]
     pub context: String,
@@ -103,6 +106,7 @@ impl Execute for TaskAddArgs {
             title: self.title,
             description: self.description,
             instructions: self.instructions,
+            execution_summary: self.execution_summary,
             context_files: parse_context_csv(&self.context),
             workspace_path: self.workspace,
             assigned_to: self.assigned_to,
@@ -181,6 +185,9 @@ impl Execute for TaskShowArgs {
             if !task.instructions.is_empty() {
                 println!("Instructions: {}", task.instructions);
             }
+            if !task.execution_summary.is_empty() {
+                println!("Execution Summary: {}", task.execution_summary);
+            }
             if !task.context_files.is_empty() {
                 println!("Context:     {}", task.context_files.join(", "));
             }
@@ -236,6 +243,9 @@ pub struct TaskUpdateArgs {
     /// New instructions payload
     #[arg(long)]
     pub instructions: Option<String>,
+    /// New execution summary (empty string clears)
+    #[arg(long)]
+    pub execution_summary: Option<String>,
     /// New comma-separated context files (empty string clears all)
     #[arg(long)]
     pub context: Option<String>,
@@ -309,6 +319,7 @@ impl Execute for TaskUpdateArgs {
                 title: self.title,
                 description: self.description,
                 instructions: self.instructions,
+                execution_summary: self.execution_summary,
                 context_files: self.context.map(|raw| parse_context_csv(&raw)),
                 workspace_path,
                 assigned_to,
@@ -447,6 +458,7 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "title": task.title,
         "description": task.description,
         "instructions": task.instructions,
+        "execution_summary": task.execution_summary,
         "context_files": task.context_files,
         "workspace_path": task.workspace_path,
         "assigned_to": task.assigned_to,

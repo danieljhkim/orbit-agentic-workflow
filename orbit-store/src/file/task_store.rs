@@ -15,6 +15,7 @@ pub(crate) struct FileTaskInsert {
     pub title: String,
     pub description: String,
     pub instructions: String,
+    pub execution_summary: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
     pub assigned_to: Option<String>,
@@ -32,6 +33,7 @@ pub(crate) struct FileTaskUpdate {
     pub title: Option<String>,
     pub description: Option<String>,
     pub instructions: Option<String>,
+    pub execution_summary: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
@@ -113,6 +115,10 @@ struct TaskFileDocument {
     description: String,
     #[serde(default)]
     instructions: String,
+    #[serde(default)]
+    #[serde(rename = "execution_summary")]
+    #[serde(alias = "executionSummary")]
+    execution_summary: String,
     #[serde(default)]
     context_files: Vec<String>,
     #[serde(default)]
@@ -206,6 +212,7 @@ impl TaskFileStore {
             title: params.title,
             description: params.description,
             instructions: params.instructions,
+            execution_summary: params.execution_summary,
             context_files: params.context_files,
             workspace_path: params.workspace_path,
             assigned_to: params.assigned_to,
@@ -317,6 +324,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.instructions {
             doc.instructions = value.clone();
+        }
+        if let Some(value) = &fields.execution_summary {
+            doc.execution_summary = value.clone();
         }
         if let Some(value) = &fields.context_files {
             doc.context_files = value.clone();
@@ -504,6 +514,7 @@ fn doc_to_task(state: TaskStateDir, doc: TaskFileDocument) -> Task {
         title: doc.title,
         description: doc.description,
         instructions: doc.instructions,
+        execution_summary: doc.execution_summary,
         context_files: doc.context_files,
         workspace_path: doc.workspace_path,
         assigned_to: doc.assigned_to,

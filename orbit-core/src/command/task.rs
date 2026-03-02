@@ -10,6 +10,7 @@ pub struct TaskAddParams {
     pub title: String,
     pub description: String,
     pub instructions: String,
+    pub execution_summary: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
     pub assigned_to: Option<String>,
@@ -27,6 +28,7 @@ impl Default for TaskAddParams {
             title: String::new(),
             description: String::new(),
             instructions: String::new(),
+            execution_summary: String::new(),
             context_files: Vec::new(),
             workspace_path: None,
             assigned_to: None,
@@ -44,6 +46,7 @@ pub struct TaskUpdateParams {
     pub title: Option<String>,
     pub description: Option<String>,
     pub instructions: Option<String>,
+    pub execution_summary: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
@@ -78,6 +81,7 @@ impl OrbitRuntime {
                 title: params.title.clone(),
                 description: params.description.clone(),
                 instructions: params.instructions.clone(),
+                execution_summary: params.execution_summary.clone(),
                 context_files: params.context_files.clone(),
                 workspace_path: workspace_path.clone(),
                 assigned_to: params.assigned_to.clone(),
@@ -128,6 +132,18 @@ impl OrbitRuntime {
                 .map_err(OrbitError::TaskStatusTransition)?;
         }
 
+        if task.status == TaskStatus::InProgress && params.status == Some(TaskStatus::Review) {
+            let effective_execution_summary = params
+                .execution_summary
+                .as_deref()
+                .unwrap_or(task.execution_summary.as_str());
+            if effective_execution_summary.trim().is_empty() {
+                return Err(OrbitError::InvalidInput(format!(
+                    "task '{id}' requires non-empty execution_summary before transitioning in_progress -> review"
+                )));
+            }
+        }
+
         let workspace_path = match params.workspace_path {
             Some(value) => Some(normalize_path(value)?),
             None => None,
@@ -140,6 +156,7 @@ impl OrbitRuntime {
                     title: params.title,
                     description: params.description,
                     instructions: params.instructions,
+                    execution_summary: params.execution_summary,
                     context_files: params.context_files,
                     workspace_path,
                     assigned_to: params.assigned_to,

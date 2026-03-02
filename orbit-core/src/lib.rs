@@ -436,6 +436,7 @@ mod tests {
                     title: Some("changed".to_string()),
                     description: Some("new desc".to_string()),
                     instructions: None,
+                    execution_summary: Some("validated with unit tests".to_string()),
                     context_files: None,
                     workspace_path: None,
                     assigned_to: None,
@@ -457,6 +458,7 @@ mod tests {
         assert_eq!(updated.title, "changed");
         assert_eq!(updated.description, "new desc");
         assert_eq!(updated.priority, TaskPriority::High);
+        assert_eq!(updated.execution_summary, "validated with unit tests");
 
         let audits = runtime.list_audits(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskUpdated"));
@@ -478,6 +480,100 @@ mod tests {
 
         let audits = runtime.list_audits(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskArchived"));
+    }
+
+    #[test]
+    fn review_transition_requires_execution_summary() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "needs review summary".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let _in_progress = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: None,
+                    description: None,
+                    instructions: None,
+                    execution_summary: None,
+                    context_files: None,
+                    workspace_path: None,
+                    assigned_to: None,
+                    created_by: None,
+                    status: Some(TaskStatus::InProgress),
+                    priority: None,
+                    task_type: None,
+                    branch: None,
+                    pr_number: None,
+                    proposed_by: None,
+                    proposal_approved_by: None,
+                    proposal_decision_note: None,
+                    review_approved_by: None,
+                    review_decision_note: None,
+                },
+            )
+            .expect("in progress");
+
+        let missing_summary = runtime.update_task(
+            &task.id,
+            TaskUpdateParams {
+                title: None,
+                description: None,
+                instructions: None,
+                execution_summary: None,
+                context_files: None,
+                workspace_path: None,
+                assigned_to: None,
+                created_by: None,
+                status: Some(TaskStatus::Review),
+                priority: None,
+                task_type: None,
+                branch: None,
+                pr_number: None,
+                proposed_by: None,
+                proposal_approved_by: None,
+                proposal_decision_note: None,
+                review_approved_by: None,
+                review_decision_note: None,
+            },
+        );
+        assert!(matches!(missing_summary, Err(crate::OrbitError::InvalidInput(_))));
+
+        let review = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: None,
+                    description: None,
+                    instructions: None,
+                    execution_summary: Some("Implemented change and validated tests.".to_string()),
+                    context_files: None,
+                    workspace_path: None,
+                    assigned_to: None,
+                    created_by: None,
+                    status: Some(TaskStatus::Review),
+                    priority: None,
+                    task_type: None,
+                    branch: None,
+                    pr_number: None,
+                    proposed_by: None,
+                    proposal_approved_by: None,
+                    proposal_decision_note: None,
+                    review_approved_by: None,
+                    review_decision_note: None,
+                },
+            )
+            .expect("review with summary");
+
+        assert_eq!(review.status, TaskStatus::Review);
+        assert_eq!(
+            review.execution_summary,
+            "Implemented change and validated tests."
+        );
     }
 
     #[test]

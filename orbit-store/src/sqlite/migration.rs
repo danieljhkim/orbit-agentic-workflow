@@ -9,6 +9,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 title TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 instructions TEXT NOT NULL DEFAULT '',
+                execution_summary TEXT NOT NULL DEFAULT '',
                 context_files TEXT NOT NULL DEFAULT '[]',
                 workspace_path TEXT,
                 assigned_to TEXT,
@@ -217,6 +218,10 @@ fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
     add_column_if_missing(
         conn,
         "ALTER TABLE tasks ADD COLUMN instructions TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN execution_summary TEXT NOT NULL DEFAULT ''",
     )?;
     add_column_if_missing(
         conn,

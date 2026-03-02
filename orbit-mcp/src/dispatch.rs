@@ -142,6 +142,7 @@ fn task_add(
     let title = required_string(obj, "title")?;
     let description = optional_string(obj, "description").unwrap_or_default();
     let instructions = optional_string(obj, "instructions").unwrap_or_default();
+    let execution_summary = optional_string(obj, "execution_summary").unwrap_or_default();
     let context_files = optional_string_array(obj, "context_files")?.unwrap_or_default();
     let workspace_path = optional_string(obj, "workspace_path");
     let assigned_to = optional_string(obj, "assigned_to");
@@ -162,6 +163,7 @@ fn task_add(
         title,
         description,
         instructions,
+        execution_summary,
         context_files,
         workspace_path,
         assigned_to,
@@ -231,6 +233,7 @@ fn task_update(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value
             title: optional_string(obj, "title"),
             description: optional_string(obj, "description"),
             instructions: optional_string(obj, "instructions"),
+            execution_summary: optional_string(obj, "execution_summary"),
             context_files: optional_string_array(obj, "context_files")?,
             workspace_path,
             assigned_to,
@@ -803,6 +806,7 @@ fn task_to_json(task: &Task) -> Value {
         "title": task.title,
         "description": task.description,
         "instructions": task.instructions,
+        "execution_summary": task.execution_summary,
         "context_files": task.context_files,
         "workspace_path": task.workspace_path,
         "assigned_to": task.assigned_to,
