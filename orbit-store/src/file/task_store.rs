@@ -17,16 +17,14 @@ pub(crate) struct FileTaskInsert {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
-    pub identity_id: Option<String>,
     pub assigned_to: Option<String>,
     pub created_by: Option<String>,
-    pub approved_at: Option<DateTime<Utc>>,
-    pub approved_by: Option<String>,
-    pub approval_note: Option<String>,
+    pub status: TaskStatus,
     pub priority: TaskPriority,
     pub task_type: TaskType,
-    pub owner: String,
-    pub parent_id: Option<String>,
+    pub branch: Option<String>,
+    pub pr_number: Option<String>,
+    pub proposed_by: Option<String>,
 }
 
 #[derive(Default, Clone)]
@@ -36,24 +34,26 @@ pub(crate) struct FileTaskUpdate {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
-    pub identity_id: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
     pub created_by: Option<Option<String>>,
-    pub approved_at: Option<Option<DateTime<Utc>>>,
-    pub approved_by: Option<Option<String>>,
-    pub approval_note: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
-    pub owner: Option<String>,
-    pub parent_id: Option<Option<String>>,
+    pub branch: Option<Option<String>>,
+    pub pr_number: Option<Option<String>>,
+    pub proposed_by: Option<Option<String>>,
+    pub proposal_approved_by: Option<Option<String>>,
+    pub proposal_decision_note: Option<Option<String>>,
+    pub review_approved_by: Option<Option<String>>,
+    pub review_decision_note: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaskStateDir {
-    Todo,
+    Proposed,
+    Backlog,
     InProgress,
-    Blocked,
+    Review,
     Done,
     Archived,
 }
@@ -61,9 +61,10 @@ enum TaskStateDir {
 impl TaskStateDir {
     fn as_dir(self) -> &'static str {
         match self {
-            TaskStateDir::Todo => "todo",
+            TaskStateDir::Proposed => "proposed",
+            TaskStateDir::Backlog => "backlog",
             TaskStateDir::InProgress => "in_progress",
-            TaskStateDir::Blocked => "blocked",
+            TaskStateDir::Review => "review",
             TaskStateDir::Done => "done",
             TaskStateDir::Archived => "archived",
         }
@@ -71,29 +72,32 @@ impl TaskStateDir {
 
     fn to_status(self) -> TaskStatus {
         match self {
-            TaskStateDir::Todo => TaskStatus::Todo,
+            TaskStateDir::Proposed => TaskStatus::Proposed,
+            TaskStateDir::Backlog => TaskStatus::Backlog,
             TaskStateDir::InProgress => TaskStatus::InProgress,
-            TaskStateDir::Blocked => TaskStatus::Blocked,
+            TaskStateDir::Review => TaskStatus::Review,
             TaskStateDir::Done => TaskStatus::Done,
-            TaskStateDir::Archived => TaskStatus::Cancelled,
+            TaskStateDir::Archived => TaskStatus::Archived,
         }
     }
 
     fn from_status(status: TaskStatus) -> Self {
         match status {
-            TaskStatus::Todo => TaskStateDir::Todo,
+            TaskStatus::Proposed => TaskStateDir::Proposed,
+            TaskStatus::Backlog => TaskStateDir::Backlog,
             TaskStatus::InProgress => TaskStateDir::InProgress,
-            TaskStatus::Blocked => TaskStateDir::Blocked,
+            TaskStatus::Review => TaskStateDir::Review,
             TaskStatus::Done => TaskStateDir::Done,
-            TaskStatus::Cancelled => TaskStateDir::Archived,
+            TaskStatus::Archived => TaskStateDir::Archived,
         }
     }
 
-    fn all() -> [TaskStateDir; 5] {
+    fn all() -> [TaskStateDir; 6] {
         [
-            TaskStateDir::Todo,
+            TaskStateDir::Proposed,
+            TaskStateDir::Backlog,
             TaskStateDir::InProgress,
-            TaskStateDir::Blocked,
+            TaskStateDir::Review,
             TaskStateDir::Done,
             TaskStateDir::Archived,
         ]
@@ -114,28 +118,28 @@ struct TaskFileDocument {
     #[serde(default)]
     workspace_path: Option<String>,
     #[serde(default)]
-    identity_id: Option<String>,
-    #[serde(default)]
     assigned_to: Option<String>,
     #[serde(default)]
     created_by: Option<String>,
-    #[serde(default)]
-    approved_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    approved_by: Option<String>,
-    #[serde(default)]
-    approval_note: Option<String>,
     priority: TaskPriority,
     #[serde(rename = "type", default = "default_task_type")]
     task_type: TaskType,
     #[serde(default)]
-    owner: String,
+    branch: Option<String>,
     #[serde(default)]
-    parent_id: Option<String>,
+    pr_number: Option<String>,
+    #[serde(default)]
+    proposed_by: Option<String>,
+    #[serde(default)]
+    proposal_approved_by: Option<String>,
+    #[serde(default)]
+    proposal_decision_note: Option<String>,
+    #[serde(default)]
+    review_approved_by: Option<String>,
+    #[serde(default)]
+    review_decision_note: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-    #[serde(default)]
-    tags: Vec<String>,
     #[serde(default)]
     acceptance_criteria: Vec<String>,
     #[serde(default)]
@@ -148,8 +152,6 @@ struct TaskFileDocument {
     scheduler_id: Option<String>,
     #[serde(default)]
     scheduler_run_id: Option<String>,
-    #[serde(default)]
-    auto_escalated: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +199,7 @@ impl TaskFileStore {
             .created_by
             .clone()
             .unwrap_or_else(|| "human".to_string());
+        let initial_state = TaskStateDir::from_status(params.status);
         let doc = TaskFileDocument {
             schema_version: 1,
             id,
@@ -205,19 +208,19 @@ impl TaskFileStore {
             instructions: params.instructions,
             context_files: params.context_files,
             workspace_path: params.workspace_path,
-            identity_id: params.identity_id,
             assigned_to: params.assigned_to,
             created_by: params.created_by,
-            approved_at: params.approved_at,
-            approved_by: params.approved_by,
-            approval_note: params.approval_note,
             priority: params.priority,
             task_type: params.task_type,
-            owner: params.owner,
-            parent_id: params.parent_id,
+            branch: params.branch,
+            pr_number: params.pr_number,
+            proposed_by: params.proposed_by,
+            proposal_approved_by: None,
+            proposal_decision_note: None,
+            review_approved_by: None,
+            review_decision_note: None,
             created_at: now,
             updated_at: now,
-            tags: Vec::new(),
             acceptance_criteria: Vec::new(),
             history: vec![TaskHistoryEntry {
                 at: now,
@@ -228,11 +231,10 @@ impl TaskFileStore {
             job_id: None,
             scheduler_id: None,
             scheduler_run_id: None,
-            auto_escalated: None,
         };
 
-        self.write_doc_for_state(TaskStateDir::Todo, &doc)?;
-        Ok(doc_to_task(TaskStateDir::Todo, doc))
+        self.write_doc_for_state(initial_state, &doc)?;
+        Ok(doc_to_task(initial_state, doc))
     }
 
     pub(crate) fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -322,23 +324,11 @@ impl TaskFileStore {
         if let Some(value) = &fields.workspace_path {
             doc.workspace_path = value.clone();
         }
-        if let Some(value) = &fields.identity_id {
-            doc.identity_id = value.clone();
-        }
         if let Some(value) = &fields.assigned_to {
             doc.assigned_to = value.clone();
         }
         if let Some(value) = &fields.created_by {
             doc.created_by = value.clone();
-        }
-        if let Some(value) = &fields.approved_at {
-            doc.approved_at = *value;
-        }
-        if let Some(value) = &fields.approved_by {
-            doc.approved_by = value.clone();
-        }
-        if let Some(value) = &fields.approval_note {
-            doc.approval_note = value.clone();
         }
         if let Some(value) = fields.priority {
             doc.priority = value;
@@ -346,11 +336,26 @@ impl TaskFileStore {
         if let Some(value) = fields.task_type {
             doc.task_type = value;
         }
-        if let Some(value) = &fields.owner {
-            doc.owner = value.clone();
+        if let Some(value) = &fields.branch {
+            doc.branch = value.clone();
         }
-        if let Some(value) = &fields.parent_id {
-            doc.parent_id = value.clone();
+        if let Some(value) = &fields.pr_number {
+            doc.pr_number = value.clone();
+        }
+        if let Some(value) = &fields.proposed_by {
+            doc.proposed_by = value.clone();
+        }
+        if let Some(value) = &fields.proposal_approved_by {
+            doc.proposal_approved_by = value.clone();
+        }
+        if let Some(value) = &fields.proposal_decision_note {
+            doc.proposal_decision_note = value.clone();
+        }
+        if let Some(value) = &fields.review_approved_by {
+            doc.review_approved_by = value.clone();
+        }
+        if let Some(value) = &fields.review_decision_note {
+            doc.review_decision_note = value.clone();
         }
 
         let target_state = fields
@@ -361,7 +366,9 @@ impl TaskFileStore {
         let event = if target_state == current_state {
             None
         } else if target_state == TaskStateDir::Done {
-            Some("closed".to_string())
+            Some("completed".to_string())
+        } else if target_state == TaskStateDir::Archived {
+            Some("archived".to_string())
         } else {
             Some("moved".to_string())
         };
@@ -499,17 +506,18 @@ fn doc_to_task(state: TaskStateDir, doc: TaskFileDocument) -> Task {
         instructions: doc.instructions,
         context_files: doc.context_files,
         workspace_path: doc.workspace_path,
-        identity_id: doc.identity_id,
         assigned_to: doc.assigned_to,
         created_by: doc.created_by,
-        approved_at: doc.approved_at,
-        approved_by: doc.approved_by,
-        approval_note: doc.approval_note,
         status: state.to_status(),
         priority: doc.priority,
         task_type: doc.task_type,
-        owner: doc.owner,
-        parent_id: doc.parent_id,
+        branch: doc.branch,
+        pr_number: doc.pr_number,
+        proposed_by: doc.proposed_by,
+        proposal_approved_by: doc.proposal_approved_by,
+        proposal_decision_note: doc.proposal_decision_note,
+        review_approved_by: doc.review_approved_by,
+        review_decision_note: doc.review_decision_note,
         created_at: doc.created_at,
         updated_at: doc.updated_at,
     }

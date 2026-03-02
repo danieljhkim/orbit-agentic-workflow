@@ -10,21 +10,23 @@ use crate::OrbitId;
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
-    Todo,
+    Proposed,
+    Backlog,
     InProgress,
+    Review,
     Done,
-    Blocked,
-    Cancelled,
+    Archived,
 }
 
 impl Display for TaskStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            TaskStatus::Todo => "todo",
+            TaskStatus::Proposed => "proposed",
+            TaskStatus::Backlog => "backlog",
             TaskStatus::InProgress => "in_progress",
+            TaskStatus::Review => "review",
             TaskStatus::Done => "done",
-            TaskStatus::Blocked => "blocked",
-            TaskStatus::Cancelled => "cancelled",
+            TaskStatus::Archived => "archived",
         };
         write!(f, "{s}")
     }
@@ -35,12 +37,36 @@ impl FromStr for TaskStatus {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "todo" => Ok(TaskStatus::Todo),
+            "proposed" => Ok(TaskStatus::Proposed),
+            "backlog" => Ok(TaskStatus::Backlog),
             "in_progress" => Ok(TaskStatus::InProgress),
+            "review" => Ok(TaskStatus::Review),
             "done" => Ok(TaskStatus::Done),
-            "blocked" => Ok(TaskStatus::Blocked),
-            "cancelled" => Ok(TaskStatus::Cancelled),
+            "archived" => Ok(TaskStatus::Archived),
             other => Err(format!("unknown task status: {other}")),
+        }
+    }
+}
+
+impl TaskStatus {
+    pub fn validate_transition(&self, target: TaskStatus) -> Result<(), String> {
+        if target == TaskStatus::Archived {
+            return Ok(());
+        }
+
+        let allowed = match self {
+            TaskStatus::Proposed => target == TaskStatus::Backlog,
+            TaskStatus::Backlog => target == TaskStatus::InProgress,
+            TaskStatus::InProgress => target == TaskStatus::Review,
+            TaskStatus::Review => target == TaskStatus::Done,
+            TaskStatus::Done => false,
+            TaskStatus::Archived => target == TaskStatus::Backlog,
+        };
+
+        if allowed {
+            Ok(())
+        } else {
+            Err(format!("invalid status transition: {} -> {}", self, target))
         }
     }
 }
@@ -89,7 +115,10 @@ pub enum TaskType {
     Feature,
     #[cfg_attr(feature = "clap", value(alias = "bug"))]
     Issue,
-    Other,
+    #[cfg_attr(feature = "clap", value(alias = "other"))]
+    #[serde(alias = "other")]
+    Chore,
+    Refactor,
 }
 
 impl Display for TaskType {
@@ -98,7 +127,8 @@ impl Display for TaskType {
             TaskType::Task => "task",
             TaskType::Feature => "feature",
             TaskType::Issue => "issue",
-            TaskType::Other => "other",
+            TaskType::Chore => "chore",
+            TaskType::Refactor => "refactor",
         };
         write!(f, "{s}")
     }
@@ -113,7 +143,10 @@ impl FromStr for TaskType {
             "feature" => Ok(TaskType::Feature),
             "issue" => Ok(TaskType::Issue),
             "bug" => Ok(TaskType::Issue),
-            "other" => Ok(TaskType::Other),
+            "chore" => Ok(TaskType::Chore),
+            // Backward-compatible mapping for legacy persisted values.
+            "other" => Ok(TaskType::Chore),
+            "refactor" => Ok(TaskType::Refactor),
             other => Err(format!("unknown task type: {other}")),
         }
     }
@@ -129,22 +162,26 @@ pub struct Task {
     #[serde(default)]
     pub workspace_path: Option<String>,
     #[serde(default)]
-    pub identity_id: Option<String>,
-    #[serde(default)]
     pub assigned_to: Option<String>,
     #[serde(default)]
     pub created_by: Option<String>,
-    #[serde(default)]
-    pub approved_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub approved_by: Option<String>,
-    #[serde(default)]
-    pub approval_note: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub task_type: TaskType,
-    pub owner: String,
-    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub pr_number: Option<String>,
+    #[serde(default)]
+    pub proposed_by: Option<String>,
+    #[serde(default)]
+    pub proposal_approved_by: Option<String>,
+    #[serde(default)]
+    pub proposal_decision_note: Option<String>,
+    #[serde(default)]
+    pub review_approved_by: Option<String>,
+    #[serde(default)]
+    pub review_decision_note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

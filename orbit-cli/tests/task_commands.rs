@@ -79,7 +79,7 @@ fn task_show_displays_fields() {
         .success()
         .stdout(predicate::str::contains("ID:"))
         .stdout(predicate::str::contains("showable task"))
-        .stdout(predicate::str::contains("todo"));
+        .stdout(predicate::str::contains("proposed"));
 }
 
 #[test]
@@ -109,32 +109,32 @@ fn task_update_changes_title() {
 }
 
 #[test]
-fn task_close_and_reopen() {
+fn task_archive_and_unarchive() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let id = add_task(dir.path(), "closable");
+    let id = add_task(dir.path(), "archivable");
     orbit_in(dir.path())
-        .args(["task", "close", &id])
+        .args(["task", "archive", &id])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Closed"));
+        .stdout(predicate::str::contains("Archived"));
 
     orbit_in(dir.path())
         .args(["task", "show", &id])
         .assert()
         .success()
-        .stdout(predicate::str::contains("done"));
+        .stdout(predicate::str::contains("archived"));
 
     orbit_in(dir.path())
-        .args(["task", "reopen", &id])
+        .args(["task", "unarchive", &id])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Reopened"));
+        .stdout(predicate::str::contains("Unarchived"));
 
     orbit_in(dir.path())
         .args(["task", "show", &id])
         .assert()
         .success()
-        .stdout(predicate::str::contains("todo"));
+        .stdout(predicate::str::contains("backlog"));
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn task_workspace_add_update_and_clear() {
 }
 
 #[test]
-fn task_approve_sets_approval_fields() {
+fn task_approve_proposed_to_backlog() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
     std::fs::write(
@@ -227,6 +227,13 @@ fn task_approve_sets_approval_fields() {
     )
     .expect("write config");
     let id = add_task(dir.path(), "approvable");
+
+    // Task should start as proposed since approval is required
+    orbit_in(dir.path())
+        .args(["task", "show", &id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("proposed"));
 
     orbit_in(dir.path())
         .args([
@@ -250,7 +257,7 @@ fn task_approve_sets_approval_fields() {
         .stdout
         .clone();
     let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["approved_by"], "daniel");
-    assert_eq!(show["approval_note"], "approved verbally in sync");
-    assert!(show["approved_at"].is_string());
+    assert_eq!(show["proposal_approved_by"], "daniel");
+    assert_eq!(show["proposal_decision_note"], "approved verbally in sync");
+    assert_eq!(show["status"], "backlog");
 }

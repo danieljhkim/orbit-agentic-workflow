@@ -5,7 +5,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::{Store, StoreTx, new_id, parse_timestamp};
 
 fn parse_status(raw: &str) -> TaskStatus {
-    raw.parse().unwrap_or(TaskStatus::Todo)
+    raw.parse().unwrap_or(TaskStatus::Backlog)
 }
 
 fn parse_priority(raw: &str) -> TaskPriority {
@@ -29,22 +29,20 @@ fn parse_context_files(raw: &str) -> rusqlite::Result<Vec<String>> {
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let context_files_raw: String = row.get(4)?;
     let workspace_path: Option<String> = row.get(5)?;
-    let identity_id: Option<String> = row.get(6)?;
-    let assigned_to: Option<String> = row.get(7)?;
-    let created_by: Option<String> = row.get(8)?;
-    let approved_at_raw: Option<String> = row.get(9)?;
-    let approved_by: Option<String> = row.get(10)?;
-    let approval_note: Option<String> = row.get(11)?;
-    let status_raw: String = row.get(12)?;
-    let priority_raw: String = row.get(13)?;
-    let task_type_raw: String = row.get(14)?;
-    let parent_id: Option<String> = row.get(16)?;
-    let created_at_raw: String = row.get(17)?;
-    let updated_at_raw: String = row.get(18)?;
-    let approved_at = match approved_at_raw {
-        Some(raw) => Some(parse_timestamp(&raw)?),
-        None => None,
-    };
+    let assigned_to: Option<String> = row.get(6)?;
+    let created_by: Option<String> = row.get(7)?;
+    let status_raw: String = row.get(8)?;
+    let priority_raw: String = row.get(9)?;
+    let task_type_raw: String = row.get(10)?;
+    let branch: Option<String> = row.get(11)?;
+    let pr_number: Option<String> = row.get(12)?;
+    let proposed_by: Option<String> = row.get(13)?;
+    let proposal_approved_by: Option<String> = row.get(14)?;
+    let proposal_decision_note: Option<String> = row.get(15)?;
+    let review_approved_by: Option<String> = row.get(16)?;
+    let review_decision_note: Option<String> = row.get(17)?;
+    let created_at_raw: String = row.get(18)?;
+    let updated_at_raw: String = row.get(19)?;
 
     Ok(Task {
         id: row.get(0)?,
@@ -53,23 +51,24 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         instructions: row.get(3)?,
         context_files: parse_context_files(&context_files_raw)?,
         workspace_path,
-        identity_id,
         assigned_to,
         created_by,
-        approved_at,
-        approved_by,
-        approval_note,
         status: parse_status(&status_raw),
         priority: parse_priority(&priority_raw),
         task_type: parse_task_type(&task_type_raw),
-        owner: row.get(15)?,
-        parent_id,
+        branch,
+        pr_number,
+        proposed_by,
+        proposal_approved_by,
+        proposal_decision_note,
+        review_approved_by,
+        review_decision_note,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,
     })
 }
 
-const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, identity_id, assigned_to, created_by, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -178,13 +177,14 @@ pub struct TaskInsertParams {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
-    pub identity_id: Option<String>,
     pub assigned_to: Option<String>,
     pub created_by: Option<String>,
+    pub status: TaskStatus,
     pub priority: TaskPriority,
     pub task_type: TaskType,
-    pub owner: String,
-    pub parent_id: Option<String>,
+    pub branch: Option<String>,
+    pub pr_number: Option<String>,
+    pub proposed_by: Option<String>,
 }
 
 impl Default for TaskInsertParams {
@@ -195,13 +195,14 @@ impl Default for TaskInsertParams {
             instructions: String::new(),
             context_files: Vec::new(),
             workspace_path: None,
-            identity_id: None,
             assigned_to: None,
             created_by: None,
+            status: TaskStatus::Backlog,
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
-            owner: String::new(),
-            parent_id: None,
+            branch: None,
+            pr_number: None,
+            proposed_by: None,
         }
     }
 }
@@ -213,17 +214,18 @@ pub struct TaskUpdateFields {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
-    pub identity_id: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
     pub created_by: Option<Option<String>>,
-    pub approved_at: Option<Option<chrono::DateTime<Utc>>>,
-    pub approved_by: Option<Option<String>>,
-    pub approval_note: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
-    pub owner: Option<String>,
-    pub parent_id: Option<Option<String>>,
+    pub branch: Option<Option<String>>,
+    pub pr_number: Option<Option<String>>,
+    pub proposed_by: Option<Option<String>>,
+    pub proposal_approved_by: Option<Option<String>>,
+    pub proposal_decision_note: Option<Option<String>>,
+    pub review_approved_by: Option<Option<String>>,
+    pub review_decision_note: Option<Option<String>>,
 }
 
 impl<'a> StoreTx<'a> {
@@ -238,24 +240,25 @@ impl<'a> StoreTx<'a> {
             instructions: params.instructions.clone(),
             context_files: params.context_files.clone(),
             workspace_path: params.workspace_path.clone(),
-            identity_id: params.identity_id.clone(),
             assigned_to: params.assigned_to.clone(),
             created_by: params.created_by.clone(),
-            approved_at: None,
-            approved_by: None,
-            approval_note: None,
-            status: TaskStatus::Todo,
+            status: params.status,
             priority: params.priority,
             task_type: params.task_type,
-            owner: params.owner.clone(),
-            parent_id: params.parent_id.clone(),
+            branch: params.branch.clone(),
+            pr_number: params.pr_number.clone(),
+            proposed_by: params.proposed_by.clone(),
+            proposal_approved_by: None,
+            proposal_decision_note: None,
+            review_approved_by: None,
+            review_decision_note: None,
             created_at: now,
             updated_at: now,
         };
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, identity_id, assigned_to, created_by, approved_at, approved_by, approval_note, status, priority, task_type, owner, parent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                "INSERT INTO tasks(id, title, description, instructions, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
                 params![
                     task.id,
                     task.title,
@@ -263,17 +266,18 @@ impl<'a> StoreTx<'a> {
                     task.instructions,
                     context_files_json,
                     task.workspace_path,
-                    task.identity_id,
                     task.assigned_to,
                     task.created_by,
-                    task.approved_at.map(|value| value.to_rfc3339()),
-                    task.approved_by,
-                    task.approval_note,
                     task.status.to_string(),
                     task.priority.to_string(),
                     task.task_type.to_string(),
-                    task.owner,
-                    task.parent_id,
+                    task.branch,
+                    task.pr_number,
+                    task.proposed_by,
+                    task.proposal_approved_by,
+                    task.proposal_decision_note,
+                    task.review_approved_by,
+                    task.review_decision_note,
                     task.created_at.to_rfc3339(),
                     task.updated_at.to_rfc3339(),
                 ],
@@ -308,28 +312,12 @@ impl<'a> StoreTx<'a> {
             sets.push("workspace_path = ?");
             param_values.push(Box::new(v.clone()));
         }
-        if let Some(ref v) = fields.identity_id {
-            sets.push("identity_id = ?");
-            param_values.push(Box::new(v.clone()));
-        }
         if let Some(ref v) = fields.assigned_to {
             sets.push("assigned_to = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(ref v) = fields.created_by {
             sets.push("created_by = ?");
-            param_values.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = fields.approved_at {
-            sets.push("approved_at = ?");
-            param_values.push(Box::new(v.map(|value| value.to_rfc3339())));
-        }
-        if let Some(ref v) = fields.approved_by {
-            sets.push("approved_by = ?");
-            param_values.push(Box::new(v.clone()));
-        }
-        if let Some(ref v) = fields.approval_note {
-            sets.push("approval_note = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(v) = fields.status {
@@ -344,12 +332,32 @@ impl<'a> StoreTx<'a> {
             sets.push("task_type = ?");
             param_values.push(Box::new(v.to_string()));
         }
-        if let Some(ref v) = fields.owner {
-            sets.push("owner = ?");
+        if let Some(ref v) = fields.branch {
+            sets.push("branch = ?");
             param_values.push(Box::new(v.clone()));
         }
-        if let Some(ref v) = fields.parent_id {
-            sets.push("parent_id = ?");
+        if let Some(ref v) = fields.pr_number {
+            sets.push("pr_number = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.proposed_by {
+            sets.push("proposed_by = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.proposal_approved_by {
+            sets.push("proposal_approved_by = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.proposal_decision_note {
+            sets.push("proposal_decision_note = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.review_approved_by {
+            sets.push("review_approved_by = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.review_decision_note {
+            sets.push("review_decision_note = ?");
             param_values.push(Box::new(v.clone()));
         }
 
@@ -425,8 +433,6 @@ mod tests {
                     workspace_path: None,
                     priority: TaskPriority::High,
                     task_type: TaskType::Issue,
-                    owner: "alice".to_string(),
-                    parent_id: None,
                     ..Default::default()
                 })
             })
@@ -439,8 +445,7 @@ mod tests {
         assert_eq!(found.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(found.priority, TaskPriority::High);
         assert_eq!(found.task_type, TaskType::Issue);
-        assert_eq!(found.owner, "alice");
-        assert_eq!(found.status, TaskStatus::Todo);
+        assert_eq!(found.status, TaskStatus::Backlog);
     }
 
     #[test]
@@ -462,11 +467,11 @@ mod tests {
             })
             .expect("insert");
 
-        let todos = store
-            .list_tasks_filtered(Some(TaskStatus::Todo), None)
+        let backlog = store
+            .list_tasks_filtered(Some(TaskStatus::Backlog), None)
             .expect("filter");
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].title, "open");
+        assert_eq!(backlog.len(), 1);
+        assert_eq!(backlog[0].title, "open");
     }
 
     #[test]
@@ -560,7 +565,6 @@ mod tests {
                         title: Some("changed".to_string()),
                         description: Some("new desc".to_string()),
                         priority: Some(TaskPriority::High),
-                        owner: Some("bob".to_string()),
                         ..Default::default()
                     },
                 )
@@ -572,7 +576,6 @@ mod tests {
         assert_eq!(found.title, "changed");
         assert_eq!(found.description, "new desc");
         assert_eq!(found.priority, TaskPriority::High);
-        assert_eq!(found.owner, "bob");
     }
 
     #[test]

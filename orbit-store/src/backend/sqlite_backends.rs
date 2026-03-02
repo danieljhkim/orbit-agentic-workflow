@@ -30,33 +30,16 @@ impl TaskStoreBackend for SqliteTaskStoreBackend {
                 instructions: params.instructions.clone(),
                 context_files: params.context_files.clone(),
                 workspace_path: params.workspace_path.clone(),
-                identity_id: params.identity_id.clone(),
                 assigned_to: params.assigned_to.clone(),
                 created_by: params.created_by.clone(),
+                status: params.status,
                 priority: params.priority,
                 task_type: params.task_type,
-                owner: params.owner.clone(),
-                parent_id: params.parent_id.clone(),
+                branch: params.branch.clone(),
+                pr_number: params.pr_number.clone(),
+                proposed_by: params.proposed_by.clone(),
             })
         })?;
-
-        if params.approved_at.is_some()
-            || params.approved_by.is_some()
-            || params.approval_note.is_some()
-        {
-            self.store.with_transaction(|tx| {
-                let _ = tx.update_task(
-                    &task.id,
-                    &TaskUpdateFields {
-                        approved_at: Some(params.approved_at),
-                        approved_by: Some(params.approved_by.clone()),
-                        approval_note: Some(params.approval_note.clone()),
-                        ..Default::default()
-                    },
-                )?;
-                Ok(())
-            })?;
-        }
 
         self.get_task(&task.id)?
             .ok_or(OrbitError::TaskNotFound(task.id))
@@ -92,17 +75,18 @@ impl TaskStoreBackend for SqliteTaskStoreBackend {
                     instructions: params.instructions.clone(),
                     context_files: params.context_files.clone(),
                     workspace_path: params.workspace_path,
-                    identity_id: params.identity_id.clone(),
                     assigned_to: params.assigned_to.clone(),
                     created_by: params.created_by.clone(),
-                    approved_at: params.approved_at,
-                    approved_by: params.approved_by.clone(),
-                    approval_note: params.approval_note.clone(),
                     status: params.status,
                     priority: params.priority,
                     task_type: params.task_type,
-                    owner: params.owner.clone(),
-                    parent_id: params.parent_id.clone(),
+                    branch: params.branch.clone(),
+                    pr_number: params.pr_number.clone(),
+                    proposed_by: params.proposed_by.clone(),
+                    proposal_approved_by: params.proposal_approved_by.clone(),
+                    proposal_decision_note: params.proposal_decision_note.clone(),
+                    review_approved_by: params.review_approved_by.clone(),
+                    review_decision_note: params.review_decision_note.clone(),
                 },
             )
         })?;

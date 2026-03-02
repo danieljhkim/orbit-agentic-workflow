@@ -252,18 +252,16 @@ impl OrbitRuntime {
             let outcome = self.execute_single_attempt(&scheduler);
             let finished_at = Utc::now();
 
-            let changed = self.complete_scheduler_run_backend(
-                &SchedulerRunCompletionParams {
-                    run_id: &run.run_id,
-                    state: outcome.state,
-                    finished_at,
-                    duration_ms: outcome.duration_ms,
-                    exit_code: outcome.exit_code,
-                    agent_response_json: outcome.response_json.as_ref(),
-                    error_code: outcome.error_code.as_deref(),
-                    error_message: outcome.error_message.as_deref(),
-                },
-            )?;
+            let changed = self.complete_scheduler_run_backend(&SchedulerRunCompletionParams {
+                run_id: &run.run_id,
+                state: outcome.state,
+                finished_at,
+                duration_ms: outcome.duration_ms,
+                exit_code: outcome.exit_code,
+                agent_response_json: outcome.response_json.as_ref(),
+                error_code: outcome.error_code.as_deref(),
+                error_message: outcome.error_message.as_deref(),
+            })?;
             if !changed {
                 return Err(OrbitError::SchedulerRunNotFound(run.run_id.clone()));
             }
@@ -371,18 +369,16 @@ impl OrbitRuntime {
             STALE_RUN_GRACE_SECONDS
         );
 
-        let changed = self.complete_scheduler_run_backend(
-            &SchedulerRunCompletionParams {
-                run_id: &active_run.run_id,
-                state: SchedulerRunState::Failed,
-                finished_at: now,
-                duration_ms,
-                exit_code: Some(1),
-                agent_response_json: None,
-                error_code: Some(AGENT_INVOCATION_FAILED),
-                error_message: Some(&message),
-            },
-        )?;
+        let changed = self.complete_scheduler_run_backend(&SchedulerRunCompletionParams {
+            run_id: &active_run.run_id,
+            state: SchedulerRunState::Failed,
+            finished_at: now,
+            duration_ms,
+            exit_code: Some(1),
+            agent_response_json: None,
+            error_code: Some(AGENT_INVOCATION_FAILED),
+            error_message: Some(&message),
+        })?;
         if !changed {
             return Err(OrbitError::SchedulerRunNotFound(active_run.run_id.clone()));
         }

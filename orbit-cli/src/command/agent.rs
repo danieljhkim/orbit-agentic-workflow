@@ -35,12 +35,6 @@ pub struct AgentRunArgs {
     pub task: String,
     #[arg(long)]
     pub identity: Option<String>,
-    #[arg(long)]
-    pub approve_on_verbal: bool,
-    #[arg(long)]
-    pub approved_by: Option<String>,
-    #[arg(long)]
-    pub approval_note: Option<String>,
 }
 
 impl Execute for AgentRunArgs {
@@ -48,9 +42,6 @@ impl Execute for AgentRunArgs {
         let result = runtime.run_agent_task_with_options(
             &self.task,
             AgentRunOptions {
-                approve_on_verbal: self.approve_on_verbal,
-                approved_by: self.approved_by,
-                approval_note: self.approval_note,
                 identity_id: self.identity,
             },
         )?;

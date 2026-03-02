@@ -40,6 +40,8 @@ pub enum OrbitError {
     Execution(String),
     #[error("store error: {0}")]
     Store(String),
+    #[error("invalid task status transition: {0}")]
+    TaskStatusTransition(String),
     #[error("io error: {0}")]
     Io(String),
 }

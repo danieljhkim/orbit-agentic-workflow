@@ -27,12 +27,12 @@ pub enum TaskSubcommand {
     Show(TaskShowArgs),
     /// Update task fields
     Update(TaskUpdateArgs),
-    /// Approve a task for agent execution
+    /// Approve a task (proposed → backlog, or review → done)
     Approve(TaskApproveArgs),
-    /// Close a task (set status to done)
-    Close(TaskCloseArgs),
-    /// Reopen a closed task
-    Reopen(TaskReopenArgs),
+    /// Archive a task
+    Archive(TaskArchiveArgs),
+    /// Unarchive a task (archived → backlog)
+    Unarchive(TaskUnarchiveArgs),
     /// Delete a task permanently
     Delete(TaskDeleteArgs),
     /// Search tasks by title or description
@@ -47,8 +47,8 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::Show(args) => args.execute(runtime),
             TaskSubcommand::Update(args) => args.execute(runtime),
             TaskSubcommand::Approve(args) => args.execute(runtime),
-            TaskSubcommand::Close(args) => args.execute(runtime),
-            TaskSubcommand::Reopen(args) => args.execute(runtime),
+            TaskSubcommand::Archive(args) => args.execute(runtime),
+            TaskSubcommand::Unarchive(args) => args.execute(runtime),
             TaskSubcommand::Delete(args) => args.execute(runtime),
             TaskSubcommand::Search(args) => args.execute(runtime),
         }
@@ -74,9 +74,6 @@ pub struct TaskAddArgs {
     /// Repository workspace path
     #[arg(long)]
     pub workspace: Option<String>,
-    /// Optional agent identity id
-    #[arg(long)]
-    pub identity: Option<String>,
     /// Optional assignee display name
     #[arg(long)]
     pub assigned_to: Option<String>,
@@ -89,12 +86,15 @@ pub struct TaskAddArgs {
     /// Task type
     #[arg(long = "type", value_enum, default_value_t = TaskType::Task)]
     pub task_type: TaskType,
-    /// Task owner
-    #[arg(long, default_value = "")]
-    pub owner: String,
-    /// Parent task ID
+    /// Git branch name
     #[arg(long)]
-    pub parent: Option<String>,
+    pub branch: Option<String>,
+    /// Pull request number
+    #[arg(long)]
+    pub pr_number: Option<String>,
+    /// Who proposed this task
+    #[arg(long)]
+    pub proposed_by: Option<String>,
 }
 
 impl Execute for TaskAddArgs {
@@ -105,13 +105,13 @@ impl Execute for TaskAddArgs {
             instructions: self.instructions,
             context_files: parse_context_csv(&self.context),
             workspace_path: self.workspace,
-            identity_id: self.identity,
             assigned_to: self.assigned_to,
             created_by: self.created_by,
             priority: self.priority,
             task_type: self.task_type,
-            owner: self.owner,
-            parent_id: self.parent,
+            branch: self.branch,
+            pr_number: self.pr_number,
+            proposed_by: self.proposed_by,
         })?;
 
         println!("{}", task.id);
@@ -187,30 +187,32 @@ impl Execute for TaskShowArgs {
             if let Some(ref workspace_path) = task.workspace_path {
                 println!("Workspace:   {}", workspace_path);
             }
-            if let Some(ref identity_id) = task.identity_id {
-                println!("Identity:    {}", identity_id);
-            }
             if let Some(ref assigned_to) = task.assigned_to {
                 println!("Assigned To: {}", assigned_to);
             }
             if let Some(ref created_by) = task.created_by {
                 println!("Created By:  {}", created_by);
             }
-            println!("Approved:    {}", yes_no(task.approved_at.is_some()));
-            if let Some(ref approved_by) = task.approved_by {
-                println!("Approved By: {}", approved_by);
+            if let Some(ref branch) = task.branch {
+                println!("Branch:      {}", branch);
             }
-            if let Some(approved_at) = task.approved_at {
-                println!("Approved At: {}", approved_at.to_rfc3339());
+            if let Some(ref pr_number) = task.pr_number {
+                println!("PR Number:   {}", pr_number);
             }
-            if let Some(ref approval_note) = task.approval_note {
-                println!("Approval Note: {}", approval_note);
+            if let Some(ref proposed_by) = task.proposed_by {
+                println!("Proposed By: {}", proposed_by);
             }
-            if !task.owner.is_empty() {
-                println!("Owner:       {}", task.owner);
+            if let Some(ref approved_by) = task.proposal_approved_by {
+                println!("Proposal Approved By: {}", approved_by);
             }
-            if let Some(ref parent) = task.parent_id {
-                println!("Parent:      {}", parent);
+            if let Some(ref note) = task.proposal_decision_note {
+                println!("Proposal Note: {}", note);
+            }
+            if let Some(ref approved_by) = task.review_approved_by {
+                println!("Review Approved By: {}", approved_by);
+            }
+            if let Some(ref note) = task.review_decision_note {
+                println!("Review Note: {}", note);
             }
             println!("Created:     {}", task.created_at.to_rfc3339());
             println!("Updated:     {}", task.updated_at.to_rfc3339());
@@ -240,9 +242,6 @@ pub struct TaskUpdateArgs {
     /// New workspace path (use empty string to clear)
     #[arg(long)]
     pub workspace: Option<String>,
-    /// New identity id (empty string clears)
-    #[arg(long)]
-    pub identity: Option<String>,
     /// New assignee (empty string clears)
     #[arg(long)]
     pub assigned_to: Option<String>,
@@ -258,27 +257,17 @@ pub struct TaskUpdateArgs {
     /// New type
     #[arg(long = "type", value_enum)]
     pub task_type: Option<TaskType>,
-    /// New owner
+    /// Git branch name (empty string clears)
     #[arg(long)]
-    pub owner: Option<String>,
-    /// New parent task ID (use empty string to clear)
+    pub branch: Option<String>,
+    /// Pull request number (empty string clears)
     #[arg(long)]
-    pub parent: Option<String>,
+    pub pr_number: Option<String>,
 }
 
 impl Execute for TaskUpdateArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let parent_id = self
-            .parent
-            .map(|p| if p.is_empty() { None } else { Some(p) });
         let workspace_path = self.workspace.map(|value| {
-            if value.trim().is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        });
-        let identity_id = self.identity.map(|value| {
             if value.trim().is_empty() {
                 None
             } else {
@@ -299,6 +288,20 @@ impl Execute for TaskUpdateArgs {
                 Some(value)
             }
         });
+        let branch = self.branch.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
+        let pr_number = self.pr_number.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
 
         let task = runtime.update_task(
             &self.id,
@@ -308,14 +311,18 @@ impl Execute for TaskUpdateArgs {
                 instructions: self.instructions,
                 context_files: self.context.map(|raw| parse_context_csv(&raw)),
                 workspace_path,
-                identity_id,
                 assigned_to,
                 created_by,
                 status: self.status,
                 priority: self.priority,
                 task_type: self.task_type,
-                owner: self.owner,
-                parent_id,
+                branch,
+                pr_number,
+                proposed_by: None,
+                proposal_approved_by: None,
+                proposal_decision_note: None,
+                review_approved_by: None,
+                review_decision_note: None,
             },
         )?;
 
@@ -333,7 +340,7 @@ pub struct TaskApproveArgs {
     /// Approver identity
     #[arg(long, default_value = "human")]
     pub by: String,
-    /// Optional approval note (e.g., verbal confirmation details)
+    /// Optional approval note
     #[arg(long)]
     pub note: Option<String>,
 }
@@ -346,34 +353,34 @@ impl Execute for TaskApproveArgs {
     }
 }
 
-// --- Close ---
+// --- Archive ---
 
 #[derive(Args)]
-pub struct TaskCloseArgs {
+pub struct TaskArchiveArgs {
     /// Task ID
     pub id: String,
 }
 
-impl Execute for TaskCloseArgs {
+impl Execute for TaskArchiveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.close_task(&self.id)?;
-        println!("Closed task '{}'", self.id);
+        runtime.archive_task(&self.id)?;
+        println!("Archived task '{}'", self.id);
         Ok(())
     }
 }
 
-// --- Reopen ---
+// --- Unarchive ---
 
 #[derive(Args)]
-pub struct TaskReopenArgs {
+pub struct TaskUnarchiveArgs {
     /// Task ID
     pub id: String,
 }
 
-impl Execute for TaskReopenArgs {
+impl Execute for TaskUnarchiveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.reopen_task(&self.id)?;
-        println!("Reopened task '{}'", self.id);
+        runtime.unarchive_task(&self.id)?;
+        println!("Unarchived task '{}'", self.id);
         Ok(())
     }
 }
@@ -423,18 +430,13 @@ impl Execute for TaskSearchArgs {
 
 fn print_task_table(tasks: &[orbit_core::Task]) {
     println!(
-        "{:<28} {:<12} {:<8} {:<8} {:<5} TITLE",
-        "ID", "STATUS", "PRI", "TYPE", "APPR"
+        "{:<28} {:<12} {:<8} {:<8} TITLE",
+        "ID", "STATUS", "PRI", "TYPE"
     );
     for task in tasks {
         println!(
-            "{:<28} {:<12} {:<8} {:<8} {:<5} {}",
-            task.id,
-            task.status,
-            task.priority,
-            task.task_type,
-            yes_no(task.approved_at.is_some()),
-            task.title
+            "{:<28} {:<12} {:<8} {:<8} {}",
+            task.id, task.status, task.priority, task.task_type, task.title
         );
     }
 }
@@ -447,17 +449,18 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "instructions": task.instructions,
         "context_files": task.context_files,
         "workspace_path": task.workspace_path,
-        "identity_id": task.identity_id,
         "assigned_to": task.assigned_to,
         "created_by": task.created_by,
-        "approved_at": task.approved_at.as_ref().map(|value| value.to_rfc3339()),
-        "approved_by": task.approved_by,
-        "approval_note": task.approval_note,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
         "type": task.task_type.to_string(),
-        "owner": task.owner,
-        "parent_id": task.parent_id,
+        "branch": task.branch,
+        "pr_number": task.pr_number,
+        "proposed_by": task.proposed_by,
+        "proposal_approved_by": task.proposal_approved_by,
+        "proposal_decision_note": task.proposal_decision_note,
+        "review_approved_by": task.review_approved_by,
+        "review_decision_note": task.review_decision_note,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
@@ -465,8 +468,4 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
 
 fn parse_context_csv(raw: &str) -> Vec<String> {
     crate::parse::csv_to_vec(raw)
-}
-
-fn yes_no(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
 }

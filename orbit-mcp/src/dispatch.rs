@@ -60,8 +60,8 @@ fn dispatch_tool_inner(
         "orbit.task.show" => task_show(runtime, obj),
         "orbit.task.update" => task_update(runtime, obj),
         "orbit.task.approve" => task_approve(runtime, obj, &identity),
-        "orbit.task.close" => task_close(runtime, obj),
-        "orbit.task.reopen" => task_reopen(runtime, obj),
+        "orbit.task.archive" => task_archive(runtime, obj),
+        "orbit.task.unarchive" => task_unarchive(runtime, obj),
         "orbit.task.delete" => task_delete(runtime, obj),
         "orbit.task.search" => task_search(runtime, obj),
         "orbit.job.add" => job_add(runtime, obj, &identity),
@@ -137,15 +137,13 @@ fn config_show(runtime: &OrbitRuntime) -> Result<Value, OrbitError> {
 fn task_add(
     runtime: &OrbitRuntime,
     obj: &Map<String, Value>,
-    identity: &IdentityContext,
+    _identity: &IdentityContext,
 ) -> Result<Value, OrbitError> {
     let title = required_string(obj, "title")?;
     let description = optional_string(obj, "description").unwrap_or_default();
     let instructions = optional_string(obj, "instructions").unwrap_or_default();
     let context_files = optional_string_array(obj, "context_files")?.unwrap_or_default();
     let workspace_path = optional_string(obj, "workspace_path");
-    let task_identity =
-        optional_string(obj, "task_identity_id").or_else(|| Some(identity.id.clone()));
     let assigned_to = optional_string(obj, "assigned_to");
     let created_by = optional_string(obj, "created_by");
     let priority = optional_string(obj, "priority")
@@ -156,8 +154,9 @@ fn task_add(
         .map(|value| parse_enum::<TaskType>("task_type", &value))
         .transpose()?
         .unwrap_or(TaskType::Task);
-    let owner = optional_string(obj, "owner").unwrap_or_default();
-    let parent_id = optional_string(obj, "parent_id");
+    let branch = optional_string(obj, "branch");
+    let pr_number = optional_string(obj, "pr_number");
+    let proposed_by = optional_string(obj, "proposed_by");
 
     let task = runtime.add_task(TaskAddParams {
         title,
@@ -165,13 +164,13 @@ fn task_add(
         instructions,
         context_files,
         workspace_path,
-        identity_id: task_identity,
         assigned_to,
         created_by,
         priority,
         task_type,
-        owner,
-        parent_id,
+        branch,
+        pr_number,
+        proposed_by,
     })?;
 
     Ok(task_to_json(&task))
@@ -209,17 +208,12 @@ fn task_update(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value
         "clear_workspace_path",
         "workspace_path",
     )?;
-    let identity_id = optional_clearable_string(
-        obj,
-        "task_identity_id",
-        "clear_task_identity_id",
-        "task_identity_id",
-    )?;
     let assigned_to =
         optional_clearable_string(obj, "assigned_to", "clear_assigned_to", "assigned_to")?;
     let created_by =
         optional_clearable_string(obj, "created_by", "clear_created_by", "created_by")?;
-    let parent_id = optional_clearable_string(obj, "parent_id", "clear_parent_id", "parent_id")?;
+    let branch = optional_clearable_string(obj, "branch", "clear_branch", "branch")?;
+    let pr_number = optional_clearable_string(obj, "pr_number", "clear_pr_number", "pr_number")?;
 
     let status = optional_string(obj, "status")
         .map(|value| parse_enum::<TaskStatus>("status", &value))
@@ -239,14 +233,18 @@ fn task_update(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value
             instructions: optional_string(obj, "instructions"),
             context_files: optional_string_array(obj, "context_files")?,
             workspace_path,
-            identity_id,
             assigned_to,
             created_by,
             status,
             priority,
             task_type,
-            owner: optional_string(obj, "owner"),
-            parent_id,
+            branch,
+            pr_number,
+            proposed_by: None,
+            proposal_approved_by: None,
+            proposal_decision_note: None,
+            review_approved_by: None,
+            review_decision_note: None,
         },
     )?;
 
@@ -266,16 +264,16 @@ fn task_approve(
     Ok(task_to_json(&task))
 }
 
-fn task_close(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+fn task_archive(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
     let task_id = required_string(obj, "task_id")?;
-    runtime.close_task(&task_id)?;
+    runtime.archive_task(&task_id)?;
     let task = runtime.get_task(&task_id)?;
     Ok(task_to_json(&task))
 }
 
-fn task_reopen(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
+fn task_unarchive(runtime: &OrbitRuntime, obj: &Map<String, Value>) -> Result<Value, OrbitError> {
     let task_id = required_string(obj, "task_id")?;
-    runtime.reopen_task(&task_id)?;
+    runtime.unarchive_task(&task_id)?;
     let task = runtime.get_task(&task_id)?;
     Ok(task_to_json(&task))
 }
@@ -431,9 +429,6 @@ fn agent_run(
     let result = runtime.run_agent_task_with_options(
         &task_id,
         AgentRunOptions {
-            approve_on_verbal: optional_bool(obj, "approve_on_verbal")?.unwrap_or(false),
-            approved_by: optional_string(obj, "approved_by"),
-            approval_note: optional_string(obj, "approval_note"),
             identity_id: optional_string(obj, "run_identity_id")
                 .or_else(|| Some(identity.id.clone())),
         },
@@ -810,17 +805,18 @@ fn task_to_json(task: &Task) -> Value {
         "instructions": task.instructions,
         "context_files": task.context_files,
         "workspace_path": task.workspace_path,
-        "identity_id": task.identity_id,
         "assigned_to": task.assigned_to,
         "created_by": task.created_by,
-        "approved_at": task.approved_at.as_ref().map(|value| value.to_rfc3339()),
-        "approved_by": task.approved_by,
-        "approval_note": task.approval_note,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
         "type": task.task_type.to_string(),
-        "owner": task.owner,
-        "parent_id": task.parent_id,
+        "branch": task.branch,
+        "pr_number": task.pr_number,
+        "proposed_by": task.proposed_by,
+        "proposal_approved_by": task.proposal_approved_by,
+        "proposal_decision_note": task.proposal_decision_note,
+        "review_approved_by": task.review_approved_by,
+        "review_decision_note": task.review_decision_note,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
@@ -923,6 +919,7 @@ fn orbit_error_code(err: &OrbitError) -> &'static str {
         OrbitError::AgentRun(_) => "AGENT_RUN_FAILED",
         OrbitError::AgentProtocolViolation(_) => "AGENT_PROTOCOL_VIOLATION",
         OrbitError::UnsupportedAgentProvider(_) => "UNSUPPORTED_AGENT_PROVIDER",
+        OrbitError::TaskStatusTransition(_) => "TASK_STATUS_TRANSITION",
         OrbitError::Execution(_) => "EXECUTION_FAILED",
         OrbitError::Store(_) => "STORE_ERROR",
         OrbitError::Io(_) => "IO_ERROR",

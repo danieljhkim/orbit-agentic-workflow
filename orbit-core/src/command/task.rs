@@ -1,8 +1,7 @@
-use chrono::Utc;
 use orbit_store::{
     TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
 };
-use orbit_types::{IdentityRole, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
+use orbit_types::{OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
 
 use crate::OrbitRuntime;
 use crate::paths::normalize_path;
@@ -13,13 +12,13 @@ pub struct TaskAddParams {
     pub instructions: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
-    pub identity_id: Option<String>,
     pub assigned_to: Option<String>,
     pub created_by: Option<String>,
     pub priority: TaskPriority,
     pub task_type: TaskType,
-    pub owner: String,
-    pub parent_id: Option<String>,
+    pub branch: Option<String>,
+    pub pr_number: Option<String>,
+    pub proposed_by: Option<String>,
 }
 
 impl Default for TaskAddParams {
@@ -30,13 +29,13 @@ impl Default for TaskAddParams {
             instructions: String::new(),
             context_files: Vec::new(),
             workspace_path: None,
-            identity_id: None,
             assigned_to: None,
             created_by: None,
             priority: TaskPriority::Medium,
             task_type: TaskType::Task,
-            owner: String::new(),
-            parent_id: None,
+            branch: None,
+            pr_number: None,
+            proposed_by: None,
         }
     }
 }
@@ -47,49 +46,32 @@ pub struct TaskUpdateParams {
     pub instructions: Option<String>,
     pub context_files: Option<Vec<String>>,
     pub workspace_path: Option<Option<String>>,
-    pub identity_id: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
     pub created_by: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
     pub task_type: Option<TaskType>,
-    pub owner: Option<String>,
-    pub parent_id: Option<Option<String>>,
+    pub branch: Option<Option<String>>,
+    pub pr_number: Option<Option<String>>,
+    pub proposed_by: Option<Option<String>>,
+    pub proposal_approved_by: Option<Option<String>>,
+    pub proposal_decision_note: Option<Option<String>>,
+    pub review_approved_by: Option<Option<String>>,
+    pub review_decision_note: Option<Option<String>>,
 }
 
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
-        if let Some(ref parent) = params.parent_id {
-            let exists = self.context.task_store.get_task(parent)?;
-            if exists.is_none() {
-                return Err(OrbitError::TaskNotFound(format!(
-                    "parent task not found: {parent}"
-                )));
-            }
-        }
-
         let workspace_path = normalize_path(params.workspace_path)?;
-        let identity_id = params.identity_id.clone();
-        let mut assigned_to = params.assigned_to.clone();
-        let mut created_by = params.created_by.clone();
-        if let Some(id) = identity_id.as_ref() {
-            let resolved = self.resolve_identity(id)?;
-            if assigned_to.is_none() {
-                assigned_to = Some(resolved.name.clone());
-            }
-            if created_by.is_none() {
-                created_by = Some(resolved.name);
-            }
-        }
-        let auto_approve = !self.context.task_approval_required_for_agent;
-        let auto_approval_note = if auto_approve {
-            Some(
-                "Auto-approved by configuration (task.approval.required_for_agent=false)"
-                    .to_string(),
-            )
+        let initial_status = if self.context.task_approval_required_for_agent {
+            TaskStatus::Proposed
         } else {
-            None
+            TaskStatus::Backlog
         };
+        let proposed_by = params
+            .proposed_by
+            .clone()
+            .or_else(|| params.created_by.clone());
 
         self.with_mutation(|| {
             let task = self.context.task_store.create_task(StoreTaskCreateParams {
@@ -98,20 +80,14 @@ impl OrbitRuntime {
                 instructions: params.instructions.clone(),
                 context_files: params.context_files.clone(),
                 workspace_path: workspace_path.clone(),
-                identity_id: identity_id.clone(),
-                assigned_to: assigned_to.clone(),
-                created_by: created_by.clone(),
-                approved_at: auto_approve.then_some(Utc::now()),
-                approved_by: if auto_approve {
-                    Some(created_by.clone().unwrap_or_else(|| "system".to_string()))
-                } else {
-                    None
-                },
-                approval_note: auto_approval_note.clone(),
+                assigned_to: params.assigned_to.clone(),
+                created_by: params.created_by.clone(),
+                status: initial_status,
                 priority: params.priority,
                 task_type: params.task_type,
-                owner: params.owner.clone(),
-                parent_id: params.parent_id.clone(),
+                branch: params.branch.clone(),
+                pr_number: params.pr_number.clone(),
+                proposed_by: proposed_by.clone(),
             })?;
             Ok((
                 task.clone(),
@@ -144,20 +120,12 @@ impl OrbitRuntime {
     }
 
     pub fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
-        // Verify task exists
-        self.get_task(id)?;
+        let task = self.get_task(id)?;
 
-        if let Some(Some(ref parent)) = params.parent_id {
-            let exists = self.context.task_store.get_task(parent)?;
-            if exists.is_none() {
-                return Err(OrbitError::TaskNotFound(format!(
-                    "parent task not found: {parent}"
-                )));
-            }
-        }
-
-        if let Some(Some(identity_id)) = params.identity_id.as_ref() {
-            let _ = self.resolve_identity(identity_id)?;
+        if let Some(target_status) = params.status {
+            task.status
+                .validate_transition(target_status)
+                .map_err(OrbitError::TaskStatusTransition)?;
         }
 
         let workspace_path = match params.workspace_path {
@@ -174,17 +142,18 @@ impl OrbitRuntime {
                     instructions: params.instructions,
                     context_files: params.context_files,
                     workspace_path,
-                    identity_id: params.identity_id,
                     assigned_to: params.assigned_to,
                     created_by: params.created_by,
-                    approved_at: None,
-                    approved_by: None,
-                    approval_note: None,
                     status: params.status,
                     priority: params.priority,
                     task_type: params.task_type,
-                    owner: params.owner,
-                    parent_id: params.parent_id,
+                    branch: params.branch,
+                    pr_number: params.pr_number,
+                    proposed_by: params.proposed_by,
+                    proposal_approved_by: params.proposal_approved_by,
+                    proposal_decision_note: params.proposal_decision_note,
+                    review_approved_by: params.review_approved_by,
+                    review_decision_note: params.review_decision_note,
                 },
             )?;
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
@@ -193,13 +162,75 @@ impl OrbitRuntime {
         Ok(task)
     }
 
-    pub fn close_task(&self, id: &str) -> Result<(), OrbitError> {
+    pub fn approve_task(
+        &self,
+        id: &str,
+        approved_by: &str,
+        note: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        let task = self.get_task(id)?;
+        let approver = approved_by.trim();
+        if approver.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "approved_by must not be empty".to_string(),
+            ));
+        }
+
+        match task.status {
+            TaskStatus::Proposed => {
+                let task = self.with_mutation(|| {
+                    let task = self.context.task_store.update_task(
+                        id,
+                        StoreTaskUpdateParams {
+                            status: Some(TaskStatus::Backlog),
+                            proposal_approved_by: Some(Some(approver.to_string())),
+                            proposal_decision_note: Some(note.clone()),
+                            ..Default::default()
+                        },
+                    )?;
+                    Ok((
+                        task.clone(),
+                        OrbitEvent::TaskProposalApproved {
+                            id: id.to_string(),
+                            approved_by: approver.to_string(),
+                        },
+                    ))
+                })?;
+                Ok(task)
+            }
+            TaskStatus::Review => {
+                let task = self.with_mutation(|| {
+                    let task = self.context.task_store.update_task(
+                        id,
+                        StoreTaskUpdateParams {
+                            status: Some(TaskStatus::Done),
+                            review_approved_by: Some(Some(approver.to_string())),
+                            review_decision_note: Some(note.clone()),
+                            ..Default::default()
+                        },
+                    )?;
+                    Ok((
+                        task.clone(),
+                        OrbitEvent::TaskReviewApproved {
+                            id: id.to_string(),
+                            approved_by: approver.to_string(),
+                        },
+                    ))
+                })?;
+                Ok(task)
+            }
+            other => Err(OrbitError::InvalidInput(format!(
+                "task '{id}' is in status '{other}'; approve requires 'proposed' or 'review'"
+            ))),
+        }
+    }
+
+    pub fn archive_task(&self, id: &str) -> Result<(), OrbitError> {
         let task = self.get_task(id)?;
 
-        if task.status == TaskStatus::Done || task.status == TaskStatus::Cancelled {
+        if task.status == TaskStatus::Archived {
             return Err(OrbitError::InvalidInput(format!(
-                "task '{id}' is already {}",
-                task.status
+                "task '{id}' is already archived"
             )));
         }
 
@@ -207,20 +238,20 @@ impl OrbitRuntime {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
-                    status: Some(TaskStatus::Done),
+                    status: Some(TaskStatus::Archived),
                     ..Default::default()
                 },
             )?;
-            Ok(((), OrbitEvent::TaskClosed { id: id.to_string() }))
+            Ok(((), OrbitEvent::TaskArchived { id: id.to_string() }))
         })
     }
 
-    pub fn reopen_task(&self, id: &str) -> Result<(), OrbitError> {
+    pub fn unarchive_task(&self, id: &str) -> Result<(), OrbitError> {
         let task = self.get_task(id)?;
 
-        if task.status != TaskStatus::Done && task.status != TaskStatus::Cancelled {
+        if task.status != TaskStatus::Archived {
             return Err(OrbitError::InvalidInput(format!(
-                "task '{id}' is not closed (status: {})",
+                "task '{id}' is not archived (status: {})",
                 task.status
             )));
         }
@@ -229,11 +260,11 @@ impl OrbitRuntime {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
-                    status: Some(TaskStatus::Todo),
+                    status: Some(TaskStatus::Backlog),
                     ..Default::default()
                 },
             )?;
-            Ok(((), OrbitEvent::TaskReopened { id: id.to_string() }))
+            Ok(((), OrbitEvent::TaskUnarchived { id: id.to_string() }))
         })
     }
 
@@ -249,83 +280,5 @@ impl OrbitRuntime {
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.context.task_store.search_tasks(query)
-    }
-
-    pub fn approve_task(
-        &self,
-        id: &str,
-        approved_by: &str,
-        approval_note: Option<String>,
-    ) -> Result<Task, OrbitError> {
-        let task = self.get_task(id)?;
-        let approver = approved_by.trim();
-        if approver.is_empty() {
-            return Err(OrbitError::InvalidInput(
-                "approved_by must not be empty".to_string(),
-            ));
-        }
-        if task.approved_at.is_some() {
-            return Ok(task);
-        }
-
-        let task = self.with_mutation(|| {
-            let task = self.context.task_store.update_task(
-                id,
-                StoreTaskUpdateParams {
-                    approved_at: Some(Some(Utc::now())),
-                    approved_by: Some(Some(approver.to_string())),
-                    approval_note: Some(approval_note.clone()),
-                    ..Default::default()
-                },
-            )?;
-            Ok((
-                task.clone(),
-                OrbitEvent::TaskApproved {
-                    id: id.to_string(),
-                    approved_by: approver.to_string(),
-                },
-            ))
-        })?;
-
-        Ok(task)
-    }
-
-    pub fn approve_task_from_session(
-        &self,
-        id: &str,
-        session_id: &str,
-        approval_note: Option<String>,
-    ) -> Result<Task, OrbitError> {
-        if !self.context.task_delegate_approval {
-            return Err(OrbitError::TaskApprovalRequired(
-                "delegated approval is disabled (task.approval.delegate_approval=false)"
-                    .to_string(),
-            ));
-        }
-
-        let session = self
-            .get_agent_session(session_id)?
-            .ok_or_else(|| OrbitError::AgentSessionNotFound(session_id.to_string()))?;
-        if session.task_id != id {
-            return Err(OrbitError::TaskApprovalRequired(format!(
-                "session '{session_id}' is not attached to task '{id}'"
-            )));
-        }
-        if session.identity_role != Some(IdentityRole::Leader) {
-            return Err(OrbitError::TaskApprovalRequired(format!(
-                "session '{session_id}' identity is not authorized for delegated approval"
-            )));
-        }
-        let approver = session
-            .identity_name
-            .as_deref()
-            .or(session.identity_id.as_deref())
-            .ok_or_else(|| {
-                OrbitError::TaskApprovalRequired(format!(
-                    "session '{session_id}' has no identity attribution"
-                ))
-            })?;
-
-        self.approve_task(id, approver, approval_note)
     }
 }

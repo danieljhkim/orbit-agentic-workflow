@@ -77,9 +77,10 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
         OrbitEvent::TaskAdded { .. } => "TaskAdded",
         OrbitEvent::TaskUpdated { .. } => "TaskUpdated",
-        OrbitEvent::TaskApproved { .. } => "TaskApproved",
-        OrbitEvent::TaskClosed { .. } => "TaskClosed",
-        OrbitEvent::TaskReopened { .. } => "TaskReopened",
+        OrbitEvent::TaskArchived { .. } => "TaskArchived",
+        OrbitEvent::TaskUnarchived { .. } => "TaskUnarchived",
+        OrbitEvent::TaskProposalApproved { .. } => "TaskProposalApproved",
+        OrbitEvent::TaskReviewApproved { .. } => "TaskReviewApproved",
         OrbitEvent::TaskDeleted { .. } => "TaskDeleted",
         OrbitEvent::ToolAdded { .. } => "ToolAdded",
         OrbitEvent::ToolRemoved { .. } => "ToolRemoved",
@@ -150,11 +151,14 @@ fn event_message(event: &OrbitEvent) -> String {
         OrbitEvent::PolicyDenied { tool } => format!("policy denied: {tool}"),
         OrbitEvent::TaskAdded { id } => format!("task added: {id}"),
         OrbitEvent::TaskUpdated { id } => format!("task updated: {id}"),
-        OrbitEvent::TaskApproved { id, approved_by } => {
-            format!("task approved: {id} by {approved_by}")
+        OrbitEvent::TaskArchived { id } => format!("task archived: {id}"),
+        OrbitEvent::TaskUnarchived { id } => format!("task unarchived: {id}"),
+        OrbitEvent::TaskProposalApproved { id, approved_by } => {
+            format!("task proposal approved: {id} by {approved_by}")
         }
-        OrbitEvent::TaskClosed { id } => format!("task closed: {id}"),
-        OrbitEvent::TaskReopened { id } => format!("task reopened: {id}"),
+        OrbitEvent::TaskReviewApproved { id, approved_by } => {
+            format!("task review approved: {id} by {approved_by}")
+        }
         OrbitEvent::TaskDeleted { id } => format!("task deleted: {id}"),
         OrbitEvent::ToolAdded { name } => format!("tool added: {name}"),
         OrbitEvent::ToolRemoved { name } => format!("tool removed: {name}"),

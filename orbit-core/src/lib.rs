@@ -30,7 +30,7 @@ mod tests {
     use orbit_policy::PolicyEngine;
     use orbit_types::{
         OrbitEvent, SchedulerRetryBackoffStrategy, SchedulerRunState, SchedulerTargetType,
-        TaskPriority, TaskStatus, TaskType,
+        TaskPriority, TaskStatus,
     };
     use serde_json::json;
     use tempfile::tempdir;
@@ -319,13 +319,11 @@ mod tests {
                 instructions: "steps".to_string(),
                 context_files: vec!["ARCHITECTURE.md".to_string()],
                 workspace_path: None,
-                identity_id: None,
                 assigned_to: None,
                 created_by: None,
                 priority: TaskPriority::High,
-                task_type: TaskType::Issue,
-                owner: "alice".to_string(),
-                parent_id: None,
+                task_type: orbit_types::TaskType::Issue,
+                ..Default::default()
             })
             .expect("add");
 
@@ -334,9 +332,9 @@ mod tests {
         assert_eq!(task.instructions, "steps");
         assert_eq!(task.context_files, vec!["ARCHITECTURE.md".to_string()]);
         assert_eq!(task.priority, TaskPriority::High);
-        assert_eq!(task.task_type, TaskType::Issue);
-        assert_eq!(task.owner, "alice");
-        assert_eq!(task.status, TaskStatus::Todo);
+        assert_eq!(task.task_type, orbit_types::TaskType::Issue);
+        // Default status depends on task_approval_required_for_agent (false in memory → Backlog)
+        assert_eq!(task.status, TaskStatus::Backlog);
     }
 
     #[test]
@@ -383,17 +381,17 @@ mod tests {
             .expect("add");
         let t2 = runtime
             .add_task(TaskAddParams {
-                title: "closed".to_string(),
+                title: "archived".to_string(),
                 ..Default::default()
             })
             .expect("add");
-        runtime.close_task(&t2.id).expect("close");
+        runtime.archive_task(&t2.id).expect("archive");
 
-        let todos = runtime
-            .list_tasks_filtered(Some(TaskStatus::Todo), None)
+        let backlog = runtime
+            .list_tasks_filtered(Some(TaskStatus::Backlog), None)
             .expect("filter");
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].title, "open");
+        assert_eq!(backlog.len(), 1);
+        assert_eq!(backlog[0].title, "open");
     }
 
     #[test]
@@ -440,14 +438,18 @@ mod tests {
                     instructions: None,
                     context_files: None,
                     workspace_path: None,
-                    identity_id: None,
                     assigned_to: None,
                     created_by: None,
                     status: None,
                     priority: Some(TaskPriority::High),
                     task_type: None,
-                    owner: Some("bob".to_string()),
-                    parent_id: None,
+                    branch: None,
+                    pr_number: None,
+                    proposed_by: None,
+                    proposal_approved_by: None,
+                    proposal_decision_note: None,
+                    review_approved_by: None,
+                    review_decision_note: None,
                 },
             )
             .expect("update");
@@ -455,76 +457,75 @@ mod tests {
         assert_eq!(updated.title, "changed");
         assert_eq!(updated.description, "new desc");
         assert_eq!(updated.priority, TaskPriority::High);
-        assert_eq!(updated.owner, "bob");
 
         let audits = runtime.list_audits(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskUpdated"));
     }
 
     #[test]
-    fn close_task_sets_done() {
+    fn archive_task_sets_archived() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
             .add_task(TaskAddParams {
-                title: "closable".to_string(),
+                title: "archivable".to_string(),
                 ..Default::default()
             })
             .expect("add");
 
-        runtime.close_task(&task.id).expect("close");
-        let closed = runtime.get_task(&task.id).expect("get");
-        assert_eq!(closed.status, TaskStatus::Done);
+        runtime.archive_task(&task.id).expect("archive");
+        let archived = runtime.get_task(&task.id).expect("get");
+        assert_eq!(archived.status, TaskStatus::Archived);
 
         let audits = runtime.list_audits(10).expect("audits");
-        assert!(audits.iter().any(|a| a.event_type == "TaskClosed"));
+        assert!(audits.iter().any(|a| a.event_type == "TaskArchived"));
     }
 
     #[test]
-    fn close_already_done_returns_error() {
+    fn archive_already_archived_returns_error() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
             .add_task(TaskAddParams {
-                title: "already done".to_string(),
+                title: "already archived".to_string(),
                 ..Default::default()
             })
             .expect("add");
 
-        runtime.close_task(&task.id).expect("close");
-        let result = runtime.close_task(&task.id);
+        runtime.archive_task(&task.id).expect("archive");
+        let result = runtime.archive_task(&task.id);
         assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
     }
 
     #[test]
-    fn reopen_task_sets_todo() {
+    fn unarchive_task_sets_backlog() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
             .add_task(TaskAddParams {
-                title: "reopen me".to_string(),
+                title: "unarchive me".to_string(),
                 ..Default::default()
             })
             .expect("add");
 
-        runtime.close_task(&task.id).expect("close");
-        runtime.reopen_task(&task.id).expect("reopen");
+        runtime.archive_task(&task.id).expect("archive");
+        runtime.unarchive_task(&task.id).expect("unarchive");
 
-        let reopened = runtime.get_task(&task.id).expect("get");
-        assert_eq!(reopened.status, TaskStatus::Todo);
+        let unarchived = runtime.get_task(&task.id).expect("get");
+        assert_eq!(unarchived.status, TaskStatus::Backlog);
 
         let audits = runtime.list_audits(10).expect("audits");
-        assert!(audits.iter().any(|a| a.event_type == "TaskReopened"));
+        assert!(audits.iter().any(|a| a.event_type == "TaskUnarchived"));
     }
 
     #[test]
-    fn reopen_non_closed_returns_error() {
+    fn unarchive_non_archived_returns_error() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
             .add_task(TaskAddParams {
-                title: "not closed".to_string(),
+                title: "not archived".to_string(),
                 ..Default::default()
             })
             .expect("add");
 
-        let result = runtime.reopen_task(&task.id);
+        let result = runtime.unarchive_task(&task.id);
         assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
     }
 
@@ -594,17 +595,6 @@ mod tests {
         let results = runtime.search_tasks("migration").expect("search");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "task one");
-    }
-
-    #[test]
-    fn add_task_with_parent_validates_parent_exists() {
-        let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let result = runtime.add_task(TaskAddParams {
-            title: "child".to_string(),
-            parent_id: Some("task-nonexistent".to_string()),
-            ..Default::default()
-        });
-        assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
     }
 
     #[test]

@@ -1,5 +1,4 @@
 use orbit_core::OrbitRuntime;
-use orbit_core::command::agent::AgentRunOptions;
 use orbit_core::command::task::TaskAddParams;
 use orbit_types::AgentSessionStatus;
 use tempfile::tempdir;
@@ -133,7 +132,7 @@ fn agent_run_requires_approval_when_config_enabled() {
 }
 
 #[test]
-fn agent_run_can_approve_on_verbal_when_config_enabled() {
+fn agent_run_succeeds_after_explicit_approval() {
     let dir = tempdir().expect("tempdir");
     std::fs::write(
         dir.path().join("config.toml"),
@@ -144,133 +143,35 @@ fn agent_run_can_approve_on_verbal_when_config_enabled() {
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let task = runtime
         .add_task(TaskAddParams {
-            title: "agent verbal approval".to_string(),
+            title: "agent after approval".to_string(),
             instructions: r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#.to_string(),
             ..Default::default()
         })
         .expect("task");
 
-    let result = runtime
-        .run_agent_task_with_options(
-            &task.id,
-            AgentRunOptions {
-                approve_on_verbal: true,
-                approved_by: Some("agent".to_string()),
-                approval_note: Some("approved based on user verbal confirmation".to_string()),
-                identity_id: None,
-            },
-        )
-        .expect("run");
-    assert_eq!(result.status, AgentSessionStatus::Completed);
-
-    let approved_task = runtime.get_task(&task.id).expect("task");
-    assert!(approved_task.approved_at.is_some());
-    assert_eq!(approved_task.approved_by.as_deref(), Some("agent"));
-}
-
-#[test]
-fn leader_identity_can_delegate_approval_when_enabled() {
-    let dir = tempdir().expect("tempdir");
-    let identities = dir.path().join("identities");
-    std::fs::create_dir_all(&identities).expect("create identities");
-    std::fs::write(
-        identities.join("linus.yaml"),
-        r#"
-identity:
-  name: linus-leader
-  display_name: Linus Torvalds (Maintainer)
-  role: leader
-personality:
-  tone: direct
-behavior:
-  change_strategy: minimal-diff
-"#,
-    )
-    .expect("write identity");
-    std::fs::write(
-        dir.path().join("config.toml"),
-        format!(
-            "[task.approval]\nrequired_for_agent = true\ndelegate_approval = true\n\n[identity]\nroot = \"{}\"\n",
-            identities.to_string_lossy()
-        ),
-    )
-    .expect("write config");
-
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let task = runtime
-        .add_task(TaskAddParams {
-            title: "leader delegated approval".to_string(),
-            identity_id: Some("linus".to_string()),
-            instructions: r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#.to_string(),
-            ..Default::default()
-        })
-        .expect("task");
-
-    let result = runtime
-        .run_agent_task_with_options(
-            &task.id,
-            AgentRunOptions {
-                approve_on_verbal: true,
-                approved_by: None,
-                approval_note: Some("approved from verbal confirmation".to_string()),
-                identity_id: Some("linus".to_string()),
-            },
-        )
-        .expect("run");
-    assert_eq!(result.status, AgentSessionStatus::Completed);
-
-    let approved_task = runtime.get_task(&task.id).expect("task");
-    assert_eq!(
-        approved_task.approved_by.as_deref(),
-        Some("Linus Torvalds (Maintainer)")
-    );
-}
-
-#[test]
-fn leader_identity_cannot_delegate_when_disabled() {
-    let dir = tempdir().expect("tempdir");
-    let identities = dir.path().join("identities");
-    std::fs::create_dir_all(&identities).expect("create identities");
-    std::fs::write(
-        identities.join("linus.yaml"),
-        r#"
-identity:
-  name: linus-leader
-  display_name: Linus Torvalds (Maintainer)
-  role: leader
-"#,
-    )
-    .expect("write identity");
-    std::fs::write(
-        dir.path().join("config.toml"),
-        format!(
-            "[task.approval]\nrequired_for_agent = true\ndelegate_approval = false\n\n[identity]\nroot = \"{}\"\n",
-            identities.to_string_lossy()
-        ),
-    )
-    .expect("write config");
-
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let task = runtime
-        .add_task(TaskAddParams {
-            title: "leader delegated approval blocked".to_string(),
-            identity_id: Some("linus".to_string()),
-            instructions: r#"{"tool_calls":[{"name":"time.now","input":{}}]}"#.to_string(),
-            ..Default::default()
-        })
-        .expect("task");
-
-    let result = runtime.run_agent_task_with_options(
-        &task.id,
-        AgentRunOptions {
-            approve_on_verbal: true,
-            approved_by: None,
-            approval_note: None,
-            identity_id: Some("linus".to_string()),
-        },
-    );
+    // Task starts as proposed, so agent should fail
+    let result = runtime.run_agent_task(&task.id);
     assert!(matches!(
         result,
         Err(orbit_types::OrbitError::TaskApprovalRequired(_))
     ));
+
+    // Approve the task (proposed → backlog)
+    runtime
+        .approve_task(&task.id, "human-reviewer", Some("looks good".to_string()))
+        .expect("approve");
+
+    // Now agent should succeed
+    let result = runtime.run_agent_task(&task.id).expect("run");
+    assert_eq!(result.status, AgentSessionStatus::Completed);
+
+    let approved_task = runtime.get_task(&task.id).expect("task");
+    assert_eq!(
+        approved_task.proposal_approved_by.as_deref(),
+        Some("human-reviewer")
+    );
+    assert_eq!(
+        approved_task.proposal_decision_note.as_deref(),
+        Some("looks good")
+    );
 }
