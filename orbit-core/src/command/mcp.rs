@@ -5,6 +5,8 @@ use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use crate::OrbitRuntime;
+use crate::fs_utils::write_text_with_parent;
+use crate::paths;
 use orbit_types::OrbitError;
 
 #[derive(Debug, Clone)]
@@ -112,10 +114,9 @@ fn upsert_codex_config(
     changed |= set_toml_inline_table(orbit_table, "env", &[("ORBIT_ROOT", &data_root_str)]);
 
     if changed && !dry_run {
-        write_text(
-            path,
-            toml::to_string_pretty(&root).map_err(|e| OrbitError::Execution(e.to_string()))?,
-        )?;
+        let rendered =
+            toml::to_string_pretty(&root).map_err(|e| OrbitError::Execution(e.to_string()))?;
+        write_text_with_parent(path, &rendered)?;
     }
 
     Ok(McpConfigMutation {
@@ -184,7 +185,8 @@ fn upsert_claude_config(
     if changed && !dry_run {
         let rendered = serde_json::to_string_pretty(&root)
             .map_err(|e| OrbitError::Execution(e.to_string()))?;
-        write_text(path, format!("{rendered}\n"))?;
+        let content = format!("{rendered}\n");
+        write_text_with_parent(path, &content)?;
     }
 
     Ok(McpConfigMutation {
@@ -192,13 +194,6 @@ fn upsert_claude_config(
         existed,
         changed,
     })
-}
-
-fn write_text(path: &Path, content: String) -> Result<(), OrbitError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
-    }
-    fs::write(path, content).map_err(|e| OrbitError::Io(e.to_string()))
 }
 
 fn set_toml_string(table: &mut toml::map::Map<String, TomlValue>, key: &str, value: &str) -> bool {
@@ -299,11 +294,15 @@ fn codex_config_path() -> Result<PathBuf, OrbitError> {
         return Ok(PathBuf::from(codex_home).join("config.toml"));
     }
 
-    Ok(home_dir()?.join(".codex").join("config.toml"))
+    Ok(paths::home_dir_required("cannot resolve config paths")?
+        .join(".codex")
+        .join("config.toml"))
 }
 
 fn claude_code_config_path() -> Result<PathBuf, OrbitError> {
-    Ok(home_dir()?.join(".claude").join(".mcp.json"))
+    Ok(paths::home_dir_required("cannot resolve config paths")?
+        .join(".claude")
+        .join(".mcp.json"))
 }
 
 fn claude_config_path() -> Result<PathBuf, OrbitError> {
@@ -316,23 +315,7 @@ fn claude_config_path() -> Result<PathBuf, OrbitError> {
         }
     }
 
-    Ok(home_dir()?.join(".claude.json"))
-}
-
-fn home_dir() -> Result<PathBuf, OrbitError> {
-    if let Ok(home) = std::env::var("HOME")
-        && !home.trim().is_empty()
-    {
-        return Ok(PathBuf::from(home));
-    }
-    if let Ok(profile) = std::env::var("USERPROFILE")
-        && !profile.trim().is_empty()
-    {
-        return Ok(PathBuf::from(profile));
-    }
-    Err(OrbitError::InvalidInput(
-        "HOME/USERPROFILE is not set; cannot resolve config paths".to_string(),
-    ))
+    Ok(paths::home_dir_required("cannot resolve config paths")?.join(".claude.json"))
 }
 
 #[cfg(test)]

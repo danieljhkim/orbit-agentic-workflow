@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 use orbit_types::{IdentityRole, OrbitError};
 
-use super::persistence::{PersistenceConfig, resolve_path};
+use crate::paths;
+
+use super::persistence::PersistenceConfig;
 use super::raw::{RawExecutionEnvConfig, RawIdentitySection, RawRuntimeConfig, RawTaskSection};
 
 const DEFAULT_ENV_INHERIT: bool = false;
@@ -22,7 +24,7 @@ pub(crate) struct RuntimeConfig {
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
-        let orbit_home = orbit_home_root();
+        let orbit_home = paths::orbit_home_root();
         Self::default_for_roots(&orbit_home, &orbit_home)
     }
 }
@@ -110,7 +112,7 @@ pub(crate) struct IdentityConfig {
 
 impl Default for IdentityConfig {
     fn default() -> Self {
-        Self::default_for_orbit_home(&orbit_home_root())
+        Self::default_for_orbit_home(&paths::orbit_home_root())
     }
 }
 
@@ -128,10 +130,11 @@ impl IdentityConfig {
         orbit_home: &Path,
     ) -> Result<Self, OrbitError> {
         let default = Self::default_for_orbit_home(orbit_home);
-        let root = resolve_path(
+        let root = paths::resolve_config_path(
             raw.and_then(|v| v.root.as_deref()),
             &default.root,
             config_root,
+            "identity.root",
         )?;
         let mut role_overrides = BTreeMap::new();
         if let Some(roles) = raw.and_then(|v| v.roles.as_ref()) {
@@ -216,16 +219,6 @@ impl ExecutionEnvPolicy {
     }
 }
 
-fn orbit_home_root() -> PathBuf {
-    home_dir()
-        .map(|home| home.join(".orbit"))
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(".orbit")
-        })
-}
-
 fn default_pass_list() -> Vec<String> {
     DEFAULT_ENV_PASS.iter().map(ToString::to_string).collect()
 }
@@ -266,18 +259,4 @@ fn required_env_vars_for_provider(provider: &str) -> &'static [&'static str] {
         "claude" => &["HOME", "PATH"],
         _ => &[],
     }
-}
-
-fn home_dir() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("HOME")
-        && !home.trim().is_empty()
-    {
-        return Some(PathBuf::from(home));
-    }
-    if let Ok(profile) = std::env::var("USERPROFILE")
-        && !profile.trim().is_empty()
-    {
-        return Some(PathBuf::from(profile));
-    }
-    None
 }

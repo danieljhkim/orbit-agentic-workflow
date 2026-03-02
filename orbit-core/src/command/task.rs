@@ -3,9 +3,9 @@ use orbit_store::{
     TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
 };
 use orbit_types::{IdentityRole, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
-use std::path::Path;
 
 use crate::OrbitRuntime;
+use crate::paths::normalize_path;
 
 pub struct TaskAddParams {
     pub title: String,
@@ -68,7 +68,7 @@ impl OrbitRuntime {
             }
         }
 
-        let workspace_path = normalize_workspace_path(params.workspace_path)?;
+        let workspace_path = normalize_path(params.workspace_path)?;
         let identity_id = params.identity_id.clone();
         let mut assigned_to = params.assigned_to.clone();
         let mut created_by = params.created_by.clone();
@@ -161,7 +161,7 @@ impl OrbitRuntime {
         }
 
         let workspace_path = match params.workspace_path {
-            Some(value) => Some(normalize_workspace_path(value)?),
+            Some(value) => Some(normalize_path(value)?),
             None => None,
         };
 
@@ -328,34 +328,4 @@ impl OrbitRuntime {
 
         self.approve_task(id, approver, approval_note)
     }
-}
-
-fn normalize_workspace_path(raw: Option<String>) -> Result<Option<String>, OrbitError> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-
-    let path = Path::new(trimmed);
-    if !path.exists() {
-        return Err(OrbitError::InvalidInput(format!(
-            "workspace path does not exist: {trimmed}"
-        )));
-    }
-    if !path.is_dir() {
-        return Err(OrbitError::InvalidInput(format!(
-            "workspace path is not a directory: {trimmed}"
-        )));
-    }
-
-    let canonical = path.canonicalize().map_err(|e| {
-        OrbitError::InvalidInput(format!(
-            "failed to canonicalize workspace path '{trimmed}': {e}"
-        ))
-    })?;
-    Ok(Some(canonical.to_string_lossy().to_string()))
 }

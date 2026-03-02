@@ -15,6 +15,7 @@ use orbit_types::OrbitError;
 use crate::OrbitContext;
 use crate::config::{PersistenceType, RuntimeConfig};
 use crate::identity_catalog::IdentityCatalog;
+use crate::paths;
 use crate::skill_catalog::SkillCatalog;
 
 pub(crate) fn build_context_from_data_root(
@@ -71,7 +72,7 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
     )))?;
     let job_store = job_store_sqlite(store.clone());
     let scheduler_store = scheduler_store_sqlite(store.clone());
-    let orbit_home = orbit_home_root();
+    let orbit_home = paths::orbit_home_root();
     let runtime_config = RuntimeConfig::default_for_roots(&orbit_home, &orbit_home);
     let data_root = runtime_config
         .persistence
@@ -172,20 +173,4 @@ fn load_external_tools(store: &Store, registry: &mut ToolRegistry) -> Result<(),
         }
     }
     Ok(())
-}
-
-fn orbit_home_root() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME")
-        && !home.trim().is_empty()
-    {
-        return PathBuf::from(home).join(".orbit");
-    }
-    if let Ok(profile) = std::env::var("USERPROFILE")
-        && !profile.trim().is_empty()
-    {
-        return PathBuf::from(profile).join(".orbit");
-    }
-    std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(".orbit")
 }

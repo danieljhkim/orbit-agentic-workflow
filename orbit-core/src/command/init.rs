@@ -4,45 +4,12 @@ use std::path::{Path, PathBuf};
 use orbit_types::OrbitError;
 
 use crate::OrbitRuntime;
+use crate::command::identity::seed_default_identities;
 use crate::command::job::seed_default_jobs;
-
-const DEFAULT_IDENTITIES: [(&str, &str); 6] = [
-    ("linus", include_str!("../../assets/identities/linus.yaml")),
-    ("john", include_str!("../../assets/identities/john.yaml")),
-    ("kent", include_str!("../../assets/identities/kent.yaml")),
-    ("rob", include_str!("../../assets/identities/rob.yaml")),
-    ("grace", include_str!("../../assets/identities/grace.yaml")),
-    ("steve", include_str!("../../assets/identities/steve.yaml")),
-];
-const DEFAULT_SKILLS: [(&str, &str); 6] = [
-    (
-        "orbit-approve-task",
-        include_str!("../../assets/skills/orbit-approve-task/SKILL.md"),
-    ),
-    (
-        "orbit-assess-codebase",
-        include_str!("../../assets/skills/orbit-assess-codebase/SKILL.md"),
-    ),
-    (
-        "orbit-execute-change-request",
-        include_str!("../../assets/skills/orbit-execute-change-request/SKILL.md"),
-    ),
-    (
-        "orbit-maintain-system",
-        include_str!("../../assets/skills/orbit-maintain-system/SKILL.md"),
-    ),
-    (
-        "orbit-manage-tasks",
-        include_str!("../../assets/skills/orbit-manage-tasks/SKILL.md"),
-    ),
-    (
-        "orbit-track-issues",
-        include_str!("../../assets/skills/orbit-track-issues/SKILL.md"),
-    ),
-];
-const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../../assets/config/default-config.toml");
-const DEFAULT_CONFIG_TEMPLATE_REPO: &str =
-    include_str!("../../assets/config/default-config-repo.toml");
+use crate::command::skill::{default_skill_ids, seed_default_skills};
+use crate::config::{default_config_template_for_root, seed_default_config};
+use crate::fs_utils::{create_dir_symlink, remove_path_if_exists};
+use crate::paths;
 
 #[derive(Debug, Clone)]
 pub struct InitResult {
@@ -105,35 +72,12 @@ fn init_workspace_at_root(
     let skills_root = orbit_root.join("skills");
     fs::create_dir_all(&skills_root).map_err(|e| OrbitError::Io(e.to_string()))?;
 
-    let mut created = 0usize;
-    for (name, content) in DEFAULT_IDENTITIES {
-        let path = identity_root.join(format!("{name}.yaml"));
-        if path.exists() {
-            continue;
-        }
-        write_identity_file(&path, content)?;
-        created += 1;
-    }
-
-    let mut created_skill_files = 0usize;
-    for (id, content) in DEFAULT_SKILLS {
-        let path = skills_root.join(id).join("SKILL.md");
-        if path.exists() {
-            continue;
-        }
-        write_identity_file(&path, content)?;
-        created_skill_files += 1;
-    }
-
+    let created_identity_files = seed_default_identities(&identity_root)?;
+    let created_skill_files = seed_default_skills(&skills_root)?;
     let config_path = orbit_root.join("config.toml");
-    let created_config = if config_path.exists() {
-        false
-    } else {
-        write_identity_file(&config_path, init_target.config_template)?;
-        true
-    };
+    let created_config = seed_default_config(&config_path, init_target.config_template)?;
 
-    let skill_ids = DEFAULT_SKILLS.map(|(id, _)| id);
+    let skill_ids = default_skill_ids();
     let created_skills_symlink = ensure_skill_links(
         &skills_root,
         &skill_ids,
@@ -145,7 +89,7 @@ fn init_workspace_at_root(
     let created_default_work = seed_default_jobs(&init_runtime)? > 0;
 
     Ok(InitResult {
-        created_identity_files: created,
+        created_identity_files,
         identity_root: identity_root.to_string_lossy().to_string(),
         created_skill_files,
         skills_root: skills_root.to_string_lossy().to_string(),
@@ -156,15 +100,8 @@ fn init_workspace_at_root(
     })
 }
 
-fn write_identity_file(path: &Path, content: &str) -> Result<(), OrbitError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
-    }
-    fs::write(path, content).map_err(|e| OrbitError::Io(e.to_string()))
-}
-
 fn home_orbit_root() -> Result<PathBuf, OrbitError> {
-    Ok(home_dir()?.join(".orbit"))
+    Ok(paths::home_dir_required("cannot resolve home directory")?.join(".orbit"))
 }
 
 #[derive(Debug, Clone)]
@@ -177,16 +114,14 @@ struct InitTarget {
 fn resolve_init_target_from_root(orbit_root: &Path) -> Result<InitTarget, OrbitError> {
     let orbit_root = orbit_root.to_path_buf();
     let home_root = home_orbit_root()?;
-    let config_template = if orbit_root == home_root {
-        DEFAULT_CONFIG_TEMPLATE
-    } else {
-        DEFAULT_CONFIG_TEMPLATE_REPO
-    };
+    let config_template = default_config_template_for_root(&orbit_root, &home_root);
 
     let skills_links_root = if let Some(repo_root) = find_git_repo_root(&orbit_root) {
         repo_root.join(".agents").join("skills")
     } else {
-        home_dir()?.join(".agents").join("skills")
+        paths::home_dir_required("cannot resolve home directory")?
+            .join(".agents")
+            .join("skills")
     };
 
     Ok(InitTarget {
@@ -203,22 +138,6 @@ fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
         }
     }
     None
-}
-
-fn home_dir() -> Result<PathBuf, OrbitError> {
-    if let Ok(home) = std::env::var("HOME")
-        && !home.trim().is_empty()
-    {
-        return Ok(PathBuf::from(home));
-    }
-    if let Ok(profile) = std::env::var("USERPROFILE")
-        && !profile.trim().is_empty()
-    {
-        return Ok(PathBuf::from(profile));
-    }
-    Err(OrbitError::InvalidInput(
-        "HOME/USERPROFILE is not set; cannot resolve home directory".to_string(),
-    ))
 }
 
 fn ensure_skill_links(
@@ -318,29 +237,4 @@ fn ensure_skill_links(
     }
 
     Ok(changed)
-}
-
-#[cfg(unix)]
-fn create_dir_symlink(src: &Path, dst: &Path) -> Result<(), OrbitError> {
-    std::os::unix::fs::symlink(src, dst).map_err(|e| OrbitError::Io(e.to_string()))
-}
-
-#[cfg(windows)]
-fn create_dir_symlink(src: &Path, dst: &Path) -> Result<(), OrbitError> {
-    std::os::windows::fs::symlink_dir(src, dst).map_err(|e| OrbitError::Io(e.to_string()))
-}
-
-fn remove_path_if_exists(path: &Path) -> Result<(), OrbitError> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    let metadata = fs::symlink_metadata(path).map_err(|e| OrbitError::Io(e.to_string()))?;
-    if metadata.file_type().is_symlink() {
-        fs::remove_file(path).map_err(|e| OrbitError::Io(e.to_string()))
-    } else if metadata.is_dir() {
-        fs::remove_dir_all(path).map_err(|e| OrbitError::Io(e.to_string()))
-    } else {
-        fs::remove_file(path).map_err(|e| OrbitError::Io(e.to_string()))
-    }
 }

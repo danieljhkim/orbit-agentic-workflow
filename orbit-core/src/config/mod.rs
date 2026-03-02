@@ -1,7 +1,9 @@
+mod bootstrap;
 mod persistence;
 mod raw;
 mod runtime;
 
+pub(crate) use bootstrap::{default_config_template_for_root, seed_default_config};
 pub(crate) use persistence::{PersistenceConfig, PersistenceType};
 pub(crate) use runtime::{ExecutionEnvPolicy, RuntimeConfig};
 

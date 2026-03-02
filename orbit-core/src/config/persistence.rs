@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
+use crate::paths;
+
 use super::raw::{RawPersistenceConfig, RawRuntimeConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,7 +173,12 @@ fn parse_configurable_entity(
             }
             Ok(EntityPersistenceConfig {
                 persistence_type,
-                path: resolve_path(raw.path.as_deref(), &defaults.path, base_dir)?,
+                path: paths::resolve_config_path(
+                    raw.path.as_deref(),
+                    &defaults.path,
+                    base_dir,
+                    "persistence.path",
+                )?,
                 format: Some(format),
             })
         }
@@ -183,7 +190,12 @@ fn parse_configurable_entity(
             }
             Ok(EntityPersistenceConfig {
                 persistence_type,
-                path: resolve_path(raw.path.as_deref(), &defaults.path, base_dir)?,
+                path: paths::resolve_config_path(
+                    raw.path.as_deref(),
+                    &defaults.path,
+                    base_dir,
+                    "persistence.path",
+                )?,
                 format: None,
             })
         }
@@ -226,7 +238,12 @@ fn parse_sqlite_only_entity(
 
     Ok(EntityPersistenceConfig {
         persistence_type,
-        path: resolve_path(raw.path.as_deref(), &defaults.path, base_dir)?,
+        path: paths::resolve_config_path(
+            raw.path.as_deref(),
+            &defaults.path,
+            base_dir,
+            "persistence.path",
+        )?,
         format: None,
     })
 }
@@ -240,32 +257,4 @@ fn parse_persistence_type(raw: Option<&str>, entity: &str) -> Result<Persistence
             "{entity}.persistence.type must be 'file' or 'sqlite' (got '{other}')"
         ))),
     }
-}
-
-pub(super) fn resolve_path(
-    raw: Option<&str>,
-    default: &Path,
-    base_dir: &Path,
-) -> Result<PathBuf, OrbitError> {
-    let Some(raw) = raw else {
-        return Ok(default.to_path_buf());
-    };
-    let value = raw.trim();
-    if value.is_empty() {
-        return Err(OrbitError::InvalidInput(
-            "persistence.path must not be empty".to_string(),
-        ));
-    }
-    if value == "~" || value.starts_with("~/") {
-        let home = std::env::var("HOME").map_err(|_| {
-            OrbitError::InvalidInput("cannot expand '~' because HOME is not set".to_string())
-        })?;
-        let suffix = value.trim_start_matches("~/");
-        return Ok(PathBuf::from(home).join(suffix));
-    }
-    let path = PathBuf::from(value);
-    if path.is_relative() {
-        return Ok(base_dir.join(path));
-    }
-    Ok(path)
 }

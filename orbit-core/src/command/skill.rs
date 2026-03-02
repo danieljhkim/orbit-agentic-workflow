@@ -1,9 +1,39 @@
+use std::path::Path;
+
 use std::collections::HashSet;
 
 use orbit_types::{OrbitError, Role, Skill};
 
 use crate::OrbitRuntime;
+use crate::fs_utils::write_text_with_parent;
 use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};
+
+const DEFAULT_SKILL_FILES: [(&str, &str); 6] = [
+    (
+        "orbit-approve-task",
+        include_str!("../../assets/skills/orbit-approve-task/SKILL.md"),
+    ),
+    (
+        "orbit-assess-codebase",
+        include_str!("../../assets/skills/orbit-assess-codebase/SKILL.md"),
+    ),
+    (
+        "orbit-execute-change-request",
+        include_str!("../../assets/skills/orbit-execute-change-request/SKILL.md"),
+    ),
+    (
+        "orbit-maintain-system",
+        include_str!("../../assets/skills/orbit-maintain-system/SKILL.md"),
+    ),
+    (
+        "orbit-manage-tasks",
+        include_str!("../../assets/skills/orbit-manage-tasks/SKILL.md"),
+    ),
+    (
+        "orbit-track-issues",
+        include_str!("../../assets/skills/orbit-track-issues/SKILL.md"),
+    ),
+];
 
 pub struct SkillAddParams {
     pub name: String,
@@ -35,6 +65,23 @@ pub struct SkillDoctorResult {
     pub skill_name: String,
     pub status: SkillDoctorStatus,
     pub message: String,
+}
+
+pub(crate) fn default_skill_ids() -> [&'static str; 6] {
+    DEFAULT_SKILL_FILES.map(|(id, _)| id)
+}
+
+pub(crate) fn seed_default_skills(skills_root: &Path) -> Result<usize, OrbitError> {
+    let mut created = 0usize;
+    for (id, content) in DEFAULT_SKILL_FILES {
+        let path = skills_root.join(id).join("SKILL.md");
+        if path.exists() {
+            continue;
+        }
+        write_text_with_parent(&path, content)?;
+        created += 1;
+    }
+    Ok(created)
 }
 
 impl OrbitRuntime {

@@ -6,7 +6,7 @@ pub mod mutation;
 pub mod pipeline;
 
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use orbit_policy::PolicyEngine;
@@ -17,6 +17,7 @@ use serde_json::Value;
 use crate::OrbitContext;
 use crate::command::init::ensure_orbit_root_initialized;
 use crate::identity_catalog::compile_identity_block;
+use crate::paths;
 
 #[derive(Clone)]
 pub struct OrbitRuntime {
@@ -130,13 +131,7 @@ impl OrbitRuntime {
     }
 
     pub fn orbit_home_root() -> PathBuf {
-        home_dir()
-            .map(|home| home.join(".orbit"))
-            .unwrap_or_else(|| {
-                std::env::current_dir()
-                    .unwrap_or_else(|_| PathBuf::from("."))
-                    .join(".orbit")
-            })
+        paths::orbit_home_root()
     }
 }
 
@@ -219,39 +214,7 @@ fn configured_root_from_config(config_path: &Path) -> Result<Option<PathBuf>, Or
 }
 
 fn resolve_root_path_value(raw: &str, base_dir: &Path) -> Result<PathBuf, OrbitError> {
-    let value = raw.trim();
-    if value.is_empty() {
-        return Err(OrbitError::InvalidInput(
-            "root path must not be empty".to_string(),
-        ));
-    }
-    if value == "~" || value.starts_with("~/") {
-        let home = home_dir().ok_or_else(|| {
-            OrbitError::InvalidInput("cannot expand '~' because HOME is not set".to_string())
-        })?;
-        let suffix = value.trim_start_matches("~/");
-        return Ok(normalize_path_components(&home.join(suffix)));
-    }
-    let path = PathBuf::from(value);
-    if path.is_relative() {
-        return Ok(normalize_path_components(&base_dir.join(path)));
-    }
-    Ok(normalize_path_components(&path))
-}
-
-fn normalize_path_components(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        if matches!(component, Component::CurDir) {
-            continue;
-        }
-        normalized.push(component.as_os_str());
-    }
-    if normalized.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        normalized
-    }
+    paths::resolve_path_value(raw, base_dir, "root path")
 }
 
 fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
@@ -263,23 +226,16 @@ fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
     None
 }
 
-fn home_dir() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("HOME")
-        && !home.trim().is_empty()
-    {
-        return Some(PathBuf::from(home));
-    }
-    if let Ok(profile) = std::env::var("USERPROFILE")
-        && !profile.trim().is_empty()
-    {
-        return Some(PathBuf::from(profile));
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use super::resolve_initialize_data_root;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn cli_root_override_has_highest_precedence() {
@@ -294,6 +250,7 @@ mod tests {
 
     #[test]
     fn orbit_root_env_overrides_config_roots() {
+        let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path();
         let explicit = dir.path().join("env-root");
@@ -313,6 +270,7 @@ mod tests {
 
     #[test]
     fn repo_config_root_has_precedence_over_home_config() {
+        let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = dir.path().join("repo");
         let cwd = repo.join("nested");
@@ -348,6 +306,7 @@ mod tests {
 
     #[test]
     fn home_config_root_used_when_repo_config_missing() {
+        let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path();
         let orbit_home = dir.path().join("home").join(".orbit");
@@ -372,6 +331,7 @@ mod tests {
 
     #[test]
     fn home_config_root_used_when_inside_git_repo_without_repo_config() {
+        let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = dir.path().join("repo");
         let cwd = repo.join("nested");
@@ -399,6 +359,7 @@ mod tests {
 
     #[test]
     fn orbit_home_fallback_used_when_no_override_or_config() {
+        let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path();
         let orbit_home = dir.path().join("home").join(".orbit");
@@ -416,6 +377,7 @@ mod tests {
 
     #[test]
     fn configured_root_normalizes_curdir_segments() {
+        let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let orbit_home = dir.path().join("home").join(".orbit");
         std::fs::create_dir_all(&orbit_home).expect("home orbit");
