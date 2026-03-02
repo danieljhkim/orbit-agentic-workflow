@@ -2,7 +2,7 @@ use std::path::Path;
 
 use std::collections::HashSet;
 
-use orbit_types::{OrbitError, Role, Skill};
+use orbit_types::OrbitError;
 
 use crate::OrbitRuntime;
 use crate::fs_utils::write_text_with_parent;
@@ -34,25 +34,7 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 6] = [
         include_str!("../../assets/skills/orbit-track-issues/SKILL.md"),
     ),
 ];
-const ORBIT_ROOT_TOKEN: &str = "{{ORBIT_ROOT}}";
-
-pub struct SkillAddParams {
-    pub name: String,
-    pub description: Option<String>,
-    pub instructions: String,
-    pub context_files: Vec<String>,
-    pub allowed_tools: Vec<String>,
-    pub role: Role,
-}
-
-#[derive(Default)]
-pub struct SkillUpdateParams {
-    pub description: Option<Option<String>>,
-    pub instructions: Option<String>,
-    pub context_files: Option<Vec<String>>,
-    pub allowed_tools: Option<Vec<String>>,
-    pub role: Option<Role>,
-}
+use crate::paths::ORBIT_ROOT_TOKEN;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkillDoctorStatus {
@@ -133,69 +115,4 @@ impl OrbitRuntime {
         Ok(output)
     }
 
-    pub fn add_skill(&self, _params: SkillAddParams) -> Result<Skill, OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "legacy skill mutation is disabled; manage skills via .orbit/skills".to_string(),
-        ))
-    }
-
-    pub fn list_skills(&self) -> Result<Vec<Skill>, OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "legacy skill sqlite view is disabled; use `orbit skill list`".to_string(),
-        ))
-    }
-
-    pub fn show_skill(&self, _name: &str) -> Result<Skill, OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "legacy skill sqlite view is disabled; use `orbit skill show <id>`".to_string(),
-        ))
-    }
-
-    pub fn update_skill(
-        &self,
-        _name: &str,
-        _params: SkillUpdateParams,
-    ) -> Result<Skill, OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "legacy skill mutation is disabled; manage skills via .orbit/skills".to_string(),
-        ))
-    }
-
-    pub fn delete_skill(&self, _name: &str) -> Result<(), OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "legacy skill mutation is disabled; manage skills via .orbit/skills".to_string(),
-        ))
-    }
-
-    pub fn attach_skill_to_task(
-        &self,
-        _task_id: &str,
-        _skill_name: &str,
-    ) -> Result<(), OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "task-attached skill runtime is disabled; use job.skill_refs".to_string(),
-        ))
-    }
-
-    pub fn detach_skill_from_task(
-        &self,
-        _task_id: &str,
-        _skill_name: &str,
-    ) -> Result<(), OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "task-attached skill runtime is disabled; use job.skill_refs".to_string(),
-        ))
-    }
-
-    pub fn list_task_skills(&self, _task_id: &str) -> Result<Vec<Skill>, OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "task-attached skill runtime is disabled; use job.skill_refs".to_string(),
-        ))
-    }
-
-    pub fn doctor_skills(&self) -> Result<Vec<SkillDoctorResult>, OrbitError> {
-        Err(OrbitError::InvalidInput(
-            "legacy skill sqlite doctor is disabled; use `orbit skill doctor`".to_string(),
-        ))
-    }
 }

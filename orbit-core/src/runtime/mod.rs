@@ -22,7 +22,7 @@ use crate::paths;
 #[derive(Clone)]
 pub struct OrbitRuntime {
     pub(crate) context: OrbitContext,
-    pub event_bus: event_bus::EventBus,
+    pub event_log: event_bus::EventLog,
 }
 
 impl OrbitRuntime {
@@ -42,14 +42,14 @@ impl OrbitRuntime {
         let orbit_home = Self::orbit_home_root();
         Ok(Self {
             context: builder::build_context_from_data_root(data_root, &orbit_home)?,
-            event_bus: event_bus::EventBus::default(),
+            event_log: event_bus::EventLog::default(),
         })
     }
 
     pub fn in_memory() -> Result<Self, OrbitError> {
         Ok(Self {
             context: builder::build_context_in_memory()?,
-            event_bus: event_bus::EventBus::default(),
+            event_log: event_bus::EventLog::default(),
         })
     }
 
@@ -218,12 +218,7 @@ fn resolve_root_path_value(raw: &str, base_dir: &Path) -> Result<PathBuf, OrbitE
 }
 
 fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
-    for ancestor in start.ancestors() {
-        if ancestor.join(".git").exists() {
-            return Some(ancestor.to_path_buf());
-        }
-    }
-    None
+    paths::find_git_repo_root(start)
 }
 
 #[cfg(test)]

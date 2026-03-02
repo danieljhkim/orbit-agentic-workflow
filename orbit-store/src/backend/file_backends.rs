@@ -1,13 +1,12 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Job, OrbitError, Scheduler, SchedulerRun, SchedulerRunState, SchedulerScheduleState, Task,
-    TaskPriority, TaskStatus,
+    Job, OrbitError, Scheduler, SchedulerRun, SchedulerScheduleState, Task, TaskPriority,
+    TaskStatus,
 };
-use serde_json::Value;
 
 use super::contracts::{
-    JobCreateParams, JobStoreBackend, SchedulerCreateParams, SchedulerStoreBackend,
-    TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    JobCreateParams, JobStoreBackend, SchedulerCreateParams, SchedulerRunCompletionParams,
+    SchedulerStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
 };
 use crate::file::job_store::{FileWorkInsert, JobFileStore};
 use crate::file::scheduler_store::SchedulerFileStore;
@@ -190,24 +189,17 @@ impl SchedulerStoreBackend for SchedulerFileStore {
 
     fn complete_scheduler_run(
         &self,
-        run_id: &str,
-        state: SchedulerRunState,
-        finished_at: DateTime<Utc>,
-        duration_ms: Option<u64>,
-        exit_code: Option<i32>,
-        agent_response_json: Option<&Value>,
-        error_code: Option<&str>,
-        error_message: Option<&str>,
+        params: &SchedulerRunCompletionParams,
     ) -> Result<bool, OrbitError> {
         self.complete_scheduler_run(
-            run_id,
-            state,
-            finished_at,
-            duration_ms,
-            exit_code,
-            agent_response_json,
-            error_code,
-            error_message,
+            params.run_id,
+            params.state,
+            params.finished_at,
+            params.duration_ms,
+            params.exit_code,
+            params.agent_response_json,
+            params.error_code,
+            params.error_message,
         )
     }
 

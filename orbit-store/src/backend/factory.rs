@@ -9,8 +9,8 @@ use super::contracts::{
 };
 use super::sqlite_backends::{
     SqliteAgentSessionStoreBackend, SqliteAuditEventStoreBackend, SqliteAuditStoreBackend,
-    SqliteJobStoreBackend, SqliteLockStoreBackend, SqliteTaskStoreBackend, SqliteToolStoreBackend,
-    SqliteWatchStoreBackend, SqliteWorkStoreBackend,
+    SqliteJobStoreBackend, SqliteLockStoreBackend, SqliteSchedulerStoreBackend,
+    SqliteTaskStoreBackend, SqliteToolStoreBackend, SqliteWatchStoreBackend,
 };
 use crate::Store;
 use crate::file::job_store::JobFileStore;
@@ -34,7 +34,7 @@ pub fn job_store_file(root: PathBuf) -> Result<Arc<dyn JobStoreBackend>, OrbitEr
 }
 
 pub fn job_store_sqlite(store: Store) -> Arc<dyn JobStoreBackend> {
-    Arc::new(SqliteWorkStoreBackend { store })
+    Arc::new(SqliteJobStoreBackend { store })
 }
 
 pub fn scheduler_store_file(root: PathBuf) -> Result<Arc<dyn SchedulerStoreBackend>, OrbitError> {
@@ -44,7 +44,7 @@ pub fn scheduler_store_file(root: PathBuf) -> Result<Arc<dyn SchedulerStoreBacke
 }
 
 pub fn scheduler_store_sqlite(store: Store) -> Arc<dyn SchedulerStoreBackend> {
-    Arc::new(SqliteJobStoreBackend { store })
+    Arc::new(SqliteSchedulerStoreBackend { store })
 }
 
 pub fn tool_store_sqlite(store: Store) -> Arc<dyn ToolStoreBackend> {

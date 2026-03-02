@@ -1,3 +1,4 @@
+pub mod agent_session;
 pub mod audit;
 pub mod audit_event;
 pub mod error;
@@ -26,7 +27,8 @@ pub use scheduler::{
     AgentResponseEnvelope, AgentRunError, Scheduler, SchedulerRetryBackoffStrategy, SchedulerRun,
     SchedulerRunState, SchedulerScheduleState, SchedulerTargetType,
 };
-pub use skill::{AgentSession, AgentSessionStatus, AgentToolCall, Skill, TaskSkillAttachment};
+pub use agent_session::{AgentSession, AgentSessionStatus, AgentToolCall};
+pub use skill::{Skill, TaskSkillAttachment};
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 pub use watch::Watch;

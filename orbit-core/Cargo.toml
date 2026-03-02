@@ -3,6 +3,9 @@ name = "orbit-core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+clap = ["orbit-types/clap"]
+
 [dependencies]
 chrono.workspace = true
 jsonschema.workspace = true

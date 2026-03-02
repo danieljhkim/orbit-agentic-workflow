@@ -146,21 +146,7 @@ impl Execute for TaskListArgs {
             let json_tasks: Vec<Value> = tasks.iter().map(task_to_json).collect();
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else {
-            println!(
-                "{:<28} {:<12} {:<8} {:<8} {:<5} TITLE",
-                "ID", "STATUS", "PRI", "TYPE", "APPR"
-            );
-            for task in &tasks {
-                println!(
-                    "{:<28} {:<12} {:<8} {:<8} {:<5} {}",
-                    task.id,
-                    task.status,
-                    task.priority,
-                    task.task_type,
-                    yes_no(task.approved_at.is_some()),
-                    task.title
-                );
-            }
+            print_task_table(&tasks);
             Ok(())
         }
     }
@@ -427,27 +413,31 @@ impl Execute for TaskSearchArgs {
             let json_tasks: Vec<Value> = tasks.iter().map(task_to_json).collect();
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else {
-            println!(
-                "{:<28} {:<12} {:<8} {:<8} {:<5} TITLE",
-                "ID", "STATUS", "PRI", "TYPE", "APPR"
-            );
-            for task in &tasks {
-                println!(
-                    "{:<28} {:<12} {:<8} {:<8} {:<5} {}",
-                    task.id,
-                    task.status,
-                    task.priority,
-                    task.task_type,
-                    yes_no(task.approved_at.is_some()),
-                    task.title
-                );
-            }
+            print_task_table(&tasks);
             Ok(())
         }
     }
 }
 
 // --- Helpers ---
+
+fn print_task_table(tasks: &[orbit_core::Task]) {
+    println!(
+        "{:<28} {:<12} {:<8} {:<8} {:<5} TITLE",
+        "ID", "STATUS", "PRI", "TYPE", "APPR"
+    );
+    for task in tasks {
+        println!(
+            "{:<28} {:<12} {:<8} {:<8} {:<5} {}",
+            task.id,
+            task.status,
+            task.priority,
+            task.task_type,
+            yes_no(task.approved_at.is_some()),
+            task.title
+        );
+    }
+}
 
 fn task_to_json(task: &orbit_core::Task) -> Value {
     json!({
@@ -474,11 +464,7 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
 }
 
 fn parse_context_csv(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(ToString::to_string)
-        .collect()
+    crate::parse::csv_to_vec(raw)
 }
 
 fn yes_no(value: bool) -> &'static str {

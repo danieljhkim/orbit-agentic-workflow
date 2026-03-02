@@ -71,7 +71,7 @@ mod tests {
         assert_eq!(audits.len(), 1);
         assert_eq!(audits[0].event_type, "ToolExecuted");
 
-        let events = runtime.event_bus.snapshot();
+        let events = runtime.event_log.snapshot();
         assert!(matches!(
             events.first(),
             Some(OrbitEvent::ToolExecuted { name }) if name == "fs.read"

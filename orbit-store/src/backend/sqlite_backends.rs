@@ -1,15 +1,15 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
     AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Job, OrbitError,
-    OrbitEvent, Scheduler, SchedulerRun, SchedulerRunState, SchedulerScheduleState, StoredTool,
-    Task, TaskPriority, TaskStatus, Watch,
+    OrbitEvent, Scheduler, SchedulerRun, SchedulerScheduleState, StoredTool, Task, TaskPriority,
+    TaskStatus, Watch,
 };
-use serde_json::Value;
 
 use super::contracts::{
     AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, JobCreateParams,
-    JobStoreBackend, LockStoreBackend, SchedulerCreateParams, SchedulerStoreBackend,
-    TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend, WatchStoreBackend,
+    JobStoreBackend, LockStoreBackend, SchedulerCreateParams, SchedulerRunCompletionParams,
+    SchedulerStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend,
+    WatchStoreBackend,
 };
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 use crate::sqlite::scheduler_store::DueJobsClaim;
@@ -121,11 +121,11 @@ impl TaskStoreBackend for SqliteTaskStoreBackend {
 }
 
 #[derive(Clone)]
-pub(crate) struct SqliteWorkStoreBackend {
+pub(crate) struct SqliteJobStoreBackend {
     pub(crate) store: Store,
 }
 
-impl JobStoreBackend for SqliteWorkStoreBackend {
+impl JobStoreBackend for SqliteJobStoreBackend {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
         self.store.with_transaction(|tx| {
             tx.insert_work(&JobInsertParams {
@@ -157,11 +157,11 @@ impl JobStoreBackend for SqliteWorkStoreBackend {
 }
 
 #[derive(Clone)]
-pub(crate) struct SqliteJobStoreBackend {
+pub(crate) struct SqliteSchedulerStoreBackend {
     pub(crate) store: Store,
 }
 
-impl SchedulerStoreBackend for SqliteJobStoreBackend {
+impl SchedulerStoreBackend for SqliteSchedulerStoreBackend {
     fn add_scheduler(&self, params: SchedulerCreateParams) -> Result<Scheduler, OrbitError> {
         self.store.with_transaction(|tx| {
             tx.insert_job_v2(
@@ -246,25 +246,18 @@ impl SchedulerStoreBackend for SqliteJobStoreBackend {
 
     fn complete_scheduler_run(
         &self,
-        run_id: &str,
-        state: SchedulerRunState,
-        finished_at: DateTime<Utc>,
-        duration_ms: Option<u64>,
-        exit_code: Option<i32>,
-        agent_response_json: Option<&Value>,
-        error_code: Option<&str>,
-        error_message: Option<&str>,
+        params: &SchedulerRunCompletionParams,
     ) -> Result<bool, OrbitError> {
         self.store.with_transaction(|tx| {
             tx.complete_scheduler_run(
-                run_id,
-                state,
-                finished_at,
-                duration_ms,
-                exit_code,
-                agent_response_json,
-                error_code,
-                error_message,
+                params.run_id,
+                params.state,
+                params.finished_at,
+                params.duration_ms,
+                params.exit_code,
+                params.agent_response_json,
+                params.error_code,
+                params.error_message,
             )
         })
     }

@@ -12,7 +12,7 @@ const DEFAULT_JOB_FILES: [(&str, &str); 1] = [(
     "approve-task-leader",
     include_str!("../../assets/jobs/approve-task-leader.yaml"),
 )];
-const ORBIT_ROOT_TOKEN: &str = "{{ORBIT_ROOT}}";
+use crate::paths::ORBIT_ROOT_TOKEN;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

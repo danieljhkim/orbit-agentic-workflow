@@ -129,19 +129,23 @@ pub trait SchedulerStoreBackend: Send + Sync {
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError>;
-    #[allow(clippy::too_many_arguments)]
     fn complete_scheduler_run(
         &self,
-        run_id: &str,
-        state: SchedulerRunState,
-        finished_at: DateTime<Utc>,
-        duration_ms: Option<u64>,
-        exit_code: Option<i32>,
-        agent_response_json: Option<&Value>,
-        error_code: Option<&str>,
-        error_message: Option<&str>,
+        params: &SchedulerRunCompletionParams,
     ) -> Result<bool, OrbitError>;
     fn claim_due_schedulers(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError>;
+}
+
+#[derive(Debug, Clone)]
+pub struct SchedulerRunCompletionParams<'a> {
+    pub run_id: &'a str,
+    pub state: SchedulerRunState,
+    pub finished_at: DateTime<Utc>,
+    pub duration_ms: Option<u64>,
+    pub exit_code: Option<i32>,
+    pub agent_response_json: Option<&'a Value>,
+    pub error_code: Option<&'a str>,
+    pub error_message: Option<&'a str>,
 }
 
 pub trait ToolStoreBackend: Send + Sync {

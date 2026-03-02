@@ -190,11 +190,7 @@ fn parse_optional_json_object(raw: Option<&str>, field: &str) -> Result<Value, O
 }
 
 fn parse_csv(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(ToString::to_string)
-        .collect()
+    crate::parse::csv_to_vec(raw)
 }
 
 fn job_to_json(spec: &Job) -> Value {

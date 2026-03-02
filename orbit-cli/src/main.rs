@@ -1,6 +1,7 @@
 mod audit_middleware;
 mod command;
 mod output;
+mod parse;
 
 use clap::Parser;
 use orbit_core::OrbitRuntime;

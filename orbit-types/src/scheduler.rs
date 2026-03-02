@@ -2,16 +2,16 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::OrbitId;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum SchedulerTargetType {
-    #[value(name = "job", alias = "job")]
+    #[cfg_attr(feature = "clap", value(name = "job", alias = "job"))]
     Job,
 }
 
@@ -34,7 +34,8 @@ impl FromStr for SchedulerTargetType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum SchedulerScheduleState {
     Enabled,
@@ -65,7 +66,8 @@ impl FromStr for SchedulerScheduleState {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum SchedulerRetryBackoffStrategy {
     None,
@@ -96,7 +98,8 @@ impl FromStr for SchedulerRetryBackoffStrategy {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum SchedulerRunState {
     Pending,

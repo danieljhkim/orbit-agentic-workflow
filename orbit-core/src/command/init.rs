@@ -132,12 +132,7 @@ fn resolve_init_target_from_root(orbit_root: &Path) -> Result<InitTarget, OrbitE
 }
 
 fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
-    for ancestor in start.ancestors() {
-        if ancestor.join(".git").exists() {
-            return Some(ancestor.to_path_buf());
-        }
-    }
-    None
+    crate::paths::find_git_repo_root(start)
 }
 
 fn ensure_skill_links(

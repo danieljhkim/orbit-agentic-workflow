@@ -2,6 +2,8 @@ use std::path::{Component, Path, PathBuf};
 
 use orbit_types::OrbitError;
 
+pub(crate) const ORBIT_ROOT_TOKEN: &str = "{{ORBIT_ROOT}}";
+
 pub(crate) fn home_dir() -> Option<PathBuf> {
     if let Ok(home) = std::env::var("HOME")
         && !home.trim().is_empty()
@@ -96,6 +98,15 @@ pub(crate) fn resolve_path_value(
         return Ok(normalize_path_components(&base_dir.join(path)));
     }
     Ok(normalize_path_components(&path))
+}
+
+pub(crate) fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
+    for ancestor in start.ancestors() {
+        if ancestor.join(".git").exists() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
 }
 
 pub(crate) fn normalize_path_components(path: &Path) -> PathBuf {

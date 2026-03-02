@@ -1,5 +1,1 @@
-use orbit_types::OrbitEvent;
-
-pub(crate) fn normalize_event(event: OrbitEvent) -> OrbitEvent {
-    event
-}
+// Intentionally empty - audit normalization hooks can be added here if needed.

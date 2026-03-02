@@ -3,12 +3,12 @@ use std::sync::{Arc, Mutex};
 use orbit_types::OrbitEvent;
 
 #[derive(Clone, Default)]
-pub struct EventBus {
+pub struct EventLog {
     events: Arc<Mutex<Vec<OrbitEvent>>>,
 }
 
-impl EventBus {
-    pub fn publish(&self, event: OrbitEvent) {
+impl EventLog {
+    pub fn append(&self, event: OrbitEvent) {
         if let Ok(mut events) = self.events.lock() {
             events.push(event);
         }

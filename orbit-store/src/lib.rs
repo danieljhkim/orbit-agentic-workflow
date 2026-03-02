@@ -14,8 +14,9 @@ use chrono::{DateTime, Utc};
 
 pub use backend::{
     AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, JobCreateParams,
-    JobStoreBackend, LockStoreBackend, SchedulerCreateParams, SchedulerStoreBackend,
-    TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend, WatchStoreBackend,
+    JobStoreBackend, LockStoreBackend, SchedulerCreateParams, SchedulerRunCompletionParams,
+    SchedulerStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend,
+    WatchStoreBackend,
     agent_session_store_sqlite, audit_event_store_sqlite, audit_store_sqlite, job_store_file,
     job_store_sqlite, lock_store_sqlite, scheduler_store_file, scheduler_store_sqlite,
     task_store_file, task_store_sqlite, tool_store_sqlite, watch_store_sqlite,

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
 use orbit_store::SchedulerCreateParams as StoreJobCreateParams;
+use orbit_store::SchedulerRunCompletionParams;
 use orbit_types::{
     AgentResponseEnvelope, OrbitError, OrbitEvent, Scheduler, SchedulerRetryBackoffStrategy,
     SchedulerRun, SchedulerRunState, SchedulerScheduleState, SchedulerTargetType,
@@ -252,14 +253,16 @@ impl OrbitRuntime {
             let finished_at = Utc::now();
 
             let changed = self.complete_scheduler_run_backend(
-                &run.run_id,
-                outcome.state,
-                finished_at,
-                outcome.duration_ms,
-                outcome.exit_code,
-                outcome.response_json.as_ref(),
-                outcome.error_code.as_deref(),
-                outcome.error_message.as_deref(),
+                &SchedulerRunCompletionParams {
+                    run_id: &run.run_id,
+                    state: outcome.state,
+                    finished_at,
+                    duration_ms: outcome.duration_ms,
+                    exit_code: outcome.exit_code,
+                    agent_response_json: outcome.response_json.as_ref(),
+                    error_code: outcome.error_code.as_deref(),
+                    error_message: outcome.error_message.as_deref(),
+                },
             )?;
             if !changed {
                 return Err(OrbitError::SchedulerRunNotFound(run.run_id.clone()));
@@ -369,14 +372,16 @@ impl OrbitRuntime {
         );
 
         let changed = self.complete_scheduler_run_backend(
-            &active_run.run_id,
-            SchedulerRunState::Failed,
-            now,
-            duration_ms,
-            Some(1),
-            None,
-            Some(AGENT_INVOCATION_FAILED),
-            Some(&message),
+            &SchedulerRunCompletionParams {
+                run_id: &active_run.run_id,
+                state: SchedulerRunState::Failed,
+                finished_at: now,
+                duration_ms,
+                exit_code: Some(1),
+                agent_response_json: None,
+                error_code: Some(AGENT_INVOCATION_FAILED),
+                error_message: Some(&message),
+            },
         )?;
         if !changed {
             return Err(OrbitError::SchedulerRunNotFound(active_run.run_id.clone()));
@@ -671,28 +676,11 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             .mark_scheduler_run_running(run_id, started_at)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn complete_scheduler_run_backend(
         &self,
-        run_id: &str,
-        state: SchedulerRunState,
-        finished_at: DateTime<Utc>,
-        duration_ms: Option<u64>,
-        exit_code: Option<i32>,
-        agent_response_json: Option<&Value>,
-        error_code: Option<&str>,
-        error_message: Option<&str>,
+        params: &SchedulerRunCompletionParams,
     ) -> Result<bool, OrbitError> {
-        self.context.scheduler_store.complete_scheduler_run(
-            run_id,
-            state,
-            finished_at,
-            duration_ms,
-            exit_code,
-            agent_response_json,
-            error_code,
-            error_message,
-        )
+        self.context.scheduler_store.complete_scheduler_run(params)
     }
 
     fn update_job_next_run_backend(

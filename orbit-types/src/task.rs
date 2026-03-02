@@ -2,12 +2,12 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::OrbitId;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Todo,
@@ -45,7 +45,8 @@ impl FromStr for TaskStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskPriority {
     Low,
@@ -80,12 +81,13 @@ impl FromStr for TaskPriority {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
     Task,
     Feature,
-    #[value(alias = "bug")]
+    #[cfg_attr(feature = "clap", value(alias = "bug"))]
     Issue,
     Other,
 }
