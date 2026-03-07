@@ -9,6 +9,8 @@ pub struct Job {
     pub id: OrbitId,
     pub spec_type: String,
     pub description: String,
+    #[serde(default)]
+    pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
     pub artifact_path_template: Option<String>,

@@ -115,6 +115,7 @@ mod tests {
                 id: "spec-core-double-run".to_string(),
                 spec_type: "analysis".to_string(),
                 description: "spec for scheduler test".to_string(),
+                instruction: String::new(),
                 input_schema_json: json!({}),
                 output_schema_json: json!({}),
                 artifact_path_template: None,

@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     description TEXT NOT NULL,
+    instruction TEXT NOT NULL DEFAULT '',
     input_schema_json TEXT NOT NULL,
     output_schema_json TEXT NOT NULL,
     artifact_path_template TEXT,

@@ -39,6 +39,8 @@ fn job_add_show_list_delete_json_flow() {
             "analysis",
             "--description",
             "CLI job test",
+            "--instruction",
+            "Inspect repository metrics and summarize them.",
             "--input-schema",
             "{\"type\":\"object\"}",
             "--output-schema",
@@ -60,6 +62,10 @@ fn job_add_show_list_delete_json_flow() {
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["id"], "spec-cli-1");
     assert_eq!(show["type"], "analysis");
+    assert_eq!(
+        show["instruction"],
+        "Inspect repository metrics and summarize them."
+    );
     assert_eq!(show["is_active"], true);
 
     let list_output = orbit_in(dir.path())
@@ -127,6 +133,7 @@ fn job_add_defaults_type_and_schemas_when_omitted() {
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["id"], "spec-cli-defaults");
     assert_eq!(show["type"], "general");
+    assert_eq!(show["instruction"], "");
     assert_eq!(show["input_schema_json"], serde_json::json!({}));
     assert_eq!(show["output_schema_json"], serde_json::json!({}));
 }

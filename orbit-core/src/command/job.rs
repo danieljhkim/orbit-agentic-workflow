@@ -20,6 +20,8 @@ pub struct JobAddParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
+    #[serde(default)]
+    pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
     pub artifact_path_template: Option<String>,
@@ -51,6 +53,7 @@ impl OrbitRuntime {
             id: params.id,
             spec_type: params.spec_type,
             description: params.description,
+            instruction: params.instruction,
             input_schema_json: params.input_schema_json,
             output_schema_json: params.output_schema_json,
             artifact_path_template: params.artifact_path_template,

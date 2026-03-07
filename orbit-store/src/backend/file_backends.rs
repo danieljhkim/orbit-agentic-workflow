@@ -90,6 +90,7 @@ impl JobStoreBackend for JobFileStore {
             id: params.id,
             spec_type: params.spec_type,
             description: params.description,
+            instruction: params.instruction,
             input_schema_json: params.input_schema_json,
             output_schema_json: params.output_schema_json,
             artifact_path_template: params.artifact_path_template,

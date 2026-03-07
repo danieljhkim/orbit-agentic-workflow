@@ -1,6 +1,7 @@
 id: approve-task-leader
 specType: task_approval
 description: Leader review and delegated task approval workflow
+instruction: Review the proposed task approval payload and return a decision with any supporting note.
 inputSchemaJson:
   type: object
   required:

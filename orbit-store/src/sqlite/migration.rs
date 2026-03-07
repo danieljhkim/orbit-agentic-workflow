@@ -659,6 +659,7 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
                 id TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
                 description TEXT NOT NULL,
+                instruction TEXT NOT NULL DEFAULT '',
                 input_schema_json TEXT NOT NULL,
                 output_schema_json TEXT NOT NULL,
                 artifact_path_template TEXT,
@@ -682,6 +683,10 @@ fn ensure_execution_targets_schema(conn: &Connection) -> Result<(), OrbitError> 
     add_column_if_missing(conn, "ALTER TABLE jobs ADD COLUMN identity_id TEXT")?;
     add_column_if_missing(conn, "ALTER TABLE jobs ADD COLUMN assigned_to TEXT")?;
     add_column_if_missing(conn, "ALTER TABLE jobs ADD COLUMN created_by TEXT")?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE jobs ADD COLUMN instruction TEXT NOT NULL DEFAULT ''",
+    )?;
     Ok(())
 }
 
@@ -777,11 +782,11 @@ fn migrate_legacy_work_rows(conn: &Connection) -> Result<(), OrbitError> {
 
         let sql = format!(
             "INSERT OR IGNORE INTO jobs(
-                id, type, description, input_schema_json, output_schema_json,
+                id, type, description, instruction, input_schema_json, output_schema_json,
                 artifact_path_template, skill_refs_json, identity_id, assigned_to, created_by, is_active, created_at, updated_at
             )
             SELECT
-                id, type, description, input_schema_json, output_schema_json,
+                id, type, description, '', input_schema_json, output_schema_json,
                 artifact_path_template, skill_refs_json, NULL, NULL, NULL, is_active, created_at, updated_at
             FROM {table}"
         );

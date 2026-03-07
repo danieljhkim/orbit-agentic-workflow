@@ -147,6 +147,7 @@ mod tests {
             id: "exec-1".to_string(),
             spec_type: "analysis".to_string(),
             description: "Analyze repository".to_string(),
+            instruction: "Summarize the repository health.".to_string(),
             input_schema_json: serde_json::json!({
                 "type": "object",
                 "properties": { "path": { "type": "string" } }
@@ -166,6 +167,7 @@ mod tests {
         };
         let spec_json = serde_json::to_value(spec).expect("serialize spec");
         assert_eq!(spec_json["spec_type"], "analysis");
+        assert_eq!(spec_json["instruction"], "Summarize the repository health.");
         assert_eq!(spec_json["is_active"], true);
     }
 

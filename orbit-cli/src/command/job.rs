@@ -44,6 +44,8 @@ pub struct JobAddArgs {
     pub spec_type: String,
     #[arg(long)]
     pub description: String,
+    #[arg(long, default_value = "")]
+    pub instruction: String,
     #[arg(long)]
     pub input_schema: Option<String>,
     #[arg(long)]
@@ -74,6 +76,7 @@ impl Execute for JobAddArgs {
             id: self.id,
             spec_type: self.spec_type,
             description: self.description,
+            instruction: self.instruction,
             input_schema_json,
             output_schema_json,
             artifact_path_template: self.artifact_path_template,
@@ -135,6 +138,9 @@ impl Execute for JobShowArgs {
             println!("ID:                  {}", spec.id);
             println!("Type:                {}", spec.spec_type);
             println!("Description:         {}", spec.description);
+            if !spec.instruction.is_empty() {
+                println!("Instruction:         {}", spec.instruction);
+            }
             println!(
                 "Artifact Template:   {}",
                 spec.artifact_path_template.unwrap_or_default()
@@ -198,6 +204,7 @@ fn job_to_json(spec: &Job) -> Value {
         "id": spec.id,
         "type": spec.spec_type,
         "description": spec.description,
+        "instruction": spec.instruction,
         "input_schema_json": spec.input_schema_json,
         "output_schema_json": spec.output_schema_json,
         "artifact_path_template": spec.artifact_path_template,

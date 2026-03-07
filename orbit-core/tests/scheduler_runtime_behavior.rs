@@ -21,6 +21,7 @@ fn add_job(runtime: &OrbitRuntime, id: &str) {
             id: id.to_string(),
             spec_type: "analysis".to_string(),
             description: "runtime test spec".to_string(),
+            instruction: "Run the scheduled runtime behavior test.".to_string(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
             artifact_path_template: None,
@@ -41,6 +42,7 @@ fn add_job_rejects_missing_skill_ref() {
         id: "spec-missing-skill".to_string(),
         spec_type: "analysis".to_string(),
         description: "missing skill".to_string(),
+        instruction: String::new(),
         input_schema_json: json!({}),
         output_schema_json: json!({}),
         artifact_path_template: None,
@@ -155,6 +157,7 @@ fn scheduled_run_executes_agent_and_records_success_run() {
     assert!(stdin_raw.contains("\"skills\""));
     assert!(stdin_raw.contains("\"input\""));
     assert!(stdin_raw.contains("\"memory\""));
+    assert!(stdin_raw.contains("\"instruction\":\"Run the scheduled runtime behavior test.\""));
 }
 
 #[test]
@@ -688,6 +691,7 @@ Validate output shape.
             id: "spec-schema".to_string(),
             spec_type: "analysis".to_string(),
             description: "schema validation".to_string(),
+            instruction: String::new(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
             artifact_path_template: None,
@@ -786,6 +790,7 @@ Validate advanced schema behavior.
             id: "spec-complex-schema".to_string(),
             spec_type: "analysis".to_string(),
             description: "schema validation".to_string(),
+            instruction: String::new(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
             artifact_path_template: None,

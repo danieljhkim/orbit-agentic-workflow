@@ -118,6 +118,7 @@ impl JobStoreBackend for SqliteJobStoreBackend {
                 id: params.id.clone(),
                 spec_type: params.spec_type.clone(),
                 description: params.description.clone(),
+                instruction: params.instruction.clone(),
                 input_schema_json: params.input_schema_json.clone(),
                 output_schema_json: params.output_schema_json.clone(),
                 artifact_path_template: params.artifact_path_template.clone(),

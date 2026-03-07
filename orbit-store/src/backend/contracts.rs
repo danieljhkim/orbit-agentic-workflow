@@ -55,6 +55,7 @@ pub struct JobCreateParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
+    pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
     pub artifact_path_template: Option<String>,

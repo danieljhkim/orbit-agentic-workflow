@@ -554,6 +554,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     "id": job.id,
                     "type": job.spec_type,
                     "description": job.description,
+                    "instruction": job.instruction,
                     "input_schema_json": job.input_schema_json,
                     "output_schema_json": job.output_schema_json,
                     "artifact_path_template": job.artifact_path_template,
