@@ -1,0 +1,50 @@
+---
+name: orbit-skills
+description: Use when starting any Orbit-related work. This skill explains the Orbit task lifecycle, how skills fit into that lifecycle, and which Orbit skill to use for task creation, approval, execution, issue tracking, maintenance, and assessment.
+---
+
+# Orbit Skills
+
+## Purpose
+
+Use this skill to choose the right Orbit skill for the current job. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
+
+## Orbit Lifecycle Overview
+
+Default task lifecycle:
+
+```text
+proposed -> backlog -> in_progress -> review -> done
+```
+
+Use `blocked` when execution cannot safely continue. Use `orbit task` commands for lifecycle mutations; do not edit task backing files directly.
+
+## Skill Selection Guide
+
+- `orbit-create-task`: Create a new Orbit task with a concrete description, plan, scope, context, and verification steps.
+- `orbit-manage-tasks`: Update, search, show, approve, or archive existing tasks through canonical `orbit task` workflows.
+- `orbit-approve-task`: Record explicit human approval at lifecycle gates (`proposed -> backlog`, `review -> done`).
+- `orbit-execute-change-request`: Carry a human-requested change or existing task through implementation, validation, and execution summary.
+- `orbit-track-issues`: Capture newly discovered bugs, risks, or regressions as Orbit issue tasks and avoid duplicates.
+- `orbit-maintain-system`: Perform explicitly requested low-risk maintenance and track every issue found.
+- `orbit-assess-codebase`: Produce a structured codebase assessment and route findings into issue tracking.
+
+## Typical End-to-End Flow
+
+1. Start with `orbit-create-task`.
+2. Obtain approval with `orbit-approve-task` if the task is in `proposed`.
+3. Execute via `orbit-execute-change-request`.
+4. Use `orbit-approve-task` again when review is accepted.
+5. Use `orbit-manage-tasks` for follow-up lifecycle operations such as archive.
+
+## Decision Heuristics
+
+- Planning new work: `orbit-create-task`
+- Changing task state or searching tasks: `orbit-manage-tasks`
+- Recording explicit approval: `orbit-approve-task`
+- Implementing a requested change under Orbit discipline: `orbit-execute-change-request`
+- Capturing a defect or risk: `orbit-track-issues`
+- Performing safe upkeep: `orbit-maintain-system`
+- Running a broad evaluation: `orbit-assess-codebase`
+
+When multiple skills apply, start with the skill for the current lifecycle step, then hand off to the next one as the task advances.

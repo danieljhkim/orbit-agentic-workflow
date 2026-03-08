@@ -7,61 +7,39 @@ description: Use this when executing human-initiated code change or existing orb
 
 ## Purpose
 
-Handle human-initiated engineering changes or an existing orbit task (feature, refactor, improvement, issue) from intent to verified implementation, with explicit task lifecycle tracking in `orbit task`.
-
----
-
-## Inputs
-
-- Natural-language change request
-- Constraints (scope, files, deadlines), if any
-- Repository workspace
-- Priority/type hints, if any
-- Actor identity metadata (display name), if available
-
----
+Handle a human-requested engineering change or existing Orbit task from intent to verified implementation, with explicit task lifecycle tracking in `orbit task`.
 
 ## Responsibilities
 
 1. Clarify intent and success criteria.
-2. Create or link the tracking task in Orbit - if creating, refer to `orbit-create-task` skill.
-3. Obtain/record approval before execution (if task is in `proposed` status). If approval cannot be obtained right away, your job is done for now.
-4. Implement the requested change and validate, as outlined in `{{ORBIT_ROOT}}/tasks/<current-status>/<task-id>/plan.md`
-5. Once the task is completed,
-6. Persist the execution summary in the linked task bundle.
+2. Create or link the tracking task in Orbit. If creating, use `orbit-create-task`.
+3. Ensure `proposed` work is explicitly approved before execution.
+4. Move `backlog -> in_progress` before making changes.
+5. Implement and validate the change according to the task plan.
+6. Move `in_progress -> review` after validation.
+7. Persist the execution summary in the linked task bundle.
 
----
+Use `orbit-manage-tasks` for canonical CLI mutation and verification details.
 
-## Required Task Lifecycle
+## Lifecycle Rules
 
-For the canonical `orbit task` CLI workflows (update/search/approve/archive), refer to the `orbit-manage-tasks` skill. It defines required attribution fields and post-mutation verification.
-
-Manage a SINGLE Orbit task per change request:
-
-1. Create task at start, if task is not already created.
-2. If any doubt remains, ask clarifying questions and record them in the task comments.
-3. Ensure task is approved before implementation (if `proposed`). If approval cannot be obtained right away, your job is done for now.
-4. Update task status (from `backlog`) to `in_progress` before execution.
-5. Once change is completed, update the status from `in_progress` to `review`
-
-Do not skip lifecycle updates.
-
----
+- Manage a single Orbit task per change request.
+- If material ambiguity remains, ask clarifying questions before implementation.
+- If approval cannot be obtained for `proposed` work, stop after recording that state.
+- Do not skip lifecycle updates.
 
 ## Output
 
+Persist the summary at:
 
-Persist the execution summary markdown in the linked task bundle at:
-
-```
+```text
 {{ORBIT_ROOT}}/tasks/<current-status>/<task-id>/execution-summary.md
 ```
 
-Return output as markdown, using this structure:
+Use this structure:
 
 ```markdown
 # Execution Summary - <Change Request Title>
-
 Agent Name: <agent name>
 Agent Model: <model name>
 
@@ -72,44 +50,27 @@ success | failed
 Task ID: <orbit-task-id>
 
 ## 1. Summary of Changes
-High-level description of what was implemented and how the system evolved.
-
+<what changed>
 ## 2. Strategic Decisions
-- Decision:
-  - Rationale:
-  - Trade-offs:
-
+- <decision> | Rationale: <why> | Trade-offs: <trade-offs>
 ## 3. Assumptions Made
-- Assumption:
-  - Impact if incorrect:
-
+- <assumption> | Impact if incorrect: <impact>
 ## 4. Design Weaknesses / Risks
-- Weakness:
-  - Severity: Low / Medium / High
-  - Mitigation:
-
+- <risk> | Severity: Low / Medium / High | Mitigation: <mitigation>
 ## 5. Deviations from Original Plan
-- Deviation:
-  - Justification:
-
-## 6. Technical Debt Introduced (if any)
-- Item:
-  - Recommended Resolution:
-
+- <deviation> | Justification: <why>
+## 6. Technical Debt Introduced
+- <item> | Recommended resolution: <next step>
 ## 7. Recommended Follow-Ups
-- Concrete next step(s), if applicable.
-
+- <next step>
 ## 8. Overall Assessment
-Short evaluation of execution quality (alignment, discipline, robustness).
+<short quality assessment>
 ```
-
----
 
 ## Exit Criteria
 
 - Requested change implemented
 - Validation completed
-- Task approved before execution (if required)
-- Task updated with execution comments
-- Task archived when successful
-- Markdown summary written to the linked task bundle's `execution-summary.md`
+- Task approved before execution, if required
+- Task advanced through `review`
+- Summary written to `execution-summary.md`

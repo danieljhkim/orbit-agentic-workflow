@@ -45,6 +45,12 @@ fn init_creates_default_identities_under_home_orbit() {
     let skills_root = home.path().join(".orbit").join("skills");
     assert!(
         skills_root
+            .join("orbit-create-task")
+            .join("SKILL.md")
+            .exists()
+    );
+    assert!(
+        skills_root
             .join("orbit-approve-task")
             .join("SKILL.md")
             .exists()
@@ -74,6 +80,9 @@ fn init_creates_default_identities_under_home_orbit() {
             .exists()
     );
     assert!(
+        skills_root.join("orbit-skills").join("SKILL.md").exists()
+    );
+    assert!(
         skills_root
             .join("orbit-track-issues")
             .join("SKILL.md")
@@ -90,11 +99,13 @@ fn init_creates_default_identities_under_home_orbit() {
     let root_meta = std::fs::symlink_metadata(&skills_link_root).expect("skills link dir metadata");
     assert!(root_meta.file_type().is_dir());
     for skill_id in [
+        "orbit-create-task",
         "orbit-approve-task",
         "orbit-assess-codebase",
         "orbit-execute-change-request",
         "orbit-maintain-system",
         "orbit-manage-tasks",
+        "orbit-skills",
         "orbit-track-issues",
     ] {
         let link_path = skills_link_root.join(skill_id);

@@ -7,60 +7,47 @@ description: Use this skill when requested to review Orbit tasks for approval, r
 
 ## Purpose
 
-Provide a deterministic, auditable approval workflow for Orbit tasks at lifecycle gates (proposal approval and review approval).
+Use this skill to record explicit human approval or after you have completed the review of an orbit task. 
 
-## Task Lifecycle Gates
+## Approval Gates
 
-The `orbit task approve` command auto-detects the current task status:
+The `orbit task approve` command auto-detects the current status:
 
-- **Proposed → Backlog**: Sets `proposal_approved_by` and `proposal_decision_note`, moves task to `backlog`.
-- **Review → Done**: Sets `review_approved_by` and `review_decision_note`, moves task to `done`.
+- `proposed -> backlog`: sets `proposal_approved_by` and `proposal_decision_note`
+- `review -> done`: sets `review_approved_by` and `review_decision_note`
 
-## Task Commands
+Use `orbit-manage-tasks` for general CLI workflows; this skill covers approval-specific checks.
 
-For canonical `orbit task` CLI workflows (show/approve/update/verify), refer to the `orbit-manage-tasks` skill.
+## Workflow
 
-This skill's approval-specific verification expectations:
+1. Confirm you have the correct task ID and scope.
+2. Confirm the task is in `proposed` or `review`.
+3. Confirm approval is explicit, not inferred.
+4. Approve with explicit approver identity and a meaningful note.
+5. Verify the approval fields and resulting status.
 
-- task identity and scope are correct
-- current status is `proposed` or `review` (the two approvable states)
-- approval fields are missing before approval, or present after approval
+## Verification Rules
 
-Expected after proposal approval:
-
-- `proposal_approved_by` matches requested approver
-- `proposal_decision_note` matches note (if provided)
-- status is `backlog`
-
-Expected after review approval:
-
-- `review_approved_by` matches requested approver
-- `review_decision_note` matches note (if provided)
-- status is `done`
-
-## Standard Workflow
-
-### A) Explicit Human Approval
-
-1. Inspect and confirm you have the correct task ID.
-2. Approve with explicit approver identity and a meaningful note.
-3. Verify approval metadata (`proposal_approved_by`/`review_approved_by` and corresponding note).
+- Before approval: identity, scope, and current status are correct.
+- After proposal approval: status is `backlog`.
+- After review approval: status is `done`.
+- After approval: approver and note match the requested values.
 
 ## Output Requirements
 
-After approval actions, report:
+Report:
 
 - action taken (`proposal approved` or `review approved`)
 - task ID
 - approver identity used
-- approval note (if set)
-- verification status (approval fields present or reason not approved)
+- approval note, if any
+- verification result
 
-Keep output operational, concise, and auditable.
+Keep output concise, operational, and auditable.
 
 ## Safety Rules
 
-- Never approve the wrong task ID; always verify before mutation.
-- Do not infer approval from ambiguity; require explicit confirmation.
+- Never approve the wrong task ID.
+- Never infer approval from ambiguity.
 - Prefer explicit `orbit task approve` over implicit pathways.
-- Record meaningful notes for future auditability.
+- Record meaningful notes for auditability.

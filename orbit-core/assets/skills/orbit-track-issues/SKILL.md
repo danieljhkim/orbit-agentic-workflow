@@ -5,40 +5,32 @@ description: Use this skill when issues are identified by agents or humans. All 
 
 # Track Issues
 
-Use this skill to evaluate and maintain issue lifecycle discipline while synchronizing each issue with an Orbit task.
+## Purpose
 
-Ensure:
+Use this skill to maintain issue lifecycle discipline while synchronizing each issue with an Orbit task.
 
-- No pre-existing pending orbit issue already covers the same concern.
-- The issue is clearly defined
-- The implementation aligns with issue intent
-- Status fields reflect reality
-- Risks and assumptions are documented
-- Next actions are explicit
-- Lifecycle state is disciplined
+## Rules
 
-This skill does not implement product changes; it performs governance and tracking updates.
-
----
+- No pre-existing pending Orbit issue should already cover the same concern.
+- The issue must be clearly defined.
+- Impact, risks, and next actions must be explicit.
+- Lifecycle state must reflect reality.
+- This skill tracks issues; it does not implement product changes.
 
 ## Orbit Task Contract
 
-Create and manage Orbit tasks directly with `orbit task` commands.
+Create and manage issue tasks with `orbit task` commands.
 
-Requirements:
+- Every identified issue must have one Orbit task with `--type issue`.
+- The task description must state the problem and impact.
+- The task plan or instructions must include concrete recommended next actions.
+- Assign priority by risk: `low`, `medium`, or `high`.
 
-- Every identified issue MUST have one Orbit task with `--type issue`.
-- Task description MUST include description of the problem and the impact.
-- Task instruction MUST include concrete steps to your recommended next actions
-- Assign task priority based on the risk level assessment - `low`, `medium`, `high`
-
-For canonical `orbit task add` instruction, refer to the `orbit-create-task` skill.
-
----
+Use `orbit-create-task` for canonical task creation details.
 
 ## Completion Standard
 
 Tracking is complete when:
 
 - No duplicate Orbit issue task exists for the same concern.
-- Orbit issue task is created aligned to the orbit task contract.
+- The Orbit issue task matches the issue-tracking contract.

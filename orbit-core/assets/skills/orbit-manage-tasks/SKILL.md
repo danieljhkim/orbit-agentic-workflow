@@ -7,17 +7,15 @@ description: Must use this skill when updating, searching, or archiving orbit ta
 
 ## Purpose
 
-Provide a deterministic, auditable workflow to update, search, and archive Orbit tasks via the `orbit task` CLI, with explicit ID resolution and post-mutation verification.
+Provide a deterministic, auditable workflow to update, search, approve, show, and archive Orbit tasks via the `orbit task` CLI.
 
 ## Scope
 
 In scope:
-- Update: `orbit task update`
-- Search: `orbit task search`
-- Archive: `orbit task archive`
-- Approve: `orbit task approve`
-
-Supporting commands:
+- `orbit task update`
+- `orbit task search`
+- `orbit task archive`
+- `orbit task approve`
 - `orbit task show <id>`
 - `orbit task list`
 
@@ -27,31 +25,25 @@ Out of scope unless explicitly requested:
 
 ## Task Lifecycle
 
-Tasks follow a linear lifecycle:
-
-```
-proposed → backlog → in_progress → review → done
+```text
+proposed -> backlog -> in_progress -> review -> done
 ```
 
-Any status can transition to `blocked`. If you have a task at hand that is in `in_progress`, and blocked from execution, transition it to `blocked`. 
-
+Any status may move to `blocked` when execution cannot safely continue.
 
 ## Operating Rules
 
-- Use `orbit task` commands only. Do not edit backing files directly.
-- Never invent task IDs. Resolve IDs from command output or search/list results.
-- Use explicit flags for each requested change.
-- After update/archive, verify with `orbit task show <id>`.
-- Prefer `--json` for machine-readable output in automation/debug flows.
-- Avoid destructive operations unless the user explicitly asks.
-- If any attribution field is missing on an existing task, backfill via `orbit task update`.
-- File-backed tasks persist as task bundles at `{{ORBIT_ROOT}}/tasks/<status>/<task_id>/`.
-- Use `execution-summary.md` for the canonical task execution summary. Store any additional task-owned markdown or reports under `artifacts/`.
-
+- Use `orbit task` commands only; do not edit task files directly.
+- Never invent task IDs; resolve them from search/list/show output.
+- Use explicit flags for every requested change.
+- Verify mutations with `orbit task show <id>`.
+- Prefer `--json` for machine-readable flows.
+- Avoid destructive operations unless explicitly requested.
+- Backfill missing attribution fields when needed.
+- Task bundles live at `{{ORBIT_ROOT}}/tasks/<status>/<task_id>/`.
+- Use `execution-summary.md` for canonical execution summaries; store other task-owned artifacts under `artifacts/`.
 
 ## Command Reference
-
-### Update
 
 ```bash
 orbit task update <id> \
@@ -60,39 +52,20 @@ orbit task update <id> \
   --status <proposed|backlog|in-progress|review|done|blocked> \
   --branch "<branch_name>" \
   --pr-number "<pr_number>"
-```
-
-### Search
-
-```bash
 orbit task search "<query>" --json
-```
-
-### Archive
-
-```bash
 orbit task archive <id>
-```
-
-### Approve
-
-```bash
 orbit task approve <id> --by "<approver>" --note "<note>"
+orbit task show <id>
+orbit task list
 ```
-
-## Standard Workflows
-
-1. Create Task 
-2. Update Task
-3. Search Tasks
-4. Archive Task
 
 ## Response Contract
 
-After executing commands, respond with:
-- Action performed (`created`, `updated`, `completed`, `blocked`, `approved`)
-- Task ID(s)
-- Important fields changed or confirmed
-- Any failure with concrete next-step remediation
+After task commands, report:
+
+- action performed (`updated`, `completed`, `blocked`, `approved`, `archived`, `found`)
+- task ID(s)
+- important fields changed or confirmed
+- any failure and the next remediation step
 
 Keep responses concise, operational, and user-safe.
