@@ -73,14 +73,14 @@ fn task_add_creates_bundle_layout() {
     let task_dir = task_dir(dir.path(), &id);
 
     assert!(task_dir.join("task.yaml").exists());
-    assert!(task_dir.join("description.md").exists());
+    assert!(!task_dir.join("description.md").exists());
     assert!(task_dir.join("instructions.md").exists());
     assert!(task_dir.join("execution-summary.md").exists());
     assert!(task_dir.join("artifacts").is_dir());
 
     let task_yaml = std::fs::read_to_string(task_dir.join("task.yaml")).expect("read task yaml");
-    assert!(task_yaml.contains("schema_version: 2"));
-    assert!(!task_yaml.contains("description:"));
+    assert!(task_yaml.contains("schema_version: 3"));
+    assert!(task_yaml.contains("description: test description"));
     assert!(!task_yaml.contains("instructions:"));
     assert!(!task_yaml.contains("execution_summary:"));
 }
