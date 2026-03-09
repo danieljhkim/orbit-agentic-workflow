@@ -73,7 +73,6 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::JobProtocolViolation { .. } => "JobProtocolViolation",
         OrbitEvent::JobSkipped { .. } => "JobSkipped",
         OrbitEvent::ToolExecuted { .. } => "ToolExecuted",
-        OrbitEvent::WatchTriggered { .. } => "WatchTriggered",
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
         OrbitEvent::TaskAdded { .. } => "TaskAdded",
         OrbitEvent::TaskUpdated { .. } => "TaskUpdated",
@@ -141,7 +140,6 @@ fn event_message(event: &OrbitEvent) -> String {
             format!("job skipped: job={job_id} reason={reason}")
         }
         OrbitEvent::ToolExecuted { name } => format!("tool executed: {name}"),
-        OrbitEvent::WatchTriggered { path } => format!("watch triggered: {path}"),
         OrbitEvent::PolicyDenied { tool } => format!("policy denied: {tool}"),
         OrbitEvent::TaskAdded { id } => format!("task added: {id}"),
         OrbitEvent::TaskUpdated { id } => format!("task updated: {id}"),

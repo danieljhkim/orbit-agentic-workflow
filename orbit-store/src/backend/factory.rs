@@ -5,12 +5,12 @@ use orbit_types::OrbitError;
 
 use super::contracts::{
     ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend,
-    JobStoreBackend, LockStoreBackend, TaskStoreBackend, ToolStoreBackend, WatchStoreBackend,
+    JobStoreBackend, LockStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use super::sqlite_backends::{
     SqliteActivityStoreBackend, SqliteAgentSessionStoreBackend, SqliteAuditEventStoreBackend,
     SqliteAuditStoreBackend, SqliteJobStoreBackend, SqliteLockStoreBackend, SqliteTaskStoreBackend,
-    SqliteToolStoreBackend, SqliteWatchStoreBackend,
+    SqliteToolStoreBackend,
 };
 use crate::Store;
 use crate::file::activity_store::ActivityFileStore;
@@ -49,10 +49,6 @@ pub fn job_store_sqlite(store: Store) -> Arc<dyn JobStoreBackend> {
 
 pub fn tool_store_sqlite(store: Store) -> Arc<dyn ToolStoreBackend> {
     Arc::new(SqliteToolStoreBackend { store })
-}
-
-pub fn watch_store_sqlite(store: Store) -> Arc<dyn WatchStoreBackend> {
-    Arc::new(SqliteWatchStoreBackend { store })
 }
 
 pub fn audit_store_sqlite(store: Store) -> Arc<dyn AuditStoreBackend> {

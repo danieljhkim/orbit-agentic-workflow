@@ -28,10 +28,6 @@ persistence = { type = "file", path = "skills", format = "md" }
 # yaml + sqlite are supported for now (default = file)
 persistence = { type = "file", path = "tasks", format = "yaml" }
 
-[watch]
-# only sqlite is supported for now (default = sqlite)
-persistence = { type = "sqlite", path = "orbit.db"}
-
 [audit]
 # only sqlite is supported for now (default = sqlite)
 persistence = { type = "sqlite", path = "orbit.db" }

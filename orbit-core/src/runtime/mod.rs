@@ -1,7 +1,6 @@
 pub mod audit;
 pub mod builder;
 pub mod event_bus;
-pub mod execute;
 pub mod mutation;
 pub mod pipeline;
 
@@ -120,10 +119,6 @@ impl OrbitRuntime {
 
     pub fn run_jobs(&self) -> Result<usize, OrbitError> {
         self.run_due_jobs(Utc::now())
-    }
-
-    pub fn trigger_watch_once(&self, path: &str) -> Result<(), OrbitError> {
-        self.trigger_watch_path(path)
     }
 
     pub fn default_data_root() -> PathBuf {

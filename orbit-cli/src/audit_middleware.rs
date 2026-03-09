@@ -284,15 +284,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Watch(_) => CommandMeta {
-            command: "watch".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: None,
-            target_id: None,
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
     }
 }

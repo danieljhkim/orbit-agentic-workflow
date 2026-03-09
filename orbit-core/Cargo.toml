@@ -9,7 +9,6 @@ clap = ["orbit-types/clap"]
 [dependencies]
 chrono.workspace = true
 jsonschema.workspace = true
-notify.workspace = true
 orbit-agent = { path = "../orbit-agent" }
 orbit-exec = { path = "../orbit-exec" }
 orbit-policy = { path = "../orbit-policy" }

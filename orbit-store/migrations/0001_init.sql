@@ -97,14 +97,6 @@ ON activities(type);
 CREATE INDEX IF NOT EXISTS idx_works_active
 ON activities(is_active);
 
-CREATE TABLE IF NOT EXISTS watches (
-    id TEXT PRIMARY KEY,
-    path TEXT NOT NULL,
-    command TEXT NOT NULL,
-    debounce_ms INTEGER NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS audits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,

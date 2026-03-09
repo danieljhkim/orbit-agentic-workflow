@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use predicates::prelude::*;
 use serde_json::Value;
 use std::path::Path;
 
@@ -43,12 +44,15 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
         serde_json::json!("file")
     );
     assert_eq!(
-        value["persistence"]["watch"]["persistence"]["type"],
-        serde_json::json!("sqlite")
-    );
-    assert_eq!(
         value["persistence"]["audit"]["persistence"]["type"],
         serde_json::json!("sqlite")
+    );
+    assert!(
+        value["persistence"]
+            .as_object()
+            .expect("persistence object")
+            .get("watch")
+            .is_none()
     );
 
     assert!(dir.path().join(".orbit").join("config.toml").exists());
@@ -67,6 +71,9 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
             .join("SKILL.md")
             .exists()
     );
+    let config_raw = std::fs::read_to_string(dir.path().join(".orbit").join("config.toml"))
+        .expect("read config");
+    assert!(!config_raw.contains("[watch]"));
 }
 
 #[test]
@@ -179,4 +186,35 @@ fn non_init_commands_in_repo_bootstrap_only_home_scope() {
     assert_eq!(value["exists"], serde_json::json!(true));
     assert!(home.join(".orbit").join("config.toml").exists());
     assert!(!workspace.join(".orbit").exists());
+}
+
+#[test]
+fn config_show_rejects_legacy_watch_section() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let orbit_dir = dir.path().join(".orbit");
+    std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
+    std::fs::write(
+        orbit_dir.join("config.toml"),
+        "[watch]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
+    )
+    .expect("write config");
+
+    orbit_in(dir.path())
+        .args(["config", "show", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "watch config is no longer supported",
+        ));
+}
+
+#[test]
+fn top_level_help_omits_watch_command() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("watch").not());
 }

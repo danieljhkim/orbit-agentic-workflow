@@ -9,4 +9,3 @@ pub mod migration;
 pub mod skill_store;
 pub mod task_store;
 pub mod tool_store;
-pub mod watch_store;

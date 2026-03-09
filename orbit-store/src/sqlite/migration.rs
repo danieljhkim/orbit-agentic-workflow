@@ -34,14 +34,6 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 created_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS watches (
-                id TEXT PRIMARY KEY,
-                path TEXT NOT NULL,
-                command TEXT NOT NULL,
-                debounce_ms INTEGER NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS audits (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -117,6 +109,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     ensure_execution_targets_schema(conn)?;
     migrate_legacy_work_rows(conn)?;
     ensure_audit_events_schema(conn)?;
+    ensure_no_legacy_watch_state(conn)?;
 
     Ok(())
 }
@@ -882,6 +875,24 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool, OrbitError> {
     Ok(exists > 0)
 }
 
+fn ensure_no_legacy_watch_state(conn: &Connection) -> Result<(), OrbitError> {
+    if !table_exists(conn, "watches")? {
+        return Ok(());
+    }
+
+    let watch_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM watches", [], |row| row.get(0))
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    if watch_count == 0 {
+        return Ok(());
+    }
+
+    Err(OrbitError::InvalidInput(
+        "legacy watch persistence is no longer supported; remove rows from the `watches` table before running this Orbit version"
+            .to_string(),
+    ))
+}
+
 fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, OrbitError> {
     let pragma = format!("PRAGMA table_info({table})");
     let mut stmt = conn
@@ -1313,6 +1324,54 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("automatic migration is not supported")
+        );
+    }
+
+    #[test]
+    fn apply_schema_does_not_create_watches_table() {
+        let conn = Connection::open_in_memory().expect("open");
+
+        apply_schema(&conn).expect("apply schema");
+
+        let watches_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watches'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query watches table");
+        assert_eq!(watches_table_exists, 0);
+    }
+
+    #[test]
+    fn apply_schema_fails_fast_for_legacy_watch_rows() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE watches (
+                    id TEXT PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    debounce_ms INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO watches(id, path, command, debounce_ms, updated_at)
+                VALUES (
+                    'watch-1',
+                    '/tmp/input.txt',
+                    'echo run',
+                    500,
+                    '2026-03-09T00:00:00Z'
+                );
+            "#,
+        )
+        .expect("legacy watches");
+
+        let err = apply_schema(&conn).expect_err("must fail fast");
+        assert!(
+            err.to_string()
+                .contains("legacy watch persistence is no longer supported")
         );
     }
 }

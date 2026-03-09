@@ -39,7 +39,6 @@ pub(crate) struct PersistenceConfig {
     pub(crate) activity: EntityPersistenceConfig,
     pub(crate) skill: EntityPersistenceConfig,
     pub(crate) task: EntityPersistenceConfig,
-    pub(crate) watch: EntityPersistenceConfig,
     pub(crate) audit: EntityPersistenceConfig,
 }
 
@@ -67,11 +66,6 @@ impl PersistenceConfig {
                 path: data_root.join("tasks"),
                 format: Some("yaml".to_string()),
             },
-            watch: EntityPersistenceConfig {
-                persistence_type: PersistenceType::Sqlite,
-                path: sqlite_default.clone(),
-                format: None,
-            },
             audit: EntityPersistenceConfig {
                 persistence_type: PersistenceType::Sqlite,
                 path: sqlite_default,
@@ -82,6 +76,12 @@ impl PersistenceConfig {
 
     pub(super) fn from_raw(data_root: &Path, raw: &RawRuntimeConfig) -> Result<Self, OrbitError> {
         let defaults = Self::default_for_data_root(data_root);
+        if raw.watch.is_some() {
+            return Err(OrbitError::InvalidInput(
+                "watch config is no longer supported; remove the [watch] section from config.toml"
+                    .to_string(),
+            ));
+        }
 
         Ok(Self {
             job: parse_configurable_entity(
@@ -114,12 +114,6 @@ impl PersistenceConfig {
                 "yaml",
                 data_root,
             )?,
-            watch: parse_sqlite_only_entity(
-                "watch",
-                raw.watch.as_ref().and_then(|v| v.persistence.as_ref()),
-                &defaults.watch,
-                data_root,
-            )?,
             audit: parse_sqlite_only_entity(
                 "audit",
                 raw.audit.as_ref().and_then(|v| v.persistence.as_ref()),
@@ -135,7 +129,6 @@ impl PersistenceConfig {
             "activity": { "persistence": self.activity.to_json_value() },
             "skill": { "persistence": self.skill.to_json_value() },
             "task": { "persistence": self.task.to_json_value() },
-            "watch": { "persistence": self.watch.to_json_value() },
             "audit": { "persistence": self.audit.to_json_value() },
         })
     }

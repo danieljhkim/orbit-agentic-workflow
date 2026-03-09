@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
     ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend,
-    JobStoreBackend, LockStoreBackend, TaskStoreBackend, ToolStoreBackend, WatchStoreBackend,
+    JobStoreBackend, LockStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use orbit_tools::ToolRegistry;
 
@@ -20,7 +20,6 @@ pub struct OrbitContext {
     pub(crate) activity_store: Arc<dyn ActivityStoreBackend>,
     pub(crate) job_store: Arc<dyn JobStoreBackend>,
     pub(crate) tool_store: Arc<dyn ToolStoreBackend>,
-    pub(crate) watch_store: Arc<dyn WatchStoreBackend>,
     pub(crate) audit_store: Arc<dyn AuditStoreBackend>,
     pub(crate) audit_event_store: Arc<dyn AuditEventStoreBackend>,
     pub(crate) agent_session_store: Arc<dyn AgentSessionStoreBackend>,

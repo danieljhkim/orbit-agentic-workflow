@@ -6,7 +6,7 @@ use orbit_policy::PolicyEngine;
 use orbit_store::{
     Store, activity_store_file, activity_store_sqlite, agent_session_store_sqlite,
     audit_event_store_sqlite, audit_store_sqlite, job_store_file, job_store_sqlite,
-    lock_store_sqlite, task_store_file, tool_store_sqlite, watch_store_sqlite,
+    lock_store_sqlite, task_store_file, tool_store_sqlite,
 };
 use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
@@ -23,14 +23,7 @@ pub(crate) fn build_context_from_data_root(
     orbit_home: &Path,
 ) -> Result<OrbitContext, OrbitError> {
     let runtime_config = RuntimeConfig::load_from_data_root(data_root, orbit_home)?;
-    let db_path = if runtime_config.persistence.watch.path == runtime_config.persistence.audit.path
-    {
-        runtime_config.persistence.watch.path.clone()
-    } else {
-        return Err(OrbitError::InvalidInput(
-            "watch.persistence.path and audit.persistence.path must match in v2.1".to_string(),
-        ));
-    };
+    let db_path = runtime_config.persistence.audit.path.clone();
     let store = Store::open(&db_path)?;
 
     let task_store = task_store_file(runtime_config.persistence.task.path.clone())?;
@@ -103,7 +96,6 @@ fn build_context_common(
     job_store: Arc<dyn orbit_store::JobStoreBackend>,
 ) -> Result<OrbitContext, OrbitError> {
     let tool_store = tool_store_sqlite(store.clone());
-    let watch_store = watch_store_sqlite(store.clone());
     let audit_store = audit_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
     let agent_session_store = agent_session_store_sqlite(store.clone());
@@ -134,7 +126,6 @@ fn build_context_common(
         activity_store,
         job_store,
         tool_store,
-        watch_store,
         audit_store,
         audit_event_store,
         agent_session_store,

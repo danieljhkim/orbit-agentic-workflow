@@ -32,7 +32,7 @@ mod tests {
     }
 
     #[test]
-    fn persistence_defaults_to_file_for_activities_and_works() {
+    fn persistence_defaults_to_file_for_activities_and_uses_sqlite_for_audit() {
         let config = PersistenceConfig::default_for_data_root(Path::new("/tmp/orbit"));
         assert_eq!(config.job.path, std::path::PathBuf::from("/tmp/orbit/jobs"));
         assert_eq!(
@@ -41,5 +41,13 @@ mod tests {
         );
         assert_eq!(config.job.format.as_deref(), Some("yaml"));
         assert_eq!(config.activity.format.as_deref(), Some("yaml"));
+        assert_eq!(
+            config.audit.path,
+            std::path::PathBuf::from("/tmp/orbit/orbit.db")
+        );
+        assert_eq!(
+            config.audit.persistence_type,
+            super::PersistenceType::Sqlite
+        );
     }
 }

@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
     Activity, AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Job, JobRun,
-    JobScheduleState, OrbitError, OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus, Watch,
+    JobScheduleState, OrbitError, OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus,
 };
 
 use super::contracts::{
     ActivityCreateParams, ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend,
     AuditStoreBackend, JobCreateParams, JobRunCompletionParams, JobStoreBackend, LockStoreBackend,
-    TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend, WatchStoreBackend,
+    TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend,
 };
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 use crate::sqlite::job_store::DueJobsClaim;
@@ -270,31 +270,6 @@ impl ToolStoreBackend for SqliteToolStoreBackend {
     fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<bool, OrbitError> {
         self.store
             .with_transaction(|tx| tx.set_tool_enabled(name, enabled))
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct SqliteWatchStoreBackend {
-    pub(crate) store: Store,
-}
-
-impl WatchStoreBackend for SqliteWatchStoreBackend {
-    fn list_watches(&self) -> Result<Vec<Watch>, OrbitError> {
-        self.store.list_watches()
-    }
-
-    fn get_watch(&self, id: &str) -> Result<Option<Watch>, OrbitError> {
-        self.store.get_watch(id)
-    }
-
-    fn insert_watch(
-        &self,
-        path: &str,
-        command: &str,
-        debounce_ms: u64,
-    ) -> Result<Watch, OrbitError> {
-        self.store
-            .with_transaction(|tx| tx.insert_watch(path, command, debounce_ms))
     }
 }
 

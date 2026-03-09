@@ -12,7 +12,6 @@ pub mod role;
 pub mod skill;
 pub mod task;
 pub mod tool;
-pub mod watch;
 
 pub use activity::Activity;
 pub use agent_session::{AgentSession, AgentSessionStatus, AgentToolCall};
@@ -31,7 +30,6 @@ pub use role::Role;
 pub use skill::{Skill, TaskSkillAttachment};
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
-pub use watch::Watch;
 
 #[cfg(test)]
 mod tests {

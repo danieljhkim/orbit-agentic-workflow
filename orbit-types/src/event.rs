@@ -58,9 +58,6 @@ pub enum OrbitEvent {
         job_id: String,
         reason: String,
     },
-    WatchTriggered {
-        path: String,
-    },
     PolicyDenied {
         tool: String,
     },

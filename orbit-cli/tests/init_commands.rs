@@ -92,6 +92,7 @@ fn init_creates_default_identities_under_home_orbit() {
     let config_raw = std::fs::read_to_string(config_path).expect("read config");
     assert!(config_raw.contains("[execution.env]"));
     assert!(config_raw.contains("[task.approval]"));
+    assert!(!config_raw.contains("[watch]"));
 
     let skills_link_root = home.path().join(".agents").join("skills");
     let root_meta = std::fs::symlink_metadata(&skills_link_root).expect("skills link dir metadata");
@@ -237,6 +238,7 @@ fn init_force_resets_home_orbit_to_defaults() {
     let config_path = orbit_root.join("config.toml");
     let config_raw = std::fs::read_to_string(config_path).expect("read config");
     assert!(config_raw.contains("[execution.env]"));
+    assert!(!config_raw.contains("[watch]"));
     assert!(!config_raw.contains("legacy marker"));
 
     let skill_raw = std::fs::read_to_string(

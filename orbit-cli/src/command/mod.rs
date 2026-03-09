@@ -7,7 +7,6 @@ pub mod job;
 pub mod skill;
 pub mod task;
 pub mod tool;
-pub mod watch;
 
 use std::path::PathBuf;
 
@@ -41,7 +40,6 @@ pub enum Commands {
     Activity(activity::ActivityCommand),
     Skill(skill::SkillCommand),
     Job(job::JobCommand),
-    Watch(watch::WatchCommand),
 }
 
 impl Execute for Commands {
@@ -56,7 +54,6 @@ impl Execute for Commands {
             Commands::Activity(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
-            Commands::Watch(cmd) => cmd.execute(runtime),
         }
     }
 }

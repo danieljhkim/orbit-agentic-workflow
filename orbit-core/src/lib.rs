@@ -7,7 +7,6 @@ pub mod job;
 mod json_schema;
 mod paths;
 pub mod runtime;
-pub mod watch;
 
 pub use orbit_store::identity_store as identity_catalog;
 pub use orbit_store::skill_store as skill_catalog;
@@ -166,21 +165,6 @@ mod tests {
         assert_eq!(ran, 0);
 
         let _ = runtime.context.lock_store.unlock(lock_name);
-    }
-
-    #[test]
-    fn watch_debounce_coalesces_burst_events() {
-        let mut d = crate::watch::DebounceQueueOne::new(100);
-        let first = d.on_event("a.txt".to_string(), 0);
-        let second = d.on_event("b.txt".to_string(), 10);
-        let third = d.on_event("c.txt".to_string(), 20);
-
-        assert_eq!(first.as_deref(), Some("a.txt"));
-        assert!(second.is_none());
-        assert!(third.is_none());
-
-        assert!(d.on_tick(50).is_none());
-        assert_eq!(d.on_tick(100).as_deref(), Some("c.txt"));
     }
 
     #[test]
