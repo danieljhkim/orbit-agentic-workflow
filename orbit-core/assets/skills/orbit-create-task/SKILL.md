@@ -42,7 +42,7 @@ orbit task add \
   --created-by "<identity_display_name_or_model_name>" \
   --priority <low|medium|high|critical> \
   --type <task|feature|issue|chore|refactor> \
-  --proposed-by "<proposer>"
+  --proposed-by "<identity_display_name_or_model_name>"
 ```
 
 ## Plan Template

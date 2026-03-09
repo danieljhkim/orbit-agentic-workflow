@@ -1,6 +1,6 @@
 ---
 name: orbit-manage-tasks
-description: Must use this skill when updating, searching, or archiving orbit tasks. Do not use this skill to "create" task, use `orbit-create-task` skill instead.
+description: Must use this skill when updating or searching orbit tasks. Do not use this skill to "create" task, use `orbit-create-task` skill instead.
 ---
 
 # Orbit Manage Tasks
@@ -14,14 +14,9 @@ Provide a deterministic, auditable workflow to update, search, approve, show, an
 In scope:
 - `orbit task update`
 - `orbit task search`
-- `orbit task archive`
-- `orbit task approve`
 - `orbit task show <id>`
 - `orbit task list`
 
-Out of scope unless explicitly requested:
-- `orbit task delete`
-- `orbit task unarchive`
 
 ## Task Lifecycle
 
@@ -53,8 +48,6 @@ orbit task update <id> \
   --branch "<branch_name>" \
   --pr-number "<pr_number>"
 orbit task search "<query>" --json
-orbit task archive <id>
-orbit task approve <id> --by "<approver>" --note "<note>"
 orbit task show <id>
 orbit task list
 ```
@@ -63,7 +56,7 @@ orbit task list
 
 After task commands, report:
 
-- action performed (`updated`, `completed`, `blocked`, `approved`, `archived`, `found`)
+- action performed (`updated`, `completed`, `blocked`, `found`)
 - task ID(s)
 - important fields changed or confirmed
 - any failure and the next remediation step
