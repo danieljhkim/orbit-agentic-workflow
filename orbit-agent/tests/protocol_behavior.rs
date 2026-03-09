@@ -1,18 +1,11 @@
 use orbit_agent::{
-    AgentInvocationMode, AgentInvocationRequest, AgentResponseStatus, StdinAdapter,
-    build_invocation, build_stdin_payload, parse_and_validate_response,
+    Agent, AgentConfig, AgentRequest, AgentResponseStatus, parse_and_validate_response,
 };
 use orbit_types::{ExecutionResult, OrbitError};
 use serde_json::json;
 
-fn scheduled_request(agent_cli: &str) -> AgentInvocationRequest {
-    AgentInvocationRequest {
-        agent_cli: agent_cli.to_string(),
-        mode: AgentInvocationMode::Scheduled {
-            target_type: "job".to_string(),
-            target_id: "spec-123".to_string(),
-        },
-    }
+fn scheduled_request() -> AgentRequest {
+    AgentRequest::scheduled("job", "spec-123", br#"{"schemaVersion":1}"#.to_vec())
 }
 
 fn expected_native_args() -> Vec<String> {
@@ -31,7 +24,10 @@ fn expected_native_args() -> Vec<String> {
 
 #[test]
 fn provider_mapper_supports_claude() {
-    let invocation = build_invocation(&scheduled_request("claude")).expect("claude mapper");
+    let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
+    let invocation = agent
+        .invoke(scheduled_request())
+        .expect("claude invocation");
     assert_eq!(invocation.program, "claude");
     assert_eq!(
         invocation.args,
@@ -41,15 +37,15 @@ fn provider_mapper_supports_claude() {
             "text".to_string()
         ]
     );
-    assert_eq!(
-        invocation.stdin_adapter,
-        StdinAdapter::PromptWithEmbeddedEnvelope
-    );
+    assert_eq!(invocation.runtime_key, "claude");
+    let text = String::from_utf8(invocation.stdin).expect("utf8");
+    assert!(text.contains("Execution envelope"));
 }
 
 #[test]
 fn provider_mapper_supports_codex() {
-    let invocation = build_invocation(&scheduled_request("codex")).expect("codex mapper");
+    let agent = Agent::new(&AgentConfig::cli("codex")).expect("codex runtime");
+    let invocation = agent.invoke(scheduled_request()).expect("codex invocation");
     assert_eq!(invocation.program, "codex");
     assert_eq!(
         invocation.args,
@@ -59,24 +55,26 @@ fn provider_mapper_supports_codex() {
             "workspace-write".to_string(),
         ]
     );
-    assert_eq!(
-        invocation.stdin_adapter,
-        StdinAdapter::PromptWithEmbeddedEnvelope
-    );
+    assert_eq!(invocation.runtime_key, "codex");
+    let text = String::from_utf8(invocation.stdin).expect("utf8");
+    assert!(text.contains("Execution envelope"));
 }
 
 #[test]
 fn provider_mapper_supports_mock_agent() {
-    let invocation = build_invocation(&scheduled_request("mock-agent")).expect("mock-agent mapper");
+    let agent = Agent::new(&AgentConfig::cli("mock-agent")).expect("mock-agent runtime");
+    let invocation = agent
+        .invoke(scheduled_request())
+        .expect("mock-agent invocation");
     assert_eq!(invocation.program, "mock-agent");
     assert_eq!(invocation.args, expected_native_args());
-    assert_eq!(invocation.stdin_adapter, StdinAdapter::OrbitEnvelopeJson);
+    assert_eq!(invocation.stdin, br#"{"schemaVersion":1}"#);
 }
 
 #[test]
 fn provider_mapper_uses_binary_basename_for_paths() {
-    let invocation =
-        build_invocation(&scheduled_request("/usr/local/bin/claude")).expect("path-based mapper");
+    let agent = Agent::new(&AgentConfig::cli("/usr/local/bin/claude")).expect("path-based runtime");
+    let invocation = agent.invoke(scheduled_request()).expect("path invocation");
     assert_eq!(invocation.program, "/usr/local/bin/claude");
     assert_eq!(
         invocation.args,
@@ -90,8 +88,9 @@ fn provider_mapper_uses_binary_basename_for_paths() {
 
 #[test]
 fn provider_mapper_rejects_unsupported_provider() {
-    let err = build_invocation(&scheduled_request("custom-agent"))
-        .expect_err("unsupported provider must fail");
+    let err = Agent::new(&AgentConfig::cli("custom-agent"))
+        .err()
+        .expect("unsupported provider must fail");
     assert!(matches!(
         err,
         OrbitError::UnsupportedAgentProvider(provider) if provider == "custom-agent"
@@ -123,11 +122,20 @@ fn protocol_parser_accepts_success_envelope() {
 
 #[test]
 fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
-    let invocation = build_invocation(&scheduled_request("codex")).expect("codex mapper");
-    let payload = build_stdin_payload(&invocation, br#"{"schemaVersion":1}"#);
-    let text = String::from_utf8(payload).expect("utf8");
+    let agent = Agent::new(&AgentConfig::cli("codex")).expect("codex runtime");
+    let invocation = agent.invoke(scheduled_request()).expect("codex invocation");
+    let text = String::from_utf8(invocation.stdin).expect("utf8");
     assert!(text.contains("Execution envelope"));
     assert!(text.contains(r#"{"schemaVersion":1}"#));
+}
+
+#[test]
+fn claude_runtime_declares_required_env_vars() {
+    let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
+    let invocation = agent
+        .invoke(scheduled_request())
+        .expect("claude invocation");
+    assert_eq!(invocation.required_env_vars, &["HOME", "PATH"]);
 }
 
 #[test]

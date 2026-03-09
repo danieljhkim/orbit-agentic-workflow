@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use orbit_agent::{
-    AgentInvocationMode, AgentInvocationRequest, AgentResponseStatus, build_invocation,
-    build_stdin_payload, parse_and_validate_response,
+    Agent, AgentConfig, AgentRequest, AgentResponseStatus, parse_and_validate_response,
 };
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
@@ -93,14 +92,8 @@ impl OrbitRuntime {
 
         self.validate_job_target_exists(params.target_type, &params.target_id)?;
 
-        // Validate provider adapter availability at add-time.
-        let _ = build_invocation(&AgentInvocationRequest {
-            agent_cli: params.agent_cli.clone(),
-            mode: AgentInvocationMode::Scheduled {
-                target_type: params.target_type.to_string(),
-                target_id: params.target_id.clone(),
-            },
-        })?;
+        // Validate runtime availability at add-time.
+        let _ = Agent::new(&AgentConfig::cli(params.agent_cli.clone()))?;
 
         let next_run_at =
             crate::scheduler::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
@@ -398,13 +391,41 @@ impl OrbitRuntime {
     }
 
     fn execute_single_attempt(&self, scheduler: &Scheduler) -> AttemptOutcome {
-        let invocation = match build_invocation(&AgentInvocationRequest {
-            agent_cli: scheduler.agent_cli.clone(),
-            mode: AgentInvocationMode::Scheduled {
-                target_type: scheduler.target_type.to_string(),
-                target_id: scheduler.target_id.clone(),
-            },
-        }) {
+        let agent = match Agent::new(&AgentConfig::cli(scheduler.agent_cli.clone())) {
+            Ok(agent) => agent,
+            Err(err) => {
+                return AttemptOutcome {
+                    state: SchedulerRunState::Failed,
+                    exit_code: Some(1),
+                    duration_ms: None,
+                    response_json: None,
+                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                    error_message: Some(err.to_string()),
+                    retryable: false,
+                    protocol_violation: false,
+                };
+            }
+        };
+        let stdin_payload = match self.build_stdin_envelope_payload(scheduler) {
+            Ok(payload) => payload,
+            Err(err) => {
+                return AttemptOutcome {
+                    state: SchedulerRunState::Failed,
+                    exit_code: Some(1),
+                    duration_ms: None,
+                    response_json: None,
+                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                    error_message: Some(err.to_string()),
+                    retryable: false,
+                    protocol_violation: false,
+                };
+            }
+        };
+        let invocation = match agent.invoke(AgentRequest::scheduled(
+            scheduler.target_type.to_string(),
+            scheduler.target_id.clone(),
+            stdin_payload,
+        )) {
             Ok(invocation) => invocation,
             Err(err) => {
                 return AttemptOutcome {
@@ -422,7 +443,7 @@ impl OrbitRuntime {
         let missing_env = self
             .context
             .execution_env_policy
-            .missing_required(invocation.provider.required_env_vars());
+            .missing_required(invocation.required_env_vars);
         if !missing_env.is_empty() {
             let vars = missing_env.join(", ");
             return AttemptOutcome {
@@ -434,40 +455,24 @@ impl OrbitRuntime {
                 error_message: Some(format!(
                     "missing required environment variable(s) for provider '{}': {vars}. \
 configure .orbit/config.toml [execution.env].pass and set these variables in the parent shell.",
-                    invocation.provider.key()
+                    invocation.runtime_key
                 )),
                 retryable: false,
                 protocol_violation: false,
             };
-        }
+        };
         let environment_mode = if self.context.execution_env_policy.inherit() {
             EnvironmentMode::Inherit
         } else {
             EnvironmentMode::ClearAndSet(self.context.execution_env_policy.hydrated_allowlist_env())
         };
-        let stdin_payload = match self.build_stdin_envelope_payload(scheduler) {
-            Ok(payload) => payload,
-            Err(err) => {
-                return AttemptOutcome {
-                    state: SchedulerRunState::Failed,
-                    exit_code: Some(1),
-                    duration_ms: None,
-                    response_json: None,
-                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
-                    error_message: Some(err.to_string()),
-                    retryable: false,
-                    protocol_violation: false,
-                };
-            }
-        };
-        let stdin_payload = build_stdin_payload(&invocation, &stdin_payload);
 
         let exec_result = match run_process(
             &ExecRequest {
                 program: invocation.program,
                 args: invocation.args,
                 timeout_ms: Some(scheduler.timeout_seconds.saturating_mul(1000)),
-                stdin_mode: StdinMode::Bytes(stdin_payload),
+                stdin_mode: StdinMode::Bytes(invocation.stdin),
                 environment_mode,
             },
             &NoSandbox,
