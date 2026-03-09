@@ -1,4 +1,8 @@
 use chrono::{DateTime, Utc};
+use orbit_agent::{
+    AgentInvocationMode, AgentInvocationRequest, AgentResponseStatus, build_invocation,
+    build_stdin_payload, parse_and_validate_response,
+};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::ClaimedJobRun;
 use orbit_store::SchedulerCreateParams as StoreJobCreateParams;
@@ -90,11 +94,13 @@ impl OrbitRuntime {
         self.validate_job_target_exists(params.target_type, &params.target_id)?;
 
         // Validate provider adapter availability at add-time.
-        let _ = crate::scheduler::agent_protocol::build_invocation(
-            &params.agent_cli,
-            params.target_type,
-            &params.target_id,
-        )?;
+        let _ = build_invocation(&AgentInvocationRequest {
+            agent_cli: params.agent_cli.clone(),
+            mode: AgentInvocationMode::Scheduled {
+                target_type: params.target_type.to_string(),
+                target_id: params.target_id.clone(),
+            },
+        })?;
 
         let next_run_at =
             crate::scheduler::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
@@ -392,11 +398,13 @@ impl OrbitRuntime {
     }
 
     fn execute_single_attempt(&self, scheduler: &Scheduler) -> AttemptOutcome {
-        let invocation = match crate::scheduler::agent_protocol::build_invocation(
-            &scheduler.agent_cli,
-            scheduler.target_type,
-            &scheduler.target_id,
-        ) {
+        let invocation = match build_invocation(&AgentInvocationRequest {
+            agent_cli: scheduler.agent_cli.clone(),
+            mode: AgentInvocationMode::Scheduled {
+                target_type: scheduler.target_type.to_string(),
+                target_id: scheduler.target_id.clone(),
+            },
+        }) {
             Ok(invocation) => invocation,
             Err(err) => {
                 return AttemptOutcome {
@@ -411,11 +419,10 @@ impl OrbitRuntime {
                 };
             }
         };
-        let provider = crate::scheduler::agent_protocol::provider_key(&scheduler.agent_cli);
         let missing_env = self
             .context
             .execution_env_policy
-            .missing_required_for_provider(&provider);
+            .missing_required(invocation.provider.required_env_vars());
         if !missing_env.is_empty() {
             let vars = missing_env.join(", ");
             return AttemptOutcome {
@@ -425,8 +432,9 @@ impl OrbitRuntime {
                 response_json: None,
                 error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                 error_message: Some(format!(
-                    "missing required environment variable(s) for provider '{provider}': {vars}. \
-configure .orbit/config.toml [execution.env].pass and set these variables in the parent shell."
+                    "missing required environment variable(s) for provider '{}': {vars}. \
+configure .orbit/config.toml [execution.env].pass and set these variables in the parent shell.",
+                    invocation.provider.key()
                 )),
                 retryable: false,
                 protocol_violation: false,
@@ -452,8 +460,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 };
             }
         };
-        let stdin_payload =
-            crate::scheduler::agent_protocol::build_stdin_payload(&invocation, &stdin_payload);
+        let stdin_payload = build_stdin_payload(&invocation, &stdin_payload);
 
         let exec_result = match run_process(
             &ExecRequest {
@@ -480,9 +487,14 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             }
         };
 
-        match crate::scheduler::agent_protocol::parse_and_validate_response(&exec_result) {
+        match parse_and_validate_response(&exec_result) {
             Ok((envelope, state)) => {
-                if state == SchedulerRunState::Success
+                let run_state = match state {
+                    AgentResponseStatus::Success => SchedulerRunState::Success,
+                    AgentResponseStatus::Failed => SchedulerRunState::Failed,
+                    AgentResponseStatus::Timeout => SchedulerRunState::Timeout,
+                };
+                if run_state == SchedulerRunState::Success
                     && let Err(err) = self.validate_skill_output_schema(scheduler, &envelope)
                 {
                     return AttemptOutcome {
@@ -497,14 +509,14 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     };
                 }
                 AttemptOutcome {
-                    state,
+                    state: run_state,
                     exit_code: exec_result.exit_code,
                     duration_ms: Some(exec_result.duration_ms),
                     response_json: serde_json::to_value(envelope).ok(),
                     error_code: None,
                     error_message: None,
-                    retryable: state == SchedulerRunState::Failed
-                        || state == SchedulerRunState::Timeout,
+                    retryable: run_state == SchedulerRunState::Failed
+                        || run_state == SchedulerRunState::Timeout,
                     protocol_violation: false,
                 }
             }

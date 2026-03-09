@@ -202,8 +202,8 @@ impl ExecutionEnvPolicy {
             .collect()
     }
 
-    pub(crate) fn missing_required_for_provider(&self, provider: &str) -> Vec<String> {
-        required_env_vars_for_provider(provider)
+    pub(crate) fn missing_required(&self, required_env_vars: &[&str]) -> Vec<String> {
+        required_env_vars
             .iter()
             .copied()
             .filter(|name| !self.is_required_var_available(name))
@@ -251,12 +251,4 @@ fn is_valid_env_var_name(value: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-}
-
-fn required_env_vars_for_provider(provider: &str) -> &'static [&'static str] {
-    match provider {
-        "codex" => &["HOME", "PATH"],
-        "claude" => &["HOME", "PATH"],
-        _ => &[],
-    }
 }

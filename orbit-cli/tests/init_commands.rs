@@ -79,9 +79,7 @@ fn init_creates_default_identities_under_home_orbit() {
             .join("SKILL.md")
             .exists()
     );
-    assert!(
-        skills_root.join("orbit-skills").join("SKILL.md").exists()
-    );
+    assert!(skills_root.join("orbit-skills").join("SKILL.md").exists());
     assert!(
         skills_root
             .join("orbit-track-issues")

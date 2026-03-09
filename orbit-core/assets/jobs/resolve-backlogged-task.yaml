@@ -1,0 +1,22 @@
+id: resolve-backlogged-task
+specType: task
+description: Work on a backlogged orbit task
+instruction: Check if there exists any orbit tasks with "backlog" status. If there are any, pick a single task to work on. Work on it, once done, update the orbit task to "review" status. Output a brief summary in the comment.
+inputSchemaJson:
+  type: object
+  properties: {}
+  additionalProperties: false
+outputSchemaJson:
+  type: object
+  required:
+    - task_id
+  properties:
+    task_id:
+      type: string
+    comment:
+      type: string
+  additionalProperties: false
+skillRefs: ["orbit-manage-tasks", "orbit-execute-change-request"]
+identityId: kent
+assignedTo: kent-beck
+createdBy: system

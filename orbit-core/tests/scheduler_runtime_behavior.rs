@@ -287,6 +287,38 @@ pass = ["PATH"]
 }
 
 #[test]
+fn codex_scheduler_run_uses_workspace_write_sandbox() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let args_capture = dir.path().join("codex-args.txt");
+    let script_path = dir.path().join("codex");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"{args}\"\ncat > /dev/null\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        args = args_capture.display(),
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    add_job(&runtime, "spec-codex-sandbox");
+    let scheduler_id = add_scheduled_job(
+        &runtime,
+        "spec-codex-sandbox",
+        &agent_cli,
+        0,
+        SchedulerRetryBackoffStrategy::None,
+        0,
+    );
+
+    let run = runtime
+        .run_scheduler_now(&scheduler_id)
+        .expect("run scheduler");
+    assert_eq!(run.state, SchedulerRunState::Success);
+
+    let args = std::fs::read_to_string(args_capture).expect("read args");
+    let captured: Vec<&str> = args.lines().collect();
+    assert_eq!(captured, vec!["exec", "--sandbox", "workspace-write"]);
+}
+
+#[test]
 fn claude_scheduler_run_fails_fast_when_required_env_var_is_not_allowlisted() {
     let dir = tempdir().expect("tempdir");
     write_runtime_config(

@@ -1,0 +1,17 @@
+id: perform-maintenance
+specType: maintenance
+description: perform system maintenance, using `orbit-maintain-system`
+instruction: Use `orbit-maintain-system` skill to perform system maintenance. Output a brief summary in the comment
+inputSchemaJson:
+  type: object
+  properties: {}
+  additionalProperties: false
+outputSchemaJson:
+  type: object
+  properties:
+    comment:
+      type: string
+skillRefs: ["orbit-maintain-system"]
+identityId: linus
+assignedTo: linus
+createdBy: system

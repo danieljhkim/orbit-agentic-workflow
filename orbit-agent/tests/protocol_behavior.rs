@@ -1,8 +1,19 @@
-use orbit_core::scheduler::agent_protocol::{
-    StdinAdapter, build_invocation, build_stdin_payload, parse_and_validate_response,
+use orbit_agent::{
+    AgentInvocationMode, AgentInvocationRequest, AgentResponseStatus, StdinAdapter,
+    build_invocation, build_stdin_payload, parse_and_validate_response,
 };
-use orbit_types::{ExecutionResult, OrbitError, SchedulerRunState, SchedulerTargetType};
+use orbit_types::{ExecutionResult, OrbitError};
 use serde_json::json;
+
+fn scheduled_request(agent_cli: &str) -> AgentInvocationRequest {
+    AgentInvocationRequest {
+        agent_cli: agent_cli.to_string(),
+        mode: AgentInvocationMode::Scheduled {
+            target_type: "job".to_string(),
+            target_id: "spec-123".to_string(),
+        },
+    }
+}
 
 fn expected_native_args() -> Vec<String> {
     vec![
@@ -20,8 +31,7 @@ fn expected_native_args() -> Vec<String> {
 
 #[test]
 fn provider_mapper_supports_claude() {
-    let invocation =
-        build_invocation("claude", SchedulerTargetType::Job, "spec-123").expect("claude mapper");
+    let invocation = build_invocation(&scheduled_request("claude")).expect("claude mapper");
     assert_eq!(invocation.program, "claude");
     assert_eq!(
         invocation.args,
@@ -39,40 +49,14 @@ fn provider_mapper_supports_claude() {
 
 #[test]
 fn provider_mapper_supports_codex() {
-    let invocation =
-        build_invocation("codex", SchedulerTargetType::Job, "spec-123").expect("codex mapper");
+    let invocation = build_invocation(&scheduled_request("codex")).expect("codex mapper");
     assert_eq!(invocation.program, "codex");
-    assert_eq!(invocation.args, vec!["exec".to_string()]);
-    assert_eq!(
-        invocation.stdin_adapter,
-        StdinAdapter::PromptWithEmbeddedEnvelope
-    );
-}
-
-#[test]
-fn provider_mapper_supports_mock_agent() {
-    let invocation = build_invocation("mock-agent", SchedulerTargetType::Job, "spec-123")
-        .expect("mock-agent mapper");
-    assert_eq!(invocation.program, "mock-agent");
-    assert_eq!(invocation.args, expected_native_args());
-    assert_eq!(invocation.stdin_adapter, StdinAdapter::OrbitEnvelopeJson);
-}
-
-#[test]
-fn provider_mapper_uses_binary_basename_for_paths() {
-    let invocation = build_invocation(
-        "/usr/local/bin/claude",
-        SchedulerTargetType::Job,
-        "spec-123",
-    )
-    .expect("path-based claude mapper");
-    assert_eq!(invocation.program, "/usr/local/bin/claude");
     assert_eq!(
         invocation.args,
         vec![
-            "-p".to_string(),
-            "--output-format".to_string(),
-            "text".to_string()
+            "exec".to_string(),
+            "--sandbox".to_string(),
+            "workspace-write".to_string(),
         ]
     );
     assert_eq!(
@@ -82,8 +66,31 @@ fn provider_mapper_uses_binary_basename_for_paths() {
 }
 
 #[test]
+fn provider_mapper_supports_mock_agent() {
+    let invocation = build_invocation(&scheduled_request("mock-agent")).expect("mock-agent mapper");
+    assert_eq!(invocation.program, "mock-agent");
+    assert_eq!(invocation.args, expected_native_args());
+    assert_eq!(invocation.stdin_adapter, StdinAdapter::OrbitEnvelopeJson);
+}
+
+#[test]
+fn provider_mapper_uses_binary_basename_for_paths() {
+    let invocation =
+        build_invocation(&scheduled_request("/usr/local/bin/claude")).expect("path-based mapper");
+    assert_eq!(invocation.program, "/usr/local/bin/claude");
+    assert_eq!(
+        invocation.args,
+        vec![
+            "-p".to_string(),
+            "--output-format".to_string(),
+            "text".to_string()
+        ]
+    );
+}
+
+#[test]
 fn provider_mapper_rejects_unsupported_provider() {
-    let err = build_invocation("custom-agent", SchedulerTargetType::Job, "spec-123")
+    let err = build_invocation(&scheduled_request("custom-agent"))
         .expect_err("unsupported provider must fail");
     assert!(matches!(
         err,
@@ -110,14 +117,13 @@ fn protocol_parser_accepts_success_envelope() {
     };
 
     let (envelope, state) = parse_and_validate_response(&exec).expect("valid envelope");
-    assert_eq!(state, SchedulerRunState::Success);
+    assert_eq!(state, AgentResponseStatus::Success);
     assert_eq!(envelope.status, "success");
 }
 
 #[test]
 fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
-    let invocation =
-        build_invocation("codex", SchedulerTargetType::Job, "spec-123").expect("codex mapper");
+    let invocation = build_invocation(&scheduled_request("codex")).expect("codex mapper");
     let payload = build_stdin_payload(&invocation, br#"{"schemaVersion":1}"#);
     let text = String::from_utf8(payload).expect("utf8");
     assert!(text.contains("Execution envelope"));

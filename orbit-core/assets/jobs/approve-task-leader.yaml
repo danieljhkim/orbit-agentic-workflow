@@ -1,40 +1,17 @@
 id: approve-task-leader
 specType: task_approval
-description: Leader review and delegated task approval workflow
-instruction: Review the proposed task approval payload and return a decision with any supporting note.
+description: Leader review all the orbit tasks that have "proposed" status and provide approvals or rejection.
+instruction: Use `orbit-approve-task` to check for any orbit tasks with "proposed" status, review them carefully, and update the status to "backlog" for approved tasks. Output the task_id's that have been approved and rejected and leave a brief summary in the comment.
 inputSchemaJson:
   type: object
-  required:
-    - task_id
-    - decision
-  properties:
-    task_id:
-      type: string
-    decision:
-      type: string
-      enum:
-        - approve
-        - reject
-    note:
-      type: string
+  properties: {}
   additionalProperties: false
 outputSchemaJson:
   type: object
-  required:
-    - task_id
-    - decision
-    - approved
   properties:
-    task_id:
-      type: string
-    decision:
-      type: string
-    approved:
-      type: boolean
     comment:
       type: string
-artifactPathTemplate: "{{ORBIT_ROOT}}/agents/{{repo_name}}/executions/{{date}}-approve-task.md"
-skillRefs: []
+skillRefs: ["orbit-approve-task", "orbit-manage-tasks"]
 identityId: linus
-assignedTo: Linus Torvalds (Maintainer)
+assignedTo: linus
 createdBy: system

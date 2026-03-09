@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "orbit-agent",
   "orbit-cli",
   "orbit-core",
   "orbit-types",

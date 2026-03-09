@@ -1014,12 +1014,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "orbit-agent"
+version = "0.1.0"
+dependencies = [
+ "orbit-types",
+ "serde_json",
+]
+
+[[package]]
 name = "orbit-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "jsonschema",
  "notify",
+ "orbit-agent",
  "orbit-exec",
  "orbit-policy",
  "orbit-store",

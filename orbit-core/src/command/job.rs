@@ -8,10 +8,20 @@ use serde_json::Value;
 
 use crate::OrbitRuntime;
 
-const DEFAULT_JOB_FILES: [(&str, &str); 1] = [(
-    "approve-task-leader",
-    include_str!("../../assets/jobs/approve-task-leader.yaml"),
-)];
+const DEFAULT_JOB_FILES: [(&str, &str); 3] = [
+    (
+        "approve-task-leader",
+        include_str!("../../assets/jobs/approve-task-leader.yaml"),
+    ),
+    (
+        "perform-maintenance",
+        include_str!("../../assets/jobs/perform-maintenance.yaml"),
+    ),
+    (
+        "resolve-backlogged-task",
+        include_str!("../../assets/jobs/resolve-backlogged-task.yaml"),
+    ),
+];
 use crate::paths::ORBIT_ROOT_TOKEN;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -188,7 +198,7 @@ fn validate_job_params(params: &JobAddParams) -> Result<(), OrbitError> {
 mod tests {
     use std::path::Path;
 
-    use super::load_default_job_specs;
+    use super::{DEFAULT_JOB_FILES, load_default_job_specs};
 
     #[test]
     fn parse_rejects_duplicate_ids() {
@@ -269,5 +279,13 @@ artifactPathTemplate: "{{ORBIT_ROOT}}/agents/executions/{{date}}-tokenized.md"
             parsed[0].artifact_path_template.as_deref(),
             Some("/tmp/orbit/agents/executions/{{date}}-tokenized.md")
         );
+    }
+
+    #[test]
+    fn bundled_default_job_specs_parse_successfully() {
+        let parsed = load_default_job_specs(&DEFAULT_JOB_FILES, Some(Path::new("/tmp/orbit")))
+            .expect("bundled default jobs must parse");
+
+        assert_eq!(parsed.len(), DEFAULT_JOB_FILES.len());
     }
 }
