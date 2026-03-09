@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
@@ -5,6 +6,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use orbit_core::OrbitRuntime;
 use orbit_core::command::job::JobAddParams;
 use orbit_core::command::scheduler::SchedulerAddParams;
+use orbit_core::scheduler::runtime::{SchedulerRuntime, SchedulerRuntimeConfig, ShutdownSignal};
 use orbit_store::Store;
 use orbit_types::{
     OrbitError, SchedulerRetryBackoffStrategy, SchedulerRunState, SchedulerTargetType,
@@ -855,4 +857,65 @@ Validate advanced schema behavior.
         history[0].error_code.as_deref(),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
+}
+
+#[test]
+fn scheduler_runtime_tick_once_reports_next_wake_time() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
+    );
+
+    add_job(&runtime, "spec-next-wake");
+    let scheduler_id = add_scheduled_job(
+        &runtime,
+        "spec-next-wake",
+        &agent_cli,
+        0,
+        SchedulerRetryBackoffStrategy::None,
+        0,
+    );
+    let scheduler = runtime
+        .show_scheduler(&scheduler_id)
+        .expect("show scheduler");
+
+    let tick = SchedulerRuntime::new(&runtime, SchedulerRuntimeConfig::default())
+        .tick_once(Utc::now())
+        .expect("tick once");
+
+    assert_eq!(tick.ran, 0);
+    assert_eq!(tick.next_wake_at, Some(scheduler.next_run_at));
+}
+
+#[test]
+fn scheduler_runtime_run_forever_stops_after_shutdown_request() {
+    struct CountdownShutdown {
+        checks: AtomicUsize,
+    }
+
+    impl ShutdownSignal for CountdownShutdown {
+        fn should_stop(&self) -> bool {
+            self.checks.fetch_add(1, Ordering::SeqCst) >= 1
+        }
+    }
+
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let scheduler_runtime = SchedulerRuntime::new(
+        &runtime,
+        SchedulerRuntimeConfig {
+            idle_sleep: std::time::Duration::from_secs(0),
+            max_sleep: std::time::Duration::from_secs(0),
+        },
+    );
+    let shutdown = CountdownShutdown {
+        checks: AtomicUsize::new(0),
+    };
+
+    scheduler_runtime
+        .run_forever(&shutdown)
+        .expect("run forever exits cleanly");
 }

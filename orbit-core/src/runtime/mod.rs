@@ -147,7 +147,7 @@ struct RootOnlyConfig {
     root: Option<RootField>,
 }
 
-fn resolve_initialize_data_root(
+pub(crate) fn resolve_initialize_data_root(
     cwd: &Path,
     root_override: Option<&Path>,
     orbit_home: &Path,

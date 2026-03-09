@@ -222,6 +222,8 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 SchedulerSubcommand::List(_) => ("list", None),
                 SchedulerSubcommand::Show(args) => ("show", Some(args.scheduler_id.as_str())),
                 SchedulerSubcommand::Run(args) => ("run", Some(args.scheduler_id.as_str())),
+                SchedulerSubcommand::Tick(_) => ("tick", None),
+                SchedulerSubcommand::Serve(_) => ("serve", None),
                 SchedulerSubcommand::Pause(args) => ("pause", Some(args.scheduler_id.as_str())),
                 SchedulerSubcommand::Resume(args) => ("resume", Some(args.scheduler_id.as_str())),
                 SchedulerSubcommand::History(args) => ("history", Some(args.scheduler_id.as_str())),

@@ -164,6 +164,61 @@ fn task_update_rejects_non_updatable_fields() {
 }
 
 #[test]
+fn task_update_updates_description_and_plan() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "body-update");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "update",
+            &id,
+            "--description",
+            "updated description",
+            "--plan",
+            "updated plan",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["description"], "updated description");
+    assert_eq!(show["plan"], "updated plan");
+    assert_eq!(show["instructions"], "updated plan");
+}
+
+#[test]
+fn task_update_accepts_instructions_alias_for_plan() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "instructions-update");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--instructions", "updated via alias"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["plan"], "updated via alias");
+    assert_eq!(show["instructions"], "updated via alias");
+}
+
+#[test]
 fn task_archive_and_unarchive() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "archivable");

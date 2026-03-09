@@ -6,10 +6,20 @@ mod parse;
 use clap::Parser;
 use orbit_core::OrbitRuntime;
 
-use crate::command::{Commands, Execute};
+use crate::command::{Commands, Execute, init::InitCommand};
 
 fn main() {
     let cli = command::Cli::parse();
+    let root_override = cli.root.clone();
+
+    if let Commands::Init(cmd) = cli.command {
+        if let Err(err) = execute_init_command(cmd, root_override.as_deref()) {
+            eprintln!("error: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let runtime = match OrbitRuntime::initialize_with_root_override(cli.root.as_deref()) {
         Ok(runtime) => runtime,
         Err(err) => {
@@ -37,4 +47,11 @@ fn main() {
         eprintln!("error: {err}");
         std::process::exit(1);
     }
+}
+
+fn execute_init_command(
+    cmd: InitCommand,
+    root_override: Option<&std::path::Path>,
+) -> Result<(), orbit_core::OrbitError> {
+    cmd.execute_without_runtime(root_override)
 }

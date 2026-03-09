@@ -112,6 +112,15 @@ impl SchedulerFileStore {
         Ok(schedulers)
     }
 
+    pub(crate) fn next_due_scheduler_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError> {
+        Ok(self
+            .read_all_jobs()?
+            .into_iter()
+            .filter(|scheduler| scheduler.state == SchedulerScheduleState::Enabled)
+            .map(|scheduler| scheduler.next_run_at)
+            .min())
+    }
+
     pub(crate) fn list_scheduler_runs(
         &self,
         scheduler_id: &str,

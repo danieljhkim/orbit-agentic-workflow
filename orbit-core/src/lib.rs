@@ -434,6 +434,8 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    description: Some("updated description".to_string()),
+                    plan: Some("updated plan".to_string()),
                     execution_summary: Some("validated with unit tests".to_string()),
                     assigned_to: Some(Some("Eng Owner".to_string())),
                     status: None,
@@ -443,6 +445,8 @@ mod tests {
             )
             .expect("update");
 
+        assert_eq!(updated.description, "updated description");
+        assert_eq!(updated.plan, "updated plan");
         assert_eq!(updated.execution_summary, "validated with unit tests");
         assert_eq!(updated.assigned_to.as_deref(), Some("Eng Owner"));
 
@@ -482,6 +486,8 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    description: None,
+                    plan: None,
                     execution_summary: None,
                     assigned_to: None,
                     status: Some(TaskStatus::InProgress),
@@ -494,6 +500,8 @@ mod tests {
         let missing_summary = runtime.update_task(
             &task.id,
             TaskUpdateParams {
+                description: None,
+                plan: None,
                 execution_summary: None,
                 assigned_to: None,
                 status: Some(TaskStatus::Review),
@@ -510,6 +518,8 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    description: None,
+                    plan: None,
                     execution_summary: Some("Implemented change and validated tests.".to_string()),
                     assigned_to: None,
                     status: Some(TaskStatus::Review),

@@ -1,5 +1,10 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use chrono::Utc;
 use clap::{Args, Subcommand};
 use orbit_core::command::scheduler::SchedulerAddParams;
+use orbit_core::scheduler::runtime::{SchedulerRuntime, SchedulerRuntimeConfig, ShutdownSignal};
 use orbit_core::{
     OrbitError, OrbitRuntime, Scheduler, SchedulerRetryBackoffStrategy, SchedulerRun,
     SchedulerTargetType,
@@ -26,6 +31,8 @@ pub enum SchedulerSubcommand {
     List(SchedulerListArgs),
     Show(SchedulerShowArgs),
     Run(SchedulerRunArgs),
+    Tick(SchedulerTickArgs),
+    Serve(SchedulerServeArgs),
     Pause(SchedulerPauseArgs),
     Resume(SchedulerResumeArgs),
     History(SchedulerHistoryArgs),
@@ -39,6 +46,8 @@ impl Execute for SchedulerSubcommand {
             SchedulerSubcommand::List(args) => args.execute(runtime),
             SchedulerSubcommand::Show(args) => args.execute(runtime),
             SchedulerSubcommand::Run(args) => args.execute(runtime),
+            SchedulerSubcommand::Tick(args) => args.execute(runtime),
+            SchedulerSubcommand::Serve(args) => args.execute(runtime),
             SchedulerSubcommand::Pause(args) => args.execute(runtime),
             SchedulerSubcommand::Resume(args) => args.execute(runtime),
             SchedulerSubcommand::History(args) => args.execute(runtime),
@@ -206,6 +215,56 @@ impl Execute for SchedulerRunArgs {
 }
 
 #[derive(Args)]
+pub struct SchedulerTickArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for SchedulerTickArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let tick = SchedulerRuntime::new(runtime, SchedulerRuntimeConfig::default())
+            .tick_once(Utc::now())?;
+        if self.json {
+            crate::output::json::print_pretty(&json!({
+                "ran": tick.ran,
+                "next_wake_at": tick.next_wake_at.map(|value| value.to_rfc3339()),
+            }))
+        } else {
+            println!(
+                "ran={};next_wake_at={}",
+                tick.ran,
+                tick.next_wake_at
+                    .map(|value| value.to_rfc3339())
+                    .unwrap_or_else(|| "-".to_string())
+            );
+            Ok(())
+        }
+    }
+}
+
+#[derive(Args)]
+pub struct SchedulerServeArgs {
+    #[arg(long, default_value = "30s")]
+    pub idle_sleep: String,
+    #[arg(long, default_value = "5m")]
+    pub max_sleep: String,
+}
+
+impl Execute for SchedulerServeArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let shutdown = CliShutdownSignal::install()?;
+        let scheduler_runtime = SchedulerRuntime::new(
+            runtime,
+            SchedulerRuntimeConfig {
+                idle_sleep: Duration::from_secs(parse_duration_seconds(&self.idle_sleep)?),
+                max_sleep: Duration::from_secs(parse_duration_seconds(&self.max_sleep)?),
+            },
+        );
+        scheduler_runtime.run_forever(&shutdown)
+    }
+}
+
+#[derive(Args)]
 pub struct SchedulerPauseArgs {
     pub scheduler_id: String,
 }
@@ -359,4 +418,56 @@ fn summarize_error_message(raw: Option<&str>) -> String {
     }
     let truncated = value.chars().take(120).collect::<String>();
     format!("{truncated}...")
+}
+
+struct CliShutdownSignal;
+
+impl CliShutdownSignal {
+    fn install() -> Result<Self, OrbitError> {
+        reset_shutdown_signal();
+        install_shutdown_handlers()?;
+        Ok(Self)
+    }
+}
+
+impl ShutdownSignal for CliShutdownSignal {
+    fn should_stop(&self) -> bool {
+        shutdown_requested()
+    }
+}
+
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+fn reset_shutdown_signal() {
+    SHUTDOWN_REQUESTED.store(false, Ordering::SeqCst);
+}
+
+fn shutdown_requested() -> bool {
+    SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
+}
+
+#[cfg(unix)]
+fn install_shutdown_handlers() -> Result<(), OrbitError> {
+    unsafe extern "C" fn handle_signal(_: i32) {
+        SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+    }
+
+    unsafe extern "C" {
+        fn signal(signum: i32, handler: usize) -> usize;
+    }
+
+    const SIGINT: i32 = 2;
+    const SIGTERM: i32 = 15;
+
+    unsafe {
+        signal(SIGINT, handle_signal as *const () as usize);
+        signal(SIGTERM, handle_signal as *const () as usize);
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn install_shutdown_handlers() -> Result<(), OrbitError> {
+    Ok(())
 }

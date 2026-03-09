@@ -2,6 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 use std::path::Path;
+use std::time::Duration;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -241,6 +242,39 @@ fn scheduler_run_failure_json_includes_error_details() {
             .unwrap_or_default()
             .contains("network down")
     );
+}
+
+#[test]
+fn scheduler_tick_runs_due_schedulers_and_reports_next_wake() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_job(dir.path(), "spec-cli-tick");
+    let agent_cli = write_mock_agent(dir.path());
+    let scheduler_id = add_scheduler(dir.path(), &spec_id, "every 1s", &agent_cli);
+
+    std::thread::sleep(Duration::from_millis(1200));
+
+    let tick_output = orbit_in(dir.path())
+        .args(["scheduler", "tick", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let tick: Value = serde_json::from_slice(&tick_output).expect("tick json");
+    assert_eq!(tick["ran"], 1);
+    assert!(tick["next_wake_at"].as_str().is_some());
+
+    let history_output = orbit_in(dir.path())
+        .args(["scheduler", "history", &scheduler_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let history: Value = serde_json::from_slice(&history_output).expect("history json");
+    let runs = history.as_array().expect("array");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0]["state"], "success");
 }
 
 #[test]

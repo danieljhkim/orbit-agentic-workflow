@@ -159,3 +159,79 @@ fn complete_scheduler_run_updates_terminal_state_and_error_fields() {
     assert_eq!(finished.error_code.as_deref(), Some("RUN_FAILED"));
     assert_eq!(finished.error_message.as_deref(), Some("cancel requested"));
 }
+
+#[test]
+fn next_due_scheduler_time_returns_earliest_enabled_scheduler() {
+    let store = Store::open_in_memory().expect("store");
+    let now = Utc::now();
+    let earliest = now + chrono::Duration::minutes(5);
+    let latest = now + chrono::Duration::minutes(15);
+
+    let paused_id = store
+        .with_transaction(|tx| {
+            let paused = tx.insert_job_v2(
+                SchedulerTargetType::Job,
+                "spec-paused",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                SchedulerRetryBackoffStrategy::None,
+                0,
+                now + chrono::Duration::minutes(1),
+            )?;
+            let _ = tx.set_scheduler_state(&paused.scheduler_id, SchedulerScheduleState::Paused)?;
+            let _enabled = tx.insert_job_v2(
+                SchedulerTargetType::Job,
+                "spec-enabled",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                SchedulerRetryBackoffStrategy::None,
+                0,
+                earliest,
+            )?;
+            let _ = tx.insert_job_v2(
+                SchedulerTargetType::Job,
+                "spec-later",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                SchedulerRetryBackoffStrategy::None,
+                0,
+                latest,
+            )?;
+            Ok(paused.scheduler_id)
+        })
+        .expect("insert schedulers");
+
+    let next_due = store
+        .next_due_scheduler_time()
+        .expect("next due scheduler time");
+
+    assert_eq!(next_due, Some(earliest));
+
+    store
+        .with_transaction(|tx| tx.mark_scheduler_disabled(&paused_id))
+        .expect("disable paused scheduler");
+    assert_eq!(
+        store
+            .next_due_scheduler_time()
+            .expect("next due after disabling paused"),
+        Some(earliest)
+    );
+}
+
+#[test]
+fn next_due_scheduler_time_returns_none_without_enabled_schedulers() {
+    let store = Store::open_in_memory().expect("store");
+
+    assert_eq!(
+        store
+            .next_due_scheduler_time()
+            .expect("next due without schedulers"),
+        None
+    );
+}

@@ -104,6 +104,7 @@ pub trait SchedulerStoreBackend: Send + Sync {
     fn list_schedulers(&self, include_disabled: bool) -> Result<Vec<Scheduler>, OrbitError>;
     fn get_scheduler(&self, scheduler_id: &str) -> Result<Option<Scheduler>, OrbitError>;
     fn due_schedulers(&self, now: DateTime<Utc>) -> Result<Vec<Scheduler>, OrbitError>;
+    fn next_due_scheduler_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError>;
     fn list_scheduler_runs(&self, scheduler_id: &str) -> Result<Vec<SchedulerRun>, OrbitError>;
     fn get_pending_or_running_scheduler_run(
         &self,

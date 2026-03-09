@@ -86,6 +86,30 @@ impl Store {
             .map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    pub fn next_due_scheduler_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT next_run_at
+                 FROM schedulers
+                 WHERE state = 'enabled'
+                 ORDER BY next_run_at ASC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        value
+            .map(|raw| parse_timestamp(&raw).map_err(|e| OrbitError::Store(e.to_string())))
+            .transpose()
+    }
+
     pub fn list_scheduler_runs(&self, scheduler_id: &str) -> Result<Vec<SchedulerRun>, OrbitError> {
         let conn = self
             .conn

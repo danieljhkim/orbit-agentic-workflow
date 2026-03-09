@@ -177,6 +177,10 @@ impl SchedulerStoreBackend for SqliteSchedulerStoreBackend {
         self.store.due_schedulers(now)
     }
 
+    fn next_due_scheduler_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError> {
+        self.store.next_due_scheduler_time()
+    }
+
     fn list_scheduler_runs(&self, scheduler_id: &str) -> Result<Vec<SchedulerRun>, OrbitError> {
         self.store.list_scheduler_runs(scheduler_id)
     }

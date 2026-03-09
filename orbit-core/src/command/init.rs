@@ -37,23 +37,29 @@ impl OrbitRuntime {
         &self,
         options: InitOptions,
     ) -> Result<InitResult, OrbitError> {
-        let data_root = self.data_root();
-        let orbit_home = OrbitRuntime::orbit_home_root();
-
-        if data_root == orbit_home {
-            let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
-            if let Some(repo_root) = find_git_repo_root(&cwd) {
-                return init_workspace_at_root(&repo_root.join(".orbit"), options);
-            }
-        }
-
-        init_workspace_at_root(&data_root, options)
+        init_workspace_at_root(&resolve_init_root(self.data_root())?, options)
     }
 }
 
 pub(crate) fn ensure_orbit_root_initialized(orbit_root: &Path) -> Result<(), OrbitError> {
     let _ = init_workspace_at_root(orbit_root, InitOptions::default())?;
     Ok(())
+}
+
+pub fn init_workspace_from_root_override(
+    root_override: Option<&Path>,
+    options: InitOptions,
+) -> Result<InitResult, OrbitError> {
+    let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
+    let orbit_home = OrbitRuntime::orbit_home_root();
+    let data_root = crate::runtime::resolve_initialize_data_root(&cwd, root_override, &orbit_home)?;
+    let init_root = resolve_init_root(data_root)?;
+
+    if init_root != orbit_home || !options.force {
+        ensure_orbit_root_initialized(&orbit_home)?;
+    }
+
+    init_workspace_at_root(&init_root, options)
 }
 
 fn init_workspace_at_root(
@@ -102,6 +108,18 @@ fn init_workspace_at_root(
 
 fn home_orbit_root() -> Result<PathBuf, OrbitError> {
     Ok(paths::home_dir_required("cannot resolve home directory")?.join(".orbit"))
+}
+
+fn resolve_init_root(data_root: PathBuf) -> Result<PathBuf, OrbitError> {
+    let orbit_home = OrbitRuntime::orbit_home_root();
+    if data_root == orbit_home {
+        let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
+        if let Some(repo_root) = find_git_repo_root(&cwd) {
+            return Ok(repo_root.join(".orbit"));
+        }
+    }
+
+    Ok(data_root)
 }
 
 #[derive(Debug, Clone)]
