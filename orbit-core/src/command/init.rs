@@ -84,12 +84,11 @@ fn init_workspace_at_root(
     let created_config = seed_default_config(&config_path, init_target.config_template)?;
 
     let skill_ids = default_skill_ids();
-    let created_skills_symlink = ensure_skill_links(
-        &skills_root,
-        &skill_ids,
-        &init_target.skills_links_root,
-        options.force,
-    )?;
+    let mut created_skills_symlink = false;
+    for skills_links_root in &init_target.skills_links_roots {
+        created_skills_symlink |=
+            ensure_skill_links(&skills_root, &skill_ids, skills_links_root, options.force)?;
+    }
 
     let init_runtime = OrbitRuntime::from_data_root(&orbit_root)?;
     let created_default_work = seed_default_activities(&init_runtime)? > 0;
@@ -125,7 +124,7 @@ fn resolve_init_root(data_root: PathBuf) -> Result<PathBuf, OrbitError> {
 #[derive(Debug, Clone)]
 struct InitTarget {
     orbit_root: PathBuf,
-    skills_links_root: PathBuf,
+    skills_links_roots: Vec<PathBuf>,
     config_template: &'static str,
 }
 
@@ -134,19 +133,25 @@ fn resolve_init_target_from_root(orbit_root: &Path) -> Result<InitTarget, OrbitE
     let home_root = home_orbit_root()?;
     let config_template = default_config_template_for_root(&orbit_root, &home_root);
 
-    let skills_links_root = if let Some(repo_root) = find_git_repo_root(&orbit_root) {
-        repo_root.join(".agents").join("skills")
+    let skills_links_base = if let Some(repo_root) = find_git_repo_root(&orbit_root) {
+        repo_root
     } else {
         paths::home_dir_required("cannot resolve home directory")?
-            .join(".agents")
-            .join("skills")
     };
+    let skills_links_roots = skill_link_roots(&skills_links_base);
 
     Ok(InitTarget {
         orbit_root,
-        skills_links_root,
+        skills_links_roots,
         config_template,
     })
+}
+
+fn skill_link_roots(base_root: &Path) -> Vec<PathBuf> {
+    [".agents", ".claude"]
+        .into_iter()
+        .map(|dir| base_root.join(dir).join("skills"))
+        .collect()
 }
 
 fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
@@ -165,8 +170,7 @@ fn ensure_skill_links(
 
     if let Ok(metadata) = fs::symlink_metadata(skills_links_dir) {
         if metadata.file_type().is_symlink() {
-            // Migrate old behavior (~/.agents/skills -> ~/.orbit/skills) to
-            // per-skill symlink entries.
+            // Migrate legacy root-level skill symlinks to per-skill entries.
             fs::remove_file(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         } else if !metadata.file_type().is_dir() {
             if force {

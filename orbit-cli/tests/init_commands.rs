@@ -20,6 +20,31 @@ fn create_dir_symlink(src: &std::path::Path, dst: &std::path::Path) {
     std::os::windows::fs::symlink_dir(src, dst).expect("create symlink");
 }
 
+fn assert_default_skill_links(base_root: &std::path::Path) {
+    for skills_link_root in [
+        base_root.join(".agents").join("skills"),
+        base_root.join(".claude").join("skills"),
+    ] {
+        let root_meta =
+            std::fs::symlink_metadata(&skills_link_root).expect("skills link dir metadata");
+        assert!(root_meta.file_type().is_dir());
+        for skill_id in [
+            "orbit-create-task",
+            "orbit-approve-task",
+            "orbit-assess-codebase",
+            "orbit-execute-change-request",
+            "orbit-maintain-system",
+            "orbit-manage-tasks",
+            "orbit-skills",
+            "orbit-track-issues",
+        ] {
+            let link_path = skills_link_root.join(skill_id);
+            let link_meta = std::fs::symlink_metadata(&link_path).expect("skill symlink metadata");
+            assert!(link_meta.file_type().is_symlink());
+        }
+    }
+}
+
 #[test]
 fn init_creates_default_identities_under_home_orbit() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -94,23 +119,7 @@ fn init_creates_default_identities_under_home_orbit() {
     assert!(config_raw.contains("[task.approval]"));
     assert!(!config_raw.contains("[watch]"));
 
-    let skills_link_root = home.path().join(".agents").join("skills");
-    let root_meta = std::fs::symlink_metadata(&skills_link_root).expect("skills link dir metadata");
-    assert!(root_meta.file_type().is_dir());
-    for skill_id in [
-        "orbit-create-task",
-        "orbit-approve-task",
-        "orbit-assess-codebase",
-        "orbit-execute-change-request",
-        "orbit-maintain-system",
-        "orbit-manage-tasks",
-        "orbit-skills",
-        "orbit-track-issues",
-    ] {
-        let link_path = skills_link_root.join(skill_id);
-        let link_meta = std::fs::symlink_metadata(&link_path).expect("skill symlink metadata");
-        assert!(link_meta.file_type().is_symlink());
-    }
+    assert_default_skill_links(home.path());
 }
 
 #[test]
@@ -148,9 +157,11 @@ fn init_migrates_root_skills_symlink_to_per_skill_links() {
 
     let orbit_skills = home.path().join(".orbit").join("skills");
     std::fs::create_dir_all(&orbit_skills).expect("create orbit skills");
-    let agents_dir = home.path().join(".agents");
-    std::fs::create_dir_all(&agents_dir).expect("create agents dir");
-    create_dir_symlink(&orbit_skills, &agents_dir.join("skills"));
+    for skill_parent in [".agents", ".claude"] {
+        let skill_dir = home.path().join(skill_parent);
+        std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+        create_dir_symlink(&orbit_skills, &skill_dir.join("skills"));
+    }
 
     orbit_in(workspace.path())
         .env("HOME", home.path())
@@ -158,13 +169,18 @@ fn init_migrates_root_skills_symlink_to_per_skill_links() {
         .assert()
         .success();
 
-    let skills_link_root = home.path().join(".agents").join("skills");
-    let root_meta = std::fs::symlink_metadata(&skills_link_root).expect("skills metadata");
-    assert!(root_meta.file_type().is_dir());
-    assert!(!root_meta.file_type().is_symlink());
-    let skill_link_meta = std::fs::symlink_metadata(skills_link_root.join("orbit-approve-task"))
-        .expect("orbit-approve-task link metadata");
-    assert!(skill_link_meta.file_type().is_symlink());
+    for skills_link_root in [
+        home.path().join(".agents").join("skills"),
+        home.path().join(".claude").join("skills"),
+    ] {
+        let root_meta = std::fs::symlink_metadata(&skills_link_root).expect("skills metadata");
+        assert!(root_meta.file_type().is_dir());
+        assert!(!root_meta.file_type().is_symlink());
+        let skill_link_meta =
+            std::fs::symlink_metadata(skills_link_root.join("orbit-approve-task"))
+                .expect("orbit-approve-task link metadata");
+        assert!(skill_link_meta.file_type().is_symlink());
+    }
 }
 
 #[test]
@@ -172,25 +188,24 @@ fn init_repairs_broken_per_skill_symlink_targets() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("home");
 
-    let skills_link_root = home.path().join(".agents").join("skills");
-    std::fs::create_dir_all(&skills_link_root).expect("create skills link root");
     let broken_target = home
         .path()
         .join(".orbit")
         .join("skills")
         .join("does-not-exist");
-    create_dir_symlink(&broken_target, &skills_link_root.join("orbit-approve-task"));
+    for skills_link_root in [
+        home.path().join(".agents").join("skills"),
+        home.path().join(".claude").join("skills"),
+    ] {
+        std::fs::create_dir_all(&skills_link_root).expect("create skills link root");
+        create_dir_symlink(&broken_target, &skills_link_root.join("orbit-approve-task"));
+    }
 
     orbit_in(workspace.path())
         .env("HOME", home.path())
         .args(["init"])
         .assert()
         .success();
-
-    let repaired_link = skills_link_root.join("orbit-approve-task");
-    let repaired_link_meta = std::fs::symlink_metadata(&repaired_link).expect("repaired metadata");
-    assert!(repaired_link_meta.file_type().is_symlink());
-    assert!(repaired_link.exists());
 
     let expected_target = home
         .path()
@@ -199,10 +214,25 @@ fn init_repairs_broken_per_skill_symlink_targets() {
         .join("orbit-approve-task")
         .canonicalize()
         .expect("canonical expected target");
-    let actual_target = repaired_link
-        .canonicalize()
-        .expect("canonical repaired target");
-    assert_eq!(actual_target, expected_target);
+    for repaired_link in [
+        home.path()
+            .join(".agents")
+            .join("skills")
+            .join("orbit-approve-task"),
+        home.path()
+            .join(".claude")
+            .join("skills")
+            .join("orbit-approve-task"),
+    ] {
+        let repaired_link_meta =
+            std::fs::symlink_metadata(&repaired_link).expect("repaired metadata");
+        assert!(repaired_link_meta.file_type().is_symlink());
+        assert!(repaired_link.exists());
+        let actual_target = repaired_link
+            .canonicalize()
+            .expect("canonical repaired target");
+        assert_eq!(actual_target, expected_target);
+    }
 }
 
 #[test]
@@ -288,14 +318,7 @@ fn init_uses_repo_local_layout_when_inside_git_repository() {
             .exists()
     );
 
-    let repo_skills_link_root = repo.path().join(".agents").join("skills");
-    let root_meta = std::fs::symlink_metadata(&repo_skills_link_root)
-        .expect("repo .agents skills root metadata");
-    assert!(root_meta.file_type().is_dir());
-    let skill_link_meta =
-        std::fs::symlink_metadata(repo_skills_link_root.join("orbit-approve-task"))
-            .expect("repo skill symlink metadata");
-    assert!(skill_link_meta.file_type().is_symlink());
+    assert_default_skill_links(repo.path());
 
     let config_raw =
         std::fs::read_to_string(repo_orbit.join("config.toml")).expect("read repo config");
