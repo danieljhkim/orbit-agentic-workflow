@@ -71,8 +71,10 @@ impl TaskStoreBackend for TaskFileStore {
                 pr_number: params.pr_number,
                 proposed_by: params.proposed_by,
                 proposal_approved_by: params.proposal_approved_by,
+                proposal_rejected_by: params.proposal_rejected_by,
                 proposal_decision_note: params.proposal_decision_note,
                 review_approved_by: params.review_approved_by,
+                review_rejected_by: params.review_rejected_by,
                 review_decision_note: params.review_decision_note,
             },
         )

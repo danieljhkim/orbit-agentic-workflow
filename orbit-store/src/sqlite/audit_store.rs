@@ -79,7 +79,9 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::TaskArchived { .. } => "TaskArchived",
         OrbitEvent::TaskUnarchived { .. } => "TaskUnarchived",
         OrbitEvent::TaskProposalApproved { .. } => "TaskProposalApproved",
+        OrbitEvent::TaskProposalRejected { .. } => "TaskProposalRejected",
         OrbitEvent::TaskReviewApproved { .. } => "TaskReviewApproved",
+        OrbitEvent::TaskReviewRejected { .. } => "TaskReviewRejected",
         OrbitEvent::TaskDeleted { .. } => "TaskDeleted",
         OrbitEvent::ToolAdded { .. } => "ToolAdded",
         OrbitEvent::ToolRemoved { .. } => "ToolRemoved",
@@ -148,8 +150,14 @@ fn event_message(event: &OrbitEvent) -> String {
         OrbitEvent::TaskProposalApproved { id, approved_by } => {
             format!("task proposal approved: {id} by {approved_by}")
         }
+        OrbitEvent::TaskProposalRejected { id, rejected_by } => {
+            format!("task proposal rejected: {id} by {rejected_by}")
+        }
         OrbitEvent::TaskReviewApproved { id, approved_by } => {
             format!("task review approved: {id} by {approved_by}")
+        }
+        OrbitEvent::TaskReviewRejected { id, rejected_by } => {
+            format!("task review rejected: {id} by {rejected_by}")
         }
         OrbitEvent::TaskDeleted { id } => format!("task deleted: {id}"),
         OrbitEvent::ToolAdded { name } => format!("tool added: {name}"),

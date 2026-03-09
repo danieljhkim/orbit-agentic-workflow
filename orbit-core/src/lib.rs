@@ -454,6 +454,87 @@ mod tests {
     }
 
     #[test]
+    fn reject_review_task_moves_back_to_backlog_with_audit_metadata() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "needs more work".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    description: None,
+                    plan: None,
+                    execution_summary: None,
+                    assigned_to: None,
+                    status: Some(TaskStatus::InProgress),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("in progress");
+        runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    description: None,
+                    plan: None,
+                    execution_summary: Some("Implemented initial pass.".to_string()),
+                    assigned_to: None,
+                    status: Some(TaskStatus::Review),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("review");
+
+        let rejected = runtime
+            .reject_task(
+                &task.id,
+                "reviewer",
+                "Missing regression coverage".to_string(),
+            )
+            .expect("reject");
+
+        assert_eq!(rejected.status, TaskStatus::Backlog);
+        assert_eq!(rejected.review_rejected_by.as_deref(), Some("reviewer"));
+        assert_eq!(
+            rejected.review_decision_note.as_deref(),
+            Some("Missing regression coverage")
+        );
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskReviewRejected"));
+    }
+
+    #[test]
+    fn reject_task_requires_supported_status_and_note() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "backlog task".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let wrong_status = runtime.reject_task(&task.id, "reviewer", "not ready".to_string());
+        assert!(matches!(
+            wrong_status,
+            Err(crate::OrbitError::InvalidInput(_))
+        ));
+
+        let empty_note = runtime.reject_task(&task.id, "reviewer", "   ".to_string());
+        assert!(matches!(
+            empty_note,
+            Err(crate::OrbitError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
     fn review_transition_requires_execution_summary() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime

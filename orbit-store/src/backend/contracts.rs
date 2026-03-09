@@ -44,8 +44,10 @@ pub struct TaskUpdateParams {
     pub pr_number: Option<Option<String>>,
     pub proposed_by: Option<Option<String>>,
     pub proposal_approved_by: Option<Option<String>>,
+    pub proposal_rejected_by: Option<Option<String>>,
     pub proposal_decision_note: Option<Option<String>>,
     pub review_approved_by: Option<Option<String>>,
+    pub review_rejected_by: Option<Option<String>>,
     pub review_decision_note: Option<Option<String>>,
 }
 

@@ -39,11 +39,13 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let pr_number: Option<String> = row.get(13)?;
     let proposed_by: Option<String> = row.get(14)?;
     let proposal_approved_by: Option<String> = row.get(15)?;
-    let proposal_decision_note: Option<String> = row.get(16)?;
-    let review_approved_by: Option<String> = row.get(17)?;
-    let review_decision_note: Option<String> = row.get(18)?;
-    let created_at_raw: String = row.get(19)?;
-    let updated_at_raw: String = row.get(20)?;
+    let proposal_rejected_by: Option<String> = row.get(16)?;
+    let proposal_decision_note: Option<String> = row.get(17)?;
+    let review_approved_by: Option<String> = row.get(18)?;
+    let review_rejected_by: Option<String> = row.get(19)?;
+    let review_decision_note: Option<String> = row.get(20)?;
+    let created_at_raw: String = row.get(21)?;
+    let updated_at_raw: String = row.get(22)?;
 
     Ok(Task {
         id: row.get(0)?,
@@ -62,15 +64,17 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         pr_number,
         proposed_by,
         proposal_approved_by,
+        proposal_rejected_by,
         proposal_decision_note,
         review_approved_by,
+        review_rejected_by,
         review_decision_note,
         created_at: parse_timestamp(&created_at_raw)?,
         updated_at: parse_timestamp(&updated_at_raw)?,
     })
 }
 
-const SELECT_COLS: &str = "id, title, description, instructions, execution_summary, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at";
+const SELECT_COLS: &str = "id, title, description, instructions, execution_summary, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_rejected_by, proposal_decision_note, review_approved_by, review_rejected_by, review_decision_note, created_at, updated_at";
 
 impl Store {
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -228,8 +232,10 @@ pub struct TaskUpdateFields {
     pub pr_number: Option<Option<String>>,
     pub proposed_by: Option<Option<String>>,
     pub proposal_approved_by: Option<Option<String>>,
+    pub proposal_rejected_by: Option<Option<String>>,
     pub proposal_decision_note: Option<Option<String>>,
     pub review_approved_by: Option<Option<String>>,
+    pub review_rejected_by: Option<Option<String>>,
     pub review_decision_note: Option<Option<String>>,
 }
 
@@ -255,8 +261,10 @@ impl<'a> StoreTx<'a> {
             pr_number: params.pr_number.clone(),
             proposed_by: params.proposed_by.clone(),
             proposal_approved_by: None,
+            proposal_rejected_by: None,
             proposal_decision_note: None,
             review_approved_by: None,
+            review_rejected_by: None,
             review_decision_note: None,
             created_at: now,
             updated_at: now,
@@ -264,7 +272,7 @@ impl<'a> StoreTx<'a> {
 
         self.tx
             .execute(
-                "INSERT INTO tasks(id, title, description, instructions, execution_summary, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_decision_note, review_approved_by, review_decision_note, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                "INSERT INTO tasks(id, title, description, instructions, execution_summary, context_files, workspace_path, assigned_to, created_by, status, priority, task_type, branch, pr_number, proposed_by, proposal_approved_by, proposal_rejected_by, proposal_decision_note, review_approved_by, review_rejected_by, review_decision_note, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
                 params![
                     task.id,
                     task.title,
@@ -282,8 +290,10 @@ impl<'a> StoreTx<'a> {
                     task.pr_number,
                     task.proposed_by,
                     task.proposal_approved_by,
+                    task.proposal_rejected_by,
                     task.proposal_decision_note,
                     task.review_approved_by,
+                    task.review_rejected_by,
                     task.review_decision_note,
                     task.created_at.to_rfc3339(),
                     task.updated_at.to_rfc3339(),
@@ -359,12 +369,20 @@ impl<'a> StoreTx<'a> {
             sets.push("proposal_approved_by = ?");
             param_values.push(Box::new(v.clone()));
         }
+        if let Some(ref v) = fields.proposal_rejected_by {
+            sets.push("proposal_rejected_by = ?");
+            param_values.push(Box::new(v.clone()));
+        }
         if let Some(ref v) = fields.proposal_decision_note {
             sets.push("proposal_decision_note = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(ref v) = fields.review_approved_by {
             sets.push("review_approved_by = ?");
+            param_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = fields.review_rejected_by {
+            sets.push("review_rejected_by = ?");
             param_values.push(Box::new(v.clone()));
         }
         if let Some(ref v) = fields.review_decision_note {

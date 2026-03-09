@@ -397,3 +397,116 @@ fn task_approve_proposed_to_backlog() {
     assert_eq!(show["proposal_decision_note"], "approved verbally in sync");
     assert_eq!(show["status"], "backlog");
 }
+
+#[test]
+fn task_reject_proposed_to_archived() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "rejectable");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "daniel",
+            "--note",
+            "Duplicate of an existing task",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rejected task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["proposal_rejected_by"], "daniel");
+    assert_eq!(
+        show["proposal_decision_note"],
+        "Duplicate of an existing task"
+    );
+    assert_eq!(show["status"], "archived");
+}
+
+#[test]
+fn task_reject_review_to_backlog() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = false\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "review reject");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--status", "in-progress"])
+        .assert()
+        .success();
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "update",
+            &id,
+            "--status",
+            "review",
+            "--execution-summary",
+            "Implemented initial change set",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "review-bot",
+            "--note",
+            "Needs stronger coverage before merge",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rejected task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["review_rejected_by"], "review-bot");
+    assert_eq!(
+        show["review_decision_note"],
+        "Needs stronger coverage before merge"
+    );
+    assert_eq!(show["status"], "backlog");
+}
+
+#[test]
+fn task_reject_requires_note() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "missing note");
+
+    orbit_in(dir.path())
+        .args(["task", "reject", &id, "--by", "daniel"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "required arguments were not provided",
+        ));
+}

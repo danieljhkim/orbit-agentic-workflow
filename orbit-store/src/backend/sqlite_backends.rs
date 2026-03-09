@@ -84,8 +84,10 @@ impl TaskStoreBackend for SqliteTaskStoreBackend {
                     pr_number: params.pr_number.clone(),
                     proposed_by: params.proposed_by.clone(),
                     proposal_approved_by: params.proposal_approved_by.clone(),
+                    proposal_rejected_by: params.proposal_rejected_by.clone(),
                     proposal_decision_note: params.proposal_decision_note.clone(),
                     review_approved_by: params.review_approved_by.clone(),
+                    review_rejected_by: params.review_rejected_by.clone(),
                     review_decision_note: params.review_decision_note.clone(),
                 },
             )

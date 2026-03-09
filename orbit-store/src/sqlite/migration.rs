@@ -21,8 +21,10 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 pr_number TEXT,
                 proposed_by TEXT,
                 proposal_approved_by TEXT,
+                proposal_rejected_by TEXT,
                 proposal_decision_note TEXT,
                 review_approved_by TEXT,
+                review_rejected_by TEXT,
                 review_decision_note TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -252,6 +254,11 @@ fn ensure_tasks_schema(conn: &Connection) -> Result<(), OrbitError> {
         conn,
         "ALTER TABLE tasks ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
     )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE tasks ADD COLUMN proposal_rejected_by TEXT",
+    )?;
+    add_column_if_missing(conn, "ALTER TABLE tasks ADD COLUMN review_rejected_by TEXT")?;
 
     if table_has_column(conn, "tasks", "type")? {
         conn.execute(

@@ -1,8 +1,8 @@
-use orbit_types::OrbitError;
 use crate::providers::AgentProvider;
 use crate::providers::codex::codex_cli::CodexCliTransport;
 use crate::runtime::AgentRuntime;
 use crate::types::{AgentRequest, AgentResponse};
+use orbit_types::OrbitError;
 
 pub(crate) struct CodexRuntime {
     command: String,

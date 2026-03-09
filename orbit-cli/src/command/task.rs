@@ -29,6 +29,8 @@ pub enum TaskSubcommand {
     Update(TaskUpdateArgs),
     /// Approve a task (proposed → backlog, or review → done)
     Approve(TaskApproveArgs),
+    /// Reject a task (proposed → archived, or review → backlog)
+    Reject(TaskRejectArgs),
     /// Archive a task
     Archive(TaskArchiveArgs),
     /// Unarchive a task (archived → backlog)
@@ -47,6 +49,7 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::Show(args) => args.execute(runtime),
             TaskSubcommand::Update(args) => args.execute(runtime),
             TaskSubcommand::Approve(args) => args.execute(runtime),
+            TaskSubcommand::Reject(args) => args.execute(runtime),
             TaskSubcommand::Archive(args) => args.execute(runtime),
             TaskSubcommand::Unarchive(args) => args.execute(runtime),
             TaskSubcommand::Delete(args) => args.execute(runtime),
@@ -200,11 +203,17 @@ impl Execute for TaskShowArgs {
             if let Some(ref approved_by) = task.proposal_approved_by {
                 println!("Proposal Approved By: {}", approved_by);
             }
+            if let Some(ref rejected_by) = task.proposal_rejected_by {
+                println!("Proposal Rejected By: {}", rejected_by);
+            }
             if let Some(ref note) = task.proposal_decision_note {
                 println!("Proposal Note: {}", note);
             }
             if let Some(ref approved_by) = task.review_approved_by {
                 println!("Review Approved By: {}", approved_by);
+            }
+            if let Some(ref rejected_by) = task.review_rejected_by {
+                println!("Review Rejected By: {}", rejected_by);
             }
             if let Some(ref note) = task.review_decision_note {
                 println!("Review Note: {}", note);
@@ -332,6 +341,28 @@ impl Execute for TaskApproveArgs {
     }
 }
 
+// --- Reject ---
+
+#[derive(Args)]
+pub struct TaskRejectArgs {
+    /// Task ID
+    pub id: String,
+    /// Rejector identity
+    #[arg(long, default_value = "human")]
+    pub by: String,
+    /// Rejection note
+    #[arg(long)]
+    pub note: String,
+}
+
+impl Execute for TaskRejectArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let task = runtime.reject_task(&self.id, &self.by, self.note)?;
+        println!("Rejected task '{}'", task.id);
+        Ok(())
+    }
+}
+
 // --- Archive ---
 
 #[derive(Args)]
@@ -439,8 +470,10 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "pr_number": task.pr_number,
         "proposed_by": task.proposed_by,
         "proposal_approved_by": task.proposal_approved_by,
+        "proposal_rejected_by": task.proposal_rejected_by,
         "proposal_decision_note": task.proposal_decision_note,
         "review_approved_by": task.review_approved_by,
+        "review_rejected_by": task.review_rejected_by,
         "review_decision_note": task.review_decision_note,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),

@@ -51,8 +51,10 @@ pub(crate) struct FileTaskUpdate {
     pub pr_number: Option<Option<String>>,
     pub proposed_by: Option<Option<String>>,
     pub proposal_approved_by: Option<Option<String>>,
+    pub proposal_rejected_by: Option<Option<String>>,
     pub proposal_decision_note: Option<Option<String>>,
     pub review_approved_by: Option<Option<String>>,
+    pub review_rejected_by: Option<Option<String>>,
     pub review_decision_note: Option<Option<String>>,
 }
 
@@ -146,9 +148,13 @@ struct TaskFileDocument {
     #[serde(default)]
     proposal_approved_by: Option<String>,
     #[serde(default)]
+    proposal_rejected_by: Option<String>,
+    #[serde(default)]
     proposal_decision_note: Option<String>,
     #[serde(default)]
     review_approved_by: Option<String>,
+    #[serde(default)]
+    review_rejected_by: Option<String>,
     #[serde(default)]
     review_decision_note: Option<String>,
     created_at: DateTime<Utc>,
@@ -236,8 +242,10 @@ impl TaskFileStore {
                 pr_number: params.pr_number,
                 proposed_by: params.proposed_by,
                 proposal_approved_by: None,
+                proposal_rejected_by: None,
                 proposal_decision_note: None,
                 review_approved_by: None,
+                review_rejected_by: None,
                 review_decision_note: None,
                 created_at: now,
                 updated_at: now,
@@ -374,11 +382,17 @@ impl TaskFileStore {
         if let Some(value) = &fields.proposal_approved_by {
             bundle.doc.proposal_approved_by = value.clone();
         }
+        if let Some(value) = &fields.proposal_rejected_by {
+            bundle.doc.proposal_rejected_by = value.clone();
+        }
         if let Some(value) = &fields.proposal_decision_note {
             bundle.doc.proposal_decision_note = value.clone();
         }
         if let Some(value) = &fields.review_approved_by {
             bundle.doc.review_approved_by = value.clone();
+        }
+        if let Some(value) = &fields.review_rejected_by {
+            bundle.doc.review_rejected_by = value.clone();
         }
         if let Some(value) = &fields.review_decision_note {
             bundle.doc.review_decision_note = value.clone();
@@ -626,8 +640,10 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         pr_number: bundle.doc.pr_number,
         proposed_by: bundle.doc.proposed_by,
         proposal_approved_by: bundle.doc.proposal_approved_by,
+        proposal_rejected_by: bundle.doc.proposal_rejected_by,
         proposal_decision_note: bundle.doc.proposal_decision_note,
         review_approved_by: bundle.doc.review_approved_by,
+        review_rejected_by: bundle.doc.review_rejected_by,
         review_decision_note: bundle.doc.review_decision_note,
         created_at: bundle.doc.created_at,
         updated_at: bundle.doc.updated_at,

@@ -189,9 +189,13 @@ pub struct Task {
     #[serde(default)]
     pub proposal_approved_by: Option<String>,
     #[serde(default)]
+    pub proposal_rejected_by: Option<String>,
+    #[serde(default)]
     pub proposal_decision_note: Option<String>,
     #[serde(default)]
     pub review_approved_by: Option<String>,
+    #[serde(default)]
+    pub review_rejected_by: Option<String>,
     #[serde(default)]
     pub review_decision_note: Option<String>,
     pub created_at: DateTime<Utc>,

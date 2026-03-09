@@ -77,9 +77,17 @@ pub enum OrbitEvent {
         id: String,
         approved_by: String,
     },
+    TaskProposalRejected {
+        id: String,
+        rejected_by: String,
+    },
     TaskReviewApproved {
         id: String,
         approved_by: String,
+    },
+    TaskReviewRejected {
+        id: String,
+        rejected_by: String,
     },
     TaskDeleted {
         id: String,

@@ -1,27 +1,27 @@
 ---
 name: orbit-approve-task
-description: Use this skill when requested to review Orbit tasks for approval, record explicit human sign-off, or advance tasks through lifecycle gates, or `archive` the task if rejected.
+description: Use this skill when requested to review Orbit tasks for approval, record explicit human sign-off, or advance tasks through lifecycle gates, including explicit rejection.
 ---
 
 # Orbit Approve Task
 
 ## Purpose
 
-Use this skill to record explicit human approval OR after you have completed the review of an orbit task. 
+Use this skill to record explicit human approval or rejection after reviewing an Orbit task.
 
 ## Approval Gates
 
-The `orbit task approve` command auto-detects the current status:
+The decision commands auto-detect the current status:
 
 - `proposed -> backlog`: sets `proposal_approved_by` and `proposal_decision_note`
-- `proposed -> archived`: sets `proposal_approved_by` and `proposal_decision_note`
+- `proposed -> archived`: sets `proposal_rejected_by` and `proposal_decision_note`
 - `review -> done`: sets `review_approved_by` and `review_decision_note`
-- `review -> backlog`: sets `review_decision_note` explaining why
+- `review -> backlog`: sets `review_rejected_by` and `review_decision_note`
 
 Commands:
 
 ```bash
-orbit task archive <id> # reject
+orbit task reject <id> --by "<identity_display_name_or_model_name>" --note "<note>" # reject
 orbit task approve <id> --by "<identity_display_name_or_model_name>" --note "<note>" # approve
 ```
 
@@ -29,17 +29,16 @@ orbit task approve <id> --by "<identity_display_name_or_model_name>" --note "<no
 
 1. Find all tasks with status `proposed` or `review`.
 2. Confirm all the tasks are in `proposed` or `review`.
-3. For `proposed` tasks, review the task carefully, and determine whether the task is valid.
-    - If the proposed task is valid, approve with explicit approver identity and a meaningful note
-    - If not valid, archive the task using `orbit task archive <id>`
-4. For `review` tasks, review each task carefully and confrim that all the requirements were fulfilled as outlined in the task. 
-    - If the task is completed successfully, update the task status to `done` - `orbit task close <id>`
-    - If the task is incompleted,  update the task status to `backlog` and leave a note on why the task is incomplete. 
-
+3. For `proposed` tasks, review the task carefully and determine whether the task is valid.
+   - If the proposed task is valid, approve with explicit identity and a meaningful note.
+   - If not valid, reject with `orbit task reject <id> --by <agent_name> --note <reason>`.
+4. For `review` tasks, confirm all requirements were fulfilled as outlined in the task.
+   - If the task is completed successfully, approve with `orbit task approve <id> --by <agent_name> --note <reason>`.
+   - If the task is incomplete, reject with `orbit task reject <id> --by <agent_name> --note <reason>` and explain what still needs to be resolved.
 
 ## Verification Rules
 
-- Before approval: identity, scope, and current status are correct.
+- Before decision: identity, scope, and current status are correct.
 - After proposal approval: status is `backlog`.
 - After proposal rejection: status is `archived`.
 - After review approval: status is `done`.
@@ -49,10 +48,10 @@ orbit task approve <id> --by "<identity_display_name_or_model_name>" --note "<no
 
 Report:
 
-- action taken (`proposal approved` or `review approved`)
+- action taken (`proposal approved`, `proposal rejected`, `review approved`, or `review rejected`)
 - task ID
-- approver identity used
-- approval note, if any
+- decision identity used
+- decision note
 - verification result
 
 Keep output concise, operational, and auditable.
@@ -60,6 +59,7 @@ Keep output concise, operational, and auditable.
 ## Safety Rules
 
 - Never approve the wrong task ID.
+- Never reject the wrong task ID.
 - Never infer approval from ambiguity.
-- Prefer explicit `orbit task approve` over implicit pathways.
+- Prefer explicit `orbit task approve` and `orbit task reject` over implicit pathways.
 - Record meaningful notes for auditability.

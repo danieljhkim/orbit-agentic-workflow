@@ -216,6 +216,76 @@ impl OrbitRuntime {
         }
     }
 
+    pub fn reject_task(
+        &self,
+        id: &str,
+        rejected_by: &str,
+        note: String,
+    ) -> Result<Task, OrbitError> {
+        let task = self.get_task(id)?;
+        let rejector = rejected_by.trim();
+        if rejector.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "rejected_by must not be empty".to_string(),
+            ));
+        }
+        let reason = note.trim();
+        if reason.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "rejection note must not be empty".to_string(),
+            ));
+        }
+        let reason = reason.to_string();
+
+        match task.status {
+            TaskStatus::Proposed => {
+                let task = self.with_mutation(|| {
+                    let task = self.context.task_store.update_task(
+                        id,
+                        StoreTaskUpdateParams {
+                            status: Some(TaskStatus::Archived),
+                            proposal_rejected_by: Some(Some(rejector.to_string())),
+                            proposal_decision_note: Some(Some(reason.clone())),
+                            ..Default::default()
+                        },
+                    )?;
+                    Ok((
+                        task.clone(),
+                        OrbitEvent::TaskProposalRejected {
+                            id: id.to_string(),
+                            rejected_by: rejector.to_string(),
+                        },
+                    ))
+                })?;
+                Ok(task)
+            }
+            TaskStatus::Review => {
+                let task = self.with_mutation(|| {
+                    let task = self.context.task_store.update_task(
+                        id,
+                        StoreTaskUpdateParams {
+                            status: Some(TaskStatus::Backlog),
+                            review_rejected_by: Some(Some(rejector.to_string())),
+                            review_decision_note: Some(Some(reason.clone())),
+                            ..Default::default()
+                        },
+                    )?;
+                    Ok((
+                        task.clone(),
+                        OrbitEvent::TaskReviewRejected {
+                            id: id.to_string(),
+                            rejected_by: rejector.to_string(),
+                        },
+                    ))
+                })?;
+                Ok(task)
+            }
+            other => Err(OrbitError::InvalidInput(format!(
+                "task '{id}' is in status '{other}'; reject requires 'proposed' or 'review'"
+            ))),
+        }
+    }
+
     pub fn archive_task(&self, id: &str) -> Result<(), OrbitError> {
         let task = self.get_task(id)?;
 
