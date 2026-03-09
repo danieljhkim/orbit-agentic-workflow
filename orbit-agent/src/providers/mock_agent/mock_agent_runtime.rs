@@ -26,6 +26,7 @@ impl AgentRuntime for MockAgentRuntime {
             program: self.command.clone(),
             args: self.cli.args(&req.operation),
             stdin: self.cli.stdin(&req.envelope_json),
+            stdout_schema_json: None,
             required_env_vars: AgentProvider::MockAgent.required_env_vars(),
         })
     }

@@ -1,7 +1,7 @@
 id: approve-task-leader
 specType: task_approval
-description: Leader review all the orbit tasks that have "proposed" status and provide approvals or rejection.
-instruction: Use `orbit-approve-task` to check for any orbit tasks with "proposed" status, review them carefully, and update the status to "backlog" for approved tasks. Output the task_id's that have been approved and rejected and leave a brief summary in the comment.
+description: Leader review all the orbit tasks that have "proposed" or "review" status and provide approvals or rejection.
+instruction: Use `orbit-approve-task` to check for any orbit tasks with "proposed" or "review" status, review them carefully, and update the status accordingly. Output the task_id's that have been approved and rejected and leave a brief summary in the comment.
 inputSchemaJson:
   type: object
   properties: {}

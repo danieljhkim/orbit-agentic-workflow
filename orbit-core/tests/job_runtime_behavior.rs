@@ -62,13 +62,33 @@ fn add_scheduled_activity(
     retry_backoff_strategy: JobRetryBackoffStrategy,
     retry_initial_delay_seconds: u64,
 ) -> String {
+    add_scheduled_activity_with_timeout(
+        runtime,
+        target_id,
+        agent_cli,
+        10,
+        retry_max_attempts,
+        retry_backoff_strategy,
+        retry_initial_delay_seconds,
+    )
+}
+
+fn add_scheduled_activity_with_timeout(
+    runtime: &OrbitRuntime,
+    target_id: &str,
+    agent_cli: &str,
+    timeout_seconds: u64,
+    retry_max_attempts: u32,
+    retry_backoff_strategy: JobRetryBackoffStrategy,
+    retry_initial_delay_seconds: u64,
+) -> String {
     runtime
         .add_job(JobAddParams {
             target_type: JobTargetType::Activity,
             target_id: target_id.to_string(),
             schedule: "every 1s".to_string(),
             agent_cli: agent_cli.to_string(),
-            timeout_seconds: 10,
+            timeout_seconds,
             retry_max_attempts,
             retry_backoff_strategy,
             retry_initial_delay_seconds,
@@ -325,10 +345,12 @@ fn codex_job_run_uses_workspace_write_sandbox() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let args_capture = dir.path().join("codex-args.txt");
+    let schema_capture = dir.path().join("codex-schema.json");
     let script_path = dir.path().join("codex");
     let script = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"{args}\"\ncat > /dev/null\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"{args}\"\nprev=''\nfor arg in \"$@\"; do\n  if [ \"$prev\" = '--output-schema' ]; then\n    cat \"$arg\" > \"{schema}\"\n  fi\n  prev=\"$arg\"\ndone\ncat > /dev/null\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
         args = args_capture.display(),
+        schema = schema_capture.display(),
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
@@ -347,7 +369,46 @@ fn codex_job_run_uses_workspace_write_sandbox() {
 
     let args = std::fs::read_to_string(args_capture).expect("read args");
     let captured: Vec<&str> = args.lines().collect();
-    assert_eq!(captured, vec!["exec", "--sandbox", "workspace-write"]);
+    assert_eq!(captured[0..3], ["exec", "--sandbox", "workspace-write"]);
+    assert!(captured.contains(&"--output-schema"));
+
+    let schema = std::fs::read_to_string(schema_capture).expect("read schema");
+    assert!(schema.contains("\"schemaVersion\""));
+    assert!(schema.contains("\"status\""));
+    assert!(schema.contains("\"durationMs\""));
+}
+
+#[test]
+fn empty_stdout_timeout_marks_run_as_timeout() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nsleep 2\n");
+
+    add_activity(&runtime, "spec-timeout");
+    let job_id = add_scheduled_activity_with_timeout(
+        &runtime,
+        "spec-timeout",
+        &agent_cli,
+        1,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
+    );
+
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Timeout);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    assert_eq!(history[0].state, JobRunState::Timeout);
+    assert_eq!(history[0].error_code.as_deref(), Some("AGENT_TIMEOUT"));
+    assert!(
+        history[0]
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("timed out")
+    );
 }
 
 #[test]

@@ -26,6 +26,7 @@ impl AgentRuntime for ClaudeRuntime {
             program: self.command.clone(),
             args: self.cli.args(&req.operation),
             stdin: self.cli.stdin(&req.envelope_json),
+            stdout_schema_json: None,
             required_env_vars: AgentProvider::Claude.required_env_vars(),
         })
     }

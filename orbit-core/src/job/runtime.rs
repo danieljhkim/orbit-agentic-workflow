@@ -15,7 +15,7 @@ impl Default for JobRuntimeConfig {
     fn default() -> Self {
         Self {
             idle_sleep: Duration::from_secs(30),
-            max_sleep: Duration::from_secs(300),
+            max_sleep: Duration::from_secs(600),
         }
     }
 }

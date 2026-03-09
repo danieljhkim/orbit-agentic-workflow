@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use chrono::{DateTime, Utc};
 use orbit_agent::{
     Agent, AgentConfig, AgentRequest, AgentResponseStatus, parse_and_validate_response,
@@ -12,11 +14,13 @@ use orbit_types::{
 };
 use serde::Serialize;
 use serde_json::{Value, json};
+use tempfile::NamedTempFile;
 
 use crate::OrbitRuntime;
 use crate::json_schema::validate_instance_against_schema;
 const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
 const AGENT_INVOCATION_FAILED: &str = "AGENT_INVOCATION_FAILED";
+const AGENT_TIMEOUT: &str = "AGENT_TIMEOUT";
 const STALE_RUN_GRACE_SECONDS: u64 = 30;
 
 #[derive(Debug, Clone)]
@@ -511,11 +515,26 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         } else {
             EnvironmentMode::ClearAndSet(self.context.execution_env_policy.hydrated_allowlist_env())
         };
+        let (args, _stdout_schema_file) = match prepare_exec_args(&invocation) {
+            Ok(prepared) => prepared,
+            Err(err) => {
+                return AttemptOutcome {
+                    state: JobRunState::Failed,
+                    exit_code: Some(1),
+                    duration_ms: None,
+                    response_json: None,
+                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                    error_message: Some(err.to_string()),
+                    retryable: true,
+                    protocol_violation: false,
+                };
+            }
+        };
 
         let exec_result = match run_process(
             &ExecRequest {
                 program: invocation.program,
-                args: invocation.args,
+                args,
                 timeout_ms: Some(execution.timeout_seconds.saturating_mul(1000)),
                 stdin_mode: StdinMode::Bytes(invocation.stdin),
                 environment_mode,
@@ -536,6 +555,19 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 };
             }
         };
+
+        if orbit_agent::is_timeout(&exec_result) && exec_result.stdout.trim().is_empty() {
+            return AttemptOutcome {
+                state: JobRunState::Timeout,
+                exit_code: exec_result.exit_code,
+                duration_ms: Some(exec_result.duration_ms),
+                response_json: None,
+                error_code: Some(AGENT_TIMEOUT.to_string()),
+                error_message: Some(format_timeout_error_message(&exec_result)),
+                retryable: true,
+                protocol_violation: false,
+            };
+        }
 
         match parse_and_validate_response(&exec_result) {
             Ok((envelope, state)) => {
@@ -767,4 +799,43 @@ fn is_stale_active_run(job: &Job, run: &JobRun, now: DateTime<Utc>) -> bool {
     let elapsed_seconds = now.signed_duration_since(reference_time).num_seconds();
     let stale_after_seconds = job.timeout_seconds.saturating_add(STALE_RUN_GRACE_SECONDS) as i64;
     elapsed_seconds >= stale_after_seconds
+}
+
+fn prepare_exec_args(
+    invocation: &orbit_agent::AgentResponse,
+) -> Result<(Vec<String>, Option<NamedTempFile>), OrbitError> {
+    let mut args = invocation.args.clone();
+    let mut stdout_schema_file = None;
+
+    if let Some(schema) = invocation.stdout_schema_json.as_ref() {
+        let mut file = NamedTempFile::new().map_err(|error| {
+            OrbitError::Execution(format!(
+                "failed to create temporary agent output schema file: {error}"
+            ))
+        })?;
+        serde_json::to_writer(file.as_file_mut(), schema).map_err(|error| {
+            OrbitError::Execution(format!(
+                "failed to write temporary agent output schema file: {error}"
+            ))
+        })?;
+        file.as_file_mut().flush().map_err(|error| {
+            OrbitError::Execution(format!(
+                "failed to flush temporary agent output schema file: {error}"
+            ))
+        })?;
+
+        args.push("--output-schema".to_string());
+        args.push(file.path().to_string_lossy().into_owned());
+        stdout_schema_file = Some(file);
+    }
+
+    Ok((args, stdout_schema_file))
+}
+
+fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> String {
+    let stderr = exec_result.stderr.trim();
+    if stderr.is_empty() {
+        return "agent timed out before producing JSON stdout".to_string();
+    }
+    format!("agent timed out before producing JSON stdout; stderr: {stderr}")
 }

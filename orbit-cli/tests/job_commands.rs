@@ -62,6 +62,31 @@ fn add_job(dir: &Path, target_id: &str, schedule: &str, agent_cli: &str) -> Stri
     String::from_utf8(output).expect("utf8").trim().to_string()
 }
 
+fn add_job_with_default_timeout(
+    dir: &Path,
+    target_id: &str,
+    schedule: &str,
+    agent_cli: &str,
+) -> String {
+    let output = orbit_in(dir)
+        .args([
+            "job",
+            "add",
+            "--target-id",
+            target_id,
+            "--schedule",
+            schedule,
+            "--agent-cli",
+            agent_cli,
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("utf8").trim().to_string()
+}
+
 fn write_mock_agent(dir: &Path) -> String {
     let path = dir.join("mock-agent");
     std::fs::write(
@@ -117,6 +142,24 @@ fn job_add_list_show_json_flow() {
     assert_eq!(show["target_id"], spec_id);
     assert_eq!(show["schedule"], "every 1m");
     assert_eq!(show["state"], "enabled");
+}
+
+#[test]
+fn job_add_defaults_timeout_to_fifteen_minutes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-cli-default-timeout");
+
+    let job_id = add_job_with_default_timeout(dir.path(), &spec_id, "every 1m", "mock-agent");
+
+    let show_output = orbit_in(dir.path())
+        .args(["job", "show", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["timeout_seconds"], 900);
 }
 
 #[test]

@@ -74,6 +74,7 @@ fn provider_mapper_supports_codex() {
         ]
     );
     assert_eq!(invocation.runtime_key, "codex");
+    assert!(invocation.stdout_schema_json.is_some());
     let text = String::from_utf8(invocation.stdin).expect("utf8");
     assert!(text.contains("Execution envelope"));
 }
@@ -85,6 +86,7 @@ fn provider_mapper_supports_mock_agent() {
     assert_eq!(invocation.program, "mock-agent");
     assert_eq!(invocation.args, expected_job_args());
     assert_eq!(invocation.stdin, br#"{"schemaVersion":1}"#);
+    assert!(invocation.stdout_schema_json.is_none());
 }
 
 #[test]
@@ -96,6 +98,7 @@ fn provider_mapper_supports_direct_activity_mode() {
     assert_eq!(invocation.program, "mock-agent");
     assert_eq!(invocation.args, expected_activity_args());
     assert_eq!(invocation.stdin, br#"{"schemaVersion":1}"#);
+    assert!(invocation.stdout_schema_json.is_none());
 }
 
 #[test]
@@ -161,6 +164,7 @@ fn claude_runtime_declares_required_env_vars() {
     let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert_eq!(invocation.required_env_vars, &["HOME", "PATH"]);
+    assert!(invocation.stdout_schema_json.is_none());
 }
 
 #[test]

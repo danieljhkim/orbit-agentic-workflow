@@ -7,6 +7,7 @@ pub struct AgentResponse {
     pub program: String,
     pub args: Vec<String>,
     pub stdin: Vec<u8>,
+    pub stdout_schema_json: Option<Value>,
     pub required_env_vars: &'static [&'static str],
 }
 
