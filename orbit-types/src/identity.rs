@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentityRole {
+    Ceo,
     Leader,
     Engineer,
     ProductDesigner,
@@ -15,6 +16,7 @@ pub enum IdentityRole {
 impl Display for IdentityRole {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = match self {
+            IdentityRole::Ceo => "ceo",
             IdentityRole::Leader => "leader",
             IdentityRole::Engineer => "engineer",
             IdentityRole::ProductDesigner => "product-designer",
@@ -29,6 +31,7 @@ impl FromStr for IdentityRole {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim().to_ascii_lowercase().as_str() {
+            "ceo" => Ok(IdentityRole::Ceo),
             "leader" => Ok(IdentityRole::Leader),
             "engineer" => Ok(IdentityRole::Engineer),
             "product-designer" | "product_designer" => Ok(IdentityRole::ProductDesigner),
