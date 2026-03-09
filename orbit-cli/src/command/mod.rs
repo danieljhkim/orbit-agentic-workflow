@@ -1,9 +1,9 @@
+pub mod activity;
 pub mod agent;
 pub mod audit;
 pub mod config;
 pub mod init;
 pub mod job;
-pub mod scheduler;
 pub mod skill;
 pub mod task;
 pub mod tool;
@@ -38,9 +38,9 @@ pub enum Commands {
     Task(task::TaskCommand),
     Agent(agent::AgentCommand),
     Audit(audit::AuditCommand),
-    Job(job::JobCommand),
+    Activity(activity::ActivityCommand),
     Skill(skill::SkillCommand),
-    Scheduler(scheduler::SchedulerCommand),
+    Job(job::JobCommand),
     Watch(watch::WatchCommand),
 }
 
@@ -53,9 +53,9 @@ impl Execute for Commands {
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Agent(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
-            Commands::Job(cmd) => cmd.execute(runtime),
+            Commands::Activity(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),
-            Commands::Scheduler(cmd) => cmd.execute(runtime),
+            Commands::Job(cmd) => cmd.execute(runtime),
             Commands::Watch(cmd) => cmd.execute(runtime),
         }
     }

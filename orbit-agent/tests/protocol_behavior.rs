@@ -4,19 +4,39 @@ use orbit_agent::{
 use orbit_types::{ExecutionResult, OrbitError};
 use serde_json::json;
 
-fn scheduled_request() -> AgentRequest {
-    AgentRequest::scheduled("job", "spec-123", br#"{"schemaVersion":1}"#.to_vec())
+fn activity_request() -> AgentRequest {
+    AgentRequest::activity("spec-123", br#"{"schemaVersion":1}"#.to_vec())
 }
 
-fn expected_native_args() -> Vec<String> {
+fn job_request() -> AgentRequest {
+    AgentRequest::job("job-123", "spec-123", br#"{"schemaVersion":1}"#.to_vec())
+}
+
+fn expected_job_args() -> Vec<String> {
     vec![
         "run".to_string(),
         "--target-type".to_string(),
+        "activity".to_string(),
+        "--target-id".to_string(),
+        "spec-123".to_string(),
+        "--job-id".to_string(),
+        "job-123".to_string(),
+        "--mode".to_string(),
         "job".to_string(),
+        "--output".to_string(),
+        "json".to_string(),
+    ]
+}
+
+fn expected_activity_args() -> Vec<String> {
+    vec![
+        "run".to_string(),
+        "--target-type".to_string(),
+        "activity".to_string(),
         "--target-id".to_string(),
         "spec-123".to_string(),
         "--mode".to_string(),
-        "scheduled".to_string(),
+        "activity".to_string(),
         "--output".to_string(),
         "json".to_string(),
     ]
@@ -25,9 +45,7 @@ fn expected_native_args() -> Vec<String> {
 #[test]
 fn provider_mapper_supports_claude() {
     let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
-    let invocation = agent
-        .invoke(scheduled_request())
-        .expect("claude invocation");
+    let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert_eq!(invocation.program, "claude");
     assert_eq!(
         invocation.args,
@@ -45,7 +63,7 @@ fn provider_mapper_supports_claude() {
 #[test]
 fn provider_mapper_supports_codex() {
     let agent = Agent::new(&AgentConfig::cli("codex")).expect("codex runtime");
-    let invocation = agent.invoke(scheduled_request()).expect("codex invocation");
+    let invocation = agent.invoke(job_request()).expect("codex invocation");
     assert_eq!(invocation.program, "codex");
     assert_eq!(
         invocation.args,
@@ -63,18 +81,27 @@ fn provider_mapper_supports_codex() {
 #[test]
 fn provider_mapper_supports_mock_agent() {
     let agent = Agent::new(&AgentConfig::cli("mock-agent")).expect("mock-agent runtime");
+    let invocation = agent.invoke(job_request()).expect("mock-agent invocation");
+    assert_eq!(invocation.program, "mock-agent");
+    assert_eq!(invocation.args, expected_job_args());
+    assert_eq!(invocation.stdin, br#"{"schemaVersion":1}"#);
+}
+
+#[test]
+fn provider_mapper_supports_direct_activity_mode() {
+    let agent = Agent::new(&AgentConfig::cli("mock-agent")).expect("mock-agent runtime");
     let invocation = agent
-        .invoke(scheduled_request())
+        .invoke(activity_request())
         .expect("mock-agent invocation");
     assert_eq!(invocation.program, "mock-agent");
-    assert_eq!(invocation.args, expected_native_args());
+    assert_eq!(invocation.args, expected_activity_args());
     assert_eq!(invocation.stdin, br#"{"schemaVersion":1}"#);
 }
 
 #[test]
 fn provider_mapper_uses_binary_basename_for_paths() {
     let agent = Agent::new(&AgentConfig::cli("/usr/local/bin/claude")).expect("path-based runtime");
-    let invocation = agent.invoke(scheduled_request()).expect("path invocation");
+    let invocation = agent.invoke(job_request()).expect("path invocation");
     assert_eq!(invocation.program, "/usr/local/bin/claude");
     assert_eq!(
         invocation.args,
@@ -123,7 +150,7 @@ fn protocol_parser_accepts_success_envelope() {
 #[test]
 fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
     let agent = Agent::new(&AgentConfig::cli("codex")).expect("codex runtime");
-    let invocation = agent.invoke(scheduled_request()).expect("codex invocation");
+    let invocation = agent.invoke(job_request()).expect("codex invocation");
     let text = String::from_utf8(invocation.stdin).expect("utf8");
     assert!(text.contains("Execution envelope"));
     assert!(text.contains(r#"{"schemaVersion":1}"#));
@@ -132,9 +159,7 @@ fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
 #[test]
 fn claude_runtime_declares_required_env_vars() {
     let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
-    let invocation = agent
-        .invoke(scheduled_request())
-        .expect("claude invocation");
+    let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert_eq!(invocation.required_env_vars, &["HOME", "PATH"]);
 }
 

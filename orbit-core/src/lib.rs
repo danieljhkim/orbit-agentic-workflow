@@ -3,10 +3,10 @@ pub mod command;
 mod config;
 pub mod context;
 mod fs_utils;
+pub mod job;
 mod json_schema;
 mod paths;
 pub mod runtime;
-pub mod scheduler;
 pub mod watch;
 
 pub use orbit_store::identity_store as identity_catalog;
@@ -16,9 +16,9 @@ pub use context::OrbitContext;
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
-    AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, Job, Role, Scheduler,
-    SchedulerRetryBackoffStrategy, SchedulerRun, SchedulerRunState, SchedulerScheduleState,
-    SchedulerTargetType, Skill, Task, TaskPriority, TaskStatus, TaskType,
+    Activity, AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, Job,
+    JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill,
+    Task, TaskPriority, TaskStatus, TaskType,
 };
 pub use runtime::OrbitRuntime;
 
@@ -29,15 +29,14 @@ mod tests {
 
     use orbit_policy::PolicyEngine;
     use orbit_types::{
-        OrbitEvent, SchedulerRetryBackoffStrategy, SchedulerRunState, SchedulerTargetType,
-        TaskPriority, TaskStatus,
+        JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
     };
     use serde_json::json;
     use tempfile::tempdir;
 
     use crate::OrbitRuntime;
+    use crate::command::activity::ActivityAddParams;
     use crate::command::job::JobAddParams;
-    use crate::command::scheduler::SchedulerAddParams;
     use crate::command::task::{TaskAddParams, TaskUpdateParams};
 
     #[test]
@@ -97,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_run_does_not_double_execute_due_job() {
+    fn job_run_does_not_double_execute_due_activity() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let dir = tempdir().expect("temp dir");
         let agent_path = dir.path().join("mock-agent");
@@ -111,10 +110,10 @@ mod tests {
             .expect("chmod mock agent");
 
         runtime
-            .add_job(JobAddParams {
+            .add_activity(ActivityAddParams {
                 id: "spec-core-double-run".to_string(),
                 spec_type: "analysis".to_string(),
-                description: "spec for scheduler test".to_string(),
+                description: "spec for job test".to_string(),
                 instruction: String::new(),
                 input_schema_json: json!({}),
                 output_schema_json: json!({}),
@@ -124,37 +123,35 @@ mod tests {
                 assigned_to: None,
                 created_by: None,
             })
-            .expect("insert job");
+            .expect("insert activity");
 
-        let scheduler = runtime
-            .add_scheduler(SchedulerAddParams {
-                target_type: SchedulerTargetType::Job,
+        let job = runtime
+            .add_job(JobAddParams {
+                target_type: JobTargetType::Activity,
                 target_id: "spec-core-double-run".to_string(),
                 schedule: "every 1m".to_string(),
                 agent_cli: agent_path.to_string_lossy().to_string(),
                 timeout_seconds: 30,
                 retry_max_attempts: 0,
-                retry_backoff_strategy: SchedulerRetryBackoffStrategy::None,
+                retry_backoff_strategy: JobRetryBackoffStrategy::None,
                 retry_initial_delay_seconds: 0,
             })
-            .expect("add scheduler");
+            .expect("add job");
 
-        let due_at = scheduler.next_run_at;
-        let first = runtime.run_due_schedulers(due_at).expect("first run");
-        let second = runtime.run_due_schedulers(due_at).expect("second run");
+        let due_at = job.next_run_at;
+        let first = runtime.run_due_jobs(due_at).expect("first run");
+        let second = runtime.run_due_jobs(due_at).expect("second run");
 
         assert_eq!(first, 1);
         assert_eq!(second, 0);
 
-        let sessions = runtime
-            .scheduler_history(&scheduler.scheduler_id)
-            .expect("history");
+        let sessions = runtime.job_history(&job.job_id).expect("history");
         assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].state, SchedulerRunState::Success);
+        assert_eq!(sessions[0].state, JobRunState::Success);
     }
 
     #[test]
-    fn scheduler_run_skips_when_global_lock_held() {
+    fn job_run_skips_when_global_lock_held() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let lock_name = runtime.context.lock_store.global_job_lock_name();
         assert!(
@@ -165,7 +162,7 @@ mod tests {
                 .expect("lock")
         );
 
-        let ran = runtime.run_schedulers().expect("run schedulers");
+        let ran = runtime.run_jobs().expect("run jobs");
         assert_eq!(ran, 0);
 
         let _ = runtime.context.lock_store.unlock(lock_name);

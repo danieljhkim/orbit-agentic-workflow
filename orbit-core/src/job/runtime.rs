@@ -6,12 +6,12 @@ use chrono::{DateTime, Utc};
 use crate::{OrbitError, OrbitRuntime};
 
 #[derive(Debug, Clone, Copy)]
-pub struct SchedulerRuntimeConfig {
+pub struct JobRuntimeConfig {
     pub idle_sleep: Duration,
     pub max_sleep: Duration,
 }
 
-impl Default for SchedulerRuntimeConfig {
+impl Default for JobRuntimeConfig {
     fn default() -> Self {
         Self {
             idle_sleep: Duration::from_secs(30),
@@ -21,7 +21,7 @@ impl Default for SchedulerRuntimeConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SchedulerTickResult {
+pub struct JobTickResult {
     pub ran: usize,
     pub next_wake_at: Option<DateTime<Utc>>,
 }
@@ -30,24 +30,20 @@ pub trait ShutdownSignal {
     fn should_stop(&self) -> bool;
 }
 
-pub struct SchedulerRuntime<'a> {
+pub struct JobRuntime<'a> {
     runtime: &'a OrbitRuntime,
-    config: SchedulerRuntimeConfig,
+    config: JobRuntimeConfig,
 }
 
-impl<'a> SchedulerRuntime<'a> {
-    pub fn new(runtime: &'a OrbitRuntime, config: SchedulerRuntimeConfig) -> Self {
+impl<'a> JobRuntime<'a> {
+    pub fn new(runtime: &'a OrbitRuntime, config: JobRuntimeConfig) -> Self {
         Self { runtime, config }
     }
 
-    pub fn tick_once(&self, now: DateTime<Utc>) -> Result<SchedulerTickResult, OrbitError> {
-        let ran = self.runtime.run_due_schedulers(now)?;
-        let next_wake_at = self
-            .runtime
-            .context
-            .scheduler_store
-            .next_due_scheduler_time()?;
-        Ok(SchedulerTickResult { ran, next_wake_at })
+    pub fn tick_once(&self, now: DateTime<Utc>) -> Result<JobTickResult, OrbitError> {
+        let ran = self.runtime.run_due_jobs(now)?;
+        let next_wake_at = self.runtime.context.job_store.next_due_job_time()?;
+        Ok(JobTickResult { ran, next_wake_at })
     }
 
     pub fn run_forever(&self, shutdown: &dyn ShutdownSignal) -> Result<(), OrbitError> {
@@ -89,36 +85,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn overdue_scheduler_uses_idle_sleep_to_avoid_busy_spin() {
+    fn overdue_job_uses_idle_sleep_to_avoid_busy_spin() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let scheduler_runtime = SchedulerRuntime::new(
+        let job_runtime = JobRuntime::new(
             &runtime,
-            SchedulerRuntimeConfig {
+            JobRuntimeConfig {
                 idle_sleep: Duration::from_secs(7),
                 max_sleep: Duration::from_secs(60),
             },
         );
         let now = Utc::now();
 
-        let sleep_for = scheduler_runtime.sleep_duration_after_tick(now, Some(now));
+        let sleep_for = job_runtime.sleep_duration_after_tick(now, Some(now));
 
         assert_eq!(sleep_for, Duration::from_secs(7));
     }
 
     #[test]
-    fn future_scheduler_wake_is_capped_by_max_sleep() {
+    fn future_job_wake_is_capped_by_max_sleep() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let scheduler_runtime = SchedulerRuntime::new(
+        let job_runtime = JobRuntime::new(
             &runtime,
-            SchedulerRuntimeConfig {
+            JobRuntimeConfig {
                 idle_sleep: Duration::from_secs(5),
                 max_sleep: Duration::from_secs(30),
             },
         );
         let now = Utc::now();
 
-        let sleep_for = scheduler_runtime
-            .sleep_duration_after_tick(now, Some(now + chrono::Duration::hours(1)));
+        let sleep_for =
+            job_runtime.sleep_duration_after_tick(now, Some(now + chrono::Duration::hours(1)));
 
         assert_eq!(sleep_for, Duration::from_secs(30));
     }

@@ -19,43 +19,43 @@ pub enum OrbitEvent {
     ToolDisabled {
         name: String,
     },
-    SchedulerAdded {
-        scheduler_id: String,
+    JobAdded {
+        job_id: String,
     },
-    SchedulerPaused {
-        scheduler_id: String,
+    JobPaused {
+        job_id: String,
     },
-    SchedulerResumed {
-        scheduler_id: String,
+    JobResumed {
+        job_id: String,
     },
-    SchedulerDeleted {
-        scheduler_id: String,
+    JobDeleted {
+        job_id: String,
     },
-    SchedulerTriggered {
-        scheduler_id: String,
+    JobTriggered {
+        job_id: String,
     },
-    SchedulerRunStarted {
-        scheduler_id: String,
+    JobRunStarted {
+        job_id: String,
         run_id: String,
         attempt: u32,
     },
-    SchedulerRunCompleted {
-        scheduler_id: String,
+    JobRunCompleted {
+        job_id: String,
         run_id: String,
         state: String,
     },
-    SchedulerRetryScheduled {
-        scheduler_id: String,
+    JobRetryScheduled {
+        job_id: String,
         run_id: String,
         next_run_at: String,
     },
-    SchedulerProtocolViolation {
-        scheduler_id: String,
+    JobProtocolViolation {
+        job_id: String,
         run_id: String,
         message: String,
     },
-    SchedulerSkipped {
-        scheduler_id: String,
+    JobSkipped {
+        job_id: String,
         reason: String,
     },
     WatchTriggered {
@@ -104,11 +104,22 @@ pub enum OrbitEvent {
         task_id: String,
         skill_name: String,
     },
-    JobAdded {
+    ActivityAdded {
         id: String,
     },
-    JobDisabled {
+    ActivityDisabled {
         id: String,
+    },
+    ActivityRunStarted {
+        id: String,
+    },
+    ActivityRunCompleted {
+        id: String,
+        state: String,
+    },
+    ActivityProtocolViolation {
+        id: String,
+        message: String,
     },
     AgentSessionStarted {
         session_id: String,

@@ -35,8 +35,8 @@ impl EntityPersistenceConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PersistenceConfig {
-    pub(crate) scheduler: EntityPersistenceConfig,
     pub(crate) job: EntityPersistenceConfig,
+    pub(crate) activity: EntityPersistenceConfig,
     pub(crate) skill: EntityPersistenceConfig,
     pub(crate) task: EntityPersistenceConfig,
     pub(crate) watch: EntityPersistenceConfig,
@@ -47,14 +47,14 @@ impl PersistenceConfig {
     pub(crate) fn default_for_data_root(data_root: &Path) -> Self {
         let sqlite_default = data_root.join("orbit.db");
         Self {
-            scheduler: EntityPersistenceConfig {
-                persistence_type: PersistenceType::File,
-                path: data_root.join("schedulers"),
-                format: Some("yaml".to_string()),
-            },
             job: EntityPersistenceConfig {
                 persistence_type: PersistenceType::File,
                 path: data_root.join("jobs"),
+                format: Some("yaml".to_string()),
+            },
+            activity: EntityPersistenceConfig {
+                persistence_type: PersistenceType::File,
+                path: data_root.join("activities"),
                 format: Some("yaml".to_string()),
             },
             skill: EntityPersistenceConfig {
@@ -84,18 +84,18 @@ impl PersistenceConfig {
         let defaults = Self::default_for_data_root(data_root);
 
         Ok(Self {
-            scheduler: parse_configurable_entity(
-                "scheduler",
-                raw.scheduler.as_ref().and_then(|v| v.persistence.as_ref()),
-                &defaults.scheduler,
-                true,
-                "yaml",
-                data_root,
-            )?,
             job: parse_configurable_entity(
                 "job",
                 raw.job.as_ref().and_then(|v| v.persistence.as_ref()),
                 &defaults.job,
+                true,
+                "yaml",
+                data_root,
+            )?,
+            activity: parse_configurable_entity(
+                "activity",
+                raw.activity.as_ref().and_then(|v| v.persistence.as_ref()),
+                &defaults.activity,
                 true,
                 "yaml",
                 data_root,
@@ -131,8 +131,8 @@ impl PersistenceConfig {
 
     pub(crate) fn as_json_value(&self) -> Value {
         json!({
-            "scheduler": { "persistence": self.scheduler.to_json_value() },
             "job": { "persistence": self.job.to_json_value() },
+            "activity": { "persistence": self.activity.to_json_value() },
             "skill": { "persistence": self.skill.to_json_value() },
             "task": { "persistence": self.task.to_json_value() },
             "watch": { "persistence": self.watch.to_json_value() },

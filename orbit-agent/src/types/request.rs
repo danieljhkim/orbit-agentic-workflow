@@ -1,9 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentOperation {
-    Scheduled {
-        target_type: String,
-        target_id: String,
-    },
+    Activity { activity_id: String },
+    Job { job_id: String, activity_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,15 +11,24 @@ pub struct AgentRequest {
 }
 
 impl AgentRequest {
-    pub fn scheduled(
-        target_type: impl Into<String>,
-        target_id: impl Into<String>,
+    pub fn activity(activity_id: impl Into<String>, envelope_json: Vec<u8>) -> Self {
+        Self {
+            operation: AgentOperation::Activity {
+                activity_id: activity_id.into(),
+            },
+            envelope_json,
+        }
+    }
+
+    pub fn job(
+        job_id: impl Into<String>,
+        activity_id: impl Into<String>,
         envelope_json: Vec<u8>,
     ) -> Self {
         Self {
-            operation: AgentOperation::Scheduled {
-                target_type: target_type.into(),
-                target_id: target_id.into(),
+            operation: AgentOperation::Job {
+                job_id: job_id.into(),
+                activity_id: activity_id.into(),
             },
             envelope_json,
         }

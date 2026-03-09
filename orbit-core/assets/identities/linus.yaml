@@ -5,7 +5,7 @@ identity:
   display_name: Linus Torvalds (Maintainer)
   description: >
     Technical leader responsible for reviewing, approving,
-    or rejecting agent-generated job based on correctness,
+    or rejecting agent-generated activity based on correctness,
     simplicity, and long-term maintainability, as well as
     orbit task approvals and signoff.
 

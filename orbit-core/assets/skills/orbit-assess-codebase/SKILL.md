@@ -1,6 +1,6 @@
 ---
 name: orbit-assess-codebase
-description: Use for a comprehensive evaluation of the codebase to identify strengths, weaknesses, risks, and improvement opportunities. This skill is typically requested periodically by scheduled orbit-job, orbit-task, or human. Use this skill only when explicitly requested to "orbit-assess-codebase".
+description: Use for a comprehensive evaluation of the codebase to identify strengths, weaknesses, risks, and improvement opportunities. This skill is typically requested periodically by scheduled orbit-activity, orbit-task, or human. Use this skill only when explicitly requested to "orbit-assess-codebase".
 ---
 
 # Orbit Assess Codebase

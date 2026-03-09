@@ -4,17 +4,17 @@ use std::sync::Arc;
 use orbit_types::OrbitError;
 
 use super::contracts::{
-    AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, JobStoreBackend,
-    LockStoreBackend, SchedulerStoreBackend, TaskStoreBackend, ToolStoreBackend, WatchStoreBackend,
+    ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend,
+    JobStoreBackend, LockStoreBackend, TaskStoreBackend, ToolStoreBackend, WatchStoreBackend,
 };
 use super::sqlite_backends::{
-    SqliteAgentSessionStoreBackend, SqliteAuditEventStoreBackend, SqliteAuditStoreBackend,
-    SqliteJobStoreBackend, SqliteLockStoreBackend, SqliteSchedulerStoreBackend,
-    SqliteTaskStoreBackend, SqliteToolStoreBackend, SqliteWatchStoreBackend,
+    SqliteActivityStoreBackend, SqliteAgentSessionStoreBackend, SqliteAuditEventStoreBackend,
+    SqliteAuditStoreBackend, SqliteJobStoreBackend, SqliteLockStoreBackend, SqliteTaskStoreBackend,
+    SqliteToolStoreBackend, SqliteWatchStoreBackend,
 };
 use crate::Store;
+use crate::file::activity_store::ActivityFileStore;
 use crate::file::job_store::JobFileStore;
-use crate::file::scheduler_store::SchedulerFileStore;
 use crate::file::task_store::TaskFileStore;
 
 pub fn task_store_file(root: PathBuf) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
@@ -27,6 +27,16 @@ pub fn task_store_sqlite(store: Store) -> Arc<dyn TaskStoreBackend> {
     Arc::new(SqliteTaskStoreBackend { store })
 }
 
+pub fn activity_store_file(root: PathBuf) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
+    let store = ActivityFileStore::new(root);
+    store.ensure_layout()?;
+    Ok(Arc::new(store))
+}
+
+pub fn activity_store_sqlite(store: Store) -> Arc<dyn ActivityStoreBackend> {
+    Arc::new(SqliteActivityStoreBackend { store })
+}
+
 pub fn job_store_file(root: PathBuf) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
     let store = JobFileStore::new(root);
     store.ensure_layout()?;
@@ -35,16 +45,6 @@ pub fn job_store_file(root: PathBuf) -> Result<Arc<dyn JobStoreBackend>, OrbitEr
 
 pub fn job_store_sqlite(store: Store) -> Arc<dyn JobStoreBackend> {
     Arc::new(SqliteJobStoreBackend { store })
-}
-
-pub fn scheduler_store_file(root: PathBuf) -> Result<Arc<dyn SchedulerStoreBackend>, OrbitError> {
-    let store = SchedulerFileStore::new(root);
-    store.ensure_layout()?;
-    Ok(Arc::new(store))
-}
-
-pub fn scheduler_store_sqlite(store: Store) -> Arc<dyn SchedulerStoreBackend> {
-    Arc::new(SqliteSchedulerStoreBackend { store })
 }
 
 pub fn tool_store_sqlite(store: Store) -> Arc<dyn ToolStoreBackend> {

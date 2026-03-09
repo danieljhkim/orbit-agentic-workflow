@@ -25,9 +25,9 @@ CREATE TABLE IF NOT EXISTS memos (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS schedulers (
+CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
-    target_type TEXT NOT NULL CHECK (target_type IN ('job')),
+    target_type TEXT NOT NULL CHECK (target_type IN ('activity')),
     target_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     agent_cli TEXT NOT NULL,
@@ -42,17 +42,17 @@ CREATE TABLE IF NOT EXISTS schedulers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_state
-ON schedulers(state);
+ON jobs(state);
 
 CREATE INDEX IF NOT EXISTS idx_jobs_target
-ON schedulers(target_type, target_id);
+ON jobs(target_type, target_id);
 
 CREATE INDEX IF NOT EXISTS idx_jobs_next_run
-ON schedulers(state, next_run_at);
+ON jobs(state, next_run_at);
 
-CREATE TABLE IF NOT EXISTS scheduler_runs (
+CREATE TABLE IF NOT EXISTS job_runs (
     id TEXT PRIMARY KEY,
-    scheduler_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
     attempt INTEGER NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed','timeout')),
     scheduled_at TEXT NOT NULL,
@@ -64,20 +64,20 @@ CREATE TABLE IF NOT EXISTS scheduler_runs (
     error_code TEXT,
     error_message TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(scheduler_id) REFERENCES schedulers(id)
+    FOREIGN KEY(job_id) REFERENCES jobs(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_runs_job
-ON scheduler_runs(scheduler_id, created_at);
+ON job_runs(job_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_job_runs_state
-ON scheduler_runs(state);
+ON job_runs(state);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_job_runs_single_running
-ON scheduler_runs(scheduler_id)
+ON job_runs(job_id)
 WHERE state = 'running';
 
-CREATE TABLE IF NOT EXISTS jobs (
+CREATE TABLE IF NOT EXISTS activities (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -92,10 +92,10 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_works_type
-ON jobs(type);
+ON activities(type);
 
 CREATE INDEX IF NOT EXISTS idx_works_active
-ON jobs(is_active);
+ON activities(is_active);
 
 CREATE TABLE IF NOT EXISTS watches (
     id TEXT PRIMARY KEY,

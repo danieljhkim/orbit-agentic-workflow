@@ -7,7 +7,7 @@ description: Use when starting any Orbit-related work. This skill explains the O
 
 ## Purpose
 
-Use this skill to choose the right Orbit skill for the current job. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
+Use this skill to choose the right Orbit skill for the current activity. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
 
 ## Orbit Lifecycle Overview
 

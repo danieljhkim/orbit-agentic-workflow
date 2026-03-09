@@ -13,18 +13,17 @@ pub mod skill_store {
 use chrono::{DateTime, Utc};
 
 pub use backend::{
-    AgentSessionStoreBackend, AuditEventStoreBackend, AuditStoreBackend, JobCreateParams,
-    JobStoreBackend, LockStoreBackend, SchedulerCreateParams, SchedulerRunCompletionParams,
-    SchedulerStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend,
-    WatchStoreBackend, agent_session_store_sqlite, audit_event_store_sqlite, audit_store_sqlite,
-    job_store_file, job_store_sqlite, lock_store_sqlite, scheduler_store_file,
-    scheduler_store_sqlite, task_store_file, task_store_sqlite, tool_store_sqlite,
-    watch_store_sqlite,
+    ActivityCreateParams, ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend,
+    AuditStoreBackend, JobCreateParams, JobRunCompletionParams, JobStoreBackend, LockStoreBackend,
+    TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend, WatchStoreBackend,
+    activity_store_file, activity_store_sqlite, agent_session_store_sqlite,
+    audit_event_store_sqlite, audit_store_sqlite, job_store_file, job_store_sqlite,
+    lock_store_sqlite, task_store_file, task_store_sqlite, tool_store_sqlite, watch_store_sqlite,
 };
+pub use sqlite::activity_store::ActivityInsertParams;
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 pub use sqlite::connection::{Store, StoreTx};
-pub use sqlite::job_store::JobInsertParams;
-pub use sqlite::scheduler_store::{ClaimedJobRun, DueJobsClaim};
+pub use sqlite::job_store::{ClaimedJobRun, DueJobsClaim};
 pub use sqlite::task_store;
 
 pub(crate) fn parse_timestamp(raw: &str) -> rusqlite::Result<DateTime<Utc>> {

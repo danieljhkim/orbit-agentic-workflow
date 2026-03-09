@@ -4,9 +4,9 @@ use std::sync::Arc;
 use chrono::Utc;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
-    Store, agent_session_store_sqlite, audit_event_store_sqlite, audit_store_sqlite,
-    job_store_file, job_store_sqlite, lock_store_sqlite, scheduler_store_file,
-    scheduler_store_sqlite, task_store_file, tool_store_sqlite, watch_store_sqlite,
+    Store, activity_store_file, activity_store_sqlite, agent_session_store_sqlite,
+    audit_event_store_sqlite, audit_store_sqlite, job_store_file, job_store_sqlite,
+    lock_store_sqlite, task_store_file, tool_store_sqlite, watch_store_sqlite,
 };
 use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
@@ -34,22 +34,22 @@ pub(crate) fn build_context_from_data_root(
     let store = Store::open(&db_path)?;
 
     let task_store = task_store_file(runtime_config.persistence.task.path.clone())?;
+    let activity_store = match runtime_config.persistence.activity.persistence_type {
+        PersistenceType::File => {
+            activity_store_file(runtime_config.persistence.activity.path.clone())?
+        }
+        PersistenceType::Sqlite => activity_store_sqlite(sqlite_store_for_entity(
+            &store,
+            &db_path,
+            &runtime_config.persistence.activity.path,
+        )?),
+    };
     let job_store = match runtime_config.persistence.job.persistence_type {
         PersistenceType::File => job_store_file(runtime_config.persistence.job.path.clone())?,
         PersistenceType::Sqlite => job_store_sqlite(sqlite_store_for_entity(
             &store,
             &db_path,
             &runtime_config.persistence.job.path,
-        )?),
-    };
-    let scheduler_store = match runtime_config.persistence.scheduler.persistence_type {
-        PersistenceType::File => {
-            scheduler_store_file(runtime_config.persistence.scheduler.path.clone())?
-        }
-        PersistenceType::Sqlite => scheduler_store_sqlite(sqlite_store_for_entity(
-            &store,
-            &db_path,
-            &runtime_config.persistence.scheduler.path,
         )?),
     };
 
@@ -59,8 +59,8 @@ pub(crate) fn build_context_from_data_root(
         orbit_home.to_path_buf(),
         runtime_config,
         task_store,
+        activity_store,
         job_store,
-        scheduler_store,
     )
 }
 
@@ -70,8 +70,8 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
         "orbit-task-store-{}",
         Utc::now().timestamp_nanos_opt().unwrap_or_default()
     )))?;
+    let activity_store = activity_store_sqlite(store.clone());
     let job_store = job_store_sqlite(store.clone());
-    let scheduler_store = scheduler_store_sqlite(store.clone());
     let orbit_home = paths::orbit_home_root();
     let runtime_config = RuntimeConfig::default_for_roots(&orbit_home, &orbit_home);
     let data_root = runtime_config
@@ -88,8 +88,8 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
         orbit_home,
         runtime_config,
         task_store,
+        activity_store,
         job_store,
-        scheduler_store,
     )
 }
 
@@ -99,8 +99,8 @@ fn build_context_common(
     orbit_home: PathBuf,
     runtime_config: RuntimeConfig,
     task_store: Arc<dyn orbit_store::TaskStoreBackend>,
+    activity_store: Arc<dyn orbit_store::ActivityStoreBackend>,
     job_store: Arc<dyn orbit_store::JobStoreBackend>,
-    scheduler_store: Arc<dyn orbit_store::SchedulerStoreBackend>,
 ) -> Result<OrbitContext, OrbitError> {
     let tool_store = tool_store_sqlite(store.clone());
     let watch_store = watch_store_sqlite(store.clone());
@@ -131,8 +131,8 @@ fn build_context_common(
         data_root,
         orbit_home,
         task_store,
+        activity_store,
         job_store,
-        scheduler_store,
         tool_store,
         watch_store,
         audit_store,

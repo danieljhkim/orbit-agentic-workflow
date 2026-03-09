@@ -13,7 +13,7 @@ Create an Orbit task another engineer or agent can execute without guessing. Pla
 
 1. Confirm objective, constraints, and done criteria.
 2. Inspect codebase context before creating the task.
-3. Break the job into small sequenced tasks.
+3. Break the activity into small sequenced tasks.
 4. Add assumptions, risks, and rollback notes.
 5. Create the task with `orbit task add`.
 6. Verify it with `orbit task show <id>`.

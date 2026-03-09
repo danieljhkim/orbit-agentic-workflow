@@ -160,11 +160,11 @@ struct TaskFileDocument {
     #[serde(default)]
     comments: Vec<TaskComment>,
     #[serde(default)]
+    activity_id: Option<String>,
+    #[serde(default)]
     job_id: Option<String>,
     #[serde(default)]
-    scheduler_id: Option<String>,
-    #[serde(default)]
-    scheduler_run_id: Option<String>,
+    job_run_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -248,9 +248,9 @@ impl TaskFileStore {
                     event: "created".to_string(),
                 }],
                 comments: Vec::new(),
+                activity_id: None,
                 job_id: None,
-                scheduler_id: None,
-                scheduler_run_id: None,
+                job_run_id: None,
             },
             plan: params.plan,
             execution_summary: params.execution_summary,

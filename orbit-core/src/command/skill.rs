@@ -108,7 +108,7 @@ impl OrbitRuntime {
             .collect())
     }
 
-    pub(crate) fn resolve_job_skill_refs(
+    pub(crate) fn resolve_activity_skill_refs(
         &self,
         refs: &[String],
     ) -> Result<Vec<LoadedSkill>, OrbitError> {

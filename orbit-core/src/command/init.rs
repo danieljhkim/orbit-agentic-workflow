@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use orbit_types::OrbitError;
 
 use crate::OrbitRuntime;
+use crate::command::activity::seed_default_activities;
 use crate::command::identity::seed_default_identities;
-use crate::command::job::seed_default_jobs;
 use crate::command::skill::{default_skill_ids, seed_default_skills};
 use crate::config::{default_config_template_for_root, seed_default_config};
 use crate::fs_utils::{create_dir_symlink, remove_path_if_exists};
@@ -92,7 +92,7 @@ fn init_workspace_at_root(
     )?;
 
     let init_runtime = OrbitRuntime::from_data_root(&orbit_root)?;
-    let created_default_work = seed_default_jobs(&init_runtime)? > 0;
+    let created_default_work = seed_default_activities(&init_runtime)? > 0;
 
     Ok(InitResult {
         created_identity_files,

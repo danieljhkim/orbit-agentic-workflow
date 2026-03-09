@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod agent_session;
 pub mod audit;
 pub mod audit_event;
@@ -8,12 +9,12 @@ pub mod identity;
 pub mod job;
 pub mod memo;
 pub mod role;
-pub mod scheduler;
 pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod watch;
 
+pub use activity::Activity;
 pub use agent_session::{AgentSession, AgentSessionStatus, AgentToolCall};
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
@@ -21,13 +22,12 @@ pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use identity::{IdentityRole, ResolvedIdentity};
-pub use job::Job;
+pub use job::{
+    AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun, JobRunState,
+    JobScheduleState, JobTargetType,
+};
 pub use memo::Memo;
 pub use role::Role;
-pub use scheduler::{
-    AgentResponseEnvelope, AgentRunError, Scheduler, SchedulerRetryBackoffStrategy, SchedulerRun,
-    SchedulerRunState, SchedulerScheduleState, SchedulerTargetType,
-};
 pub use skill::{Skill, TaskSkillAttachment};
 pub use task::{Task, TaskPriority, TaskStatus, TaskType};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
@@ -38,9 +38,8 @@ mod tests {
     use chrono::Utc;
 
     use crate::{
-        AgentResponseEnvelope, ExecutionResult, Job, OrbitEvent, Role, Scheduler,
-        SchedulerRetryBackoffStrategy, SchedulerRun, SchedulerRunState, SchedulerScheduleState,
-        SchedulerTargetType, Skill,
+        Activity, AgentResponseEnvelope, ExecutionResult, Job, JobRetryBackoffStrategy, JobRun,
+        JobRunState, JobScheduleState, JobTargetType, OrbitEvent, Role, Skill,
     };
 
     #[test]
@@ -101,31 +100,31 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_shapes_are_stable() {
-        let scheduler = Scheduler {
-            scheduler_id: "scheduler-1".to_string(),
-            target_type: SchedulerTargetType::Job,
+    fn job_shapes_are_stable() {
+        let job = Job {
+            job_id: "job-1".to_string(),
+            target_type: JobTargetType::Activity,
             target_id: "exec-1".to_string(),
             schedule: "0 * * * *".to_string(),
             agent_cli: "claude".to_string(),
             timeout_seconds: 300,
             retry_max_attempts: 2,
-            retry_backoff_strategy: SchedulerRetryBackoffStrategy::Exponential,
+            retry_backoff_strategy: JobRetryBackoffStrategy::Exponential,
             retry_initial_delay_seconds: 10,
-            state: SchedulerScheduleState::Enabled,
+            state: JobScheduleState::Enabled,
             next_run_at: Utc::now(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        let scheduler_value = serde_json::to_value(scheduler).expect("serialize scheduler");
-        assert_eq!(scheduler_value["state"], "enabled");
-        assert_eq!(scheduler_value["target_type"], "job");
+        let job_value = serde_json::to_value(job).expect("serialize job");
+        assert_eq!(job_value["state"], "enabled");
+        assert_eq!(job_value["target_type"], "activity");
 
-        let run = SchedulerRun {
+        let run = JobRun {
             run_id: "run-1".to_string(),
-            scheduler_id: "scheduler-1".to_string(),
+            job_id: "job-1".to_string(),
             attempt: 1,
-            state: SchedulerRunState::Running,
+            state: JobRunState::Running,
             scheduled_at: Utc::now(),
             started_at: None,
             finished_at: None,
@@ -142,8 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn job_shape_is_stable() {
-        let spec = Job {
+    fn activity_shape_is_stable() {
+        let spec = Activity {
             id: "exec-1".to_string(),
             spec_type: "analysis".to_string(),
             description: "Analyze repository".to_string(),

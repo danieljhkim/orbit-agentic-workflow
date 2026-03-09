@@ -12,12 +12,12 @@ pub enum OrbitError {
     TaskApprovalRequired(String),
     #[error("skill not found: {0}")]
     SkillNotFound(String),
-    #[error("scheduler not found: {0}")]
-    SchedulerNotFound(String),
-    #[error("scheduler run not found: {0}")]
-    SchedulerRunNotFound(String),
     #[error("job not found: {0}")]
     JobNotFound(String),
+    #[error("job run not found: {0}")]
+    JobRunNotFound(String),
+    #[error("activity not found: {0}")]
+    ActivityNotFound(String),
     #[error("agent session not found: {0}")]
     AgentSessionNotFound(String),
     #[error("identity not found: {0}")]
@@ -28,8 +28,8 @@ pub enum OrbitError {
     SkillValidation(String),
     #[error("identity validation failed: {0}")]
     IdentityValidation(String),
-    #[error("scheduler validation failed: {0}")]
-    SchedulerValidation(String),
+    #[error("job validation failed: {0}")]
+    JobValidation(String),
     #[error("agent run failed: {0}")]
     AgentRun(String),
     #[error("agent protocol violation: {0}")]
