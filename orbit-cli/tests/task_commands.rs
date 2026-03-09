@@ -40,6 +40,37 @@ fn add_task(dir: &Path, title: &str) -> String {
     String::from_utf8(output).expect("utf8").trim().to_string()
 }
 
+fn add_task_with_comment(dir: &Path, title: &str, comment: &str) -> String {
+    let workspace = dir
+        .canonicalize()
+        .expect("canonical workspace")
+        .to_string_lossy()
+        .to_string();
+    let output = orbit_in(dir)
+        .args([
+            "task",
+            "add",
+            "--title",
+            title,
+            "--description",
+            "test description",
+            "--plan",
+            "test plan",
+            "--comment",
+            comment,
+            "--workspace",
+            &workspace,
+            "--proposed-by",
+            "test-user",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("utf8").trim().to_string()
+}
+
 fn task_dir(dir: &Path, id: &str) -> std::path::PathBuf {
     let tasks_root = dir.join(".orbit").join("tasks");
     for status in [
@@ -86,6 +117,24 @@ fn task_add_creates_bundle_layout() {
         std::fs::read_to_string(task_dir.join("plan.md")).expect("read plan"),
         "test plan"
     );
+}
+
+#[test]
+fn task_add_comment_is_persisted_in_show_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task_with_comment(dir.path(), "commented task", "initial context");
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["comments"].as_array().expect("comments").len(), 1);
+    assert_eq!(show["comments"][0]["by"], "test-user");
+    assert_eq!(show["comments"][0]["message"], "initial context");
 }
 
 #[test]
@@ -216,6 +265,44 @@ fn task_update_accepts_instructions_alias_for_plan() {
     let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["plan"], "updated via alias");
     assert_eq!(show["instructions"], "updated via alias");
+}
+
+#[test]
+fn task_update_comment_appends_without_replacing_existing_comments() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task_with_comment(dir.path(), "comment append", "created");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--comment", "follow-up"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    let comments = show["comments"].as_array().expect("comments");
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0]["message"], "created");
+    assert_eq!(comments[1]["by"], "human");
+    assert_eq!(comments[1]["message"], "follow-up");
+}
+
+#[test]
+fn task_update_rejects_blank_comment() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "blank comment");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--comment", "   "])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("task comment must not be empty"));
 }
 
 #[test]
@@ -399,6 +486,45 @@ fn task_approve_proposed_to_backlog() {
 }
 
 #[test]
+fn task_approve_comment_appends_with_approver_identity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "approvable comment");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "approve",
+            &id,
+            "--by",
+            "daniel",
+            "--note",
+            "approved verbally in sync",
+            "--comment",
+            "ready to schedule",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Approved task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["comments"][0]["by"], "daniel");
+    assert_eq!(show["comments"][0]["message"], "ready to schedule");
+}
+
+#[test]
 fn task_reject_proposed_to_archived() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
@@ -495,6 +621,65 @@ fn task_reject_review_to_backlog() {
         "Needs stronger coverage before merge"
     );
     assert_eq!(show["status"], "backlog");
+}
+
+#[test]
+fn task_reject_comment_appends_with_reviewer_identity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = false\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "review reject with comment");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--status", "in-progress"])
+        .assert()
+        .success();
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "update",
+            &id,
+            "--status",
+            "review",
+            "--execution-summary",
+            "Implemented initial change set",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "review-bot",
+            "--note",
+            "Needs stronger coverage before merge",
+            "--comment",
+            "add a regression test for comment ordering",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rejected task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["comments"][0]["by"], "review-bot");
+    assert_eq!(
+        show["comments"][0]["message"],
+        "add a regression test for comment ordering"
+    );
 }
 
 #[test]

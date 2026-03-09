@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{OrbitError, Task, TaskPriority, TaskStatus, TaskType};
+use orbit_types::{OrbitError, Task, TaskComment, TaskPriority, TaskStatus, TaskType};
 use serde::{Deserialize, Serialize};
 
 const TASK_DOC_FILE_NAME: &str = "task.yaml";
@@ -32,6 +32,7 @@ pub(crate) struct FileTaskInsert {
     pub branch: Option<String>,
     pub pr_number: Option<String>,
     pub proposed_by: Option<String>,
+    pub comments: Vec<TaskComment>,
 }
 
 #[derive(Default, Clone)]
@@ -56,6 +57,7 @@ pub(crate) struct FileTaskUpdate {
     pub review_approved_by: Option<Option<String>>,
     pub review_rejected_by: Option<Option<String>>,
     pub review_decision_note: Option<Option<String>>,
+    pub append_comments: Vec<TaskComment>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,13 +189,6 @@ struct TaskHistoryEntry {
     event: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TaskComment {
-    at: DateTime<Utc>,
-    by: String,
-    message: String,
-}
-
 fn default_task_type() -> TaskType {
     TaskType::Task
 }
@@ -255,7 +250,7 @@ impl TaskFileStore {
                     by: history_actor,
                     event: "created".to_string(),
                 }],
-                comments: Vec::new(),
+                comments: params.comments,
                 activity_id: None,
                 job_id: None,
                 job_run_id: None,
@@ -396,6 +391,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.review_decision_note {
             bundle.doc.review_decision_note = value.clone();
+        }
+        if !fields.append_comments.is_empty() {
+            bundle.doc.comments.extend(fields.append_comments.clone());
         }
 
         let target_state = fields
@@ -645,6 +643,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         review_approved_by: bundle.doc.review_approved_by,
         review_rejected_by: bundle.doc.review_rejected_by,
         review_decision_note: bundle.doc.review_decision_note,
+        comments: bundle.doc.comments,
         created_at: bundle.doc.created_at,
         updated_at: bundle.doc.updated_at,
     }
@@ -656,7 +655,8 @@ mod tests {
 
     use super::{ARTIFACTS_DIR_NAME, EXECUTION_SUMMARY_FILE_NAME, FileTaskInsert, FileTaskUpdate};
     use super::{PLAN_FILE_NAME, TASK_DOC_FILE_NAME, TaskFileStore};
-    use orbit_types::{TaskPriority, TaskStatus, TaskType};
+    use chrono::Utc;
+    use orbit_types::{TaskComment, TaskPriority, TaskStatus, TaskType};
     use tempfile::tempdir;
 
     fn sample_insert(status: TaskStatus) -> FileTaskInsert {
@@ -675,6 +675,7 @@ mod tests {
             branch: None,
             pr_number: None,
             proposed_by: Some("daniel".to_string()),
+            comments: Vec::new(),
         }
     }
 
@@ -818,6 +819,7 @@ mod tests {
                 branch: None,
                 pr_number: None,
                 proposed_by: None,
+                comments: Vec::new(),
             })
             .expect("create second task");
 
@@ -911,5 +913,41 @@ mod tests {
             .get_task(&task.id)
             .expect_err("empty title should error");
         assert!(err.to_string().contains("task title must not be empty"));
+    }
+
+    #[test]
+    fn update_task_appends_comments_without_replacing_existing_entries() {
+        let dir = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(dir.path().to_path_buf());
+
+        let task = store
+            .create_task(FileTaskInsert {
+                comments: vec![TaskComment {
+                    at: Utc::now(),
+                    by: "creator".to_string(),
+                    message: "created with context".to_string(),
+                }],
+                ..sample_insert(TaskStatus::Backlog)
+            })
+            .expect("create task");
+
+        let updated = store
+            .update_task(
+                &task.id,
+                &FileTaskUpdate {
+                    append_comments: vec![TaskComment {
+                        at: Utc::now(),
+                        by: "reviewer".to_string(),
+                        message: "needs follow-up".to_string(),
+                    }],
+                    ..Default::default()
+                },
+            )
+            .expect("append comment");
+
+        assert_eq!(updated.comments.len(), 2);
+        assert_eq!(updated.comments[0].by, "creator");
+        assert_eq!(updated.comments[1].by, "reviewer");
+        assert_eq!(updated.comments[1].message, "needs follow-up");
     }
 }

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use orbit_types::{
     Activity, AgentSession, AgentSessionStatus, AgentToolCall, Audit, AuditEvent, Job,
     JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
-    OrbitEvent, StoredTool, Task, TaskPriority, TaskStatus, TaskType,
+    OrbitEvent, StoredTool, Task, TaskComment, TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
 
@@ -25,6 +25,7 @@ pub struct TaskCreateParams {
     pub branch: Option<String>,
     pub pr_number: Option<String>,
     pub proposed_by: Option<String>,
+    pub comments: Vec<TaskComment>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -49,6 +50,7 @@ pub struct TaskUpdateParams {
     pub review_approved_by: Option<Option<String>>,
     pub review_rejected_by: Option<Option<String>>,
     pub review_decision_note: Option<Option<String>>,
+    pub append_comments: Vec<TaskComment>,
 }
 
 #[derive(Debug, Clone)]

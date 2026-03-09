@@ -17,7 +17,7 @@ pub use orbit_types::OrbitError;
 pub use orbit_types::{
     Activity, AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, Job,
     JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill,
-    Task, TaskPriority, TaskStatus, TaskType,
+    Task, TaskComment, TaskPriority, TaskStatus, TaskType,
 };
 pub use runtime::OrbitRuntime;
 
@@ -418,6 +418,7 @@ mod tests {
                     description: Some("updated description".to_string()),
                     plan: Some("updated plan".to_string()),
                     execution_summary: Some("validated with unit tests".to_string()),
+                    comment: None,
                     assigned_to: Some(Some("Eng Owner".to_string())),
                     status: None,
                     branch: None,
@@ -433,6 +434,121 @@ mod tests {
 
         let audits = runtime.list_audits(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskUpdated"));
+    }
+
+    #[test]
+    fn add_task_comment_uses_created_by_or_proposed_by() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "commented".to_string(),
+                comment: Some("initial context".to_string()),
+                proposed_by: Some("proposer".to_string()),
+                ..Default::default()
+            })
+            .expect("add");
+
+        assert_eq!(task.comments.len(), 1);
+        assert_eq!(task.comments[0].by, "proposer");
+        assert_eq!(task.comments[0].message, "initial context");
+    }
+
+    #[test]
+    fn update_task_comment_appends_with_human_author() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "comment me".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let updated = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    description: None,
+                    plan: None,
+                    execution_summary: None,
+                    comment: Some("follow-up note".to_string()),
+                    assigned_to: None,
+                    status: None,
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("update");
+
+        assert_eq!(updated.comments.len(), 1);
+        assert_eq!(updated.comments[0].by, "human");
+        assert_eq!(updated.comments[0].message, "follow-up note");
+    }
+
+    #[test]
+    fn approve_task_comment_uses_approver_identity() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "approve me".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let task = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    description: None,
+                    plan: None,
+                    execution_summary: None,
+                    comment: None,
+                    assigned_to: None,
+                    status: Some(TaskStatus::InProgress),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("in progress");
+        let task = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    description: None,
+                    plan: None,
+                    execution_summary: Some("ready".to_string()),
+                    comment: None,
+                    assigned_to: None,
+                    status: Some(TaskStatus::Review),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("review");
+
+        let approved = runtime
+            .approve_task(
+                &task.id,
+                "reviewer",
+                Some("looks good".to_string()),
+                Some("approved with note".to_string()),
+            )
+            .expect("approve");
+
+        assert_eq!(approved.comments.len(), 1);
+        assert_eq!(approved.comments[0].by, "reviewer");
+        assert_eq!(approved.comments[0].message, "approved with note");
+    }
+
+    #[test]
+    fn blank_task_comment_is_rejected() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let result = runtime.add_task(TaskAddParams {
+            title: "invalid comment".to_string(),
+            comment: Some("   ".to_string()),
+            ..Default::default()
+        });
+
+        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
     }
 
     #[test]
@@ -470,6 +586,7 @@ mod tests {
                     description: None,
                     plan: None,
                     execution_summary: None,
+                    comment: None,
                     assigned_to: None,
                     status: Some(TaskStatus::InProgress),
                     branch: None,
@@ -484,6 +601,7 @@ mod tests {
                     description: None,
                     plan: None,
                     execution_summary: Some("Implemented initial pass.".to_string()),
+                    comment: None,
                     assigned_to: None,
                     status: Some(TaskStatus::Review),
                     branch: None,
@@ -497,6 +615,7 @@ mod tests {
                 &task.id,
                 "reviewer",
                 "Missing regression coverage".to_string(),
+                None,
             )
             .expect("reject");
 
@@ -521,13 +640,13 @@ mod tests {
             })
             .expect("add");
 
-        let wrong_status = runtime.reject_task(&task.id, "reviewer", "not ready".to_string());
+        let wrong_status = runtime.reject_task(&task.id, "reviewer", "not ready".to_string(), None);
         assert!(matches!(
             wrong_status,
             Err(crate::OrbitError::InvalidInput(_))
         ));
 
-        let empty_note = runtime.reject_task(&task.id, "reviewer", "   ".to_string());
+        let empty_note = runtime.reject_task(&task.id, "reviewer", "   ".to_string(), None);
         assert!(matches!(
             empty_note,
             Err(crate::OrbitError::InvalidInput(_))
@@ -551,6 +670,7 @@ mod tests {
                     description: None,
                     plan: None,
                     execution_summary: None,
+                    comment: None,
                     assigned_to: None,
                     status: Some(TaskStatus::InProgress),
                     branch: None,
@@ -565,6 +685,7 @@ mod tests {
                 description: None,
                 plan: None,
                 execution_summary: None,
+                comment: None,
                 assigned_to: None,
                 status: Some(TaskStatus::Review),
                 branch: None,
@@ -583,6 +704,7 @@ mod tests {
                     description: None,
                     plan: None,
                     execution_summary: Some("Implemented change and validated tests.".to_string()),
+                    comment: None,
                     assigned_to: None,
                     status: Some(TaskStatus::Review),
                     branch: None,

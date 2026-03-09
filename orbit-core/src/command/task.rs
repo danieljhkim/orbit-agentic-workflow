@@ -1,7 +1,8 @@
+use chrono::Utc;
 use orbit_store::{
     TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
 };
-use orbit_types::{OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, TaskType};
+use orbit_types::{OrbitError, OrbitEvent, Task, TaskComment, TaskPriority, TaskStatus, TaskType};
 
 use crate::OrbitRuntime;
 use crate::paths::normalize_path;
@@ -10,6 +11,7 @@ pub struct TaskAddParams {
     pub title: String,
     pub description: String,
     pub plan: String,
+    pub comment: Option<String>,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
     pub assigned_to: Option<String>,
@@ -25,6 +27,7 @@ impl Default for TaskAddParams {
             title: String::new(),
             description: String::new(),
             plan: String::new(),
+            comment: None,
             context_files: Vec::new(),
             workspace_path: None,
             assigned_to: None,
@@ -40,6 +43,7 @@ pub struct TaskUpdateParams {
     pub description: Option<String>,
     pub plan: Option<String>,
     pub execution_summary: Option<String>,
+    pub comment: Option<String>,
     pub assigned_to: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub branch: Option<Option<String>>,
@@ -58,6 +62,14 @@ impl OrbitRuntime {
             .proposed_by
             .clone()
             .or_else(|| params.created_by.clone());
+        let comments = build_task_comments(
+            params.comment.clone(),
+            params
+                .created_by
+                .as_deref()
+                .or(params.proposed_by.as_deref())
+                .unwrap_or("human"),
+        )?;
 
         self.with_mutation(|| {
             let task = self.context.task_store.create_task(StoreTaskCreateParams {
@@ -75,6 +87,7 @@ impl OrbitRuntime {
                 branch: None,
                 pr_number: None,
                 proposed_by: proposed_by.clone(),
+                comments: comments.clone(),
             })?;
             Ok((
                 task.clone(),
@@ -133,6 +146,8 @@ impl OrbitRuntime {
             }
         }
 
+        let append_comments = build_task_comments(params.comment.clone(), "human")?;
+
         let task = self.with_mutation(|| {
             let task = self.context.task_store.update_task(
                 id,
@@ -144,6 +159,7 @@ impl OrbitRuntime {
                     status: params.status,
                     branch: params.branch,
                     pr_number: params.pr_number,
+                    append_comments: append_comments.clone(),
                     ..Default::default()
                 },
             )?;
@@ -158,6 +174,7 @@ impl OrbitRuntime {
         id: &str,
         approved_by: &str,
         note: Option<String>,
+        comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let approver = approved_by.trim();
@@ -166,6 +183,7 @@ impl OrbitRuntime {
                 "approved_by must not be empty".to_string(),
             ));
         }
+        let append_comments = build_task_comments(comment, approver)?;
 
         match task.status {
             TaskStatus::Proposed => {
@@ -176,6 +194,7 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Backlog),
                             proposal_approved_by: Some(Some(approver.to_string())),
                             proposal_decision_note: Some(note.clone()),
+                            append_comments: append_comments.clone(),
                             ..Default::default()
                         },
                     )?;
@@ -197,6 +216,7 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Done),
                             review_approved_by: Some(Some(approver.to_string())),
                             review_decision_note: Some(note.clone()),
+                            append_comments: append_comments.clone(),
                             ..Default::default()
                         },
                     )?;
@@ -221,6 +241,7 @@ impl OrbitRuntime {
         id: &str,
         rejected_by: &str,
         note: String,
+        comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let rejector = rejected_by.trim();
@@ -236,6 +257,7 @@ impl OrbitRuntime {
             ));
         }
         let reason = reason.to_string();
+        let append_comments = build_task_comments(comment, rejector)?;
 
         match task.status {
             TaskStatus::Proposed => {
@@ -246,6 +268,7 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Archived),
                             proposal_rejected_by: Some(Some(rejector.to_string())),
                             proposal_decision_note: Some(Some(reason.clone())),
+                            append_comments: append_comments.clone(),
                             ..Default::default()
                         },
                     )?;
@@ -267,6 +290,7 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Backlog),
                             review_rejected_by: Some(Some(rejector.to_string())),
                             review_decision_note: Some(Some(reason.clone())),
+                            append_comments: append_comments.clone(),
                             ..Default::default()
                         },
                     )?;
@@ -342,4 +366,28 @@ impl OrbitRuntime {
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.context.task_store.search_tasks(query)
     }
+}
+
+fn build_task_comments(message: Option<String>, by: &str) -> Result<Vec<TaskComment>, OrbitError> {
+    let Some(message) = message else {
+        return Ok(Vec::new());
+    };
+    let message = message.trim();
+    if message.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "task comment must not be empty".to_string(),
+        ));
+    }
+    let by = by.trim();
+    if by.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "task comment author must not be empty".to_string(),
+        ));
+    }
+
+    Ok(vec![TaskComment {
+        at: Utc::now(),
+        by: by.to_string(),
+        message: message.to_string(),
+    }])
 }

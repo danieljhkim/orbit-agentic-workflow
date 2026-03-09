@@ -71,6 +71,9 @@ pub struct TaskAddArgs {
     /// Task plan payload (agent planning input)
     #[arg(long, alias = "instructions")]
     pub plan: String,
+    /// Append an initial task comment
+    #[arg(long)]
+    pub comment: Option<String>,
     /// Comma-separated context file paths
     #[arg(long, default_value = "")]
     pub context: String,
@@ -100,6 +103,7 @@ impl Execute for TaskAddArgs {
             title: self.title,
             description: self.description,
             plan: self.plan,
+            comment: self.comment,
             context_files: parse_context_csv(&self.context),
             workspace_path: Some(self.workspace),
             assigned_to: self.assigned_to,
@@ -179,6 +183,17 @@ impl Execute for TaskShowArgs {
             if !task.execution_summary.is_empty() {
                 println!("Execution Summary: {}", task.execution_summary);
             }
+            if !task.comments.is_empty() {
+                println!("Comments:");
+                for comment in &task.comments {
+                    println!(
+                        "  [{}] {}: {}",
+                        comment.at.to_rfc3339(),
+                        comment.by,
+                        comment.message
+                    );
+                }
+            }
             if !task.context_files.is_empty() {
                 println!("Context:     {}", task.context_files.join(", "));
             }
@@ -240,6 +255,9 @@ pub struct TaskUpdateArgs {
     /// New execution summary (empty string clears)
     #[arg(long)]
     pub execution_summary: Option<String>,
+    /// Append a task comment
+    #[arg(long)]
+    pub comment: Option<String>,
     /// New assignee (empty string clears)
     #[arg(long)]
     pub assigned_to: Option<String>,
@@ -284,6 +302,7 @@ impl Execute for TaskUpdateArgs {
                 description: self.description,
                 plan: self.plan,
                 execution_summary: self.execution_summary,
+                comment: self.comment,
                 assigned_to,
                 status: self.status.map(Into::into),
                 branch,
@@ -331,11 +350,14 @@ pub struct TaskApproveArgs {
     /// Optional approval note
     #[arg(long)]
     pub note: Option<String>,
+    /// Append a task comment
+    #[arg(long)]
+    pub comment: Option<String>,
 }
 
 impl Execute for TaskApproveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let task = runtime.approve_task(&self.id, &self.by, self.note)?;
+        let task = runtime.approve_task(&self.id, &self.by, self.note, self.comment)?;
         println!("Approved task '{}'", task.id);
         Ok(())
     }
@@ -353,11 +375,14 @@ pub struct TaskRejectArgs {
     /// Rejection note
     #[arg(long)]
     pub note: String,
+    /// Append a task comment
+    #[arg(long)]
+    pub comment: Option<String>,
 }
 
 impl Execute for TaskRejectArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let task = runtime.reject_task(&self.id, &self.by, self.note)?;
+        let task = runtime.reject_task(&self.id, &self.by, self.note, self.comment)?;
         println!("Rejected task '{}'", task.id);
         Ok(())
     }
@@ -475,6 +500,7 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "review_approved_by": task.review_approved_by,
         "review_rejected_by": task.review_rejected_by,
         "review_decision_note": task.review_decision_note,
+        "comments": task.comments,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })

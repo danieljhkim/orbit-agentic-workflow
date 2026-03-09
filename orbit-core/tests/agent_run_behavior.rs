@@ -158,7 +158,12 @@ fn agent_run_succeeds_after_explicit_approval() {
 
     // Approve the task (proposed → backlog)
     runtime
-        .approve_task(&task.id, "human-reviewer", Some("looks good".to_string()))
+        .approve_task(
+            &task.id,
+            "human-reviewer",
+            Some("looks good".to_string()),
+            None,
+        )
         .expect("approve");
 
     // Now agent should succeed

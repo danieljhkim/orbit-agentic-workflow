@@ -29,6 +29,7 @@ impl TaskStoreBackend for TaskFileStore {
             branch: params.branch,
             pr_number: params.pr_number,
             proposed_by: params.proposed_by,
+            comments: params.comments,
         })
     }
 
@@ -76,6 +77,7 @@ impl TaskStoreBackend for TaskFileStore {
                 review_approved_by: params.review_approved_by,
                 review_rejected_by: params.review_rejected_by,
                 review_decision_note: params.review_decision_note,
+                append_comments: params.append_comments,
             },
         )
     }

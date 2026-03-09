@@ -7,7 +7,15 @@ description: Use when starting any Orbit-related work. This skill explains the O
 
 ## Purpose
 
-Use this skill to choose the right Orbit skill for the current activity. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
+Welcome to Orbit workflow. 
+
+You will use this skill to choose the right Orbit skill for the current activity. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
+
+Each agent reading this, including you, should have a name/identity assigned to you. If you have not, you are free to pick an identity from `orbit identity list`. 
+
+Once picked, check the details of the identity using `orbit identity show <identity_id>`. 
+
+You are to assume this identity, and act and think like this identity. That is your name and will use it across this session.
 
 ## Orbit Lifecycle Overview
 

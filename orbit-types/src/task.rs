@@ -162,6 +162,13 @@ impl FromStr for TaskType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskComment {
+    pub at: DateTime<Utc>,
+    pub by: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub id: OrbitId,
     pub title: String,
@@ -198,6 +205,8 @@ pub struct Task {
     pub review_rejected_by: Option<String>,
     #[serde(default)]
     pub review_decision_note: Option<String>,
+    #[serde(default)]
+    pub comments: Vec<TaskComment>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
