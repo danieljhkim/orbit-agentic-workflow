@@ -135,6 +135,7 @@ mod tests {
                 retry_max_attempts: 0,
                 retry_backoff_strategy: JobRetryBackoffStrategy::None,
                 retry_initial_delay_seconds: 0,
+                initial_state_override: None,
             })
             .expect("add job");
 

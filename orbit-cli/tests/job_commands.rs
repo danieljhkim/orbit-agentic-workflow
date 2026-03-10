@@ -652,6 +652,74 @@ fn job_add_manual_schedule_creates_disabled_job() {
 }
 
 #[test]
+fn seeded_default_manual_jobs_are_listed_as_enabled_after_init() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args(["init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("default_jobs_created="));
+
+    let list_output = orbit_in(dir.path())
+        .args(["job", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let list: Value = serde_json::from_slice(&list_output).expect("list json");
+    let jobs = list.as_array().expect("jobs array");
+
+    let seeded_job = jobs
+        .iter()
+        .find(|job| job["job_id"] == "job-resolve-backlogged-task")
+        .expect("seeded default job visible");
+    assert_eq!(seeded_job["schedule"], "manual");
+    assert_eq!(seeded_job["state"], "enabled");
+}
+
+#[test]
+fn seeded_default_manual_jobs_can_be_paused_and_resumed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path()).args(["init"]).assert().success();
+
+    orbit_in(dir.path())
+        .args(["job", "pause", "job-resolve-backlogged-task"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Paused job"));
+
+    let paused_output = orbit_in(dir.path())
+        .args(["job", "show", "job-resolve-backlogged-task", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let paused: Value = serde_json::from_slice(&paused_output).expect("paused json");
+    assert_eq!(paused["state"], "paused");
+
+    orbit_in(dir.path())
+        .args(["job", "resume", "job-resolve-backlogged-task"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Resumed job"));
+
+    let resumed_output = orbit_in(dir.path())
+        .args(["job", "show", "job-resolve-backlogged-task", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let resumed: Value = serde_json::from_slice(&resumed_output).expect("resumed json");
+    assert_eq!(resumed["schedule"], "manual");
+    assert_eq!(resumed["state"], "enabled");
+}
+
+#[test]
 fn job_tick_skips_manual_schedule_job() {
     let dir = tempfile::tempdir().expect("tempdir");
     let agent_cli = write_mock_agent(dir.path());

@@ -92,6 +92,7 @@ impl Execute for JobAddArgs {
             retry_max_attempts: self.retry_max_attempts,
             retry_backoff_strategy: self.retry_backoff,
             retry_initial_delay_seconds,
+            initial_state_override: None,
         })?;
 
         if self.json {

@@ -101,6 +101,7 @@ fn add_scheduled_activity_with_timeout(
             retry_max_attempts,
             retry_backoff_strategy,
             retry_initial_delay_seconds,
+            initial_state_override: None,
         })
         .expect("add job")
         .job_id
@@ -1106,4 +1107,37 @@ fn job_runtime_run_forever_stops_after_shutdown_request() {
     job_runtime
         .run_forever(&shutdown)
         .expect("run forever exits cleanly");
+}
+
+#[test]
+fn run_job_now_manual_schedule_does_not_error_on_cron_validation() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
+    );
+
+    add_activity(&runtime, "spec-manual-run");
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            target_type: JobTargetType::Activity,
+            target_id: "spec-manual-run".to_string(),
+            schedule: "manual".to_string(),
+            agent_cli,
+            timeout_seconds: 10,
+            retry_max_attempts: 0,
+            retry_backoff_strategy: JobRetryBackoffStrategy::None,
+            retry_initial_delay_seconds: 0,
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let result = runtime
+        .run_job_now(&job_id)
+        .expect("manual job run must succeed");
+    assert_eq!(result.state, JobRunState::Success);
 }

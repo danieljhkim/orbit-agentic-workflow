@@ -46,6 +46,33 @@ fn assert_default_skill_links(base_root: &std::path::Path) {
     }
 }
 
+fn assert_default_named_jobs_visible_and_enabled(base_root: &std::path::Path) {
+    let list_output = orbit_in(base_root)
+        .args(["job", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let list: serde_json::Value = serde_json::from_slice(&list_output).expect("job list json");
+    let jobs = list.as_array().expect("jobs array");
+
+    for job_id in [
+        "job-resolve-backlogged-task",
+        "job-perform-maintenance",
+        "job-oversee-orbit-operations",
+        "job-approve-task-leader",
+        "job-triage-and-dispatch-task",
+    ] {
+        let job = jobs
+            .iter()
+            .find(|job| job["job_id"] == job_id)
+            .unwrap_or_else(|| panic!("missing default job in list: {job_id}"));
+        assert_eq!(job["schedule"], "manual");
+        assert_eq!(job["state"], "enabled");
+    }
+}
+
 #[test]
 fn init_creates_default_identities_under_home_orbit() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -127,6 +154,7 @@ fn init_creates_default_identities_under_home_orbit() {
     assert!(!config_raw.contains("[watch]"));
 
     assert_default_skill_links(home.path());
+    assert_default_named_jobs_visible_and_enabled(home.path());
 }
 
 #[test]
@@ -342,4 +370,6 @@ fn init_uses_repo_local_layout_when_inside_git_repository() {
             .exists()
     );
     assert!(home_orbit.join("config.toml").exists());
+
+    assert_default_named_jobs_visible_and_enabled(repo.path());
 }

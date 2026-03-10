@@ -34,6 +34,7 @@ pub struct JobAddParams {
     pub retry_max_attempts: u32,
     pub retry_backoff_strategy: JobRetryBackoffStrategy,
     pub retry_initial_delay_seconds: u64,
+    pub initial_state_override: Option<JobScheduleState>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,13 +123,23 @@ impl OrbitRuntime {
 
         let is_manual = params.schedule.trim().eq_ignore_ascii_case("manual");
         let (next_run_at, initial_state) = if is_manual {
-            // Manual jobs never auto-fire; use far-future sentinel and start disabled.
-            let far_future = Utc::now() + chrono::Duration::days(365 * 100);
-            (far_future, JobScheduleState::Disabled)
+            // Manual jobs never auto-fire; use a far-future sentinel for scheduler bookkeeping.
+            let far_future = manual_job_next_run_at();
+            (
+                far_future,
+                params
+                    .initial_state_override
+                    .unwrap_or(JobScheduleState::Disabled),
+            )
         } else {
             let next_run_at =
                 crate::job::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
-            (next_run_at, JobScheduleState::Enabled)
+            (
+                next_run_at,
+                params
+                    .initial_state_override
+                    .unwrap_or(JobScheduleState::Enabled),
+            )
         };
 
         let job = self.context.job_store.add_job(StoreActivityCreateParams {
@@ -175,8 +186,11 @@ impl OrbitRuntime {
 
     pub fn resume_job(&self, job_id: &str) -> Result<(), OrbitError> {
         let job = self.show_job(job_id)?;
-        let next_run_at =
-            crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
+        let next_run_at = if job.schedule.trim().eq_ignore_ascii_case("manual") {
+            manual_job_next_run_at()
+        } else {
+            crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?
+        };
 
         let changed = self
             .context
@@ -353,8 +367,11 @@ impl OrbitRuntime {
         }
 
         if !retry_scheduled_for_future {
-            let next_run_at =
-                crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?;
+            let next_run_at = if job.schedule.trim().eq_ignore_ascii_case("manual") {
+                manual_job_next_run_at()
+            } else {
+                crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?
+            };
             let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
             let _ = self.record_event(OrbitEvent::JobTriggered {
                 job_id: job.job_id.clone(),
@@ -881,6 +898,10 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
     format!("agent timed out before producing JSON stdout; stderr: {stderr}")
 }
 
+fn manual_job_next_run_at() -> DateTime<Utc> {
+    Utc::now() + chrono::Duration::days(365 * 100)
+}
+
 const DEFAULT_NAMED_JOBS: &[(&str, &str)] = &[
     ("job-resolve-backlogged-task", "resolve-backlogged-task"),
     ("job-perform-maintenance", "perform-maintenance"),
@@ -900,11 +921,12 @@ pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitEr
             target_type: JobTargetType::Activity,
             target_id: target_id.to_string(),
             schedule: "manual".to_string(),
-            agent_cli: "codex".to_string(), // TODO: make this dynamic 
+            agent_cli: "codex".to_string(), // TODO: make this dynamic
             timeout_seconds: 900,
             retry_max_attempts: 0,
             retry_backoff_strategy: JobRetryBackoffStrategy::None,
             retry_initial_delay_seconds: 0,
+            initial_state_override: Some(JobScheduleState::Enabled),
         })?;
         created += 1;
     }
