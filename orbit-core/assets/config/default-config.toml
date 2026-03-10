@@ -2,7 +2,7 @@ root = "~/.orbit"
 
 [execution.env]
 inherit = false
-pass = ["HOME","PATH","CODEX_HOME"]
+pass = ["HOME","PATH","CODEX_HOME","TMPDIR","__CF_USER_TEXT_ENCODING","USER"]
 
 [task.approval]
 required_for_agent = true

@@ -12,7 +12,7 @@ mod tests {
     use std::path::Path;
 
     use super::PersistenceConfig;
-    use super::runtime::normalize_pass_list;
+    use super::runtime::{ExecutionEnvPolicy, normalize_pass_list};
 
     #[test]
     fn normalize_pass_list_rejects_invalid_identifiers() {
@@ -29,6 +29,28 @@ mod tests {
         ])
         .expect("normalize");
         assert_eq!(values, vec!["HOME".to_string(), "PATH".to_string()]);
+    }
+
+    #[test]
+    fn default_pass_list_includes_macos_system_vars() {
+        let policy = ExecutionEnvPolicy::default();
+        let pass = policy.pass();
+        // Core vars
+        assert!(pass.contains(&"HOME".to_string()));
+        assert!(pass.contains(&"PATH".to_string()));
+        // macOS system vars required by SCDynamicStore / CoreFoundation
+        assert!(
+            pass.contains(&"TMPDIR".to_string()),
+            "TMPDIR must be in default pass list for macOS compatibility"
+        );
+        assert!(
+            pass.contains(&"__CF_USER_TEXT_ENCODING".to_string()),
+            "__CF_USER_TEXT_ENCODING must be in default pass list for macOS compatibility"
+        );
+        assert!(
+            pass.contains(&"USER".to_string()),
+            "USER must be in default pass list for macOS compatibility"
+        );
     }
 
     #[test]

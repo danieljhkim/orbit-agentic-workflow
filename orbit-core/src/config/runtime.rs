@@ -10,7 +10,17 @@ use super::persistence::PersistenceConfig;
 use super::raw::{RawExecutionEnvConfig, RawIdentitySection, RawRuntimeConfig, RawTaskSection};
 
 const DEFAULT_ENV_INHERIT: bool = false;
-const DEFAULT_ENV_PASS: [&str; 3] = ["HOME", "PATH", "CODEX_HOME"];
+const DEFAULT_ENV_PASS: [&str; 6] = [
+    "HOME",
+    "PATH",
+    "CODEX_HOME",
+    // macOS system vars required by SCDynamicStore / CoreFoundation.
+    // Without these, agent CLIs that depend on system-configuration panic
+    // with "Attempted to create a NULL object" in hermetic mode.
+    "TMPDIR",
+    "__CF_USER_TEXT_ENCODING",
+    "USER",
+];
 const DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT: bool = false;
 const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
 

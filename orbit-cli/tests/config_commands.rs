@@ -29,7 +29,7 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
     assert_eq!(value["execution"]["env"]["inherit"], false);
     assert_eq!(
         value["execution"]["env"]["pass"],
-        serde_json::json!(["CODEX_HOME", "HOME", "PATH"])
+        serde_json::json!(["CODEX_HOME", "HOME", "PATH", "TMPDIR", "USER", "__CF_USER_TEXT_ENCODING"])
     );
     assert_eq!(
         value["task"]["approval"]["required_for_agent"],

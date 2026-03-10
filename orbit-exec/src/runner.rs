@@ -164,6 +164,33 @@ mod tests {
     }
 
     #[test]
+    fn clear_and_set_with_macos_system_vars_does_not_crash() {
+        // Simulates the default hermetic allowlist. On macOS, spawned processes
+        // need TMPDIR, __CF_USER_TEXT_ENCODING, and USER to avoid panics in
+        // system-configuration / CoreFoundation code paths.
+        let pairs: Vec<(String, String)> =
+            ["HOME", "PATH", "TMPDIR", "__CF_USER_TEXT_ENCODING", "USER"]
+                .iter()
+                .filter_map(|name| std::env::var(name).ok().map(|v| (name.to_string(), v)))
+                .collect();
+
+        let result = run_process(
+            &ExecRequest {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string(), "echo ok".to_string()],
+                timeout_ms: Some(2000),
+                stdin_mode: StdinMode::Inherit,
+                environment_mode: EnvironmentMode::ClearAndSet(pairs),
+            },
+            &NoSandbox,
+        )
+        .expect("process must not crash in hermetic env with macOS system vars");
+
+        assert!(result.success);
+        assert_eq!(result.stdout.trim(), "ok");
+    }
+
+    #[test]
     fn inherit_environment_keeps_existing_variables() {
         let result = run_process(
             &ExecRequest {
