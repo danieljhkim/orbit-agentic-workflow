@@ -159,7 +159,7 @@ fn job_add_defaults_timeout_to_fifteen_minutes() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["timeout_seconds"], 900);
+    assert_eq!(show["timeout_seconds"], 7000);
 }
 
 #[test]

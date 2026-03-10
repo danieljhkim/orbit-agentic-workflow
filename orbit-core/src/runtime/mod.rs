@@ -32,8 +32,10 @@ impl OrbitRuntime {
     pub fn initialize_with_root_override(root_override: Option<&Path>) -> Result<Self, OrbitError> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let orbit_home = Self::default_data_root();
-        ensure_orbit_root_initialized(&orbit_home)?;
         let data_root = resolve_initialize_data_root(&cwd, root_override, &orbit_home)?;
+        if should_bootstrap_orbit_home(&data_root, &orbit_home) {
+            ensure_orbit_root_initialized(&orbit_home)?;
+        }
         Self::from_data_root(&data_root)
     }
 
@@ -224,11 +226,15 @@ fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
     paths::find_git_repo_root(start)
 }
 
+fn should_bootstrap_orbit_home(data_root: &Path, orbit_home: &Path) -> bool {
+    data_root == orbit_home
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, OnceLock};
 
-    use super::resolve_initialize_data_root;
+    use super::{resolve_initialize_data_root, should_bootstrap_orbit_home};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -392,5 +398,15 @@ mod tests {
             unsafe { std::env::set_var("ORBIT_ROOT", value) };
         }
         assert_eq!(chosen, orbit_home);
+    }
+
+    #[test]
+    fn bootstrap_home_only_when_home_is_selected_data_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let orbit_home = dir.path().join("home").join(".orbit");
+        let repo_orbit = dir.path().join("repo").join(".orbit");
+
+        assert!(should_bootstrap_orbit_home(&orbit_home, &orbit_home));
+        assert!(!should_bootstrap_orbit_home(&repo_orbit, &orbit_home));
     }
 }
