@@ -81,6 +81,14 @@ pub struct JobCreateParams {
     pub next_run_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct JobRunQuery {
+    pub job_id: Option<String>,
+    pub state: Option<JobRunState>,
+    pub created_since: Option<DateTime<Utc>>,
+    pub limit: Option<usize>,
+}
+
 pub trait TaskStoreBackend: Send + Sync {
     fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError>;
     fn list_tasks(&self) -> Result<Vec<Task>, OrbitError>;
@@ -109,6 +117,8 @@ pub trait JobStoreBackend: Send + Sync {
     fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError>;
     fn next_due_job_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError>;
     fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
+    fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError>;
+    fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError>;
     fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError>;
     fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError>;
     fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError>;
@@ -131,6 +141,7 @@ pub trait JobStoreBackend: Send + Sync {
     fn complete_job_run(&self, params: &JobRunCompletionParams) -> Result<bool, OrbitError>;
     fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError>;
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError>;
+    fn delete_job_run(&self, run_id: &str) -> Result<String, OrbitError>;
 }
 
 #[derive(Debug, Clone)]

@@ -365,7 +365,7 @@ fn job_to_json(job: &Job) -> Value {
     })
 }
 
-fn job_run_to_json(run: &JobRun) -> Value {
+pub(crate) fn job_run_to_json(run: &JobRun) -> Value {
     json!({
         "run_id": run.run_id,
         "job_id": run.job_id,
@@ -383,7 +383,7 @@ fn job_run_to_json(run: &JobRun) -> Value {
     })
 }
 
-fn parse_duration_seconds(raw: &str) -> Result<u64, OrbitError> {
+pub(crate) fn parse_duration_seconds(raw: &str) -> Result<u64, OrbitError> {
     let value = raw.trim();
     if value.is_empty() {
         return Err(OrbitError::InvalidInput(
@@ -416,7 +416,7 @@ fn parse_duration_seconds(raw: &str) -> Result<u64, OrbitError> {
     Ok(seconds)
 }
 
-fn summarize_error_message(raw: Option<&str>) -> String {
+pub(crate) fn summarize_error_message(raw: Option<&str>) -> String {
     let value = raw.unwrap_or("-").replace('\n', " ");
     if value.chars().count() <= 120 {
         return value;

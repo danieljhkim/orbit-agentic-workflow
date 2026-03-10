@@ -192,20 +192,6 @@ impl OrbitRuntime {
         })
     }
 
-    pub fn archive_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
-        let job_id = self.context.job_store.archive_job_run(run_id)?;
-        self.record_event(OrbitEvent::JobRunArchived {
-            job_id,
-            run_id: run_id.to_string(),
-        })
-    }
-
-    pub fn job_history(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        let job = self.show_job(job_id)?;
-        let _ = self.recover_stale_active_run_for_job(&job, Utc::now())?;
-        self.list_activity_runs_backend(job_id)
-    }
-
     pub fn run_job_now(&self, job_id: &str) -> Result<JobRunResult, OrbitError> {
         let job = self.show_job(job_id)?;
         let _ = self.recover_stale_active_run_for_job(&job, Utc::now())?;
@@ -751,10 +737,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
 
     fn get_job_backend(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
         self.context.job_store.get_job(job_id)
-    }
-
-    fn list_activity_runs_backend(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.context.job_store.list_job_runs(job_id)
     }
 
     fn get_pending_or_running_job_run_backend(

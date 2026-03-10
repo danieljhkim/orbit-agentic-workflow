@@ -241,6 +241,24 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::JobRun(job_run_cmd) => {
+            use crate::command::job_run::JobRunSubcommand;
+            let (sub, target_id) = match &job_run_cmd.command {
+                JobRunSubcommand::List(_) => ("list", None),
+                JobRunSubcommand::Show(args) => ("show", Some(args.run_id.as_str())),
+                JobRunSubcommand::Archive(args) => ("archive", Some(args.run_id.as_str())),
+                JobRunSubcommand::Delete(args) => ("delete", Some(args.run_id.as_str())),
+            };
+            CommandMeta {
+                command: "job-run".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("job_run".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Agent(_) => CommandMeta {
             command: "agent".to_string(),
             subcommand: Some("run".to_string()),

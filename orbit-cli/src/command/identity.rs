@@ -41,12 +41,7 @@ impl Execute for IdentityListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let ids = runtime.list_identities()?;
         if self.json {
-            let values: Vec<_> = ids
-                .iter()
-                .map(|id| {
-                    json!({ "id": id })
-                })
-                .collect();
+            let values: Vec<_> = ids.iter().map(|id| json!({ "id": id })).collect();
             crate::output::json::print_pretty(&serde_json::Value::Array(values))
         } else {
             println!("{:<24} NAME", "ID");

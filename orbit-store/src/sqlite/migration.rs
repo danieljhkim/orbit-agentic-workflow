@@ -522,11 +522,34 @@ fn ensure_activity_schema_v2(conn: &Connection) -> Result<(), OrbitError> {
                 FOREIGN KEY(job_id) REFERENCES jobs(id)
             );
 
+            CREATE TABLE IF NOT EXISTS archived_job_runs (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                attempt INTEGER NOT NULL,
+                state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed','timeout')),
+                scheduled_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                duration_ms INTEGER,
+                exit_code INTEGER,
+                agent_response_json TEXT,
+                error_code TEXT,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(job_id) REFERENCES jobs(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_activity_runs_activity
             ON job_runs(job_id, created_at);
 
             CREATE INDEX IF NOT EXISTS idx_activity_runs_state
             ON job_runs(state);
+
+            CREATE INDEX IF NOT EXISTS idx_archived_activity_runs_activity
+            ON archived_job_runs(job_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_archived_activity_runs_state
+            ON archived_job_runs(state);
 
             CREATE UNIQUE INDEX IF NOT EXISTS uq_activity_runs_single_running
             ON job_runs(job_id)

@@ -6,8 +6,8 @@ use orbit_types::{
 
 use super::contracts::{
     ActivityCreateParams, ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend,
-    AuditStoreBackend, JobCreateParams, JobRunCompletionParams, JobStoreBackend, LockStoreBackend,
-    ToolStoreBackend,
+    AuditStoreBackend, JobCreateParams, JobRunCompletionParams, JobRunQuery, JobStoreBackend,
+    LockStoreBackend, ToolStoreBackend,
 };
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 use crate::sqlite::job_store::DueJobsClaim;
@@ -92,6 +92,14 @@ impl JobStoreBackend for SqliteJobStoreBackend {
         self.store.list_job_runs(job_id)
     }
 
+    fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError> {
+        self.store.list_job_runs_filtered(query)
+    }
+
+    fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
+        self.store.get_job_run(run_id)
+    }
+
     fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
         self.store.get_pending_or_running_job_run(job_id)
     }
@@ -153,10 +161,12 @@ impl JobStoreBackend for SqliteJobStoreBackend {
         self.store.with_transaction(|tx| tx.claim_due_jobs(now))
     }
 
-    fn archive_job_run(&self, _run_id: &str) -> Result<String, OrbitError> {
-        Err(OrbitError::Store(
-            "job run archive is not supported for the sqlite backend".to_string(),
-        ))
+    fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
+        self.store.with_transaction(|tx| tx.archive_job_run(run_id))
+    }
+
+    fn delete_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
+        self.store.with_transaction(|tx| tx.delete_job_run(run_id))
     }
 }
 

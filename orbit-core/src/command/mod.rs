@@ -5,6 +5,7 @@ pub mod duration;
 pub mod identity;
 pub mod init;
 pub mod job;
+pub mod job_run;
 pub mod skill;
 pub mod task;
 pub mod tool;

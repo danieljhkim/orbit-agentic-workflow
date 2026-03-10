@@ -2,9 +2,11 @@ use chrono::{DateTime, Utc};
 use orbit_types::{
     Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
 };
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params_from_iter;
+use rusqlite::{OptionalExtension, params, types::Value as SqlValue};
 use serde_json::Value;
 
+use crate::backend::JobRunQuery;
 use crate::{Store, StoreTx, new_id, now_string, parse_timestamp};
 
 #[derive(Debug, Clone)]
@@ -21,6 +23,7 @@ pub struct DueJobsClaim {
 
 const JOB_COLS: &str = "id, target_type, target_id, schedule, agent_cli, timeout_seconds, retry_max_attempts, retry_backoff_strategy, retry_initial_delay_seconds, state, next_run_at, created_at, updated_at";
 const JOB_RUN_COLS: &str = "id, job_id, attempt, state, scheduled_at, started_at, finished_at, duration_ms, exit_code, agent_response_json, error_code, error_message, created_at";
+const ARCHIVED_JOB_RUN_COLS: &str = "id, job_id, attempt, state, scheduled_at, started_at, finished_at, duration_ms, exit_code, agent_response_json, error_code, error_message, created_at";
 
 impl Store {
     pub fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
@@ -130,7 +133,45 @@ impl Store {
             .map_err(|e| OrbitError::Store(e.to_string()))
     }
 
-    pub fn get_activity_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
+    pub fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let mut sql = format!("SELECT {JOB_RUN_COLS} FROM job_runs WHERE 1 = 1");
+        let mut params = Vec::new();
+
+        if let Some(job_id) = query.job_id.as_ref() {
+            sql.push_str(" AND job_id = ?");
+            params.push(SqlValue::from(job_id.clone()));
+        }
+        if let Some(state) = query.state {
+            sql.push_str(" AND state = ?");
+            params.push(SqlValue::from(state.to_string()));
+        }
+        if let Some(created_since) = query.created_since {
+            sql.push_str(" AND created_at >= ?");
+            params.push(SqlValue::from(created_since.to_rfc3339()));
+        }
+
+        sql.push_str(" ORDER BY created_at DESC, id DESC");
+        if let Some(limit) = query.limit {
+            sql.push_str(" LIMIT ?");
+            params.push(SqlValue::from(limit as i64));
+        }
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let rows = stmt
+            .query_map(params_from_iter(params), row_to_activity_run)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    pub fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
         let conn = self
             .conn
             .lock()
@@ -143,6 +184,10 @@ impl Store {
         )
         .optional()
         .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    pub fn get_activity_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
+        self.get_job_run(run_id)
     }
 
     pub fn get_running_activity_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
@@ -451,6 +496,97 @@ impl<'a> StoreTx<'a> {
         }
 
         Ok(result)
+    }
+
+    pub fn archive_job_run(&mut self, run_id: &str) -> Result<String, OrbitError> {
+        let Some(run) = self.get_run_from_table("job_runs", run_id)? else {
+            return Err(OrbitError::JobRunNotFound(run_id.to_string()));
+        };
+
+        let response_raw = run
+            .agent_response_json
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| OrbitError::Store(format!("serialize agent response: {e}")))?;
+
+        self.tx
+            .execute(
+                "INSERT INTO archived_job_runs(
+                    id, job_id, attempt, state, scheduled_at, started_at,
+                    finished_at, duration_ms, exit_code, agent_response_json,
+                    error_code, error_message, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    run.run_id,
+                    run.job_id,
+                    run.attempt as i64,
+                    run.state.to_string(),
+                    run.scheduled_at.to_rfc3339(),
+                    run.started_at.map(|value| value.to_rfc3339()),
+                    run.finished_at.map(|value| value.to_rfc3339()),
+                    run.duration_ms.map(|value| value as i64),
+                    run.exit_code,
+                    response_raw,
+                    run.error_code,
+                    run.error_message,
+                    run.created_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let deleted = self
+            .tx
+            .execute("DELETE FROM job_runs WHERE id = ?1", [run_id])
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        if deleted != 1 {
+            return Err(OrbitError::Store(format!(
+                "expected to archive one job run, archived {deleted}"
+            )));
+        }
+
+        Ok(run.job_id)
+    }
+
+    pub fn delete_job_run(&mut self, run_id: &str) -> Result<String, OrbitError> {
+        if let Some(run) = self.get_run_from_table("job_runs", run_id)? {
+            let deleted = self
+                .tx
+                .execute("DELETE FROM job_runs WHERE id = ?1", [run_id])
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            if deleted != 1 {
+                return Err(OrbitError::Store(format!(
+                    "expected to delete one active job run, deleted {deleted}"
+                )));
+            }
+            return Ok(run.job_id);
+        }
+
+        if let Some(run) = self.get_run_from_table("archived_job_runs", run_id)? {
+            let deleted = self
+                .tx
+                .execute("DELETE FROM archived_job_runs WHERE id = ?1", [run_id])
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            if deleted != 1 {
+                return Err(OrbitError::Store(format!(
+                    "expected to delete one archived job run, deleted {deleted}"
+                )));
+            }
+            return Ok(run.job_id);
+        }
+
+        Err(OrbitError::JobRunNotFound(run_id.to_string()))
+    }
+
+    fn get_run_from_table(&self, table: &str, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
+        self.tx
+            .query_row(
+                &format!("SELECT {ARCHIVED_JOB_RUN_COLS} FROM {table} WHERE id = ?1"),
+                [run_id],
+                row_to_activity_run,
+            )
+            .optional()
+            .map_err(|e| OrbitError::Store(e.to_string()))
     }
 }
 

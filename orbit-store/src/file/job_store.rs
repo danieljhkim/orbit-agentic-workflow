@@ -8,6 +8,7 @@ use orbit_types::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::backend::JobRunQuery;
 #[derive(Clone)]
 pub(crate) struct JobFileStore {
     root: PathBuf,
@@ -120,6 +121,43 @@ impl JobFileStore {
                 .then_with(|| a.run_id.cmp(&b.run_id))
         });
         Ok(runs)
+    }
+
+    pub(crate) fn list_job_runs_filtered(
+        &self,
+        query: &JobRunQuery,
+    ) -> Result<Vec<JobRun>, OrbitError> {
+        let mut runs = if let Some(job_id) = query.job_id.as_deref() {
+            self.read_runs_for_activity(job_id)?
+        } else {
+            self.read_all_runs()?
+        };
+
+        if let Some(state) = query.state {
+            runs.retain(|run| run.state == state);
+        }
+        if let Some(created_since) = query.created_since {
+            runs.retain(|run| run.created_at >= created_since);
+        }
+
+        runs.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| a.run_id.cmp(&b.run_id))
+        });
+
+        if let Some(limit) = query.limit {
+            runs.truncate(limit);
+        }
+
+        Ok(runs)
+    }
+
+    pub(crate) fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
+        let Some((_job_id, path)) = self.find_run_path(run_id)? else {
+            return Ok(None);
+        };
+        Ok(Some(self.read_run_at(&path)?))
     }
 
     pub(crate) fn get_pending_or_running_job_run(
@@ -284,8 +322,59 @@ impl JobFileStore {
         Ok(runs)
     }
 
+    fn read_all_runs(&self) -> Result<Vec<JobRun>, OrbitError> {
+        self.ensure_layout()?;
+        let runs_root = self.runs_dir();
+        if !runs_root.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut runs = Vec::new();
+        for entry in fs::read_dir(runs_root).map_err(|e| OrbitError::Io(e.to_string()))? {
+            let entry = entry.map_err(|e| OrbitError::Io(e.to_string()))?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if path.file_name().and_then(|value| value.to_str()) == Some("archived") {
+                continue;
+            }
+            let Some(job_id) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            runs.extend(self.read_runs_for_activity(job_id)?);
+        }
+
+        Ok(runs)
+    }
+
     fn find_run_path(&self, run_id: &str) -> Result<Option<(String, PathBuf)>, OrbitError> {
         let runs_root = self.runs_dir();
+        if !runs_root.exists() {
+            return Ok(None);
+        }
+        for entry in fs::read_dir(runs_root).map_err(|e| OrbitError::Io(e.to_string()))? {
+            let entry = entry.map_err(|e| OrbitError::Io(e.to_string()))?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(job_id) = path.file_name().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            let run_path = path.join(format!("{run_id}.yaml"));
+            if run_path.exists() {
+                return Ok(Some((job_id.to_string(), run_path)));
+            }
+        }
+        Ok(None)
+    }
+
+    fn find_archived_run_path(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<(String, PathBuf)>, OrbitError> {
+        let runs_root = self.archived_runs_dir();
         if !runs_root.exists() {
             return Ok(None);
         }
@@ -391,6 +480,18 @@ impl JobFileStore {
         fs::rename(&src, &dst).map_err(|e| OrbitError::Io(e.to_string()))?;
         Ok(job_id)
     }
+
+    pub(crate) fn delete_run(&self, run_id: &str) -> Result<String, OrbitError> {
+        if let Some((job_id, path)) = self.find_run_path(run_id)? {
+            fs::remove_file(&path).map_err(|e| OrbitError::Io(e.to_string()))?;
+            return Ok(job_id);
+        }
+        if let Some((job_id, path)) = self.find_archived_run_path(run_id)? {
+            fs::remove_file(&path).map_err(|e| OrbitError::Io(e.to_string()))?;
+            return Ok(job_id);
+        }
+        Err(OrbitError::JobRunNotFound(run_id.to_string()))
+    }
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), OrbitError> {
@@ -468,6 +569,53 @@ mod tests {
         assert!(
             matches!(err, OrbitError::JobRunNotFound(_)),
             "expected JobRunNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn delete_run_removes_active_and_archived_files() {
+        let (_dir, store) = make_store();
+        let now = Utc::now();
+        let job = store
+            .insert_activity_v2(
+                JobTargetType::Activity,
+                "target-delete",
+                "every 1h",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+            .expect("insert job");
+
+        let active_run = store
+            .insert_job_run(&job.job_id, 1, now)
+            .expect("insert active run");
+        let archived_run = store
+            .insert_job_run(&job.job_id, 2, now)
+            .expect("insert archived run");
+        store
+            .archive_run(&archived_run.run_id)
+            .expect("archive run");
+
+        store
+            .delete_run(&active_run.run_id)
+            .expect("delete active run");
+        assert!(
+            !store.run_path(&job.job_id, &active_run.run_id).exists(),
+            "active run file removed"
+        );
+
+        store
+            .delete_run(&archived_run.run_id)
+            .expect("delete archived run");
+        assert!(
+            !store
+                .archived_run_path(&job.job_id, &archived_run.run_id)
+                .exists(),
+            "archived run file removed"
         );
     }
 }

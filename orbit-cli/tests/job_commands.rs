@@ -159,7 +159,7 @@ fn job_add_defaults_timeout_to_fifteen_minutes() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["timeout_seconds"], 7000);
+    assert_eq!(show["timeout_seconds"], 900);
 }
 
 #[test]
@@ -276,6 +276,135 @@ fn job_run_failure_json_includes_error_details() {
             .unwrap_or_default()
             .contains("network down")
     );
+}
+
+#[test]
+fn job_run_top_level_list_and_show_work() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let success_spec = add_activity(dir.path(), "spec-cli-job-run-success");
+    let failed_spec = add_activity(dir.path(), "spec-cli-job-run-failed");
+
+    let success_agent = write_mock_agent(dir.path());
+    let success_job_id = add_job(dir.path(), &success_spec, "every 1m", &success_agent);
+
+    let success_run_output = orbit_in(dir.path())
+        .args(["job", "run", &success_job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let success_run: Value = serde_json::from_slice(&success_run_output).expect("success run json");
+
+    let failed_agent = write_failing_agent(dir.path());
+    let failed_job_id = add_job(dir.path(), &failed_spec, "every 1m", &failed_agent);
+
+    let failed_run_output = orbit_in(dir.path())
+        .args(["job", "run", &failed_job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let failed_run: Value = serde_json::from_slice(&failed_run_output).expect("failed run json");
+
+    let show_output = orbit_in(dir.path())
+        .args([
+            "job-run",
+            "show",
+            failed_run["run_id"].as_str().expect("run id"),
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["job_id"], failed_job_id);
+    assert_eq!(show["run_id"], failed_run["run_id"]);
+    assert_eq!(show["state"], "failed");
+
+    let filtered_by_job_output = orbit_in(dir.path())
+        .args(["job-run", "list", "--job", &success_job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let filtered_by_job: Value =
+        serde_json::from_slice(&filtered_by_job_output).expect("job filtered json");
+    let filtered_by_job_runs = filtered_by_job.as_array().expect("array");
+    assert_eq!(filtered_by_job_runs.len(), 1);
+    assert_eq!(filtered_by_job_runs[0]["run_id"], success_run["run_id"]);
+
+    let failed_only_output = orbit_in(dir.path())
+        .args(["job-run", "list", "--status", "failed", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let failed_only: Value = serde_json::from_slice(&failed_only_output).expect("failed list json");
+    let failed_only_runs = failed_only.as_array().expect("array");
+    assert_eq!(failed_only_runs.len(), 1);
+    assert_eq!(failed_only_runs[0]["run_id"], failed_run["run_id"]);
+
+    let limited_output = orbit_in(dir.path())
+        .args(["job-run", "list", "--limit", "1", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let limited: Value = serde_json::from_slice(&limited_output).expect("limited json");
+    assert_eq!(limited.as_array().expect("array").len(), 1);
+}
+
+#[test]
+fn job_run_archive_and_delete_mutate_visibility() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-cli-job-run-mutate");
+    let agent_cli = write_mock_agent(dir.path());
+    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+
+    let run_output = orbit_in(dir.path())
+        .args(["job", "run", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&run_output).expect("run json");
+    let run_id = run["run_id"].as_str().expect("run id").to_string();
+
+    orbit_in(dir.path())
+        .args(["job-run", "archive", &run_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Archived job run"));
+
+    orbit_in(dir.path())
+        .args(["job-run", "show", &run_id, "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("job run not found"));
+
+    let list_output = orbit_in(dir.path())
+        .args(["job-run", "list", "--job", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let list: Value = serde_json::from_slice(&list_output).expect("list json");
+    assert!(list.as_array().expect("array").is_empty());
+
+    orbit_in(dir.path())
+        .args(["job-run", "delete", &run_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deleted job run"));
 }
 
 #[test]

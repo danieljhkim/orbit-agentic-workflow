@@ -1,5 +1,5 @@
 use chrono::Utc;
-use orbit_store::Store;
+use orbit_store::{JobRunQuery, Store};
 use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobScheduleState, JobTargetType};
 
 #[test]
@@ -145,6 +145,167 @@ fn complete_job_run_updates_terminal_state_and_error_fields() {
     assert_eq!(finished.exit_code, Some(130));
     assert_eq!(finished.error_code.as_deref(), Some("RUN_FAILED"));
     assert_eq!(finished.error_message.as_deref(), Some("cancel requested"));
+}
+
+#[test]
+fn job_run_query_supports_lookup_and_filtering() {
+    let store = Store::open_in_memory().expect("store");
+    let now = Utc::now();
+
+    let first_job = store
+        .with_transaction(|tx| {
+            tx.insert_activity_v2(
+                JobTargetType::Activity,
+                "spec-query-success",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+        })
+        .expect("insert first job");
+    let second_job = store
+        .with_transaction(|tx| {
+            tx.insert_activity_v2(
+                JobTargetType::Activity,
+                "spec-query-failed",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+        })
+        .expect("insert second job");
+
+    let success_run = store
+        .with_transaction(|tx| tx.insert_job_run(&first_job.job_id, 1, now))
+        .expect("insert success run");
+    store
+        .with_transaction(|tx| {
+            tx.complete_job_run(
+                &success_run.run_id,
+                JobRunState::Success,
+                Utc::now(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        })
+        .expect("complete success run");
+
+    let failed_run = store
+        .with_transaction(|tx| tx.insert_job_run(&second_job.job_id, 1, now))
+        .expect("insert failed run");
+    store
+        .with_transaction(|tx| {
+            tx.complete_job_run(
+                &failed_run.run_id,
+                JobRunState::Failed,
+                Utc::now(),
+                None,
+                Some(1),
+                None,
+                Some("FAILED"),
+                Some("run failed"),
+            )
+        })
+        .expect("complete failed run");
+
+    let fetched = store
+        .get_job_run(&failed_run.run_id)
+        .expect("lookup run")
+        .expect("run exists");
+    assert_eq!(fetched.run_id, failed_run.run_id);
+    assert_eq!(fetched.job_id, second_job.job_id);
+
+    let filtered = store
+        .list_job_runs_filtered(&JobRunQuery {
+            job_id: Some(second_job.job_id.clone()),
+            state: Some(JobRunState::Failed),
+            created_since: Some(now - chrono::Duration::seconds(1)),
+            limit: Some(10),
+        })
+        .expect("filtered runs");
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].run_id, failed_run.run_id);
+
+    let limited = store
+        .list_job_runs_filtered(&JobRunQuery {
+            limit: Some(1),
+            ..Default::default()
+        })
+        .expect("limited runs");
+    assert_eq!(limited.len(), 1);
+}
+
+#[test]
+fn archive_and_delete_job_runs_update_active_visibility() {
+    let store = Store::open_in_memory().expect("store");
+    let now = Utc::now();
+
+    let job = store
+        .with_transaction(|tx| {
+            tx.insert_activity_v2(
+                JobTargetType::Activity,
+                "spec-archive-delete",
+                "every 1m",
+                "mock-agent",
+                300,
+                0,
+                JobRetryBackoffStrategy::None,
+                0,
+                now,
+            )
+        })
+        .expect("insert job");
+
+    let archived_run = store
+        .with_transaction(|tx| tx.insert_job_run(&job.job_id, 1, now))
+        .expect("insert archived candidate");
+    let deleted_run = store
+        .with_transaction(|tx| tx.insert_job_run(&job.job_id, 2, now))
+        .expect("insert deleted candidate");
+
+    store
+        .with_transaction(|tx| tx.archive_job_run(&archived_run.run_id))
+        .expect("archive run");
+
+    assert!(
+        store
+            .get_job_run(&archived_run.run_id)
+            .expect("lookup archived run")
+            .is_none(),
+        "archived runs should disappear from active lookup"
+    );
+
+    let active_runs = store
+        .list_job_runs(&job.job_id)
+        .expect("list active runs after archive");
+    assert_eq!(active_runs.len(), 1);
+    assert_eq!(active_runs[0].run_id, deleted_run.run_id);
+
+    store
+        .with_transaction(|tx| tx.delete_job_run(&archived_run.run_id))
+        .expect("delete archived run");
+    store
+        .with_transaction(|tx| tx.delete_job_run(&deleted_run.run_id))
+        .expect("delete active run");
+
+    assert!(
+        store
+            .list_job_runs(&job.job_id)
+            .expect("list after delete")
+            .is_empty(),
+        "all active runs deleted"
+    );
 }
 
 #[test]

@@ -15,8 +15,7 @@ fn write_identity(dir: &Path, id: &str, name: &str, role: &str) {
     let identity_root = dir.join(".orbit").join("identities");
     std::fs::create_dir_all(&identity_root).expect("create identity dir");
     let content = format!("identity:\n  name: {name}\n  role: {role}\n");
-    std::fs::write(identity_root.join(format!("{id}.yaml")), content)
-        .expect("write identity");
+    std::fs::write(identity_root.join(format!("{id}.yaml")), content).expect("write identity");
 }
 
 #[test]

@@ -73,6 +73,7 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::JobProtocolViolation { .. } => "JobProtocolViolation",
         OrbitEvent::JobSkipped { .. } => "JobSkipped",
         OrbitEvent::JobRunArchived { .. } => "JobRunArchived",
+        OrbitEvent::JobRunDeleted { .. } => "JobRunDeleted",
         OrbitEvent::ToolExecuted { .. } => "ToolExecuted",
         OrbitEvent::PolicyDenied { .. } => "PolicyDenied",
         OrbitEvent::TaskAdded { .. } => "TaskAdded",
@@ -144,6 +145,9 @@ fn event_message(event: &OrbitEvent) -> String {
         }
         OrbitEvent::JobRunArchived { job_id, run_id } => {
             format!("job run archived: job={job_id} run={run_id}")
+        }
+        OrbitEvent::JobRunDeleted { job_id, run_id } => {
+            format!("job run deleted: job={job_id} run={run_id}")
         }
         OrbitEvent::ToolExecuted { name } => format!("tool executed: {name}"),
         OrbitEvent::PolicyDenied { tool } => format!("policy denied: {tool}"),

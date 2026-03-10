@@ -5,7 +5,7 @@ use orbit_types::{
 
 use super::contracts::{
     ActivityCreateParams, ActivityStoreBackend, JobCreateParams, JobRunCompletionParams,
-    JobStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    JobRunQuery, JobStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
 };
 use crate::file::activity_store::{ActivityFileStore, FileWorkInsert};
 use crate::file::job_store::JobFileStore;
@@ -152,6 +152,14 @@ impl JobStoreBackend for JobFileStore {
         self.list_job_runs(job_id)
     }
 
+    fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError> {
+        self.list_job_runs_filtered(query)
+    }
+
+    fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
+        self.get_job_run(run_id)
+    }
+
     fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
         self.get_pending_or_running_job_run(job_id)
     }
@@ -208,5 +216,9 @@ impl JobStoreBackend for JobFileStore {
 
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
         self.archive_run(run_id)
+    }
+
+    fn delete_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
+        self.delete_run(run_id)
     }
 }
