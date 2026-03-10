@@ -880,3 +880,33 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
     }
     format!("agent timed out before producing JSON stdout; stderr: {stderr}")
 }
+
+const DEFAULT_NAMED_JOBS: &[(&str, &str)] = &[
+    ("job-resolve-backlogged-task", "resolve-backlogged-task"),
+    ("job-perform-maintenance", "perform-maintenance"),
+    ("job-oversee-orbit-operations", "oversee-orbit-operations"),
+    ("job-approve-task-leader", "approve-task-leader"),
+    ("job-triage-and-dispatch-task", "triage-and-dispatch-task"),
+];
+
+pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitError> {
+    let mut created = 0usize;
+    for (job_id, target_id) in DEFAULT_NAMED_JOBS {
+        if runtime.show_job(job_id).is_ok() {
+            continue;
+        }
+        runtime.add_job(JobAddParams {
+            job_id: Some(job_id.to_string()),
+            target_type: JobTargetType::Activity,
+            target_id: target_id.to_string(),
+            schedule: "manual".to_string(),
+            agent_cli: "codex".to_string(), // TODO: make this dynamic 
+            timeout_seconds: 900,
+            retry_max_attempts: 0,
+            retry_backoff_strategy: JobRetryBackoffStrategy::None,
+            retry_initial_delay_seconds: 0,
+        })?;
+        created += 1;
+    }
+    Ok(created)
+}

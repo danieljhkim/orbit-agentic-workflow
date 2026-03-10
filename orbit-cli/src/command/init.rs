@@ -31,7 +31,7 @@ impl InitCommand {
 
 fn print_init_result(result: &orbit_core::command::init::InitResult) {
     println!(
-        "identities: root={}, created={}; skills: root={}, created={}, symlink_created={}; config: path={}, created={}; default_work_created={}",
+        "identities: root={}, created={}; skills: root={}, created={}, symlink_created={}; config: path={}, created={}; default_work_created={}; default_jobs_created={}",
         result.identity_root,
         result.created_identity_files,
         result.skills_root,
@@ -39,6 +39,7 @@ fn print_init_result(result: &orbit_core::command::init::InitResult) {
         result.created_skills_symlink,
         result.config_path,
         result.created_config,
-        result.created_default_work
+        result.created_default_work,
+        result.created_default_jobs
     );
 }

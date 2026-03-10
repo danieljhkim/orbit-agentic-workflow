@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::OrbitRuntime;
 
-const DEFAULT_JOB_FILES: [(&str, &str); 4] = [
+const DEFAULT_JOB_FILES: [(&str, &str); 5] = [
     (
         "approve-task-leader",
         include_str!("../../assets/activities/approve-task-leader.yaml"),
@@ -24,6 +24,10 @@ const DEFAULT_JOB_FILES: [(&str, &str); 4] = [
     (
         "resolve-backlogged-task",
         include_str!("../../assets/activities/resolve-backlogged-task.yaml"),
+    ),
+    (
+        "triage-and-dispatch-task",
+        include_str!("../../assets/activities/triage-and-dispatch-task.yaml"),
     ),
 ];
 use crate::paths::ORBIT_ROOT_TOKEN;
