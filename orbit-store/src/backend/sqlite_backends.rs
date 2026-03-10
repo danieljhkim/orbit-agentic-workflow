@@ -59,6 +59,7 @@ impl JobStoreBackend for SqliteJobStoreBackend {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
         self.store.with_transaction(|tx| {
             tx.insert_activity_v2(
+                params.job_id,
                 params.target_type,
                 &params.target_id,
                 &params.schedule,
@@ -68,6 +69,7 @@ impl JobStoreBackend for SqliteJobStoreBackend {
                 params.retry_backoff_strategy,
                 params.retry_initial_delay_seconds,
                 params.next_run_at,
+                params.initial_state,
             )
         })
     }

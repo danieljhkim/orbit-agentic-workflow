@@ -42,6 +42,7 @@ impl JobFileStore {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn insert_activity_v2(
         &self,
+        job_id: Option<String>,
         target_type: JobTargetType,
         target_id: &str,
         schedule: &str,
@@ -51,11 +52,23 @@ impl JobFileStore {
         retry_backoff_strategy: JobRetryBackoffStrategy,
         retry_initial_delay_seconds: u64,
         next_run_at: DateTime<Utc>,
+        initial_state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
         self.ensure_layout()?;
+        let resolved_id = match job_id {
+            Some(id) => {
+                if self.job_path(&id).exists() {
+                    return Err(OrbitError::JobValidation(format!(
+                        "job id already exists: {id}"
+                    )));
+                }
+                id
+            }
+            None => self.next_id("job"),
+        };
         let now = Utc::now();
         let job = Job {
-            job_id: self.next_id("job"),
+            job_id: resolved_id,
             target_type,
             target_id: target_id.to_string(),
             schedule: schedule.to_string(),
@@ -64,7 +77,7 @@ impl JobFileStore {
             retry_max_attempts,
             retry_backoff_strategy,
             retry_initial_delay_seconds,
-            state: JobScheduleState::Enabled,
+            state: initial_state,
             next_run_at,
             created_at: now,
             updated_at: now,
@@ -521,7 +534,7 @@ use crate::{ClaimedJobRun, DueJobsClaim};
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use orbit_types::{JobRetryBackoffStrategy, JobTargetType, OrbitError};
+    use orbit_types::{JobRetryBackoffStrategy, JobScheduleState, JobTargetType, OrbitError};
 
     use super::JobFileStore;
 
@@ -531,25 +544,30 @@ mod tests {
         (dir, store)
     }
 
-    #[test]
-    fn archive_run_moves_file_to_archived_dir() {
-        let (_dir, store) = make_store();
-        let now = Utc::now();
-        let job = store
+    fn insert_test_job(store: &JobFileStore, target_id: &str) -> orbit_types::Job {
+        store
             .insert_activity_v2(
+                None,
                 JobTargetType::Activity,
-                "target-1",
+                target_id,
                 "every 1h",
                 "mock-agent",
                 300,
                 0,
                 JobRetryBackoffStrategy::None,
                 0,
-                now,
+                Utc::now(),
+                JobScheduleState::Enabled,
             )
-            .expect("insert job");
+            .expect("insert job")
+    }
+
+    #[test]
+    fn archive_run_moves_file_to_archived_dir() {
+        let (_dir, store) = make_store();
+        let job = insert_test_job(&store, "target-1");
         let run = store
-            .insert_job_run(&job.job_id, 1, now)
+            .insert_job_run(&job.job_id, 1, Utc::now())
             .expect("insert run");
 
         let src = store.run_path(&job.job_id, &run.run_id);
@@ -576,19 +594,7 @@ mod tests {
     fn delete_run_removes_active_and_archived_files() {
         let (_dir, store) = make_store();
         let now = Utc::now();
-        let job = store
-            .insert_activity_v2(
-                JobTargetType::Activity,
-                "target-delete",
-                "every 1h",
-                "mock-agent",
-                300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
-                now,
-            )
-            .expect("insert job");
+        let job = insert_test_job(&store, "target-delete");
 
         let active_run = store
             .insert_job_run(&job.job_id, 1, now)

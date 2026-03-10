@@ -25,6 +25,7 @@ const STALE_RUN_GRACE_SECONDS: u64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct JobAddParams {
+    pub job_id: Option<String>,
     pub target_type: JobTargetType,
     pub target_id: String,
     pub schedule: String,
@@ -119,10 +120,19 @@ impl OrbitRuntime {
         // Validate runtime availability at add-time.
         let _ = Agent::new(&AgentConfig::cli(params.agent_cli.clone()))?;
 
-        let next_run_at =
-            crate::job::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
+        let is_manual = params.schedule.trim().eq_ignore_ascii_case("manual");
+        let (next_run_at, initial_state) = if is_manual {
+            // Manual jobs never auto-fire; use far-future sentinel and start disabled.
+            let far_future = Utc::now() + chrono::Duration::days(365 * 100);
+            (far_future, JobScheduleState::Disabled)
+        } else {
+            let next_run_at =
+                crate::job::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
+            (next_run_at, JobScheduleState::Enabled)
+        };
 
         let job = self.context.job_store.add_job(StoreActivityCreateParams {
+            job_id: params.job_id,
             target_type: params.target_type,
             target_id: params.target_id,
             schedule: params.schedule,
@@ -132,6 +142,7 @@ impl OrbitRuntime {
             retry_backoff_strategy: params.retry_backoff_strategy,
             retry_initial_delay_seconds: params.retry_initial_delay_seconds,
             next_run_at,
+            initial_state,
         })?;
         self.record_event(OrbitEvent::JobAdded {
             job_id: job.job_id.clone(),

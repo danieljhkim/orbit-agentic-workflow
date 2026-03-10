@@ -532,3 +532,170 @@ fn job_add_rejects_legacy_workflow_target_type() {
         .assert()
         .failure();
 }
+
+#[test]
+fn job_add_with_named_id_uses_provided_id() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    add_activity(dir.path(), "spec-named-id");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "job",
+            "add",
+            "--job-id",
+            "job-my-named-job",
+            "--target-id",
+            "spec-named-id",
+            "--schedule",
+            "every 1m",
+            "--agent-cli",
+            "mock-agent",
+            "--timeout",
+            "30s",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let returned_id = String::from_utf8(output).expect("utf8").trim().to_string();
+    assert_eq!(returned_id, "job-my-named-job");
+
+    let show_output = orbit_in(dir.path())
+        .args(["job", "show", "job-my-named-job", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["job_id"], "job-my-named-job");
+    assert_eq!(show["target_id"], "spec-named-id");
+}
+
+#[test]
+fn job_add_duplicate_named_id_rejected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    add_activity(dir.path(), "spec-dup-id");
+
+    orbit_in(dir.path())
+        .args([
+            "job",
+            "add",
+            "--job-id",
+            "job-duplicate",
+            "--target-id",
+            "spec-dup-id",
+            "--schedule",
+            "every 1m",
+            "--agent-cli",
+            "mock-agent",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "job",
+            "add",
+            "--job-id",
+            "job-duplicate",
+            "--target-id",
+            "spec-dup-id",
+            "--schedule",
+            "every 1m",
+            "--agent-cli",
+            "mock-agent",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("job-duplicate"));
+}
+
+#[test]
+fn job_add_manual_schedule_creates_disabled_job() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    add_activity(dir.path(), "spec-manual");
+
+    let job_id = {
+        let output = orbit_in(dir.path())
+            .args([
+                "job",
+                "add",
+                "--target-id",
+                "spec-manual",
+                "--schedule",
+                "manual",
+                "--agent-cli",
+                "mock-agent",
+                "--timeout",
+                "30s",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        String::from_utf8(output).expect("utf8").trim().to_string()
+    };
+
+    let show_output = orbit_in(dir.path())
+        .args(["job", "show", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["schedule"], "manual");
+    assert_eq!(show["state"], "disabled");
+}
+
+#[test]
+fn job_tick_skips_manual_schedule_job() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let agent_cli = write_mock_agent(dir.path());
+    add_activity(dir.path(), "spec-manual-tick");
+
+    let job_id = {
+        let output = orbit_in(dir.path())
+            .args([
+                "job",
+                "add",
+                "--target-id",
+                "spec-manual-tick",
+                "--schedule",
+                "manual",
+                "--agent-cli",
+                &agent_cli,
+                "--timeout",
+                "30s",
+            ])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        String::from_utf8(output).expect("utf8").trim().to_string()
+    };
+
+    orbit_in(dir.path())
+        .args(["job", "tick", "--json"])
+        .assert()
+        .success();
+
+    let history_output = orbit_in(dir.path())
+        .args(["job", "history", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let history: Value = serde_json::from_slice(&history_output).expect("history json");
+    let runs = history.as_array().expect("array");
+    assert!(
+        runs.is_empty(),
+        "manual job must not be triggered by tick, but got {} runs",
+        runs.len()
+    );
+}

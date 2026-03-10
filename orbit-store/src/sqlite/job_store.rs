@@ -240,6 +240,7 @@ impl<'a> StoreTx<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn insert_activity_v2(
         &mut self,
+        job_id: Option<String>,
         target_type: JobTargetType,
         target_id: &str,
         schedule: &str,
@@ -249,10 +250,12 @@ impl<'a> StoreTx<'a> {
         retry_backoff_strategy: JobRetryBackoffStrategy,
         retry_initial_delay_seconds: u64,
         next_run_at: DateTime<Utc>,
+        initial_state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
         let now = Utc::now();
+        let resolved_id = job_id.unwrap_or_else(|| new_id("job"));
         let job = Job {
-            job_id: new_id("job"),
+            job_id: resolved_id,
             target_type,
             target_id: target_id.to_string(),
             schedule: schedule.to_string(),
@@ -261,7 +264,7 @@ impl<'a> StoreTx<'a> {
             retry_max_attempts,
             retry_backoff_strategy,
             retry_initial_delay_seconds,
-            state: JobScheduleState::Enabled,
+            state: initial_state,
             next_run_at,
             created_at: now,
             updated_at: now,

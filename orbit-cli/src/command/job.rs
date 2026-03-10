@@ -58,6 +58,8 @@ impl Execute for JobSubcommand {
 #[derive(Args)]
 pub struct JobAddArgs {
     #[arg(long)]
+    pub job_id: Option<String>,
+    #[arg(long)]
     pub target_id: String,
     #[arg(long)]
     pub schedule: String,
@@ -81,6 +83,7 @@ impl Execute for JobAddArgs {
         let retry_initial_delay_seconds = parse_duration_seconds(&self.retry_initial_delay)?;
 
         let job = runtime.add_job(JobAddParams {
+            job_id: self.job_id,
             target_type: JobTargetType::Activity,
             target_id: self.target_id,
             schedule: self.schedule,

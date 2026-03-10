@@ -2,6 +2,26 @@ use chrono::Utc;
 use orbit_store::{JobRunQuery, Store};
 use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobScheduleState, JobTargetType};
 
+fn insert_job<'a>(
+    tx: &mut orbit_store::StoreTx<'a>,
+    target_id: &str,
+    next_run_at: chrono::DateTime<chrono::Utc>,
+) -> Result<orbit_types::Job, orbit_types::OrbitError> {
+    tx.insert_activity_v2(
+        None,
+        JobTargetType::Activity,
+        target_id,
+        "every 1m",
+        "mock-agent",
+        300,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
+        next_run_at,
+        JobScheduleState::Enabled,
+    )
+}
+
 #[test]
 fn job_state_transitions_and_disabled_visibility() {
     let store = Store::open_in_memory().expect("store");
@@ -10,6 +30,7 @@ fn job_state_transitions_and_disabled_visibility() {
     let job = store
         .with_transaction(|tx| {
             tx.insert_activity_v2(
+                None,
                 JobTargetType::Activity,
                 "spec-demo",
                 "every 1h",
@@ -19,6 +40,7 @@ fn job_state_transitions_and_disabled_visibility() {
                 JobRetryBackoffStrategy::None,
                 0,
                 now,
+                JobScheduleState::Enabled,
             )
         })
         .expect("insert job");
@@ -60,19 +82,7 @@ fn claim_due_jobs_skips_when_pending_or_running_run_exists() {
     let now = Utc::now();
 
     let job = store
-        .with_transaction(|tx| {
-            tx.insert_activity_v2(
-                JobTargetType::Activity,
-                "spec-claim",
-                "every 1m",
-                "mock-agent",
-                300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
-                now,
-            )
-        })
+        .with_transaction(|tx| insert_job(tx, "spec-claim", now))
         .expect("insert job");
 
     let first = store
@@ -96,19 +106,7 @@ fn complete_job_run_updates_terminal_state_and_error_fields() {
     let now = Utc::now();
 
     let job = store
-        .with_transaction(|tx| {
-            tx.insert_activity_v2(
-                JobTargetType::Activity,
-                "spec-legacy",
-                "every 1m",
-                "mock-agent",
-                300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
-                now,
-            )
-        })
+        .with_transaction(|tx| insert_job(tx, "spec-legacy", now))
         .expect("insert job");
 
     let run = store
@@ -153,34 +151,10 @@ fn job_run_query_supports_lookup_and_filtering() {
     let now = Utc::now();
 
     let first_job = store
-        .with_transaction(|tx| {
-            tx.insert_activity_v2(
-                JobTargetType::Activity,
-                "spec-query-success",
-                "every 1m",
-                "mock-agent",
-                300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
-                now,
-            )
-        })
+        .with_transaction(|tx| insert_job(tx, "spec-query-success", now))
         .expect("insert first job");
     let second_job = store
-        .with_transaction(|tx| {
-            tx.insert_activity_v2(
-                JobTargetType::Activity,
-                "spec-query-failed",
-                "every 1m",
-                "mock-agent",
-                300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
-                now,
-            )
-        })
+        .with_transaction(|tx| insert_job(tx, "spec-query-failed", now))
         .expect("insert second job");
 
     let success_run = store
@@ -252,19 +226,7 @@ fn archive_and_delete_job_runs_update_active_visibility() {
     let now = Utc::now();
 
     let job = store
-        .with_transaction(|tx| {
-            tx.insert_activity_v2(
-                JobTargetType::Activity,
-                "spec-archive-delete",
-                "every 1m",
-                "mock-agent",
-                300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
-                now,
-            )
-        })
+        .with_transaction(|tx| insert_job(tx, "spec-archive-delete", now))
         .expect("insert job");
 
     let archived_run = store
@@ -318,6 +280,7 @@ fn next_due_job_time_returns_earliest_enabled_job() {
     let paused_id = store
         .with_transaction(|tx| {
             let paused = tx.insert_activity_v2(
+                None,
                 JobTargetType::Activity,
                 "spec-paused",
                 "every 1m",
@@ -327,9 +290,11 @@ fn next_due_job_time_returns_earliest_enabled_job() {
                 JobRetryBackoffStrategy::None,
                 0,
                 now + chrono::Duration::minutes(1),
+                JobScheduleState::Enabled,
             )?;
             let _ = tx.set_job_state(&paused.job_id, JobScheduleState::Paused)?;
             let _enabled = tx.insert_activity_v2(
+                None,
                 JobTargetType::Activity,
                 "spec-enabled",
                 "every 1m",
@@ -339,8 +304,10 @@ fn next_due_job_time_returns_earliest_enabled_job() {
                 JobRetryBackoffStrategy::None,
                 0,
                 earliest,
+                JobScheduleState::Enabled,
             )?;
             let _ = tx.insert_activity_v2(
+                None,
                 JobTargetType::Activity,
                 "spec-later",
                 "every 1m",
@@ -350,6 +317,7 @@ fn next_due_job_time_returns_earliest_enabled_job() {
                 JobRetryBackoffStrategy::None,
                 0,
                 latest,
+                JobScheduleState::Enabled,
             )?;
             Ok(paused.job_id)
         })

@@ -92,6 +92,7 @@ fn add_scheduled_activity_with_timeout(
 ) -> String {
     runtime
         .add_job(JobAddParams {
+            job_id: None,
             target_type: JobTargetType::Activity,
             target_id: target_id.to_string(),
             schedule: "every 1s".to_string(),

@@ -70,6 +70,7 @@ pub struct ActivityCreateParams {
 
 #[derive(Debug, Clone)]
 pub struct JobCreateParams {
+    pub job_id: Option<String>,
     pub target_type: JobTargetType,
     pub target_id: String,
     pub schedule: String,
@@ -79,6 +80,7 @@ pub struct JobCreateParams {
     pub retry_backoff_strategy: JobRetryBackoffStrategy,
     pub retry_initial_delay_seconds: u64,
     pub next_run_at: DateTime<Utc>,
+    pub initial_state: JobScheduleState,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -126,6 +126,7 @@ mod tests {
 
         let job = runtime
             .add_job(JobAddParams {
+                job_id: None,
                 target_type: JobTargetType::Activity,
                 target_id: "spec-core-double-run".to_string(),
                 schedule: "every 1m".to_string(),
