@@ -32,7 +32,14 @@ impl IdentityCatalog {
         &self.role_overrides
     }
 
-    pub fn list(&self) -> Result<Vec<String>, OrbitError> {
+    pub fn list(&self) -> Result<Vec<ResolvedIdentity>, OrbitError> {
+        self.list_ids()?
+            .into_iter()
+            .map(|identity_id| self.resolve(&identity_id))
+            .collect()
+    }
+
+    fn list_ids(&self) -> Result<Vec<String>, OrbitError> {
         if !self.root.exists() {
             return Ok(Vec::new());
         }
@@ -199,4 +206,59 @@ struct IdentityHeader {
     display_name: Option<String>,
     #[serde(default)]
     role: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use orbit_types::{IdentityRole, OrbitError};
+
+    use super::IdentityCatalog;
+
+    #[test]
+    fn list_returns_sorted_resolved_identities() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("zara.yaml"),
+            "identity:\n  name: Zara\n  role: member\n",
+        )
+        .expect("write zara");
+        std::fs::write(
+            dir.path().join("alice.yaml"),
+            "identity:\n  name: Alice\n  role: engineer\n",
+        )
+        .expect("write alice");
+
+        let catalog = IdentityCatalog::new(dir.path().to_path_buf(), BTreeMap::new());
+
+        let identities = catalog.list().expect("list identities");
+
+        assert_eq!(identities.len(), 2);
+        assert_eq!(identities[0].id, "alice");
+        assert_eq!(identities[0].name, "Alice");
+        assert_eq!(identities[0].role, IdentityRole::Engineer);
+        assert_eq!(identities[1].id, "zara");
+    }
+
+    #[test]
+    fn list_surfaces_malformed_identity_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("broken.yaml"),
+            "identity:\n  name: Broken\n  role: [not-valid\n",
+        )
+        .expect("write broken");
+
+        let catalog = IdentityCatalog::new(dir.path().to_path_buf(), BTreeMap::new());
+
+        let error = catalog.list().expect_err("malformed identity should fail");
+
+        match error {
+            OrbitError::IdentityValidation(message) => {
+                assert!(message.contains("broken.yaml"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
 }

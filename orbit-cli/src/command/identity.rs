@@ -39,18 +39,17 @@ pub struct IdentityListArgs {
 
 impl Execute for IdentityListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let ids = runtime.list_identities()?;
+        let identities = runtime.list_identities()?;
         if self.json {
-            let values: Vec<_> = ids.iter().map(|id| json!({ "id": id })).collect();
+            let values: Vec<_> = identities
+                .iter()
+                .map(|identity| json!({ "id": identity.id }))
+                .collect();
             crate::output::json::print_pretty(&serde_json::Value::Array(values))
         } else {
             println!("{:<24} NAME", "ID");
-            for id in &ids {
-                let name = runtime
-                    .show_identity(id)
-                    .map(|i| i.name)
-                    .unwrap_or_default();
-                println!("{:<24} {}", id, name);
+            for identity in &identities {
+                println!("{:<24} {}", identity.id, identity.name);
             }
             Ok(())
         }

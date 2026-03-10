@@ -111,7 +111,7 @@ impl OrbitRuntime {
             .collect()
     }
 
-    pub fn list_identities(&self) -> Result<Vec<String>, OrbitError> {
+    pub fn list_identities(&self) -> Result<Vec<ResolvedIdentity>, OrbitError> {
         self.context.identity_catalog.list()
     }
 

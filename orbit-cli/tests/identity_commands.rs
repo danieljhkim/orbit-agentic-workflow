@@ -18,6 +18,12 @@ fn write_identity(dir: &Path, id: &str, name: &str, role: &str) {
     std::fs::write(identity_root.join(format!("{id}.yaml")), content).expect("write identity");
 }
 
+fn write_raw_identity(dir: &Path, id: &str, content: &str) {
+    let identity_root = dir.join(".orbit").join("identities");
+    std::fs::create_dir_all(&identity_root).expect("create identity dir");
+    std::fs::write(identity_root.join(format!("{id}.yaml")), content).expect("write identity");
+}
+
 #[test]
 fn identity_list_shows_seeded_identities() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -126,6 +132,41 @@ fn identity_show_unknown_returns_error() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("nonexistent"));
+}
+
+#[test]
+fn identity_list_fails_for_malformed_identity_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_identity(dir.path(), "alice", "Alice", "engineer");
+    write_raw_identity(
+        dir.path(),
+        "broken",
+        "identity:\n  name: Broken\n  role: [not-valid\n",
+    );
+
+    orbit_in(dir.path())
+        .args(["identity", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid identity file"))
+        .stderr(predicate::str::contains("broken.yaml"));
+}
+
+#[test]
+fn identity_list_json_fails_for_malformed_identity_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_raw_identity(
+        dir.path(),
+        "broken",
+        "identity:\n  name: Broken\n  role: [not-valid\n",
+    );
+
+    orbit_in(dir.path())
+        .args(["identity", "list", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid identity file"))
+        .stderr(predicate::str::contains("broken.yaml"));
 }
 
 #[test]
