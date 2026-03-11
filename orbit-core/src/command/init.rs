@@ -14,9 +14,9 @@ use crate::paths;
 
 #[derive(Debug, Clone)]
 pub struct InitResult {
-    pub created_identity_files: usize,
+    pub refreshed_identity_files: usize,
     pub identity_root: String,
-    pub created_skill_files: usize,
+    pub refreshed_skill_files: usize,
     pub skills_root: String,
     pub created_skills_symlink: bool,
     pub created_config: bool,
@@ -28,6 +28,10 @@ pub struct InitResult {
 #[derive(Debug, Clone, Default)]
 pub struct InitOptions {
     pub force: bool,
+    /// When true, always overwrite default identity and skill files even if
+    /// they already exist.  Explicit `orbit init` sets this; implicit
+    /// bootstrap from other commands does not.
+    pub refresh_defaults: bool,
 }
 
 impl OrbitRuntime {
@@ -80,8 +84,9 @@ fn init_workspace_at_root(
     let skills_root = orbit_root.join("skills");
     fs::create_dir_all(&skills_root).map_err(|e| OrbitError::Io(e.to_string()))?;
 
-    let created_identity_files = seed_default_identities(&identity_root)?;
-    let created_skill_files = seed_default_skills(&skills_root, &orbit_root)?;
+    let overwrite = options.force || options.refresh_defaults;
+    let refreshed_identity_files = seed_default_identities(&identity_root, overwrite)?;
+    let refreshed_skill_files = seed_default_skills(&skills_root, &orbit_root, overwrite)?;
     let config_path = orbit_root.join("config.toml");
     let created_config = seed_default_config(&config_path, init_target.config_template)?;
 
@@ -97,9 +102,9 @@ fn init_workspace_at_root(
     let created_default_jobs = seed_default_jobs(&init_runtime)?;
 
     Ok(InitResult {
-        created_identity_files,
+        refreshed_identity_files,
         identity_root: identity_root.to_string_lossy().to_string(),
-        created_skill_files,
+        refreshed_skill_files,
         skills_root: skills_root.to_string_lossy().to_string(),
         created_skills_symlink,
         created_config,

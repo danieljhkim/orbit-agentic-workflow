@@ -84,6 +84,7 @@ fn init_creates_default_identities_under_home_orbit() {
         .assert()
         .success()
         .stdout(predicate::str::contains("identities: root="))
+        .stdout(predicate::str::contains("refreshed="))
         .stdout(predicate::str::contains("skills: root="))
         .stdout(predicate::str::contains("config: path="));
 
@@ -168,21 +169,20 @@ fn init_is_idempotent_for_existing_identity_files() {
         .assert()
         .success()
         .stdout(predicate::str::contains("identities: root="))
-        .stdout(predicate::str::contains("created=0"))
+        .stdout(predicate::str::contains("refreshed=6"))
         .stdout(predicate::str::contains("skills: root="))
-        .stdout(predicate::str::contains("created=0"))
-        .stdout(predicate::str::contains("created=false"));
+        .stdout(predicate::str::contains("refreshed=9"));
 
+    // Second init also refreshes all defaults (overwrite in place).
     orbit_in(workspace.path())
         .env("HOME", home.path())
         .args(["init"])
         .assert()
         .success()
         .stdout(predicate::str::contains("identities: root="))
-        .stdout(predicate::str::contains("created=0"))
+        .stdout(predicate::str::contains("refreshed=6"))
         .stdout(predicate::str::contains("skills: root="))
-        .stdout(predicate::str::contains("created=0"))
-        .stdout(predicate::str::contains("created=false"));
+        .stdout(predicate::str::contains("refreshed=9"));
 }
 
 #[test]
@@ -372,4 +372,56 @@ fn init_uses_repo_local_layout_when_inside_git_repository() {
     assert!(home_orbit.join("config.toml").exists());
 
     assert_default_named_jobs_visible_and_enabled(repo.path());
+}
+
+#[test]
+fn init_refreshes_modified_defaults_without_destroying_tasks() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("home");
+
+    // First init to seed everything.
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["init"])
+        .assert()
+        .success();
+
+    let orbit_root = home.path().join(".orbit");
+
+    // Tamper with a default identity file.
+    let identity_path = orbit_root.join("identities").join("linus.yaml");
+    std::fs::write(&identity_path, "TAMPERED IDENTITY").expect("tamper identity");
+
+    // Tamper with a default skill file.
+    let skill_path = orbit_root
+        .join("skills")
+        .join("orbit-approve-task")
+        .join("SKILL.md");
+    std::fs::write(&skill_path, "TAMPERED SKILL").expect("tamper skill");
+
+    // Create a fake task artifact that must survive.
+    let task_dir = orbit_root.join("tasks").join("backlog").join("T-fake-task");
+    std::fs::create_dir_all(&task_dir).expect("create task dir");
+    std::fs::write(task_dir.join("task.yaml"), "id: T-fake-task\n").expect("write task");
+
+    // Re-run plain init (no --force).
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("refreshed="));
+
+    // Identity should be restored to default.
+    let identity_raw = std::fs::read_to_string(&identity_path).expect("read identity");
+    assert!(!identity_raw.contains("TAMPERED"));
+    assert!(identity_raw.contains("display_name:"));
+
+    // Skill should be restored to default.
+    let skill_raw = std::fs::read_to_string(&skill_path).expect("read skill");
+    assert!(!skill_raw.contains("TAMPERED"));
+    assert!(skill_raw.contains("name: orbit-approve-task"));
+
+    // Task artifact must still exist.
+    assert!(task_dir.join("task.yaml").exists());
 }

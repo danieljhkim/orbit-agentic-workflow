@@ -69,18 +69,19 @@ pub(crate) fn default_skill_ids() -> [&'static str; 9] {
 pub(crate) fn seed_default_skills(
     skills_root: &Path,
     orbit_root: &Path,
+    overwrite: bool,
 ) -> Result<usize, OrbitError> {
-    let mut created = 0usize;
+    let mut count = 0usize;
     for (id, content) in DEFAULT_SKILL_FILES {
         let path = skills_root.join(id).join("SKILL.md");
-        if path.exists() {
+        if !overwrite && path.exists() {
             continue;
         }
         let rendered = inject_skill_template_tokens(content, orbit_root);
         write_text_with_parent(&path, &rendered)?;
-        created += 1;
+        count += 1;
     }
-    Ok(created)
+    Ok(count)
 }
 
 fn inject_skill_template_tokens(raw: &str, orbit_root: &Path) -> String {

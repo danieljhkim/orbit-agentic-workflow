@@ -14,7 +14,10 @@ pub struct InitCommand {
 
 impl Execute for InitCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let result = runtime.init_workspace_with_options(InitOptions { force: self.force })?;
+        let result = runtime.init_workspace_with_options(InitOptions {
+            force: self.force,
+            refresh_defaults: true,
+        })?;
         print_init_result(&result);
         Ok(())
     }
@@ -22,8 +25,13 @@ impl Execute for InitCommand {
 
 impl InitCommand {
     pub fn execute_without_runtime(self, root_override: Option<&Path>) -> Result<(), OrbitError> {
-        let result =
-            init_workspace_from_root_override(root_override, InitOptions { force: self.force })?;
+        let result = init_workspace_from_root_override(
+            root_override,
+            InitOptions {
+                force: self.force,
+                refresh_defaults: true,
+            },
+        )?;
         print_init_result(&result);
         Ok(())
     }
@@ -31,11 +39,11 @@ impl InitCommand {
 
 fn print_init_result(result: &orbit_core::command::init::InitResult) {
     println!(
-        "identities: root={}, created={}; skills: root={}, created={}, symlink_created={}; config: path={}, created={}; default_work_created={}; default_jobs_created={}",
+        "identities: root={}, refreshed={}; skills: root={}, refreshed={}, symlink_created={}; config: path={}, created={}; default_work_created={}; default_jobs_created={}",
         result.identity_root,
-        result.created_identity_files,
+        result.refreshed_identity_files,
         result.skills_root,
-        result.created_skill_files,
+        result.refreshed_skill_files,
         result.created_skills_symlink,
         result.config_path,
         result.created_config,

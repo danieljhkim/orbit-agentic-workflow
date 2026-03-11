@@ -13,15 +13,18 @@ const DEFAULT_IDENTITY_FILES: [(&str, &str); 6] = [
     ("steve", include_str!("../../assets/identities/steve.yaml")),
 ];
 
-pub(crate) fn seed_default_identities(identity_root: &Path) -> Result<usize, OrbitError> {
-    let mut created = 0usize;
+pub(crate) fn seed_default_identities(
+    identity_root: &Path,
+    overwrite: bool,
+) -> Result<usize, OrbitError> {
+    let mut count = 0usize;
     for (name, content) in DEFAULT_IDENTITY_FILES {
         let path = identity_root.join(format!("{name}.yaml"));
-        if path.exists() {
+        if !overwrite && path.exists() {
             continue;
         }
         write_text_with_parent(&path, content)?;
-        created += 1;
+        count += 1;
     }
-    Ok(created)
+    Ok(count)
 }
