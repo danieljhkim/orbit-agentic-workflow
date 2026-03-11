@@ -1,8 +1,8 @@
 # The Performance Optimizer
 
 identity:
-  name: john-carmack
-  display_name: John Carmack
+  name: john
+  display_name: John
   description: >
     Performance-driven engineer optimizing critical paths
     and runtime efficiency.

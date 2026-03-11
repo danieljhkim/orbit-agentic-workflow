@@ -89,7 +89,7 @@ fn init_creates_default_identities_under_home_orbit() {
         .stdout(predicate::str::contains("config: path="));
 
     let identity_root = home.path().join(".orbit").join("identities");
-    assert!(identity_root.join("linus.yaml").exists());
+    assert!(identity_root.join("prii.yaml").exists());
     assert!(identity_root.join("john.yaml").exists());
     assert!(identity_root.join("kent.yaml").exists());
     assert!(identity_root.join("rob.yaml").exists());
@@ -345,7 +345,7 @@ fn init_uses_repo_local_layout_when_inside_git_repository() {
             repo_canonical.join(".orbit").join("skills").display()
         )));
 
-    assert!(repo_orbit.join("identities").join("linus.yaml").exists());
+    assert!(repo_orbit.join("identities").join("prii.yaml").exists());
     assert!(
         repo_orbit
             .join("skills")
@@ -362,7 +362,7 @@ fn init_uses_repo_local_layout_when_inside_git_repository() {
     assert!(config_raw.contains("path = \"orbit.db\""));
 
     let home_orbit = home.path().join(".orbit");
-    assert!(home_orbit.join("identities").join("linus.yaml").exists());
+    assert!(home_orbit.join("identities").join("prii.yaml").exists());
     assert!(
         home_orbit
             .join("skills")
@@ -390,7 +390,7 @@ fn init_refreshes_modified_defaults_without_destroying_tasks() {
     let orbit_root = home.path().join(".orbit");
 
     // Tamper with a default identity file.
-    let identity_path = orbit_root.join("identities").join("linus.yaml");
+    let identity_path = orbit_root.join("identities").join("prii.yaml");
     std::fs::write(&identity_path, "TAMPERED IDENTITY").expect("tamper identity");
 
     // Tamper with a default skill file.

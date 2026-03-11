@@ -12,6 +12,6 @@ outputSchemaJson:
     comment:
       type: string
 skillRefs: ["orbit-skills", "orbit-maintain-system"]
-identityId: linus
-assignedTo: linus
+identityId: prii
+assignedTo: prii
 createdBy: system

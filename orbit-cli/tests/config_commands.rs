@@ -75,7 +75,7 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
         dir.path()
             .join(".orbit")
             .join("identities")
-            .join("linus.yaml")
+            .join("prii.yaml")
             .exists()
     );
     assert!(

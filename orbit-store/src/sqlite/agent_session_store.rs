@@ -176,11 +176,11 @@ mod tests {
         let session = AgentSession {
             session_id: "session-1".to_string(),
             task_id: "task-test-1".to_string(),
-            identity_id: Some("linus".to_string()),
-            identity_name: Some("Linus".to_string()),
+            identity_id: Some("Prii".to_string()),
+            identity_name: Some("Prii".to_string()),
             identity_role: Some(orbit_types::IdentityRole::Leader),
             identity_block: Some(
-                "<agent_identity>\nName: Linus\nRole: leader\n</agent_identity>".to_string(),
+                "<agent_identity>\nName: Prii\nRole: leader\n</agent_identity>".to_string(),
             ),
             skill_names: vec!["alpha".to_string()],
             composed_context_hash: "hash".to_string(),

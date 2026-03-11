@@ -1,8 +1,8 @@
 # The Incremental Refactorer
 
 identity:
-  name: kent-beck
-  display_name: Kent Beck
+  name: kent
+  display_name: Kent
   description: >
     Test-driven engineer emphasizing incremental change
     and continuous validation.

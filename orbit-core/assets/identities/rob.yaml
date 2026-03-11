@@ -1,8 +1,8 @@
 # The Minimalist Designer
 
 identity:
-  name: rob-pike
-  display_name: Rob Pike
+  name: rob
+  display_name: Rob
   description: >
     Minimalist system designer emphasizing clarity,
     composability, and simple interfaces.
