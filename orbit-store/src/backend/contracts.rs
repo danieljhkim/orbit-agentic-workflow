@@ -68,6 +68,19 @@ pub struct ActivityCreateParams {
     pub created_by: Option<String>,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct ActivityUpdateParams {
+    pub description: Option<String>,
+    pub instruction: Option<String>,
+    pub input_schema_json: Option<Value>,
+    pub output_schema_json: Option<Value>,
+    pub artifact_path_template: Option<Option<String>>,
+    pub skill_refs: Option<Vec<String>>,
+    pub identity_id: Option<Option<String>>,
+    pub assigned_to: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
 #[derive(Debug, Clone)]
 pub struct JobCreateParams {
     pub job_id: Option<String>,
@@ -109,6 +122,7 @@ pub trait ActivityStoreBackend: Send + Sync {
     fn add_activity(&self, params: ActivityCreateParams) -> Result<Activity, OrbitError>;
     fn list_activities(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError>;
     fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError>;
+    fn update_activity(&self, id: &str, params: ActivityUpdateParams) -> Result<Activity, OrbitError>;
     fn disable_activity(&self, id: &str) -> Result<bool, OrbitError>;
 }
 

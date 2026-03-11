@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use orbit_store::ActivityCreateParams as StoreWorkCreateParams;
+use orbit_store::ActivityUpdateParams as StoreActivityUpdateParams;
 use orbit_types::{Activity, JobRunState, OrbitError, OrbitEvent};
 use serde::Deserialize;
 use serde_json::Value;
@@ -48,6 +49,19 @@ pub struct ActivityAddParams {
     pub identity_id: Option<String>,
     pub assigned_to: Option<String>,
     pub created_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ActivityUpdateParams {
+    pub description: Option<String>,
+    pub instruction: Option<String>,
+    pub input_schema_json: Option<Value>,
+    pub output_schema_json: Option<Value>,
+    pub artifact_path_template: Option<Option<String>>,
+    pub skill_refs: Option<Vec<String>>,
+    pub identity_id: Option<Option<String>>,
+    pub assigned_to: Option<Option<String>>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +130,31 @@ impl OrbitRuntime {
             .activity_store
             .get_activity(id)?
             .ok_or_else(|| OrbitError::ActivityNotFound(id.to_string()))
+    }
+
+    pub fn update_activity(
+        &self,
+        id: &str,
+        params: ActivityUpdateParams,
+    ) -> Result<Activity, OrbitError> {
+        let activity = self
+            .context
+            .activity_store
+            .update_activity(id, StoreActivityUpdateParams {
+                description: params.description,
+                instruction: params.instruction,
+                input_schema_json: params.input_schema_json,
+                output_schema_json: params.output_schema_json,
+                artifact_path_template: params.artifact_path_template,
+                skill_refs: params.skill_refs,
+                identity_id: params.identity_id,
+                assigned_to: params.assigned_to,
+                is_active: params.is_active,
+            })?;
+        self.record_event(OrbitEvent::ActivityUpdated {
+            id: activity.id.clone(),
+        })?;
+        Ok(activity)
     }
 
     pub fn delete_activity(&self, id: &str) -> Result<(), OrbitError> {

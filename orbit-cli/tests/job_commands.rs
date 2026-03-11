@@ -870,3 +870,44 @@ fn job_delete_hides_job_from_list_but_show_still_works() {
     assert_eq!(show["job_id"], job_id);
     assert_eq!(show["state"], "disabled");
 }
+
+#[test]
+fn job_resume_after_delete_removes_disabled_copy() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-resume-after-delete");
+    let job_id = add_job(dir.path(), &spec_id, "every 5m", "mock-agent");
+
+    // Delete (moves to disabled/).
+    orbit_in(dir.path())
+        .args(["job", "delete", &job_id])
+        .assert()
+        .success();
+
+    // Resume the deleted job.
+    orbit_in(dir.path())
+        .args(["job", "resume", &job_id])
+        .assert()
+        .success();
+
+    // After resume, there must be exactly one file for this job — no duplicate.
+    let jobs_dir = dir.path().join(".orbit").join("jobs").join("jobs");
+    let active_path = jobs_dir.join(format!("{job_id}.yaml"));
+    let disabled_path = jobs_dir.join("disabled").join(format!("{job_id}.yaml"));
+    assert!(active_path.exists(), "active job file must exist after resume");
+    assert!(!disabled_path.exists(), "disabled copy must be removed after resume");
+
+    // The job must appear once in list --all.
+    let list_output = orbit_in(dir.path())
+        .args(["job", "list", "--all", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let list: Value = serde_json::from_slice(&list_output).expect("list json");
+    let matches: Vec<_> = list.as_array().unwrap().iter()
+        .filter(|j| j["job_id"] == job_id)
+        .collect();
+    assert_eq!(matches.len(), 1, "job must appear exactly once in list --all after resume");
+    assert_eq!(matches[0]["state"], "enabled");
+}

@@ -201,6 +201,182 @@ fn activity_run_executes_without_creating_a_job() {
 }
 
 #[test]
+fn activity_update_description_changes_field() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-update-desc",
+            "--description",
+            "original description",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "update",
+            "spec-update-desc",
+            "--description",
+            "updated description",
+        ])
+        .assert()
+        .success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-update-desc", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["description"], "updated description");
+}
+
+#[test]
+fn activity_update_returns_json_when_flag_set() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-update-json",
+            "--description",
+            "before update",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let update_output = orbit_in(dir.path())
+        .args([
+            "activity",
+            "update",
+            "spec-update-json",
+            "--description",
+            "after update",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let updated: Value = serde_json::from_slice(&update_output).expect("update json");
+    assert_eq!(updated["id"], "spec-update-json");
+    assert_eq!(updated["description"], "after update");
+}
+
+#[test]
+fn activity_update_skill_refs_replaces_list() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_skill(dir.path(), "skill-a");
+    write_skill(dir.path(), "skill-b");
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-update-skills",
+            "--description",
+            "activity with skills",
+            "--skill-refs",
+            "skill-a",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "update",
+            "spec-update-skills",
+            "--skill-refs",
+            "skill-b",
+        ])
+        .assert()
+        .success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-update-skills", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    let refs = show["skill_refs"].as_array().expect("array");
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0], "skill-b");
+}
+
+#[test]
+fn activity_update_clear_artifact_path_template() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-update-artifact",
+            "--description",
+            "activity with artifact",
+            "--artifact-path-template",
+            "/tmp/artifact-{{id}}.md",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "update",
+            "spec-update-artifact",
+            "--clear-artifact-path-template",
+        ])
+        .assert()
+        .success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-update-artifact", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert!(show["artifact_path_template"].is_null());
+}
+
+#[test]
+fn activity_update_unknown_id_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "update",
+            "nonexistent-activity",
+            "--description",
+            "whatever",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
 fn legacy_workflow_command_is_not_supported() {
     let dir = tempfile::tempdir().expect("tempdir");
 
@@ -241,4 +417,90 @@ fn activity_list_ops_returns_signal_tier_json() {
     assert!(activity.get("input_schema_json").is_none());
     assert!(activity.get("output_schema_json").is_none());
     assert!(activity.get("skill_refs").is_none());
+}
+
+#[test]
+fn activity_update_inactive_deactivates_activity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args(["activity", "add", "--id", "spec-deactivate", "--description", "active by default", "--json"])
+        .assert().success();
+
+    orbit_in(dir.path())
+        .args(["activity", "update", "spec-deactivate", "--inactive"])
+        .assert().success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-deactivate", "--json"])
+        .assert().success()
+        .get_output().stdout.clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["is_active"], false);
+}
+
+#[test]
+fn activity_update_active_reactivates_inactive_activity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args(["activity", "add", "--id", "spec-reactivate", "--description", "will be toggled", "--json"])
+        .assert().success();
+
+    // Deactivate first.
+    orbit_in(dir.path())
+        .args(["activity", "update", "spec-reactivate", "--inactive"])
+        .assert().success();
+
+    // Now reactivate.
+    orbit_in(dir.path())
+        .args(["activity", "update", "spec-reactivate", "--active"])
+        .assert().success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-reactivate", "--json"])
+        .assert().success()
+        .get_output().stdout.clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["is_active"], true);
+}
+
+#[test]
+fn activity_update_identity_sets_field() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args(["activity", "add", "--id", "spec-identity", "--description", "identity test", "--json"])
+        .assert().success();
+
+    orbit_in(dir.path())
+        .args(["activity", "update", "spec-identity", "--identity", "grace"])
+        .assert().success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-identity", "--json"])
+        .assert().success()
+        .get_output().stdout.clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["identity_id"], "grace");
+}
+
+#[test]
+fn activity_update_clear_identity_removes_field() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args(["activity", "add", "--id", "spec-clear-identity", "--description", "has identity", "--identity", "grace", "--json"])
+        .assert().success();
+
+    orbit_in(dir.path())
+        .args(["activity", "update", "spec-clear-identity", "--clear-identity"])
+        .assert().success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["activity", "show", "spec-clear-identity", "--json"])
+        .assert().success()
+        .get_output().stdout.clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert!(show["identity_id"].is_null());
 }

@@ -119,6 +119,57 @@ impl ActivityFileStore {
         Ok(None)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn update_activity(
+        &self,
+        id: &str,
+        description: Option<String>,
+        instruction: Option<String>,
+        input_schema_json: Option<serde_json::Value>,
+        output_schema_json: Option<serde_json::Value>,
+        artifact_path_template: Option<Option<String>>,
+        skill_refs: Option<Vec<String>>,
+        identity_id: Option<Option<String>>,
+        assigned_to: Option<Option<String>>,
+        is_active: Option<bool>,
+    ) -> Result<Activity, OrbitError> {
+        self.ensure_layout()?;
+        let (path, current_active) = if self.active_doc_path(id).exists() {
+            (self.active_doc_path(id), true)
+        } else if self.inactive_doc_path(id).exists() {
+            (self.inactive_doc_path(id), false)
+        } else {
+            return Err(OrbitError::InvalidInput(format!(
+                "activity not found: {id}"
+            )));
+        };
+        let mut doc = self.read_doc_at(&path)?;
+        if let Some(v) = description { doc.description = v; }
+        if let Some(v) = instruction { doc.instruction = v; }
+        if let Some(v) = input_schema_json { doc.input_schema_json = v; }
+        if let Some(v) = output_schema_json { doc.output_schema_json = v; }
+        if let Some(v) = artifact_path_template { doc.artifact_path_template = v; }
+        if let Some(v) = skill_refs { doc.skill_refs = v; }
+        if let Some(v) = identity_id { doc.identity_id = v; }
+        if let Some(v) = assigned_to { doc.assigned_to = v; }
+        doc.updated_at = Utc::now();
+
+        let new_active = is_active.unwrap_or(current_active);
+        if new_active != current_active {
+            // Move the file to the new location.
+            let new_path = if new_active {
+                self.active_doc_path(id)
+            } else {
+                self.inactive_doc_path(id)
+            };
+            self.write_doc_at(&new_path, &doc)?;
+            fs::remove_file(&path).map_err(|e| OrbitError::Io(e.to_string()))?;
+            return Ok(doc_to_work(doc, new_active));
+        }
+        self.write_doc_at(&path, &doc)?;
+        Ok(doc_to_work(doc, new_active))
+    }
+
     pub(crate) fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {
         self.ensure_layout()?;
         let active = self.active_doc_path(id);

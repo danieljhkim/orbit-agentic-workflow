@@ -57,6 +57,70 @@ impl Store {
         .optional()
         .map_err(|e| OrbitError::Store(e.to_string()))
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_activity(
+        &self,
+        id: &str,
+        description: Option<String>,
+        instruction: Option<String>,
+        input_schema_json: Option<Value>,
+        output_schema_json: Option<Value>,
+        artifact_path_template: Option<Option<String>>,
+        skill_refs: Option<Vec<String>>,
+        identity_id: Option<Option<String>>,
+        assigned_to: Option<Option<String>>,
+        is_active: Option<bool>,
+    ) -> Result<Activity, OrbitError> {
+        let mut activity = self
+            .get_activity(id)?
+            .ok_or_else(|| OrbitError::InvalidInput(format!("activity not found: {id}")))?;
+
+        if let Some(v) = description { activity.description = v; }
+        if let Some(v) = instruction { activity.instruction = v; }
+        if let Some(v) = input_schema_json { activity.input_schema_json = v; }
+        if let Some(v) = output_schema_json { activity.output_schema_json = v; }
+        if let Some(v) = artifact_path_template { activity.artifact_path_template = v; }
+        if let Some(v) = skill_refs { activity.skill_refs = v; }
+        if let Some(v) = identity_id { activity.identity_id = v; }
+        if let Some(v) = assigned_to { activity.assigned_to = v; }
+        if let Some(v) = is_active { activity.is_active = v; }
+        activity.updated_at = Utc::now();
+
+        let input_raw = serde_json::to_string(&activity.input_schema_json)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let output_raw = serde_json::to_string(&activity.output_schema_json)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let skill_refs_raw = serde_json::to_string(&activity.skill_refs)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let updated_at_str = now_string();
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        conn.execute(
+            "UPDATE activities SET description=?1, instruction=?2, input_schema_json=?3, output_schema_json=?4, artifact_path_template=?5, skill_refs_json=?6, identity_id=?7, assigned_to=?8, is_active=?9, updated_at=?10 WHERE id=?11",
+            params![
+                activity.description,
+                activity.instruction,
+                input_raw,
+                output_raw,
+                activity.artifact_path_template,
+                skill_refs_raw,
+                activity.identity_id,
+                activity.assigned_to,
+                activity.is_active as i64,
+                updated_at_str,
+                id,
+            ],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        activity.updated_at = parse_timestamp(&updated_at_str)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        Ok(activity)
+    }
 }
 
 impl<'a> StoreTx<'a> {

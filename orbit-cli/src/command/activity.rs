@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand};
-use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams};
+use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams, ActivityUpdateParams};
 use orbit_core::{Activity, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
@@ -22,6 +22,7 @@ pub enum ActivitySubcommand {
     Add(Box<ActivityAddArgs>),
     List(ActivityListArgs),
     Show(ActivityShowArgs),
+    Update(ActivityUpdateArgs),
     Run(ActivityRunArgs),
     Delete(ActivityDeleteArgs),
 }
@@ -32,6 +33,7 @@ impl Execute for ActivitySubcommand {
             ActivitySubcommand::Add(args) => (*args).execute(runtime),
             ActivitySubcommand::List(args) => args.execute(runtime),
             ActivitySubcommand::Show(args) => args.execute(runtime),
+            ActivitySubcommand::Update(args) => args.execute(runtime),
             ActivitySubcommand::Run(args) => args.execute(runtime),
             ActivitySubcommand::Delete(args) => args.execute(runtime),
         }
@@ -169,6 +171,99 @@ impl Execute for ActivityShowArgs {
             println!("Active:              {}", spec.is_active);
             println!("Created:             {}", spec.created_at.to_rfc3339());
             println!("Updated:             {}", spec.updated_at.to_rfc3339());
+            Ok(())
+        }
+    }
+}
+
+#[derive(Args)]
+pub struct ActivityUpdateArgs {
+    pub id: String,
+    #[arg(long)]
+    pub description: Option<String>,
+    #[arg(long)]
+    pub instruction: Option<String>,
+    #[arg(long)]
+    pub input_schema: Option<String>,
+    #[arg(long)]
+    pub output_schema: Option<String>,
+    #[arg(long)]
+    pub artifact_path_template: Option<String>,
+    #[arg(long, conflicts_with = "artifact_path_template")]
+    pub clear_artifact_path_template: bool,
+    #[arg(long)]
+    pub skill_refs: Option<String>,
+    #[arg(long)]
+    pub identity: Option<String>,
+    #[arg(long, conflicts_with = "identity")]
+    pub clear_identity: bool,
+    #[arg(long)]
+    pub assigned_to: Option<String>,
+    #[arg(long, conflicts_with = "assigned_to")]
+    pub clear_assigned_to: bool,
+    #[arg(long, conflicts_with = "inactive")]
+    pub active: bool,
+    #[arg(long, conflicts_with = "active")]
+    pub inactive: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for ActivityUpdateArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let input_schema_json = self
+            .input_schema
+            .as_deref()
+            .map(|raw| parse_json_object(raw, "input_schema"))
+            .transpose()?;
+        let output_schema_json = self
+            .output_schema
+            .as_deref()
+            .map(|raw| parse_json_object(raw, "output_schema"))
+            .transpose()?;
+        let artifact_path_template = if self.clear_artifact_path_template {
+            Some(None)
+        } else {
+            self.artifact_path_template.map(Some)
+        };
+        let identity_id = if self.clear_identity {
+            Some(None)
+        } else {
+            self.identity.map(Some)
+        };
+        let assigned_to = if self.clear_assigned_to {
+            Some(None)
+        } else {
+            self.assigned_to.map(Some)
+        };
+        let is_active = if self.active {
+            Some(true)
+        } else if self.inactive {
+            Some(false)
+        } else {
+            None
+        };
+        let skill_refs = self.skill_refs.as_deref().map(parse_csv);
+
+        let activity = runtime.update_activity(
+            &self.id,
+            ActivityUpdateParams {
+                description: self.description,
+                instruction: self.instruction,
+                input_schema_json,
+                output_schema_json,
+                artifact_path_template,
+                skill_refs,
+                identity_id,
+                assigned_to,
+                is_active,
+            },
+        )?;
+
+        if self.json {
+            crate::output::json::print_pretty(&activity_to_json(&activity))
+        } else {
+            println!("Updated activity '{}'", activity.id);
             Ok(())
         }
     }

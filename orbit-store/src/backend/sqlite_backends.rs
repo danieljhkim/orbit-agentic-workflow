@@ -5,9 +5,9 @@ use orbit_types::{
 };
 
 use super::contracts::{
-    ActivityCreateParams, ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend,
-    AuditStoreBackend, JobCreateParams, JobRunCompletionParams, JobRunQuery, JobStoreBackend,
-    LockStoreBackend, ToolStoreBackend,
+    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AgentSessionStoreBackend,
+    AuditEventStoreBackend, AuditStoreBackend, JobCreateParams, JobRunCompletionParams,
+    JobRunQuery, JobStoreBackend, LockStoreBackend, ToolStoreBackend,
 };
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 use crate::sqlite::job_store::DueJobsClaim;
@@ -43,6 +43,21 @@ impl ActivityStoreBackend for SqliteActivityStoreBackend {
 
     fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError> {
         self.store.get_activity(id)
+    }
+
+    fn update_activity(&self, id: &str, params: ActivityUpdateParams) -> Result<Activity, OrbitError> {
+        self.store.update_activity(
+            id,
+            params.description,
+            params.instruction,
+            params.input_schema_json,
+            params.output_schema_json,
+            params.artifact_path_template,
+            params.skill_refs,
+            params.identity_id,
+            params.assigned_to,
+            params.is_active,
+        )
     }
 
     fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {

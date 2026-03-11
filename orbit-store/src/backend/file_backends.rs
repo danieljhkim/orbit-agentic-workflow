@@ -4,8 +4,9 @@ use orbit_types::{
 };
 
 use super::contracts::{
-    ActivityCreateParams, ActivityStoreBackend, JobCreateParams, JobRunCompletionParams,
-    JobRunQuery, JobStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, JobCreateParams,
+    JobRunCompletionParams, JobRunQuery, JobStoreBackend, TaskCreateParams, TaskStoreBackend,
+    TaskUpdateParams,
 };
 use crate::file::activity_store::{ActivityFileStore, FileWorkInsert};
 use crate::file::job_store::JobFileStore;
@@ -110,6 +111,21 @@ impl ActivityStoreBackend for ActivityFileStore {
 
     fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError> {
         self.get_activity(id)
+    }
+
+    fn update_activity(&self, id: &str, params: ActivityUpdateParams) -> Result<Activity, OrbitError> {
+        self.update_activity(
+            id,
+            params.description,
+            params.instruction,
+            params.input_schema_json,
+            params.output_schema_json,
+            params.artifact_path_template,
+            params.skill_refs,
+            params.identity_id,
+            params.assigned_to,
+            params.is_active,
+        )
     }
 
     fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {

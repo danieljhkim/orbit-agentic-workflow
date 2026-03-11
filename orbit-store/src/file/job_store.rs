@@ -199,9 +199,17 @@ impl JobFileStore {
         let Some(mut job) = self.get_job(job_id)? else {
             return Ok(false);
         };
+        if state == JobScheduleState::Disabled {
+            return self.mark_job_disabled(job_id);
+        }
         job.state = state;
         job.updated_at = Utc::now();
         self.write_activity(&job)?;
+        // If the job was previously in disabled/, remove that stale copy.
+        let disabled_path = self.disabled_job_path(job_id);
+        if disabled_path.exists() {
+            fs::remove_file(&disabled_path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
         Ok(true)
     }
 

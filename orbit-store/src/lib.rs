@@ -13,7 +13,7 @@ pub mod skill_store {
 use chrono::{DateTime, Utc};
 
 pub use backend::{
-    ActivityCreateParams, ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend,
+    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AgentSessionStoreBackend, AuditEventStoreBackend,
     AuditStoreBackend, JobCreateParams, JobRunCompletionParams, JobRunQuery, JobStoreBackend,
     LockStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend,
     activity_store_file, activity_store_sqlite, agent_session_store_sqlite,

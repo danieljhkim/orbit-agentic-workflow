@@ -120,6 +120,9 @@ pub enum OrbitEvent {
     ActivityAdded {
         id: String,
     },
+    ActivityUpdated {
+        id: String,
+    },
     ActivityDisabled {
         id: String,
     },

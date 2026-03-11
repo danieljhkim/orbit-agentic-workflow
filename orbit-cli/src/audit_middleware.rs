@@ -273,6 +273,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 ActivitySubcommand::Add(args) => ("add", Some(args.id.as_str())),
                 ActivitySubcommand::List(_) => ("list", None),
                 ActivitySubcommand::Show(args) => ("show", Some(args.id.as_str())),
+                ActivitySubcommand::Update(args) => ("update", Some(args.id.as_str())),
                 ActivitySubcommand::Run(args) => ("run", Some(args.id.as_str())),
                 ActivitySubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
             };

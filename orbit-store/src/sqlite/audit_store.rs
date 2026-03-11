@@ -95,6 +95,7 @@ fn event_type(event: &OrbitEvent) -> &'static str {
         OrbitEvent::SkillAttached { .. } => "SkillAttached",
         OrbitEvent::SkillDetached { .. } => "SkillDetached",
         OrbitEvent::ActivityAdded { .. } => "ActivityAdded",
+        OrbitEvent::ActivityUpdated { .. } => "ActivityUpdated",
         OrbitEvent::ActivityDisabled { .. } => "ActivityDisabled",
         OrbitEvent::ActivityRunStarted { .. } => "ActivityRunStarted",
         OrbitEvent::ActivityRunCompleted { .. } => "ActivityRunCompleted",
@@ -184,6 +185,7 @@ fn event_message(event: &OrbitEvent) -> String {
             skill_name,
         } => format!("skill detached: {skill_name} -> {task_id}"),
         OrbitEvent::ActivityAdded { id } => format!("activity added: {id}"),
+        OrbitEvent::ActivityUpdated { id } => format!("activity updated: {id}"),
         OrbitEvent::ActivityDisabled { id } => format!("activity disabled: {id}"),
         OrbitEvent::ActivityRunStarted { id } => format!("activity run started: {id}"),
         OrbitEvent::ActivityRunCompleted { id, state } => {
