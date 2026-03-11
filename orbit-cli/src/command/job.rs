@@ -34,7 +34,6 @@ pub enum JobSubcommand {
     Resume(JobResumeArgs),
     History(JobHistoryArgs),
     Delete(JobDeleteArgs),
-    Archive(JobArchiveRunArgs),
 }
 
 impl Execute for JobSubcommand {
@@ -50,7 +49,6 @@ impl Execute for JobSubcommand {
             JobSubcommand::Resume(args) => args.execute(runtime),
             JobSubcommand::History(args) => args.execute(runtime),
             JobSubcommand::Delete(args) => args.execute(runtime),
-            JobSubcommand::Archive(args) => args.execute(runtime),
         }
     }
 }
@@ -343,19 +341,6 @@ impl Execute for JobDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.delete_job(&self.job_id)?;
         println!("Deleted job '{}'", self.job_id);
-        Ok(())
-    }
-}
-
-#[derive(Args)]
-pub struct JobArchiveRunArgs {
-    pub job_run_id: String,
-}
-
-impl Execute for JobArchiveRunArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.archive_job_run(&self.job_run_id)?;
-        println!("Archived job run '{}'", self.job_run_id);
         Ok(())
     }
 }

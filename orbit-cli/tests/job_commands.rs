@@ -176,7 +176,7 @@ fn job_add_defaults_timeout_to_fifteen_minutes() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["timeout_seconds"], 7000);
+    assert_eq!(show["timeout_seconds"], 900); // 15m default = 900 seconds
 }
 
 #[test]
@@ -772,10 +772,7 @@ fn job_tick_skips_manual_schedule_job() {
 fn job_list_ops_returns_signal_tier_json() {
     let dir = tempfile::tempdir().expect("tempdir");
 
-    orbit_in(dir.path())
-        .args(["init"])
-        .assert()
-        .success();
+    orbit_in(dir.path()).args(["init"]).assert().success();
 
     let output = orbit_in(dir.path())
         .args(["job", "list", "--ops"])
@@ -802,4 +799,74 @@ fn job_list_ops_returns_signal_tier_json() {
     assert!(job.get("timeout_seconds").is_none());
     assert!(job.get("retry_max_attempts").is_none());
     assert!(job.get("schedule").is_none());
+}
+
+#[test]
+fn job_archive_subcommand_is_rejected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    orbit_in(dir.path())
+        .args(["job", "archive", "jrun-dummy"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn job_delete_moves_file_to_disabled_subdir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-delete-disabled");
+    let job_id = add_job(dir.path(), &spec_id, "every 5m", "mock-agent");
+
+    // Confirm the job YAML is present in the active jobs directory.
+    let jobs_dir = dir.path().join(".orbit").join("jobs").join("jobs");
+    let active_path = jobs_dir.join(format!("{job_id}.yaml"));
+    assert!(active_path.exists(), "job yaml must exist in jobs/ before delete");
+
+    orbit_in(dir.path())
+        .args(["job", "delete", &job_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deleted job"));
+
+    // After delete, file must be under jobs/disabled/ not in jobs/.
+    let disabled_path = jobs_dir.join("disabled").join(format!("{job_id}.yaml"));
+    assert!(!active_path.exists(), "job yaml must be removed from jobs/");
+    assert!(disabled_path.exists(), "job yaml must appear in jobs/disabled/");
+}
+
+#[test]
+fn job_delete_hides_job_from_list_but_show_still_works() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-delete-hide");
+    let job_id = add_job(dir.path(), &spec_id, "every 5m", "mock-agent");
+
+    orbit_in(dir.path())
+        .args(["job", "delete", &job_id])
+        .assert()
+        .success();
+
+    // job list must not show the deleted job.
+    let list_output = orbit_in(dir.path())
+        .args(["job", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let list: Value = serde_json::from_slice(&list_output).expect("list json");
+    assert!(
+        !list.as_array().unwrap().iter().any(|j| j["job_id"] == job_id),
+        "deleted job must not appear in list"
+    );
+
+    // job show must still resolve the deleted job (it's in disabled/).
+    let show_output = orbit_in(dir.path())
+        .args(["job", "show", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["job_id"], job_id);
+    assert_eq!(show["state"], "disabled");
 }

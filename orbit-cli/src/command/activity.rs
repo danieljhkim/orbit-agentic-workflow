@@ -112,7 +112,10 @@ impl Execute for ActivityListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let specs = runtime.list_activities(self.all)?;
         if self.ops {
-            let values = specs.iter().map(activity_to_signal_json).collect::<Vec<_>>();
+            let values = specs
+                .iter()
+                .map(activity_to_signal_json)
+                .collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else if self.json {
             let values = specs.iter().map(activity_to_json).collect::<Vec<_>>();

@@ -35,6 +35,7 @@ impl JobFileStore {
 
     pub(crate) fn ensure_layout(&self) -> Result<(), OrbitError> {
         fs::create_dir_all(self.activities_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
+        fs::create_dir_all(self.disabled_jobs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         fs::create_dir_all(self.runs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         Ok(())
     }
@@ -101,10 +102,14 @@ impl JobFileStore {
 
     pub(crate) fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
         let path = self.job_path(job_id);
-        if !path.exists() {
-            return Ok(None);
+        if path.exists() {
+            return Ok(Some(self.read_activity_at(&path)?));
         }
-        Ok(Some(self.read_activity_at(&path)?))
+        let disabled_path = self.disabled_job_path(job_id);
+        if disabled_path.exists() {
+            return Ok(Some(self.read_activity_at(&disabled_path)?));
+        }
+        Ok(None)
     }
 
     pub(crate) fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError> {
@@ -201,7 +206,28 @@ impl JobFileStore {
     }
 
     pub(crate) fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
-        self.set_job_state(job_id, JobScheduleState::Disabled)
+        let Some(mut job) = self.get_job(job_id)? else {
+            return Ok(false);
+        };
+        // If already in disabled/, nothing to move.
+        let disabled_path = self.disabled_job_path(job_id);
+        if disabled_path.exists() {
+            return Ok(true);
+        }
+        job.state = JobScheduleState::Disabled;
+        job.updated_at = Utc::now();
+        // Write updated state to disabled/ then remove the active file.
+        let content = serde_yaml::to_string(&JobFileDocument {
+            schema_version: 1,
+            job: job.clone(),
+        })
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+        write_atomic(&disabled_path, &content)?;
+        let active_path = self.job_path(job_id);
+        if active_path.exists() {
+            fs::remove_file(&active_path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+        Ok(true)
     }
 
     pub(crate) fn update_job_next_run(
@@ -302,12 +328,22 @@ impl JobFileStore {
 
     fn read_all_activities(&self) -> Result<Vec<Job>, OrbitError> {
         self.ensure_layout()?;
-        let mut paths = fs::read_dir(self.activities_dir())
+        let mut paths: Vec<PathBuf> = fs::read_dir(self.activities_dir())
             .map_err(|e| OrbitError::Io(e.to_string()))?
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| is_yaml(path))
-            .collect::<Vec<_>>();
+            .collect();
+        // Also include disabled jobs.
+        if self.disabled_jobs_dir().exists() {
+            let disabled: Vec<PathBuf> = fs::read_dir(self.disabled_jobs_dir())
+                .map_err(|e| OrbitError::Io(e.to_string()))?
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| is_yaml(path))
+                .collect();
+            paths.extend(disabled);
+        }
         paths.sort();
         let mut jobs = Vec::new();
         for path in paths {
@@ -453,12 +489,20 @@ impl JobFileStore {
         self.root.join("jobs")
     }
 
+    fn disabled_jobs_dir(&self) -> PathBuf {
+        self.activities_dir().join("disabled")
+    }
+
     fn runs_dir(&self) -> PathBuf {
         self.root.join("runs")
     }
 
     fn job_path(&self, job_id: &str) -> PathBuf {
         self.activities_dir().join(format!("{job_id}.yaml"))
+    }
+
+    fn disabled_job_path(&self, job_id: &str) -> PathBuf {
+        self.disabled_jobs_dir().join(format!("{job_id}.yaml"))
     }
 
     fn run_dir(&self, job_id: &str) -> PathBuf {

@@ -69,6 +69,7 @@ enum TaskStateDir {
     Done,
     Blocked,
     Archived,
+    Rejected,
 }
 
 impl TaskStateDir {
@@ -81,6 +82,7 @@ impl TaskStateDir {
             TaskStateDir::Done => "done",
             TaskStateDir::Blocked => "blocked",
             TaskStateDir::Archived => "archived",
+            TaskStateDir::Rejected => "rejected",
         }
     }
 
@@ -93,6 +95,7 @@ impl TaskStateDir {
             TaskStateDir::Done => TaskStatus::Done,
             TaskStateDir::Blocked => TaskStatus::Blocked,
             TaskStateDir::Archived => TaskStatus::Archived,
+            TaskStateDir::Rejected => TaskStatus::Rejected,
         }
     }
 
@@ -105,10 +108,11 @@ impl TaskStateDir {
             TaskStatus::Done => TaskStateDir::Done,
             TaskStatus::Blocked => TaskStateDir::Blocked,
             TaskStatus::Archived => TaskStateDir::Archived,
+            TaskStatus::Rejected => TaskStateDir::Rejected,
         }
     }
 
-    fn all() -> [TaskStateDir; 7] {
+    fn all() -> [TaskStateDir; 8] {
         [
             TaskStateDir::Proposed,
             TaskStateDir::Backlog,
@@ -117,6 +121,7 @@ impl TaskStateDir {
             TaskStateDir::Done,
             TaskStateDir::Blocked,
             TaskStateDir::Archived,
+            TaskStateDir::Rejected,
         ]
     }
 }
@@ -407,6 +412,8 @@ impl TaskFileStore {
             Some("completed".to_string())
         } else if target_state == TaskStateDir::Archived {
             Some("archived".to_string())
+        } else if target_state == TaskStateDir::Rejected {
+            Some("rejected".to_string())
         } else {
             Some("moved".to_string())
         };

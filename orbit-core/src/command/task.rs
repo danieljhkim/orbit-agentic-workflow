@@ -129,6 +129,12 @@ impl OrbitRuntime {
                         .to_string(),
                 ));
             }
+            if target_status == TaskStatus::Rejected {
+                return Err(OrbitError::InvalidInput(
+                    "use `orbit task reject <id>` instead of setting status to rejected"
+                        .to_string(),
+                ));
+            }
             task.status
                 .validate_transition(target_status)
                 .map_err(OrbitError::TaskStatusTransition)?;
@@ -265,7 +271,7 @@ impl OrbitRuntime {
                     let task = self.context.task_store.update_task(
                         id,
                         StoreTaskUpdateParams {
-                            status: Some(TaskStatus::Archived),
+                            status: Some(TaskStatus::Rejected),
                             proposal_rejected_by: Some(Some(rejector.to_string())),
                             proposal_decision_note: Some(Some(reason.clone())),
                             append_comments: append_comments.clone(),
@@ -287,7 +293,7 @@ impl OrbitRuntime {
                     let task = self.context.task_store.update_task(
                         id,
                         StoreTaskUpdateParams {
-                            status: Some(TaskStatus::Backlog),
+                            status: Some(TaskStatus::Rejected),
                             review_rejected_by: Some(Some(rejector.to_string())),
                             review_decision_note: Some(Some(reason.clone())),
                             append_comments: append_comments.clone(),

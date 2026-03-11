@@ -18,6 +18,7 @@ pub enum TaskStatus {
     Done,
     Blocked,
     Archived,
+    Rejected,
 }
 
 impl Display for TaskStatus {
@@ -39,6 +40,7 @@ impl FromStr for TaskStatus {
             "done" => Ok(TaskStatus::Done),
             "blocked" => Ok(TaskStatus::Blocked),
             "archived" => Ok(TaskStatus::Archived),
+            "rejected" => Ok(TaskStatus::Rejected),
             other => Err(format!("unknown task status: {other}")),
         }
     }
@@ -54,6 +56,7 @@ impl TaskStatus {
             TaskStatus::Done => "done",
             TaskStatus::Blocked => "blocked",
             TaskStatus::Archived => "archived",
+            TaskStatus::Rejected => "rejected",
         }
     }
 
@@ -61,20 +64,24 @@ impl TaskStatus {
         if target == TaskStatus::Archived {
             return Ok(());
         }
-        if target == TaskStatus::Blocked && *self != TaskStatus::Archived {
+        if target == TaskStatus::Blocked
+            && *self != TaskStatus::Archived
+            && *self != TaskStatus::Rejected
+        {
             return Ok(());
         }
 
         let allowed = match self {
-            TaskStatus::Proposed => target == TaskStatus::Backlog,
+            TaskStatus::Proposed => target == TaskStatus::Backlog || target == TaskStatus::Rejected,
             TaskStatus::Backlog => target == TaskStatus::InProgress,
             TaskStatus::InProgress => target == TaskStatus::Review,
-            TaskStatus::Review => target == TaskStatus::Done,
+            TaskStatus::Review => target == TaskStatus::Done || target == TaskStatus::Rejected,
             TaskStatus::Done => false,
             TaskStatus::Blocked => {
                 target == TaskStatus::Backlog || target == TaskStatus::InProgress
             }
             TaskStatus::Archived => target == TaskStatus::Backlog,
+            TaskStatus::Rejected => target == TaskStatus::Backlog,
         };
 
         if allowed {

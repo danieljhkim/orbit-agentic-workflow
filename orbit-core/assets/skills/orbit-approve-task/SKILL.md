@@ -14,9 +14,9 @@ Use this skill to record explicit human approval or rejection after reviewing an
 The decision commands auto-detect the current status:
 
 - `proposed -> backlog`: sets `proposal_approved_by` and `proposal_decision_note`
-- `proposed -> archived`: sets `proposal_rejected_by` and `proposal_decision_note`
+- `proposed -> rejected`: sets `proposal_rejected_by` and `proposal_decision_note`
 - `review -> done`: sets `review_approved_by` and `review_decision_note`
-- `review -> backlog`: sets `review_rejected_by` and `review_decision_note`
+- `review -> rejected`: sets `review_rejected_by` and `review_decision_note`
 
 Commands:
 
@@ -45,9 +45,9 @@ orbit task approve <id> --by "<identity_display_name>" --note "<note>" # approve
 
 - Before decision: identity, scope, and current status are correct.
 - After proposal approval: status is `backlog`.
-- After proposal rejection: status is `archived`.
+- After proposal rejection: status is `rejected`.
 - After review approval: status is `done`.
-- After review rejection: status is `backlog`.
+- After review rejection: status is `rejected`.
 
 ## Output Requirements
 

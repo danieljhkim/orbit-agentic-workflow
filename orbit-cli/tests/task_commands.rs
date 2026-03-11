@@ -582,7 +582,7 @@ fn task_approve_comment_appends_with_approver_identity() {
 }
 
 #[test]
-fn task_reject_proposed_to_archived() {
+fn task_reject_proposed_to_rejected() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
     std::fs::write(
@@ -619,11 +619,11 @@ fn task_reject_proposed_to_archived() {
         show["proposal_decision_note"],
         "Duplicate of an existing task"
     );
-    assert_eq!(show["status"], "archived");
+    assert_eq!(show["status"], "rejected");
 }
 
 #[test]
-fn task_reject_review_to_backlog() {
+fn task_reject_review_to_rejected() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
     std::fs::write(
@@ -677,7 +677,7 @@ fn task_reject_review_to_backlog() {
         show["review_decision_note"],
         "Needs stronger coverage before merge"
     );
-    assert_eq!(show["status"], "backlog");
+    assert_eq!(show["status"], "rejected");
 }
 
 #[test]
@@ -785,4 +785,143 @@ fn task_list_ops_returns_signal_tier_json() {
     assert!(task.get("execution_summary").is_none());
     assert!(task.get("context_files").is_none());
     assert!(task.get("comments").is_none());
+}
+
+#[test]
+fn task_reject_proposed_moves_to_rejected_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "rejected-dir-test");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "grace",
+            "--note",
+            "invalid scope",
+        ])
+        .assert()
+        .success();
+
+    // File must be under rejected/ on disk.
+    let home = dir.path().join(".orbit");
+    let rejected_dir = home.join("tasks").join("rejected").join(&id);
+    assert!(rejected_dir.exists(), "task dir must be under rejected/");
+    // Must not remain under proposed/.
+    let proposed_dir = home.join("tasks").join("proposed").join(&id);
+    assert!(
+        !proposed_dir.exists(),
+        "task dir must not remain in proposed/"
+    );
+}
+
+#[test]
+fn task_reject_review_moves_to_rejected_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = false\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "review-rejected-dir-test");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--status", "in-progress"])
+        .assert()
+        .success();
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "update",
+            &id,
+            "--status",
+            "review",
+            "--execution-summary",
+            "initial implementation done",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "grace",
+            "--note",
+            "missing coverage",
+        ])
+        .assert()
+        .success();
+
+    let home = dir.path().join(".orbit");
+    let rejected_dir = home.join("tasks").join("rejected").join(&id);
+    assert!(rejected_dir.exists(), "task dir must be under rejected/");
+    let review_dir = home.join("tasks").join("review").join(&id);
+    assert!(!review_dir.exists(), "task dir must not remain in review/");
+}
+
+#[test]
+fn task_list_filtered_by_rejected_shows_rejected_tasks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "filterable-rejected");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "grace",
+            "--note",
+            "out of scope",
+        ])
+        .assert()
+        .success();
+
+    let output = orbit_in(dir.path())
+        .args(["task", "list", "--status", "rejected", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let tasks: serde_json::Value = serde_json::from_slice(&output).expect("json");
+    let tasks = tasks.as_array().expect("array");
+    assert!(
+        tasks.iter().any(|t| t["id"] == id),
+        "rejected task must appear in filtered list"
+    );
+    assert!(
+        tasks.iter().all(|t| t["status"] == "rejected"),
+        "all tasks must be rejected"
+    );
+}
+
+#[test]
+fn task_update_status_rejected_is_blocked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "direct-reject-blocked");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--status", "rejected"])
+        .assert()
+        .failure();
 }

@@ -214,10 +214,7 @@ fn legacy_workflow_command_is_not_supported() {
 fn activity_list_ops_returns_signal_tier_json() {
     let dir = tempfile::tempdir().expect("tempdir");
 
-    orbit_in(dir.path())
-        .args(["init"])
-        .assert()
-        .success();
+    orbit_in(dir.path()).args(["init"]).assert().success();
 
     let output = orbit_in(dir.path())
         .args(["activity", "list", "--ops"])

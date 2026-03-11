@@ -25,6 +25,14 @@ Default task lifecycle:
 proposed -> backlog -> in-progress -> review -> done
 ```
 
+Rejection path (via `orbit task reject`):
+
+```text
+proposed -> rejected
+review    -> rejected
+rejected  -> backlog  (reconsider)
+```
+
 Use the CLI-facing spelling `in-progress` in commands and examples. Orbit may still store task bundles under an internal `in_progress` directory on disk.
 
 Use `blocked` when execution cannot safely continue. Use `orbit task` commands for lifecycle mutations; do not edit task backing files directly.

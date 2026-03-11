@@ -330,6 +330,7 @@ pub enum TaskUpdateStatusArg {
     Review,
     Done,
     Blocked,
+    Rejected,
 }
 
 impl From<TaskUpdateStatusArg> for TaskStatus {
@@ -341,6 +342,7 @@ impl From<TaskUpdateStatusArg> for TaskStatus {
             TaskUpdateStatusArg::Review => TaskStatus::Review,
             TaskUpdateStatusArg::Done => TaskStatus::Done,
             TaskUpdateStatusArg::Blocked => TaskStatus::Blocked,
+            TaskUpdateStatusArg::Rejected => TaskStatus::Rejected,
         }
     }
 }

@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn reject_review_task_moves_back_to_backlog_with_audit_metadata() {
+    fn reject_review_task_moves_to_rejected_with_audit_metadata() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
             .add_task(TaskAddParams {
@@ -621,7 +621,7 @@ mod tests {
             )
             .expect("reject");
 
-        assert_eq!(rejected.status, TaskStatus::Backlog);
+        assert_eq!(rejected.status, TaskStatus::Rejected);
         assert_eq!(rejected.review_rejected_by.as_deref(), Some("reviewer"));
         assert_eq!(
             rejected.review_decision_note.as_deref(),
