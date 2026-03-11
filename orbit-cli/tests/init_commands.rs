@@ -151,6 +151,7 @@ fn init_creates_default_identities_under_home_orbit() {
     assert!(config_path.exists());
     let config_raw = std::fs::read_to_string(config_path).expect("read config");
     assert!(config_raw.contains("[execution.env]"));
+    assert!(config_raw.contains("[execution.codex]"));
     assert!(config_raw.contains("[task.approval]"));
     assert!(!config_raw.contains("[watch]"));
 

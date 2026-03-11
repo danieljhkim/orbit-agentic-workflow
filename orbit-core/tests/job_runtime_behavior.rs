@@ -506,6 +506,51 @@ fn codex_job_run_uses_workspace_write_sandbox() {
 }
 
 #[test]
+fn codex_job_run_can_enable_approval_requests_via_runtime_config() {
+    let dir = tempdir().expect("tempdir");
+    write_runtime_config(
+        dir.path(),
+        r#"[execution.codex]
+approval_policy = "on-request"
+"#,
+    );
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let args_capture = dir.path().join("codex-args.txt");
+    let script_path = dir.path().join("codex");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"{args}\"\ncat > /dev/null\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        args = args_capture.display(),
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    add_activity(&runtime, "spec-codex-approval");
+    let job_id = add_scheduled_activity(
+        &runtime,
+        "spec-codex-approval",
+        &agent_cli,
+        0,
+        JobRetryBackoffStrategy::None,
+        0,
+    );
+
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let args = std::fs::read_to_string(args_capture).expect("read args");
+    let captured: Vec<&str> = args.lines().collect();
+    assert_eq!(
+        captured[0..5],
+        [
+            "--ask-for-approval",
+            "on-request",
+            "exec",
+            "--sandbox",
+            "workspace-write",
+        ]
+    );
+}
+
+#[test]
 fn empty_stdout_timeout_marks_run_as_timeout() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");

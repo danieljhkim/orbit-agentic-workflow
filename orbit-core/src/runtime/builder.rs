@@ -115,6 +115,7 @@ fn build_context_common(
     load_external_tools(&store, &mut registry)?;
 
     let execution_env_policy = runtime_config.execution_env.clone();
+    let codex_execution_policy = runtime_config.codex_execution.clone();
     let persistence = runtime_config.persistence.clone();
     let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
     let task_delegate_approval = runtime_config.task_approval.delegate_approval;
@@ -135,6 +136,7 @@ fn build_context_common(
         skill_catalog,
         identity_catalog,
         execution_env_policy,
+        codex_execution_policy,
         persistence,
         task_approval_required_for_agent,
         task_delegate_approval,

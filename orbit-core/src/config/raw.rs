@@ -17,12 +17,19 @@ pub(super) struct RawRuntimeConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawExecutionConfig {
     pub(super) env: Option<RawExecutionEnvConfig>,
+    pub(super) codex: Option<RawCodexExecutionConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawExecutionEnvConfig {
     pub(super) inherit: Option<bool>,
     pub(super) pass: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct RawCodexExecutionConfig {
+    pub(super) sandbox: Option<String>,
+    pub(super) approval_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -74,6 +74,16 @@ impl OrbitRuntime {
         )
     }
 
+    pub fn codex_execution_config(&self) -> (String, Option<String>) {
+        (
+            self.context.codex_execution_policy.sandbox().to_string(),
+            self.context
+                .codex_execution_policy
+                .approval_policy()
+                .map(ToString::to_string),
+        )
+    }
+
     pub fn data_root(&self) -> PathBuf {
         self.context.data_root.clone()
     }

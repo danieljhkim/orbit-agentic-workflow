@@ -5,14 +5,14 @@ mod runtime;
 
 pub(crate) use bootstrap::{default_config_template_for_root, seed_default_config};
 pub(crate) use persistence::{PersistenceConfig, PersistenceType};
-pub(crate) use runtime::{ExecutionEnvPolicy, RuntimeConfig};
+pub(crate) use runtime::{CodexExecutionPolicy, ExecutionEnvPolicy, RuntimeConfig};
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use super::PersistenceConfig;
-    use super::runtime::{ExecutionEnvPolicy, normalize_pass_list};
+    use super::runtime::{CodexExecutionPolicy, ExecutionEnvPolicy, normalize_pass_list};
 
     #[test]
     fn normalize_pass_list_rejects_invalid_identifiers() {
@@ -51,6 +51,13 @@ mod tests {
             pass.contains(&"USER".to_string()),
             "USER must be in default pass list for macOS compatibility"
         );
+    }
+
+    #[test]
+    fn codex_execution_defaults_to_workspace_write_without_approval_override() {
+        let policy = CodexExecutionPolicy::default();
+        assert_eq!(policy.sandbox(), "workspace-write");
+        assert_eq!(policy.approval_policy(), None);
     }
 
     #[test]

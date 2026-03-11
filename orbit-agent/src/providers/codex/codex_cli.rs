@@ -1,15 +1,33 @@
 use crate::providers::common::render_prompt_with_embedded_envelope;
 use crate::types::AgentOperation;
 
-pub(crate) struct CodexCliTransport;
+pub(crate) struct CodexCliTransport {
+    sandbox: Option<String>,
+    approval_policy: Option<String>,
+}
 
 impl CodexCliTransport {
+    pub(crate) fn new(sandbox: Option<String>, approval_policy: Option<String>) -> Self {
+        Self {
+            sandbox,
+            approval_policy,
+        }
+    }
+
     pub(crate) fn args(&self, _operation: &AgentOperation) -> Vec<String> {
-        vec![
-            "exec".to_string(),
-            "--sandbox".to_string(),
-            "workspace-write".to_string(),
-        ]
+        let mut args = Vec::new();
+        if let Some(approval_policy) = &self.approval_policy {
+            args.push("--ask-for-approval".to_string());
+            args.push(approval_policy.clone());
+        }
+        args.push("exec".to_string());
+        args.push("--sandbox".to_string());
+        args.push(
+            self.sandbox
+                .clone()
+                .unwrap_or_else(|| "workspace-write".to_string()),
+        );
+        args
     }
 
     pub(crate) fn stdin(&self, envelope_json: &[u8]) -> Vec<u8> {

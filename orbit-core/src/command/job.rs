@@ -474,7 +474,12 @@ impl OrbitRuntime {
     }
 
     fn execute_single_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
-        let agent = match Agent::new(&AgentConfig::cli(execution.agent_cli.clone())) {
+        let agent = match Agent::new(
+            &AgentConfig::cli(execution.agent_cli.clone()).with_codex_execution(
+                self.context.codex_execution_policy.sandbox(),
+                self.context.codex_execution_policy.approval_policy(),
+            ),
+        ) {
             Ok(agent) => agent,
             Err(err) => {
                 return AttemptOutcome {

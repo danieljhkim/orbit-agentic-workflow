@@ -7,7 +7,10 @@ use orbit_types::{IdentityRole, OrbitError};
 use crate::paths;
 
 use super::persistence::PersistenceConfig;
-use super::raw::{RawExecutionEnvConfig, RawIdentitySection, RawRuntimeConfig, RawTaskSection};
+use super::raw::{
+    RawCodexExecutionConfig, RawExecutionEnvConfig, RawIdentitySection, RawRuntimeConfig,
+    RawTaskSection,
+};
 
 const DEFAULT_ENV_INHERIT: bool = false;
 const DEFAULT_ENV_PASS: [&str; 6] = [
@@ -27,6 +30,7 @@ const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeConfig {
     pub(crate) execution_env: ExecutionEnvPolicy,
+    pub(crate) codex_execution: CodexExecutionPolicy,
     pub(crate) persistence: PersistenceConfig,
     pub(crate) task_approval: TaskApprovalConfig,
     pub(crate) identity: IdentityConfig,
@@ -43,6 +47,7 @@ impl RuntimeConfig {
     pub(crate) fn default_for_roots(data_root: &Path, orbit_home: &Path) -> Self {
         Self {
             execution_env: ExecutionEnvPolicy::default(),
+            codex_execution: CodexExecutionPolicy::default(),
             persistence: PersistenceConfig::default_for_data_root(data_root),
             task_approval: TaskApprovalConfig::default(),
             identity: IdentityConfig::default_for_orbit_home(orbit_home),
@@ -75,10 +80,115 @@ impl RuntimeConfig {
             execution_env: ExecutionEnvPolicy::from_raw(
                 parsed.execution.clone().and_then(|v| v.env),
             )?,
+            codex_execution: CodexExecutionPolicy::from_raw(
+                parsed.execution.clone().and_then(|v| v.codex),
+            )?,
             persistence: PersistenceConfig::from_raw(data_root, &parsed)?,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
             identity: IdentityConfig::from_raw(parsed.identity.as_ref(), data_root, orbit_home)?,
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodexExecutionPolicy {
+    sandbox: CodexSandboxMode,
+    approval_policy: Option<CodexApprovalPolicy>,
+}
+
+impl Default for CodexExecutionPolicy {
+    fn default() -> Self {
+        Self {
+            sandbox: CodexSandboxMode::WorkspaceWrite,
+            approval_policy: None,
+        }
+    }
+}
+
+impl CodexExecutionPolicy {
+    fn from_raw(raw: Option<RawCodexExecutionConfig>) -> Result<Self, OrbitError> {
+        let Some(raw) = raw else {
+            return Ok(Self::default());
+        };
+
+        let sandbox = match raw.sandbox.as_deref() {
+            Some(value) => CodexSandboxMode::parse(value)?,
+            None => CodexSandboxMode::WorkspaceWrite,
+        };
+        let approval_policy = raw
+            .approval_policy
+            .as_deref()
+            .map(CodexApprovalPolicy::parse)
+            .transpose()?;
+
+        Ok(Self {
+            sandbox,
+            approval_policy,
+        })
+    }
+
+    pub(crate) fn sandbox(&self) -> &str {
+        self.sandbox.as_str()
+    }
+
+    pub(crate) fn approval_policy(&self) -> Option<&str> {
+        self.approval_policy.map(CodexApprovalPolicy::as_str)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodexSandboxMode {
+    ReadOnly,
+    WorkspaceWrite,
+    DangerFullAccess,
+}
+
+impl CodexSandboxMode {
+    fn parse(value: &str) -> Result<Self, OrbitError> {
+        match value.trim() {
+            "read-only" => Ok(Self::ReadOnly),
+            "workspace-write" => Ok(Self::WorkspaceWrite),
+            "danger-full-access" => Ok(Self::DangerFullAccess),
+            other => Err(OrbitError::InvalidInput(format!(
+                "execution.codex.sandbox has invalid value '{other}'; expected one of: read-only, workspace-write, danger-full-access"
+            ))),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "read-only",
+            Self::WorkspaceWrite => "workspace-write",
+            Self::DangerFullAccess => "danger-full-access",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodexApprovalPolicy {
+    Untrusted,
+    OnRequest,
+    Never,
+}
+
+impl CodexApprovalPolicy {
+    fn parse(value: &str) -> Result<Self, OrbitError> {
+        match value.trim() {
+            "untrusted" => Ok(Self::Untrusted),
+            "on-request" => Ok(Self::OnRequest),
+            "never" => Ok(Self::Never),
+            other => Err(OrbitError::InvalidInput(format!(
+                "execution.codex.approval_policy has invalid value '{other}'; expected one of: untrusted, on-request, never"
+            ))),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Untrusted => "untrusted",
+            Self::OnRequest => "on-request",
+            Self::Never => "never",
+        }
     }
 }
 

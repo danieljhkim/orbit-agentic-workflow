@@ -10,10 +10,14 @@ pub(crate) struct CodexRuntime {
 }
 
 impl CodexRuntime {
-    pub(crate) fn new(command: String) -> Self {
+    pub(crate) fn new(
+        command: String,
+        sandbox: Option<String>,
+        approval_policy: Option<String>,
+    ) -> Self {
         Self {
             command,
-            cli: CodexCliTransport,
+            cli: CodexCliTransport::new(sandbox, approval_policy),
         }
     }
 }

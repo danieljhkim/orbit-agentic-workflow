@@ -41,6 +41,7 @@ impl Execute for ConfigShowArgs {
         let orbit_home = runtime.orbit_home();
         let config_path = runtime.config_path();
         let (inherit, pass) = runtime.execution_env_config();
+        let (codex_sandbox, codex_approval_policy) = runtime.codex_execution_config();
         let persistence = runtime.persistence_config_json();
         let task_approval_required_for_agent = runtime.task_approval_required_for_agent();
         let task_delegate_approval = runtime.task_delegate_approval();
@@ -57,6 +58,10 @@ impl Execute for ConfigShowArgs {
                     "env": {
                         "inherit": inherit,
                         "pass": pass,
+                    },
+                    "codex": {
+                        "sandbox": codex_sandbox,
+                        "approval_policy": codex_approval_policy,
                     }
                 },
                 "task": {
@@ -78,6 +83,11 @@ impl Execute for ConfigShowArgs {
             println!("Exists:              {}", config_path.exists());
             println!("Execution env inherit: {}", inherit);
             println!("Execution env pass:  {}", pass.join(","));
+            println!("Codex sandbox:       {}", codex_sandbox);
+            println!(
+                "Codex approval policy: {}",
+                codex_approval_policy.unwrap_or_else(|| "provider-default".to_string())
+            );
             println!(
                 "Task approval required for agent: {}",
                 task_approval_required_for_agent

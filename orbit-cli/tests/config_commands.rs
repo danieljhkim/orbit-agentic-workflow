@@ -29,7 +29,22 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
     assert_eq!(value["execution"]["env"]["inherit"], false);
     assert_eq!(
         value["execution"]["env"]["pass"],
-        serde_json::json!(["CODEX_HOME", "HOME", "PATH", "TMPDIR", "USER", "__CF_USER_TEXT_ENCODING"])
+        serde_json::json!([
+            "CODEX_HOME",
+            "HOME",
+            "PATH",
+            "TMPDIR",
+            "USER",
+            "__CF_USER_TEXT_ENCODING"
+        ])
+    );
+    assert_eq!(
+        value["execution"]["codex"]["sandbox"],
+        serde_json::json!("workspace-write")
+    );
+    assert_eq!(
+        value["execution"]["codex"]["approval_policy"],
+        serde_json::Value::Null
     );
     assert_eq!(
         value["task"]["approval"]["required_for_agent"],
@@ -74,6 +89,7 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
     let config_raw = std::fs::read_to_string(dir.path().join(".orbit").join("config.toml"))
         .expect("read config");
     assert!(!config_raw.contains("[watch]"));
+    assert!(config_raw.contains("[execution.codex]"));
 }
 
 #[test]
@@ -83,7 +99,7 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
     std::fs::write(
         orbit_dir.join("config.toml"),
-        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[task.approval]\nrequired_for_agent = true\n\n[job]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
+        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[execution.codex]\nsandbox = \"danger-full-access\"\napproval_policy = \"on-request\"\n\n[task.approval]\nrequired_for_agent = true\n\n[job]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
     )
     .expect("write config");
 
@@ -101,6 +117,14 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     assert_eq!(
         value["execution"]["env"]["pass"],
         serde_json::json!(["HOME", "PATH"])
+    );
+    assert_eq!(
+        value["execution"]["codex"]["sandbox"],
+        serde_json::json!("danger-full-access")
+    );
+    assert_eq!(
+        value["execution"]["codex"]["approval_policy"],
+        serde_json::json!("on-request")
     );
     assert_eq!(
         value["task"]["approval"]["required_for_agent"],

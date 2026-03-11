@@ -80,6 +80,26 @@ fn provider_mapper_supports_codex() {
 }
 
 #[test]
+fn provider_mapper_supports_codex_approval_override() {
+    let agent = Agent::new(
+        &AgentConfig::cli("codex").with_codex_execution("workspace-write", Some("on-request")),
+    )
+    .expect("codex runtime");
+    let invocation = agent.invoke(job_request()).expect("codex invocation");
+    assert_eq!(invocation.program, "codex");
+    assert_eq!(
+        invocation.args,
+        vec![
+            "--ask-for-approval".to_string(),
+            "on-request".to_string(),
+            "exec".to_string(),
+            "--sandbox".to_string(),
+            "workspace-write".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn provider_mapper_supports_mock_agent() {
     let agent = Agent::new(&AgentConfig::cli("mock-agent")).expect("mock-agent runtime");
     let invocation = agent.invoke(job_request()).expect("mock-agent invocation");
