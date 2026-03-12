@@ -1,0 +1,23 @@
+schemaVersion: 1
+id: perform-maintenance
+specType: maintenance
+description: perform system maintenance, using `orbit-maintain-system`
+instruction: Use `orbit-maintain-system` skill to perform system maintenance. Output a brief summary in the comment
+inputSchemaJson:
+  additionalProperties: false
+  properties: {}
+  type: object
+outputSchemaJson:
+  properties:
+    comment:
+      type: string
+  type: object
+artifactPathTemplate: null
+skillRefs:
+- orbit-skills
+- orbit-maintain-system
+identityId: prii
+assignedTo: prii
+createdBy: system
+createdAt: 2026-03-12T03:26:17.764615Z
+updatedAt: 2026-03-12T03:26:17.764615Z

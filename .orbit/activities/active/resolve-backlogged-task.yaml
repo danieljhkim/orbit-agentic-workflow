@@ -1,0 +1,31 @@
+schemaVersion: 1
+id: resolve-backlogged-task
+specType: task
+description: Work on a backlogged orbit task
+instruction: If input.task_id is provided, work on that specific orbit task and do not select a different backlog item. Otherwise, check if there exists any orbit tasks with "backlog" status and pick a single task to work on. Once done, update the orbit task to "review" status. Output a brief summary in the comment.
+inputSchemaJson:
+  additionalProperties: false
+  properties:
+    task_id:
+      type: string
+  type: object
+outputSchemaJson:
+  additionalProperties: false
+  properties:
+    comment:
+      type: string
+    task_id:
+      type: string
+  required:
+  - task_id
+  type: object
+artifactPathTemplate: null
+skillRefs:
+- orbit-skills
+- orbit-manage-tasks
+- orbit-execute-change-request
+identityId: kent
+assignedTo: kent
+createdBy: system
+createdAt: 2026-03-12T03:26:17.764941Z
+updatedAt: 2026-03-12T03:26:17.764941Z

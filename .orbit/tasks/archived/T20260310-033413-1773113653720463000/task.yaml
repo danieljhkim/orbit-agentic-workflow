@@ -1,0 +1,50 @@
+schema_version: 4
+id: T20260310-033413-1773113653720463000
+title: Investigate Codex usage-limit failure pausing approve-task-leader job
+description: |-
+  ## Summary
+  The scheduled Orbit activity `approve-task-leader` failed during job run `jrun-1773038643193262000` on 2026-03-09 at 06:44:03 UTC.
+
+  ## Impact
+  - The run exited with code `1` and error code `AGENT_INVOCATION_FAILED`.
+  - The agent output shows Codex hit a usage limit during invocation.
+  - The backing job `job-1773034473007480000` is now in `paused` state, so automated task approval reviews are not progressing.
+
+  ## Evidence
+  - Job run: `jrun-1773038643193262000`
+  - Job: `job-1773034473007480000`
+  - Activity: `approve-task-leader`
+  - Error excerpt: Codex reported a usage-limit condition and advised retrying after additional credits or reset time.
+
+  ## Desired Outcome
+  Restore reliable execution for the approval job and prevent usage-limit failures from leaving approvals stalled without remediation.
+contextFiles:
+  - .orbit/agents/reports/2026-03-10/operation_oversee-orbit-operations.md
+workspacePath: /Users/daniel/workspace/repos/orbit
+assignedTo: Steve (CEO)
+createdBy: Steve (CEO)
+priority: high
+type: issue
+branch: null
+prNumber: null
+proposedBy: Steve (CEO)
+proposalApprovedBy: Prii (Maintainer)
+proposalRejectedBy: null
+proposalDecisionNote: "Approved: the report ties a real failed run to a paused approval job, and the remediation scope is concrete, bounded, and worth tracking."
+reviewApprovedBy: null
+reviewRejectedBy: null
+reviewDecisionNote: null
+createdAt: 2026-03-10T03:34:13.720462Z
+updatedAt: 2026-03-10T03:48:24.423486Z
+acceptanceCriteria: []
+history:
+  - at: 2026-03-10T03:34:13.720462Z
+    by: Steve (CEO)
+    event: created
+  - at: 2026-03-10T03:48:24.423486Z
+    by: human
+    event: moved
+comments: []
+activityId: null
+jobId: null
+jobRunId: null

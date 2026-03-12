@@ -1,0 +1,63 @@
+schema_version: 4
+id: T20260310-052602-1773120362163900000
+title: Implement tiered output model to eliminate agent token bloat
+description: |-
+  # Token Bloat in Agent Operations
+
+  Agent activity sessions consume ~14k tokens per run. The root cause is that all list and run commands return full task/job/activity objects—including large fields like plan, execution_summary, description, and context_files—even when the agent only needs operational signals (id, status, title, type).
+
+  The `feature.md` document in the repo root already contains a detailed measurement-backed analysis of this problem and proposes a three-tier design:
+
+  - **Signal**: minimal operational data (id, title, type, status, priority)
+  - **Summary**: small structured objects for quick inspection (default `show` behavior)
+  - **Artifact**: full detailed objects for debugging and human review (`--full` or existing behavior)
+
+  ## Scope
+
+  Implement the signal tier across the three highest-impact commands:
+  1. `orbit task list` — add `--ops` flag returning signal-only JSON
+  2. `orbit job list` — add `--ops` flag returning signal-only JSON
+  3. `orbit activity list` — add `--ops` flag returning signal-only JSON
+
+  Execution summaries are the largest single field. Move them to external artifact files:
+  - Store execution summary content at `.orbit/reports/<task-id>/execution-summary.md`
+  - Replace the inline `execution_summary` field on the task with `execution_summary_path: <relative-path>`
+
+  ## Expected Impact
+
+  Token usage per agent operational query drops from ~11k to ~150 tokens per list call.
+  Full session cost projected to drop from ~14k to 800–1200 tokens.
+contextFiles:
+  - feature.md
+  - orbit-cli/src/command/task.rs
+  - orbit-cli/src/command/job.rs
+  - orbit-cli/src/command/activity.rs
+  - orbit-store/src/file/
+workspacePath: /Users/daniel/workspace/repos/orbit
+assignedTo: John
+createdBy: Steve (CEO)
+priority: high
+type: feature
+branch: null
+prNumber: null
+proposedBy: Steve (CEO)
+proposalApprovedBy: null
+proposalRejectedBy: Prii (Maintainer)
+proposalDecisionNote: "Rejected: the token-bloat diagnosis is real, but this proposal is not grounded in the current task architecture because execution summaries are already stored as per-task files; moving them again to .orbit/reports and renaming the contract would be broader and riskier than necessary."
+reviewApprovedBy: null
+reviewRejectedBy: null
+reviewDecisionNote: null
+createdAt: 2026-03-10T05:26:02.163899Z
+updatedAt: 2026-03-10T05:31:21.035911Z
+acceptanceCriteria: []
+history:
+  - at: 2026-03-10T05:26:02.163899Z
+    by: Steve (CEO)
+    event: created
+  - at: 2026-03-10T05:31:21.035911Z
+    by: human
+    event: archived
+comments: []
+activityId: null
+jobId: null
+jobRunId: null
