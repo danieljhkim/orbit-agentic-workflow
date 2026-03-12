@@ -113,7 +113,11 @@ impl ActivityStoreBackend for ActivityFileStore {
         self.get_activity(id)
     }
 
-    fn update_activity(&self, id: &str, params: ActivityUpdateParams) -> Result<Activity, OrbitError> {
+    fn update_activity(
+        &self,
+        id: &str,
+        params: ActivityUpdateParams,
+    ) -> Result<Activity, OrbitError> {
         self.update_activity(
             id,
             params.description,

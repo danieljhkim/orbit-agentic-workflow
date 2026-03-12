@@ -424,17 +424,30 @@ fn activity_update_inactive_deactivates_activity() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
-        .args(["activity", "add", "--id", "spec-deactivate", "--description", "active by default", "--json"])
-        .assert().success();
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-deactivate",
+            "--description",
+            "active by default",
+            "--json",
+        ])
+        .assert()
+        .success();
 
     orbit_in(dir.path())
         .args(["activity", "update", "spec-deactivate", "--inactive"])
-        .assert().success();
+        .assert()
+        .success();
 
     let show_output = orbit_in(dir.path())
         .args(["activity", "show", "spec-deactivate", "--json"])
-        .assert().success()
-        .get_output().stdout.clone();
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["is_active"], false);
 }
@@ -444,23 +457,37 @@ fn activity_update_active_reactivates_inactive_activity() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
-        .args(["activity", "add", "--id", "spec-reactivate", "--description", "will be toggled", "--json"])
-        .assert().success();
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-reactivate",
+            "--description",
+            "will be toggled",
+            "--json",
+        ])
+        .assert()
+        .success();
 
     // Deactivate first.
     orbit_in(dir.path())
         .args(["activity", "update", "spec-reactivate", "--inactive"])
-        .assert().success();
+        .assert()
+        .success();
 
     // Now reactivate.
     orbit_in(dir.path())
         .args(["activity", "update", "spec-reactivate", "--active"])
-        .assert().success();
+        .assert()
+        .success();
 
     let show_output = orbit_in(dir.path())
         .args(["activity", "show", "spec-reactivate", "--json"])
-        .assert().success()
-        .get_output().stdout.clone();
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["is_active"], true);
 }
@@ -470,17 +497,30 @@ fn activity_update_identity_sets_field() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
-        .args(["activity", "add", "--id", "spec-identity", "--description", "identity test", "--json"])
-        .assert().success();
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-identity",
+            "--description",
+            "identity test",
+            "--json",
+        ])
+        .assert()
+        .success();
 
     orbit_in(dir.path())
         .args(["activity", "update", "spec-identity", "--identity", "grace"])
-        .assert().success();
+        .assert()
+        .success();
 
     let show_output = orbit_in(dir.path())
         .args(["activity", "show", "spec-identity", "--json"])
-        .assert().success()
-        .get_output().stdout.clone();
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["identity_id"], "grace");
 }
@@ -490,17 +530,37 @@ fn activity_update_clear_identity_removes_field() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
-        .args(["activity", "add", "--id", "spec-clear-identity", "--description", "has identity", "--identity", "grace", "--json"])
-        .assert().success();
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-clear-identity",
+            "--description",
+            "has identity",
+            "--identity",
+            "grace",
+            "--json",
+        ])
+        .assert()
+        .success();
 
     orbit_in(dir.path())
-        .args(["activity", "update", "spec-clear-identity", "--clear-identity"])
-        .assert().success();
+        .args([
+            "activity",
+            "update",
+            "spec-clear-identity",
+            "--clear-identity",
+        ])
+        .assert()
+        .success();
 
     let show_output = orbit_in(dir.path())
         .args(["activity", "show", "spec-clear-identity", "--json"])
-        .assert().success()
-        .get_output().stdout.clone();
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert!(show["identity_id"].is_null());
 }

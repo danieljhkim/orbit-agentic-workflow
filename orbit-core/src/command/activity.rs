@@ -137,10 +137,9 @@ impl OrbitRuntime {
         id: &str,
         params: ActivityUpdateParams,
     ) -> Result<Activity, OrbitError> {
-        let activity = self
-            .context
-            .activity_store
-            .update_activity(id, StoreActivityUpdateParams {
+        let activity = self.context.activity_store.update_activity(
+            id,
+            StoreActivityUpdateParams {
                 description: params.description,
                 instruction: params.instruction,
                 input_schema_json: params.input_schema_json,
@@ -150,7 +149,8 @@ impl OrbitRuntime {
                 identity_id: params.identity_id,
                 assigned_to: params.assigned_to,
                 is_active: params.is_active,
-            })?;
+            },
+        )?;
         self.record_event(OrbitEvent::ActivityUpdated {
             id: activity.id.clone(),
         })?;

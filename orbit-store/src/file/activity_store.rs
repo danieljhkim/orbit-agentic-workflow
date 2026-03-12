@@ -144,14 +144,30 @@ impl ActivityFileStore {
             )));
         };
         let mut doc = self.read_doc_at(&path)?;
-        if let Some(v) = description { doc.description = v; }
-        if let Some(v) = instruction { doc.instruction = v; }
-        if let Some(v) = input_schema_json { doc.input_schema_json = v; }
-        if let Some(v) = output_schema_json { doc.output_schema_json = v; }
-        if let Some(v) = artifact_path_template { doc.artifact_path_template = v; }
-        if let Some(v) = skill_refs { doc.skill_refs = v; }
-        if let Some(v) = identity_id { doc.identity_id = v; }
-        if let Some(v) = assigned_to { doc.assigned_to = v; }
+        if let Some(v) = description {
+            doc.description = v;
+        }
+        if let Some(v) = instruction {
+            doc.instruction = v;
+        }
+        if let Some(v) = input_schema_json {
+            doc.input_schema_json = v;
+        }
+        if let Some(v) = output_schema_json {
+            doc.output_schema_json = v;
+        }
+        if let Some(v) = artifact_path_template {
+            doc.artifact_path_template = v;
+        }
+        if let Some(v) = skill_refs {
+            doc.skill_refs = v;
+        }
+        if let Some(v) = identity_id {
+            doc.identity_id = v;
+        }
+        if let Some(v) = assigned_to {
+            doc.assigned_to = v;
+        }
         doc.updated_at = Utc::now();
 
         let new_active = is_active.unwrap_or(current_active);

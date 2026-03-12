@@ -76,15 +76,33 @@ impl Store {
             .get_activity(id)?
             .ok_or_else(|| OrbitError::InvalidInput(format!("activity not found: {id}")))?;
 
-        if let Some(v) = description { activity.description = v; }
-        if let Some(v) = instruction { activity.instruction = v; }
-        if let Some(v) = input_schema_json { activity.input_schema_json = v; }
-        if let Some(v) = output_schema_json { activity.output_schema_json = v; }
-        if let Some(v) = artifact_path_template { activity.artifact_path_template = v; }
-        if let Some(v) = skill_refs { activity.skill_refs = v; }
-        if let Some(v) = identity_id { activity.identity_id = v; }
-        if let Some(v) = assigned_to { activity.assigned_to = v; }
-        if let Some(v) = is_active { activity.is_active = v; }
+        if let Some(v) = description {
+            activity.description = v;
+        }
+        if let Some(v) = instruction {
+            activity.instruction = v;
+        }
+        if let Some(v) = input_schema_json {
+            activity.input_schema_json = v;
+        }
+        if let Some(v) = output_schema_json {
+            activity.output_schema_json = v;
+        }
+        if let Some(v) = artifact_path_template {
+            activity.artifact_path_template = v;
+        }
+        if let Some(v) = skill_refs {
+            activity.skill_refs = v;
+        }
+        if let Some(v) = identity_id {
+            activity.identity_id = v;
+        }
+        if let Some(v) = assigned_to {
+            activity.assigned_to = v;
+        }
+        if let Some(v) = is_active {
+            activity.is_active = v;
+        }
         activity.updated_at = Utc::now();
 
         let input_raw = serde_json::to_string(&activity.input_schema_json)
@@ -117,8 +135,8 @@ impl Store {
         )
         .map_err(|e| OrbitError::Store(e.to_string()))?;
 
-        activity.updated_at = parse_timestamp(&updated_at_str)
-            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        activity.updated_at =
+            parse_timestamp(&updated_at_str).map_err(|e| OrbitError::Store(e.to_string()))?;
         Ok(activity)
     }
 }

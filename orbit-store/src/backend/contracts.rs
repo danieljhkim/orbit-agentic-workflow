@@ -122,7 +122,11 @@ pub trait ActivityStoreBackend: Send + Sync {
     fn add_activity(&self, params: ActivityCreateParams) -> Result<Activity, OrbitError>;
     fn list_activities(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError>;
     fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError>;
-    fn update_activity(&self, id: &str, params: ActivityUpdateParams) -> Result<Activity, OrbitError>;
+    fn update_activity(
+        &self,
+        id: &str,
+        params: ActivityUpdateParams,
+    ) -> Result<Activity, OrbitError>;
     fn disable_activity(&self, id: &str) -> Result<bool, OrbitError>;
 }
 

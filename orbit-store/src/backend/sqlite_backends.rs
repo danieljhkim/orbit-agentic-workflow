@@ -45,7 +45,11 @@ impl ActivityStoreBackend for SqliteActivityStoreBackend {
         self.store.get_activity(id)
     }
 
-    fn update_activity(&self, id: &str, params: ActivityUpdateParams) -> Result<Activity, OrbitError> {
+    fn update_activity(
+        &self,
+        id: &str,
+        params: ActivityUpdateParams,
+    ) -> Result<Activity, OrbitError> {
         self.store.update_activity(
             id,
             params.description,

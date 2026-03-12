@@ -819,7 +819,10 @@ fn job_delete_moves_file_to_disabled_subdir() {
     // Confirm the job YAML is present in the active jobs directory.
     let jobs_dir = dir.path().join(".orbit").join("jobs").join("jobs");
     let active_path = jobs_dir.join(format!("{job_id}.yaml"));
-    assert!(active_path.exists(), "job yaml must exist in jobs/ before delete");
+    assert!(
+        active_path.exists(),
+        "job yaml must exist in jobs/ before delete"
+    );
 
     orbit_in(dir.path())
         .args(["job", "delete", &job_id])
@@ -830,7 +833,10 @@ fn job_delete_moves_file_to_disabled_subdir() {
     // After delete, file must be under jobs/disabled/ not in jobs/.
     let disabled_path = jobs_dir.join("disabled").join(format!("{job_id}.yaml"));
     assert!(!active_path.exists(), "job yaml must be removed from jobs/");
-    assert!(disabled_path.exists(), "job yaml must appear in jobs/disabled/");
+    assert!(
+        disabled_path.exists(),
+        "job yaml must appear in jobs/disabled/"
+    );
 }
 
 #[test]
@@ -854,7 +860,11 @@ fn job_delete_hides_job_from_list_but_show_still_works() {
         .clone();
     let list: Value = serde_json::from_slice(&list_output).expect("list json");
     assert!(
-        !list.as_array().unwrap().iter().any(|j| j["job_id"] == job_id),
+        !list
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|j| j["job_id"] == job_id),
         "deleted job must not appear in list"
     );
 
@@ -893,8 +903,14 @@ fn job_resume_after_delete_removes_disabled_copy() {
     let jobs_dir = dir.path().join(".orbit").join("jobs").join("jobs");
     let active_path = jobs_dir.join(format!("{job_id}.yaml"));
     let disabled_path = jobs_dir.join("disabled").join(format!("{job_id}.yaml"));
-    assert!(active_path.exists(), "active job file must exist after resume");
-    assert!(!disabled_path.exists(), "disabled copy must be removed after resume");
+    assert!(
+        active_path.exists(),
+        "active job file must exist after resume"
+    );
+    assert!(
+        !disabled_path.exists(),
+        "disabled copy must be removed after resume"
+    );
 
     // The job must appear once in list --all.
     let list_output = orbit_in(dir.path())
@@ -905,9 +921,16 @@ fn job_resume_after_delete_removes_disabled_copy() {
         .stdout
         .clone();
     let list: Value = serde_json::from_slice(&list_output).expect("list json");
-    let matches: Vec<_> = list.as_array().unwrap().iter()
+    let matches: Vec<_> = list
+        .as_array()
+        .unwrap()
+        .iter()
         .filter(|j| j["job_id"] == job_id)
         .collect();
-    assert_eq!(matches.len(), 1, "job must appear exactly once in list --all after resume");
+    assert_eq!(
+        matches.len(),
+        1,
+        "job must appear exactly once in list --all after resume"
+    );
     assert_eq!(matches[0]["state"], "enabled");
 }
