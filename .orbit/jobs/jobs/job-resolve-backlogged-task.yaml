@@ -5,7 +5,7 @@ job:
   target_id: resolve-backlogged-task
   schedule: manual
   agent_cli: codex
-  timeout_seconds: 900
+  timeout_seconds: 1200
   retry_max_attempts: 0
   retry_backoff_strategy: none
   retry_initial_delay_seconds: 0

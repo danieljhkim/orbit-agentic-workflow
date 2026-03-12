@@ -63,7 +63,7 @@ pub struct JobAddArgs {
     pub schedule: String,
     #[arg(long)]
     pub agent_cli: String,
-    #[arg(long, default_value = "15m")]
+    #[arg(long, default_value = "20m")]
     pub timeout: String,
     #[arg(long, default_value_t = 0)]
     pub retry_max_attempts: u32,

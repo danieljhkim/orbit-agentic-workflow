@@ -41,7 +41,7 @@ fn identity_list_shows_seeded_identities() {
 #[test]
 fn identity_list_json_is_valid() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write_identity(dir.path(), "grace", "Grace Hopper", "engineer");
+    write_identity(dir.path(), "grace", "Grace", "engineer");
 
     let output = orbit_in(dir.path())
         .args(["identity", "list", "--json"])
@@ -92,21 +92,21 @@ fn identity_list_is_deterministically_sorted() {
 #[test]
 fn identity_show_displays_identity_details() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write_identity(dir.path(), "kent", "Kent Beck", "engineer");
+    write_identity(dir.path(), "kent", "Kent", "engineer");
 
     orbit_in(dir.path())
         .args(["identity", "show", "kent"])
         .assert()
         .success()
         .stdout(predicate::str::contains("kent"))
-        .stdout(predicate::str::contains("Kent Beck"))
+        .stdout(predicate::str::contains("Kent"))
         .stdout(predicate::str::contains("engineer"));
 }
 
 #[test]
 fn identity_show_json_is_valid() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write_identity(dir.path(), "rob", "Rob Pike", "leader");
+    write_identity(dir.path(), "rob", "Rob", "leader");
 
     let output = orbit_in(dir.path())
         .args(["identity", "show", "rob", "--json"])
@@ -119,7 +119,7 @@ fn identity_show_json_is_valid() {
     let text = String::from_utf8(output).expect("utf8");
     let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid json");
     assert_eq!(parsed["id"].as_str().unwrap(), "rob");
-    assert_eq!(parsed["name"].as_str().unwrap(), "Rob Pike");
+    assert_eq!(parsed["name"].as_str().unwrap(), "Rob");
     assert_eq!(parsed["role"].as_str().unwrap(), "leader");
 }
 

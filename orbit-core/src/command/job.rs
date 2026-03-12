@@ -1015,7 +1015,7 @@ pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitEr
             target_id: target_id.to_string(),
             schedule: "manual".to_string(),
             agent_cli: "codex".to_string(), // TODO: make this dynamic
-            timeout_seconds: 900,
+            timeout_seconds: 1200,
             retry_max_attempts: 0,
             retry_backoff_strategy: JobRetryBackoffStrategy::None,
             retry_initial_delay_seconds: 0,

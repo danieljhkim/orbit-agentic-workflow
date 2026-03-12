@@ -162,7 +162,7 @@ fn job_add_list_show_json_flow() {
 }
 
 #[test]
-fn job_add_defaults_timeout_to_fifteen_minutes() {
+fn job_add_defaults_timeout_to_twenty_minutes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-default-timeout");
 
@@ -176,7 +176,7 @@ fn job_add_defaults_timeout_to_fifteen_minutes() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["timeout_seconds"], 900); // 15m default = 900 seconds
+    assert_eq!(show["timeout_seconds"], 1200); // 20m default = 1200 seconds
 }
 
 #[test]
