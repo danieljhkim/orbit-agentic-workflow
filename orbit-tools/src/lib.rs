@@ -51,6 +51,8 @@ mod tests {
         assert!(names.contains(&"git.commit".to_string()));
         assert!(names.contains(&"proc.spawn".to_string()));
         assert!(names.contains(&"time.now".to_string()));
+        assert!(names.contains(&"github.auth.status".to_string()));
+        assert!(names.contains(&"github.pr.create".to_string()));
     }
 
     #[test]
