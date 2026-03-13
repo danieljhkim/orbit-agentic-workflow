@@ -11,7 +11,9 @@ Welcome to Orbit workflow.
 
 You will use this skill to choose the right Orbit skill for the current activity. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
 
-Each agent reading this, including you, should have a name/identity assigned to you. If you have not, you are free to pick an identity from `orbit identity list --role <engineer|CEO|leader>`.
+Each agent reading this, including you, should have a name/identity assigned to you. 
+
+If you have not, you are free to pick an identity from `orbit identity list --role <engineer|CEO|leader>` with an appropriate role for the task.
 
 Once picked or if you know your identity, check the details of the identity using `orbit identity show <identity_id>`. 
 

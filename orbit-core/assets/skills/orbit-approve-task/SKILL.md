@@ -44,8 +44,7 @@ orbit task approve <id> --by "<identity_display_name>" --note "<note>" # approve
    - The `files` list must include:
      - the changed repository files that were accepted
      - the approved Orbit task artifacts under `.orbit/tasks/done/<task_id>/`
-     - any associated job-run artifacts that belong in the same audited commit
-   - Do not stage task bundles from `.orbit/tasks/proposed/`, `.orbit/tasks/backlog/`, `.orbit/tasks/in_progress/`, `.orbit/tasks/review/`, `.orbit/tasks/blocked/`, or `.orbit/tasks/rejected/` for this review-approval commit workflow.
+     - related job-run artifacts under `.orbit/jobs/jobs/runs/<job_run_id>/`
 
 ## Verification Rules
 

@@ -15,7 +15,7 @@ In scope:
 - `orbit task update`
 - `orbit task search`
 - `orbit task show <id>`
-- `orbit task list`
+- `orbit task list --ops`
 
 
 ## Task Lifecycle
@@ -50,7 +50,7 @@ orbit task update <id> \
   --pr-number "<pr_number>"
 orbit task search "<query>" --json
 orbit task show <id>
-orbit task list
+orbit task list --ops
 ```
 
 ## Response Contract
