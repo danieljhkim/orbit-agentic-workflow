@@ -2,12 +2,10 @@ root = "~/.orbit"
 
 [execution.env]
 inherit = false
-pass = ["HOME","PATH","CODEX_HOME","TMPDIR","__CF_USER_TEXT_ENCODING","USER"]
 
 [execution.codex]
 sandbox = "workspace-write"
-approval_policy = "never"
-# Optional: enable escalation requests for workflows that legitimately need
+# Optional: enable escalation requests for workflows that legitimately need approval.
 # approval_policy = "on-request"
 
 [task.approval]

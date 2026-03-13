@@ -27,17 +27,12 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
 
     assert_eq!(value["exists"], true);
     assert_eq!(value["execution"]["env"]["inherit"], false);
-    assert_eq!(
-        value["execution"]["env"]["pass"],
-        serde_json::json!([
-            "CODEX_HOME",
-            "HOME",
-            "PATH",
-            "TMPDIR",
-            "USER",
-            "__CF_USER_TEXT_ENCODING"
-        ])
-    );
+    let expected_pass = if cfg!(target_os = "macos") {
+        serde_json::json!(["CODEX_HOME", "HOME", "PATH", "TMPDIR", "USER", "__CF_USER_TEXT_ENCODING"])
+    } else {
+        serde_json::json!(["CODEX_HOME", "HOME", "PATH", "TMPDIR", "USER"])
+    };
+    assert_eq!(value["execution"]["env"]["pass"], expected_pass);
     assert_eq!(
         value["execution"]["codex"]["sandbox"],
         serde_json::json!("workspace-write")
