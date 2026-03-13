@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_agent::{
@@ -59,6 +60,9 @@ struct AttemptOutcome {
     error_message: Option<String>,
     retryable: bool,
     protocol_violation: bool,
+    /// Validated absolute path to a report file the agent created, to be auto-committed
+    /// after the run artifact is persisted.
+    created_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,6 +345,13 @@ impl OrbitRuntime {
             });
 
             if outcome.state == JobRunState::Success {
+                if let Some(ref created_file_path) = outcome.created_file {
+                    self.execute_created_file_auto_commit(
+                        created_file_path,
+                        &job.job_id,
+                        &run.run_id,
+                    )?;
+                }
                 break;
             }
 
@@ -498,6 +509,7 @@ impl OrbitRuntime {
                     error_message: Some(err.to_string()),
                     retryable: false,
                     protocol_violation: false,
+                    created_file: None,
                 };
             }
         };
@@ -513,6 +525,7 @@ impl OrbitRuntime {
                     error_message: Some(err.to_string()),
                     retryable: false,
                     protocol_violation: false,
+                    created_file: None,
                 };
             }
         };
@@ -539,6 +552,7 @@ impl OrbitRuntime {
                     error_message: Some(err.to_string()),
                     retryable: false,
                     protocol_violation: false,
+                    created_file: None,
                 };
             }
         };
@@ -561,6 +575,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 )),
                 retryable: false,
                 protocol_violation: false,
+                created_file: None,
             };
         };
         let job_env_extra: &[String] = execution
@@ -589,6 +604,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     error_message: Some(err.to_string()),
                     retryable: true,
                     protocol_violation: false,
+                    created_file: None,
                 };
             }
         };
@@ -614,6 +630,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     error_message: Some(err.to_string()),
                     retryable: true,
                     protocol_violation: false,
+                    created_file: None,
                 };
             }
         };
@@ -628,6 +645,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 error_message: Some(format_timeout_error_message(&exec_result)),
                 retryable: true,
                 protocol_violation: false,
+                created_file: None,
             };
         }
 
@@ -654,6 +672,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                         error_message: Some(err.to_string()),
                         retryable: false,
                         protocol_violation: true,
+                        created_file: None,
                     };
                 }
                 if run_state == JobRunState::Success
@@ -675,8 +694,68 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                         error_message: Some(err.to_string()),
                         retryable: false,
                         protocol_violation,
+                        created_file: None,
                     };
                 }
+                // Validate any `created_file` path returned by the agent before persisting the
+                // run. Invalid paths fail the run as a protocol violation so no unintended files
+                // are staged. The validated absolute path is carried forward; the actual git
+                // commit runs after run persistence so the run artifact can be included.
+                let validated_created_file = if run_state == JobRunState::Success {
+                    match envelope.result.as_ref().and_then(|r| r.get("created_file")) {
+                        Some(Value::String(s)) => {
+                            match self.validate_created_file_path(s) {
+                                Ok(abs_path) => {
+                                    Some(abs_path.to_string_lossy().into_owned())
+                                }
+                                Err(OrbitError::AgentProtocolViolation(msg)) => {
+                                    return AttemptOutcome {
+                                        state: JobRunState::Failed,
+                                        exit_code: exec_result.exit_code,
+                                        duration_ms: Some(exec_result.duration_ms),
+                                        response_json: None,
+                                        error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
+                                        error_message: Some(msg),
+                                        retryable: false,
+                                        protocol_violation: true,
+                                        created_file: None,
+                                    };
+                                }
+                                Err(err) => {
+                                    return AttemptOutcome {
+                                        state: JobRunState::Failed,
+                                        exit_code: exec_result.exit_code,
+                                        duration_ms: Some(exec_result.duration_ms),
+                                        response_json: None,
+                                        error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                                        error_message: Some(err.to_string()),
+                                        retryable: false,
+                                        protocol_violation: false,
+                                        created_file: None,
+                                    };
+                                }
+                            }
+                        }
+                        Some(_) => {
+                            return AttemptOutcome {
+                                state: JobRunState::Failed,
+                                exit_code: exec_result.exit_code,
+                                duration_ms: Some(exec_result.duration_ms),
+                                response_json: None,
+                                error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
+                                error_message: Some(
+                                    "result.created_file must be a string".to_string(),
+                                ),
+                                retryable: false,
+                                protocol_violation: true,
+                                created_file: None,
+                            };
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
                 AttemptOutcome {
                     state: run_state,
                     exit_code: exec_result.exit_code,
@@ -687,6 +766,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     retryable: run_state == JobRunState::Failed
                         || run_state == JobRunState::Timeout,
                     protocol_violation: false,
+                    created_file: validated_created_file,
                 }
             }
             Err(OrbitError::AgentProtocolViolation(message)) => AttemptOutcome {
@@ -698,6 +778,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 error_message: Some(message),
                 retryable: false,
                 protocol_violation: true,
+                created_file: None,
             },
             Err(err) => AttemptOutcome {
                 state: JobRunState::Failed,
@@ -708,6 +789,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 error_message: Some(err.to_string()),
                 retryable: true,
                 protocol_violation: false,
+                created_file: None,
             },
         }
     }
@@ -853,6 +935,141 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             "git.commit",
             json!({
                 "repo_root": repo_root.to_string_lossy(),
+                "message": message,
+                "files": files,
+            }),
+        )?;
+        Ok(())
+    }
+
+    /// Validate a `created_file` path returned by an agent.
+    ///
+    /// Returns the canonical absolute path on success. Fails with
+    /// `AgentProtocolViolation` for agent errors (empty path, missing file,
+    /// path outside repo root) so the run is marked as a protocol violation.
+    fn validate_created_file_path(&self, path: &str) -> Result<PathBuf, OrbitError> {
+        let path = path.trim();
+        if path.is_empty() {
+            return Err(OrbitError::AgentProtocolViolation(
+                "result.created_file must not be empty".to_string(),
+            ));
+        }
+
+        let repo_root = paths::find_git_repo_root(&self.context.data_root).ok_or_else(|| {
+            OrbitError::AgentProtocolViolation(format!(
+                "result.created_file: cannot locate git repository root from Orbit data root '{}'",
+                self.context.data_root.display()
+            ))
+        })?;
+
+        // Resolve to absolute path (relative paths are resolved relative to repo root).
+        let abs_path = if Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            repo_root.join(path)
+        };
+
+        if !abs_path.exists() {
+            return Err(OrbitError::AgentProtocolViolation(format!(
+                "result.created_file '{}' does not exist",
+                path
+            )));
+        }
+
+        let canonical = abs_path.canonicalize().map_err(|e| {
+            OrbitError::AgentProtocolViolation(format!(
+                "result.created_file '{}' cannot be resolved: {e}",
+                path
+            ))
+        })?;
+        let canonical_root = repo_root.canonicalize().map_err(|e| {
+            OrbitError::Execution(format!(
+                "failed to canonicalize repo root '{}': {e}",
+                repo_root.display()
+            ))
+        })?;
+
+        if !canonical.starts_with(&canonical_root) {
+            return Err(OrbitError::AgentProtocolViolation(format!(
+                "result.created_file '{}' is outside the git repository root",
+                path
+            )));
+        }
+
+        Ok(canonical)
+    }
+
+    /// Commit the agent-created report file together with the current run artifact.
+    ///
+    /// This is called AFTER `complete_job_run_backend` so the run YAML exists on disk
+    /// and can be included in the same audited commit as the report.
+    fn execute_created_file_auto_commit(
+        &self,
+        created_file: &str, // canonical absolute path (already validated)
+        job_id: &str,
+        run_id: &str,
+    ) -> Result<(), OrbitError> {
+        let repo_root = paths::find_git_repo_root(&self.context.data_root).ok_or_else(|| {
+            OrbitError::Execution(format!(
+                "cannot locate git repository root from Orbit data root '{}'",
+                self.context.data_root.display()
+            ))
+        })?;
+        let canonical_root = repo_root.canonicalize().map_err(|e| {
+            OrbitError::Execution(format!(
+                "failed to canonicalize repo root '{}': {e}",
+                repo_root.display()
+            ))
+        })?;
+
+        // Convert created_file to repo-root-relative path for git.
+        let created_file_abs = PathBuf::from(created_file);
+        let created_file_rel = created_file_abs
+            .strip_prefix(&canonical_root)
+            .map_err(|_| {
+                OrbitError::Execution(format!(
+                    "created_file '{}' is outside repo root '{}'",
+                    created_file,
+                    canonical_root.display()
+                ))
+            })?
+            .to_string_lossy()
+            .into_owned();
+
+        let mut files = vec![created_file_rel];
+
+        // Include the run artifact YAML when file-based job persistence is used.
+        // This is only possible after complete_job_run_backend has persisted the run.
+        let run_artifact_abs = self
+            .context
+            .persistence
+            .job
+            .path
+            .join("runs")
+            .join(job_id)
+            .join(format!("{run_id}.yaml"));
+        if run_artifact_abs.exists() {
+            if let Ok(canonical_artifact) = run_artifact_abs.canonicalize() {
+                if let Ok(rel) = canonical_artifact.strip_prefix(&canonical_root) {
+                    files.push(rel.to_string_lossy().into_owned());
+                }
+            }
+        }
+
+        let message = format!("orbit: {job_id} run artifact and report [{run_id}]");
+        let repo_root_str = canonical_root.to_string_lossy().to_string();
+
+        self.run_tool(
+            "git.stage_paths",
+            json!({
+                "repo_root": repo_root_str,
+                "files": files.clone(),
+            }),
+        )?;
+        self.run_tool(
+            "git.commit",
+            json!({
+                "repo_root": repo_root_str,
                 "message": message,
                 "files": files,
             }),

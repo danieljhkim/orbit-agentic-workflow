@@ -11,6 +11,9 @@ outputSchemaJson:
   properties:
     comment:
       type: string
+    created_file:
+      type: string
+      description: Repo-relative or absolute path to the markdown report written during this run. Orbit auto-commits this file together with the run artifact.
 skillRefs: ["orbit-skills", "orbit-create-task", "orbit-operations-management"]
 identityId: steve
 assignedTo: steve

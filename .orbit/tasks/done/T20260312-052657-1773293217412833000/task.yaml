@@ -60,11 +60,11 @@ proposedBy: daniel
 proposalApprovedBy: Prii (Maintainer)
 proposalRejectedBy: null
 proposalDecisionNote: 'Approved: narrow, auditable auto-commit flow with explicit path validation and post-persist commit timing for the current run artifact.'
-reviewApprovedBy: null
+reviewApprovedBy: Prii (Maintainer)
 reviewRejectedBy: null
-reviewDecisionNote: null
+reviewDecisionNote: 'Approved: maintenance and operations now return created_file, the runtime validates and commits only the report plus current run artifact after persistence, and the targeted orbit-core/runtime/init test commands all passed.'
 createdAt: 2026-03-12T05:26:57.412831Z
-updatedAt: 2026-03-12T06:10:26.950963Z
+updatedAt: 2026-03-13T04:52:05.120147Z
 acceptanceCriteria: []
 history:
 - at: 2026-03-12T05:26:57.412831Z
@@ -73,6 +73,15 @@ history:
 - at: 2026-03-12T06:10:18.357075Z
   by: human
   event: moved
+- at: 2026-03-13T03:57:55.165792Z
+  by: human
+  event: moved
+- at: 2026-03-13T04:43:05.151410Z
+  by: human
+  event: moved
+- at: 2026-03-13T04:52:05.120147Z
+  by: human
+  event: completed
 comments:
 - at: 2026-03-12T06:10:26.950808Z
   by: human
