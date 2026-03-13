@@ -304,10 +304,6 @@ impl ExecutionEnvPolicy {
         &self.pass
     }
 
-    pub(crate) fn hydrated_allowlist_env(&self) -> Vec<(String, String)> {
-        self.hydrated_allowlist_env_with_extras(&[])
-    }
-
     pub(crate) fn hydrated_allowlist_env_with_extras(
         &self,
         extras: &[String],
