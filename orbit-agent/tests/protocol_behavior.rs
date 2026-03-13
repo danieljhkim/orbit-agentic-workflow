@@ -51,8 +51,11 @@ fn provider_mapper_supports_claude() {
         invocation.args,
         vec![
             "-p".to_string(),
+            "--permission-mode".to_string(),
+            "bypassPermissions".to_string(),
             "--output-format".to_string(),
-            "text".to_string()
+            "text".to_string(),
+            "--no-session-persistence".to_string(),
         ]
     );
     assert_eq!(invocation.runtime_key, "claude");
@@ -130,8 +133,11 @@ fn provider_mapper_uses_binary_basename_for_paths() {
         invocation.args,
         vec![
             "-p".to_string(),
+            "--permission-mode".to_string(),
+            "bypassPermissions".to_string(),
             "--output-format".to_string(),
-            "text".to_string()
+            "text".to_string(),
+            "--no-session-persistence".to_string(),
         ]
     );
 }
@@ -183,8 +189,21 @@ fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
 fn claude_runtime_declares_required_env_vars() {
     let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
-    assert_eq!(invocation.required_env_vars, &["HOME", "PATH"]);
+    assert_eq!(
+        invocation.required_env_vars,
+        &["HOME", "PATH", "ANTHROPIC_API_KEY"]
+    );
     assert!(invocation.stdout_schema_json.is_none());
+}
+
+#[test]
+fn claude_runtime_requires_anthropic_api_key() {
+    let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
+    let invocation = agent.invoke(job_request()).expect("claude invocation");
+    assert!(
+        invocation.required_env_vars.contains(&"ANTHROPIC_API_KEY"),
+        "ANTHROPIC_API_KEY must be in Claude required_env_vars"
+    );
 }
 
 #[test]

@@ -30,7 +30,8 @@ impl AgentProvider {
     pub(crate) fn required_env_vars(self) -> &'static [&'static str] {
         match self {
             AgentProvider::MockAgent => &[],
-            AgentProvider::Codex | AgentProvider::Claude => &["HOME", "PATH"],
+            AgentProvider::Codex => &["HOME", "PATH"],
+            AgentProvider::Claude => &["HOME", "PATH", "ANTHROPIC_API_KEY"],
         }
     }
 

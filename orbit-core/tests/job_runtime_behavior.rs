@@ -225,9 +225,8 @@ fn write_runtime_config(data_root: &std::path::Path, content: &str) {
 fn write_identity_file(data_root: &std::path::Path, id: &str, display_name: &str, role: &str) {
     let identity_root = data_root.join("identities");
     std::fs::create_dir_all(&identity_root).expect("create identity root");
-    let content = format!(
-        "identity:\n  name: {id}\n  display_name: {display_name}\n  role: {role}\n"
-    );
+    let content =
+        format!("identity:\n  name: {id}\n  display_name: {display_name}\n  role: {role}\n");
     std::fs::write(identity_root.join(format!("{id}.yaml")), content).expect("write identity");
 }
 
@@ -1580,6 +1579,89 @@ fn created_file_outside_repo_fails_as_protocol_violation() {
             .as_deref()
             .unwrap_or_default()
             .contains("outside the git repository")
+    );
+}
+
+#[test]
+fn claude_job_run_succeeds_with_mock_binary() {
+    // Verifies end-to-end Claude invocation: provider detection, required flags,
+    // ANTHROPIC_API_KEY env var availability, and successful run recording.
+    let dir = tempdir().expect("tempdir");
+    let args_capture = dir.path().join("claude-args.txt");
+
+    // Mock claude binary: assert required flags are present, emit a success envelope.
+    let script_path = dir.path().join("claude");
+    let script = format!(
+        concat!(
+            "#!/bin/sh\n",
+            "printf '%s' \"$@\" > \"{args}\"\n",
+            "cat > /dev/null\n", // consume stdin
+            "case \"$*\" in\n",
+            "  *--permission-mode*bypassPermissions*--no-session-persistence*)\n",
+            "    printf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+            "    ;;\n",
+            "  *)\n",
+            "    echo \"missing required claude flags\" >&2\n",
+            "    exit 1\n",
+            "    ;;\n",
+            "esac\n",
+        ),
+        args = args_capture.to_string_lossy(),
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    // Runtime config: hermetic env but ANTHROPIC_API_KEY in the pass list.
+    write_runtime_config(
+        dir.path(),
+        "[execution.env]\npass = [\"HOME\", \"PATH\", \"ANTHROPIC_API_KEY\"]\n",
+    );
+
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    add_activity(&runtime, "spec-claude-run");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            target_type: JobTargetType::Activity,
+            target_id: "spec-claude-run".to_string(),
+            schedule: "manual".to_string(),
+            agent_cli,
+            timeout_seconds: 10,
+            retry_max_attempts: 0,
+            retry_backoff_strategy: JobRetryBackoffStrategy::None,
+            retry_initial_delay_seconds: 0,
+            initial_state_override: None,
+            env_extra: vec![],
+        })
+        .expect("add job")
+        .job_id;
+
+    // Set a dummy ANTHROPIC_API_KEY so the env check passes.
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: guarded by env_lock; safe within the test.
+    unsafe { std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key") };
+
+    let result = runtime
+        .run_job_now(&job_id)
+        .expect("claude job must succeed");
+
+    unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+    drop(_guard);
+
+    assert_eq!(result.state, JobRunState::Success, "job must succeed");
+
+    let args_raw = std::fs::read_to_string(args_capture).expect("args capture");
+    assert!(
+        args_raw.contains("-p"),
+        "claude must be invoked with -p: {args_raw}"
+    );
+    assert!(
+        args_raw.contains("--permission-mode") && args_raw.contains("bypassPermissions"),
+        "claude must be invoked with --permission-mode bypassPermissions: {args_raw}"
+    );
+    assert!(
+        args_raw.contains("--no-session-persistence"),
+        "claude must be invoked with --no-session-persistence: {args_raw}"
     );
 }
 

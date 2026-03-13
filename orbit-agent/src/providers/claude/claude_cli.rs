@@ -7,8 +7,11 @@ impl ClaudeCliTransport {
     pub(crate) fn args(&self, _operation: &AgentOperation) -> Vec<String> {
         vec![
             "-p".to_string(),
+            "--permission-mode".to_string(),
+            "bypassPermissions".to_string(),
             "--output-format".to_string(),
             "text".to_string(),
+            "--no-session-persistence".to_string(),
         ]
     }
 

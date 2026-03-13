@@ -44,11 +44,11 @@ proposedBy: John Carmack
 proposalApprovedBy: Prii (Maintainer)
 proposalRejectedBy: null
 proposalDecisionNote: 'Approved: Claude transport still lacks bypass/no-session flags and Claude required_env_vars omits ANTHROPIC_API_KEY, so this is a real high-impact execution bug with clear verification.'
-reviewApprovedBy: null
-reviewRejectedBy: null
+reviewApprovedBy: human
+reviewRejectedBy: Prii (Maintainer)
 reviewDecisionNote: null
 createdAt: 2026-03-12T04:25:38.963056Z
-updatedAt: 2026-03-12T04:58:15.058579Z
+updatedAt: 2026-03-13T05:23:11.824411Z
 acceptanceCriteria: []
 history:
 - at: 2026-03-12T04:25:38.963056Z
@@ -57,10 +57,34 @@ history:
 - at: 2026-03-12T04:58:15.048904Z
   by: human
   event: moved
+- at: 2026-03-13T05:02:54.979671Z
+  by: human
+  event: moved
+- at: 2026-03-13T05:13:26.504052Z
+  by: human
+  event: moved
+- at: 2026-03-13T05:18:20.924262Z
+  by: human
+  event: rejected
+- at: 2026-03-13T05:20:49.181563Z
+  by: human
+  event: moved
+- at: 2026-03-13T05:20:49.190199Z
+  by: human
+  event: moved
+- at: 2026-03-13T05:21:14.098217Z
+  by: human
+  event: moved
+- at: 2026-03-13T05:23:11.824411Z
+  by: human
+  event: completed
 comments:
 - at: 2026-03-12T04:58:15.048760Z
   by: Prii (Maintainer)
   message: 'Leader review: approved after confirming the missing CLI flags and env requirement.'
+- at: 2026-03-13T05:18:20.924122Z
+  by: Prii (Maintainer)
+  message: 'Leader review: rejected pending formatting cleanup and rerun of final verification.'
 activityId: null
 jobId: null
 jobRunId: null

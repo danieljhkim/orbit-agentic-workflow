@@ -703,39 +703,35 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 // commit runs after run persistence so the run artifact can be included.
                 let validated_created_file = if run_state == JobRunState::Success {
                     match envelope.result.as_ref().and_then(|r| r.get("created_file")) {
-                        Some(Value::String(s)) => {
-                            match self.validate_created_file_path(s) {
-                                Ok(abs_path) => {
-                                    Some(abs_path.to_string_lossy().into_owned())
-                                }
-                                Err(OrbitError::AgentProtocolViolation(msg)) => {
-                                    return AttemptOutcome {
-                                        state: JobRunState::Failed,
-                                        exit_code: exec_result.exit_code,
-                                        duration_ms: Some(exec_result.duration_ms),
-                                        response_json: None,
-                                        error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
-                                        error_message: Some(msg),
-                                        retryable: false,
-                                        protocol_violation: true,
-                                        created_file: None,
-                                    };
-                                }
-                                Err(err) => {
-                                    return AttemptOutcome {
-                                        state: JobRunState::Failed,
-                                        exit_code: exec_result.exit_code,
-                                        duration_ms: Some(exec_result.duration_ms),
-                                        response_json: None,
-                                        error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
-                                        error_message: Some(err.to_string()),
-                                        retryable: false,
-                                        protocol_violation: false,
-                                        created_file: None,
-                                    };
-                                }
+                        Some(Value::String(s)) => match self.validate_created_file_path(s) {
+                            Ok(abs_path) => Some(abs_path.to_string_lossy().into_owned()),
+                            Err(OrbitError::AgentProtocolViolation(msg)) => {
+                                return AttemptOutcome {
+                                    state: JobRunState::Failed,
+                                    exit_code: exec_result.exit_code,
+                                    duration_ms: Some(exec_result.duration_ms),
+                                    response_json: None,
+                                    error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
+                                    error_message: Some(msg),
+                                    retryable: false,
+                                    protocol_violation: true,
+                                    created_file: None,
+                                };
                             }
-                        }
+                            Err(err) => {
+                                return AttemptOutcome {
+                                    state: JobRunState::Failed,
+                                    exit_code: exec_result.exit_code,
+                                    duration_ms: Some(exec_result.duration_ms),
+                                    response_json: None,
+                                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                                    error_message: Some(err.to_string()),
+                                    retryable: false,
+                                    protocol_violation: false,
+                                    created_file: None,
+                                };
+                            }
+                        },
                         Some(_) => {
                             return AttemptOutcome {
                                 state: JobRunState::Failed,
