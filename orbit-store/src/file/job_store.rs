@@ -38,15 +38,14 @@ impl JobFileStore {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn insert_activity_v2(
         &self,
         job_id: Option<String>,
         target_type: JobTargetType,
         target_id: &str,
-        schedule: &str,
         agent_cli: &str,
         timeout_seconds: u64,
-        next_run_at: DateTime<Utc>,
         initial_state: JobScheduleState,
         env_extra: Vec<String>,
     ) -> Result<Job, OrbitError> {
@@ -67,11 +66,9 @@ impl JobFileStore {
             job_id: resolved_id,
             target_type,
             target_id: target_id.to_string(),
-            schedule: schedule.to_string(),
             agent_cli: agent_cli.to_string(),
             timeout_seconds,
             state: initial_state,
-            next_run_at,
             created_at: now,
             updated_at: now,
             env_extra,
@@ -103,25 +100,6 @@ impl JobFileStore {
             return Ok(Some(self.read_activity_at(&disabled_path)?));
         }
         Ok(None)
-    }
-
-    pub(crate) fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError> {
-        let mut jobs = self
-            .read_all_activities()?
-            .into_iter()
-            .filter(|job| job.state == JobScheduleState::Enabled && job.next_run_at <= now)
-            .collect::<Vec<_>>();
-        jobs.sort_by(|a, b| a.next_run_at.cmp(&b.next_run_at));
-        Ok(jobs)
-    }
-
-    pub(crate) fn next_due_job_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError> {
-        Ok(self
-            .read_all_activities()?
-            .into_iter()
-            .filter(|job| job.state == JobScheduleState::Enabled)
-            .map(|job| job.next_run_at)
-            .min())
     }
 
     pub(crate) fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
@@ -231,20 +209,6 @@ impl JobFileStore {
         Ok(true)
     }
 
-    pub(crate) fn update_job_next_run(
-        &self,
-        job_id: &str,
-        next_run_at: DateTime<Utc>,
-    ) -> Result<bool, OrbitError> {
-        let Some(mut job) = self.get_job(job_id)? else {
-            return Ok(false);
-        };
-        job.next_run_at = next_run_at;
-        job.updated_at = Utc::now();
-        self.write_activity(&job)?;
-        Ok(true)
-    }
-
     pub(crate) fn insert_job_run(
         &self,
         job_id: &str,
@@ -310,21 +274,6 @@ impl JobFileStore {
         run.error_message = error_message.map(ToString::to_string);
         self.write_run(&job_id, &run)?;
         Ok(true)
-    }
-
-    pub(crate) fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError> {
-        let due_jobs = self.due_jobs(now)?;
-        let mut result = DueJobsClaim::default();
-
-        for job in due_jobs {
-            if self.get_pending_or_running_job_run(&job.job_id)?.is_some() {
-                result.skipped.push(job.job_id.clone());
-                continue;
-            }
-            let run = self.insert_job_run(&job.job_id, 1, now)?;
-            result.claimed.push(ClaimedJobRun { job, run });
-        }
-        Ok(result)
     }
 
     fn read_all_activities(&self) -> Result<Vec<Job>, OrbitError> {
@@ -574,7 +523,6 @@ fn is_yaml(path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
 }
-use crate::{ClaimedJobRun, DueJobsClaim};
 
 #[cfg(test)]
 mod tests {
@@ -595,10 +543,8 @@ mod tests {
                 None,
                 JobTargetType::Activity,
                 target_id,
-                "every 1h",
                 "mock-agent",
                 300,
-                Utc::now(),
                 JobScheduleState::Enabled,
                 vec![],
             )

@@ -68,7 +68,6 @@ fn assert_default_named_jobs_visible_and_enabled(base_root: &std::path::Path) {
             .iter()
             .find(|job| job["job_id"] == job_id)
             .unwrap_or_else(|| panic!("missing default job in list: {job_id}"));
-        assert_eq!(job["schedule"], "manual");
         assert_eq!(job["state"], "enabled");
     }
 }

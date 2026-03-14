@@ -1,10 +1,12 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{Activity, Job, JobRun, JobScheduleState, OrbitError, Task, TaskPriority, TaskStatus};
+use orbit_types::{
+    Activity, Job, JobRun, JobScheduleState, OrbitError, Task, TaskPriority, TaskStatus,
+};
 
 use super::contracts::{
-    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, DueJobsClaim,
-    JobCreateParams, JobRunCompletionParams, JobRunQuery, JobStoreBackend, TaskCreateParams,
-    TaskStoreBackend, TaskUpdateParams,
+    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, JobCreateParams,
+    JobRunCompletionParams, JobRunQuery, JobStoreBackend, TaskCreateParams, TaskStoreBackend,
+    TaskUpdateParams,
 };
 use crate::file::activity_store::{ActivityFileStore, FileWorkInsert};
 use crate::file::job_store::JobFileStore;
@@ -140,10 +142,8 @@ impl JobStoreBackend for JobFileStore {
             params.job_id,
             params.target_type,
             &params.target_id,
-            &params.schedule,
             &params.agent_cli,
             params.timeout_seconds,
-            params.next_run_at,
             params.initial_state,
             params.env_extra,
         )
@@ -155,14 +155,6 @@ impl JobStoreBackend for JobFileStore {
 
     fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
         self.get_job(job_id)
-    }
-
-    fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError> {
-        self.due_jobs(now)
-    }
-
-    fn next_due_job_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError> {
-        self.next_due_job_time()
     }
 
     fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
@@ -187,14 +179,6 @@ impl JobStoreBackend for JobFileStore {
 
     fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
         self.mark_job_disabled(job_id)
-    }
-
-    fn update_job_next_run(
-        &self,
-        job_id: &str,
-        next_run_at: DateTime<Utc>,
-    ) -> Result<bool, OrbitError> {
-        self.update_job_next_run(job_id, next_run_at)
     }
 
     fn insert_job_run(
@@ -225,10 +209,6 @@ impl JobStoreBackend for JobFileStore {
             params.error_code,
             params.error_message,
         )
-    }
-
-    fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError> {
-        self.claim_due_jobs(now)
     }
 
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError> {

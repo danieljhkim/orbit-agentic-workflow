@@ -28,7 +28,14 @@ fn config_show_json_bootstraps_orbit_home_when_missing() {
     assert_eq!(value["exists"], true);
     assert_eq!(value["execution"]["env"]["inherit"], false);
     let expected_pass = if cfg!(target_os = "macos") {
-        serde_json::json!(["CODEX_HOME", "HOME", "PATH", "TMPDIR", "USER", "__CF_USER_TEXT_ENCODING"])
+        serde_json::json!([
+            "CODEX_HOME",
+            "HOME",
+            "PATH",
+            "TMPDIR",
+            "USER",
+            "__CF_USER_TEXT_ENCODING"
+        ])
     } else {
         serde_json::json!(["CODEX_HOME", "HOME", "PATH", "TMPDIR", "USER"])
     };
@@ -225,9 +232,9 @@ fn config_show_json_reports_workspace_config_path_when_local_config_is_used() {
         .join("identities");
     let reported_identity_root = std::fs::canonicalize(
         Path::new(
-        value["identity"]["root"]
-            .as_str()
-            .expect("identity.root should be a string in config show json"),
+            value["identity"]["root"]
+                .as_str()
+                .expect("identity.root should be a string in config show json"),
         )
         .parent()
         .expect("identity.root should have a parent"),

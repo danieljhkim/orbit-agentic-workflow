@@ -1,13 +1,11 @@
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 use chrono::{Duration as ChronoDuration, Utc};
 use orbit_core::OrbitRuntime;
 use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams};
 use orbit_core::command::job::JobAddParams;
-use orbit_core::job::runtime::{JobRuntime, JobRuntimeConfig, ShutdownSignal};
 use orbit_types::{JobRunState, JobTargetType, OrbitError};
 use serde_json::json;
 use tempfile::tempdir;
@@ -82,7 +80,6 @@ fn add_scheduled_activity_with_timeout(
             job_id: None,
             target_type: JobTargetType::Activity,
             target_id: target_id.to_string(),
-            schedule: "every 1s".to_string(),
             agent_cli: agent_cli.to_string(),
             timeout_seconds,
             initial_state_override: None,
@@ -264,7 +261,7 @@ fn insert_stale_running_run(
 }
 
 #[test]
-fn scheduled_run_executes_agent_and_records_success_run() {
+fn job_run_executes_agent_and_records_success_run() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let args_capture = dir.path().join("args.txt");
@@ -278,15 +275,10 @@ fn scheduled_run_executes_agent_and_records_success_run() {
     let agent_cli = write_agent_script(&script_path, &script);
 
     add_activity(&runtime, "spec-success");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-success",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-success", &agent_cli);
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
-    assert_eq!(ran, 1);
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
@@ -331,11 +323,7 @@ fn run_job_now_with_input_passes_manual_input_to_agent() {
             "additionalProperties": false
         }),
     );
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-success-with-input",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-success-with-input", &agent_cli);
 
     let run = runtime
         .run_job_now_with_input(&job_id, json!({ "task_id": "T123" }))
@@ -361,11 +349,7 @@ fn run_job_now_with_input_rejects_schema_mismatch() {
             "additionalProperties": false
         }),
     );
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-invalid-input",
-        "mock-agent",
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-invalid-input", "mock-agent");
 
     let err = runtime
         .run_job_now_with_input(&job_id, json!({ "task_id": "T123" }))
@@ -415,11 +399,7 @@ fn job_run_resolves_activity_identity_from_data_root_when_home_differs() {
             created_by: None,
         })
         .expect("add activity");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-identity",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-identity", &agent_cli);
 
     let run_result = runtime.run_job_now(&job_id);
     match previous_home {
@@ -447,15 +427,10 @@ fn invalid_agent_json_with_zero_exit_falls_back_to_success() {
     let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nprintf 'not-json'\n");
 
     add_activity(&runtime, "spec-protocol");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-protocol",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-protocol", &agent_cli);
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
-    assert_eq!(ran, 1);
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
@@ -481,15 +456,10 @@ fn invocation_failure_with_stderr_marks_run_failed_with_invocation_error() {
     );
 
     add_activity(&runtime, "spec-invocation");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-invocation",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-invocation", &agent_cli);
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
-    assert_eq!(ran, 1);
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Failed);
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
@@ -525,11 +495,7 @@ pass = ["PATH"]
     );
 
     add_activity(&runtime, "spec-codex-missing-env");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-codex-missing-env",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-codex-missing-env", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Failed);
@@ -557,11 +523,7 @@ fn codex_job_run_uses_workspace_write_sandbox() {
     let agent_cli = write_agent_script(&script_path, &script);
 
     add_activity(&runtime, "spec-codex-sandbox");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-codex-sandbox",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-codex-sandbox", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Success);
@@ -591,11 +553,7 @@ approval_policy = "on-request"
     let agent_cli = write_agent_script(&script_path, &script);
 
     add_activity(&runtime, "spec-codex-approval");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-codex-approval",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-codex-approval", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Success);
@@ -633,11 +591,7 @@ fn successful_commit_request_is_executed_via_git_tools() {
     let agent_cli = write_agent_script(&script_path, script);
 
     add_activity(&runtime, "spec-commit-request");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-commit-request",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-commit-request", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Success);
@@ -688,11 +642,7 @@ fn commit_request_excludes_preexisting_staged_changes() {
     let agent_cli = write_agent_script(&script_path, script);
 
     add_activity(&runtime, "spec-commit-request-isolated");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-commit-request-isolated",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-commit-request-isolated", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Success);
@@ -730,11 +680,7 @@ fn malformed_commit_request_fails_as_protocol_violation() {
     let agent_cli = write_agent_script(&script_path, script);
 
     add_activity(&runtime, "spec-commit-protocol");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-commit-protocol",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-commit-protocol", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Failed);
@@ -761,12 +707,7 @@ fn empty_stdout_timeout_marks_run_as_timeout() {
     let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nsleep 2\n");
 
     add_activity(&runtime, "spec-timeout");
-    let job_id = add_scheduled_activity_with_timeout(
-        &runtime,
-        "spec-timeout",
-        &agent_cli,
-        1,
-    );
+    let job_id = add_scheduled_activity_with_timeout(&runtime, "spec-timeout", &agent_cli, 1);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Timeout);
@@ -801,11 +742,7 @@ pass = ["PATH"]
     );
 
     add_activity(&runtime, "spec-claude-missing-env");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-claude-missing-env",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-claude-missing-env", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Failed);
@@ -842,11 +779,7 @@ fn provider_required_env_present_reaches_protocol_validation() {
     let agent_cli = write_agent_script(&script_path, "#!/bin/sh\nprintf 'not-json'\n");
 
     add_activity(&runtime, "spec-provider-env-present");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-provider-env-present",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-provider-env-present", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Success);
@@ -855,7 +788,6 @@ fn provider_required_env_present_reaches_protocol_validation() {
     assert_eq!(history[0].state, JobRunState::Success);
     assert!(history[0].error_code.is_none());
 }
-
 
 #[test]
 fn run_job_now_rejects_when_active_run_exists() {
@@ -868,11 +800,7 @@ fn run_job_now_rejects_when_active_run_exists() {
     );
 
     add_activity(&runtime, "spec-active-lock");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-active-lock",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-active-lock", &agent_cli);
 
     let r1 = Arc::clone(&runtime);
     let job_id_thread = job_id.clone();
@@ -908,11 +836,7 @@ fn job_history_recovers_stale_running_run_to_failed() {
     );
 
     add_activity(&runtime, "spec-history-stale");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-history-stale",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-history-stale", &agent_cli);
     let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
 
     let history = runtime.job_history(&job_id).expect("history");
@@ -942,11 +866,7 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
     );
 
     add_activity(&runtime, "spec-run-now-stale");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-run-now-stale",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-run-now-stale", &agent_cli);
     let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
 
     let result = runtime.run_job_now(&job_id).expect("run now");
@@ -966,96 +886,6 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
     assert!(
         history.iter().any(|run| run.state == JobRunState::Success),
         "new attempt should complete successfully"
-    );
-}
-
-#[test]
-fn run_due_jobs_recovers_stale_running_run_and_reclaims_job() {
-    let dir = tempdir().expect("tempdir");
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let script_path = dir.path().join("mock-agent");
-    let agent_cli = write_agent_script(
-        &script_path,
-        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
-    );
-
-    add_activity(&runtime, "spec-due-stale");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-due-stale",
-        &agent_cli,
-    );
-    let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
-
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run due jobs");
-    assert_eq!(ran, 1, "job should be reclaimed after stale run recovery");
-
-    let history = runtime.job_history(&job_id).expect("history");
-    let stale = history
-        .iter()
-        .find(|run| run.run_id == stale_run_id)
-        .expect("stale run should exist");
-    assert_eq!(stale.state, JobRunState::Failed);
-    assert!(
-        history.iter().any(|run| run.state == JobRunState::Success),
-        "reclaimed due job should complete successfully"
-    );
-}
-
-#[test]
-fn concurrent_job_run_invocations_do_not_double_run_job() {
-    let dir = tempdir().expect("tempdir");
-    let runtime = Arc::new(OrbitRuntime::from_data_root(dir.path()).expect("runtime"));
-    let script_path = dir.path().join("mock-agent");
-    let agent_cli = write_agent_script(
-        &script_path,
-        "#!/bin/sh\nsleep 0.2\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
-    );
-
-    add_activity(&runtime, "spec-concurrent");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-concurrent",
-        &agent_cli,
-    );
-
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let barrier = Arc::new(Barrier::new(3));
-
-    let r1 = Arc::clone(&runtime);
-    let b1 = Arc::clone(&barrier);
-    let due_one = due_at;
-    let t1 = thread::spawn(move || {
-        b1.wait();
-        r1.run_due_jobs(due_one).expect("thread 1 run")
-    });
-
-    let r2 = Arc::clone(&runtime);
-    let b2 = Arc::clone(&barrier);
-    let due_two = due_at;
-    let t2 = thread::spawn(move || {
-        b2.wait();
-        r2.run_due_jobs(due_two).expect("thread 2 run")
-    });
-
-    barrier.wait();
-
-    let c1 = t1.join().expect("join t1");
-    let c2 = t2.join().expect("join t2");
-    assert_eq!(c1 + c2, 1, "job should be claimed exactly once");
-
-    let history = runtime.job_history(&job_id).expect("history");
-    assert_eq!(history.len(), 1);
-    assert_eq!(history[0].state, JobRunState::Success);
-
-    let audits = runtime.list_audits(25).expect("audits");
-    assert!(
-        audits.iter().any(|audit| {
-            audit.event_type == "JobRunCompleted"
-                && audit.payload["data"]["job_id"].as_str() == Some(job_id.as_str())
-        }),
-        "job run completion should be recorded in audits"
     );
 }
 
@@ -1120,15 +950,10 @@ Validate output shape.
             created_by: None,
         })
         .expect("add activity");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-schema",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-schema", &agent_cli);
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
-    assert_eq!(ran, 1);
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Failed);
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
@@ -1213,15 +1038,10 @@ Validate advanced schema behavior.
             created_by: None,
         })
         .expect("add activity");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-complex-schema",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-complex-schema", &agent_cli);
 
-    let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
-    let ran = runtime.run_due_jobs(due_at).expect("run jobs");
-    assert_eq!(ran, 1);
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Failed);
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
@@ -1230,62 +1050,6 @@ Validate advanced schema behavior.
         history[0].error_code.as_deref(),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
-}
-
-#[test]
-fn job_runtime_tick_once_reports_next_wake_time() {
-    let dir = tempdir().expect("tempdir");
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let script_path = dir.path().join("mock-agent");
-    let agent_cli = write_agent_script(
-        &script_path,
-        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
-    );
-
-    add_activity(&runtime, "spec-next-wake");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-next-wake",
-        &agent_cli,
-    );
-    let job = runtime.show_job(&job_id).expect("show job");
-
-    let tick = JobRuntime::new(&runtime, JobRuntimeConfig::default())
-        .tick_once(Utc::now())
-        .expect("tick once");
-
-    assert_eq!(tick.ran, 0);
-    assert_eq!(tick.next_wake_at, Some(job.next_run_at));
-}
-
-#[test]
-fn job_runtime_run_forever_stops_after_shutdown_request() {
-    struct CountdownShutdown {
-        checks: AtomicUsize,
-    }
-
-    impl ShutdownSignal for CountdownShutdown {
-        fn should_stop(&self) -> bool {
-            self.checks.fetch_add(1, Ordering::SeqCst) >= 1
-        }
-    }
-
-    let dir = tempdir().expect("tempdir");
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let job_runtime = JobRuntime::new(
-        &runtime,
-        JobRuntimeConfig {
-            idle_sleep: std::time::Duration::from_secs(0),
-            max_sleep: std::time::Duration::from_secs(0),
-        },
-    );
-    let shutdown = CountdownShutdown {
-        checks: AtomicUsize::new(0),
-    };
-
-    job_runtime
-        .run_forever(&shutdown)
-        .expect("run forever exits cleanly");
 }
 
 #[test]
@@ -1306,11 +1070,7 @@ fn created_file_auto_commit_includes_report_and_run_artifact() {
     let agent_cli = write_agent_script(&script_path, script);
 
     add_activity(&runtime, "spec-created-file");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-created-file",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-created-file", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Success);
@@ -1349,11 +1109,7 @@ fn created_file_empty_path_fails_as_protocol_violation() {
     let agent_cli = write_agent_script(&script_path, script);
 
     add_activity(&runtime, "spec-created-file-empty");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-created-file-empty",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-created-file-empty", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Failed);
@@ -1388,11 +1144,7 @@ fn created_file_nonexistent_path_fails_as_protocol_violation() {
     let agent_cli = write_agent_script(&script_path, script);
 
     add_activity(&runtime, "spec-created-file-nonexistent");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-created-file-nonexistent",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-created-file-nonexistent", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Failed);
@@ -1431,11 +1183,7 @@ fn created_file_outside_repo_fails_as_protocol_violation() {
     let agent_cli = write_agent_script(&script_path, &script);
 
     add_activity(&runtime, "spec-created-file-outside");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-created-file-outside",
-        &agent_cli,
-    );
+    let job_id = add_scheduled_activity(&runtime, "spec-created-file-outside", &agent_cli);
 
     let run = runtime.run_job_now(&job_id).expect("run job");
     assert_eq!(run.state, JobRunState::Failed);
@@ -1496,7 +1244,6 @@ fn claude_job_run_succeeds_with_mock_binary() {
             job_id: None,
             target_type: JobTargetType::Activity,
             target_id: "spec-claude-run".to_string(),
-            schedule: "manual".to_string(),
             agent_cli,
             timeout_seconds: 10,
             initial_state_override: None,
@@ -1535,7 +1282,7 @@ fn claude_job_run_succeeds_with_mock_binary() {
 }
 
 #[test]
-fn run_job_now_manual_schedule_does_not_error_on_cron_validation() {
+fn run_job_now_executes_job_successfully() {
     let dir = tempdir().expect("tempdir");
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
     let script_path = dir.path().join("mock-agent");
@@ -1550,7 +1297,6 @@ fn run_job_now_manual_schedule_does_not_error_on_cron_validation() {
             job_id: None,
             target_type: JobTargetType::Activity,
             target_id: "spec-manual-run".to_string(),
-            schedule: "manual".to_string(),
             agent_cli,
             timeout_seconds: 10,
             initial_state_override: None,

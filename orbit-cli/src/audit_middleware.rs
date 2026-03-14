@@ -223,10 +223,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 JobSubcommand::List(_) => ("list", None),
                 JobSubcommand::Show(args) => ("show", Some(args.job_id.as_str())),
                 JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
-                JobSubcommand::Tick(_) => ("tick", None),
-                JobSubcommand::Serve(_) => ("serve", None),
-                JobSubcommand::Pause(args) => ("pause", Some(args.job_id.as_str())),
-                JobSubcommand::Resume(args) => ("resume", Some(args.job_id.as_str())),
                 JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
                 JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
             };

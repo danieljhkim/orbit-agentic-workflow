@@ -39,7 +39,6 @@ impl FromStr for JobTargetType {
 #[serde(rename_all = "snake_case")]
 pub enum JobScheduleState {
     Enabled,
-    Paused,
     Disabled,
 }
 
@@ -47,7 +46,6 @@ impl Display for JobScheduleState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             JobScheduleState::Enabled => write!(f, "enabled"),
-            JobScheduleState::Paused => write!(f, "paused"),
             JobScheduleState::Disabled => write!(f, "disabled"),
         }
     }
@@ -59,13 +57,11 @@ impl FromStr for JobScheduleState {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "enabled" | "active" => Ok(JobScheduleState::Enabled),
-            "paused" => Ok(JobScheduleState::Paused),
-            "disabled" | "deleted" => Ok(JobScheduleState::Disabled),
+            "disabled" | "deleted" | "paused" => Ok(JobScheduleState::Disabled),
             other => Err(format!("unknown job state: {other}")),
         }
     }
 }
-
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
@@ -137,11 +133,9 @@ pub struct Job {
     pub job_id: OrbitId,
     pub target_type: JobTargetType,
     pub target_id: OrbitId,
-    pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
     pub state: JobScheduleState,
-    pub next_run_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     /// Additional env var names to pass through in hermetic mode, on top of the global allowlist.

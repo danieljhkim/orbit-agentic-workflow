@@ -85,24 +85,10 @@ pub struct JobCreateParams {
     pub job_id: Option<String>,
     pub target_type: JobTargetType,
     pub target_id: String,
-    pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
-    pub next_run_at: DateTime<Utc>,
     pub initial_state: JobScheduleState,
     pub env_extra: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ClaimedJobRun {
-    pub job: Job,
-    pub run: JobRun,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct DueJobsClaim {
-    pub claimed: Vec<ClaimedJobRun>,
-    pub skipped: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,19 +129,12 @@ pub trait JobStoreBackend: Send + Sync {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError>;
     fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError>;
     fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError>;
-    fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<Job>, OrbitError>;
-    fn next_due_job_time(&self) -> Result<Option<DateTime<Utc>>, OrbitError>;
     fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
     fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError>;
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError>;
     fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError>;
     fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError>;
     fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError>;
-    fn update_job_next_run(
-        &self,
-        job_id: &str,
-        next_run_at: DateTime<Utc>,
-    ) -> Result<bool, OrbitError>;
     fn insert_job_run(
         &self,
         job_id: &str,
@@ -168,7 +147,6 @@ pub trait JobStoreBackend: Send + Sync {
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError>;
     fn complete_job_run(&self, params: &JobRunCompletionParams) -> Result<bool, OrbitError>;
-    fn claim_due_jobs(&self, now: DateTime<Utc>) -> Result<DueJobsClaim, OrbitError>;
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError>;
     fn delete_job_run(&self, run_id: &str) -> Result<String, OrbitError>;
 }

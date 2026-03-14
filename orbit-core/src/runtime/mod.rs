@@ -152,10 +152,6 @@ impl OrbitRuntime {
         compile_identity_block(identity)
     }
 
-    pub fn run_jobs(&self) -> Result<usize, OrbitError> {
-        self.run_due_jobs(Utc::now())
-    }
-
     pub fn default_data_root() -> PathBuf {
         Self::orbit_home_root()
     }

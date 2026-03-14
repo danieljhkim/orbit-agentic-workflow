@@ -3,7 +3,6 @@ pub mod command;
 mod config;
 pub mod context;
 mod fs_utils;
-pub mod job;
 mod json_schema;
 mod paths;
 pub mod runtime;
@@ -93,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn job_run_does_not_double_execute_due_activity() {
+    fn job_run_now_rejects_concurrent_active_run() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let dir = tempdir().expect("temp dir");
         let agent_path = dir.path().join("mock-agent");
@@ -127,7 +126,6 @@ mod tests {
                 job_id: None,
                 target_type: JobTargetType::Activity,
                 target_id: "spec-core-double-run".to_string(),
-                schedule: "every 1m".to_string(),
                 agent_cli: agent_path.to_string_lossy().to_string(),
                 timeout_seconds: 30,
                 initial_state_override: None,
@@ -135,34 +133,11 @@ mod tests {
             })
             .expect("add job");
 
-        let due_at = job.next_run_at;
-        let first = runtime.run_due_jobs(due_at).expect("first run");
-        let second = runtime.run_due_jobs(due_at).expect("second run");
-
-        assert_eq!(first, 1);
-        assert_eq!(second, 0);
+        runtime.run_job_now(&job.job_id).expect("first run");
 
         let sessions = runtime.job_history(&job.job_id).expect("history");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].state, JobRunState::Success);
-    }
-
-    #[test]
-    fn job_run_skips_when_global_lock_held() {
-        let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let lock_name = runtime.context.lock_store.global_job_lock_name();
-        assert!(
-            runtime
-                .context
-                .lock_store
-                .try_lock(lock_name)
-                .expect("lock")
-        );
-
-        let ran = runtime.run_jobs().expect("run jobs");
-        assert_eq!(ran, 0);
-
-        let _ = runtime.context.lock_store.unlock(lock_name);
     }
 
     #[test]

@@ -1,10 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-
-use chrono::Utc;
 use clap::{Args, Subcommand};
 use orbit_core::command::job::JobAddParams;
-use orbit_core::job::runtime::{JobRuntime, JobRuntimeConfig, ShutdownSignal};
 use orbit_core::{Job, JobRun, JobTargetType, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
@@ -28,10 +23,6 @@ pub enum JobSubcommand {
     List(JobListArgs),
     Show(JobShowArgs),
     Run(JobRunArgs),
-    Tick(JobTickArgs),
-    Serve(JobServeArgs),
-    Pause(JobPauseArgs),
-    Resume(JobResumeArgs),
     History(JobHistoryArgs),
     Delete(JobDeleteArgs),
 }
@@ -43,10 +34,6 @@ impl Execute for JobSubcommand {
             JobSubcommand::List(args) => args.execute(runtime),
             JobSubcommand::Show(args) => args.execute(runtime),
             JobSubcommand::Run(args) => args.execute(runtime),
-            JobSubcommand::Tick(args) => args.execute(runtime),
-            JobSubcommand::Serve(args) => args.execute(runtime),
-            JobSubcommand::Pause(args) => args.execute(runtime),
-            JobSubcommand::Resume(args) => args.execute(runtime),
             JobSubcommand::History(args) => args.execute(runtime),
             JobSubcommand::Delete(args) => args.execute(runtime),
         }
@@ -59,8 +46,6 @@ pub struct JobAddArgs {
     pub job_id: Option<String>,
     #[arg(long)]
     pub target_id: String,
-    #[arg(long)]
-    pub schedule: String,
     #[arg(long)]
     pub agent_cli: String,
     #[arg(long, default_value = "20m")]
@@ -80,7 +65,6 @@ impl Execute for JobAddArgs {
             job_id: self.job_id,
             target_type: JobTargetType::Activity,
             target_id: self.target_id,
-            schedule: self.schedule,
             agent_cli: self.agent_cli,
             timeout_seconds,
             initial_state_override: None,
@@ -102,7 +86,7 @@ pub struct JobListArgs {
     pub all: bool,
     #[arg(long)]
     pub json: bool,
-    /// Output signal-tier JSON (job_id, target_id, state, next_run_at only)
+    /// Output signal-tier JSON (job_id, target_id, state only)
     #[arg(long)]
     pub ops: bool,
 }
@@ -118,17 +102,13 @@ impl Execute for JobListArgs {
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!(
-                "{:<26} {:<15} {:<28} {:<9} {:<20}",
-                "JOB_ID", "TARGET_TYPE", "TARGET_ID", "STATE", "NEXT_RUN_AT"
+                "{:<26} {:<15} {:<28} {:<9}",
+                "JOB_ID", "TARGET_TYPE", "TARGET_ID", "STATE"
             );
             for job in &jobs {
                 println!(
-                    "{:<26} {:<15} {:<28} {:<9} {:<20}",
-                    job.job_id,
-                    job.target_type,
-                    job.target_id,
-                    job.state,
-                    job.next_run_at.to_rfc3339(),
+                    "{:<26} {:<15} {:<28} {:<9}",
+                    job.job_id, job.target_type, job.target_id, job.state,
                 );
             }
             Ok(())
@@ -152,11 +132,9 @@ impl Execute for JobShowArgs {
             println!("Job ID:            {}", job.job_id);
             println!("Target Type:       {}", job.target_type);
             println!("Target ID:         {}", job.target_id);
-            println!("Schedule:          {}", job.schedule);
             println!("Agent CLI:         {}", job.agent_cli);
             println!("Timeout (seconds): {}", job.timeout_seconds);
             println!("State:             {}", job.state);
-            println!("Next Run:          {}", job.next_run_at.to_rfc3339());
             println!("Created:           {}", job.created_at.to_rfc3339());
             println!("Updated:           {}", job.updated_at.to_rfc3339());
             Ok(())
@@ -206,85 +184,6 @@ impl Execute for JobRunArgs {
             );
             Ok(())
         }
-    }
-}
-
-#[derive(Args)]
-pub struct JobTickArgs {
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobTickArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let tick = JobRuntime::new(runtime, JobRuntimeConfig::default()).tick_once(Utc::now())?;
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "ran": tick.ran,
-                "next_wake_at": tick.next_wake_at.map(|value| value.to_rfc3339()),
-            }))
-        } else {
-            println!(
-                "ran={};next_wake_at={}",
-                tick.ran,
-                tick.next_wake_at
-                    .map(|value| value.to_rfc3339())
-                    .unwrap_or_else(|| "-".to_string())
-            );
-            Ok(())
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct JobServeArgs {
-    #[arg(long, default_value = "30s")]
-    pub idle_sleep: String,
-    #[arg(long, default_value = "5m")]
-    pub max_sleep: String,
-}
-
-impl Execute for JobServeArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let shutdown = CliShutdownSignal::install()?;
-        let job_runtime = JobRuntime::new(
-            runtime,
-            JobRuntimeConfig {
-                idle_sleep: Duration::from_secs(crate::parse::parse_duration_seconds(
-                    &self.idle_sleep,
-                )?),
-                max_sleep: Duration::from_secs(crate::parse::parse_duration_seconds(
-                    &self.max_sleep,
-                )?),
-            },
-        );
-        job_runtime.run_forever(&shutdown)
-    }
-}
-
-#[derive(Args)]
-pub struct JobPauseArgs {
-    pub job_id: String,
-}
-
-impl Execute for JobPauseArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.pause_job(&self.job_id)?;
-        println!("Paused job '{}'", self.job_id);
-        Ok(())
-    }
-}
-
-#[derive(Args)]
-pub struct JobResumeArgs {
-    pub job_id: String,
-}
-
-impl Execute for JobResumeArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.resume_job(&self.job_id)?;
-        println!("Resumed job '{}'", self.job_id);
-        Ok(())
     }
 }
 
@@ -345,7 +244,6 @@ fn job_to_signal_json(job: &Job) -> Value {
         "job_id": job.job_id,
         "target_id": job.target_id,
         "state": job.state.to_string(),
-        "next_run_at": job.next_run_at.to_rfc3339(),
     })
 }
 
@@ -354,11 +252,9 @@ fn job_to_json(job: &Job) -> Value {
         "job_id": job.job_id,
         "target_type": job.target_type.to_string(),
         "target_id": job.target_id,
-        "schedule": job.schedule,
         "agent_cli": job.agent_cli,
         "timeout_seconds": job.timeout_seconds,
         "state": job.state.to_string(),
-        "next_run_at": job.next_run_at.to_rfc3339(),
         "created_at": job.created_at.to_rfc3339(),
         "updated_at": job.updated_at.to_rfc3339(),
         "env_extra": job.env_extra,
@@ -405,56 +301,4 @@ fn build_job_run_input(task_id: Option<&str>) -> Result<Value, OrbitError> {
             Ok(json!({ "task_id": task_id }))
         }
     }
-}
-
-struct CliShutdownSignal;
-
-impl CliShutdownSignal {
-    fn install() -> Result<Self, OrbitError> {
-        reset_shutdown_signal();
-        install_shutdown_handlers()?;
-        Ok(Self)
-    }
-}
-
-impl ShutdownSignal for CliShutdownSignal {
-    fn should_stop(&self) -> bool {
-        shutdown_requested()
-    }
-}
-
-static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-fn reset_shutdown_signal() {
-    SHUTDOWN_REQUESTED.store(false, Ordering::SeqCst);
-}
-
-fn shutdown_requested() -> bool {
-    SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
-}
-
-#[cfg(unix)]
-fn install_shutdown_handlers() -> Result<(), OrbitError> {
-    unsafe extern "C" fn handle_signal(_: i32) {
-        SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
-    }
-
-    unsafe extern "C" {
-        fn signal(signum: i32, handler: usize) -> usize;
-    }
-
-    const SIGINT: i32 = 2;
-    const SIGTERM: i32 = 15;
-
-    unsafe {
-        signal(SIGINT, handle_signal as *const () as usize);
-        signal(SIGTERM, handle_signal as *const () as usize);
-    }
-
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn install_shutdown_handlers() -> Result<(), OrbitError> {
-    Ok(())
 }

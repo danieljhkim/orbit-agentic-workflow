@@ -14,11 +14,10 @@ use chrono::{DateTime, Utc};
 
 pub use backend::{
     ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AgentSessionStoreBackend,
-    AuditEventStoreBackend, ClaimedJobRun, DueJobsClaim, JobCreateParams,
-    JobRunCompletionParams, JobRunQuery, JobStoreBackend, LockStoreBackend, TaskCreateParams,
-    TaskStoreBackend, TaskUpdateParams, ToolStoreBackend, activity_store_file,
-    agent_session_store_sqlite, audit_event_store_sqlite, job_store_file, lock_store_memory,
-    task_store_file, tool_store_sqlite,
+    AuditEventStoreBackend, JobCreateParams, JobRunCompletionParams, JobRunQuery, JobStoreBackend,
+    LockStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams, ToolStoreBackend,
+    activity_store_file, agent_session_store_sqlite, audit_event_store_sqlite, job_store_file,
+    lock_store_memory, task_store_file, tool_store_sqlite,
 };
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 pub use sqlite::connection::{Store, StoreTx};
@@ -34,5 +33,4 @@ pub(crate) fn now_string() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-}
+mod tests {}

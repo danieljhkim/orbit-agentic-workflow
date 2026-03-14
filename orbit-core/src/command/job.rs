@@ -6,7 +6,6 @@ use orbit_agent::{
     Agent, AgentConfig, AgentRequest, AgentResponseStatus, parse_and_validate_response,
 };
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_store::ClaimedJobRun;
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobRunCompletionParams;
 use orbit_types::{
@@ -31,7 +30,6 @@ pub struct JobAddParams {
     pub job_id: Option<String>,
     pub target_type: JobTargetType,
     pub target_id: String,
-    pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
     pub initial_state_override: Option<JobScheduleState>,
@@ -109,11 +107,6 @@ impl OrbitRuntime {
                 "target_id must not be empty".to_string(),
             ));
         }
-        if params.schedule.trim().is_empty() {
-            return Err(OrbitError::JobValidation(
-                "schedule must not be empty".to_string(),
-            ));
-        }
         if params.agent_cli.trim().is_empty() {
             return Err(OrbitError::JobValidation(
                 "agent_cli must not be empty".to_string(),
@@ -125,26 +118,9 @@ impl OrbitRuntime {
         // Validate runtime availability at add-time.
         let _ = Agent::new(&AgentConfig::cli(params.agent_cli.clone()))?;
 
-        let is_manual = params.schedule.trim().eq_ignore_ascii_case("manual");
-        let (next_run_at, initial_state) = if is_manual {
-            // Manual jobs never auto-fire; use a far-future sentinel for scheduler bookkeeping.
-            let far_future = manual_job_next_run_at();
-            (
-                far_future,
-                params
-                    .initial_state_override
-                    .unwrap_or(JobScheduleState::Disabled),
-            )
-        } else {
-            let next_run_at =
-                crate::job::state_machine::compute_next_run_at(&params.schedule, Utc::now())?;
-            (
-                next_run_at,
-                params
-                    .initial_state_override
-                    .unwrap_or(JobScheduleState::Enabled),
-            )
-        };
+        let initial_state = params
+            .initial_state_override
+            .unwrap_or(JobScheduleState::Enabled);
 
         let env_extra = crate::config::normalize_pass_list(params.env_extra)
             .map_err(|e| OrbitError::JobValidation(e.to_string()))?;
@@ -152,10 +128,8 @@ impl OrbitRuntime {
             job_id: params.job_id,
             target_type: params.target_type,
             target_id: params.target_id,
-            schedule: params.schedule,
             agent_cli: params.agent_cli,
             timeout_seconds: params.timeout_seconds,
-            next_run_at,
             initial_state,
             env_extra,
         })?;
@@ -172,44 +146,6 @@ impl OrbitRuntime {
     pub fn show_job(&self, job_id: &str) -> Result<Job, OrbitError> {
         self.get_job_backend(job_id)?
             .ok_or_else(|| OrbitError::JobNotFound(job_id.to_string()))
-    }
-
-    pub fn pause_job(&self, job_id: &str) -> Result<(), OrbitError> {
-        let _ = self.show_job(job_id)?;
-        let changed = self
-            .context
-            .job_store
-            .set_job_state(job_id, JobScheduleState::Paused)?;
-        if !changed {
-            return Err(OrbitError::JobNotFound(job_id.to_string()));
-        }
-        self.record_event(OrbitEvent::JobPaused {
-            job_id: job_id.to_string(),
-        })
-    }
-
-    pub fn resume_job(&self, job_id: &str) -> Result<(), OrbitError> {
-        let job = self.show_job(job_id)?;
-        let next_run_at = if job.schedule.trim().eq_ignore_ascii_case("manual") {
-            manual_job_next_run_at()
-        } else {
-            crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?
-        };
-
-        let changed = self
-            .context
-            .job_store
-            .set_job_state(job_id, JobScheduleState::Enabled)?;
-        if !changed {
-            return Err(OrbitError::JobNotFound(job_id.to_string()));
-        }
-        let _ = self
-            .context
-            .job_store
-            .update_job_next_run(job_id, next_run_at)?;
-        self.record_event(OrbitEvent::JobResumed {
-            job_id: job_id.to_string(),
-        })
     }
 
     pub fn delete_job(&self, job_id: &str) -> Result<(), OrbitError> {
@@ -244,16 +180,6 @@ impl OrbitRuntime {
         })?;
 
         self.execute_activity_with_retries(job, Utc::now(), None, input)
-    }
-
-    pub(crate) fn execute_claimed_job(&self, claimed: &ClaimedJobRun) -> Result<(), OrbitError> {
-        let _ = self.execute_activity_with_retries(
-            claimed.job.clone(),
-            claimed.run.scheduled_at,
-            Some(claimed.run.clone()),
-            json!({}),
-        )?;
-        Ok(())
     }
 
     fn execute_activity_with_retries(
@@ -326,23 +252,9 @@ impl OrbitRuntime {
 
         if outcome.state == JobRunState::Success {
             if let Some(ref created_file_path) = outcome.created_file {
-                self.execute_created_file_auto_commit(
-                    created_file_path,
-                    &job.job_id,
-                    &run.run_id,
-                )?;
+                self.execute_created_file_auto_commit(created_file_path, &job.job_id, &run.run_id)?;
             }
         }
-
-        let next_run_at = if job.schedule.trim().eq_ignore_ascii_case("manual") {
-            manual_job_next_run_at()
-        } else {
-            crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?
-        };
-        let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
-        let _ = self.record_event(OrbitEvent::JobTriggered {
-            job_id: job.job_id.clone(),
-        });
 
         Ok(JobRunResult {
             job_id: job.job_id.clone(),
@@ -766,11 +678,9 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     "id": job.job_id,
                     "target_type": job.target_type,
                     "target_id": job.target_id,
-                    "schedule": job.schedule,
                     "agent_cli": job.agent_cli,
                     "timeout_seconds": job.timeout_seconds,
                     "state": job.state,
-                    "next_run_at": job.next_run_at.to_rfc3339(),
                 })
             }),
             skills: skills
@@ -1080,16 +990,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
     ) -> Result<bool, OrbitError> {
         self.context.job_store.complete_job_run(params)
     }
-
-    fn update_job_next_run_backend(
-        &self,
-        job_id: &str,
-        next_run_at: DateTime<Utc>,
-    ) -> Result<bool, OrbitError> {
-        self.context
-            .job_store
-            .update_job_next_run(job_id, next_run_at)
-    }
 }
 
 fn is_stale_active_run(job: &Job, run: &JobRun, now: DateTime<Utc>) -> bool {
@@ -1138,10 +1038,6 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
     format!("agent timed out before producing JSON stdout; stderr: {stderr}")
 }
 
-fn manual_job_next_run_at() -> DateTime<Utc> {
-    Utc::now() + chrono::Duration::days(365 * 100)
-}
-
 const DEFAULT_NAMED_JOBS: &[(&str, &str)] = &[
     ("job-resolve-backlogged-task", "resolve-backlogged-task"),
     ("job-perform-maintenance", "perform-maintenance"),
@@ -1160,7 +1056,6 @@ pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitEr
             job_id: Some(job_id.to_string()),
             target_type: JobTargetType::Activity,
             target_id: target_id.to_string(),
-            schedule: "manual".to_string(),
             agent_cli: "codex".to_string(), // TODO: make this dynamic
             timeout_seconds: 1200,
             initial_state_override: Some(JobScheduleState::Enabled),

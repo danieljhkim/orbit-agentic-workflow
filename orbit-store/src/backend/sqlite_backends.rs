@@ -3,11 +3,9 @@ use orbit_types::{
     AgentSession, AgentSessionStatus, AgentToolCall, AuditEvent, OrbitError, StoredTool,
 };
 
-use super::contracts::{
-    AgentSessionStoreBackend, AuditEventStoreBackend, ToolStoreBackend,
-};
-use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
+use super::contracts::{AgentSessionStoreBackend, AuditEventStoreBackend, ToolStoreBackend};
 use crate::Store;
+use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 
 #[derive(Clone)]
 pub(crate) struct SqliteToolStoreBackend {

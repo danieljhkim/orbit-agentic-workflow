@@ -2,7 +2,6 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 use std::path::Path;
-use std::time::Duration;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -44,15 +43,13 @@ fn add_activity_with_input_schema(dir: &Path, id: &str, input_schema: &str) -> S
     String::from_utf8(output).expect("utf8").trim().to_string()
 }
 
-fn add_job(dir: &Path, target_id: &str, schedule: &str, agent_cli: &str) -> String {
+fn add_job(dir: &Path, target_id: &str, agent_cli: &str) -> String {
     let output = orbit_in(dir)
         .args([
             "job",
             "add",
             "--target-id",
             target_id,
-            "--schedule",
-            schedule,
             "--agent-cli",
             agent_cli,
             "--timeout",
@@ -66,20 +63,13 @@ fn add_job(dir: &Path, target_id: &str, schedule: &str, agent_cli: &str) -> Stri
     String::from_utf8(output).expect("utf8").trim().to_string()
 }
 
-fn add_job_with_default_timeout(
-    dir: &Path,
-    target_id: &str,
-    schedule: &str,
-    agent_cli: &str,
-) -> String {
+fn add_job_with_default_timeout(dir: &Path, target_id: &str, agent_cli: &str) -> String {
     let output = orbit_in(dir)
         .args([
             "job",
             "add",
             "--target-id",
             target_id,
-            "--schedule",
-            schedule,
             "--agent-cli",
             agent_cli,
         ])
@@ -132,7 +122,7 @@ fn job_add_list_show_json_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-list");
 
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", "mock-agent");
+    let job_id = add_job(dir.path(), &spec_id, "mock-agent");
     assert!(job_id.starts_with("job-"), "unexpected job id: {job_id}");
 
     let list_output = orbit_in(dir.path())
@@ -157,7 +147,6 @@ fn job_add_list_show_json_flow() {
     assert_eq!(show["job_id"], job_id);
     assert_eq!(show["target_type"], "activity");
     assert_eq!(show["target_id"], spec_id);
-    assert_eq!(show["schedule"], "every 1m");
     assert_eq!(show["state"], "enabled");
 }
 
@@ -166,7 +155,7 @@ fn job_add_defaults_timeout_to_twenty_minutes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-default-timeout");
 
-    let job_id = add_job_with_default_timeout(dir.path(), &spec_id, "every 1m", "mock-agent");
+    let job_id = add_job_with_default_timeout(dir.path(), &spec_id, "mock-agent");
 
     let show_output = orbit_in(dir.path())
         .args(["job", "show", &job_id, "--json"])
@@ -184,7 +173,7 @@ fn job_run_creates_run_and_history_json() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-run");
     let agent_cli = write_mock_agent(dir.path());
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+    let job_id = add_job(dir.path(), &spec_id, &agent_cli);
 
     let run_output = orbit_in(dir.path())
         .args(["job", "run", &job_id, "--json"])
@@ -223,7 +212,7 @@ fn job_run_with_task_id_passes_input_to_agent() {
         r#"{"type":"object","properties":{"task_id":{"type":"string"}},"additionalProperties":false}"#,
     );
     let agent_cli = write_stdin_capturing_agent(dir.path(), &stdin_capture);
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+    let job_id = add_job(dir.path(), &spec_id, &agent_cli);
 
     orbit_in(dir.path())
         .args([
@@ -254,7 +243,7 @@ fn job_run_with_task_id_rejects_incompatible_activity_input_schema() {
         r#"{"type":"object","properties":{},"additionalProperties":false}"#,
     );
     let agent_cli = write_mock_agent(dir.path());
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+    let job_id = add_job(dir.path(), &spec_id, &agent_cli);
 
     orbit_in(dir.path())
         .args(["job", "run", &job_id, "--task-id", "T123"])
@@ -267,42 +256,10 @@ fn job_run_with_task_id_rejects_incompatible_activity_input_schema() {
 }
 
 #[test]
-fn job_pause_resume_delete_flow() {
+fn job_delete_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-state");
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", "mock-agent");
-
-    orbit_in(dir.path())
-        .args(["job", "pause", &job_id])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Paused job"));
-
-    let paused_output = orbit_in(dir.path())
-        .args(["job", "show", &job_id, "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let paused: Value = serde_json::from_slice(&paused_output).expect("paused json");
-    assert_eq!(paused["state"], "paused");
-
-    orbit_in(dir.path())
-        .args(["job", "resume", &job_id])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Resumed job"));
-
-    let resumed_output = orbit_in(dir.path())
-        .args(["job", "show", &job_id, "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let resumed: Value = serde_json::from_slice(&resumed_output).expect("resumed json");
-    assert_eq!(resumed["state"], "enabled");
+    let job_id = add_job(dir.path(), &spec_id, "mock-agent");
 
     orbit_in(dir.path())
         .args(["job", "delete", &job_id])
@@ -327,7 +284,7 @@ fn job_run_failure_json_includes_error_details() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-run-fail");
     let agent_cli = write_failing_agent(dir.path());
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+    let job_id = add_job(dir.path(), &spec_id, &agent_cli);
 
     let run_output = orbit_in(dir.path())
         .args(["job", "run", &job_id, "--json"])
@@ -355,7 +312,7 @@ fn job_run_top_level_list_and_show_work() {
     let failed_spec = add_activity(dir.path(), "spec-cli-job-run-failed");
 
     let success_agent = write_mock_agent(dir.path());
-    let success_job_id = add_job(dir.path(), &success_spec, "every 1m", &success_agent);
+    let success_job_id = add_job(dir.path(), &success_spec, &success_agent);
 
     let success_run_output = orbit_in(dir.path())
         .args(["job", "run", &success_job_id, "--json"])
@@ -367,7 +324,7 @@ fn job_run_top_level_list_and_show_work() {
     let success_run: Value = serde_json::from_slice(&success_run_output).expect("success run json");
 
     let failed_agent = write_failing_agent(dir.path());
-    let failed_job_id = add_job(dir.path(), &failed_spec, "every 1m", &failed_agent);
+    let failed_job_id = add_job(dir.path(), &failed_spec, &failed_agent);
 
     let failed_run_output = orbit_in(dir.path())
         .args(["job", "run", &failed_job_id, "--json"])
@@ -436,7 +393,7 @@ fn job_run_archive_and_delete_mutate_visibility() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-job-run-mutate");
     let agent_cli = write_mock_agent(dir.path());
-    let job_id = add_job(dir.path(), &spec_id, "every 1m", &agent_cli);
+    let job_id = add_job(dir.path(), &spec_id, &agent_cli);
 
     let run_output = orbit_in(dir.path())
         .args(["job", "run", &job_id, "--json"])
@@ -478,39 +435,6 @@ fn job_run_archive_and_delete_mutate_visibility() {
 }
 
 #[test]
-fn job_tick_runs_due_jobs_and_reports_next_wake() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let spec_id = add_activity(dir.path(), "spec-cli-tick");
-    let agent_cli = write_mock_agent(dir.path());
-    let job_id = add_job(dir.path(), &spec_id, "every 1s", &agent_cli);
-
-    std::thread::sleep(Duration::from_millis(1200));
-
-    let tick_output = orbit_in(dir.path())
-        .args(["job", "tick", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let tick: Value = serde_json::from_slice(&tick_output).expect("tick json");
-    assert_eq!(tick["ran"], 1);
-    assert!(tick["next_wake_at"].as_str().is_some());
-
-    let history_output = orbit_in(dir.path())
-        .args(["job", "history", &job_id, "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let history: Value = serde_json::from_slice(&history_output).expect("history json");
-    let runs = history.as_array().expect("array");
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0]["state"], "success");
-}
-
-#[test]
 fn job_add_rejects_legacy_workflow_target_type() {
     let dir = tempfile::tempdir().expect("tempdir");
 
@@ -522,8 +446,6 @@ fn job_add_rejects_legacy_workflow_target_type() {
             "workflow",
             "--target-id",
             "wf-1",
-            "--schedule",
-            "every 1m",
             "--agent-cli",
             "mock-agent",
             "--timeout",
@@ -546,8 +468,6 @@ fn job_add_with_named_id_uses_provided_id() {
             "job-my-named-job",
             "--target-id",
             "spec-named-id",
-            "--schedule",
-            "every 1m",
             "--agent-cli",
             "mock-agent",
             "--timeout",
@@ -586,8 +506,6 @@ fn job_add_duplicate_named_id_rejected() {
             "job-duplicate",
             "--target-id",
             "spec-dup-id",
-            "--schedule",
-            "every 1m",
             "--agent-cli",
             "mock-agent",
         ])
@@ -602,8 +520,6 @@ fn job_add_duplicate_named_id_rejected() {
             "job-duplicate",
             "--target-id",
             "spec-dup-id",
-            "--schedule",
-            "every 1m",
             "--agent-cli",
             "mock-agent",
         ])
@@ -613,46 +529,7 @@ fn job_add_duplicate_named_id_rejected() {
 }
 
 #[test]
-fn job_add_manual_schedule_creates_disabled_job() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    add_activity(dir.path(), "spec-manual");
-
-    let job_id = {
-        let output = orbit_in(dir.path())
-            .args([
-                "job",
-                "add",
-                "--target-id",
-                "spec-manual",
-                "--schedule",
-                "manual",
-                "--agent-cli",
-                "mock-agent",
-                "--timeout",
-                "30s",
-            ])
-            .assert()
-            .success()
-            .get_output()
-            .stdout
-            .clone();
-        String::from_utf8(output).expect("utf8").trim().to_string()
-    };
-
-    let show_output = orbit_in(dir.path())
-        .args(["job", "show", &job_id, "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["schedule"], "manual");
-    assert_eq!(show["state"], "disabled");
-}
-
-#[test]
-fn seeded_default_manual_jobs_are_listed_as_enabled_after_init() {
+fn seeded_default_jobs_are_listed_as_enabled_after_init() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     orbit_in(dir.path())
@@ -675,97 +552,7 @@ fn seeded_default_manual_jobs_are_listed_as_enabled_after_init() {
         .iter()
         .find(|job| job["job_id"] == "job-resolve-backlogged-task")
         .expect("seeded default job visible");
-    assert_eq!(seeded_job["schedule"], "manual");
     assert_eq!(seeded_job["state"], "enabled");
-}
-
-#[test]
-fn seeded_default_manual_jobs_can_be_paused_and_resumed() {
-    let dir = tempfile::tempdir().expect("tempdir");
-
-    orbit_in(dir.path()).args(["init"]).assert().success();
-
-    orbit_in(dir.path())
-        .args(["job", "pause", "job-resolve-backlogged-task"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Paused job"));
-
-    let paused_output = orbit_in(dir.path())
-        .args(["job", "show", "job-resolve-backlogged-task", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let paused: Value = serde_json::from_slice(&paused_output).expect("paused json");
-    assert_eq!(paused["state"], "paused");
-
-    orbit_in(dir.path())
-        .args(["job", "resume", "job-resolve-backlogged-task"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Resumed job"));
-
-    let resumed_output = orbit_in(dir.path())
-        .args(["job", "show", "job-resolve-backlogged-task", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let resumed: Value = serde_json::from_slice(&resumed_output).expect("resumed json");
-    assert_eq!(resumed["schedule"], "manual");
-    assert_eq!(resumed["state"], "enabled");
-}
-
-#[test]
-fn job_tick_skips_manual_schedule_job() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let agent_cli = write_mock_agent(dir.path());
-    add_activity(dir.path(), "spec-manual-tick");
-
-    let job_id = {
-        let output = orbit_in(dir.path())
-            .args([
-                "job",
-                "add",
-                "--target-id",
-                "spec-manual-tick",
-                "--schedule",
-                "manual",
-                "--agent-cli",
-                &agent_cli,
-                "--timeout",
-                "30s",
-            ])
-            .assert()
-            .success()
-            .get_output()
-            .stdout
-            .clone();
-        String::from_utf8(output).expect("utf8").trim().to_string()
-    };
-
-    orbit_in(dir.path())
-        .args(["job", "tick", "--json"])
-        .assert()
-        .success();
-
-    let history_output = orbit_in(dir.path())
-        .args(["job", "history", &job_id, "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let history: Value = serde_json::from_slice(&history_output).expect("history json");
-    let runs = history.as_array().expect("array");
-    assert!(
-        runs.is_empty(),
-        "manual job must not be triggered by tick, but got {} runs",
-        runs.len()
-    );
 }
 
 #[test]
@@ -792,12 +579,10 @@ fn job_list_ops_returns_signal_tier_json() {
     assert!(job.get("job_id").is_some());
     assert!(job.get("target_id").is_some());
     assert!(job.get("state").is_some());
-    assert!(job.get("next_run_at").is_some());
 
     // Verbose fields must be absent.
     assert!(job.get("agent_cli").is_none());
     assert!(job.get("timeout_seconds").is_none());
-    assert!(job.get("schedule").is_none());
 }
 
 #[test]
@@ -813,7 +598,7 @@ fn job_archive_subcommand_is_rejected() {
 fn job_delete_moves_file_to_disabled_subdir() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-delete-disabled");
-    let job_id = add_job(dir.path(), &spec_id, "every 5m", "mock-agent");
+    let job_id = add_job(dir.path(), &spec_id, "mock-agent");
 
     // Confirm the job YAML is present in the active jobs directory.
     let jobs_dir = dir.path().join(".orbit").join("jobs").join("jobs");
@@ -842,7 +627,7 @@ fn job_delete_moves_file_to_disabled_subdir() {
 fn job_delete_hides_job_from_list_but_show_still_works() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-delete-hide");
-    let job_id = add_job(dir.path(), &spec_id, "every 5m", "mock-agent");
+    let job_id = add_job(dir.path(), &spec_id, "mock-agent");
 
     orbit_in(dir.path())
         .args(["job", "delete", &job_id])
@@ -878,58 +663,4 @@ fn job_delete_hides_job_from_list_but_show_still_works() {
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["job_id"], job_id);
     assert_eq!(show["state"], "disabled");
-}
-
-#[test]
-fn job_resume_after_delete_removes_disabled_copy() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let spec_id = add_activity(dir.path(), "spec-resume-after-delete");
-    let job_id = add_job(dir.path(), &spec_id, "every 5m", "mock-agent");
-
-    // Delete (moves to disabled/).
-    orbit_in(dir.path())
-        .args(["job", "delete", &job_id])
-        .assert()
-        .success();
-
-    // Resume the deleted job.
-    orbit_in(dir.path())
-        .args(["job", "resume", &job_id])
-        .assert()
-        .success();
-
-    // After resume, there must be exactly one file for this job — no duplicate.
-    let jobs_dir = dir.path().join(".orbit").join("jobs").join("jobs");
-    let active_path = jobs_dir.join(format!("{job_id}.yaml"));
-    let disabled_path = jobs_dir.join("disabled").join(format!("{job_id}.yaml"));
-    assert!(
-        active_path.exists(),
-        "active job file must exist after resume"
-    );
-    assert!(
-        !disabled_path.exists(),
-        "disabled copy must be removed after resume"
-    );
-
-    // The job must appear once in list --all.
-    let list_output = orbit_in(dir.path())
-        .args(["job", "list", "--all", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let list: Value = serde_json::from_slice(&list_output).expect("list json");
-    let matches: Vec<_> = list
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|j| j["job_id"] == job_id)
-        .collect();
-    assert_eq!(
-        matches.len(),
-        1,
-        "job must appear exactly once in list --all after resume"
-    );
-    assert_eq!(matches[0]["state"], "enabled");
 }
