@@ -15,7 +15,7 @@ pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
     Activity, AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, IdentityRole, Job,
-    JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill, Task, TaskComment,
+    JobRun, JobRunState, JobScheduleState, JobStep, JobTargetType, Role, Skill, Task, TaskComment,
     TaskPriority, TaskStatus, TaskType,
 };
 pub use runtime::OrbitRuntime;
@@ -26,7 +26,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_types::{JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus};
+    use orbit_types::{JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus};
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -124,12 +124,14 @@ mod tests {
         let job = runtime
             .add_job(JobAddParams {
                 job_id: None,
-                target_type: JobTargetType::Activity,
-                target_id: "spec-core-double-run".to_string(),
-                agent_cli: agent_path.to_string_lossy().to_string(),
-                timeout_seconds: 30,
+                steps: vec![JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-core-double-run".to_string(),
+                    agent_cli: agent_path.to_string_lossy().to_string(),
+                    timeout_seconds: 30,
+                    env_extra: vec![],
+                }],
                 initial_state_override: None,
-                env_extra: vec![],
             })
             .expect("add job");
 

@@ -89,8 +89,8 @@ impl Execute for JobRunListArgs {
                     run.finished_at
                         .map(|value| value.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
-                    run.error_code.clone().unwrap_or_else(|| "-".to_string()),
-                    summarize_error_message(run.error_message.as_deref()),
+                    run.steps.last().and_then(|s| s.error_code.clone()).unwrap_or_else(|| "-".to_string()),
+                    summarize_error_message(run.steps.last().and_then(|s| s.error_message.as_deref())),
                 );
             }
             Ok(())
@@ -167,20 +167,22 @@ fn print_job_run(run: &JobRun) {
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string())
     );
+    let last_step = run.steps.last();
     println!(
         "Exit Code:           {}",
-        run.exit_code
+        last_step
+            .and_then(|s| s.exit_code)
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string())
     );
     println!(
         "Error Code:          {}",
-        run.error_code.as_deref().unwrap_or("-")
+        last_step.and_then(|s| s.error_code.as_deref()).unwrap_or("-")
     );
     println!(
         "Error Message:       {}",
-        run.error_message
-            .as_deref()
+        last_step
+            .and_then(|s| s.error_message.as_deref())
             .map(|value| value.replace('\n', " "))
             .unwrap_or_else(|| "-".to_string())
     );

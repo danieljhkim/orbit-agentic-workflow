@@ -128,19 +128,41 @@ pub struct AgentCommitRequest {
     pub files: Vec<String>,
 }
 
+/// A single step within a job definition.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Job {
-    pub job_id: OrbitId,
+pub struct JobStep {
     pub target_type: JobTargetType,
     pub target_id: OrbitId,
     pub agent_cli: String,
     pub timeout_seconds: u64,
-    pub state: JobScheduleState,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
     /// Additional env var names to pass through in hermetic mode, on top of the global allowlist.
     #[serde(default)]
     pub env_extra: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Job {
+    pub job_id: OrbitId,
+    pub state: JobScheduleState,
+    pub steps: Vec<JobStep>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Per-step execution record stored in a step file inside the run bundle directory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct JobRunStep {
+    pub step_index: u32,
+    pub target_type: JobTargetType,
+    pub target_id: OrbitId,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<u64>,
+    pub exit_code: Option<i32>,
+    pub agent_response_json: Option<Value>,
+    pub state: JobRunState,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,9 +175,8 @@ pub struct JobRun {
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
     pub duration_ms: Option<u64>,
-    pub exit_code: Option<i32>,
-    pub agent_response_json: Option<Value>,
-    pub error_code: Option<String>,
-    pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Step execution results; populated in-memory from step files, not stored in jrun.yaml.
+    #[serde(skip)]
+    pub steps: Vec<JobRunStep>,
 }

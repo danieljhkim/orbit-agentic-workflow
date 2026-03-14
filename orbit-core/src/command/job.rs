@@ -7,10 +7,10 @@ use orbit_agent::{
 };
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
-use orbit_store::JobRunCompletionParams;
+use orbit_store::JobRunStepParams;
 use orbit_types::{
     Activity, AgentCommitRequest, AgentResponseEnvelope, Job, JobRun, JobRunState,
-    JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
+    JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -28,13 +28,8 @@ const STALE_RUN_GRACE_SECONDS: u64 = 30;
 #[derive(Debug, Clone)]
 pub struct JobAddParams {
     pub job_id: Option<String>,
-    pub target_type: JobTargetType,
-    pub target_id: String,
-    pub agent_cli: String,
-    pub timeout_seconds: u64,
+    pub steps: Vec<JobStep>,
     pub initial_state_override: Option<JobScheduleState>,
-    /// Extra env var names to pass through in hermetic mode for this job specifically.
-    pub env_extra: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +83,7 @@ struct ExecutionContext {
     job: Option<Job>,
     agent_cli: String,
     timeout_seconds: u64,
+    env_extra: Vec<String>,
     input: Value,
 }
 
@@ -102,36 +98,46 @@ pub(crate) struct DirectActivityRunOutcome {
 
 impl OrbitRuntime {
     pub fn add_job(&self, params: JobAddParams) -> Result<Job, OrbitError> {
-        if params.target_id.trim().is_empty() {
+        if params.steps.is_empty() {
             return Err(OrbitError::JobValidation(
-                "target_id must not be empty".to_string(),
-            ));
-        }
-        if params.agent_cli.trim().is_empty() {
-            return Err(OrbitError::JobValidation(
-                "agent_cli must not be empty".to_string(),
+                "job must have at least one step".to_string(),
             ));
         }
 
-        self.validate_activity_target_exists(params.target_type, &params.target_id)?;
-
-        // Validate runtime availability at add-time.
-        let _ = Agent::new(&AgentConfig::cli(params.agent_cli.clone()))?;
+        for step in &params.steps {
+            if step.target_id.trim().is_empty() {
+                return Err(OrbitError::JobValidation(
+                    "step target_id must not be empty".to_string(),
+                ));
+            }
+            if step.agent_cli.trim().is_empty() {
+                return Err(OrbitError::JobValidation(
+                    "step agent_cli must not be empty".to_string(),
+                ));
+            }
+            self.validate_activity_target_exists(step.target_type, &step.target_id)?;
+            // Validate runtime availability at add-time.
+            let _ = Agent::new(&AgentConfig::cli(step.agent_cli.clone()))?;
+        }
 
         let initial_state = params
             .initial_state_override
             .unwrap_or(JobScheduleState::Enabled);
 
-        let env_extra = crate::config::normalize_pass_list(params.env_extra)
-            .map_err(|e| OrbitError::JobValidation(e.to_string()))?;
+        let steps = params
+            .steps
+            .into_iter()
+            .map(|s| {
+                let env_extra = crate::config::normalize_pass_list(s.env_extra)
+                    .map_err(|e| OrbitError::JobValidation(e.to_string()))?;
+                Ok(JobStep { env_extra, ..s })
+            })
+            .collect::<Result<Vec<_>, OrbitError>>()?;
+
         let job = self.context.job_store.add_job(StoreActivityCreateParams {
             job_id: params.job_id,
-            target_type: params.target_type,
-            target_id: params.target_id,
-            agent_cli: params.agent_cli,
-            timeout_seconds: params.timeout_seconds,
+            steps,
             initial_state,
-            env_extra,
         })?;
         self.record_event(OrbitEvent::JobAdded {
             job_id: job.job_id.clone(),
@@ -218,7 +224,6 @@ impl OrbitRuntime {
         initial_run: Option<JobRun>,
         input: Value,
     ) -> Result<JobRunResult, OrbitError> {
-        let execution = self.build_execution_context_for_job(&job, input)?;
         let attempt = initial_run.as_ref().map(|r| r.attempt).unwrap_or(1);
 
         let mut run = if let Some(existing) = initial_run {
@@ -246,41 +251,83 @@ impl OrbitRuntime {
         run.state = JobRunState::Running;
         run.started_at = Some(started_at);
 
-        let outcome = self.execute_single_attempt(&execution);
-        let finished_at = Utc::now();
+        let mut final_state = JobRunState::Success;
+        let mut total_duration_ms: u64 = 0;
+        let mut last_protocol_violation = false;
+        let mut last_created_file: Option<String> = None;
 
-        let changed = self.complete_job_run_backend(&JobRunCompletionParams {
-            run_id: &run.run_id,
-            state: outcome.state,
-            finished_at,
-            duration_ms: outcome.duration_ms,
-            exit_code: outcome.exit_code,
-            agent_response_json: outcome.response_json.as_ref(),
-            error_code: outcome.error_code.as_deref(),
-            error_message: outcome.error_message.as_deref(),
-        })?;
+        for (step_index, step) in job.steps.iter().enumerate() {
+            let execution = self.build_execution_context_for_step(&job, step, input.clone())?;
+            let step_started = Utc::now();
+            let outcome = self.execute_single_attempt(&execution);
+            let step_finished = Utc::now();
+
+            if let Some(d) = outcome.duration_ms {
+                total_duration_ms += d;
+            }
+            let step_state = outcome.state;
+
+            let changed = self.complete_job_run_step_backend(
+                &run.run_id,
+                &JobRunStepParams {
+                    step_index,
+                    target_type: step.target_type,
+                    target_id: step.target_id.clone(),
+                    started_at: step_started,
+                    finished_at: step_finished,
+                    duration_ms: outcome.duration_ms,
+                    exit_code: outcome.exit_code,
+                    agent_response_json: outcome.response_json.clone(),
+                    state: step_state,
+                    error_code: outcome.error_code.clone(),
+                    error_message: outcome.error_message.clone(),
+                },
+            )?;
+            if !changed {
+                return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+            }
+
+            if outcome.protocol_violation {
+                last_protocol_violation = true;
+            }
+            if let Some(f) = outcome.created_file {
+                last_created_file = Some(f);
+            }
+
+            if step_state != JobRunState::Success {
+                final_state = step_state;
+                break;
+            }
+        }
+
+        let finished_at = Utc::now();
+        let duration_ms = if total_duration_ms > 0 {
+            Some(total_duration_ms)
+        } else {
+            None
+        };
+
+        let changed =
+            self.finalize_job_run_backend(&run.run_id, final_state, finished_at, duration_ms)?;
         if !changed {
             return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
         }
         self.record_event(OrbitEvent::JobRunCompleted {
             job_id: job.job_id.clone(),
             run_id: run.run_id.clone(),
-            state: outcome.state.to_string(),
+            state: final_state.to_string(),
         })?;
 
-        if outcome.protocol_violation {
+        if last_protocol_violation {
             self.record_event(OrbitEvent::JobProtocolViolation {
                 job_id: job.job_id.clone(),
                 run_id: run.run_id.clone(),
-                message: outcome
-                    .error_message
-                    .clone()
-                    .unwrap_or_else(|| "agent protocol violation".to_string()),
+                message: "agent protocol violation".to_string(),
             })?;
         }
 
-        if outcome.state == JobRunState::Success {
-            if let Some(ref created_file_path) = outcome.created_file {
+        if final_state == JobRunState::Success {
+            if let Some(ref created_file_path) = last_created_file {
                 self.execute_created_file_auto_commit(created_file_path, &job.job_id, &run.run_id)?;
             }
         }
@@ -288,7 +335,7 @@ impl OrbitRuntime {
         Ok(JobRunResult {
             job_id: job.job_id.clone(),
             run_id: run.run_id.clone(),
-            state: outcome.state,
+            state: final_state,
             attempt: run.attempt,
         })
     }
@@ -314,26 +361,43 @@ impl OrbitRuntime {
         let duration_ms = active_run
             .started_at
             .map(|started| now.signed_duration_since(started).num_milliseconds().max(0) as u64);
+        let total_timeout: u64 = job.steps.iter().map(|s| s.timeout_seconds).sum();
         let message = format!(
             "stale active run recovered: run '{}' remained '{}' for {}s \
 (timeout={}s, grace={}s)",
             active_run.run_id,
             active_run.state,
             age_seconds,
-            job.timeout_seconds,
+            total_timeout,
             STALE_RUN_GRACE_SECONDS
         );
 
-        let changed = self.complete_job_run_backend(&JobRunCompletionParams {
-            run_id: &active_run.run_id,
-            state: JobRunState::Failed,
-            finished_at: now,
+        // Write a synthetic step file so error_code/error_message are retrievable.
+        if let Some(first_step) = job.steps.first() {
+            let _ = self.complete_job_run_step_backend(
+                &active_run.run_id,
+                &JobRunStepParams {
+                    step_index: 0,
+                    target_type: first_step.target_type,
+                    target_id: first_step.target_id.clone(),
+                    started_at: active_run.started_at.unwrap_or(active_run.created_at),
+                    finished_at: now,
+                    duration_ms,
+                    exit_code: Some(1),
+                    agent_response_json: None,
+                    state: JobRunState::Failed,
+                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                    error_message: Some(message.clone()),
+                },
+            );
+        }
+
+        let changed = self.finalize_job_run_backend(
+            &active_run.run_id,
+            JobRunState::Failed,
+            now,
             duration_ms,
-            exit_code: Some(1),
-            agent_response_json: None,
-            error_code: Some(AGENT_INVOCATION_FAILED),
-            error_message: Some(&message),
-        })?;
+        )?;
         if !changed {
             return Err(OrbitError::JobRunNotFound(active_run.run_id.clone()));
         }
@@ -357,6 +421,7 @@ impl OrbitRuntime {
             job: None,
             agent_cli: agent_cli.to_string(),
             timeout_seconds,
+            env_extra: vec![],
             input: json!({}),
         };
         let outcome = self.execute_single_attempt(&execution);
@@ -369,18 +434,20 @@ impl OrbitRuntime {
         })
     }
 
-    fn build_execution_context_for_job(
+    fn build_execution_context_for_step(
         &self,
         job: &Job,
+        step: &JobStep,
         input: Value,
     ) -> Result<ExecutionContext, OrbitError> {
-        let activity = self.show_activity(&job.target_id)?;
+        let activity = self.show_activity(&step.target_id)?;
         self.validate_activity_input_schema(&activity, &input)?;
         Ok(ExecutionContext {
             activity,
             job: Some(job.clone()),
-            agent_cli: job.agent_cli.clone(),
-            timeout_seconds: job.timeout_seconds,
+            agent_cli: step.agent_cli.clone(),
+            timeout_seconds: step.timeout_seconds,
+            env_extra: step.env_extra.clone(),
             input,
         })
     }
@@ -468,18 +535,13 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 created_file: None,
             };
         };
-        let job_env_extra: &[String] = execution
-            .job
-            .as_ref()
-            .map(|j| j.env_extra.as_slice())
-            .unwrap_or(&[]);
         let environment_mode = if self.context.execution_env_policy.inherit() {
             EnvironmentMode::Inherit
         } else {
             EnvironmentMode::ClearAndSet(
                 self.context
                     .execution_env_policy
-                    .hydrated_allowlist_env_with_extras(job_env_extra),
+                    .hydrated_allowlist_env_with_extras(&execution.env_extra),
             )
         };
         let (args, _stdout_schema_file) = match prepare_exec_args(&invocation) {
@@ -705,11 +767,13 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             job: execution.job.as_ref().map(|job| {
                 json!({
                     "id": job.job_id,
-                    "target_type": job.target_type,
-                    "target_id": job.target_id,
-                    "agent_cli": job.agent_cli,
-                    "timeout_seconds": job.timeout_seconds,
                     "state": job.state,
+                    "steps": job.steps.iter().map(|s| json!({
+                        "target_type": s.target_type,
+                        "target_id": s.target_id,
+                        "agent_cli": s.agent_cli,
+                        "timeout_seconds": s.timeout_seconds,
+                    })).collect::<Vec<_>>(),
                 })
             }),
             skills: skills
@@ -908,7 +972,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         let mut files = vec![created_file_rel];
 
         // Include the run artifact YAML when file-based job persistence is used.
-        // This is only possible after complete_job_run_backend has persisted the run.
+        // This is only possible after finalize_job_run_backend has persisted the run.
         let run_artifact_abs = self
             .context
             .persistence
@@ -916,7 +980,8 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             .path
             .join("runs")
             .join(job_id)
-            .join(format!("{run_id}.yaml"));
+            .join(run_id)
+            .join("jrun.yaml");
         if run_artifact_abs.exists() {
             if let Ok(canonical_artifact) = run_artifact_abs.canonicalize() {
                 if let Ok(rel) = canonical_artifact.strip_prefix(&canonical_root) {
@@ -1013,18 +1078,32 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             .mark_job_run_running(run_id, started_at)
     }
 
-    fn complete_job_run_backend(
+    fn complete_job_run_step_backend(
         &self,
-        params: &JobRunCompletionParams,
+        run_id: &str,
+        params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
-        self.context.job_store.complete_job_run(params)
+        self.context.job_store.complete_job_run_step(run_id, params)
+    }
+
+    fn finalize_job_run_backend(
+        &self,
+        run_id: &str,
+        state: JobRunState,
+        finished_at: DateTime<Utc>,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OrbitError> {
+        self.context
+            .job_store
+            .finalize_job_run(run_id, state, finished_at, duration_ms)
     }
 }
 
 fn is_stale_active_run(job: &Job, run: &JobRun, now: DateTime<Utc>) -> bool {
+    let total_timeout: u64 = job.steps.iter().map(|s| s.timeout_seconds).sum();
     let reference_time = run.started_at.unwrap_or(run.created_at);
     let elapsed_seconds = now.signed_duration_since(reference_time).num_seconds();
-    let stale_after_seconds = job.timeout_seconds.saturating_add(STALE_RUN_GRACE_SECONDS) as i64;
+    let stale_after_seconds = total_timeout.saturating_add(STALE_RUN_GRACE_SECONDS) as i64;
     elapsed_seconds >= stale_after_seconds
 }
 
@@ -1098,11 +1177,16 @@ struct DefaultJobFileSpec {
 #[derive(Debug, Clone, Deserialize)]
 struct DefaultJobEntry {
     job_id: String,
+    state: String,
+    steps: Vec<DefaultJobStep>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DefaultJobStep {
     target_type: String,
     target_id: String,
     agent_cli: String,
     timeout_seconds: u64,
-    state: String,
     #[serde(default)]
     env_extra: Vec<String>,
 }
@@ -1138,15 +1222,6 @@ pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitEr
         if runtime.show_job(&entry.job_id).is_ok() {
             continue;
         }
-        let target_type = match entry.target_type.as_str() {
-            "activity" => JobTargetType::Activity,
-            other => {
-                return Err(OrbitError::InvalidInput(format!(
-                    "unsupported target_type '{}' in default job '{}'",
-                    other, entry.job_id
-                )));
-            }
-        };
         let initial_state = match entry.state.as_str() {
             "enabled" => JobScheduleState::Enabled,
             "disabled" => JobScheduleState::Disabled,
@@ -1157,14 +1232,32 @@ pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitEr
                 )));
             }
         };
+        let steps = entry
+            .steps
+            .into_iter()
+            .map(|s| {
+                let target_type = match s.target_type.as_str() {
+                    "activity" => JobTargetType::Activity,
+                    other => {
+                        return Err(OrbitError::InvalidInput(format!(
+                            "unsupported target_type '{}' in default job '{}'",
+                            other, entry.job_id
+                        )));
+                    }
+                };
+                Ok(JobStep {
+                    target_type,
+                    target_id: s.target_id,
+                    agent_cli: s.agent_cli,
+                    timeout_seconds: s.timeout_seconds,
+                    env_extra: s.env_extra,
+                })
+            })
+            .collect::<Result<Vec<_>, OrbitError>>()?;
         runtime.add_job(JobAddParams {
             job_id: Some(entry.job_id),
-            target_type,
-            target_id: entry.target_id,
-            agent_cli: entry.agent_cli,
-            timeout_seconds: entry.timeout_seconds,
+            steps,
             initial_state_override: Some(initial_state),
-            env_extra: entry.env_extra,
         })?;
         created += 1;
     }
@@ -1182,15 +1275,18 @@ mod tests {
         assert_eq!(specs.len(), DEFAULT_JOB_FILES.len());
         for spec in &specs {
             assert!(!spec.job_id.is_empty(), "job_id must not be empty");
-            assert!(!spec.target_id.is_empty(), "target_id must not be empty");
-            assert!(!spec.agent_cli.is_empty(), "agent_cli must not be empty");
-            assert!(spec.timeout_seconds > 0, "timeout_seconds must be positive");
+            assert!(!spec.steps.is_empty(), "steps must not be empty");
+            for step in &spec.steps {
+                assert!(!step.target_id.is_empty(), "target_id must not be empty");
+                assert!(!step.agent_cli.is_empty(), "agent_cli must not be empty");
+                assert!(step.timeout_seconds > 0, "timeout_seconds must be positive");
+            }
         }
     }
 
     #[test]
     fn load_rejects_mismatched_file_key_and_job_id() {
-        let specs = &[("expected-id", "job:\n  job_id: actual-id\n  target_type: activity\n  target_id: t\n  agent_cli: codex\n  timeout_seconds: 60\n  state: enabled\n")];
+        let specs = &[("expected-id", "job:\n  job_id: actual-id\n  state: enabled\n  steps:\n    - target_type: activity\n      target_id: t\n      agent_cli: codex\n      timeout_seconds: 60\n")];
         let err = load_default_job_specs(specs).expect_err("must fail");
         assert!(err.to_string().contains("does not match spec job_id"));
     }

@@ -5,7 +5,7 @@ use orbit_types::{
 
 use super::contracts::{
     ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, JobCreateParams,
-    JobRunCompletionParams, JobRunQuery, JobStoreBackend, TaskCreateParams, TaskStoreBackend,
+    JobRunQuery, JobRunStepParams, JobStoreBackend, TaskCreateParams, TaskStoreBackend,
     TaskUpdateParams,
 };
 use crate::file::activity_store::{ActivityFileStore, FileWorkInsert};
@@ -138,15 +138,7 @@ impl ActivityStoreBackend for ActivityFileStore {
 
 impl JobStoreBackend for JobFileStore {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
-        self.insert_activity_v2(
-            params.job_id,
-            params.target_type,
-            &params.target_id,
-            &params.agent_cli,
-            params.timeout_seconds,
-            params.initial_state,
-            params.env_extra,
-        )
+        self.insert_activity_v2(params.job_id, params.steps, params.initial_state)
     }
 
     fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
@@ -198,17 +190,22 @@ impl JobStoreBackend for JobFileStore {
         self.mark_job_run_running(run_id, started_at)
     }
 
-    fn complete_job_run(&self, params: &JobRunCompletionParams) -> Result<bool, OrbitError> {
-        self.complete_job_run(
-            params.run_id,
-            params.state,
-            params.finished_at,
-            params.duration_ms,
-            params.exit_code,
-            params.agent_response_json,
-            params.error_code,
-            params.error_message,
-        )
+    fn complete_job_run_step(
+        &self,
+        run_id: &str,
+        params: &JobRunStepParams,
+    ) -> Result<bool, OrbitError> {
+        self.complete_job_run_step(run_id, params)
+    }
+
+    fn finalize_job_run(
+        &self,
+        run_id: &str,
+        state: orbit_types::JobRunState,
+        finished_at: chrono::DateTime<chrono::Utc>,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OrbitError> {
+        self.finalize_job_run(run_id, state, finished_at, duration_ms)
     }
 
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError> {

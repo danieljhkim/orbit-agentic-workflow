@@ -2,11 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{Job, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError};
+use orbit_types::{
+    Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::backend::JobRunQuery;
+use crate::backend::JobRunStepParams;
+
 #[derive(Clone)]
 pub(crate) struct JobFileStore {
     root: PathBuf,
@@ -19,11 +21,20 @@ struct JobFileDocument {
     job: Job,
 }
 
+/// Serialized to jrun.yaml — contains run-level fields only.
+/// Step-level fields (exit_code, agent_response_json, etc.) live in steps/*.yaml.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JobRunFileDocument {
     schema_version: u8,
     run: JobRun,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JobRunStepFileDocument {
+    schema_version: u8,
+    step: JobRunStep,
 }
 
 impl JobFileStore {
@@ -38,16 +49,11 @@ impl JobFileStore {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn insert_activity_v2(
         &self,
         job_id: Option<String>,
-        target_type: JobTargetType,
-        target_id: &str,
-        agent_cli: &str,
-        timeout_seconds: u64,
+        steps: Vec<JobStep>,
         initial_state: JobScheduleState,
-        env_extra: Vec<String>,
     ) -> Result<Job, OrbitError> {
         self.ensure_layout()?;
         let resolved_id = match job_id {
@@ -64,14 +70,10 @@ impl JobFileStore {
         let now = Utc::now();
         let job = Job {
             job_id: resolved_id,
-            target_type,
-            target_id: target_id.to_string(),
-            agent_cli: agent_cli.to_string(),
-            timeout_seconds,
             state: initial_state,
+            steps,
             created_at: now,
             updated_at: now,
-            env_extra,
         };
         self.write_activity(&job)?;
         Ok(job)
@@ -114,7 +116,7 @@ impl JobFileStore {
 
     pub(crate) fn list_job_runs_filtered(
         &self,
-        query: &JobRunQuery,
+        query: &crate::backend::JobRunQuery,
     ) -> Result<Vec<JobRun>, OrbitError> {
         let mut runs = if let Some(job_id) = query.job_id.as_deref() {
             self.read_runs_for_activity(job_id)?
@@ -143,10 +145,10 @@ impl JobFileStore {
     }
 
     pub(crate) fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        let Some((_job_id, path)) = self.find_run_path(run_id)? else {
+        let Some((_job_id, run_dir)) = self.find_run_path(run_id)? else {
             return Ok(None);
         };
-        Ok(Some(self.read_run_at(&path)?))
+        Ok(Some(self.read_run_at(&run_dir)?))
     }
 
     pub(crate) fn get_pending_or_running_job_run(
@@ -224,11 +226,8 @@ impl JobFileStore {
             started_at: None,
             finished_at: None,
             duration_ms: None,
-            exit_code: None,
-            agent_response_json: None,
-            error_code: None,
-            error_message: None,
             created_at: Utc::now(),
+            steps: vec![],
         };
         self.write_run(job_id, &run)?;
         Ok(run)
@@ -239,39 +238,55 @@ impl JobFileStore {
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        let Some((job_id, path)) = self.find_run_path(run_id)? else {
+        let Some((job_id, run_dir)) = self.find_run_path(run_id)? else {
             return Ok(false);
         };
-        let mut run = self.read_run_at(&path)?;
+        let mut run = self.read_run_at(&run_dir)?;
         run.state = JobRunState::Running;
         run.started_at = Some(started_at);
         self.write_run(&job_id, &run)?;
         Ok(true)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn complete_job_run(
+    pub(crate) fn complete_job_run_step(
+        &self,
+        run_id: &str,
+        params: &JobRunStepParams,
+    ) -> Result<bool, OrbitError> {
+        let Some((job_id, _run_dir)) = self.find_run_path(run_id)? else {
+            return Ok(false);
+        };
+        let step = JobRunStep {
+            step_index: params.step_index as u32,
+            target_type: params.target_type,
+            target_id: params.target_id.clone(),
+            started_at: Some(params.started_at),
+            finished_at: Some(params.finished_at),
+            duration_ms: params.duration_ms,
+            exit_code: params.exit_code,
+            agent_response_json: params.agent_response_json.clone(),
+            state: params.state,
+            error_code: params.error_code.clone(),
+            error_message: params.error_message.clone(),
+        };
+        self.write_run_step(&job_id, run_id, params.step_index, &params.target_id, &step)?;
+        Ok(true)
+    }
+
+    pub(crate) fn finalize_job_run(
         &self,
         run_id: &str,
         state: JobRunState,
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
-        exit_code: Option<i32>,
-        agent_response_json: Option<&Value>,
-        error_code: Option<&str>,
-        error_message: Option<&str>,
     ) -> Result<bool, OrbitError> {
-        let Some((job_id, path)) = self.find_run_path(run_id)? else {
+        let Some((job_id, run_dir)) = self.find_run_path(run_id)? else {
             return Ok(false);
         };
-        let mut run = self.read_run_at(&path)?;
+        let mut run = self.read_run_at(&run_dir)?;
         run.state = state;
         run.finished_at = Some(finished_at);
         run.duration_ms = duration_ms;
-        run.exit_code = exit_code;
-        run.agent_response_json = agent_response_json.cloned();
-        run.error_code = error_code.map(ToString::to_string);
-        run.error_message = error_message.map(ToString::to_string);
         self.write_run(&job_id, &run)?;
         Ok(true)
     }
@@ -307,16 +322,16 @@ impl JobFileStore {
         if !dir.exists() {
             return Ok(Vec::new());
         }
-        let mut paths = fs::read_dir(dir)
+        let mut run_dirs: Vec<PathBuf> = fs::read_dir(&dir)
             .map_err(|e| OrbitError::Io(e.to_string()))?
             .filter_map(Result::ok)
             .map(|entry| entry.path())
-            .filter(|path| is_yaml(path))
-            .collect::<Vec<_>>();
-        paths.sort();
+            .filter(|p| p.is_dir())
+            .collect();
+        run_dirs.sort();
         let mut runs = Vec::new();
-        for path in paths {
-            runs.push(self.read_run_at(&path)?);
+        for run_dir in run_dirs {
+            runs.push(self.read_run_at(&run_dir)?);
         }
         Ok(runs)
     }
@@ -347,6 +362,7 @@ impl JobFileStore {
         Ok(runs)
     }
 
+    /// Returns `(job_id, run_bundle_dir)` for an active run.
     fn find_run_path(&self, run_id: &str) -> Result<Option<(String, PathBuf)>, OrbitError> {
         let runs_root = self.runs_dir();
         if !runs_root.exists() {
@@ -361,14 +377,18 @@ impl JobFileStore {
             let Some(job_id) = path.file_name().and_then(|v| v.to_str()) else {
                 continue;
             };
-            let run_path = path.join(format!("{run_id}.yaml"));
-            if run_path.exists() {
-                return Ok(Some((job_id.to_string(), run_path)));
+            if job_id == "archived" {
+                continue;
+            }
+            let run_dir = path.join(run_id);
+            if run_dir.is_dir() {
+                return Ok(Some((job_id.to_string(), run_dir)));
             }
         }
         Ok(None)
     }
 
+    /// Returns `(job_id, run_bundle_dir)` for an archived run.
     fn find_archived_run_path(
         &self,
         run_id: &str,
@@ -386,9 +406,9 @@ impl JobFileStore {
             let Some(job_id) = path.file_name().and_then(|v| v.to_str()) else {
                 continue;
             };
-            let run_path = path.join(format!("{run_id}.yaml"));
-            if run_path.exists() {
-                return Ok(Some((job_id.to_string(), run_path)));
+            let run_dir = path.join(run_id);
+            if run_dir.is_dir() {
+                return Ok(Some((job_id.to_string(), run_dir)));
             }
         }
         Ok(None)
@@ -402,12 +422,45 @@ impl JobFileStore {
         Ok(doc.job)
     }
 
-    fn read_run_at(&self, path: &Path) -> Result<JobRun, OrbitError> {
-        let raw = fs::read_to_string(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+    /// Read a run bundle directory: parses `jrun.yaml` then populates the
+    /// convenience fields (`exit_code`, `agent_response_json`, etc.) from
+    /// any step files found in `steps/`.
+    fn read_run_at(&self, run_dir: &Path) -> Result<JobRun, OrbitError> {
+        let jrun_path = run_dir.join("jrun.yaml");
+        let raw = fs::read_to_string(&jrun_path).map_err(|e| OrbitError::Io(e.to_string()))?;
         let doc = serde_yaml::from_str::<JobRunFileDocument>(&raw).map_err(|e| {
-            OrbitError::Store(format!("invalid job run file '{}': {e}", path.display()))
+            OrbitError::Store(format!(
+                "invalid jrun.yaml '{}': {e}",
+                jrun_path.display()
+            ))
         })?;
-        Ok(doc.run)
+        let mut run = doc.run;
+
+        // Read step files and populate in-memory convenience fields.
+        let steps_dir = run_dir.join("steps");
+        if steps_dir.exists() {
+            let mut step_files: Vec<PathBuf> = fs::read_dir(&steps_dir)
+                .map_err(|e| OrbitError::Io(e.to_string()))?
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| is_yaml(p))
+                .collect();
+            step_files.sort(); // lexicographic = index order (01-, 02-, …)
+            for step_path in &step_files {
+                let step_raw =
+                    fs::read_to_string(step_path).map_err(|e| OrbitError::Io(e.to_string()))?;
+                let step_doc =
+                    serde_yaml::from_str::<JobRunStepFileDocument>(&step_raw).map_err(|e| {
+                        OrbitError::Store(format!(
+                            "invalid step file '{}': {e}",
+                            step_path.display()
+                        ))
+                    })?;
+                run.steps.push(step_doc.step);
+            }
+        }
+
+        Ok(run)
     }
 
     fn write_activity(&self, job: &Job) -> Result<(), OrbitError> {
@@ -420,14 +473,38 @@ impl JobFileStore {
         write_atomic(&self.job_path(&job.job_id), &content)
     }
 
+    /// Write the run-level `jrun.yaml` inside the run bundle directory.
     fn write_run(&self, job_id: &str, run: &JobRun) -> Result<(), OrbitError> {
         self.ensure_layout()?;
+        let run_dir = self.run_bundle_dir(job_id, &run.run_id);
+        fs::create_dir_all(&run_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         let doc = JobRunFileDocument {
             schema_version: 1,
             run: run.clone(),
         };
         let content = serde_yaml::to_string(&doc).map_err(|e| OrbitError::Store(e.to_string()))?;
-        write_atomic(&self.run_path(job_id, &run.run_id), &content)
+        write_atomic(&run_dir.join("jrun.yaml"), &content)
+    }
+
+    /// Write a step result file inside `<run_bundle_dir>/steps/`.
+    fn write_run_step(
+        &self,
+        job_id: &str,
+        run_id: &str,
+        step_index: usize,
+        target_id: &str,
+        step: &JobRunStep,
+    ) -> Result<(), OrbitError> {
+        let steps_dir = self.run_bundle_dir(job_id, run_id).join("steps");
+        fs::create_dir_all(&steps_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+        // Index-prefixed filename preserves order and avoids collisions.
+        let filename = format!("{:02}-{target_id}.yaml", step_index + 1);
+        let doc = JobRunStepFileDocument {
+            schema_version: 1,
+            step: step.clone(),
+        };
+        let content = serde_yaml::to_string(&doc).map_err(|e| OrbitError::Store(e.to_string()))?;
+        write_atomic(&steps_dir.join(filename), &content)
     }
 
     fn next_job_id(&self) -> String {
@@ -448,12 +525,12 @@ impl JobFileStore {
     fn next_run_id(&self, job_id: &str) -> String {
         let now = Utc::now();
         let base = format!("jrun-{}", now.format("%Y%m%d-%H%M%S"));
-        if !self.run_path(job_id, &base).exists() {
+        if !self.run_bundle_dir(job_id, &base).exists() {
             return base;
         }
         for suffix in 2..1024_u32 {
             let candidate = format!("{base}-{suffix}");
-            if !self.run_path(job_id, &candidate).exists() {
+            if !self.run_bundle_dir(job_id, &candidate).exists() {
                 return candidate;
             }
         }
@@ -484,8 +561,9 @@ impl JobFileStore {
         self.runs_dir().join(job_id)
     }
 
-    fn run_path(&self, job_id: &str, run_id: &str) -> PathBuf {
-        self.run_dir(job_id).join(format!("{run_id}.yaml"))
+    /// Path to the run bundle directory: `<runs_dir>/<job_id>/<run_id>/`
+    fn run_bundle_dir(&self, job_id: &str, run_id: &str) -> PathBuf {
+        self.run_dir(job_id).join(run_id)
     }
 
     fn archived_runs_dir(&self) -> PathBuf {
@@ -496,15 +574,16 @@ impl JobFileStore {
         self.archived_runs_dir().join(job_id)
     }
 
-    fn archived_run_path(&self, job_id: &str, run_id: &str) -> PathBuf {
-        self.archived_run_dir(job_id).join(format!("{run_id}.yaml"))
+    /// Path to the archived run bundle directory: `<archived_runs_dir>/<job_id>/<run_id>/`
+    fn archived_run_bundle_dir(&self, job_id: &str, run_id: &str) -> PathBuf {
+        self.archived_run_dir(job_id).join(run_id)
     }
 
     pub(crate) fn archive_run(&self, run_id: &str) -> Result<String, OrbitError> {
         let Some((job_id, src)) = self.find_run_path(run_id)? else {
             return Err(OrbitError::JobRunNotFound(run_id.to_string()));
         };
-        let dst = self.archived_run_path(&job_id, run_id);
+        let dst = self.archived_run_bundle_dir(&job_id, run_id);
         let parent = dst.parent().ok_or_else(|| {
             OrbitError::Io(format!("cannot determine parent for '{}'", dst.display()))
         })?;
@@ -514,12 +593,12 @@ impl JobFileStore {
     }
 
     pub(crate) fn delete_run(&self, run_id: &str) -> Result<String, OrbitError> {
-        if let Some((job_id, path)) = self.find_run_path(run_id)? {
-            fs::remove_file(&path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        if let Some((job_id, dir)) = self.find_run_path(run_id)? {
+            fs::remove_dir_all(&dir).map_err(|e| OrbitError::Io(e.to_string()))?;
             return Ok(job_id);
         }
-        if let Some((job_id, path)) = self.find_archived_run_path(run_id)? {
-            fs::remove_file(&path).map_err(|e| OrbitError::Io(e.to_string()))?;
+        if let Some((job_id, dir)) = self.find_archived_run_path(run_id)? {
+            fs::remove_dir_all(&dir).map_err(|e| OrbitError::Io(e.to_string()))?;
             return Ok(job_id);
         }
         Err(OrbitError::JobRunNotFound(run_id.to_string()))
@@ -552,7 +631,7 @@ fn is_yaml(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use orbit_types::{JobScheduleState, JobTargetType, OrbitError};
+    use orbit_types::{JobRunState, JobScheduleState, JobStep, JobTargetType, OrbitError};
 
     use super::JobFileStore;
 
@@ -562,36 +641,42 @@ mod tests {
         (dir, store)
     }
 
+    fn make_step(target_id: &str) -> JobStep {
+        JobStep {
+            target_type: JobTargetType::Activity,
+            target_id: target_id.to_string(),
+            agent_cli: "mock-agent".to_string(),
+            timeout_seconds: 300,
+            env_extra: vec![],
+        }
+    }
+
     fn insert_test_job(store: &JobFileStore, target_id: &str) -> orbit_types::Job {
         store
             .insert_activity_v2(
                 None,
-                JobTargetType::Activity,
-                target_id,
-                "mock-agent",
-                300,
+                vec![make_step(target_id)],
                 JobScheduleState::Enabled,
-                vec![],
             )
             .expect("insert job")
     }
 
     #[test]
-    fn archive_run_moves_file_to_archived_dir() {
+    fn archive_run_moves_dir_to_archived_dir() {
         let (_dir, store) = make_store();
         let job = insert_test_job(&store, "target-1");
         let run = store
             .insert_job_run(&job.job_id, 1, Utc::now())
             .expect("insert run");
 
-        let src = store.run_path(&job.job_id, &run.run_id);
-        assert!(src.exists(), "run file must exist before archive");
+        let src = store.run_bundle_dir(&job.job_id, &run.run_id);
+        assert!(src.exists(), "run dir must exist before archive");
 
         store.archive_run(&run.run_id).expect("archive run");
 
-        assert!(!src.exists(), "run file must be gone after archive");
-        let dst = store.archived_run_path(&job.job_id, &run.run_id);
-        assert!(dst.exists(), "archived run file must exist");
+        assert!(!src.exists(), "run dir must be gone after archive");
+        let dst = store.archived_run_bundle_dir(&job.job_id, &run.run_id);
+        assert!(dst.exists(), "archived run dir must exist");
     }
 
     #[test]
@@ -605,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_run_removes_active_and_archived_files() {
+    fn delete_run_removes_active_and_archived_dirs() {
         let (_dir, store) = make_store();
         let now = Utc::now();
         let job = insert_test_job(&store, "target-delete");
@@ -624,8 +709,10 @@ mod tests {
             .delete_run(&active_run.run_id)
             .expect("delete active run");
         assert!(
-            !store.run_path(&job.job_id, &active_run.run_id).exists(),
-            "active run file removed"
+            !store
+                .run_bundle_dir(&job.job_id, &active_run.run_id)
+                .exists(),
+            "active run dir removed"
         );
 
         store
@@ -633,9 +720,9 @@ mod tests {
             .expect("delete archived run");
         assert!(
             !store
-                .archived_run_path(&job.job_id, &archived_run.run_id)
+                .archived_run_bundle_dir(&job.job_id, &archived_run.run_id)
                 .exists(),
-            "archived run file removed"
+            "archived run dir removed"
         );
     }
 
@@ -673,36 +760,35 @@ mod tests {
 
     #[test]
     fn job_write_read_roundtrip_preserves_all_fields() {
-        // Regression test: previously, fields like 'state', 'created_at',
-        // 'updated_at', and 'env_extra' were serialized at the top level of
-        // the YAML document instead of nested under the 'job:' key, causing
-        // silent data loss on read (state defaulted, timestamps missing).
         let (_dir, store) = make_store();
+        let step = JobStep {
+            target_type: JobTargetType::Activity,
+            target_id: "target-roundtrip".to_string(),
+            agent_cli: "my-agent-cli".to_string(),
+            timeout_seconds: 600,
+            env_extra: vec!["MY_VAR".to_string(), "OTHER_VAR".to_string()],
+        };
         let written = store
             .insert_activity_v2(
                 Some("job-roundtrip-test".to_string()),
-                JobTargetType::Activity,
-                "target-roundtrip",
-                "my-agent-cli",
-                600,
+                vec![step],
                 JobScheduleState::Disabled,
-                vec!["MY_VAR".to_string(), "OTHER_VAR".to_string()],
             )
             .expect("insert job");
 
         // Read the raw YAML to assert correct nesting.
         let yaml_path = store.job_path("job-roundtrip-test");
         let raw = std::fs::read_to_string(&yaml_path).expect("read yaml");
-        // All Job fields must be under the 'job:' key (2-space indent).
-        // None should appear at the top level (0-space indent).
-        for field in &["state:", "created_at:", "updated_at:", "env_extra:"] {
+        // steps must be nested under job: (2-space indent)
+        assert!(
+            raw.contains("  steps:"),
+            "steps must be nested under job: but raw yaml was:\n{raw}"
+        );
+        // state, created_at, updated_at must also be nested
+        for field in &["state:", "created_at:", "updated_at:"] {
             assert!(
                 raw.contains(&format!("  {field}")),
                 "field '{field}' must be nested under job: but raw yaml was:\n{raw}"
-            );
-            assert!(
-                !raw.starts_with(field) && !raw.contains(&format!("\n{field}")),
-                "field '{field}' must NOT appear at top level but raw yaml was:\n{raw}"
             );
         }
 
@@ -713,11 +799,15 @@ mod tests {
             .expect("job exists");
 
         assert_eq!(read_back.job_id, written.job_id);
-        assert_eq!(read_back.target_id, written.target_id);
-        assert_eq!(read_back.agent_cli, written.agent_cli);
-        assert_eq!(read_back.timeout_seconds, written.timeout_seconds);
         assert_eq!(read_back.state, JobScheduleState::Disabled);
-        assert_eq!(read_back.env_extra, vec!["MY_VAR", "OTHER_VAR"]);
+        assert_eq!(read_back.steps.len(), 1);
+        assert_eq!(read_back.steps[0].target_id, "target-roundtrip");
+        assert_eq!(read_back.steps[0].agent_cli, "my-agent-cli");
+        assert_eq!(read_back.steps[0].timeout_seconds, 600);
+        assert_eq!(
+            read_back.steps[0].env_extra,
+            vec!["MY_VAR", "OTHER_VAR"]
+        );
         assert_eq!(
             read_back.created_at.timestamp(),
             written.created_at.timestamp()
@@ -726,5 +816,69 @@ mod tests {
             read_back.updated_at.timestamp(),
             written.updated_at.timestamp()
         );
+    }
+
+    #[test]
+    fn run_bundle_directory_structure_and_step_roundtrip() {
+        use crate::backend::JobRunStepParams;
+        use orbit_types::JobTargetType;
+
+        let (_dir, store) = make_store();
+        let job = insert_test_job(&store, "target-bundle");
+        let run = store
+            .insert_job_run(&job.job_id, 1, Utc::now())
+            .expect("insert run");
+
+        // jrun.yaml must exist inside the run directory
+        let run_dir = store.run_bundle_dir(&job.job_id, &run.run_id);
+        assert!(run_dir.is_dir(), "run bundle dir must be a directory");
+        assert!(run_dir.join("jrun.yaml").exists(), "jrun.yaml must exist");
+
+        // Write a step file
+        let step_params = JobRunStepParams {
+            step_index: 0,
+            target_type: JobTargetType::Activity,
+            target_id: "target-bundle".to_string(),
+            started_at: Utc::now(),
+            finished_at: Utc::now(),
+            duration_ms: Some(42),
+            exit_code: Some(0),
+            agent_response_json: Some(serde_json::json!({"status": "success"})),
+            state: JobRunState::Success,
+            error_code: None,
+            error_message: None,
+        };
+        store
+            .complete_job_run_step(&run.run_id, &step_params)
+            .expect("write step");
+
+        // Step file must exist in steps/ subdir
+        let steps_dir = run_dir.join("steps");
+        assert!(steps_dir.is_dir(), "steps dir must exist");
+        let step_files: Vec<_> = std::fs::read_dir(&steps_dir)
+            .expect("read steps dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(|x| x == "yaml")
+            })
+            .collect();
+        assert_eq!(step_files.len(), 1, "exactly one step file expected");
+
+        // Finalize jrun.yaml
+        store
+            .finalize_job_run(&run.run_id, JobRunState::Success, Utc::now(), Some(42))
+            .expect("finalize run");
+
+        let read = store
+            .get_job_run(&run.run_id)
+            .expect("get run")
+            .expect("run exists");
+        assert_eq!(read.state, JobRunState::Success);
+        assert_eq!(read.steps.len(), 1);
+        assert_eq!(read.steps[0].exit_code, Some(0));
+        assert_eq!(read.steps[0].duration_ms, Some(42));
     }
 }

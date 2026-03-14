@@ -145,8 +145,8 @@ fn job_add_list_show_json_flow() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["job_id"], job_id);
-    assert_eq!(show["target_type"], "activity");
-    assert_eq!(show["target_id"], spec_id);
+    assert_eq!(show["steps"][0]["target_type"], "activity");
+    assert_eq!(show["steps"][0]["target_id"], spec_id);
     assert_eq!(show["state"], "enabled");
 }
 
@@ -165,7 +165,7 @@ fn job_add_defaults_timeout_to_twenty_minutes() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["timeout_seconds"], 1200); // 20m default = 1200 seconds
+    assert_eq!(show["steps"][0]["timeout_seconds"], 1200); // 20m default = 1200 seconds
 }
 
 #[test]
@@ -490,7 +490,7 @@ fn job_add_with_named_id_uses_provided_id() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["job_id"], "job-my-named-job");
-    assert_eq!(show["target_id"], "spec-named-id");
+    assert_eq!(show["steps"][0]["target_id"], "spec-named-id");
 }
 
 #[test]

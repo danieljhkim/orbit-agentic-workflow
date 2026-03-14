@@ -1,9 +1,10 @@
 schemaVersion: 1
 job:
   job_id: job-oversee-orbit-operations
-  target_type: activity
-  target_id: oversee-orbit-operations
-  agent_cli: codex
-  timeout_seconds: 1200
   state: enabled
-  env_extra: []
+  steps:
+    - target_type: activity
+      target_id: oversee-orbit-operations
+      agent_cli: codex
+      timeout_seconds: 1200
+      env_extra: []

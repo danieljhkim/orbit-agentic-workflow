@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use orbit_core::command::job::JobAddParams;
-use orbit_core::{Job, JobRun, JobTargetType, OrbitError, OrbitRuntime};
+use orbit_core::{Job, JobRun, JobStep, JobTargetType, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -63,12 +63,14 @@ impl Execute for JobAddArgs {
 
         let job = runtime.add_job(JobAddParams {
             job_id: self.job_id,
-            target_type: JobTargetType::Activity,
-            target_id: self.target_id,
-            agent_cli: self.agent_cli,
-            timeout_seconds,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: self.target_id,
+                agent_cli: self.agent_cli,
+                timeout_seconds,
+                env_extra: crate::parse::csv_to_vec(&self.env_extra),
+            }],
             initial_state_override: None,
-            env_extra: crate::parse::csv_to_vec(&self.env_extra),
         })?;
 
         if self.json {
@@ -112,11 +114,12 @@ impl Execute for JobListArgs {
                 "JOB_ID", "TARGET_TYPE", "TARGET_ID", "STATE"
             );
             for (job, last_run) in &jobs_with_runs {
+                let first = job.steps.first();
                 println!(
                     "{:<26} {:<15} {:<28} {:<9} {}",
                     job.job_id,
-                    job.target_type,
-                    job.target_id,
+                    first.map(|s| s.target_type.to_string()).unwrap_or_default(),
+                    first.map(|s| s.target_id.as_str()).unwrap_or("-"),
                     job.state,
                     format_last_run(last_run.as_ref()),
                 );
@@ -140,11 +143,15 @@ impl Execute for JobShowArgs {
             crate::output::json::print_pretty(&job_to_json(&job))
         } else {
             println!("Job ID:            {}", job.job_id);
-            println!("Target Type:       {}", job.target_type);
-            println!("Target ID:         {}", job.target_id);
-            println!("Agent CLI:         {}", job.agent_cli);
-            println!("Timeout (seconds): {}", job.timeout_seconds);
             println!("State:             {}", job.state);
+            println!("Steps:             {}", job.steps.len());
+            for (i, step) in job.steps.iter().enumerate() {
+                println!("  Step {}:", i + 1);
+                println!("    Target Type:    {}", step.target_type);
+                println!("    Target ID:      {}", step.target_id);
+                println!("    Agent CLI:      {}", step.agent_cli);
+                println!("    Timeout (s):    {}", step.timeout_seconds);
+            }
             println!("Created:           {}", job.created_at.to_rfc3339());
             println!("Updated:           {}", job.updated_at.to_rfc3339());
             Ok(())
@@ -175,17 +182,19 @@ impl Execute for JobRunArgs {
                 "run_id": run.run_id,
                 "state": run.state.to_string(),
                 "attempt": run.attempt,
-                "error_code": run_details.as_ref().and_then(|entry| entry.error_code.clone()),
-                "error_message": run_details.as_ref().and_then(|entry| entry.error_message.clone()),
+                "error_code": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|s| s.error_code.clone()),
+                "error_message": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|s| s.error_message.clone()),
             }))
         } else {
             let error_code = run_details
                 .as_ref()
-                .and_then(|entry| entry.error_code.clone())
+                .and_then(|entry| entry.steps.last())
+                .and_then(|s| s.error_code.clone())
                 .unwrap_or_else(|| "-".to_string());
             let error_message = run_details
                 .as_ref()
-                .and_then(|entry| entry.error_message.clone())
+                .and_then(|entry| entry.steps.last())
+                .and_then(|s| s.error_message.clone())
                 .unwrap_or_else(|| "-".to_string())
                 .replace('\n', " ");
             println!(
@@ -227,8 +236,8 @@ impl Execute for JobHistoryArgs {
                     run.finished_at
                         .map(|v| v.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
-                    run.error_code.clone().unwrap_or_else(|| "-".to_string()),
-                    summarize_error_message(run.error_message.as_deref()),
+                    run.steps.last().and_then(|s| s.error_code.clone()).unwrap_or_else(|| "-".to_string()),
+                    summarize_error_message(run.steps.last().and_then(|s| s.error_message.as_deref())),
                 );
             }
             Ok(())
@@ -275,9 +284,10 @@ fn job_to_json_with_last_run(job: &Job, last_run: Option<&JobRun>) -> Value {
 }
 
 fn job_to_signal_json(job: &Job) -> Value {
+    let first = job.steps.first();
     json!({
         "job_id": job.job_id,
-        "target_id": job.target_id,
+        "target_id": first.map(|s| s.target_id.as_str()).unwrap_or(""),
         "state": job.state.to_string(),
     })
 }
@@ -285,18 +295,21 @@ fn job_to_signal_json(job: &Job) -> Value {
 fn job_to_json(job: &Job) -> Value {
     json!({
         "job_id": job.job_id,
-        "target_type": job.target_type.to_string(),
-        "target_id": job.target_id,
-        "agent_cli": job.agent_cli,
-        "timeout_seconds": job.timeout_seconds,
         "state": job.state.to_string(),
         "created_at": job.created_at.to_rfc3339(),
         "updated_at": job.updated_at.to_rfc3339(),
-        "env_extra": job.env_extra,
+        "steps": job.steps.iter().map(|s| json!({
+            "target_type": s.target_type.to_string(),
+            "target_id": s.target_id,
+            "agent_cli": s.agent_cli,
+            "timeout_seconds": s.timeout_seconds,
+            "env_extra": s.env_extra,
+        })).collect::<Vec<_>>(),
     })
 }
 
 pub(crate) fn job_run_to_json(run: &JobRun) -> Value {
+    let last = run.steps.last();
     json!({
         "run_id": run.run_id,
         "job_id": run.job_id,
@@ -306,10 +319,23 @@ pub(crate) fn job_run_to_json(run: &JobRun) -> Value {
         "started_at": run.started_at.map(|v| v.to_rfc3339()),
         "finished_at": run.finished_at.map(|v| v.to_rfc3339()),
         "duration_ms": run.duration_ms,
-        "exit_code": run.exit_code,
-        "agent_response_json": run.agent_response_json,
-        "error_code": run.error_code,
-        "error_message": run.error_message,
+        "exit_code": last.and_then(|s| s.exit_code),
+        "agent_response_json": last.and_then(|s| s.agent_response_json.as_ref()),
+        "error_code": last.and_then(|s| s.error_code.as_deref()),
+        "error_message": last.and_then(|s| s.error_message.as_deref()),
+        "steps": run.steps.iter().map(|s| json!({
+            "step_index": s.step_index,
+            "target_type": s.target_type.to_string(),
+            "target_id": s.target_id,
+            "state": s.state.to_string(),
+            "started_at": s.started_at.map(|v| v.to_rfc3339()),
+            "finished_at": s.finished_at.map(|v| v.to_rfc3339()),
+            "duration_ms": s.duration_ms,
+            "exit_code": s.exit_code,
+            "agent_response_json": s.agent_response_json,
+            "error_code": s.error_code,
+            "error_message": s.error_message,
+        })).collect::<Vec<_>>(),
         "created_at": run.created_at.to_rfc3339(),
     })
 }

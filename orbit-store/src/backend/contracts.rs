@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
     Activity, AgentSession, AgentSessionStatus, AgentToolCall, AuditEvent, Job, JobRun,
-    JobRunState, JobScheduleState, JobTargetType, OrbitError, StoredTool, Task, TaskComment,
+    JobRunState, JobScheduleState, JobStep, OrbitError, StoredTool, Task, TaskComment,
     TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
@@ -83,12 +83,8 @@ pub struct ActivityUpdateParams {
 #[derive(Debug, Clone)]
 pub struct JobCreateParams {
     pub job_id: Option<String>,
-    pub target_type: JobTargetType,
-    pub target_id: String,
-    pub agent_cli: String,
-    pub timeout_seconds: u64,
+    pub steps: Vec<JobStep>,
     pub initial_state: JobScheduleState,
-    pub env_extra: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -146,21 +142,35 @@ pub trait JobStoreBackend: Send + Sync {
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError>;
-    fn complete_job_run(&self, params: &JobRunCompletionParams) -> Result<bool, OrbitError>;
+    fn complete_job_run_step(
+        &self,
+        run_id: &str,
+        params: &JobRunStepParams,
+    ) -> Result<bool, OrbitError>;
+    fn finalize_job_run(
+        &self,
+        run_id: &str,
+        state: JobRunState,
+        finished_at: DateTime<Utc>,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OrbitError>;
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError>;
     fn delete_job_run(&self, run_id: &str) -> Result<String, OrbitError>;
 }
 
 #[derive(Debug, Clone)]
-pub struct JobRunCompletionParams<'a> {
-    pub run_id: &'a str,
-    pub state: JobRunState,
+pub struct JobRunStepParams {
+    pub step_index: usize,
+    pub target_type: orbit_types::JobTargetType,
+    pub target_id: String,
+    pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub duration_ms: Option<u64>,
     pub exit_code: Option<i32>,
-    pub agent_response_json: Option<&'a Value>,
-    pub error_code: Option<&'a str>,
-    pub error_message: Option<&'a str>,
+    pub agent_response_json: Option<Value>,
+    pub state: JobRunState,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
 }
 
 pub trait ToolStoreBackend: Send + Sync {

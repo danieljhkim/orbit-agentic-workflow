@@ -23,7 +23,7 @@ pub use id::OrbitId;
 pub use identity::{IdentityRole, ResolvedIdentity};
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState,
-    JobScheduleState, JobTargetType,
+    JobRunStep, JobScheduleState, JobStep, JobTargetType,
 };
 pub use memo::Memo;
 pub use role::Role;
@@ -38,7 +38,7 @@ mod tests {
 
     use crate::{
         Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult, Job, JobRun,
-        JobRunState, JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, TaskStatus,
+        JobRunState, JobScheduleState, JobStep, JobTargetType, OrbitEvent, Role, Skill, TaskStatus,
     };
 
     #[test]
@@ -102,18 +102,20 @@ mod tests {
     fn job_shapes_are_stable() {
         let job = Job {
             job_id: "job-1".to_string(),
-            target_type: JobTargetType::Activity,
-            target_id: "exec-1".to_string(),
-            agent_cli: "claude".to_string(),
-            timeout_seconds: 300,
             state: JobScheduleState::Enabled,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "exec-1".to_string(),
+                agent_cli: "claude".to_string(),
+                timeout_seconds: 300,
+                env_extra: vec![],
+            }],
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            env_extra: vec![],
         };
         let job_value = serde_json::to_value(job).expect("serialize job");
         assert_eq!(job_value["state"], "enabled");
-        assert_eq!(job_value["target_type"], "activity");
+        assert_eq!(job_value["steps"][0]["target_type"], "activity");
 
         let run = JobRun {
             run_id: "run-1".to_string(),
@@ -124,10 +126,7 @@ mod tests {
             started_at: None,
             finished_at: None,
             duration_ms: None,
-            exit_code: None,
-            agent_response_json: None,
-            error_code: None,
-            error_message: None,
+            steps: vec![],
             created_at: Utc::now(),
         };
         let run_value = serde_json::to_value(run).expect("serialize run");

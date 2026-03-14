@@ -6,7 +6,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use orbit_core::OrbitRuntime;
 use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams};
 use orbit_core::command::job::JobAddParams;
-use orbit_types::{JobRunState, JobTargetType, OrbitError};
+use orbit_types::{JobRunState, JobStep, JobTargetType, OrbitError};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -78,12 +78,14 @@ fn add_scheduled_activity_with_timeout(
     runtime
         .add_job(JobAddParams {
             job_id: None,
-            target_type: JobTargetType::Activity,
-            target_id: target_id.to_string(),
-            agent_cli: agent_cli.to_string(),
-            timeout_seconds,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: target_id.to_string(),
+                agent_cli: agent_cli.to_string(),
+                timeout_seconds,
+                env_extra: vec![],
+            }],
             initial_state_override: None,
-            env_extra: vec![],
         })
         .expect("add job")
         .job_id
@@ -238,25 +240,24 @@ fn insert_stale_running_run(
     job_id: &str,
 ) -> String {
     let run = runtime.run_job_now(job_id).expect("seed run");
-    let run_path = data_root
+    // jrun.yaml lives inside the run bundle directory
+    let jrun_path = data_root
         .join("jobs")
         .join("runs")
         .join(job_id)
-        .join(format!("{}.yaml", run.run_id));
-    let raw = std::fs::read_to_string(&run_path).expect("read run file");
+        .join(&run.run_id)
+        .join("jrun.yaml");
+    let raw = std::fs::read_to_string(&jrun_path).expect("read jrun.yaml");
     let mut doc: JobRunFileDocument = serde_yaml::from_str(&raw).expect("parse run doc");
     let old_time = Utc::now() - ChronoDuration::hours(2);
+    // Only manipulate run-level fields; step-level fields live in steps/*.yaml
     doc.run.state = JobRunState::Running;
     doc.run.started_at = Some(old_time);
     doc.run.finished_at = None;
     doc.run.duration_ms = None;
-    doc.run.exit_code = None;
-    doc.run.agent_response_json = None;
-    doc.run.error_code = None;
-    doc.run.error_message = None;
     doc.run.created_at = old_time;
     let updated = serde_yaml::to_string(&doc).expect("serialize run doc");
-    std::fs::write(&run_path, updated).expect("write run file");
+    std::fs::write(&jrun_path, updated).expect("write jrun.yaml");
     run.run_id
 }
 
@@ -284,7 +285,7 @@ fn job_run_executes_agent_and_records_success_run() {
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Success);
     assert_eq!(history[0].attempt, 1);
-    assert!(history[0].agent_response_json.is_some());
+    assert!(history[0].steps.last().and_then(|s| s.agent_response_json.as_ref()).is_some());
 
     let args_raw = std::fs::read_to_string(args_capture).expect("args capture");
     assert!(args_raw.contains("--output"));
@@ -435,7 +436,7 @@ fn invalid_agent_json_with_zero_exit_falls_back_to_success() {
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Success);
-    assert!(history[0].error_code.is_none());
+    assert!(history[0].steps.last().and_then(|s| s.error_code.as_deref()).is_none());
 
     let audits = runtime.list_audits(25).expect("audits");
     assert!(
@@ -465,13 +466,12 @@ fn invocation_failure_with_stderr_marks_run_failed_with_invocation_error() {
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Failed);
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_INVOCATION_FAILED")
     );
     assert!(
         history[0]
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("network down")
     );
@@ -502,10 +502,10 @@ pass = ["PATH"]
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_INVOCATION_FAILED")
     );
-    let message = history[0].error_message.as_deref().unwrap_or_default();
+    let message = history[0].steps.last().and_then(|s| s.error_message.as_deref()).unwrap_or_default();
     assert!(message.contains("HOME"));
     assert!(message.contains("config.toml"));
 }
@@ -687,13 +687,12 @@ fn malformed_commit_request_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("result.commit.files must contain at least one path")
     );
@@ -714,11 +713,10 @@ fn empty_stdout_timeout_marks_run_as_timeout() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history[0].state, JobRunState::Timeout);
-    assert_eq!(history[0].error_code.as_deref(), Some("AGENT_TIMEOUT"));
+    assert_eq!(history[0].steps.last().and_then(|s| s.error_code.as_deref()), Some("AGENT_TIMEOUT"));
     assert!(
         history[0]
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("timed out")
     );
@@ -749,10 +747,10 @@ pass = ["PATH"]
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_INVOCATION_FAILED")
     );
-    let message = history[0].error_message.as_deref().unwrap_or_default();
+    let message = history[0].steps.last().and_then(|s| s.error_message.as_deref()).unwrap_or_default();
     assert!(message.contains("HOME"));
     assert!(message.contains("config.toml"));
 }
@@ -786,7 +784,7 @@ fn provider_required_env_present_reaches_protocol_validation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history[0].state, JobRunState::Success);
-    assert!(history[0].error_code.is_none());
+    assert!(history[0].steps.last().and_then(|s| s.error_code.as_deref()).is_none());
 }
 
 #[test]
@@ -845,11 +843,10 @@ fn job_history_recovers_stale_running_run_to_failed() {
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
     assert_eq!(stale.state, JobRunState::Failed);
-    assert_eq!(stale.error_code.as_deref(), Some("AGENT_INVOCATION_FAILED"));
+    assert_eq!(stale.steps.last().and_then(|s| s.error_code.as_deref()), Some("AGENT_INVOCATION_FAILED"));
     assert!(
         stale
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("stale active run recovered")
     );
@@ -882,7 +879,7 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
     assert_eq!(stale.state, JobRunState::Failed);
-    assert_eq!(stale.error_code.as_deref(), Some("AGENT_INVOCATION_FAILED"));
+    assert_eq!(stale.steps.last().and_then(|s| s.error_code.as_deref()), Some("AGENT_INVOCATION_FAILED"));
     assert!(
         history.iter().any(|run| run.state == JobRunState::Success),
         "new attempt should complete successfully"
@@ -959,7 +956,7 @@ Validate output shape.
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Failed);
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
 }
@@ -1047,7 +1044,7 @@ Validate advanced schema behavior.
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Failed);
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
 }
@@ -1087,7 +1084,7 @@ fn created_file_auto_commit_includes_report_and_run_artifact() {
         "expected report.md in commit, got:\n{changed}"
     );
 
-    let run_artifact_rel = format!("jobs/runs/{}/{}.yaml", job_id, run.run_id);
+    let run_artifact_rel = format!("jobs/runs/{}/{}/jrun.yaml", job_id, run.run_id);
     assert!(
         changed.contains(&run_artifact_rel),
         "expected run artifact '{run_artifact_rel}' in commit, got:\n{changed}"
@@ -1116,13 +1113,12 @@ fn created_file_empty_path_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("must not be empty")
     );
@@ -1151,13 +1147,12 @@ fn created_file_nonexistent_path_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("does not exist")
     );
@@ -1190,13 +1185,12 @@ fn created_file_outside_repo_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].error_code.as_deref(),
+        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .error_message
-            .as_deref()
+            .steps.last().and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("outside the git repository")
     );
@@ -1242,12 +1236,14 @@ fn claude_job_run_succeeds_with_mock_binary() {
     let job_id = runtime
         .add_job(JobAddParams {
             job_id: None,
-            target_type: JobTargetType::Activity,
-            target_id: "spec-claude-run".to_string(),
-            agent_cli,
-            timeout_seconds: 10,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-claude-run".to_string(),
+                agent_cli,
+                timeout_seconds: 10,
+                env_extra: vec![],
+            }],
             initial_state_override: None,
-            env_extra: vec![],
         })
         .expect("add job")
         .job_id;
@@ -1295,12 +1291,14 @@ fn run_job_now_executes_job_successfully() {
     let job_id = runtime
         .add_job(JobAddParams {
             job_id: None,
-            target_type: JobTargetType::Activity,
-            target_id: "spec-manual-run".to_string(),
-            agent_cli,
-            timeout_seconds: 10,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-manual-run".to_string(),
+                agent_cli,
+                timeout_seconds: 10,
+                env_extra: vec![],
+            }],
             initial_state_override: None,
-            env_extra: vec![],
         })
         .expect("add job")
         .job_id;
@@ -1309,4 +1307,93 @@ fn run_job_now_executes_job_successfully() {
         .run_job_now(&job_id)
         .expect("manual job run must succeed");
     assert_eq!(result.state, JobRunState::Success);
+}
+
+#[test]
+fn multi_step_same_agent_cli_each_step_gets_its_own_env_extra() {
+    // Regression: env_extra was looked up by matching agent_cli (first match), so step 2
+    // sharing the same agent_cli as step 1 would receive step 1's allowlist.
+    let dir = tempdir().expect("tempdir");
+
+    // Hermetic env: only the codex-required vars pass by default; each step adds its own.
+    write_runtime_config(
+        dir.path(),
+        r#"[execution.env]
+inherit = false
+pass = ["HOME", "PATH"]
+"#,
+    );
+
+    // Set the variables in the test process so they can be passed through.
+    // Safety: test binary is single-threaded at this point; no concurrent env reads.
+    unsafe {
+        std::env::set_var("STEP1_SECRET", "alpha");
+        std::env::set_var("STEP2_SECRET", "beta");
+    }
+
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+
+    // Agent dumps its environment to a file named by a counter.
+    let counter_file = dir.path().join("call_count");
+    std::fs::write(&counter_file, "0").expect("write counter");
+    let env_dir = dir.path().join("env_captures");
+    std::fs::create_dir_all(&env_dir).expect("create env dir");
+
+    // Provider detection uses the binary filename; name it "codex" so it is recognized.
+    let script_path = dir.path().join("codex");
+    let script = format!(
+        concat!(
+            "#!/bin/sh\n",
+            "n=$(cat \"{counter}\")\n",
+            "n=$((n + 1))\n",
+            "printf '%s' \"$n\" > \"{counter}\"\n",
+            "env > \"{env_dir}/$n.env\"\n",
+            "cat > /dev/null\n",
+            "printf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        ),
+        counter = counter_file.display(),
+        env_dir = env_dir.display(),
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    add_activity(&runtime, "spec-multi-env-step1");
+    add_activity(&runtime, "spec-multi-env-step2");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            steps: vec![
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-multi-env-step1".to_string(),
+                    agent_cli: agent_cli.clone(),
+                    timeout_seconds: 10,
+                    env_extra: vec!["STEP1_SECRET".to_string()],
+                },
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-multi-env-step2".to_string(),
+                    agent_cli: agent_cli.clone(),
+                    timeout_seconds: 10,
+                    env_extra: vec!["STEP2_SECRET".to_string()],
+                },
+            ],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let result = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(result.state, JobRunState::Success);
+
+    let step1_env = std::fs::read_to_string(env_dir.join("1.env")).expect("step1 env");
+    let step2_env = std::fs::read_to_string(env_dir.join("2.env")).expect("step2 env");
+
+    // Step 1 must see STEP1_SECRET but not STEP2_SECRET.
+    assert!(step1_env.contains("STEP1_SECRET=alpha"), "step1 should have STEP1_SECRET");
+    assert!(!step1_env.contains("STEP2_SECRET"), "step1 must not have STEP2_SECRET");
+
+    // Step 2 must see STEP2_SECRET but not STEP1_SECRET.
+    assert!(step2_env.contains("STEP2_SECRET=beta"), "step2 should have STEP2_SECRET");
+    assert!(!step2_env.contains("STEP1_SECRET"), "step2 must not have STEP1_SECRET");
 }
