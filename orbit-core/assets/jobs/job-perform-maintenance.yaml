@@ -1,0 +1,9 @@
+schemaVersion: 1
+job:
+  job_id: job-perform-maintenance
+  target_type: activity
+  target_id: perform-maintenance
+  agent_cli: codex
+  timeout_seconds: 1200
+  state: enabled
+  env_extra: []

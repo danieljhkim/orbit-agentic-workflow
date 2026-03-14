@@ -12,7 +12,7 @@ use orbit_types::{
     Activity, AgentCommitRequest, AgentResponseEnvelope, Job, JobRun, JobRunState,
     JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tempfile::NamedTempFile;
 
@@ -1067,30 +1067,131 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
     format!("agent timed out before producing JSON stdout; stderr: {stderr}")
 }
 
-const DEFAULT_NAMED_JOBS: &[(&str, &str)] = &[
-    ("job-resolve-backlogged-task", "resolve-backlogged-task"),
-    ("job-perform-maintenance", "perform-maintenance"),
-    ("job-oversee-orbit-operations", "oversee-orbit-operations"),
-    ("job-approve-task-leader", "approve-task-leader"),
-    ("job-triage-and-dispatch-task", "triage-and-dispatch-task"),
+const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
+    (
+        "job-approve-task-leader",
+        include_str!("../../assets/jobs/job-approve-task-leader.yaml"),
+    ),
+    (
+        "job-oversee-orbit-operations",
+        include_str!("../../assets/jobs/job-oversee-orbit-operations.yaml"),
+    ),
+    (
+        "job-perform-maintenance",
+        include_str!("../../assets/jobs/job-perform-maintenance.yaml"),
+    ),
+    (
+        "job-resolve-backlogged-task",
+        include_str!("../../assets/jobs/job-resolve-backlogged-task.yaml"),
+    ),
+    (
+        "job-triage-and-dispatch-task",
+        include_str!("../../assets/jobs/job-triage-and-dispatch-task.yaml"),
+    ),
 ];
 
+#[derive(Debug, Clone, Deserialize)]
+struct DefaultJobFileSpec {
+    job: DefaultJobEntry,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DefaultJobEntry {
+    job_id: String,
+    target_type: String,
+    target_id: String,
+    agent_cli: String,
+    timeout_seconds: u64,
+    state: String,
+    #[serde(default)]
+    env_extra: Vec<String>,
+}
+
+fn load_default_job_specs(
+    raw_specs: &[(&str, &str)],
+) -> Result<Vec<DefaultJobEntry>, OrbitError> {
+    let mut specs = Vec::with_capacity(raw_specs.len());
+    for (expected_id, raw) in raw_specs {
+        let file_spec = serde_yaml::from_str::<DefaultJobFileSpec>(raw).map_err(|err| {
+            OrbitError::InvalidInput(format!(
+                "invalid default job spec '{}': {err}",
+                expected_id
+            ))
+        })?;
+        let entry = file_spec.job;
+        let id = entry.job_id.trim();
+        if id != *expected_id {
+            return Err(OrbitError::InvalidInput(format!(
+                "default job file key '{}' does not match spec job_id '{}'",
+                expected_id, id
+            )));
+        }
+        specs.push(entry);
+    }
+    Ok(specs)
+}
+
 pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitError> {
+    let specs = load_default_job_specs(DEFAULT_JOB_FILES)?;
     let mut created = 0usize;
-    for (job_id, target_id) in DEFAULT_NAMED_JOBS {
-        if runtime.show_job(job_id).is_ok() {
+    for entry in specs {
+        if runtime.show_job(&entry.job_id).is_ok() {
             continue;
         }
+        let target_type = match entry.target_type.as_str() {
+            "activity" => JobTargetType::Activity,
+            other => {
+                return Err(OrbitError::InvalidInput(format!(
+                    "unsupported target_type '{}' in default job '{}'",
+                    other, entry.job_id
+                )));
+            }
+        };
+        let initial_state = match entry.state.as_str() {
+            "enabled" => JobScheduleState::Enabled,
+            "disabled" => JobScheduleState::Disabled,
+            other => {
+                return Err(OrbitError::InvalidInput(format!(
+                    "unsupported state '{}' in default job '{}'",
+                    other, entry.job_id
+                )));
+            }
+        };
         runtime.add_job(JobAddParams {
-            job_id: Some(job_id.to_string()),
-            target_type: JobTargetType::Activity,
-            target_id: target_id.to_string(),
-            agent_cli: "codex".to_string(), // TODO: make this dynamic
-            timeout_seconds: 1200,
-            initial_state_override: Some(JobScheduleState::Enabled),
-            env_extra: vec![],
+            job_id: Some(entry.job_id),
+            target_type,
+            target_id: entry.target_id,
+            agent_cli: entry.agent_cli,
+            timeout_seconds: entry.timeout_seconds,
+            initial_state_override: Some(initial_state),
+            env_extra: entry.env_extra,
         })?;
         created += 1;
     }
     Ok(created)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_JOB_FILES, load_default_job_specs};
+
+    #[test]
+    fn bundled_default_job_specs_parse_successfully() {
+        let specs =
+            load_default_job_specs(DEFAULT_JOB_FILES).expect("bundled default jobs must parse");
+        assert_eq!(specs.len(), DEFAULT_JOB_FILES.len());
+        for spec in &specs {
+            assert!(!spec.job_id.is_empty(), "job_id must not be empty");
+            assert!(!spec.target_id.is_empty(), "target_id must not be empty");
+            assert!(!spec.agent_cli.is_empty(), "agent_cli must not be empty");
+            assert!(spec.timeout_seconds > 0, "timeout_seconds must be positive");
+        }
+    }
+
+    #[test]
+    fn load_rejects_mismatched_file_key_and_job_id() {
+        let specs = &[("expected-id", "job:\n  job_id: actual-id\n  target_type: activity\n  target_id: t\n  agent_cli: codex\n  timeout_seconds: 60\n  state: enabled\n")];
+        let err = load_default_job_specs(specs).expect_err("must fail");
+        assert!(err.to_string().contains("does not match spec job_id"));
+    }
 }

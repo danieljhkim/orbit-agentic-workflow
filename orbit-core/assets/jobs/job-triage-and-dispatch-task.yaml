@@ -1,0 +1,9 @@
+schemaVersion: 1
+job:
+  job_id: job-triage-and-dispatch-task
+  target_type: activity
+  target_id: triage-and-dispatch-task
+  agent_cli: codex
+  timeout_seconds: 1200
+  state: enabled
+  env_extra: []

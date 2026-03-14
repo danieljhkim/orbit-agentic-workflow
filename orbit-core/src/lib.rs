@@ -388,6 +388,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: Some("updated description".to_string()),
                     plan: Some("updated plan".to_string()),
                     execution_summary: Some("validated with unit tests".to_string()),
@@ -440,6 +441,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: None,
@@ -471,6 +473,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: None,
@@ -486,6 +489,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: Some("ready".to_string()),
@@ -556,6 +560,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: None,
@@ -571,6 +576,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: Some("Implemented initial pass.".to_string()),
@@ -640,6 +646,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: None,
@@ -655,6 +662,7 @@ mod tests {
         let missing_summary = runtime.update_task(
             &task.id,
             TaskUpdateParams {
+                title: None,
                 description: None,
                 plan: None,
                 execution_summary: None,
@@ -674,6 +682,7 @@ mod tests {
             .update_task(
                 &task.id,
                 TaskUpdateParams {
+                    title: None,
                     description: None,
                     plan: None,
                     execution_summary: Some("Implemented change and validated tests.".to_string()),

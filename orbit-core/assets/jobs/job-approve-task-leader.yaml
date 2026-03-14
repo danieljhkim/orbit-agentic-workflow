@@ -1,0 +1,9 @@
+schemaVersion: 1
+job:
+  job_id: job-approve-task-leader
+  target_type: activity
+  target_id: approve-task-leader
+  agent_cli: codex
+  timeout_seconds: 1200
+  state: enabled
+  env_extra: []
