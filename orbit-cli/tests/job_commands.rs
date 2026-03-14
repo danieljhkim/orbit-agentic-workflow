@@ -586,6 +586,63 @@ fn job_list_ops_returns_signal_tier_json() {
 }
 
 #[test]
+fn job_list_shows_last_run_status_in_table_and_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-list-lastrun");
+    let agent_cli = write_mock_agent(dir.path());
+    let job_id = add_job(dir.path(), &spec_id, &agent_cli);
+
+    // Before any run: table should have LAST_RUN header and show "never".
+    let output = orbit_in(dir.path())
+        .args(["job", "list"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).expect("utf8");
+    assert!(text.contains("LAST_RUN"), "table header must include LAST_RUN column");
+    assert!(text.contains("never"), "unrun job must show 'never'");
+
+    // After a successful run: table should show "success".
+    orbit_in(dir.path())
+        .args(["job", "run", &job_id])
+        .assert()
+        .success();
+
+    let output = orbit_in(dir.path())
+        .args(["job", "list"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).expect("utf8");
+    assert!(text.contains("success"), "run job must show 'success' in LAST_RUN");
+
+    // JSON output must include last_run_state and last_run_at.
+    let json_output = orbit_in(dir.path())
+        .args(["job", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let jobs: Value = serde_json::from_slice(&json_output).expect("json");
+    let job = jobs
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|j| j["job_id"] == job_id)
+        .expect("job found in list");
+    assert_eq!(job["last_run_state"], "success");
+    assert!(
+        job["last_run_at"].is_string(),
+        "last_run_at must be a timestamp string"
+    );
+}
+
+#[test]
 fn job_archive_subcommand_is_rejected() {
     let dir = tempfile::tempdir().expect("tempdir");
     orbit_in(dir.path())

@@ -143,6 +143,35 @@ impl OrbitRuntime {
         self.list_jobs_backend(include_disabled)
     }
 
+    /// Returns jobs paired with their most recent run, if any.
+    /// Recovers stale active runs before reading run history.
+    pub fn list_jobs_with_last_run(
+        &self,
+        include_disabled: bool,
+    ) -> Result<Vec<(Job, Option<JobRun>)>, OrbitError> {
+        use orbit_store::JobRunQuery;
+
+        let now = Utc::now();
+        let jobs = self.list_jobs_backend(include_disabled)?;
+        let mut result = Vec::with_capacity(jobs.len());
+        for job in jobs {
+            let _ = self.recover_stale_active_run_for_job(&job, now);
+            let last_run = self
+                .context
+                .job_store
+                .list_job_runs_filtered(&JobRunQuery {
+                    job_id: Some(job.job_id.clone()),
+                    state: None,
+                    created_since: None,
+                    limit: Some(1),
+                })
+                .ok()
+                .and_then(|runs| runs.into_iter().next());
+            result.push((job, last_run));
+        }
+        Ok(result)
+    }
+
     pub fn show_job(&self, job_id: &str) -> Result<Job, OrbitError> {
         self.get_job_backend(job_id)?
             .ok_or_else(|| OrbitError::JobNotFound(job_id.to_string()))

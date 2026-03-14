@@ -93,22 +93,32 @@ pub struct JobListArgs {
 
 impl Execute for JobListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let jobs = runtime.list_jobs(self.all)?;
         if self.ops {
+            let jobs = runtime.list_jobs(self.all)?;
             let values = jobs.iter().map(job_to_signal_json).collect::<Vec<_>>();
-            crate::output::json::print_pretty(&Value::Array(values))
-        } else if self.json {
-            let values = jobs.iter().map(job_to_json).collect::<Vec<_>>();
+            return crate::output::json::print_pretty(&Value::Array(values));
+        }
+
+        let jobs_with_runs = runtime.list_jobs_with_last_run(self.all)?;
+        if self.json {
+            let values = jobs_with_runs
+                .iter()
+                .map(|(job, last_run)| job_to_json_with_last_run(job, last_run.as_ref()))
+                .collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             println!(
-                "{:<26} {:<15} {:<28} {:<9}",
+                "{:<26} {:<15} {:<28} {:<9} LAST_RUN",
                 "JOB_ID", "TARGET_TYPE", "TARGET_ID", "STATE"
             );
-            for job in &jobs {
+            for (job, last_run) in &jobs_with_runs {
                 println!(
-                    "{:<26} {:<15} {:<28} {:<9}",
-                    job.job_id, job.target_type, job.target_id, job.state,
+                    "{:<26} {:<15} {:<28} {:<9} {}",
+                    job.job_id,
+                    job.target_type,
+                    job.target_id,
+                    job.state,
+                    format_last_run(last_run.as_ref()),
                 );
             }
             Ok(())
@@ -237,6 +247,31 @@ impl Execute for JobDeleteArgs {
         println!("Deleted job '{}'", self.job_id);
         Ok(())
     }
+}
+
+fn format_last_run(last_run: Option<&JobRun>) -> String {
+    match last_run {
+        None => "never".to_string(),
+        Some(run) => {
+            let ts = run
+                .finished_at
+                .or(run.started_at)
+                .unwrap_or(run.scheduled_at);
+            format!("{} {}", run.state, ts.format("%Y-%m-%dT%H:%M:%SZ"))
+        }
+    }
+}
+
+fn job_to_json_with_last_run(job: &Job, last_run: Option<&JobRun>) -> Value {
+    let mut obj = job_to_json(job);
+    obj["last_run_state"] = last_run
+        .map(|r| serde_json::Value::String(r.state.to_string()))
+        .unwrap_or(serde_json::Value::Null);
+    obj["last_run_at"] = last_run
+        .and_then(|r| r.finished_at.or(r.started_at).or(Some(r.scheduled_at)))
+        .map(|ts| serde_json::Value::String(ts.to_rfc3339()))
+        .unwrap_or(serde_json::Value::Null);
+    obj
 }
 
 fn job_to_signal_json(job: &Job) -> Value {
