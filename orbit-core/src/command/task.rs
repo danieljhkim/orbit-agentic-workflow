@@ -40,6 +40,7 @@ impl Default for TaskAddParams {
 }
 
 pub struct TaskUpdateParams {
+    pub title: Option<String>,
     pub description: Option<String>,
     pub plan: Option<String>,
     pub execution_summary: Option<String>,
@@ -158,6 +159,7 @@ impl OrbitRuntime {
             let task = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
+                    title: params.title,
                     description: params.description,
                     plan: params.plan,
                     execution_summary: params.execution_summary,

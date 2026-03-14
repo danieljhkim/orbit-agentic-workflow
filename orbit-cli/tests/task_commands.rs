@@ -202,14 +202,48 @@ fn task_show_nonexistent() {
 }
 
 #[test]
-fn task_update_rejects_non_updatable_fields() {
+fn task_update_title_renames_task_and_records_history() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let id = add_task(dir.path(), "non-updatable");
+    let id = add_task(dir.path(), "original title");
+
     orbit_in(dir.path())
-        .args(["task", "update", &id, "--title", "ignored"])
+        .args(["task", "update", &id, "--title", "renamed title"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("unexpected argument '--title'"));
+        .success()
+        .stdout(predicate::str::contains("Updated task"));
+
+    // Title must be visible in show output.
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["title"], "renamed title");
+
+    // History must contain a "renamed" event in the task YAML.
+    let task_yaml = locate_task_yaml(dir.path(), &id);
+    assert!(
+        task_yaml.contains("renamed"),
+        "task history must record a 'renamed' event; got:\n{task_yaml}"
+    );
+}
+
+/// Walk .orbit/tasks/**/{id}/task.yaml and return its contents.
+fn locate_task_yaml(root: &Path, id: &str) -> String {
+    let tasks_root = root.join(".orbit").join("tasks");
+    for status_dir in std::fs::read_dir(&tasks_root)
+        .expect("read tasks dir")
+        .flatten()
+    {
+        let candidate = status_dir.path().join(id).join("task.yaml");
+        if candidate.exists() {
+            return std::fs::read_to_string(&candidate).expect("read task yaml");
+        }
+    }
+    panic!("task.yaml not found for id={id} under {}", tasks_root.display());
 }
 
 #[test]

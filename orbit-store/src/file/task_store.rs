@@ -340,9 +340,13 @@ impl TaskFileStore {
         };
         let mut bundle = self.read_bundle_at(&current_dir)?;
 
-        if let Some(value) = &fields.title {
+        let title_changed = if let Some(value) = &fields.title {
+            let changed = *value != bundle.doc.title;
             bundle.doc.title = value.clone();
-        }
+            changed
+        } else {
+            false
+        };
         if let Some(value) = &fields.description {
             bundle.doc.description = value.clone();
         }
@@ -424,6 +428,13 @@ impl TaskFileStore {
                 at: bundle.doc.updated_at,
                 by: "human".to_string(),
                 event,
+            });
+        }
+        if title_changed {
+            bundle.doc.history.push(TaskHistoryEntry {
+                at: bundle.doc.updated_at,
+                by: "human".to_string(),
+                event: "renamed".to_string(),
             });
         }
 

@@ -252,6 +252,9 @@ impl Execute for TaskShowArgs {
 pub struct TaskUpdateArgs {
     /// Task ID
     pub id: String,
+    /// New title
+    #[arg(long)]
+    pub title: Option<String>,
     /// New description (empty string clears)
     #[arg(long)]
     pub description: Option<String>,
@@ -305,6 +308,7 @@ impl Execute for TaskUpdateArgs {
         let task = runtime.update_task(
             &self.id,
             TaskUpdateParams {
+                title: self.title,
                 description: self.description,
                 plan: self.plan,
                 execution_summary: self.execution_summary,
