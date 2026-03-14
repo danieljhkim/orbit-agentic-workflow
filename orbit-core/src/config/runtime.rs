@@ -27,13 +27,12 @@ pub(crate) struct RuntimeConfig {
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
-        let orbit_home = paths::orbit_home_root();
-        Self::default_for_roots(&orbit_home, &orbit_home)
+        Self::default_for_data_root(&paths::current_dir_orbit_root())
     }
 }
 
 impl RuntimeConfig {
-    pub(crate) fn default_for_roots(data_root: &Path, _orbit_home: &Path) -> Self {
+    pub(crate) fn default_for_data_root(data_root: &Path) -> Self {
         Self {
             execution_env: ExecutionEnvPolicy::default(),
             codex_execution: CodexExecutionPolicy::default(),
@@ -43,13 +42,10 @@ impl RuntimeConfig {
         }
     }
 
-    pub(crate) fn load_from_data_root(
-        data_root: &Path,
-        orbit_home: &Path,
-    ) -> Result<Self, OrbitError> {
+    pub(crate) fn load_from_data_root(data_root: &Path) -> Result<Self, OrbitError> {
         let config_path = data_root.join("config.toml");
         if !config_path.exists() {
-            return Ok(Self::default_for_roots(data_root, orbit_home));
+            return Ok(Self::default_for_data_root(data_root));
         }
 
         let raw = fs::read_to_string(&config_path).map_err(|err| {
@@ -221,7 +217,7 @@ pub(crate) struct IdentityConfig {
 
 impl Default for IdentityConfig {
     fn default() -> Self {
-        Self::default_for_data_root(&paths::orbit_home_root())
+        Self::default_for_data_root(&paths::current_dir_orbit_root())
     }
 }
 

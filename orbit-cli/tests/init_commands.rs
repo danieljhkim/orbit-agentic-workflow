@@ -73,7 +73,7 @@ fn assert_default_named_jobs_visible_and_enabled(base_root: &std::path::Path) {
 }
 
 #[test]
-fn init_creates_default_identities_under_home_orbit() {
+fn init_creates_default_identities_under_cwd_orbit() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("home");
 
@@ -87,7 +87,7 @@ fn init_creates_default_identities_under_home_orbit() {
         .stdout(predicate::str::contains("skills: root="))
         .stdout(predicate::str::contains("config: path="));
 
-    let identity_root = home.path().join(".orbit").join("identities");
+    let identity_root = workspace.path().join(".orbit").join("identities");
     assert!(identity_root.join("prii.yaml").exists());
     assert!(identity_root.join("john.yaml").exists());
     assert!(identity_root.join("kent.yaml").exists());
@@ -95,7 +95,7 @@ fn init_creates_default_identities_under_home_orbit() {
     assert!(identity_root.join("grace.yaml").exists());
     assert!(identity_root.join("steve.yaml").exists());
 
-    let skills_root = home.path().join(".orbit").join("skills");
+    let skills_root = workspace.path().join(".orbit").join("skills");
     assert!(
         skills_root
             .join("orbit-create-task")
@@ -146,7 +146,7 @@ fn init_creates_default_identities_under_home_orbit() {
             .exists()
     );
 
-    let config_path = home.path().join(".orbit").join("config.toml");
+    let config_path = workspace.path().join(".orbit").join("config.toml");
     assert!(config_path.exists());
     let config_raw = std::fs::read_to_string(config_path).expect("read config");
     assert!(config_raw.contains("[execution.env]"));
@@ -154,8 +154,8 @@ fn init_creates_default_identities_under_home_orbit() {
     assert!(config_raw.contains("[task.approval]"));
     assert!(!config_raw.contains("[watch]"));
 
-    assert_default_skill_links(home.path());
-    assert_default_named_jobs_visible_and_enabled(home.path());
+    assert_default_skill_links(workspace.path());
+    assert_default_named_jobs_visible_and_enabled(workspace.path());
 }
 
 #[test]
@@ -190,10 +190,10 @@ fn init_migrates_root_skills_symlink_to_per_skill_links() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("home");
 
-    let orbit_skills = home.path().join(".orbit").join("skills");
+    let orbit_skills = workspace.path().join(".orbit").join("skills");
     std::fs::create_dir_all(&orbit_skills).expect("create orbit skills");
     for skill_parent in [".agents", ".claude"] {
-        let skill_dir = home.path().join(skill_parent);
+        let skill_dir = workspace.path().join(skill_parent);
         std::fs::create_dir_all(&skill_dir).expect("create skill dir");
         create_dir_symlink(&orbit_skills, &skill_dir.join("skills"));
     }
@@ -205,8 +205,8 @@ fn init_migrates_root_skills_symlink_to_per_skill_links() {
         .success();
 
     for skills_link_root in [
-        home.path().join(".agents").join("skills"),
-        home.path().join(".claude").join("skills"),
+        workspace.path().join(".agents").join("skills"),
+        workspace.path().join(".claude").join("skills"),
     ] {
         let root_meta = std::fs::symlink_metadata(&skills_link_root).expect("skills metadata");
         assert!(root_meta.file_type().is_dir());
@@ -223,14 +223,14 @@ fn init_repairs_broken_per_skill_symlink_targets() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("home");
 
-    let broken_target = home
+    let broken_target = workspace
         .path()
         .join(".orbit")
         .join("skills")
         .join("does-not-exist");
     for skills_link_root in [
-        home.path().join(".agents").join("skills"),
-        home.path().join(".claude").join("skills"),
+        workspace.path().join(".agents").join("skills"),
+        workspace.path().join(".claude").join("skills"),
     ] {
         std::fs::create_dir_all(&skills_link_root).expect("create skills link root");
         create_dir_symlink(&broken_target, &skills_link_root.join("orbit-approve-task"));
@@ -242,7 +242,7 @@ fn init_repairs_broken_per_skill_symlink_targets() {
         .assert()
         .success();
 
-    let expected_target = home
+    let expected_target = workspace
         .path()
         .join(".orbit")
         .join("skills")
@@ -250,11 +250,11 @@ fn init_repairs_broken_per_skill_symlink_targets() {
         .canonicalize()
         .expect("canonical expected target");
     for repaired_link in [
-        home.path()
+        workspace.path()
             .join(".agents")
             .join("skills")
             .join("orbit-approve-task"),
-        home.path()
+        workspace.path()
             .join(".claude")
             .join("skills")
             .join("orbit-approve-task"),
@@ -271,11 +271,11 @@ fn init_repairs_broken_per_skill_symlink_targets() {
 }
 
 #[test]
-fn init_force_resets_home_orbit_to_defaults() {
+fn init_force_resets_cwd_orbit_to_defaults() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("home");
 
-    let orbit_root = home.path().join(".orbit");
+    let orbit_root = workspace.path().join(".orbit");
     std::fs::create_dir_all(orbit_root.join("skills").join("orbit-approve-task"))
         .expect("create legacy skills");
     std::fs::write(
@@ -360,17 +360,6 @@ fn init_uses_repo_local_layout_when_inside_git_repository() {
     assert!(config_raw.contains("path = \"skills\""));
     assert!(config_raw.contains("path = \"orbit.db\""));
 
-    let home_orbit = home.path().join(".orbit");
-    assert!(home_orbit.join("identities").join("prii.yaml").exists());
-    assert!(
-        home_orbit
-            .join("skills")
-            .join("orbit-approve-task")
-            .join("SKILL.md")
-            .exists()
-    );
-    assert!(home_orbit.join("config.toml").exists());
-
     assert_default_named_jobs_visible_and_enabled(repo.path());
 }
 
@@ -386,7 +375,7 @@ fn init_refreshes_modified_defaults_without_destroying_tasks() {
         .assert()
         .success();
 
-    let orbit_root = home.path().join(".orbit");
+    let orbit_root = workspace.path().join(".orbit");
 
     // Tamper with a default identity file.
     let identity_path = orbit_root.join("identities").join("prii.yaml");

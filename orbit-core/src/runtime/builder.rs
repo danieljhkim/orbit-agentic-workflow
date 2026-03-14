@@ -15,14 +15,12 @@ use orbit_types::OrbitError;
 use crate::OrbitContext;
 use crate::config::RuntimeConfig;
 use crate::identity_catalog::IdentityCatalog;
-use crate::paths;
 use crate::skill_catalog::SkillCatalog;
 
 pub(crate) fn build_context_from_data_root(
     data_root: &Path,
-    orbit_home: &Path,
 ) -> Result<OrbitContext, OrbitError> {
-    let runtime_config = RuntimeConfig::load_from_data_root(data_root, orbit_home)?;
+    let runtime_config = RuntimeConfig::load_from_data_root(data_root)?;
     let db_path = runtime_config.persistence.audit.path.clone();
     let store = Store::open(&db_path)?;
 
@@ -33,7 +31,7 @@ pub(crate) fn build_context_from_data_root(
     build_context_common(
         store,
         data_root.to_path_buf(),
-        orbit_home.to_path_buf(),
+        data_root.to_path_buf(),
         runtime_config,
         task_store,
         activity_store,
@@ -50,8 +48,8 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
     let task_store = task_store_file(temp_root.join("tasks"))?;
     let activity_store = activity_store_file(temp_root.join("activities"))?;
     let job_store = job_store_file(temp_root.join("jobs"))?;
-    let orbit_home = paths::orbit_home_root();
-    let runtime_config = RuntimeConfig::default_for_roots(&orbit_home, &orbit_home);
+    let orbit_root = temp_root.join(".orbit");
+    let runtime_config = RuntimeConfig::default_for_data_root(&orbit_root);
     let data_root = runtime_config
         .persistence
         .task
@@ -62,7 +60,7 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
     build_context_common(
         store,
         data_root,
-        orbit_home,
+        orbit_root,
         runtime_config,
         task_store,
         activity_store,

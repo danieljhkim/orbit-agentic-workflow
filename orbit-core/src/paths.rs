@@ -18,19 +18,13 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
     None
 }
 
-pub(crate) fn home_dir_required(context: &str) -> Result<PathBuf, OrbitError> {
-    home_dir()
-        .ok_or_else(|| OrbitError::InvalidInput(format!("HOME/USERPROFILE is not set; {context}")))
+pub(crate) fn cwd_orbit_root(cwd: &Path) -> PathBuf {
+    normalize_path_components(&cwd.join(".orbit"))
 }
 
-pub(crate) fn orbit_home_root() -> PathBuf {
-    home_dir()
-        .map(|home| home.join(".orbit"))
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(".orbit")
-        })
+pub(crate) fn current_dir_orbit_root() -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    cwd_orbit_root(&cwd)
 }
 
 pub(crate) fn normalize_path(raw: Option<String>) -> Result<Option<String>, OrbitError> {

@@ -13,7 +13,7 @@ fn orbit_in(dir: &Path) -> Command {
 }
 
 #[test]
-fn config_show_json_bootstraps_orbit_home_when_missing() {
+fn config_show_json_bootstraps_cwd_orbit_when_missing() {
     let dir = tempfile::tempdir().expect("tempdir");
 
     let output = orbit_in(dir.path())
@@ -136,9 +136,17 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
         value["persistence"]["job"]["persistence"]["type"],
         serde_json::json!("file")
     );
+    let reported_jobs_path = std::fs::canonicalize(
+        value["persistence"]["job"]["persistence"]["path"]
+            .as_str()
+            .expect("job persistence path"),
+    )
+    .expect("canonical reported jobs path");
+    let expected_jobs_path =
+        std::fs::canonicalize(orbit_dir.join("custom-jobs")).expect("canonical expected jobs path");
     assert_eq!(
-        value["persistence"]["job"]["persistence"]["path"],
-        serde_json::json!(orbit_dir.join("custom-jobs").to_string_lossy())
+        reported_jobs_path,
+        expected_jobs_path
     );
 }
 
@@ -245,7 +253,7 @@ fn config_show_json_reports_workspace_config_path_when_local_config_is_used() {
 }
 
 #[test]
-fn non_init_commands_in_repo_bootstrap_only_home_scope() {
+fn non_init_commands_in_repo_bootstrap_repo_local_scope() {
     let dir = tempfile::tempdir().expect("tempdir");
     let workspace = dir.path().join("workspace");
     let home = dir.path().join("home");
@@ -269,8 +277,8 @@ fn non_init_commands_in_repo_bootstrap_only_home_scope() {
     let value: Value = serde_json::from_slice(&output).expect("json");
 
     assert_eq!(value["exists"], serde_json::json!(true));
-    assert!(home.join(".orbit").join("config.toml").exists());
-    assert!(!workspace.join(".orbit").exists());
+    assert!(workspace.join(".orbit").join("config.toml").exists());
+    assert!(!home.join(".orbit").exists());
 }
 
 #[test]

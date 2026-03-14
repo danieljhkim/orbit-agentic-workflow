@@ -8,9 +8,8 @@ use crate::command::activity::seed_default_activities;
 use crate::command::identity::seed_default_identities;
 use crate::command::job::seed_default_jobs;
 use crate::command::skill::{default_skill_ids, seed_default_skills};
-use crate::config::{default_config_template_for_root, seed_default_config};
+use crate::config::seed_default_config;
 use crate::fs_utils::{create_dir_symlink, remove_path_if_exists};
-use crate::paths;
 
 #[derive(Debug, Clone)]
 pub struct InitResult {
@@ -43,7 +42,7 @@ impl OrbitRuntime {
         &self,
         options: InitOptions,
     ) -> Result<InitResult, OrbitError> {
-        init_workspace_at_root(&resolve_init_root(self.data_root())?, options)
+        init_workspace_at_root(&self.data_root(), options)
     }
 }
 
@@ -57,22 +56,15 @@ pub fn init_workspace_from_root_override(
     options: InitOptions,
 ) -> Result<InitResult, OrbitError> {
     let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
-    let orbit_home = OrbitRuntime::orbit_home_root();
-    let data_root = crate::runtime::resolve_initialize_data_root(&cwd, root_override, &orbit_home)?;
-    let init_root = resolve_init_root(data_root)?;
-
-    if init_root != orbit_home || !options.force {
-        ensure_orbit_root_initialized(&orbit_home)?;
-    }
-
-    init_workspace_at_root(&init_root, options)
+    let data_root = crate::runtime::resolve_initialize_data_root(&cwd, root_override)?;
+    init_workspace_at_root(&data_root, options)
 }
 
 fn init_workspace_at_root(
     orbit_root: &Path,
     options: InitOptions,
 ) -> Result<InitResult, OrbitError> {
-    let init_target = resolve_init_target_from_root(orbit_root)?;
+    let init_target = resolve_init_target_from_root(orbit_root);
     let orbit_root = init_target.orbit_root.clone();
     let identity_root = orbit_root.join("identities");
 
@@ -88,7 +80,7 @@ fn init_workspace_at_root(
     let refreshed_identity_files = seed_default_identities(&identity_root, overwrite)?;
     let refreshed_skill_files = seed_default_skills(&skills_root, &orbit_root, overwrite)?;
     let config_path = orbit_root.join("config.toml");
-    let created_config = seed_default_config(&config_path, init_target.config_template)?;
+    let created_config = seed_default_config(&config_path)?;
 
     let skill_ids = default_skill_ids();
     let mut created_skills_symlink = false;
@@ -114,46 +106,28 @@ fn init_workspace_at_root(
     })
 }
 
-fn home_orbit_root() -> Result<PathBuf, OrbitError> {
-    Ok(paths::home_dir_required("cannot resolve home directory")?.join(".orbit"))
-}
-
-fn resolve_init_root(data_root: PathBuf) -> Result<PathBuf, OrbitError> {
-    let orbit_home = OrbitRuntime::orbit_home_root();
-    if data_root == orbit_home {
-        let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
-        if let Some(repo_root) = find_git_repo_root(&cwd) {
-            return Ok(repo_root.join(".orbit"));
-        }
-    }
-
-    Ok(data_root)
-}
-
 #[derive(Debug, Clone)]
 struct InitTarget {
     orbit_root: PathBuf,
     skills_links_roots: Vec<PathBuf>,
-    config_template: &'static str,
 }
 
-fn resolve_init_target_from_root(orbit_root: &Path) -> Result<InitTarget, OrbitError> {
+fn resolve_init_target_from_root(orbit_root: &Path) -> InitTarget {
     let orbit_root = orbit_root.to_path_buf();
-    let home_root = home_orbit_root()?;
-    let config_template = default_config_template_for_root(&orbit_root, &home_root);
-
     let skills_links_base = if let Some(repo_root) = find_git_repo_root(&orbit_root) {
         repo_root
     } else {
-        paths::home_dir_required("cannot resolve home directory")?
+        orbit_root
+            .parent()
+            .unwrap_or(orbit_root.as_path())
+            .to_path_buf()
     };
     let skills_links_roots = skill_link_roots(&skills_links_base);
 
-    Ok(InitTarget {
+    InitTarget {
         orbit_root,
         skills_links_roots,
-        config_template,
-    })
+    }
 }
 
 fn skill_link_roots(base_root: &Path) -> Vec<PathBuf> {

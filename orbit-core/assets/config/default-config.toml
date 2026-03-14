@@ -1,4 +1,4 @@
-root = "~/.orbit"
+root = "."
 
 [execution.env]
 inherit = false

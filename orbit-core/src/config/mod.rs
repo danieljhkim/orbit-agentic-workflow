@@ -3,7 +3,7 @@ mod persistence;
 mod raw;
 mod runtime;
 
-pub(crate) use bootstrap::{default_config_template_for_root, seed_default_config};
+pub(crate) use bootstrap::seed_default_config;
 pub(crate) use persistence::PersistenceConfig;
 pub(crate) use runtime::{
     CodexExecutionPolicy, ExecutionEnvPolicy, RuntimeConfig, normalize_pass_list,

@@ -31,18 +31,14 @@ impl OrbitRuntime {
 
     pub fn initialize_with_root_override(root_override: Option<&Path>) -> Result<Self, OrbitError> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let orbit_home = Self::default_data_root();
-        let data_root = resolve_initialize_data_root(&cwd, root_override, &orbit_home)?;
-        if should_bootstrap_orbit_home(&data_root, &orbit_home) {
-            ensure_orbit_root_initialized(&orbit_home)?;
-        }
+        let data_root = resolve_initialize_data_root(&cwd, root_override)?;
+        ensure_orbit_root_initialized(&data_root)?;
         Self::from_data_root(&data_root)
     }
 
     pub fn from_data_root(data_root: &Path) -> Result<Self, OrbitError> {
-        let orbit_home = Self::orbit_home_root();
         Ok(Self {
-            context: builder::build_context_from_data_root(data_root, &orbit_home)?,
+            context: builder::build_context_from_data_root(data_root)?,
             event_log: event_bus::EventLog::default(),
         })
     }
@@ -152,13 +148,6 @@ impl OrbitRuntime {
         compile_identity_block(identity)
     }
 
-    pub fn default_data_root() -> PathBuf {
-        Self::orbit_home_root()
-    }
-
-    pub fn orbit_home_root() -> PathBuf {
-        paths::orbit_home_root()
-    }
 }
 
 fn orbit_event_to_audit(id: i64, event: OrbitEvent) -> Audit {
@@ -193,7 +182,6 @@ struct RootOnlyConfig {
 pub(crate) fn resolve_initialize_data_root(
     cwd: &Path,
     root_override: Option<&Path>,
-    orbit_home: &Path,
 ) -> Result<PathBuf, OrbitError> {
     if let Some(root) = root_override {
         return resolve_root_path_value(&root.to_string_lossy(), cwd);
@@ -212,19 +200,11 @@ pub(crate) fn resolve_initialize_data_root(
             if let Some(configured_root) = configured_root_from_config(&repo_config)? {
                 return Ok(configured_root);
             }
-            return Ok(repo_orbit_root);
         }
+        return Ok(repo_orbit_root);
     }
 
-    let home_config = orbit_home.join("config.toml");
-    if home_config.exists() {
-        if let Some(configured_root) = configured_root_from_config(&home_config)? {
-            return Ok(configured_root);
-        }
-        return Ok(orbit_home.to_path_buf());
-    }
-
-    Ok(orbit_home.to_path_buf())
+    Ok(paths::cwd_orbit_root(cwd))
 }
 
 fn configured_root_from_config(config_path: &Path) -> Result<Option<PathBuf>, OrbitError> {
@@ -264,15 +244,11 @@ fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
     paths::find_git_repo_root(start)
 }
 
-fn should_bootstrap_orbit_home(data_root: &Path, orbit_home: &Path) -> bool {
-    data_root == orbit_home
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, OnceLock};
 
-    use super::{resolve_initialize_data_root, should_bootstrap_orbit_home};
+    use super::resolve_initialize_data_root;
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -284,9 +260,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path();
         let explicit = dir.path().join("cli-root");
-        let orbit_home = dir.path().join("home").join(".orbit");
-        let chosen = resolve_initialize_data_root(cwd, Some(explicit.as_path()), &orbit_home)
-            .expect("resolve");
+        let chosen =
+            resolve_initialize_data_root(cwd, Some(explicit.as_path())).expect("resolve");
         assert_eq!(chosen, explicit);
     }
 
@@ -296,12 +271,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path();
         let explicit = dir.path().join("env-root");
-        let orbit_home = dir.path().join("home").join(".orbit");
 
         let previous = std::env::var("ORBIT_ROOT").ok();
         // SAFETY: test runs in isolation; no other thread reads this var concurrently.
         unsafe { std::env::set_var("ORBIT_ROOT", &explicit) };
-        let chosen = resolve_initialize_data_root(cwd, None, &orbit_home).expect("resolve");
+        let chosen = resolve_initialize_data_root(cwd, None).expect("resolve");
         match previous {
             Some(value) => unsafe { std::env::set_var("ORBIT_ROOT", value) },
             None => unsafe { std::env::remove_var("ORBIT_ROOT") },
@@ -326,20 +300,12 @@ mod tests {
         )
         .expect("write repo config");
 
-        let orbit_home = dir.path().join("home").join(".orbit");
-        std::fs::create_dir_all(&orbit_home).expect("home orbit");
-        std::fs::write(
-            orbit_home.join("config.toml"),
-            "root = \"./home-root\"\n[task.approval]\nrequired_for_agent=false\n",
-        )
-        .expect("write home config");
-
         let previous = std::env::var("ORBIT_ROOT").ok();
         match previous {
             Some(_) => unsafe { std::env::remove_var("ORBIT_ROOT") },
             None => {}
         }
-        let chosen = resolve_initialize_data_root(&cwd, None, &orbit_home).expect("resolve");
+        let chosen = resolve_initialize_data_root(&cwd, None).expect("resolve");
         if let Some(value) = previous {
             unsafe { std::env::set_var("ORBIT_ROOT", value) };
         }
@@ -347,104 +313,87 @@ mod tests {
     }
 
     #[test]
-    fn home_config_root_used_when_repo_config_missing() {
-        let _guard = env_lock().lock().expect("env lock");
-        let dir = tempfile::tempdir().expect("tempdir");
-        let cwd = dir.path();
-        let orbit_home = dir.path().join("home").join(".orbit");
-        std::fs::create_dir_all(&orbit_home).expect("home orbit");
-        std::fs::write(
-            orbit_home.join("config.toml"),
-            "root = \"./configured-home-root\"\n",
-        )
-        .expect("write home config");
-
-        let previous = std::env::var("ORBIT_ROOT").ok();
-        match previous {
-            Some(_) => unsafe { std::env::remove_var("ORBIT_ROOT") },
-            None => {}
-        }
-        let chosen = resolve_initialize_data_root(cwd, None, &orbit_home).expect("resolve");
-        if let Some(value) = previous {
-            unsafe { std::env::set_var("ORBIT_ROOT", value) };
-        }
-        assert_eq!(chosen, orbit_home.join("configured-home-root"));
-    }
-
-    #[test]
-    fn home_config_root_used_when_inside_git_repo_without_repo_config() {
+    fn repo_root_used_when_inside_git_repo_without_repo_config() {
         let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = dir.path().join("repo");
         let cwd = repo.join("nested");
         std::fs::create_dir_all(repo.join(".git")).expect("create git dir");
         std::fs::create_dir_all(&cwd).expect("create cwd");
-        let orbit_home = dir.path().join("home").join(".orbit");
-        std::fs::create_dir_all(&orbit_home).expect("home orbit");
-        std::fs::write(
-            orbit_home.join("config.toml"),
-            "root = \"./configured-home-root\"\n",
-        )
-        .expect("write home config");
 
         let previous = std::env::var("ORBIT_ROOT").ok();
         match previous {
             Some(_) => unsafe { std::env::remove_var("ORBIT_ROOT") },
             None => {}
         }
-        let chosen = resolve_initialize_data_root(&cwd, None, &orbit_home).expect("resolve");
+        let chosen = resolve_initialize_data_root(&cwd, None).expect("resolve");
         if let Some(value) = previous {
             unsafe { std::env::set_var("ORBIT_ROOT", value) };
         }
-        assert_eq!(chosen, orbit_home.join("configured-home-root"));
+        assert_eq!(chosen, repo.join(".orbit"));
     }
 
     #[test]
-    fn orbit_home_fallback_used_when_no_override_or_config() {
+    fn cwd_root_used_when_outside_git_repo_without_override_or_config() {
         let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        let cwd = dir.path();
-        let orbit_home = dir.path().join("home").join(".orbit");
+        let cwd = dir.path().join("workspace");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+
         let previous = std::env::var("ORBIT_ROOT").ok();
         match previous {
             Some(_) => unsafe { std::env::remove_var("ORBIT_ROOT") },
             None => {}
         }
-        let chosen = resolve_initialize_data_root(cwd, None, &orbit_home).expect("resolve");
+        let chosen = resolve_initialize_data_root(&cwd, None).expect("resolve");
         if let Some(value) = previous {
             unsafe { std::env::set_var("ORBIT_ROOT", value) };
         }
-        assert_eq!(chosen, orbit_home);
+        assert_eq!(chosen, cwd.join(".orbit"));
+    }
+
+    #[test]
+    fn repo_root_used_even_when_repo_orbit_directory_is_absent() {
+        let _guard = env_lock().lock().expect("env lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        let cwd = repo.join("nested");
+        std::fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let previous = std::env::var("ORBIT_ROOT").ok();
+        match previous {
+            Some(_) => unsafe { std::env::remove_var("ORBIT_ROOT") },
+            None => {}
+        }
+        let chosen = resolve_initialize_data_root(&cwd, None).expect("resolve");
+        if let Some(value) = previous {
+            unsafe { std::env::set_var("ORBIT_ROOT", value) };
+        }
+        assert_eq!(chosen, repo.join(".orbit"));
     }
 
     #[test]
     fn configured_root_normalizes_curdir_segments() {
         let _guard = env_lock().lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        let orbit_home = dir.path().join("home").join(".orbit");
-        std::fs::create_dir_all(&orbit_home).expect("home orbit");
-        std::fs::write(orbit_home.join("config.toml"), "root = \".\"\n").expect("write config");
+        let repo = dir.path().join("repo");
+        let cwd = repo.join("nested");
+        let repo_orbit = repo.join(".orbit");
+        std::fs::create_dir_all(repo.join(".git")).expect("create git dir");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        std::fs::create_dir_all(&repo_orbit).expect("repo orbit");
+        std::fs::write(repo_orbit.join("config.toml"), "root = \".\"\n").expect("write config");
 
         let previous = std::env::var("ORBIT_ROOT").ok();
         if previous.is_some() {
             // SAFETY: test runs in isolation; no other thread reads this var concurrently.
             unsafe { std::env::remove_var("ORBIT_ROOT") };
         }
-        let chosen = resolve_initialize_data_root(dir.path(), None, &orbit_home).expect("resolve");
+        let chosen = resolve_initialize_data_root(&cwd, None).expect("resolve");
         if let Some(value) = previous {
             // SAFETY: test restores previous env var for isolation.
             unsafe { std::env::set_var("ORBIT_ROOT", value) };
         }
-        assert_eq!(chosen, orbit_home);
-    }
-
-    #[test]
-    fn bootstrap_home_only_when_home_is_selected_data_root() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let orbit_home = dir.path().join("home").join(".orbit");
-        let repo_orbit = dir.path().join("repo").join(".orbit");
-
-        assert!(should_bootstrap_orbit_home(&orbit_home, &orbit_home));
-        assert!(!should_bootstrap_orbit_home(&repo_orbit, &orbit_home));
+        assert_eq!(chosen, repo_orbit);
     }
 }
