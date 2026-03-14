@@ -16,8 +16,8 @@ pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
     Activity, AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, IdentityRole, Job,
-    JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill,
-    Task, TaskComment, TaskPriority, TaskStatus, TaskType,
+    JobRun, JobRunState, JobScheduleState, JobTargetType, Role, Skill, Task, TaskComment,
+    TaskPriority, TaskStatus, TaskType,
 };
 pub use runtime::OrbitRuntime;
 
@@ -27,9 +27,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_types::{
-        JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
-    };
+    use orbit_types::{JobRunState, JobTargetType, OrbitEvent, TaskPriority, TaskStatus};
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -132,9 +130,6 @@ mod tests {
                 schedule: "every 1m".to_string(),
                 agent_cli: agent_path.to_string_lossy().to_string(),
                 timeout_seconds: 30,
-                retry_max_attempts: 0,
-                retry_backoff_strategy: JobRetryBackoffStrategy::None,
-                retry_initial_delay_seconds: 0,
                 initial_state_override: None,
                 env_extra: vec![],
             })

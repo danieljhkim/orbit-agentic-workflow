@@ -22,8 +22,8 @@ pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use identity::{IdentityRole, ResolvedIdentity};
 pub use job::{
-    AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRetryBackoffStrategy, JobRun,
-    JobRunState, JobScheduleState, JobTargetType,
+    AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState,
+    JobScheduleState, JobTargetType,
 };
 pub use memo::Memo;
 pub use role::Role;
@@ -37,9 +37,8 @@ mod tests {
     use std::str::FromStr;
 
     use crate::{
-        Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult, Job,
-        JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitEvent,
-        Role, Skill, TaskStatus,
+        Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult, Job, JobRun,
+        JobRunState, JobScheduleState, JobTargetType, OrbitEvent, Role, Skill, TaskStatus,
     };
 
     #[test]
@@ -108,13 +107,11 @@ mod tests {
             schedule: "0 * * * *".to_string(),
             agent_cli: "claude".to_string(),
             timeout_seconds: 300,
-            retry_max_attempts: 2,
-            retry_backoff_strategy: JobRetryBackoffStrategy::Exponential,
-            retry_initial_delay_seconds: 10,
             state: JobScheduleState::Enabled,
             next_run_at: Utc::now(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            env_extra: vec![],
         };
         let job_value = serde_json::to_value(job).expect("serialize job");
         assert_eq!(job_value["state"], "enabled");

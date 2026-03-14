@@ -44,11 +44,6 @@ pub enum OrbitEvent {
         run_id: String,
         state: String,
     },
-    JobRetryScheduled {
-        job_id: String,
-        run_id: String,
-        next_run_at: String,
-    },
     JobProtocolViolation {
         job_id: String,
         run_id: String,

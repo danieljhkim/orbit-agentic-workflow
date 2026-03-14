@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
-use orbit_types::{JobRetryBackoffStrategy, OrbitError};
+use orbit_types::OrbitError;
 
 pub fn compute_next_run_at(
     schedule: &str,
@@ -13,24 +13,6 @@ pub fn compute_next_run_at(
     compute_next_cron_utc(trimmed, from_utc)
 }
 
-pub fn compute_retry_delay_seconds(
-    strategy: JobRetryBackoffStrategy,
-    initial_delay_seconds: u64,
-    retry_index: u32,
-) -> u64 {
-    if initial_delay_seconds == 0 {
-        return 0;
-    }
-
-    match strategy {
-        JobRetryBackoffStrategy::None => 0,
-        JobRetryBackoffStrategy::Fixed => initial_delay_seconds,
-        JobRetryBackoffStrategy::Exponential => {
-            let exponent = retry_index.saturating_sub(1);
-            initial_delay_seconds.saturating_mul(2u64.saturating_pow(exponent))
-        }
-    }
-}
 
 fn parse_interval_alias(spec: &str) -> Result<Option<Duration>, OrbitError> {
     let duration = match spec {

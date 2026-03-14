@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Activity, AgentSession, AgentSessionStatus, AgentToolCall, AuditEvent, Job,
-    JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
-    StoredTool, Task, TaskComment, TaskPriority, TaskStatus, TaskType,
+    Activity, AgentSession, AgentSessionStatus, AgentToolCall, AuditEvent, Job, JobRun,
+    JobRunState, JobScheduleState, JobTargetType, OrbitError, StoredTool, Task, TaskComment,
+    TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
 
@@ -88,9 +88,6 @@ pub struct JobCreateParams {
     pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
-    pub retry_max_attempts: u32,
-    pub retry_backoff_strategy: JobRetryBackoffStrategy,
-    pub retry_initial_delay_seconds: u64,
     pub next_run_at: DateTime<Utc>,
     pub initial_state: JobScheduleState,
     pub env_extra: Vec<String>,

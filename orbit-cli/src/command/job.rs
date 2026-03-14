@@ -5,7 +5,7 @@ use chrono::Utc;
 use clap::{Args, Subcommand};
 use orbit_core::command::job::JobAddParams;
 use orbit_core::job::runtime::{JobRuntime, JobRuntimeConfig, ShutdownSignal};
-use orbit_core::{Job, JobRetryBackoffStrategy, JobRun, JobTargetType, OrbitError, OrbitRuntime};
+use orbit_core::{Job, JobRun, JobTargetType, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -65,12 +65,6 @@ pub struct JobAddArgs {
     pub agent_cli: String,
     #[arg(long, default_value = "20m")]
     pub timeout: String,
-    #[arg(long, default_value_t = 0)]
-    pub retry_max_attempts: u32,
-    #[arg(long, value_enum, default_value_t = JobRetryBackoffStrategy::None)]
-    pub retry_backoff: JobRetryBackoffStrategy,
-    #[arg(long, default_value = "0s")]
-    pub retry_initial_delay: String,
     /// Comma-separated list of extra env var names to pass through in hermetic mode for this job.
     #[arg(long, default_value = "")]
     pub env_extra: String,
@@ -81,8 +75,6 @@ pub struct JobAddArgs {
 impl Execute for JobAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let timeout_seconds = crate::parse::parse_duration_seconds(&self.timeout)?;
-        let retry_initial_delay_seconds =
-            crate::parse::parse_duration_seconds(&self.retry_initial_delay)?;
 
         let job = runtime.add_job(JobAddParams {
             job_id: self.job_id,
@@ -91,9 +83,6 @@ impl Execute for JobAddArgs {
             schedule: self.schedule,
             agent_cli: self.agent_cli,
             timeout_seconds,
-            retry_max_attempts: self.retry_max_attempts,
-            retry_backoff_strategy: self.retry_backoff,
-            retry_initial_delay_seconds,
             initial_state_override: None,
             env_extra: crate::parse::csv_to_vec(&self.env_extra),
         })?;
@@ -160,19 +149,16 @@ impl Execute for JobShowArgs {
         if self.json {
             crate::output::json::print_pretty(&job_to_json(&job))
         } else {
-            println!("Job ID:              {}", job.job_id);
-            println!("Target Type:         {}", job.target_type);
-            println!("Target ID:           {}", job.target_id);
-            println!("Schedule:            {}", job.schedule);
-            println!("Agent CLI:           {}", job.agent_cli);
-            println!("Timeout (seconds):   {}", job.timeout_seconds);
-            println!("Retry Max Attempts:  {}", job.retry_max_attempts);
-            println!("Retry Backoff:       {}", job.retry_backoff_strategy);
-            println!("Retry Initial Delay: {}", job.retry_initial_delay_seconds);
-            println!("State:               {}", job.state);
-            println!("Next Run:            {}", job.next_run_at.to_rfc3339());
-            println!("Created:             {}", job.created_at.to_rfc3339());
-            println!("Updated:             {}", job.updated_at.to_rfc3339());
+            println!("Job ID:            {}", job.job_id);
+            println!("Target Type:       {}", job.target_type);
+            println!("Target ID:         {}", job.target_id);
+            println!("Schedule:          {}", job.schedule);
+            println!("Agent CLI:         {}", job.agent_cli);
+            println!("Timeout (seconds): {}", job.timeout_seconds);
+            println!("State:             {}", job.state);
+            println!("Next Run:          {}", job.next_run_at.to_rfc3339());
+            println!("Created:           {}", job.created_at.to_rfc3339());
+            println!("Updated:           {}", job.updated_at.to_rfc3339());
             Ok(())
         }
     }
@@ -371,9 +357,6 @@ fn job_to_json(job: &Job) -> Value {
         "schedule": job.schedule,
         "agent_cli": job.agent_cli,
         "timeout_seconds": job.timeout_seconds,
-        "retry_max_attempts": job.retry_max_attempts,
-        "retry_backoff_strategy": job.retry_backoff_strategy.to_string(),
-        "retry_initial_delay_seconds": job.retry_initial_delay_seconds,
         "state": job.state.to_string(),
         "next_run_at": job.next_run_at.to_rfc3339(),
         "created_at": job.created_at.to_rfc3339(),

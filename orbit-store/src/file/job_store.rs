@@ -2,9 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{
-    Job, JobRetryBackoffStrategy, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError,
-};
+use orbit_types::{Job, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -40,7 +38,6 @@ impl JobFileStore {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn insert_activity_v2(
         &self,
         job_id: Option<String>,
@@ -49,9 +46,6 @@ impl JobFileStore {
         schedule: &str,
         agent_cli: &str,
         timeout_seconds: u64,
-        retry_max_attempts: u32,
-        retry_backoff_strategy: JobRetryBackoffStrategy,
-        retry_initial_delay_seconds: u64,
         next_run_at: DateTime<Utc>,
         initial_state: JobScheduleState,
         env_extra: Vec<String>,
@@ -76,9 +70,6 @@ impl JobFileStore {
             schedule: schedule.to_string(),
             agent_cli: agent_cli.to_string(),
             timeout_seconds,
-            retry_max_attempts,
-            retry_backoff_strategy,
-            retry_initial_delay_seconds,
             state: initial_state,
             next_run_at,
             created_at: now,
@@ -588,7 +579,7 @@ use crate::{ClaimedJobRun, DueJobsClaim};
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use orbit_types::{JobRetryBackoffStrategy, JobScheduleState, JobTargetType, OrbitError};
+    use orbit_types::{JobScheduleState, JobTargetType, OrbitError};
 
     use super::JobFileStore;
 
@@ -607,9 +598,6 @@ mod tests {
                 "every 1h",
                 "mock-agent",
                 300,
-                0,
-                JobRetryBackoffStrategy::None,
-                0,
                 Utc::now(),
                 JobScheduleState::Enabled,
                 vec![],

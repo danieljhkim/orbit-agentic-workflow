@@ -797,7 +797,6 @@ fn job_list_ops_returns_signal_tier_json() {
     // Verbose fields must be absent.
     assert!(job.get("agent_cli").is_none());
     assert!(job.get("timeout_seconds").is_none());
-    assert!(job.get("retry_max_attempts").is_none());
     assert!(job.get("schedule").is_none());
 }
 

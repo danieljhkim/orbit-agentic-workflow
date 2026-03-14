@@ -8,7 +8,7 @@ use orbit_core::OrbitRuntime;
 use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams};
 use orbit_core::command::job::JobAddParams;
 use orbit_core::job::runtime::{JobRuntime, JobRuntimeConfig, ShutdownSignal};
-use orbit_types::{JobRetryBackoffStrategy, JobRunState, JobTargetType, OrbitError};
+use orbit_types::{JobRunState, JobTargetType, OrbitError};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -67,23 +67,8 @@ fn add_activity_rejects_missing_skill_ref() {
     assert!(result.is_err());
 }
 
-fn add_scheduled_activity(
-    runtime: &OrbitRuntime,
-    target_id: &str,
-    agent_cli: &str,
-    retry_max_attempts: u32,
-    retry_backoff_strategy: JobRetryBackoffStrategy,
-    retry_initial_delay_seconds: u64,
-) -> String {
-    add_scheduled_activity_with_timeout(
-        runtime,
-        target_id,
-        agent_cli,
-        10,
-        retry_max_attempts,
-        retry_backoff_strategy,
-        retry_initial_delay_seconds,
-    )
+fn add_scheduled_activity(runtime: &OrbitRuntime, target_id: &str, agent_cli: &str) -> String {
+    add_scheduled_activity_with_timeout(runtime, target_id, agent_cli, 10)
 }
 
 fn add_scheduled_activity_with_timeout(
@@ -91,9 +76,6 @@ fn add_scheduled_activity_with_timeout(
     target_id: &str,
     agent_cli: &str,
     timeout_seconds: u64,
-    retry_max_attempts: u32,
-    retry_backoff_strategy: JobRetryBackoffStrategy,
-    retry_initial_delay_seconds: u64,
 ) -> String {
     runtime
         .add_job(JobAddParams {
@@ -103,9 +85,6 @@ fn add_scheduled_activity_with_timeout(
             schedule: "every 1s".to_string(),
             agent_cli: agent_cli.to_string(),
             timeout_seconds,
-            retry_max_attempts,
-            retry_backoff_strategy,
-            retry_initial_delay_seconds,
             initial_state_override: None,
             env_extra: vec![],
         })
@@ -185,9 +164,6 @@ fn agent_with_orphan_stdout_holder_does_not_hang() {
         "spec-orphan-stdout",
         &agent_cli,
         10, // generous agent timeout; the hang occurs before timeout fires
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     // Run the job in a thread so we can detect a hang via channel timeout.
@@ -306,9 +282,6 @@ fn scheduled_run_executes_agent_and_records_success_run() {
         &runtime,
         "spec-success",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
@@ -362,9 +335,6 @@ fn run_job_now_with_input_passes_manual_input_to_agent() {
         &runtime,
         "spec-success-with-input",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime
@@ -395,9 +365,6 @@ fn run_job_now_with_input_rejects_schema_mismatch() {
         &runtime,
         "spec-invalid-input",
         "mock-agent",
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let err = runtime
@@ -452,9 +419,6 @@ fn job_run_resolves_activity_identity_from_data_root_when_home_differs() {
         &runtime,
         "spec-identity",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run_result = runtime.run_job_now(&job_id);
@@ -487,9 +451,6 @@ fn invalid_agent_json_with_zero_exit_falls_back_to_success() {
         &runtime,
         "spec-protocol",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
@@ -524,9 +485,6 @@ fn invocation_failure_with_stderr_marks_run_failed_with_invocation_error() {
         &runtime,
         "spec-invocation",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
@@ -571,9 +529,6 @@ pass = ["PATH"]
         &runtime,
         "spec-codex-missing-env",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -606,9 +561,6 @@ fn codex_job_run_uses_workspace_write_sandbox() {
         &runtime,
         "spec-codex-sandbox",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -643,9 +595,6 @@ approval_policy = "on-request"
         &runtime,
         "spec-codex-approval",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -688,9 +637,6 @@ fn successful_commit_request_is_executed_via_git_tools() {
         &runtime,
         "spec-commit-request",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -746,9 +692,6 @@ fn commit_request_excludes_preexisting_staged_changes() {
         &runtime,
         "spec-commit-request-isolated",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -791,9 +734,6 @@ fn malformed_commit_request_fails_as_protocol_violation() {
         &runtime,
         "spec-commit-protocol",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -826,9 +766,6 @@ fn empty_stdout_timeout_marks_run_as_timeout() {
         "spec-timeout",
         &agent_cli,
         1,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -868,9 +805,6 @@ pass = ["PATH"]
         &runtime,
         "spec-claude-missing-env",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -912,9 +846,6 @@ fn provider_required_env_present_reaches_protocol_validation() {
         &runtime,
         "spec-provider-env-present",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -925,39 +856,6 @@ fn provider_required_env_present_reaches_protocol_validation() {
     assert!(history[0].error_code.is_none());
 }
 
-#[test]
-fn run_job_now_applies_retry_policy_and_second_attempt_can_succeed() {
-    let dir = tempdir().expect("tempdir");
-    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
-    let marker = dir.path().join("retry.marker");
-    let script_path = dir.path().join("mock-agent");
-    let script = format!(
-        "#!/bin/sh\nif [ -f \"{marker}\" ]; then\n  printf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n  exit 0\nfi\ntouch \"{marker}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"failed\",\"result\":null,\"error\":{{\"code\":\"FIRST_FAIL\",\"message\":\"first attempt fails\",\"details\":{{}}}},\"durationMs\":1}}'\nexit 1\n",
-        marker = marker.to_string_lossy()
-    );
-    let agent_cli = write_agent_script(&script_path, &script);
-
-    add_activity(&runtime, "spec-retry");
-    let job_id = add_scheduled_activity(
-        &runtime,
-        "spec-retry",
-        &agent_cli,
-        1,
-        JobRetryBackoffStrategy::Fixed,
-        0,
-    );
-
-    let result = runtime.run_job_now(&job_id).expect("run now");
-    assert_eq!(result.state, JobRunState::Success);
-    assert_eq!(result.attempt, 2);
-
-    let history = runtime.job_history(&job_id).expect("history");
-    assert_eq!(history.len(), 2);
-    assert_eq!(history[0].attempt, 2);
-    assert_eq!(history[0].state, JobRunState::Success);
-    assert_eq!(history[1].attempt, 1);
-    assert_eq!(history[1].state, JobRunState::Failed);
-}
 
 #[test]
 fn run_job_now_rejects_when_active_run_exists() {
@@ -974,9 +872,6 @@ fn run_job_now_rejects_when_active_run_exists() {
         &runtime,
         "spec-active-lock",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let r1 = Arc::clone(&runtime);
@@ -1017,9 +912,6 @@ fn job_history_recovers_stale_running_run_to_failed() {
         &runtime,
         "spec-history-stale",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
     let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
 
@@ -1054,9 +946,6 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
         &runtime,
         "spec-run-now-stale",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
     let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
 
@@ -1095,9 +984,6 @@ fn run_due_jobs_recovers_stale_running_run_and_reclaims_job() {
         &runtime,
         "spec-due-stale",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
     let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
 
@@ -1132,9 +1018,6 @@ fn concurrent_job_run_invocations_do_not_double_run_job() {
         &runtime,
         "spec-concurrent",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
@@ -1241,9 +1124,6 @@ Validate output shape.
         &runtime,
         "spec-schema",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
@@ -1337,9 +1217,6 @@ Validate advanced schema behavior.
         &runtime,
         "spec-complex-schema",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let due_at = runtime.show_job(&job_id).expect("show job").next_run_at;
@@ -1370,9 +1247,6 @@ fn job_runtime_tick_once_reports_next_wake_time() {
         &runtime,
         "spec-next-wake",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
     let job = runtime.show_job(&job_id).expect("show job");
 
@@ -1436,9 +1310,6 @@ fn created_file_auto_commit_includes_report_and_run_artifact() {
         &runtime,
         "spec-created-file",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -1482,9 +1353,6 @@ fn created_file_empty_path_fails_as_protocol_violation() {
         &runtime,
         "spec-created-file-empty",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -1524,9 +1392,6 @@ fn created_file_nonexistent_path_fails_as_protocol_violation() {
         &runtime,
         "spec-created-file-nonexistent",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -1570,9 +1435,6 @@ fn created_file_outside_repo_fails_as_protocol_violation() {
         &runtime,
         "spec-created-file-outside",
         &agent_cli,
-        0,
-        JobRetryBackoffStrategy::None,
-        0,
     );
 
     let run = runtime.run_job_now(&job_id).expect("run job");
@@ -1637,9 +1499,6 @@ fn claude_job_run_succeeds_with_mock_binary() {
             schedule: "manual".to_string(),
             agent_cli,
             timeout_seconds: 10,
-            retry_max_attempts: 0,
-            retry_backoff_strategy: JobRetryBackoffStrategy::None,
-            retry_initial_delay_seconds: 0,
             initial_state_override: None,
             env_extra: vec![],
         })
@@ -1694,9 +1553,6 @@ fn run_job_now_manual_schedule_does_not_error_on_cron_validation() {
             schedule: "manual".to_string(),
             agent_cli,
             timeout_seconds: 10,
-            retry_max_attempts: 0,
-            retry_backoff_strategy: JobRetryBackoffStrategy::None,
-            retry_initial_delay_seconds: 0,
             initial_state_override: None,
             env_extra: vec![],
         })

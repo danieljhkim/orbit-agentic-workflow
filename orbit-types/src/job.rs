@@ -66,37 +66,6 @@ impl FromStr for JobScheduleState {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-#[serde(rename_all = "snake_case")]
-pub enum JobRetryBackoffStrategy {
-    None,
-    Fixed,
-    Exponential,
-}
-
-impl Display for JobRetryBackoffStrategy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JobRetryBackoffStrategy::None => write!(f, "none"),
-            JobRetryBackoffStrategy::Fixed => write!(f, "fixed"),
-            JobRetryBackoffStrategy::Exponential => write!(f, "exponential"),
-        }
-    }
-}
-
-impl FromStr for JobRetryBackoffStrategy {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "none" => Ok(JobRetryBackoffStrategy::None),
-            "fixed" => Ok(JobRetryBackoffStrategy::Fixed),
-            "exponential" => Ok(JobRetryBackoffStrategy::Exponential),
-            other => Err(format!("unknown retry backoff strategy: {other}")),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
@@ -171,9 +140,6 @@ pub struct Job {
     pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
-    pub retry_max_attempts: u32,
-    pub retry_backoff_strategy: JobRetryBackoffStrategy,
-    pub retry_initial_delay_seconds: u64,
     pub state: JobScheduleState,
     pub next_run_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,

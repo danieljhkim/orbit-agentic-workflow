@@ -10,8 +10,8 @@ use orbit_store::ClaimedJobRun;
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobRunCompletionParams;
 use orbit_types::{
-    Activity, AgentCommitRequest, AgentResponseEnvelope, Job, JobRetryBackoffStrategy, JobRun,
-    JobRunState, JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
+    Activity, AgentCommitRequest, AgentResponseEnvelope, Job, JobRun, JobRunState,
+    JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -34,9 +34,6 @@ pub struct JobAddParams {
     pub schedule: String,
     pub agent_cli: String,
     pub timeout_seconds: u64,
-    pub retry_max_attempts: u32,
-    pub retry_backoff_strategy: JobRetryBackoffStrategy,
-    pub retry_initial_delay_seconds: u64,
     pub initial_state_override: Option<JobScheduleState>,
     /// Extra env var names to pass through in hermetic mode for this job specifically.
     pub env_extra: Vec<String>,
@@ -58,7 +55,6 @@ struct AttemptOutcome {
     response_json: Option<Value>,
     error_code: Option<String>,
     error_message: Option<String>,
-    retryable: bool,
     protocol_violation: bool,
     /// Validated absolute path to a report file the agent created, to be auto-committed
     /// after the run artifact is persisted.
@@ -159,9 +155,6 @@ impl OrbitRuntime {
             schedule: params.schedule,
             agent_cli: params.agent_cli,
             timeout_seconds: params.timeout_seconds,
-            retry_max_attempts: params.retry_max_attempts,
-            retry_backoff_strategy: params.retry_backoff_strategy,
-            retry_initial_delay_seconds: params.retry_initial_delay_seconds,
             next_run_at,
             initial_state,
             env_extra,
@@ -271,132 +264,92 @@ impl OrbitRuntime {
         input: Value,
     ) -> Result<JobRunResult, OrbitError> {
         let execution = self.build_execution_context_for_job(&job, input)?;
-        let max_attempts = job.retry_max_attempts.saturating_add(1);
-        let mut current_attempt = initial_run.as_ref().map(|r| r.attempt).unwrap_or(1);
-        let mut pending_initial = initial_run;
-        let mut last_result: Option<JobRunResult> = None;
-        let mut retry_scheduled_for_future = false;
+        let attempt = initial_run.as_ref().map(|r| r.attempt).unwrap_or(1);
 
-        while current_attempt <= max_attempts {
-            let mut run = if let Some(existing) = pending_initial.take() {
-                existing
-            } else {
-                let run =
-                    self.insert_job_run_backend(&job.job_id, current_attempt, scheduled_at)?;
-                self.record_event(OrbitEvent::JobRunStarted {
-                    job_id: job.job_id.clone(),
-                    run_id: String::new(),
-                    attempt: current_attempt,
-                })?;
-                run
-            };
-
-            let started_at = Utc::now();
-            let changed = self.mark_job_run_running_backend(&run.run_id, started_at)?;
-            if !changed {
-                return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
-            }
+        let mut run = if let Some(existing) = initial_run {
+            existing
+        } else {
+            let run = self.insert_job_run_backend(&job.job_id, attempt, scheduled_at)?;
             self.record_event(OrbitEvent::JobRunStarted {
                 job_id: job.job_id.clone(),
-                run_id: run.run_id.clone(),
-                attempt: run.attempt,
+                run_id: String::new(),
+                attempt,
             })?;
-            run.state = JobRunState::Running;
-            run.started_at = Some(started_at);
+            run
+        };
 
-            let outcome = self.execute_single_attempt(&execution);
-            let finished_at = Utc::now();
+        let started_at = Utc::now();
+        let changed = self.mark_job_run_running_backend(&run.run_id, started_at)?;
+        if !changed {
+            return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+        }
+        self.record_event(OrbitEvent::JobRunStarted {
+            job_id: job.job_id.clone(),
+            run_id: run.run_id.clone(),
+            attempt: run.attempt,
+        })?;
+        run.state = JobRunState::Running;
+        run.started_at = Some(started_at);
 
-            let changed = self.complete_job_run_backend(&JobRunCompletionParams {
-                run_id: &run.run_id,
-                state: outcome.state,
-                finished_at,
-                duration_ms: outcome.duration_ms,
-                exit_code: outcome.exit_code,
-                agent_response_json: outcome.response_json.as_ref(),
-                error_code: outcome.error_code.as_deref(),
-                error_message: outcome.error_message.as_deref(),
-            })?;
-            if !changed {
-                return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
-            }
-            self.record_event(OrbitEvent::JobRunCompleted {
+        let outcome = self.execute_single_attempt(&execution);
+        let finished_at = Utc::now();
+
+        let changed = self.complete_job_run_backend(&JobRunCompletionParams {
+            run_id: &run.run_id,
+            state: outcome.state,
+            finished_at,
+            duration_ms: outcome.duration_ms,
+            exit_code: outcome.exit_code,
+            agent_response_json: outcome.response_json.as_ref(),
+            error_code: outcome.error_code.as_deref(),
+            error_message: outcome.error_message.as_deref(),
+        })?;
+        if !changed {
+            return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+        }
+        self.record_event(OrbitEvent::JobRunCompleted {
+            job_id: job.job_id.clone(),
+            run_id: run.run_id.clone(),
+            state: outcome.state.to_string(),
+        })?;
+
+        if outcome.protocol_violation {
+            self.record_event(OrbitEvent::JobProtocolViolation {
                 job_id: job.job_id.clone(),
                 run_id: run.run_id.clone(),
-                state: outcome.state.to_string(),
+                message: outcome
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| "agent protocol violation".to_string()),
             })?;
-
-            if outcome.protocol_violation {
-                self.record_event(OrbitEvent::JobProtocolViolation {
-                    job_id: job.job_id.clone(),
-                    run_id: run.run_id.clone(),
-                    message: outcome
-                        .error_message
-                        .clone()
-                        .unwrap_or_else(|| "agent protocol violation".to_string()),
-                })?;
-            }
-
-            last_result = Some(JobRunResult {
-                job_id: job.job_id.clone(),
-                run_id: run.run_id.clone(),
-                state: outcome.state,
-                attempt: run.attempt,
-            });
-
-            if outcome.state == JobRunState::Success {
-                if let Some(ref created_file_path) = outcome.created_file {
-                    self.execute_created_file_auto_commit(
-                        created_file_path,
-                        &job.job_id,
-                        &run.run_id,
-                    )?;
-                }
-                break;
-            }
-
-            if outcome.retryable && current_attempt < max_attempts {
-                let retry_index = current_attempt;
-                let delay_seconds = crate::job::state_machine::compute_retry_delay_seconds(
-                    job.retry_backoff_strategy,
-                    job.retry_initial_delay_seconds,
-                    retry_index,
-                );
-                let next_retry_at = Utc::now() + chrono::Duration::seconds(delay_seconds as i64);
-
-                let _ = self.update_job_next_run_backend(&job.job_id, next_retry_at)?;
-                self.record_event(OrbitEvent::JobRetryScheduled {
-                    job_id: job.job_id.clone(),
-                    run_id: run.run_id.clone(),
-                    next_run_at: next_retry_at.to_rfc3339(),
-                })?;
-
-                if delay_seconds > 0 {
-                    // Avoid blocking job execution while waiting for delayed retries.
-                    retry_scheduled_for_future = true;
-                    break;
-                }
-
-                current_attempt = current_attempt.saturating_add(1);
-                continue;
-            }
-
-            break;
         }
 
-        if !retry_scheduled_for_future {
-            let next_run_at = if job.schedule.trim().eq_ignore_ascii_case("manual") {
-                manual_job_next_run_at()
-            } else {
-                crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?
-            };
-            let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
-            let _ = self.record_event(OrbitEvent::JobTriggered {
-                job_id: job.job_id.clone(),
-            });
+        if outcome.state == JobRunState::Success {
+            if let Some(ref created_file_path) = outcome.created_file {
+                self.execute_created_file_auto_commit(
+                    created_file_path,
+                    &job.job_id,
+                    &run.run_id,
+                )?;
+            }
         }
 
-        last_result.ok_or(OrbitError::JobRunNotFound(job.job_id))
+        let next_run_at = if job.schedule.trim().eq_ignore_ascii_case("manual") {
+            manual_job_next_run_at()
+        } else {
+            crate::job::state_machine::compute_next_run_at(&job.schedule, Utc::now())?
+        };
+        let _ = self.update_job_next_run_backend(&job.job_id, next_run_at);
+        let _ = self.record_event(OrbitEvent::JobTriggered {
+            job_id: job.job_id.clone(),
+        });
+
+        Ok(JobRunResult {
+            job_id: job.job_id.clone(),
+            run_id: run.run_id.clone(),
+            state: outcome.state,
+            attempt: run.attempt,
+        })
     }
 
     pub(crate) fn recover_stale_active_run_for_job(
@@ -507,7 +460,6 @@ impl OrbitRuntime {
                     response_json: None,
                     error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                     error_message: Some(err.to_string()),
-                    retryable: false,
                     protocol_violation: false,
                     created_file: None,
                 };
@@ -523,7 +475,6 @@ impl OrbitRuntime {
                     response_json: None,
                     error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                     error_message: Some(err.to_string()),
-                    retryable: false,
                     protocol_violation: false,
                     created_file: None,
                 };
@@ -550,7 +501,6 @@ impl OrbitRuntime {
                     response_json: None,
                     error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                     error_message: Some(err.to_string()),
-                    retryable: false,
                     protocol_violation: false,
                     created_file: None,
                 };
@@ -573,7 +523,6 @@ impl OrbitRuntime {
 configure .orbit/config.toml [execution.env].pass and set these variables in the parent shell.",
                     invocation.runtime_key
                 )),
-                retryable: false,
                 protocol_violation: false,
                 created_file: None,
             };
@@ -602,7 +551,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     response_json: None,
                     error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                     error_message: Some(err.to_string()),
-                    retryable: true,
                     protocol_violation: false,
                     created_file: None,
                 };
@@ -628,7 +576,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     response_json: None,
                     error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                     error_message: Some(err.to_string()),
-                    retryable: true,
                     protocol_violation: false,
                     created_file: None,
                 };
@@ -643,7 +590,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 response_json: None,
                 error_code: Some(AGENT_TIMEOUT.to_string()),
                 error_message: Some(format_timeout_error_message(&exec_result)),
-                retryable: true,
                 protocol_violation: false,
                 created_file: None,
             };
@@ -670,7 +616,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                         response_json: None,
                         error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
                         error_message: Some(err.to_string()),
-                        retryable: false,
                         protocol_violation: true,
                         created_file: None,
                     };
@@ -692,7 +637,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                         response_json: serde_json::to_value(envelope).ok(),
                         error_code: Some(error_code),
                         error_message: Some(err.to_string()),
-                        retryable: false,
                         protocol_violation,
                         created_file: None,
                     };
@@ -713,7 +657,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                                     response_json: None,
                                     error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
                                     error_message: Some(msg),
-                                    retryable: false,
                                     protocol_violation: true,
                                     created_file: None,
                                 };
@@ -726,7 +669,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                                     response_json: None,
                                     error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                                     error_message: Some(err.to_string()),
-                                    retryable: false,
                                     protocol_violation: false,
                                     created_file: None,
                                 };
@@ -742,7 +684,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                                 error_message: Some(
                                     "result.created_file must be a string".to_string(),
                                 ),
-                                retryable: false,
                                 protocol_violation: true,
                                 created_file: None,
                             };
@@ -759,8 +700,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     response_json: serde_json::to_value(envelope).ok(),
                     error_code,
                     error_message,
-                    retryable: run_state == JobRunState::Failed
-                        || run_state == JobRunState::Timeout,
                     protocol_violation: false,
                     created_file: validated_created_file,
                 }
@@ -772,7 +711,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 response_json: None,
                 error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
                 error_message: Some(message),
-                retryable: false,
                 protocol_violation: true,
                 created_file: None,
             },
@@ -783,7 +721,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 response_json: None,
                 error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
                 error_message: Some(err.to_string()),
-                retryable: true,
                 protocol_violation: false,
                 created_file: None,
             },
@@ -832,9 +769,6 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                     "schedule": job.schedule,
                     "agent_cli": job.agent_cli,
                     "timeout_seconds": job.timeout_seconds,
-                    "retry_max_attempts": job.retry_max_attempts,
-                    "retry_backoff_strategy": job.retry_backoff_strategy,
-                    "retry_initial_delay_seconds": job.retry_initial_delay_seconds,
                     "state": job.state,
                     "next_run_at": job.next_run_at.to_rfc3339(),
                 })
@@ -1229,9 +1163,6 @@ pub(crate) fn seed_default_jobs(runtime: &OrbitRuntime) -> Result<usize, OrbitEr
             schedule: "manual".to_string(),
             agent_cli: "codex".to_string(), // TODO: make this dynamic
             timeout_seconds: 1200,
-            retry_max_attempts: 0,
-            retry_backoff_strategy: JobRetryBackoffStrategy::None,
-            retry_initial_delay_seconds: 0,
             initial_state_override: Some(JobScheduleState::Enabled),
             env_extra: vec![],
         })?;

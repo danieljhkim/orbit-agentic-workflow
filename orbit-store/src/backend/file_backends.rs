@@ -1,7 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{
-    Activity, Job, JobRun, JobScheduleState, OrbitError, Task, TaskPriority, TaskStatus,
-};
+use orbit_types::{Activity, Job, JobRun, JobScheduleState, OrbitError, Task, TaskPriority, TaskStatus};
 
 use super::contracts::{
     ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, DueJobsClaim,
@@ -145,9 +143,6 @@ impl JobStoreBackend for JobFileStore {
             &params.schedule,
             &params.agent_cli,
             params.timeout_seconds,
-            params.retry_max_attempts,
-            params.retry_backoff_strategy,
-            params.retry_initial_delay_seconds,
             params.next_run_at,
             params.initial_state,
             params.env_extra,
