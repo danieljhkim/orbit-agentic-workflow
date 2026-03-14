@@ -1,7 +1,11 @@
 [package]
-name = "orbit"
+name = "orbit-cli"
 version.workspace = true
 edition.workspace = true
+
+[[bin]]
+name = "orbit"
+path = "src/main.rs"
 
 [dependencies]
 chrono.workspace = true
