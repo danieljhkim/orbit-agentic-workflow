@@ -59,7 +59,7 @@ impl JobFileStore {
                 }
                 id
             }
-            None => self.next_id("job"),
+            None => self.next_job_id(),
         };
         let now = Utc::now();
         let job = Job {
@@ -216,7 +216,7 @@ impl JobFileStore {
         scheduled_at: DateTime<Utc>,
     ) -> Result<JobRun, OrbitError> {
         let run = JobRun {
-            run_id: self.next_id("jrun"),
+            run_id: self.next_run_id(job_id),
             job_id: job_id.to_string(),
             attempt,
             state: JobRunState::Pending,
@@ -430,9 +430,34 @@ impl JobFileStore {
         write_atomic(&self.run_path(job_id, &run.run_id), &content)
     }
 
-    fn next_id(&self, prefix: &str) -> String {
-        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
-        format!("{prefix}-{nanos}")
+    fn next_job_id(&self) -> String {
+        let now = Utc::now();
+        let base = format!("job-{}", now.format("%Y%m%d-%H%M%S"));
+        if !self.job_path(&base).exists() && !self.disabled_job_path(&base).exists() {
+            return base;
+        }
+        for suffix in 2..1024_u32 {
+            let candidate = format!("{base}-{suffix}");
+            if !self.job_path(&candidate).exists() && !self.disabled_job_path(&candidate).exists() {
+                return candidate;
+            }
+        }
+        base
+    }
+
+    fn next_run_id(&self, job_id: &str) -> String {
+        let now = Utc::now();
+        let base = format!("jrun-{}", now.format("%Y%m%d-%H%M%S"));
+        if !self.run_path(job_id, &base).exists() {
+            return base;
+        }
+        for suffix in 2..1024_u32 {
+            let candidate = format!("{base}-{suffix}");
+            if !self.run_path(job_id, &candidate).exists() {
+                return candidate;
+            }
+        }
+        base
     }
 
     fn activities_dir(&self) -> PathBuf {
@@ -612,6 +637,38 @@ mod tests {
                 .exists(),
             "archived run file removed"
         );
+    }
+
+    #[test]
+    fn job_id_uses_datetime_format_without_nanosecond_suffix() {
+        let (_dir, store) = make_store();
+        let job = insert_test_job(&store, "target-id-format");
+
+        // Must be job-<YYYYMMDD>-<HHMMSS> with no nanosecond component.
+        assert!(job.job_id.starts_with("job-"), "must start with 'job-'");
+        let rest = &job.job_id["job-".len()..];
+        let (date, time) = rest.split_once('-').expect("has dash after prefix");
+        assert_eq!(date.len(), 8, "date part must be 8 digits, got '{date}'");
+        assert!(date.chars().all(|c| c.is_ascii_digit()), "date must be digits");
+        assert_eq!(time.len(), 6, "time part must be 6 digits, got '{time}'");
+        assert!(time.chars().all(|c| c.is_ascii_digit()), "time must be digits");
+    }
+
+    #[test]
+    fn job_run_id_uses_datetime_format_without_nanosecond_suffix() {
+        let (_dir, store) = make_store();
+        let job = insert_test_job(&store, "target-run-id-format");
+        let run = store
+            .insert_job_run(&job.job_id, 1, Utc::now())
+            .expect("insert run");
+
+        assert!(run.run_id.starts_with("jrun-"), "must start with 'jrun-'");
+        let rest = &run.run_id["jrun-".len()..];
+        let (date, time) = rest.split_once('-').expect("has dash after prefix");
+        assert_eq!(date.len(), 8, "date part must be 8 digits, got '{date}'");
+        assert!(date.chars().all(|c| c.is_ascii_digit()), "date must be digits");
+        assert_eq!(time.len(), 6, "time part must be 6 digits, got '{time}'");
+        assert!(time.chars().all(|c| c.is_ascii_digit()), "time must be digits");
     }
 
     #[test]

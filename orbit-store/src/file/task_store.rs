@@ -447,13 +447,12 @@ impl TaskFileStore {
     }
 
     fn next_task_id(&self, now: DateTime<Utc>) -> Result<String, OrbitError> {
-        for attempt in 0..1024_u32 {
-            let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
-            let candidate = if attempt == 0 {
-                format!("T{}-{nanos}", now.format("%Y%m%d-%H%M%S"))
-            } else {
-                format!("T{}-{nanos}-{attempt}", now.format("%Y%m%d-%H%M%S"))
-            };
+        let base = format!("T{}", now.format("%Y%m%d-%H%M%S"));
+        if self.locate_task(&base)?.is_none() {
+            return Ok(base);
+        }
+        for suffix in 2..1024_u32 {
+            let candidate = format!("{base}-{suffix}");
             if self.locate_task(&candidate)?.is_none() {
                 return Ok(candidate);
             }
@@ -956,5 +955,65 @@ mod tests {
         assert_eq!(updated.comments[0].by, "creator");
         assert_eq!(updated.comments[1].by, "reviewer");
         assert_eq!(updated.comments[1].message, "needs follow-up");
+    }
+
+    #[test]
+    fn task_id_uses_datetime_format_without_nanosecond_suffix() {
+        let dir = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(dir.path().to_path_buf());
+
+        let task = store
+            .create_task(sample_insert(TaskStatus::Backlog))
+            .expect("create task");
+
+        // ID must be exactly T<YYYYMMDD>-<HHMMSS> (16 chars) with no
+        // nanosecond suffix. Conflict suffix (-2, -3, …) is only added on collision.
+        assert_eq!(
+            task.id.len(),
+            16,
+            "task id '{}' must be 16 chars (T+8date+dash+6time), got {}",
+            task.id,
+            task.id.len()
+        );
+        assert!(task.id.starts_with('T'), "must start with T");
+        let (date, time) = task.id[1..].split_once('-').expect("has dash");
+        assert_eq!(date.len(), 8, "date part must be 8 digits");
+        assert!(date.chars().all(|c| c.is_ascii_digit()), "date must be numeric");
+        assert_eq!(time.len(), 6, "time part must be 6 digits");
+        assert!(time.chars().all(|c| c.is_ascii_digit()), "time must be numeric");
+    }
+
+    #[test]
+    fn task_id_conflict_appends_numeric_suffix() {
+        let dir = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(dir.path().to_path_buf());
+
+        // Force a collision by pre-creating a task directory with the expected id.
+        let now = Utc::now();
+        let base_id = format!("T{}", now.format("%Y%m%d-%H%M%S"));
+        let occupied = dir.path().join("backlog").join(&base_id);
+        std::fs::create_dir_all(occupied.join("artifacts")).expect("create occupied dir");
+        std::fs::write(occupied.join("task.yaml"), "").expect("placeholder");
+        std::fs::write(occupied.join("plan.md"), "").expect("placeholder");
+        std::fs::write(occupied.join("execution-summary.md"), "").expect("placeholder");
+
+        let task = store
+            .create_task(sample_insert(TaskStatus::Backlog))
+            .expect("create task with suffix");
+
+        assert!(
+            task.id.starts_with(&base_id),
+            "id '{}' must start with '{base_id}'",
+            task.id
+        );
+        assert_ne!(task.id, base_id, "id must differ from occupied base id");
+        // Suffix must be a dash followed by a small integer.
+        let suffix = task.id.strip_prefix(&base_id).expect("has prefix");
+        assert!(
+            suffix.starts_with('-'),
+            "suffix '{suffix}' must start with '-'"
+        );
+        let num: u32 = suffix[1..].parse().expect("suffix is a number");
+        assert!(num >= 2, "suffix number must be >= 2, got {num}");
     }
 }
