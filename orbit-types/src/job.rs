@@ -133,6 +133,7 @@ pub struct AgentCommitRequest {
 pub struct JobStep {
     pub target_type: JobTargetType,
     pub target_id: OrbitId,
+    #[serde(default)]
     pub agent_cli: String,
     pub timeout_seconds: u64,
     /// Additional env var names to pass through in hermetic mode, on top of the global allowlist.

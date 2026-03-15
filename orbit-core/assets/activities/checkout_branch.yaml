@@ -6,9 +6,9 @@ activity:
   description: Check out a git branch, typically used to return to the base branch after task work is complete
   input_schema_json:
     type: object
-    required: [branch]
+    required: [base]
     properties:
-      branch:
+      base:
         type: string
         description: Branch name to check out (e.g. main)
   output_schema_json:
@@ -19,7 +19,7 @@ activity:
   command: bash
   args:
     - -c
-    - "git checkout '{{input.branch}}' && git pull --rebase origin '{{input.branch}}'"
+    - "git checkout '{{input.base}}' && git pull --rebase origin '{{input.base}}'"
   working_dir: "{{workspace_path}}"
   timeout_seconds: 60
   expected_exit_codes: [0]
