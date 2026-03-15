@@ -1,0 +1,28 @@
+schema_version: 1
+created_by: system
+activity:
+  id: create_branch
+  spec_type: cli_command
+  description: Create a new git branch for a task using the orbit/<task_id> naming convention
+  input_schema_json:
+    type: object
+    required: [task_id, base]
+    properties:
+      task_id:
+        type: string
+        description: The Orbit task ID to create a branch for
+      base:
+        type: string
+        description: Branch or commit to start from (e.g. main)
+  output_schema_json:
+    type: object
+    properties:
+      exit_code:
+        type: integer
+  command: bash
+  args:
+    - -c
+    - "git checkout '{{input.base}}' && git pull --rebase origin '{{input.base}}' && git checkout -b 'orbit/{{input.task_id}}'"
+  working_dir: "{{workspace_path}}"
+  timeout_seconds: 60
+  expected_exit_codes: [0]
