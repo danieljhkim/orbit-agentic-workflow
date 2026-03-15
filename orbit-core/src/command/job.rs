@@ -266,7 +266,8 @@ impl OrbitRuntime {
         let mut current_input = input;
 
         for (step_index, step) in job.steps.iter().enumerate() {
-            let execution = self.build_execution_context_for_step(&job, step, current_input.clone())?;
+            let execution =
+                self.build_execution_context_for_step(&job, step, current_input.clone())?;
             let step_started = Utc::now();
             let outcome = self.execute_single_attempt(&execution);
             let step_finished = Utc::now();

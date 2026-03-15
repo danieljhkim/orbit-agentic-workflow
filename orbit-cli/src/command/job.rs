@@ -172,8 +172,8 @@ pub struct JobRunArgs {
 
 impl Execute for JobRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let run = runtime
-            .run_job_now_with_input(&self.job_id, build_job_run_input(&self.input)?)?;
+        let run =
+            runtime.run_job_now_with_input(&self.job_id, build_job_run_input(&self.input)?)?;
         let run_details = runtime
             .job_history(&self.job_id)?
             .into_iter()

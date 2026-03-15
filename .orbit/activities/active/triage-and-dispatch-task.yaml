@@ -1,12 +1,23 @@
 schema_version: 1
 created_by: system
 identity_id: steve
-created_at: 2026-03-15T00:39:46.848611Z
-updated_at: 2026-03-15T00:39:46.848611Z
+created_at: 2026-03-15T05:05:11.627497Z
+updated_at: 2026-03-15T05:05:11.627497Z
 activity:
   id: triage-and-dispatch-task
-  spec_type: task_dispatch
+  spec_type: agent_invoke
   description: CEO reviews backlog and dispatches the highest-priority task for execution
+  input_schema_json:
+    additional_properties: false
+    type: object
+  output_schema_json:
+    additional_properties: false
+    properties:
+      comment:
+        type: string
+      task_id:
+        type: string
+    type: object
   instruction: |-
     You are Steve (CEO). Your job is to pick the single best task from the current backlog and dispatch it for execution.
 
@@ -21,17 +32,6 @@ activity:
     Step 5: Record rationale: 'orbit task update <selected_task_id> --comment "Dispatched by Steve (CEO): <one sentence rationale>"'
 
     Output: Dispatched <task_id>: <task_title>
-  input_schema_json:
-    additional_properties: false
-    type: object
-  output_schema_json:
-    additional_properties: false
-    properties:
-      comment:
-        type: string
-      task_id:
-        type: string
-    type: object
   skill_refs:
   - orbit-skills
   - orbit-manage-tasks
