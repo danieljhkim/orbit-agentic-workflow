@@ -202,6 +202,67 @@ fn cli_command_activity_executes_without_agent_cli_and_captures_output_file() {
 }
 
 #[test]
+fn cli_command_failures_redact_sensitive_environment_values_from_error_messages() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+
+    unsafe {
+        std::env::set_var("TEST_SECRET_TOKEN", "token-value-to-hide");
+    }
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-cli-secret-redaction".to_string(),
+            spec_type: "cli_command".to_string(),
+            description: "cli command redaction test".to_string(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({}),
+            spec_config: json!({
+                "command": "sh",
+                "args": ["-c", "printf '%s' \"$TEST_SECRET_TOKEN\" >&2; exit 1"],
+                "expected_exit_codes": [0]
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add activity");
+
+    let job = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: None,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-cli-secret-redaction".to_string(),
+                agent_cli: String::new(),
+                timeout_seconds: 30,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job");
+
+    let run = runtime.run_job_now(&job.job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Failed);
+
+    let history = runtime.job_history(&job.job_id).expect("history");
+    let error_message = history[0]
+        .steps
+        .last()
+        .and_then(|step| step.error_message.as_deref())
+        .expect("error message");
+    assert!(
+        !error_message.contains("token-value-to-hide"),
+        "error message must not retain sensitive env values: {error_message}"
+    );
+    assert!(
+        error_message.contains("[REDACTED_ENV]"),
+        "error message should indicate redaction: {error_message}"
+    );
+}
+
+#[test]
 fn agent_with_orphan_stdout_holder_does_not_hang() {
     // Reproduces: job-run stuck in `running` when agent exits successfully but leaves
     // orphan child processes that inherited the stdout pipe write end.
@@ -1719,6 +1780,127 @@ fn agent_step_result_fields_flow_into_next_step_input() {
         .and_then(|step| step.agent_response_json.as_ref())
         .expect("cli step output");
     assert_eq!(cli_output["seen_task_id"], json!("T123"));
+}
+
+#[test]
+fn agent_step_workspace_path_flows_into_cli_working_directory() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let workspace_dir = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace_dir).expect("create workspace");
+
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        &format!(
+            "#!/bin/sh\ncat >/dev/null\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{\"task_id\":\"T123\",\"workspace_path\":\"{}\"}},\"error\":null,\"durationMs\":1}}'\n",
+            workspace_dir.to_string_lossy()
+        ),
+    );
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-agent-workspace-output".to_string(),
+            spec_type: "agent_invoke".to_string(),
+            description: "agent step workspace propagation".to_string(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "workspace_path": { "type": "string" }
+                },
+                "required": ["task_id", "workspace_path"]
+            }),
+            spec_config: json!({
+                "instruction": "Return a task_id and workspace_path."
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add agent activity");
+
+    let cli_script_path = dir.path().join("capture-workdir.sh");
+    std::fs::write(
+        &cli_script_path,
+        "#!/bin/sh\nprintf '{\"cwd\":\"%s\"}' \"$PWD\" > \"$ORBIT_OUTPUT_FILE\"\n",
+    )
+    .expect("write cli script");
+    #[cfg(unix)]
+    std::fs::set_permissions(&cli_script_path, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod cli script");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-cli-workspace-consumer".to_string(),
+            spec_type: "cli_command".to_string(),
+            description: "consume workspace_path from prior step".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "workspace_path": { "type": "string" }
+                },
+                "required": ["task_id", "workspace_path"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "cwd": { "type": "string" }
+                },
+                "required": ["cwd"]
+            }),
+            spec_config: json!({
+                "command": cli_script_path.to_string_lossy().to_string(),
+                "working_dir": "{{workspace_path}}",
+                "expected_exit_codes": [0]
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add cli activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: None,
+            steps: vec![
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-agent-workspace-output".to_string(),
+                    agent_cli,
+                    timeout_seconds: 10,
+                    env_extra: vec![],
+                },
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-cli-workspace-consumer".to_string(),
+                    agent_cli: String::new(),
+                    timeout_seconds: 10,
+                    env_extra: vec![],
+                },
+            ],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let result = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(result.state, JobRunState::Success);
+
+    let history = runtime.job_history(&job_id).expect("job history");
+    let cli_output = history[0]
+        .steps
+        .get(1)
+        .and_then(|step| step.agent_response_json.as_ref())
+        .expect("cli step output");
+    let expected_cwd = workspace_dir.canonicalize().expect("canonical workspace");
+    assert_eq!(
+        cli_output["cwd"],
+        json!(expected_cwd.to_string_lossy().to_string())
+    );
 }
 
 #[test]

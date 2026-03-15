@@ -20,6 +20,10 @@ pub use orbit_types::{
     JobRun, JobRunState, JobScheduleState, JobStep, JobTargetType, Role, Skill, Task, TaskComment,
     TaskPriority, TaskStatus, TaskType,
 };
+pub use orbit_types::{
+    redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
+    redact_sensitive_env_text,
+};
 pub use runtime::OrbitRuntime;
 
 #[cfg(test)]
@@ -73,6 +77,27 @@ mod tests {
             events.first(),
             Some(OrbitEvent::ToolExecuted { name }) if name == "fs.read"
         ));
+    }
+
+    #[test]
+    fn tool_results_redact_sensitive_environment_values() {
+        unsafe {
+            std::env::set_var("TEST_API_TOKEN", "token-value-to-hide");
+        }
+
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let output = runtime
+            .run_tool(
+                "proc.spawn",
+                json!({
+                    "program": "sh",
+                    "args": ["-c", "printf '%s' \"$TEST_API_TOKEN\""],
+                }),
+            )
+            .expect("tool succeeds");
+
+        assert_eq!(output["stdout"], "[REDACTED_ENV]");
+        assert_eq!(output["stderr"], "");
     }
 
     #[test]

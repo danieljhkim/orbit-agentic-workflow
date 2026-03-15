@@ -1,6 +1,8 @@
 use orbit_policy::PolicyContext;
 use orbit_tools::ToolContext;
-use orbit_types::{OrbitEvent, PolicyDecision, Role};
+use orbit_types::{
+    OrbitEvent, PolicyDecision, Role, redact_sensitive_env_error, redact_sensitive_env_json,
+};
 use serde_json::Value;
 
 use crate::{OrbitError, OrbitRuntime};
@@ -40,7 +42,9 @@ impl OrbitRuntime {
                 let output = self
                     .context
                     .registry
-                    .execute(name, &ToolContext::default(), input)?;
+                    .execute(name, &ToolContext::default(), input)
+                    .map_err(redact_sensitive_env_error)?;
+                let output = redact_sensitive_env_json(output);
 
                 self.with_mutation(|| {
                     Ok((

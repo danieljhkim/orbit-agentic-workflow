@@ -28,7 +28,7 @@ activity:
     4. Call orbit.task.update with id: "<selected_task_id>" and comment: "Dispatched by Steve (CEO): <one sentence rationale>"
        to record the dispatch rationale.
 
-    Output the selected task_id and the rationale comment.
+    Output the selected task_id, workspace_path, and the rationale comment.
 
   # ---- interface ----
   input_schema_json:
@@ -47,6 +47,9 @@ activity:
         type: string
       comment:
         type: string
+      workspace_path:
+        type: string
+        description: Workspace path of the selected task for downstream CLI steps.
     additional_properties: false
 
   # ---- execution ----

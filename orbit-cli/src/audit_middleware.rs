@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use orbit_core::{AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime};
+use orbit_core::{
+    AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime, redact_sensitive_env_text,
+};
 
 use crate::command::Commands;
 
@@ -57,13 +59,13 @@ impl<'a> AuditGuard<'a> {
     pub fn mark_failure(&mut self, error: &OrbitError) {
         self.status = AuditEventStatus::Failure;
         self.exit_code = 1;
-        self.error_message = Some(error.to_string());
+        self.error_message = Some(redact_sensitive_env_text(&error.to_string()));
     }
 
     pub fn mark_denied(&mut self, msg: &str) {
         self.status = AuditEventStatus::Denied;
         self.exit_code = 1;
-        self.error_message = Some(msg.to_string());
+        self.error_message = Some(redact_sensitive_env_text(msg));
     }
 }
 

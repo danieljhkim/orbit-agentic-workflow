@@ -8,6 +8,7 @@ pub mod id;
 pub mod identity;
 pub mod job;
 pub mod memo;
+pub mod redaction;
 pub mod role;
 pub mod skill;
 pub mod task;
@@ -26,6 +27,10 @@ pub use job::{
     JobScheduleState, JobStep, JobTargetType,
 };
 pub use memo::Memo;
+pub use redaction::{
+    redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
+    redact_sensitive_env_text,
+};
 pub use role::Role;
 pub use skill::Skill;
 pub use task::{Task, TaskComment, TaskPriority, TaskStatus, TaskType};

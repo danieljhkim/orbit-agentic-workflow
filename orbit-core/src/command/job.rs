@@ -11,7 +11,8 @@ use orbit_store::JobRunStepParams;
 use orbit_store::JobUpdateParams as StoreJobUpdateParams;
 use orbit_types::{
     Activity, AgentCommitRequest, AgentResponseEnvelope, Job, JobRun, JobRunState,
-    JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent,
+    JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent, redact_sensitive_env_json,
+    redact_sensitive_env_option,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -589,7 +590,7 @@ impl OrbitRuntime {
     }
 
     fn execute_single_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
-        match execution.activity.spec_type.as_str() {
+        let outcome = match execution.activity.spec_type.as_str() {
             "agent_invoke" => self.execute_agent_attempt(execution),
             "cli_command" => self.execute_cli_command_attempt(execution),
             "api" => self.execute_api_attempt(execution),
@@ -603,7 +604,8 @@ impl OrbitRuntime {
                 protocol_violation: false,
                 created_file: None,
             },
-        }
+        };
+        redact_attempt_outcome(outcome)
     }
 
     fn execute_agent_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
@@ -1064,7 +1066,11 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         TemplateContext {
             input: execution.input.clone(),
             env: std::env::vars().collect(),
-            workspace_path: execution.activity.workspace_path.clone(),
+            workspace_path: execution
+                .activity
+                .workspace_path
+                .clone()
+                .or_else(|| input_workspace_path(&execution.input)),
         }
     }
 
@@ -1413,6 +1419,20 @@ fn step_output_for_following_input<'a>(
             .and_then(Value::as_object),
         _ => response_json.and_then(Value::as_object),
     }
+}
+
+fn input_workspace_path(input: &Value) -> Option<String> {
+    input
+        .as_object()
+        .and_then(|map| map.get("workspace_path"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn redact_attempt_outcome(mut outcome: AttemptOutcome) -> AttemptOutcome {
+    outcome.response_json = outcome.response_json.map(redact_sensitive_env_json);
+    outcome.error_message = redact_sensitive_env_option(outcome.error_message);
+    outcome
 }
 
 fn normalize_job_default_input(default_input: Option<Value>) -> Result<Option<Value>, OrbitError> {
