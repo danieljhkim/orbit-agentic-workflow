@@ -1,10 +1,10 @@
 schemaVersion: 1
 job:
-  job_id: job-perform-maintenance
+  job_id: job_oversee_orbit_operations
   state: enabled
   steps:
     - target_type: activity
-      target_id: perform-maintenance
+      target_id: oversee_orbit_operations
       agent_cli: codex
       timeout_seconds: 1200
       env_extra: []

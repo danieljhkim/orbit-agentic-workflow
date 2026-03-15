@@ -1,10 +1,10 @@
 schemaVersion: 1
 job:
-  job_id: job-approve-task-leader
+  job_id: job_approve_task_leader
   state: enabled
   steps:
     - target_type: activity
-      target_id: approve-task-leader
+      target_id: approve_task_leader
       agent_cli: codex
       timeout_seconds: 1200
       env_extra: []

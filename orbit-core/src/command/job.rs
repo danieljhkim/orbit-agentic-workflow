@@ -1312,24 +1312,24 @@ fn activity_envelope_json(activity: &Activity) -> Value {
 
 const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
     (
-        "job-approve-task-leader",
-        include_str!("../../assets/jobs/job-approve-task-leader.yaml"),
+        "job_approve_task_leader",
+        include_str!("../../assets/jobs/job_approve_task_leader.yaml"),
     ),
     (
-        "job-oversee-orbit-operations",
-        include_str!("../../assets/jobs/job-oversee-orbit-operations.yaml"),
+        "job_oversee_orbit_operations",
+        include_str!("../../assets/jobs/job_oversee_orbit_operations.yaml"),
     ),
     (
-        "job-perform-maintenance",
-        include_str!("../../assets/jobs/job-perform-maintenance.yaml"),
+        "job_perform_maintenance",
+        include_str!("../../assets/jobs/job_perform_maintenance.yaml"),
     ),
     (
-        "job-resolve-backlogged-task",
-        include_str!("../../assets/jobs/job-resolve-backlogged-task.yaml"),
+        "job_resolve_backlogged_task",
+        include_str!("../../assets/jobs/job_resolve_backlogged_task.yaml"),
     ),
     (
-        "job-dispatch-task",
-        include_str!("../../assets/jobs/job-dispatch-task.yaml"),
+        "job_dispatch_task",
+        include_str!("../../assets/jobs/job_dispatch_task.yaml"),
     ),
 ];
 

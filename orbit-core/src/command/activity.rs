@@ -12,24 +12,24 @@ use crate::paths::ORBIT_ROOT_TOKEN;
 
 const DEFAULT_JOB_FILES: [(&str, &str); 5] = [
     (
-        "approve-task-leader",
-        include_str!("../../assets/activities/approve-task-leader.yaml"),
+        "approve_task_leader",
+        include_str!("../../assets/activities/approve_task_leader.yaml"),
     ),
     (
-        "oversee-orbit-operations",
-        include_str!("../../assets/activities/oversee-orbit-operations.yaml"),
+        "oversee_orbit_operations",
+        include_str!("../../assets/activities/oversee_orbit_operations.yaml"),
     ),
     (
-        "perform-maintenance",
-        include_str!("../../assets/activities/perform-maintenance.yaml"),
+        "perform_maintenance",
+        include_str!("../../assets/activities/perform_maintenance.yaml"),
     ),
     (
-        "resolve-backlogged-task",
-        include_str!("../../assets/activities/resolve-backlogged-task.yaml"),
+        "resolve_backlogged_task",
+        include_str!("../../assets/activities/resolve_backlogged_task.yaml"),
     ),
     (
-        "dispatch-task",
-        include_str!("../../assets/activities/dispatch-task.yaml"),
+        "dispatch_task",
+        include_str!("../../assets/activities/dispatch_task.yaml"),
     ),
 ];
 

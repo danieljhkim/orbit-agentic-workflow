@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::Value;
 
 fn orbit_in(dir: &std::path::Path) -> Command {
     #[allow(deprecated)]
@@ -58,11 +59,11 @@ fn assert_default_named_jobs_visible_and_enabled(base_root: &std::path::Path) {
     let jobs = list.as_array().expect("jobs array");
 
     for job_id in [
-        "job-resolve-backlogged-task",
-        "job-perform-maintenance",
-        "job-oversee-orbit-operations",
-        "job-approve-task-leader",
-        "job-dispatch-task",
+        "job_resolve_backlogged_task",
+        "job_perform_maintenance",
+        "job_oversee_orbit_operations",
+        "job_approve_task_leader",
+        "job_dispatch_task",
     ] {
         let job = jobs
             .iter()
@@ -70,6 +71,26 @@ fn assert_default_named_jobs_visible_and_enabled(base_root: &std::path::Path) {
             .unwrap_or_else(|| panic!("missing default job in list: {job_id}"));
         assert_eq!(job["state"], "enabled");
     }
+}
+
+fn rewrite_file(path: &std::path::Path, replacements: &[(&str, &str)]) {
+    let mut raw = std::fs::read_to_string(path).expect("read file");
+    for (old, new) in replacements {
+        raw = raw.replace(old, new);
+    }
+    std::fs::write(path, raw).expect("write file");
+}
+
+fn rename_seeded_file_to_legacy_name(
+    dir: &std::path::Path,
+    current_id: &str,
+    legacy_id: &str,
+    replacements: &[(&str, &str)],
+) {
+    let current_path = dir.join(format!("{current_id}.yaml"));
+    let legacy_path = dir.join(format!("{legacy_id}.yaml"));
+    std::fs::rename(&current_path, &legacy_path).expect("rename legacy file");
+    rewrite_file(&legacy_path, replacements);
 }
 
 #[test]
@@ -417,4 +438,179 @@ fn init_refreshes_modified_defaults_without_destroying_tasks() {
 
     // Task artifact must still exist.
     assert!(task_dir.join("task.yaml").exists());
+}
+
+#[test]
+fn init_migrates_legacy_builtin_kebab_case_names_to_snake_case() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("home");
+
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["init"])
+        .assert()
+        .success();
+
+    let orbit_root = workspace.path().join(".orbit");
+    let activities_dir = orbit_root.join("activities").join("active");
+    let jobs_dir = orbit_root.join("jobs").join("jobs");
+
+    rename_seeded_file_to_legacy_name(
+        &activities_dir,
+        "approve_task_leader",
+        "approve-task-leader",
+        &[("approve_task_leader", "approve-task-leader")],
+    );
+    rename_seeded_file_to_legacy_name(
+        &activities_dir,
+        "dispatch_task",
+        "triage-and-dispatch-task",
+        &[("dispatch_task", "triage-and-dispatch-task")],
+    );
+    rename_seeded_file_to_legacy_name(
+        &jobs_dir,
+        "job_approve_task_leader",
+        "job-approve-task-leader",
+        &[
+            ("job_approve_task_leader", "job-approve-task-leader"),
+            ("approve_task_leader", "approve-task-leader"),
+        ],
+    );
+    rename_seeded_file_to_legacy_name(
+        &jobs_dir,
+        "job_dispatch_task",
+        "job-triage-and-dispatch-task",
+        &[
+            ("job_dispatch_task", "job-triage-and-dispatch-task"),
+            ("dispatch_task", "triage-and-dispatch-task"),
+        ],
+    );
+
+    let legacy_run_dir = orbit_root
+        .join("jobs")
+        .join("runs")
+        .join("job-approve-task-leader")
+        .join("jrun-20260315-010101");
+    std::fs::create_dir_all(legacy_run_dir.join("steps")).expect("create legacy run bundle");
+    std::fs::write(
+        legacy_run_dir.join("jrun.yaml"),
+        r#"schemaVersion: 1
+run:
+  run_id: jrun-20260315-010101
+  job_id: job-approve-task-leader
+  attempt: 1
+  state: success
+  scheduled_at: 2026-03-15T01:01:01Z
+  started_at: 2026-03-15T01:01:02Z
+  finished_at: 2026-03-15T01:01:03Z
+  duration_ms: 1000
+  created_at: 2026-03-15T01:01:01Z
+"#,
+    )
+    .expect("write legacy jrun");
+    std::fs::write(
+        legacy_run_dir
+            .join("steps")
+            .join("01-approve-task-leader.yaml"),
+        r#"schemaVersion: 1
+step:
+  step_index: 0
+  target_type: activity
+  target_id: approve-task-leader
+  started_at: 2026-03-15T01:01:02Z
+  finished_at: 2026-03-15T01:01:03Z
+  duration_ms: 1000
+  exit_code: 0
+  agent_response_json:
+    schemaVersion: 1
+    status: success
+    result: {}
+    error: null
+    durationMs: 1
+  state: success
+  error_code: null
+  error_message: null
+"#,
+    )
+    .expect("write legacy step");
+
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["init"])
+        .assert()
+        .success();
+
+    assert!(activities_dir.join("approve_task_leader.yaml").exists());
+    assert!(!activities_dir.join("approve-task-leader.yaml").exists());
+    assert!(activities_dir.join("dispatch_task.yaml").exists());
+    assert!(
+        !activities_dir
+            .join("triage-and-dispatch-task.yaml")
+            .exists()
+    );
+
+    assert!(jobs_dir.join("job_approve_task_leader.yaml").exists());
+    assert!(!jobs_dir.join("job-approve-task-leader.yaml").exists());
+    assert!(jobs_dir.join("job_dispatch_task.yaml").exists());
+    assert!(!jobs_dir.join("job-triage-and-dispatch-task.yaml").exists());
+
+    let migrated_run_dir = orbit_root
+        .join("jobs")
+        .join("runs")
+        .join("job_approve_task_leader")
+        .join("jrun-20260315-010101");
+    assert!(migrated_run_dir.exists());
+    assert!(
+        !orbit_root
+            .join("jobs")
+            .join("runs")
+            .join("job-approve-task-leader")
+            .exists()
+    );
+    assert!(
+        migrated_run_dir
+            .join("steps")
+            .join("01-approve_task_leader.yaml")
+            .exists()
+    );
+
+    let migrated_jrun =
+        std::fs::read_to_string(migrated_run_dir.join("jrun.yaml")).expect("read migrated jrun");
+    assert!(migrated_jrun.contains("job_approve_task_leader"));
+    assert!(!migrated_jrun.contains("job-approve-task-leader"));
+
+    let migrated_step = std::fs::read_to_string(
+        migrated_run_dir
+            .join("steps")
+            .join("01-approve_task_leader.yaml"),
+    )
+    .expect("read migrated step");
+    assert!(migrated_step.contains("approve_task_leader"));
+    assert!(!migrated_step.contains("approve-task-leader"));
+
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["activity", "show", "approve_task_leader", "--json"])
+        .assert()
+        .success();
+    orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["activity", "show", "dispatch_task", "--json"])
+        .assert()
+        .success();
+
+    let history_output = orbit_in(workspace.path())
+        .env("HOME", home.path())
+        .args(["job", "history", "job_approve_task_leader", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let history: Value = serde_json::from_slice(&history_output).expect("history json");
+    let runs = history.as_array().expect("history array");
+    assert!(
+        runs.iter()
+            .any(|run| run["job_id"] == "job_approve_task_leader")
+    );
 }

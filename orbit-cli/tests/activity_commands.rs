@@ -550,7 +550,7 @@ fn activity_update_identity_sets_field() {
         .success();
 
     orbit_in(dir.path())
-        .args(["activity", "update", "spec-identity", "--identity", "grace"])
+        .args(["activity", "update", "spec-identity", "--identity", "linus"])
         .assert()
         .success();
 
@@ -562,7 +562,7 @@ fn activity_update_identity_sets_field() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(show["identity_id"], "grace");
+    assert_eq!(show["identity_id"], "linus");
 }
 
 #[test]
@@ -578,7 +578,7 @@ fn activity_update_clear_identity_removes_field() {
             "--description",
             "has identity",
             "--identity",
-            "grace",
+            "linus",
             "--json",
         ])
         .assert()

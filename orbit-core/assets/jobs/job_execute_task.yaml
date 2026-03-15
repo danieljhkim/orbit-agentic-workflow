@@ -1,11 +1,10 @@
 schemaVersion: 1
 job:
-  job_id: job-execute-task
+  job_id: job_execute_task
   state: enabled
-  # Expected input: { "task_id": "<orbit-task-id>", "base": "<base-branch>" }
-  # Example:        { "task_id": "T20260315-034514", "base": "main" }
   #
   # Step flow:
+  #   dispatch_task
   #   create_branch    — checkout base + pull/rebase + create orbit/<task_id>
   #   implement_change — fetch task, implement plan, run tests, commit, move to review
   #   run_tests        — verify tests pass on the task branch
@@ -13,6 +12,11 @@ job:
   #   checkout_branch  — return to base branch + pull/rebase
   #   review_pr        — review the opened PR against task acceptance criteria
   steps:
+    - target_type: activity
+      target_id: dispatch_task
+      agent_cli: claude
+      timeout_seconds: 1000
+
     - target_type: activity
       target_id: create_branch
       timeout_seconds: 60
