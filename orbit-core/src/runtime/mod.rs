@@ -92,6 +92,8 @@ impl OrbitRuntime {
         self.context.data_root.clone()
     }
 
+    /// Returns the runtime config file at `<data_root>/config.toml`
+    /// which is typically `.orbit/config.toml` in a repo-local workspace.
     pub fn config_path(&self) -> PathBuf {
         self.data_root().join("config.toml")
     }

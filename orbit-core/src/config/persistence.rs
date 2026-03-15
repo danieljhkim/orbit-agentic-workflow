@@ -70,7 +70,7 @@ impl PersistenceConfig {
         let defaults = Self::default_for_data_root(data_root);
         if raw.watch.is_some() {
             return Err(OrbitError::InvalidInput(
-                "watch config is no longer supported; remove the [watch] section from config.toml"
+                "watch config is no longer supported; remove the [watch] section from the runtime config file (.orbit/config.toml in a repo-local workspace, or <data_root>/config.toml)"
                     .to_string(),
             ));
         }
