@@ -13,12 +13,12 @@ pub struct Activity {
     pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
-    pub artifact_path_template: Option<String>,
+    #[serde(default)]
     pub skill_refs: Vec<String>,
     #[serde(default)]
-    pub identity_id: Option<String>,
+    pub tools: Vec<String>,
     #[serde(default)]
-    pub assigned_to: Option<String>,
+    pub identity_id: Option<String>,
     #[serde(default)]
     pub created_by: Option<String>,
     pub is_active: bool,

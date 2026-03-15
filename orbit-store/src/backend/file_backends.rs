@@ -4,9 +4,8 @@ use orbit_types::{
 };
 
 use super::contracts::{
-    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, JobCreateParams,
-    JobRunQuery, JobRunStepParams, JobStoreBackend, TaskCreateParams, TaskStoreBackend,
-    TaskUpdateParams,
+    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, JobCreateParams, JobRunQuery,
+    JobRunStepParams, JobStoreBackend, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
 };
 use crate::file::activity_store::{ActivityFileStore, FileWorkInsert};
 use crate::file::job_store::JobFileStore;
@@ -96,10 +95,9 @@ impl ActivityStoreBackend for ActivityFileStore {
             instruction: params.instruction,
             input_schema_json: params.input_schema_json,
             output_schema_json: params.output_schema_json,
-            artifact_path_template: params.artifact_path_template,
             skill_refs: params.skill_refs,
+            tools: params.tools,
             identity_id: params.identity_id,
-            assigned_to: params.assigned_to,
             created_by: params.created_by,
         })
     }
@@ -123,10 +121,9 @@ impl ActivityStoreBackend for ActivityFileStore {
             params.instruction,
             params.input_schema_json,
             params.output_schema_json,
-            params.artifact_path_template,
             params.skill_refs,
+            params.tools,
             params.identity_id,
-            params.assigned_to,
             params.is_active,
         )
     }

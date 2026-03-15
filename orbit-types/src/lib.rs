@@ -22,8 +22,8 @@ pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use identity::{IdentityRole, ResolvedIdentity};
 pub use job::{
-    AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState,
-    JobRunStep, JobScheduleState, JobStep, JobTargetType,
+    AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
+    JobScheduleState, JobStep, JobTargetType,
 };
 pub use memo::Memo;
 pub use role::Role;
@@ -149,10 +149,9 @@ mod tests {
                 "type": "object",
                 "properties": { "score": { "type": "number" } }
             }),
-            artifact_path_template: Some("agentspace/reports/{{date}}/out.md".to_string()),
             skill_refs: vec!["orbit-assess-codebase".to_string()],
+            tools: vec!["fs.read".to_string(), "fs.write".to_string()],
             identity_id: Some("prii".to_string()),
-            assigned_to: Some("Prii (Maintainer)".to_string()),
             created_by: Some("human".to_string()),
             is_active: true,
             created_at: Utc::now(),
@@ -161,6 +160,7 @@ mod tests {
         let spec_json = serde_json::to_value(spec).expect("serialize spec");
         assert_eq!(spec_json["spec_type"], "analysis");
         assert_eq!(spec_json["instruction"], "Summarize the repository health.");
+        assert_eq!(spec_json["tools"][0], "fs.read");
         assert_eq!(spec_json["is_active"], true);
     }
 

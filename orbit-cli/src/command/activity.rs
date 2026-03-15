@@ -54,14 +54,10 @@ pub struct ActivityAddArgs {
     pub input_schema: Option<String>,
     #[arg(long)]
     pub output_schema: Option<String>,
-    #[arg(long)]
-    pub artifact_path_template: Option<String>,
     #[arg(long, default_value = "")]
     pub skill_refs: String,
     #[arg(long)]
     pub identity: Option<String>,
-    #[arg(long)]
-    pub assigned_to: Option<String>,
     #[arg(long)]
     pub created_by: Option<String>,
     #[arg(long)]
@@ -83,10 +79,9 @@ impl Execute for ActivityAddArgs {
             instruction: self.instruction,
             input_schema_json,
             output_schema_json,
-            artifact_path_template: self.artifact_path_template,
             skill_refs,
+            tools: Vec::new(),
             identity_id: self.identity,
-            assigned_to: self.assigned_to,
             created_by: self.created_by,
         })?;
 
@@ -154,16 +149,10 @@ impl Execute for ActivityShowArgs {
             if !spec.instruction.is_empty() {
                 println!("Instruction:         {}", spec.instruction);
             }
-            println!(
-                "Artifact Template:   {}",
-                spec.artifact_path_template.unwrap_or_default()
-            );
             println!("Skill Refs:          {}", spec.skill_refs.join(","));
+            println!("Tools:               {}", spec.tools.join(","));
             if let Some(ref identity_id) = spec.identity_id {
                 println!("Identity:            {}", identity_id);
-            }
-            if let Some(ref assigned_to) = spec.assigned_to {
-                println!("Assigned To:         {}", assigned_to);
             }
             if let Some(ref created_by) = spec.created_by {
                 println!("Created By:          {}", created_by);
@@ -188,19 +177,11 @@ pub struct ActivityUpdateArgs {
     #[arg(long)]
     pub output_schema: Option<String>,
     #[arg(long)]
-    pub artifact_path_template: Option<String>,
-    #[arg(long, conflicts_with = "artifact_path_template")]
-    pub clear_artifact_path_template: bool,
-    #[arg(long)]
     pub skill_refs: Option<String>,
     #[arg(long)]
     pub identity: Option<String>,
     #[arg(long, conflicts_with = "identity")]
     pub clear_identity: bool,
-    #[arg(long)]
-    pub assigned_to: Option<String>,
-    #[arg(long, conflicts_with = "assigned_to")]
-    pub clear_assigned_to: bool,
     #[arg(long, conflicts_with = "inactive")]
     pub active: bool,
     #[arg(long, conflicts_with = "active")]
@@ -221,20 +202,10 @@ impl Execute for ActivityUpdateArgs {
             .as_deref()
             .map(|raw| parse_json_object(raw, "output_schema"))
             .transpose()?;
-        let artifact_path_template = if self.clear_artifact_path_template {
-            Some(None)
-        } else {
-            self.artifact_path_template.map(Some)
-        };
         let identity_id = if self.clear_identity {
             Some(None)
         } else {
             self.identity.map(Some)
-        };
-        let assigned_to = if self.clear_assigned_to {
-            Some(None)
-        } else {
-            self.assigned_to.map(Some)
         };
         let is_active = if self.active {
             Some(true)
@@ -252,10 +223,9 @@ impl Execute for ActivityUpdateArgs {
                 instruction: self.instruction,
                 input_schema_json,
                 output_schema_json,
-                artifact_path_template,
                 skill_refs,
+                tools: None,
                 identity_id,
-                assigned_to,
                 is_active,
             },
         )?;
@@ -368,10 +338,9 @@ fn activity_to_json(spec: &Activity) -> Value {
         "instruction": spec.instruction,
         "input_schema_json": spec.input_schema_json,
         "output_schema_json": spec.output_schema_json,
-        "artifact_path_template": spec.artifact_path_template,
         "skill_refs": spec.skill_refs,
+        "tools": spec.tools,
         "identity_id": spec.identity_id,
-        "assigned_to": spec.assigned_to,
         "created_by": spec.created_by,
         "is_active": spec.is_active,
         "created_at": spec.created_at.to_rfc3339(),

@@ -60,10 +60,9 @@ pub struct ActivityCreateParams {
     pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
-    pub artifact_path_template: Option<String>,
     pub skill_refs: Vec<String>,
+    pub tools: Vec<String>,
     pub identity_id: Option<String>,
-    pub assigned_to: Option<String>,
     pub created_by: Option<String>,
 }
 
@@ -73,10 +72,9 @@ pub struct ActivityUpdateParams {
     pub instruction: Option<String>,
     pub input_schema_json: Option<Value>,
     pub output_schema_json: Option<Value>,
-    pub artifact_path_template: Option<Option<String>>,
     pub skill_refs: Option<Vec<String>>,
+    pub tools: Option<Vec<String>>,
     pub identity_id: Option<Option<String>>,
-    pub assigned_to: Option<Option<String>>,
     pub is_active: Option<bool>,
 }
 

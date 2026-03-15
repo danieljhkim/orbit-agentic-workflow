@@ -18,17 +18,14 @@ pub(crate) struct FileWorkInsert {
     pub instruction: String,
     pub input_schema_json: serde_json::Value,
     pub output_schema_json: serde_json::Value,
-    pub artifact_path_template: Option<String>,
     pub skill_refs: Vec<String>,
+    pub tools: Vec<String>,
     pub identity_id: Option<String>,
-    pub assigned_to: Option<String>,
     pub created_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ActivityFileDocument {
-    schema_version: u8,
+struct ActivitySpecDocument {
     id: String,
     spec_type: String,
     description: String,
@@ -36,16 +33,22 @@ struct ActivityFileDocument {
     instruction: String,
     input_schema_json: serde_json::Value,
     output_schema_json: serde_json::Value,
-    artifact_path_template: Option<String>,
+    #[serde(default)]
     skill_refs: Vec<String>,
     #[serde(default)]
-    identity_id: Option<String>,
-    #[serde(default)]
-    assigned_to: Option<String>,
+    tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ActivityFileDocument {
+    schema_version: u8,
     #[serde(default)]
     created_by: Option<String>,
+    #[serde(default)]
+    identity_id: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    activity: ActivitySpecDocument,
 }
 
 impl ActivityFileStore {
@@ -71,21 +74,26 @@ impl ActivityFileStore {
         let now = Utc::now();
         let doc = ActivityFileDocument {
             schema_version: 1,
-            id: params.id.clone(),
-            spec_type: params.spec_type.clone(),
-            description: params.description.clone(),
-            instruction: params.instruction.clone(),
-            input_schema_json: params.input_schema_json.clone(),
-            output_schema_json: params.output_schema_json.clone(),
-            artifact_path_template: params.artifact_path_template.clone(),
-            skill_refs: params.skill_refs.clone(),
-            identity_id: params.identity_id.clone(),
-            assigned_to: params.assigned_to.clone(),
             created_by: params.created_by.clone(),
+            identity_id: params.identity_id.clone(),
             created_at: now,
             updated_at: now,
+            activity: ActivitySpecDocument {
+                id: params.id.clone(),
+                spec_type: params.spec_type.clone(),
+                description: params.description.clone(),
+                instruction: params.instruction.clone(),
+                input_schema_json: normalize_json_schema_for_storage(
+                    params.input_schema_json.clone(),
+                ),
+                output_schema_json: normalize_json_schema_for_storage(
+                    params.output_schema_json.clone(),
+                ),
+                skill_refs: params.skill_refs.clone(),
+                tools: params.tools.clone(),
+            },
         };
-        self.write_doc_at(&self.active_doc_path(&doc.id), &doc)?;
+        self.write_doc_at(&self.active_doc_path(&doc.activity.id), &doc)?;
         Ok(doc_to_work(doc, true))
     }
 
@@ -127,10 +135,9 @@ impl ActivityFileStore {
         instruction: Option<String>,
         input_schema_json: Option<serde_json::Value>,
         output_schema_json: Option<serde_json::Value>,
-        artifact_path_template: Option<Option<String>>,
         skill_refs: Option<Vec<String>>,
+        tools: Option<Vec<String>>,
         identity_id: Option<Option<String>>,
-        assigned_to: Option<Option<String>>,
         is_active: Option<bool>,
     ) -> Result<Activity, OrbitError> {
         self.ensure_layout()?;
@@ -145,28 +152,25 @@ impl ActivityFileStore {
         };
         let mut doc = self.read_doc_at(&path)?;
         if let Some(v) = description {
-            doc.description = v;
+            doc.activity.description = v;
         }
         if let Some(v) = instruction {
-            doc.instruction = v;
+            doc.activity.instruction = v;
         }
         if let Some(v) = input_schema_json {
-            doc.input_schema_json = v;
+            doc.activity.input_schema_json = normalize_json_schema_for_storage(v);
         }
         if let Some(v) = output_schema_json {
-            doc.output_schema_json = v;
-        }
-        if let Some(v) = artifact_path_template {
-            doc.artifact_path_template = v;
+            doc.activity.output_schema_json = normalize_json_schema_for_storage(v);
         }
         if let Some(v) = skill_refs {
-            doc.skill_refs = v;
+            doc.activity.skill_refs = v;
+        }
+        if let Some(v) = tools {
+            doc.activity.tools = v;
         }
         if let Some(v) = identity_id {
             doc.identity_id = v;
-        }
-        if let Some(v) = assigned_to {
-            doc.assigned_to = v;
         }
         doc.updated_at = Utc::now();
 
@@ -260,16 +264,15 @@ impl ActivityFileStore {
 
 fn doc_to_work(doc: ActivityFileDocument, is_active: bool) -> Activity {
     Activity {
-        id: doc.id,
-        spec_type: doc.spec_type,
-        description: doc.description,
-        instruction: doc.instruction,
-        input_schema_json: doc.input_schema_json,
-        output_schema_json: doc.output_schema_json,
-        artifact_path_template: doc.artifact_path_template,
-        skill_refs: doc.skill_refs,
+        id: doc.activity.id,
+        spec_type: doc.activity.spec_type,
+        description: doc.activity.description,
+        instruction: doc.activity.instruction,
+        input_schema_json: normalize_json_schema_for_runtime(doc.activity.input_schema_json),
+        output_schema_json: normalize_json_schema_for_runtime(doc.activity.output_schema_json),
+        skill_refs: doc.activity.skill_refs,
+        tools: doc.activity.tools,
         identity_id: doc.identity_id,
-        assigned_to: doc.assigned_to,
         created_by: doc.created_by,
         is_active,
         created_at: doc.created_at,
@@ -298,4 +301,34 @@ fn is_yaml(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+fn normalize_json_schema_for_storage(value: serde_json::Value) -> serde_json::Value {
+    rename_json_schema_key(value, "additionalProperties", "additional_properties")
+}
+
+fn normalize_json_schema_for_runtime(value: serde_json::Value) -> serde_json::Value {
+    rename_json_schema_key(value, "additional_properties", "additionalProperties")
+}
+
+fn rename_json_schema_key(value: serde_json::Value, from: &str, to: &str) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let renamed = map
+                .into_iter()
+                .map(|(key, child)| {
+                    let key = if key == from { to.to_string() } else { key };
+                    (key, rename_json_schema_key(child, from, to))
+                })
+                .collect();
+            serde_json::Value::Object(renamed)
+        }
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .into_iter()
+                .map(|child| rename_json_schema_key(child, from, to))
+                .collect(),
+        ),
+        other => other,
+    }
 }

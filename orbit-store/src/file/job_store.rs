@@ -2,9 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{
-    Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError,
-};
+use orbit_types::{Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError};
 use serde::{Deserialize, Serialize};
 
 use crate::backend::JobRunStepParams;
@@ -429,10 +427,7 @@ impl JobFileStore {
         let jrun_path = run_dir.join("jrun.yaml");
         let raw = fs::read_to_string(&jrun_path).map_err(|e| OrbitError::Io(e.to_string()))?;
         let doc = serde_yaml::from_str::<JobRunFileDocument>(&raw).map_err(|e| {
-            OrbitError::Store(format!(
-                "invalid jrun.yaml '{}': {e}",
-                jrun_path.display()
-            ))
+            OrbitError::Store(format!("invalid jrun.yaml '{}': {e}", jrun_path.display()))
         })?;
         let mut run = doc.run;
 
@@ -525,16 +520,23 @@ impl JobFileStore {
     fn next_run_id(&self, job_id: &str) -> String {
         let now = Utc::now();
         let base = format!("jrun-{}", now.format("%Y%m%d-%H%M%S"));
-        if !self.run_bundle_dir(job_id, &base).exists() {
+        if !self.run_id_exists_globally(job_id, &base) {
             return base;
         }
         for suffix in 2..1024_u32 {
             let candidate = format!("{base}-{suffix}");
-            if !self.run_bundle_dir(job_id, &candidate).exists() {
+            if !self.run_id_exists_globally(job_id, &candidate) {
                 return candidate;
             }
         }
         base
+    }
+
+    fn run_id_exists_globally(&self, job_id: &str, run_id: &str) -> bool {
+        self.run_bundle_dir(job_id, run_id).exists()
+            || self.archived_run_bundle_dir(job_id, run_id).exists()
+            || self.find_run_path(run_id).ok().flatten().is_some()
+            || self.find_archived_run_path(run_id).ok().flatten().is_some()
     }
 
     fn activities_dir(&self) -> PathBuf {
@@ -653,11 +655,7 @@ mod tests {
 
     fn insert_test_job(store: &JobFileStore, target_id: &str) -> orbit_types::Job {
         store
-            .insert_activity_v2(
-                None,
-                vec![make_step(target_id)],
-                JobScheduleState::Enabled,
-            )
+            .insert_activity_v2(None, vec![make_step(target_id)], JobScheduleState::Enabled)
             .expect("insert job")
     }
 
@@ -736,9 +734,15 @@ mod tests {
         let rest = &job.job_id["job-".len()..];
         let (date, time) = rest.split_once('-').expect("has dash after prefix");
         assert_eq!(date.len(), 8, "date part must be 8 digits, got '{date}'");
-        assert!(date.chars().all(|c| c.is_ascii_digit()), "date must be digits");
+        assert!(
+            date.chars().all(|c| c.is_ascii_digit()),
+            "date must be digits"
+        );
         assert_eq!(time.len(), 6, "time part must be 6 digits, got '{time}'");
-        assert!(time.chars().all(|c| c.is_ascii_digit()), "time must be digits");
+        assert!(
+            time.chars().all(|c| c.is_ascii_digit()),
+            "time must be digits"
+        );
     }
 
     #[test]
@@ -753,9 +757,45 @@ mod tests {
         let rest = &run.run_id["jrun-".len()..];
         let (date, time) = rest.split_once('-').expect("has dash after prefix");
         assert_eq!(date.len(), 8, "date part must be 8 digits, got '{date}'");
-        assert!(date.chars().all(|c| c.is_ascii_digit()), "date must be digits");
+        assert!(
+            date.chars().all(|c| c.is_ascii_digit()),
+            "date must be digits"
+        );
         assert_eq!(time.len(), 6, "time part must be 6 digits, got '{time}'");
-        assert!(time.chars().all(|c| c.is_ascii_digit()), "time must be digits");
+        assert!(
+            time.chars().all(|c| c.is_ascii_digit()),
+            "time must be digits"
+        );
+    }
+
+    #[test]
+    fn job_run_ids_are_unique_across_jobs_in_same_second() {
+        let (_dir, store) = make_store();
+        let job_a = insert_test_job(&store, "target-run-a");
+        let job_b = insert_test_job(&store, "target-run-b");
+
+        let current_second = Utc::now().timestamp();
+        while Utc::now().timestamp() == current_second {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        let first = store
+            .insert_job_run(&job_a.job_id, 1, Utc::now())
+            .expect("insert first run");
+        let second = store
+            .insert_job_run(&job_b.job_id, 1, Utc::now())
+            .expect("insert second run");
+
+        assert_ne!(
+            first.run_id, second.run_id,
+            "run ids must be globally unique"
+        );
+
+        let resolved = store
+            .get_job_run(&second.run_id)
+            .expect("lookup run")
+            .expect("run exists");
+        assert_eq!(resolved.job_id, job_b.job_id);
     }
 
     #[test]
@@ -804,10 +844,7 @@ mod tests {
         assert_eq!(read_back.steps[0].target_id, "target-roundtrip");
         assert_eq!(read_back.steps[0].agent_cli, "my-agent-cli");
         assert_eq!(read_back.steps[0].timeout_seconds, 600);
-        assert_eq!(
-            read_back.steps[0].env_extra,
-            vec!["MY_VAR", "OTHER_VAR"]
-        );
+        assert_eq!(read_back.steps[0].env_extra, vec!["MY_VAR", "OTHER_VAR"]);
         assert_eq!(
             read_back.created_at.timestamp(),
             written.created_at.timestamp()

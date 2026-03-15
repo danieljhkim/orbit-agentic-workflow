@@ -33,21 +33,17 @@ const DEFAULT_JOB_FILES: [(&str, &str); 5] = [
 ];
 use crate::paths::ORBIT_ROOT_TOKEN;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct ActivityAddParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
-    #[serde(default)]
     pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
-    pub artifact_path_template: Option<String>,
-    #[serde(default)]
     pub skill_refs: Vec<String>,
+    pub tools: Vec<String>,
     pub identity_id: Option<String>,
-    pub assigned_to: Option<String>,
     pub created_by: Option<String>,
 }
 
@@ -57,11 +53,37 @@ pub struct ActivityUpdateParams {
     pub instruction: Option<String>,
     pub input_schema_json: Option<Value>,
     pub output_schema_json: Option<Value>,
-    pub artifact_path_template: Option<Option<String>>,
     pub skill_refs: Option<Vec<String>>,
+    pub tools: Option<Vec<String>>,
     pub identity_id: Option<Option<String>>,
-    pub assigned_to: Option<Option<String>>,
     pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ActivityFileEnvelope {
+    schema_version: u8,
+    #[serde(default)]
+    created_by: Option<String>,
+    #[serde(default)]
+    identity_id: Option<String>,
+    activity: ActivityFileSpec,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ActivityFileSpec {
+    id: String,
+    spec_type: String,
+    description: String,
+    #[serde(default)]
+    instruction: String,
+    #[serde(default)]
+    input_schema_json: Value,
+    #[serde(default)]
+    output_schema_json: Value,
+    #[serde(default)]
+    skill_refs: Vec<String>,
+    #[serde(default)]
+    tools: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,13 +107,9 @@ impl OrbitRuntime {
         validate_activity_params(&params)?;
         let _ = self.resolve_activity_skill_refs(&params.skill_refs)?;
         let identity_id = params.identity_id.clone();
-        let mut assigned_to = params.assigned_to.clone();
         let mut created_by = params.created_by.clone();
         if let Some(id) = identity_id.as_ref() {
             let resolved = self.resolve_identity(id)?;
-            if assigned_to.is_none() {
-                assigned_to = Some(resolved.name.clone());
-            }
             if created_by.is_none() {
                 created_by = Some(resolved.name);
             }
@@ -107,10 +125,9 @@ impl OrbitRuntime {
                 instruction: params.instruction,
                 input_schema_json: params.input_schema_json,
                 output_schema_json: params.output_schema_json,
-                artifact_path_template: params.artifact_path_template,
                 skill_refs: params.skill_refs,
+                tools: params.tools,
                 identity_id,
-                assigned_to,
                 created_by,
             })?;
         self.record_event(OrbitEvent::ActivityAdded {
@@ -144,10 +161,9 @@ impl OrbitRuntime {
                 instruction: params.instruction,
                 input_schema_json: params.input_schema_json,
                 output_schema_json: params.output_schema_json,
-                artifact_path_template: params.artifact_path_template,
                 skill_refs: params.skill_refs,
+                tools: params.tools,
                 identity_id: params.identity_id,
-                assigned_to: params.assigned_to,
                 is_active: params.is_active,
             },
         )?;
@@ -227,13 +243,19 @@ fn load_default_activity_specs(
             Some(root) => inject_activity_template_tokens(raw, root),
             None => (*raw).to_string(),
         };
-        let spec = serde_yaml::from_str::<ActivityAddParams>(&rendered).map_err(|err| {
+        let spec = serde_yaml::from_str::<ActivityFileEnvelope>(&rendered).map_err(|err| {
             OrbitError::InvalidInput(format!(
                 "invalid default activity spec '{}': {err}",
                 expected_id
             ))
         })?;
-        let id = spec.id.trim();
+        if spec.schema_version != 1 {
+            return Err(OrbitError::InvalidInput(format!(
+                "default activity spec '{}' uses unsupported schema_version {}",
+                expected_id, spec.schema_version
+            )));
+        }
+        let id = spec.activity.id.trim();
         if id.is_empty() {
             return Err(OrbitError::InvalidInput(format!(
                 "default activity spec '{}' contains empty activity id",
@@ -251,7 +273,18 @@ fn load_default_activity_specs(
                 "default activity set contains duplicate activity id '{id}'"
             )));
         }
-        specs.push(spec);
+        specs.push(ActivityAddParams {
+            id: spec.activity.id,
+            spec_type: spec.activity.spec_type,
+            description: spec.activity.description,
+            instruction: spec.activity.instruction,
+            input_schema_json: spec.activity.input_schema_json,
+            output_schema_json: spec.activity.output_schema_json,
+            skill_refs: spec.activity.skill_refs,
+            tools: spec.activity.tools,
+            identity_id: spec.identity_id,
+            created_by: spec.created_by,
+        });
     }
     Ok(specs)
 }
@@ -323,21 +356,25 @@ mod tests {
             (
                 "duplicate",
                 r#"
-id: duplicate
-specType: task
-description: first
-inputSchemaJson: {}
-outputSchemaJson: {}
+schema_version: 1
+activity:
+  id: duplicate
+  spec_type: task
+  description: first
+  input_schema_json: {}
+  output_schema_json: {}
 "#,
             ),
             (
                 "duplicate",
                 r#"
-id: duplicate
-specType: task
-description: second
-inputSchemaJson: {}
-outputSchemaJson: {}
+schema_version: 1
+activity:
+  id: duplicate
+  spec_type: task
+  description: second
+  input_schema_json: {}
+  output_schema_json: {}
 "#,
             ),
         ];
@@ -350,11 +387,13 @@ outputSchemaJson: {}
         let specs = [(
             "empty-id",
             r#"
-id: "  "
-specType: task
-description: empty id
-inputSchemaJson: {}
-outputSchemaJson: {}
+schema_version: 1
+activity:
+  id: "  "
+  spec_type: task
+  description: empty id
+  input_schema_json: {}
+  output_schema_json: {}
 "#,
         )];
         let err = load_default_activity_specs(&specs, None).expect_err("must fail");
@@ -366,11 +405,13 @@ outputSchemaJson: {}
         let specs = [(
             "expected-id",
             r#"
-id: actual-id
-specType: task
-description: mismatch
-inputSchemaJson: {}
-outputSchemaJson: {}
+schema_version: 1
+activity:
+  id: actual-id
+  spec_type: task
+  description: mismatch
+  input_schema_json: {}
+  output_schema_json: {}
 "#,
         )];
         let err = load_default_activity_specs(&specs, None).expect_err("must fail");
@@ -382,19 +423,20 @@ outputSchemaJson: {}
         let specs = [(
             "tokenized",
             r#"
-id: tokenized
-specType: task
-description: token replacement
-inputSchemaJson: {}
-outputSchemaJson: {}
-artifactPathTemplate: "{{ORBIT_ROOT}}/agents/executions/{{date}}-tokenized.md"
+schema_version: 1
+activity:
+  id: tokenized
+  spec_type: task
+  description: "{{ORBIT_ROOT}}/agents/executions/{{date}}-tokenized.md"
+  input_schema_json: {}
+  output_schema_json: {}
 "#,
         )];
         let parsed =
             load_default_activity_specs(&specs, Some(Path::new("/tmp/orbit"))).expect("must parse");
         assert_eq!(
-            parsed[0].artifact_path_template.as_deref(),
-            Some("/tmp/orbit/agents/executions/{{date}}-tokenized.md")
+            parsed[0].description,
+            "/tmp/orbit/agents/executions/{{date}}-tokenized.md"
         );
     }
 

@@ -136,6 +136,7 @@ fn activity_add_defaults_type_and_schemas_when_omitted() {
     assert_eq!(show["instruction"], "");
     assert_eq!(show["input_schema_json"], serde_json::json!({}));
     assert_eq!(show["output_schema_json"], serde_json::json!({}));
+    assert_eq!(show["tools"], serde_json::json!([]));
 }
 
 #[test]
@@ -321,46 +322,6 @@ fn activity_update_skill_refs_replaces_list() {
 }
 
 #[test]
-fn activity_update_clear_artifact_path_template() {
-    let dir = tempfile::tempdir().expect("tempdir");
-
-    orbit_in(dir.path())
-        .args([
-            "activity",
-            "add",
-            "--id",
-            "spec-update-artifact",
-            "--description",
-            "activity with artifact",
-            "--artifact-path-template",
-            "/tmp/artifact-{{id}}.md",
-            "--json",
-        ])
-        .assert()
-        .success();
-
-    orbit_in(dir.path())
-        .args([
-            "activity",
-            "update",
-            "spec-update-artifact",
-            "--clear-artifact-path-template",
-        ])
-        .assert()
-        .success();
-
-    let show_output = orbit_in(dir.path())
-        .args(["activity", "show", "spec-update-artifact", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    assert!(show["artifact_path_template"].is_null());
-}
-
-#[test]
 fn activity_update_unknown_id_fails() {
     let dir = tempfile::tempdir().expect("tempdir");
 
@@ -417,6 +378,7 @@ fn activity_list_ops_returns_signal_tier_json() {
     assert!(activity.get("input_schema_json").is_none());
     assert!(activity.get("output_schema_json").is_none());
     assert!(activity.get("skill_refs").is_none());
+    assert!(activity.get("tools").is_none());
 }
 
 #[test]

@@ -35,10 +35,9 @@ fn add_activity_with_input_schema(
             instruction: "Run the scheduled runtime behavior test.".to_string(),
             input_schema_json,
             output_schema_json: json!({}),
-            artifact_path_template: None,
             skill_refs: Vec::new(),
+            tools: Vec::new(),
             identity_id: None,
-            assigned_to: None,
             created_by: None,
         })
         .expect("add activity");
@@ -56,10 +55,9 @@ fn add_activity_rejects_missing_skill_ref() {
         instruction: String::new(),
         input_schema_json: json!({}),
         output_schema_json: json!({}),
-        artifact_path_template: None,
         skill_refs: vec!["does-not-exist".to_string()],
+        tools: Vec::new(),
         identity_id: None,
-        assigned_to: None,
         created_by: None,
     });
     assert!(result.is_err());
@@ -285,7 +283,13 @@ fn job_run_executes_agent_and_records_success_run() {
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Success);
     assert_eq!(history[0].attempt, 1);
-    assert!(history[0].steps.last().and_then(|s| s.agent_response_json.as_ref()).is_some());
+    assert!(
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.agent_response_json.as_ref())
+            .is_some()
+    );
 
     let args_raw = std::fs::read_to_string(args_capture).expect("args capture");
     assert!(args_raw.contains("--output"));
@@ -393,10 +397,9 @@ fn job_run_resolves_activity_identity_from_data_root_when_home_differs() {
             instruction: "Run with an explicit identity.".to_string(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
-            artifact_path_template: None,
             skill_refs: Vec::new(),
+            tools: Vec::new(),
             identity_id: Some("prii".to_string()),
-            assigned_to: None,
             created_by: None,
         })
         .expect("add activity");
@@ -436,7 +439,13 @@ fn invalid_agent_json_with_zero_exit_falls_back_to_success() {
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Success);
-    assert!(history[0].steps.last().and_then(|s| s.error_code.as_deref()).is_none());
+    assert!(
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref())
+            .is_none()
+    );
 
     let audits = runtime.list_audits(25).expect("audits");
     assert!(
@@ -466,12 +475,17 @@ fn invocation_failure_with_stderr_marks_run_failed_with_invocation_error() {
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Failed);
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_INVOCATION_FAILED")
     );
     assert!(
         history[0]
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("network down")
     );
@@ -502,10 +516,17 @@ pass = ["PATH"]
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_INVOCATION_FAILED")
     );
-    let message = history[0].steps.last().and_then(|s| s.error_message.as_deref()).unwrap_or_default();
+    let message = history[0]
+        .steps
+        .last()
+        .and_then(|s| s.error_message.as_deref())
+        .unwrap_or_default();
     assert!(message.contains("HOME"));
     assert!(message.contains("config.toml"));
 }
@@ -687,12 +708,17 @@ fn malformed_commit_request_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("result.commit.files must contain at least one path")
     );
@@ -713,10 +739,18 @@ fn empty_stdout_timeout_marks_run_as_timeout() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history[0].state, JobRunState::Timeout);
-    assert_eq!(history[0].steps.last().and_then(|s| s.error_code.as_deref()), Some("AGENT_TIMEOUT"));
+    assert_eq!(
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
+        Some("AGENT_TIMEOUT")
+    );
     assert!(
         history[0]
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("timed out")
     );
@@ -747,10 +781,17 @@ pass = ["PATH"]
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_INVOCATION_FAILED")
     );
-    let message = history[0].steps.last().and_then(|s| s.error_message.as_deref()).unwrap_or_default();
+    let message = history[0]
+        .steps
+        .last()
+        .and_then(|s| s.error_message.as_deref())
+        .unwrap_or_default();
     assert!(message.contains("HOME"));
     assert!(message.contains("config.toml"));
 }
@@ -784,7 +825,13 @@ fn provider_required_env_present_reaches_protocol_validation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(history[0].state, JobRunState::Success);
-    assert!(history[0].steps.last().and_then(|s| s.error_code.as_deref()).is_none());
+    assert!(
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref())
+            .is_none()
+    );
 }
 
 #[test]
@@ -843,10 +890,15 @@ fn job_history_recovers_stale_running_run_to_failed() {
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
     assert_eq!(stale.state, JobRunState::Failed);
-    assert_eq!(stale.steps.last().and_then(|s| s.error_code.as_deref()), Some("AGENT_INVOCATION_FAILED"));
+    assert_eq!(
+        stale.steps.last().and_then(|s| s.error_code.as_deref()),
+        Some("AGENT_INVOCATION_FAILED")
+    );
     assert!(
         stale
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("stale active run recovered")
     );
@@ -879,7 +931,10 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
         .find(|run| run.run_id == stale_run_id)
         .expect("stale run should exist");
     assert_eq!(stale.state, JobRunState::Failed);
-    assert_eq!(stale.steps.last().and_then(|s| s.error_code.as_deref()), Some("AGENT_INVOCATION_FAILED"));
+    assert_eq!(
+        stale.steps.last().and_then(|s| s.error_code.as_deref()),
+        Some("AGENT_INVOCATION_FAILED")
+    );
     assert!(
         history.iter().any(|run| run.state == JobRunState::Success),
         "new attempt should complete successfully"
@@ -940,10 +995,9 @@ Validate output shape.
             instruction: String::new(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
-            artifact_path_template: None,
             skill_refs: vec!["strict-schema".to_string()],
+            tools: Vec::new(),
             identity_id: None,
-            assigned_to: None,
             created_by: None,
         })
         .expect("add activity");
@@ -956,7 +1010,10 @@ Validate output shape.
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Failed);
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
 }
@@ -1028,10 +1085,9 @@ Validate advanced schema behavior.
             instruction: String::new(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
-            artifact_path_template: None,
             skill_refs: vec!["strict-complex".to_string()],
+            tools: Vec::new(),
             identity_id: None,
-            assigned_to: None,
             created_by: None,
         })
         .expect("add activity");
@@ -1044,7 +1100,10 @@ Validate advanced schema behavior.
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].state, JobRunState::Failed);
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
 }
@@ -1113,12 +1172,17 @@ fn created_file_empty_path_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("must not be empty")
     );
@@ -1147,12 +1211,17 @@ fn created_file_nonexistent_path_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("does not exist")
     );
@@ -1185,12 +1254,17 @@ fn created_file_outside_repo_fails_as_protocol_violation() {
 
     let history = runtime.job_history(&job_id).expect("history");
     assert_eq!(
-        history[0].steps.last().and_then(|s| s.error_code.as_deref()),
+        history[0]
+            .steps
+            .last()
+            .and_then(|s| s.error_code.as_deref()),
         Some("AGENT_PROTOCOL_VIOLATION")
     );
     assert!(
         history[0]
-            .steps.last().and_then(|s| s.error_message.as_deref())
+            .steps
+            .last()
+            .and_then(|s| s.error_message.as_deref())
             .unwrap_or_default()
             .contains("outside the git repository")
     );
@@ -1390,10 +1464,22 @@ pass = ["HOME", "PATH"]
     let step2_env = std::fs::read_to_string(env_dir.join("2.env")).expect("step2 env");
 
     // Step 1 must see STEP1_SECRET but not STEP2_SECRET.
-    assert!(step1_env.contains("STEP1_SECRET=alpha"), "step1 should have STEP1_SECRET");
-    assert!(!step1_env.contains("STEP2_SECRET"), "step1 must not have STEP2_SECRET");
+    assert!(
+        step1_env.contains("STEP1_SECRET=alpha"),
+        "step1 should have STEP1_SECRET"
+    );
+    assert!(
+        !step1_env.contains("STEP2_SECRET"),
+        "step1 must not have STEP2_SECRET"
+    );
 
     // Step 2 must see STEP2_SECRET but not STEP1_SECRET.
-    assert!(step2_env.contains("STEP2_SECRET=beta"), "step2 should have STEP2_SECRET");
-    assert!(!step2_env.contains("STEP1_SECRET"), "step2 must not have STEP1_SECRET");
+    assert!(
+        step2_env.contains("STEP2_SECRET=beta"),
+        "step2 should have STEP2_SECRET"
+    );
+    assert!(
+        !step2_env.contains("STEP1_SECRET"),
+        "step2 must not have STEP1_SECRET"
+    );
 }

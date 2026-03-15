@@ -758,10 +758,9 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 "instruction": execution.activity.instruction,
                 "input_schema_json": execution.activity.input_schema_json,
                 "output_schema_json": execution.activity.output_schema_json,
-                "artifact_path_template": execution.activity.artifact_path_template,
                 "skill_refs": execution.activity.skill_refs,
+                "tools": execution.activity.tools,
                 "identity_id": execution.activity.identity_id,
-                "assigned_to": execution.activity.assigned_to,
                 "created_by": execution.activity.created_by,
             }),
             job: execution.job.as_ref().map(|job| {
@@ -1191,16 +1190,11 @@ struct DefaultJobStep {
     env_extra: Vec<String>,
 }
 
-fn load_default_job_specs(
-    raw_specs: &[(&str, &str)],
-) -> Result<Vec<DefaultJobEntry>, OrbitError> {
+fn load_default_job_specs(raw_specs: &[(&str, &str)]) -> Result<Vec<DefaultJobEntry>, OrbitError> {
     let mut specs = Vec::with_capacity(raw_specs.len());
     for (expected_id, raw) in raw_specs {
         let file_spec = serde_yaml::from_str::<DefaultJobFileSpec>(raw).map_err(|err| {
-            OrbitError::InvalidInput(format!(
-                "invalid default job spec '{}': {err}",
-                expected_id
-            ))
+            OrbitError::InvalidInput(format!("invalid default job spec '{}': {err}", expected_id))
         })?;
         let entry = file_spec.job;
         let id = entry.job_id.trim();
@@ -1286,7 +1280,10 @@ mod tests {
 
     #[test]
     fn load_rejects_mismatched_file_key_and_job_id() {
-        let specs = &[("expected-id", "job:\n  job_id: actual-id\n  state: enabled\n  steps:\n    - target_type: activity\n      target_id: t\n      agent_cli: codex\n      timeout_seconds: 60\n")];
+        let specs = &[(
+            "expected-id",
+            "job:\n  job_id: actual-id\n  state: enabled\n  steps:\n    - target_type: activity\n      target_id: t\n      agent_cli: codex\n      timeout_seconds: 60\n",
+        )];
         let err = load_default_job_specs(specs).expect_err("must fail");
         assert!(err.to_string().contains("does not match spec job_id"));
     }

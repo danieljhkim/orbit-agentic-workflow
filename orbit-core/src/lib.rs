@@ -113,10 +113,9 @@ mod tests {
                 instruction: String::new(),
                 input_schema_json: json!({}),
                 output_schema_json: json!({}),
-                artifact_path_template: None,
                 skill_refs: Vec::new(),
+                tools: Vec::new(),
                 identity_id: None,
-                assigned_to: None,
                 created_by: None,
             })
             .expect("insert activity");

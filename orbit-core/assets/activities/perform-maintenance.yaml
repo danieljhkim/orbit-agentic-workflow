@@ -1,20 +1,22 @@
-id: perform-maintenance
-specType: maintenance
-description: perform system maintenance, using `orbit-maintain-system`
-instruction: Use `orbit-maintain-system` skill to perform system maintenance. Output a brief summary in the comment
-inputSchemaJson:
-  type: object
-  properties: {}
-  additionalProperties: false
-outputSchemaJson:
-  type: object
-  properties:
-    comment:
-      type: string
-    created_file:
-      type: string
-      description: Repo-relative or absolute path to the markdown report written during this run. Orbit auto-commits this file together with the run artifact.
-skillRefs: ["orbit-skills", "orbit-maintain-system"]
-identityId: prii
-assignedTo: prii
-createdBy: system
+schema_version: 1
+created_by: system
+identity_id: prii
+activity:
+  id: perform-maintenance
+  spec_type: maintenance
+  description: perform system maintenance, using `orbit-maintain-system`
+  instruction: Use `orbit-maintain-system` skill to perform system maintenance. Output a brief summary in the comment
+  input_schema_json:
+    type: object
+    properties: {}
+    additional_properties: false
+  output_schema_json:
+    type: object
+    properties:
+      comment:
+        type: string
+      created_file:
+        type: string
+        description: Repo-relative or absolute path to the markdown report written during this run. Orbit auto-commits this file together with the run artifact.
+  skill_refs: ["orbit-skills", "orbit-maintain-system"]
+  tools: []
