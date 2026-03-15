@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use orbit_types::{OrbitError, Task, TaskComment, TaskPriority, TaskStatus, TaskType};
 use serde::{Deserialize, Serialize};
+use serde_yaml::{Mapping, Value as YamlValue};
 
 const TASK_DOC_FILE_NAME: &str = "task.yaml";
 const PLAN_FILE_NAME: &str = "plan.md";
@@ -132,24 +133,22 @@ struct TaskFileDocument {
     #[serde(rename = "schema_version", alias = "schemaVersion")]
     schema_version: u8,
     id: String,
+    #[serde(rename = "type", default = "default_task_type")]
+    task_type: TaskType,
+    priority: TaskPriority,
     title: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    acceptance_criteria: Vec<String>,
     #[serde(default)]
     context_files: Vec<String>,
     #[serde(default)]
     workspace_path: Option<String>,
     #[serde(default)]
-    assigned_to: Option<String>,
-    #[serde(default)]
     created_by: Option<String>,
-    priority: TaskPriority,
-    #[serde(rename = "type", default = "default_task_type")]
-    task_type: TaskType,
     #[serde(default)]
-    branch: Option<String>,
-    #[serde(default)]
-    pr_number: Option<String>,
+    assigned_to: Option<String>,
     #[serde(default)]
     proposed_by: Option<String>,
     #[serde(default)]
@@ -159,25 +158,27 @@ struct TaskFileDocument {
     #[serde(default)]
     proposal_decision_note: Option<String>,
     #[serde(default)]
+    branch: Option<String>,
+    #[serde(default)]
+    pr_number: Option<String>,
+    #[serde(default)]
     review_approved_by: Option<String>,
     #[serde(default)]
     review_rejected_by: Option<String>,
     #[serde(default)]
     review_decision_note: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-    #[serde(default)]
-    acceptance_criteria: Vec<String>,
-    #[serde(default)]
-    history: Vec<TaskHistoryEntry>,
-    #[serde(default)]
-    comments: Vec<TaskComment>,
     #[serde(default)]
     activity_id: Option<String>,
     #[serde(default)]
     job_id: Option<String>,
     #[serde(default)]
     job_run_id: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    #[serde(default)]
+    history: Vec<TaskHistoryEntry>,
+    #[serde(default)]
+    comments: Vec<TaskComment>,
 }
 
 #[derive(Debug, Clone)]
@@ -602,7 +603,69 @@ impl TaskFileStore {
 }
 
 fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError> {
-    serde_yaml::to_string(doc).map_err(|e| OrbitError::Store(e.to_string()))
+    let mut yaml = String::new();
+    yaml.push_str(&yaml_field("schema_version", &doc.schema_version)?);
+
+    yaml.push_str(&yaml_section("identity"));
+    yaml.push_str(&yaml_field("id", &doc.id)?);
+    yaml.push_str(&yaml_field("type", &doc.task_type)?);
+    yaml.push_str(&yaml_field("priority", &doc.priority)?);
+
+    yaml.push_str(&yaml_section("content"));
+    yaml.push_str(&yaml_field("title", &doc.title)?);
+    yaml.push_str(&yaml_field("description", &doc.description)?);
+    yaml.push_str(&yaml_field("acceptanceCriteria", &doc.acceptance_criteria)?);
+
+    yaml.push_str(&yaml_section("context"));
+    yaml.push_str(&yaml_field("contextFiles", &doc.context_files)?);
+    yaml.push_str(&yaml_field("workspacePath", &doc.workspace_path)?);
+
+    yaml.push_str(&yaml_section("ownership"));
+    yaml.push_str(&yaml_field("createdBy", &doc.created_by)?);
+    yaml.push_str(&yaml_field("assignedTo", &doc.assigned_to)?);
+
+    yaml.push_str(&yaml_section("proposal workflow"));
+    yaml.push_str(&yaml_field("proposedBy", &doc.proposed_by)?);
+    yaml.push_str(&yaml_field("proposalApprovedBy", &doc.proposal_approved_by)?);
+    yaml.push_str(&yaml_field("proposalRejectedBy", &doc.proposal_rejected_by)?);
+    yaml.push_str(&yaml_field("proposalDecisionNote", &doc.proposal_decision_note)?);
+
+    yaml.push_str(&yaml_section("implementation"));
+    yaml.push_str(&yaml_field("branch", &doc.branch)?);
+    yaml.push_str(&yaml_field("prNumber", &doc.pr_number)?);
+
+    yaml.push_str(&yaml_section("review workflow"));
+    yaml.push_str(&yaml_field("reviewApprovedBy", &doc.review_approved_by)?);
+    yaml.push_str(&yaml_field("reviewRejectedBy", &doc.review_rejected_by)?);
+    yaml.push_str(&yaml_field("reviewDecisionNote", &doc.review_decision_note)?);
+
+    yaml.push_str(&yaml_section("execution references"));
+    yaml.push_str(&yaml_field("activityId", &doc.activity_id)?);
+    yaml.push_str(&yaml_field("jobId", &doc.job_id)?);
+    yaml.push_str(&yaml_field("jobRunId", &doc.job_run_id)?);
+
+    yaml.push_str(&yaml_section("timestamps"));
+    yaml.push_str(&yaml_field("createdAt", &doc.created_at)?);
+    yaml.push_str(&yaml_field("updatedAt", &doc.updated_at)?);
+
+    yaml.push_str(&yaml_section("audit trail"));
+    yaml.push_str(&yaml_field("history", &doc.history)?);
+    yaml.push_str(&yaml_field("comments", &doc.comments)?);
+
+    Ok(yaml)
+}
+
+fn yaml_section(name: &str) -> String {
+    format!("\n# ---- {name} ----\n")
+}
+
+fn yaml_field(key: &str, value: &impl Serialize) -> Result<String, OrbitError> {
+    let mut mapping = Mapping::new();
+    mapping.insert(
+        YamlValue::String(key.to_string()),
+        serde_yaml::to_value(value).map_err(|e| OrbitError::Store(e.to_string()))?,
+    );
+    serde_yaml::to_string(&mapping).map_err(|e| OrbitError::Store(e.to_string()))
 }
 
 fn atomic_write_string(path: &Path, contents: &str) -> Result<(), OrbitError> {
@@ -758,6 +821,29 @@ mod tests {
             fs::read_to_string(task_dir.join(EXECUTION_SUMMARY_FILE_NAME)).expect("summary"),
             "Validated bundle layout"
         );
+    }
+
+    #[test]
+    fn task_yaml_contains_section_comments_in_order() {
+        let dir = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(dir.path().to_path_buf());
+
+        let task = store
+            .create_task(sample_insert(TaskStatus::Backlog))
+            .expect("create task");
+        let yaml = fs::read_to_string(dir.path().join("backlog").join(&task.id).join(TASK_DOC_FILE_NAME))
+            .expect("read yaml");
+
+        let identity_idx = yaml.find("# ---- identity ----").expect("identity section");
+        let id_idx = yaml.find("id: ").expect("id field");
+        let content_idx = yaml.find("# ---- content ----").expect("content section");
+        let title_idx = yaml.find("title: ").expect("title field");
+        let audit_idx = yaml.find("# ---- audit trail ----").expect("audit section");
+        let history_idx = yaml.find("history:").expect("history field");
+
+        assert!(identity_idx < id_idx, "identity section should precede id field");
+        assert!(content_idx < title_idx, "content section should precede title field");
+        assert!(audit_idx < history_idx, "audit section should precede history field");
     }
 
     #[test]
