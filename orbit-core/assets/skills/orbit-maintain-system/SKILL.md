@@ -89,27 +89,33 @@ When asked to perform an operational audit:
 **1. Archive successful runs**
 
 ```bash
-orbit job-run list --status success
-orbit job-run archive <job_run_id>   # repeat for each result
+orbit tool run orbit.job_run.list --input '{"status": "success"}'
+orbit tool run orbit.job_run.archive --input '{"id": "<job_run_id>"}'   # repeat for each result
 ```
 
 **2. Inspect failed runs**
 
 ```bash
-orbit job-run list --status failed
+orbit tool run orbit.job_run.list --input '{"status": "failed"}'
 ```
 
 If none, report operations are healthy and stop.
 
 ```bash
-orbit job-run show <job_run_id>   # review: job_id, command, error, exit code, timestamps
+orbit tool run orbit.job_run.show --input '{"id": "<job_run_id>"}'   # review: job_id, command, error, exit code, timestamps
 ```
 
 **3. Create one remediation task per failure**
 
 ```bash
-orbit task add --type issue --title "..." --description "..." --plan "..." \
-  --workspace "." --proposed-by "<identity>"
+orbit tool run orbit.task.add --input '{
+  "type": "issue",
+  "title": "...",
+  "description": "...",
+  "plan": "...",
+  "workspace": ".",
+  "proposed_by": "<identity>"
+}'
 ```
 
 Record created task IDs in the report.

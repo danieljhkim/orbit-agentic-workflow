@@ -11,7 +11,7 @@ Use this skill to record explicit human approval or rejection after reviewing an
 
 ## Approval Gates
 
-The commands auto-detect the current status:
+The tool commands auto-detect the current status:
 
 - `proposed -> backlog`: sets `proposal_approved_by` and `proposal_decision_note`
 - `proposed -> rejected`: sets `proposal_rejected_by` and `proposal_decision_note`
@@ -19,20 +19,20 @@ The commands auto-detect the current status:
 - `review -> rejected`: sets `review_rejected_by` and `review_decision_note`
 
 ```bash
-orbit task approve <id> --by "<identity_display_name>" --note "<note>"
-orbit task reject <id> --by "<identity_display_name>" --note "<note>"
+orbit tool run orbit.task.approve --input '{"id": "<id>", "by": "<identity_display_name>", "note": "<note>"}'
+orbit tool run orbit.task.reject --input '{"id": "<id>", "by": "<identity_display_name>", "note": "<note>"}'
 ```
 
 ## Workflow
 
 1. Run `orbit tool run orbit.task.list --input '{"status": "proposed"}'` and `'{"status": "review"}'`. If both are empty, your job is done.
 2. For `proposed` tasks, review the task carefully.
-   - If valid: run `orbit task approve <id> --by "<identity>" --note "<note>"`. Also assign it to the best-suited identity — run `orbit identity list --role engineer` to find candidates.
-   - If not valid: run `orbit task reject <id> --by "<identity>" --note "<reason>"`.
+   - If valid: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "by": "<identity>", "note": "<note>"}'`. Also identify the best-suited engineer via `orbit tool run orbit.identity.list --input '{"role": "engineer"}'`.
+   - If not valid: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "by": "<identity>", "note": "<reason>"}'`.
 3. For `review` tasks, confirm all requirements were fulfilled as outlined in the task.
-   - If complete and code changes are acceptable: run `orbit task approve <id> --by "<identity>" --note "<note>"` and include `result.commit` in the approval response so Orbit creates the commit.
+   - If complete and code changes are acceptable: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "by": "<identity>", "note": "<note>"}'` and include `result.commit` in the approval response so Orbit creates the commit.
    - A `review approved` result that accepts code changes must include `result.commit`; do not approve changed code without commit intent.
-   - If incomplete: run `orbit task reject <id> --by "<identity>" --note "<what still needs resolving>"`.
+   - If incomplete: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "by": "<identity>", "note": "<what still needs resolving>"}'`.
 
 ## Verification
 

@@ -1,8 +1,8 @@
 schema_version: 1
 created_by: system
 identity_id: null
-created_at: 2026-03-15T18:02:22.039948Z
-updated_at: 2026-03-15T18:02:22.039948Z
+created_at: 2026-03-15T21:22:59.074019Z
+updated_at: 2026-03-15T21:22:59.074019Z
 activity:
   id: implement_change
   spec_type: agent_invoke
@@ -33,6 +33,7 @@ activity:
     - summary
     type: object
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to committed, tested code.
 
     Steps:
@@ -103,6 +104,8 @@ activity:
     If any step fails unrecoverably (tests cannot be fixed, plan is ambiguous, required
     files are missing), set status to "failed" in the execution summary, call
     orbit.task.update to add a comment explaining the blocker, and return status: "failed".
+  skill_refs:
+  - orbit
   tools:
   - orbit.task.show
   - orbit.task.update

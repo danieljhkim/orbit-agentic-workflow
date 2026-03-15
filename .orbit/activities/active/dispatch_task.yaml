@@ -1,8 +1,8 @@
 schema_version: 1
 created_by: system
 identity_id: steve
-created_at: 2026-03-15T18:02:22.039839Z
-updated_at: 2026-03-15T18:02:22.039839Z
+created_at: 2026-03-15T21:22:59.073695Z
+updated_at: 2026-03-15T21:22:59.073695Z
 activity:
   id: dispatch_task
   spec_type: agent_invoke
@@ -22,10 +22,11 @@ activity:
     - task_id
     type: object
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     You are Steve (CEO). Pick the single best task from the backlog and dispatch it.
 
     1. Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
-       If the list is empty, return a comment "Backlog is empty. Nothing to dispatch." and exit.
+       If the list is empty, return a comment "Backlog is empty. Nothing to dispatch." and task_id "None" and exit.
 
     2. For the top candidates, call orbit.task.show with the task id to read description, plan, and priority.
 
@@ -37,6 +38,8 @@ activity:
        to record the dispatch rationale.
 
     Output the selected task_id and the rationale comment.
+  skill_refs:
+  - orbit
   tools:
   - orbit.task.list
   - orbit.task.show

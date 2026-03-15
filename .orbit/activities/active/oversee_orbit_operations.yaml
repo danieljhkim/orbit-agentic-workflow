@@ -1,8 +1,8 @@
 schema_version: 1
 created_by: system
 identity_id: steve
-created_at: 2026-03-15T18:02:22.040583Z
-updated_at: 2026-03-15T18:02:22.040583Z
+created_at: 2026-03-15T21:22:59.075329Z
+updated_at: 2026-03-15T21:22:59.075329Z
 activity:
   id: oversee_orbit_operations
   spec_type: agent_invoke
@@ -23,11 +23,12 @@ activity:
         type: string
     type: object
   instruction: |
-    First refer to `orbit-operations-management` skill.
-    The agent acts as the "CEO of orbit-workflow operations" and audits recent job executions.
+    Only use skills listed in this activity's skill_refs. Ignore all others.
+    Use `orbit-maintain-system` skill to perform an operational audit of recent job runs.
+    Use `orbit-create-task` skill for any remediation tasks created.
     Any detected failures or operational issues must be investigated and converted into actionable Orbit tasks.
   skill_refs:
-  - orbit-skills
+  - orbit
   - orbit-create-task
-  - orbit-operations-management
+  - orbit-maintain-system
   tools: []

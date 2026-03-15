@@ -36,16 +36,16 @@ See the `orbit` skill for full invocation patterns and lifecycle facts.
 
 ## Output
 
-Persist the execution summary via the CLI — do NOT write to a file path directly:
+Persist the execution summary via the Orbit task update tool — do NOT write to a file path directly:
 
 ```bash
-orbit task update <task-id> --execution-summary "$(cat <<'EOF'
-<summary content>
-EOF
-)"
+orbit tool run orbit.task.update --input '{
+  "id": "<task-id>",
+  "execution_summary": "<summary content>"
+}'
 ```
 
-The CLI resolves the correct bundle path automatically. Never hardcode or guess the file location.
+The Orbit task tool resolves the correct bundle path automatically. Never hardcode or guess the file location.
 
 Use this structure for the execution summary:
 
@@ -84,4 +84,4 @@ Task ID: <orbit-task-id>
 - Validation completed
 - Task approved before execution, if required
 - Task advanced through `review`
-- Execution summary persisted via `orbit task update --execution-summary`
+- Execution summary persisted via `orbit tool run orbit.task.update --input '{"id": "...", "execution_summary": "..."}'`

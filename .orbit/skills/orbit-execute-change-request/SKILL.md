@@ -7,19 +7,25 @@ description: Use this when executing human-initiated code change or existing orb
 
 ## Purpose
 
-Handle a human-requested engineering change or existing Orbit task from intent to verified implementation, with explicit task lifecycle tracking in `orbit task`.
+Handle a human-requested engineering change or existing Orbit task from intent to verified implementation, with explicit task lifecycle tracking.
 
 ## Responsibilities
 
 1. Clarify intent and success criteria.
 2. Create or link the tracking task in Orbit. If creating, use `orbit-create-task`.
 3. Ensure `proposed` work is explicitly approved before execution.
-4. Move `backlog -> in-progress` before making changes.
+4. Mark in-progress before making changes:
+   ```bash
+   orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "in-progress"}'
+   ```
 5. Implement and validate the change according to the task plan.
-6. Move `in-progress -> review` after validation.
-7. Persist the execution summary in the linked task bundle.
+6. Move to review after validation:
+   ```bash
+   orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'
+   ```
+7. Persist the execution summary (see below).
 
-Use `orbit-manage-tasks` for canonical CLI mutation and verification details.
+See the `orbit` skill for full invocation patterns and lifecycle facts.
 
 ## Lifecycle Rules
 
@@ -30,18 +36,18 @@ Use `orbit-manage-tasks` for canonical CLI mutation and verification details.
 
 ## Output
 
-Persist the execution summary via the CLI — do NOT write to a file path directly:
+Persist the execution summary via the Orbit task update tool — do NOT write to a file path directly:
 
 ```bash
-orbit task update <task-id> --execution-summary "$(cat <<'EOF'
-<summary content>
-EOF
-)"
+orbit tool run orbit.task.update --input '{
+  "id": "<task-id>",
+  "execution_summary": "<summary content>"
+}'
 ```
 
-The CLI resolves the correct bundle path automatically. Never hardcode or guess the file location.
+The Orbit task tool resolves the correct bundle path automatically. Never hardcode or guess the file location.
 
-Use this structure for the summary content:
+Use this structure for the execution summary:
 
 ```markdown
 # Execution Summary - <Change Request Title>
@@ -78,4 +84,4 @@ Task ID: <orbit-task-id>
 - Validation completed
 - Task approved before execution, if required
 - Task advanced through `review`
-- Summary written to `execution-summary.md`
+- Execution summary persisted via `orbit tool run orbit.task.update --input '{"id": "...", "execution_summary": "..."}'`

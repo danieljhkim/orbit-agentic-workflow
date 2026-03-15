@@ -15,34 +15,31 @@ Create an Orbit task another engineer or agent can execute without guessing. Pla
 2. Inspect codebase context before creating the task.
 3. Break the activity into small sequenced tasks.
 4. Add assumptions, risks, and rollback notes.
-5. Create the task with `orbit task add`.
-6. Verify it with `orbit task show <id>`.
+5. Run `orbit tool run orbit.task.add` with all required fields.
+6. Verify with `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'`.
 
 ## Operating Rules
 
-- Use `orbit task` commands only; do not edit task files directly.
+- Never edit task files directly.
 - Never invent task IDs.
-- Use explicit flags for each requested field.
-- Set `--workspace` to the repo path when available.
-- Set attribution fields: `--assigned-to` and `--created-by` when available.
 - `description` and `plan` must be multi-line markdown.
-- Required fields: `title`, `description`, `plan`, `workspace`, and `proposed-by`.
-- `--context` should reference relevant files and task-local artifacts when available.
+- Required fields: `title`, `description`, `plan`, `workspace`, and `proposed_by`.
 
-## Command Reference
+## Command
 
 ```bash
-orbit task add \
-  --title "<title>" \
-  --description "<multi-line markdown>" \
-  --plan "<multi-line markdown>" \
-  --context "<comma,separated,context>" \
-  --workspace "<absolute_or_relative_repo_path>" \
-  --assigned-to "<identity_display_name>" \
-  --created-by "<identity_display_name>" \
-  --priority <low|medium|high|critical> \
-  --type <task|feature|issue|chore|refactor> \
-  --proposed-by "<identity_display_name>"
+orbit tool run orbit.task.add --input '{
+  "title": "<title>",
+  "description": "<multi-line markdown>",
+  "plan": "<multi-line markdown>",
+  "context": "<comma,separated,paths>",
+  "workspace": "<absolute_or_relative_repo_path>",
+  "assigned_to": "<identity_display_name>",
+  "created_by": "<identity_display_name>",
+  "priority": "<low|medium|high|critical>",
+  "type": "<task|feature|issue|chore|refactor>",
+  "proposed_by": "<identity_display_name>"
+}'
 ```
 
 ## Plan Template
