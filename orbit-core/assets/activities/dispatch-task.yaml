@@ -36,7 +36,9 @@ activity:
       comment:
         type: string
     additional_properties: false
-  skill_refs:
-    - orbit-skills
-    - orbit-manage-tasks
-  tools: []
+  skill_refs: []
+  tools:
+    - orbit.task.list
+    - orbit.task.show
+    - orbit.task.update
+    - proc.spawn
