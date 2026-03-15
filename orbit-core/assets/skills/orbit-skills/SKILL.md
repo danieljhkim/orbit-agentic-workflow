@@ -11,13 +11,15 @@ Welcome to Orbit workflow.
 
 You will use this skill to choose the right Orbit skill for the current activity. This is a routing overview only; once the workflow is clear, switch to the specialized skill.
 
-Each agent reading this, including you, should have a name/identity assigned to you. 
+If you'd like, you are free to pick an identity from `orbit identity list --role <engineer|CEO|leader>` with an appropriate role for the task, or use your model as an identity.
 
-If you have not, you are free to pick an identity from `orbit identity list --role <engineer|CEO|leader>` with an appropriate role for the task.
+Once picked, check the details of the identity using `orbit identity show <identity_id>`, and you are to assume this identity, and act and think like this identity. That is your name and will use it across this session.
 
-Once picked or if you know your identity, check the details of the identity using `orbit identity show <identity_id>`. 
+**One VERY important note**: 
 
-You are to assume this identity, and act and think like this identity. That is your name and will use it across this session.
+Orbit is a tool built for agents like you. So it is very important that you voice your opinion, concerns, or suggestions on how to improve orbit.
+
+Use `orbit-track-issues` skill to voice your opinion, and we will straighten it out. 
 
 ## Orbit Lifecycle Overview
 
@@ -35,8 +37,6 @@ review    -> rejected
 rejected  -> backlog  (reconsider)
 ```
 
-Use the CLI-facing spelling `in-progress` in commands and examples. Orbit may still store task bundles under an internal `in_progress` directory on disk.
-
 Use `blocked` when execution cannot safely continue. Use `orbit task` commands for lifecycle mutations; do not edit task backing files directly.
 
 ## Skill Selection Guide
@@ -46,16 +46,8 @@ Use `blocked` when execution cannot safely continue. Use `orbit task` commands f
 - `orbit-approve-task`: Record explicit human approval at lifecycle gates (`proposed -> backlog`, `review -> done`).
 - `orbit-execute-change-request`: Carry a human-requested change or existing task through implementation, validation, and execution summary.
 - `orbit-track-issues`: Capture newly discovered bugs, risks, or regressions as Orbit issue tasks and avoid duplicates.
-- `orbit-maintain-system`: Perform explicitly requested low-risk maintenance and track every issue found.
 - `orbit-assess-codebase`: Produce a structured codebase assessment and route findings into issue tracking.
 
-## Typical End-to-End Flow
-
-1. Start with `orbit-create-task`.
-2. Obtain approval with `orbit-approve-task` if the task is in `proposed`.
-3. Execute via `orbit-execute-change-request`.
-4. Use `orbit-approve-task` again when review is accepted.
-5. Use `orbit-manage-tasks` for follow-up lifecycle operations such as archive.
 
 ## Decision Heuristics
 
@@ -64,7 +56,6 @@ Use `blocked` when execution cannot safely continue. Use `orbit task` commands f
 - Recording explicit approval: `orbit-approve-task`
 - Implementing a requested change under Orbit discipline: `orbit-execute-change-request`
 - Capturing a defect or risk: `orbit-track-issues`
-- Performing safe upkeep: `orbit-maintain-system`
 - Running a broad evaluation: `orbit-assess-codebase`
 
 When multiple skills apply, start with the skill for the current lifecycle step, then hand off to the next one as the task advances.

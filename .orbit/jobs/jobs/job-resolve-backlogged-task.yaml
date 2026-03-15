@@ -1,11 +1,12 @@
 schemaVersion: 1
 job:
   job_id: job-resolve-backlogged-task
-  target_type: activity
-  target_id: resolve-backlogged-task
-  agent_cli: codex
-  timeout_seconds: 1200
   state: enabled
-  created_at: 2026-03-14T05:25:44.956240Z
-  updated_at: 2026-03-14T05:25:44.956240Z
-  env_extra: []
+  steps:
+  - target_type: activity
+    target_id: resolve-backlogged-task
+    agent_cli: codex
+    timeout_seconds: 1200
+    env_extra: []
+  created_at: 2026-03-14T22:59:30.120042Z
+  updated_at: 2026-03-14T22:59:30.120042Z

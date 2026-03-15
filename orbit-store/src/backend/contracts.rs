@@ -57,11 +57,9 @@ pub struct ActivityCreateParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
-    pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
-    pub skill_refs: Vec<String>,
-    pub tools: Vec<String>,
+    pub spec_config: Value,
     pub identity_id: Option<String>,
     pub created_by: Option<String>,
 }
@@ -69,11 +67,9 @@ pub struct ActivityCreateParams {
 #[derive(Debug, Default, Clone)]
 pub struct ActivityUpdateParams {
     pub description: Option<String>,
-    pub instruction: Option<String>,
     pub input_schema_json: Option<Value>,
     pub output_schema_json: Option<Value>,
-    pub skill_refs: Option<Vec<String>>,
-    pub tools: Option<Vec<String>>,
+    pub spec_config: Option<Value>,
     pub identity_id: Option<Option<String>>,
     pub is_active: Option<bool>,
 }

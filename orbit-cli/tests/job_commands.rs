@@ -27,7 +27,7 @@ fn add_activity_with_input_schema(dir: &Path, id: &str, input_schema: &str) -> S
             "--id",
             id,
             "--type",
-            "analysis",
+            "agent_invoke",
             "--description",
             "test spec",
             "--input-schema",
@@ -601,7 +601,10 @@ fn job_list_shows_last_run_status_in_table_and_json() {
         .stdout
         .clone();
     let text = String::from_utf8(output).expect("utf8");
-    assert!(text.contains("LAST_RUN"), "table header must include LAST_RUN column");
+    assert!(
+        text.contains("LAST_RUN"),
+        "table header must include LAST_RUN column"
+    );
     assert!(text.contains("never"), "unrun job must show 'never'");
 
     // After a successful run: table should show "success".
@@ -618,7 +621,10 @@ fn job_list_shows_last_run_status_in_table_and_json() {
         .stdout
         .clone();
     let text = String::from_utf8(output).expect("utf8");
-    assert!(text.contains("success"), "run job must show 'success' in LAST_RUN");
+    assert!(
+        text.contains("success"),
+        "run job must show 'success' in LAST_RUN"
+    );
 
     // JSON output must include last_run_state and last_run_at.
     let json_output = orbit_in(dir.path())

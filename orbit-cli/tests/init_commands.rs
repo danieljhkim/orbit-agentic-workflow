@@ -250,11 +250,13 @@ fn init_repairs_broken_per_skill_symlink_targets() {
         .canonicalize()
         .expect("canonical expected target");
     for repaired_link in [
-        workspace.path()
+        workspace
+            .path()
             .join(".agents")
             .join("skills")
             .join("orbit-approve-task"),
-        workspace.path()
+        workspace
+            .path()
             .join(".claude")
             .join("skills")
             .join("orbit-approve-task"),

@@ -59,6 +59,7 @@ impl Tool for ProcSpawnTool {
             &ExecRequest {
                 program,
                 args,
+                current_dir: None,
                 timeout_ms,
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::Inherit,

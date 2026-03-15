@@ -138,9 +138,8 @@ mod tests {
     fn activity_shape_is_stable() {
         let spec = Activity {
             id: "exec-1".to_string(),
-            spec_type: "analysis".to_string(),
+            spec_type: "agent_invoke".to_string(),
             description: "Analyze repository".to_string(),
-            instruction: "Summarize the repository health.".to_string(),
             input_schema_json: serde_json::json!({
                 "type": "object",
                 "properties": { "path": { "type": "string" } }
@@ -149,8 +148,11 @@ mod tests {
                 "type": "object",
                 "properties": { "score": { "type": "number" } }
             }),
-            skill_refs: vec!["orbit-assess-codebase".to_string()],
-            tools: vec!["fs.read".to_string(), "fs.write".to_string()],
+            spec_config: serde_json::json!({
+                "instruction": "Summarize the repository health.",
+                "skill_refs": ["orbit-assess-codebase"],
+                "tools": ["fs.read", "fs.write"]
+            }),
             identity_id: Some("prii".to_string()),
             created_by: Some("human".to_string()),
             is_active: true,
@@ -158,9 +160,12 @@ mod tests {
             updated_at: Utc::now(),
         };
         let spec_json = serde_json::to_value(spec).expect("serialize spec");
-        assert_eq!(spec_json["spec_type"], "analysis");
-        assert_eq!(spec_json["instruction"], "Summarize the repository health.");
-        assert_eq!(spec_json["tools"][0], "fs.read");
+        assert_eq!(spec_json["spec_type"], "agent_invoke");
+        assert_eq!(
+            spec_json["spec_config"]["instruction"],
+            "Summarize the repository health."
+        );
+        assert_eq!(spec_json["spec_config"]["tools"][0], "fs.read");
         assert_eq!(spec_json["is_active"], true);
     }
 

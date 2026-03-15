@@ -31,6 +31,7 @@ impl Tool for ProcWhichTool {
             &ExecRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), format!("command -v {command}")],
+                current_dir: None,
                 timeout_ms: Some(1_000),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::Inherit,

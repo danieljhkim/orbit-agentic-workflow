@@ -36,17 +36,15 @@ fn activity_add_show_list_delete_json_flow() {
             "--id",
             "spec-cli-1",
             "--type",
-            "analysis",
+            "agent_invoke",
             "--description",
             "CLI activity test",
-            "--instruction",
-            "Inspect repository metrics and summarize them.",
             "--input-schema",
             "{\"type\":\"object\"}",
             "--output-schema",
             "{\"type\":\"object\"}",
-            "--skill-refs",
-            "orbit-assess-codebase,execution-audit",
+            "--spec-config",
+            "{\"instruction\":\"Inspect repository metrics and summarize them.\",\"skill_refs\":[\"orbit-assess-codebase\",\"execution-audit\"]}",
             "--json",
         ])
         .assert()
@@ -61,11 +59,12 @@ fn activity_add_show_list_delete_json_flow() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["id"], "spec-cli-1");
-    assert_eq!(show["type"], "analysis");
+    assert_eq!(show["type"], "agent_invoke");
     assert_eq!(
-        show["instruction"],
+        show["spec_config"]["instruction"],
         "Inspect repository metrics and summarize them."
     );
+    assert_eq!(show["spec_config"]["skill_refs"][0], "orbit-assess-codebase");
     assert_eq!(show["is_active"], true);
 
     let list_output = orbit_in(dir.path())
@@ -132,11 +131,10 @@ fn activity_add_defaults_type_and_schemas_when_omitted() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["id"], "spec-cli-defaults");
-    assert_eq!(show["type"], "general");
-    assert_eq!(show["instruction"], "");
+    assert_eq!(show["type"], "agent_invoke");
+    assert_eq!(show["spec_config"], serde_json::json!({}));
     assert_eq!(show["input_schema_json"], serde_json::json!({}));
     assert_eq!(show["output_schema_json"], serde_json::json!({}));
-    assert_eq!(show["tools"], serde_json::json!([]));
 }
 
 #[test]
@@ -199,6 +197,56 @@ fn activity_run_executes_without_creating_a_job() {
     let stdin_raw = std::fs::read_to_string(stdin_capture).expect("stdin capture");
     assert!(stdin_raw.contains("\"activity\""));
     assert!(!stdin_raw.contains("\"job\""));
+}
+
+#[test]
+fn cli_command_activity_run_does_not_require_agent_cli() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let script_path = dir.path().join("emit-json.sh");
+    std::fs::write(
+        &script_path,
+        "#!/bin/sh\nprintf '{\"exit_code\":0}' > \"$ORBIT_OUTPUT_FILE\"\n",
+    )
+    .expect("write script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod script");
+    }
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-cli-command-run",
+            "--spec-type",
+            "cli_command",
+            "--description",
+            "CLI command activity run test",
+            "--output-schema",
+            "{\"type\":\"object\",\"properties\":{\"exit_code\":{\"type\":\"integer\"}},\"required\":[\"exit_code\"]}",
+            "--spec-config",
+            &format!(
+                "{{\"command\":\"{}\",\"expected_exit_codes\":[0]}}",
+                script_path.to_string_lossy()
+            ),
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let run_output = orbit_in(dir.path())
+        .args(["activity", "run", "spec-cli-command-run", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&run_output).expect("run json");
+    assert_eq!(run["activity_id"], "spec-cli-command-run");
+    assert_eq!(run["state"], "success");
 }
 
 #[test]
@@ -277,7 +325,7 @@ fn activity_update_returns_json_when_flag_set() {
 }
 
 #[test]
-fn activity_update_skill_refs_replaces_list() {
+fn activity_update_spec_config_replaces_list() {
     let dir = tempfile::tempdir().expect("tempdir");
     write_skill(dir.path(), "skill-a");
     write_skill(dir.path(), "skill-b");
@@ -290,8 +338,8 @@ fn activity_update_skill_refs_replaces_list() {
             "spec-update-skills",
             "--description",
             "activity with skills",
-            "--skill-refs",
-            "skill-a",
+            "--spec-config",
+            "{\"skill_refs\":[\"skill-a\"]}",
             "--json",
         ])
         .assert()
@@ -302,8 +350,8 @@ fn activity_update_skill_refs_replaces_list() {
             "activity",
             "update",
             "spec-update-skills",
-            "--skill-refs",
-            "skill-b",
+            "--spec-config",
+            "{\"skill_refs\":[\"skill-b\"]}",
         ])
         .assert()
         .success();
@@ -316,7 +364,7 @@ fn activity_update_skill_refs_replaces_list() {
         .stdout
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
-    let refs = show["skill_refs"].as_array().expect("array");
+    let refs = show["spec_config"]["skill_refs"].as_array().expect("array");
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0], "skill-b");
 }
@@ -374,11 +422,9 @@ fn activity_list_ops_returns_signal_tier_json() {
     assert!(activity.get("is_active").is_some());
 
     // Verbose fields must be absent.
-    assert!(activity.get("instruction").is_none());
+    assert!(activity.get("spec_config").is_none());
     assert!(activity.get("input_schema_json").is_none());
     assert!(activity.get("output_schema_json").is_none());
-    assert!(activity.get("skill_refs").is_none());
-    assert!(activity.get("tools").is_none());
 }
 
 #[test]

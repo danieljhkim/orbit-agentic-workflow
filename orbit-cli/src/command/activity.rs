@@ -44,18 +44,16 @@ impl Execute for ActivitySubcommand {
 pub struct ActivityAddArgs {
     #[arg(long)]
     pub id: String,
-    #[arg(long = "type", default_value = "general")]
+    #[arg(long = "spec-type", alias = "type", default_value = "agent_invoke")]
     pub spec_type: String,
     #[arg(long)]
     pub description: String,
-    #[arg(long, default_value = "")]
-    pub instruction: String,
     #[arg(long)]
     pub input_schema: Option<String>,
     #[arg(long)]
     pub output_schema: Option<String>,
-    #[arg(long, default_value = "")]
-    pub skill_refs: String,
+    #[arg(long)]
+    pub spec_config: Option<String>,
     #[arg(long)]
     pub identity: Option<String>,
     #[arg(long)]
@@ -70,17 +68,15 @@ impl Execute for ActivityAddArgs {
             parse_optional_json_object(self.input_schema.as_deref(), "input_schema")?;
         let output_schema_json =
             parse_optional_json_object(self.output_schema.as_deref(), "output_schema")?;
-        let skill_refs = parse_csv(&self.skill_refs);
+        let spec_config = parse_optional_json_object(self.spec_config.as_deref(), "spec_config")?;
 
         let spec = runtime.add_activity(ActivityAddParams {
             id: self.id,
             spec_type: self.spec_type,
             description: self.description,
-            instruction: self.instruction,
             input_schema_json,
             output_schema_json,
-            skill_refs,
-            tools: Vec::new(),
+            spec_config,
             identity_id: self.identity,
             created_by: self.created_by,
         })?;
@@ -146,11 +142,11 @@ impl Execute for ActivityShowArgs {
             println!("ID:                  {}", spec.id);
             println!("Type:                {}", spec.spec_type);
             println!("Description:         {}", spec.description);
-            if !spec.instruction.is_empty() {
-                println!("Instruction:         {}", spec.instruction);
-            }
-            println!("Skill Refs:          {}", spec.skill_refs.join(","));
-            println!("Tools:               {}", spec.tools.join(","));
+            println!(
+                "Spec Config:         {}",
+                serde_json::to_string(&spec.spec_config)
+                    .unwrap_or_else(|_| "{}".to_string())
+            );
             if let Some(ref identity_id) = spec.identity_id {
                 println!("Identity:            {}", identity_id);
             }
@@ -171,13 +167,11 @@ pub struct ActivityUpdateArgs {
     #[arg(long)]
     pub description: Option<String>,
     #[arg(long)]
-    pub instruction: Option<String>,
-    #[arg(long)]
     pub input_schema: Option<String>,
     #[arg(long)]
     pub output_schema: Option<String>,
     #[arg(long)]
-    pub skill_refs: Option<String>,
+    pub spec_config: Option<String>,
     #[arg(long)]
     pub identity: Option<String>,
     #[arg(long, conflicts_with = "identity")]
@@ -202,6 +196,11 @@ impl Execute for ActivityUpdateArgs {
             .as_deref()
             .map(|raw| parse_json_object(raw, "output_schema"))
             .transpose()?;
+        let spec_config = self
+            .spec_config
+            .as_deref()
+            .map(|raw| parse_json_object(raw, "spec_config"))
+            .transpose()?;
         let identity_id = if self.clear_identity {
             Some(None)
         } else {
@@ -214,17 +213,14 @@ impl Execute for ActivityUpdateArgs {
         } else {
             None
         };
-        let skill_refs = self.skill_refs.as_deref().map(parse_csv);
 
         let activity = runtime.update_activity(
             &self.id,
             ActivityUpdateParams {
                 description: self.description,
-                instruction: self.instruction,
                 input_schema_json,
                 output_schema_json,
-                skill_refs,
-                tools: None,
+                spec_config,
                 identity_id,
                 is_active,
             },
@@ -243,7 +239,7 @@ impl Execute for ActivityUpdateArgs {
 pub struct ActivityRunArgs {
     pub id: String,
     #[arg(long)]
-    pub agent_cli: String,
+    pub agent_cli: Option<String>,
     #[arg(long, default_value = "5m")]
     pub timeout: String,
     #[arg(long)]
@@ -254,7 +250,7 @@ impl Execute for ActivityRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let result = runtime.run_activity_now(ActivityRunParams {
             activity_id: self.id,
-            agent_cli: self.agent_cli,
+            agent_cli: self.agent_cli.unwrap_or_default(),
             timeout_seconds: crate::parse::parse_duration_seconds(&self.timeout)?,
         })?;
 
@@ -317,10 +313,6 @@ fn parse_optional_json_object(raw: Option<&str>, field: &str) -> Result<Value, O
     }
 }
 
-fn parse_csv(raw: &str) -> Vec<String> {
-    crate::parse::csv_to_vec(raw)
-}
-
 fn activity_to_signal_json(spec: &Activity) -> Value {
     json!({
         "id": spec.id,
@@ -335,11 +327,9 @@ fn activity_to_json(spec: &Activity) -> Value {
         "id": spec.id,
         "type": spec.spec_type,
         "description": spec.description,
-        "instruction": spec.instruction,
         "input_schema_json": spec.input_schema_json,
         "output_schema_json": spec.output_schema_json,
-        "skill_refs": spec.skill_refs,
-        "tools": spec.tools,
+        "spec_config": spec.spec_config,
         "identity_id": spec.identity_id,
         "created_by": spec.created_by,
         "is_active": spec.is_active,

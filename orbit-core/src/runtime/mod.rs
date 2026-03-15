@@ -147,7 +147,6 @@ impl OrbitRuntime {
     pub fn compile_identity_block(&self, identity: &ResolvedIdentity) -> String {
         compile_identity_block(identity)
     }
-
 }
 
 fn orbit_event_to_audit(id: i64, event: OrbitEvent) -> Audit {
@@ -260,8 +259,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path();
         let explicit = dir.path().join("cli-root");
-        let chosen =
-            resolve_initialize_data_root(cwd, Some(explicit.as_path())).expect("resolve");
+        let chosen = resolve_initialize_data_root(cwd, Some(explicit.as_path())).expect("resolve");
         assert_eq!(chosen, explicit);
     }
 

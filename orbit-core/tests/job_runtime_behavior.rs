@@ -30,13 +30,13 @@ fn add_activity_with_input_schema(
     let _ = runtime
         .add_activity(ActivityAddParams {
             id: id.to_string(),
-            spec_type: "analysis".to_string(),
+            spec_type: "agent_invoke".to_string(),
             description: "runtime test spec".to_string(),
-            instruction: "Run the scheduled runtime behavior test.".to_string(),
             input_schema_json,
             output_schema_json: json!({}),
-            skill_refs: Vec::new(),
-            tools: Vec::new(),
+            spec_config: json!({
+                "instruction": "Run the scheduled runtime behavior test."
+            }),
             identity_id: None,
             created_by: None,
         })
@@ -50,13 +50,13 @@ fn add_activity_rejects_missing_skill_ref() {
 
     let result = runtime.add_activity(ActivityAddParams {
         id: "spec-missing-skill".to_string(),
-        spec_type: "analysis".to_string(),
+        spec_type: "agent_invoke".to_string(),
         description: "missing skill".to_string(),
-        instruction: String::new(),
         input_schema_json: json!({}),
         output_schema_json: json!({}),
-        skill_refs: vec!["does-not-exist".to_string()],
-        tools: Vec::new(),
+        spec_config: json!({
+            "skill_refs": ["does-not-exist"]
+        }),
         identity_id: None,
         created_by: None,
     });
@@ -132,6 +132,67 @@ fn activity_run_executes_without_persisted_job() {
             .any(|audit| audit.event_type == "ActivityRunCompleted"),
         "direct activity execution should be auditable"
     );
+}
+
+#[test]
+fn cli_command_activity_executes_without_agent_cli_and_captures_output_file() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let script_path = dir.path().join("emit-json.sh");
+    let script = "#!/bin/sh\nprintf '{\"cwd\":\"%s\"}' \"$PWD\" > \"$ORBIT_OUTPUT_FILE\"\n";
+    std::fs::write(&script_path, script).expect("write script");
+    #[cfg(unix)]
+    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod script");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-cli-command".to_string(),
+            spec_type: "cli_command".to_string(),
+            description: "cli command runtime test".to_string(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "cwd": { "type": "string" }
+                },
+                "required": ["cwd"]
+            }),
+            spec_config: json!({
+                "command": script_path.to_string_lossy().to_string(),
+                "working_dir": "{{workspace_path}}",
+                "expected_exit_codes": [0]
+            }),
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add activity");
+
+    let job = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-cli-command".to_string(),
+                agent_cli: String::new(),
+                timeout_seconds: 30,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job");
+
+    let run = runtime.run_job_now(&job.job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let history = runtime.job_history(&job.job_id).expect("history");
+    let response = history[0]
+        .steps
+        .last()
+        .and_then(|step| step.agent_response_json.as_ref())
+        .expect("stored step response");
+    let expected_cwd = dir.path().canonicalize().expect("canonical cwd");
+    assert_eq!(response["cwd"], expected_cwd.to_string_lossy().to_string());
 }
 
 #[test]
@@ -392,13 +453,13 @@ fn job_run_resolves_activity_identity_from_data_root_when_home_differs() {
     runtime
         .add_activity(ActivityAddParams {
             id: "spec-identity".to_string(),
-            spec_type: "analysis".to_string(),
+            spec_type: "agent_invoke".to_string(),
             description: "identity runtime test".to_string(),
-            instruction: "Run with an explicit identity.".to_string(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
-            skill_refs: Vec::new(),
-            tools: Vec::new(),
+            spec_config: json!({
+                "instruction": "Run with an explicit identity."
+            }),
             identity_id: Some("prii".to_string()),
             created_by: None,
         })
@@ -990,13 +1051,13 @@ Validate output shape.
     let _ = runtime
         .add_activity(ActivityAddParams {
             id: "spec-schema".to_string(),
-            spec_type: "analysis".to_string(),
+            spec_type: "agent_invoke".to_string(),
             description: "schema validation".to_string(),
-            instruction: String::new(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
-            skill_refs: vec!["strict-schema".to_string()],
-            tools: Vec::new(),
+            spec_config: json!({
+                "skill_refs": ["strict-schema"]
+            }),
             identity_id: None,
             created_by: None,
         })
@@ -1080,13 +1141,13 @@ Validate advanced schema behavior.
     let _ = runtime
         .add_activity(ActivityAddParams {
             id: "spec-complex-schema".to_string(),
-            spec_type: "analysis".to_string(),
+            spec_type: "agent_invoke".to_string(),
             description: "schema validation".to_string(),
-            instruction: String::new(),
             input_schema_json: json!({}),
             output_schema_json: json!({}),
-            skill_refs: vec!["strict-complex".to_string()],
-            tools: Vec::new(),
+            spec_config: json!({
+                "skill_refs": ["strict-complex"]
+            }),
             identity_id: None,
             created_by: None,
         })

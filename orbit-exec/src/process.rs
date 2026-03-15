@@ -10,6 +10,9 @@ pub(crate) fn spawn(req: &ExecRequest) -> Result<Child, OrbitError> {
         .args(&req.args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(current_dir) = &req.current_dir {
+        command.current_dir(current_dir);
+    }
 
     // Make the child a process group leader (pgid = pid).  This lets us send
     // SIGKILL to the entire group after the child exits, ensuring that any

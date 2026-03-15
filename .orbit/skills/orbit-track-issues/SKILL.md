@@ -1,36 +1,73 @@
 ---
 name: orbit-track-issues
-description: Use this skill when issues are identified by agents or humans. All issues must be tracked. Use this to track issues properly.
+description: MUST use this skill when ANY issues, vagueness, confusion, or difficulties are encountered during Orbit-related work so the problem is captured as a task and improved for future agents.
 ---
 
-# Track Issues
+# Orbit Skill: Track Issues
 
 ## Purpose
 
-Use this skill to maintain issue lifecycle discipline while synchronizing each issue with an Orbit task.
+This skill ensures that **any friction, ambiguity, or failure encountered while using Orbit** is recorded as an Orbit task so it can be fixed later.
 
-## Rules
+Orbit is designed to continuously improve. When agents encounter problems, they must **create tasks instead of silently working around them**.
 
-- No pre-existing pending Orbit issue should already cover the same concern.
-- The issue must be clearly defined.
-- Impact, risks, and next actions must be explicit.
-- Lifecycle state must reflect reality.
-- This skill tracks issues; it does not implement product changes.
+Examples of issues worth tracking:
 
-## Orbit Task Contract
+- unclear command behavior
+- missing CLI functionality
+- confusing schema or config
+- documentation gaps
+- repetitive manual steps
+- fragile workflows
+- unclear error messages
+- unexpected runtime behavior
 
-Create and manage issue tasks with `orbit task` commands.
+If something slows the agent down, it should be tracked.
 
-- Every identified issue must have one Orbit task with `--type issue`.
-- The task description must state the problem and impact.
-- The task plan or instructions must include concrete recommended next actions.
-- Assign priority by risk: `low`, `medium`, or `high`.
+---
 
-Use `orbit-create-task` for canonical task creation details.
+# When To Use
 
-## Completion Standard
+Use this skill whenever you encounter:
 
-Tracking is complete when:
+- unclear Orbit command usage
+- missing automation capability
+- confusing workflow behavior
+- undocumented behavior
+- repetitive manual work
+- system limitations
+- unclear errors or logs
 
-- No duplicate Orbit issue task exists for the same concern.
-- The Orbit issue task matches the issue-tracking contract.
+Do **not ignore friction**. Always create a task.
+
+---
+
+# Expected Outcome
+
+A new Orbit task is created that clearly describes:
+
+1. the problem
+2. where it occurred
+3. why it caused friction
+4. a suggested improvement
+
+The goal is to help future agents avoid the same issue.
+
+---
+
+# Task Creation Guidelines
+
+Refer to `orbit-create-task` skill.
+
+---
+
+# Important Rules
+
+- Do not silently ignore Orbit problems
+- Do not implement large design changes without a task
+- Always document the root issue clearly
+
+Orbit improves through tracked issues.
+
+Future agents depend on these tasks.
+

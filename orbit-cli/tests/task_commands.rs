@@ -243,7 +243,10 @@ fn locate_task_yaml(root: &Path, id: &str) -> String {
             return std::fs::read_to_string(&candidate).expect("read task yaml");
         }
     }
-    panic!("task.yaml not found for id={id} under {}", tasks_root.display());
+    panic!(
+        "task.yaml not found for id={id} under {}",
+        tasks_root.display()
+    );
 }
 
 #[test]

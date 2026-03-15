@@ -92,11 +92,9 @@ impl ActivityStoreBackend for ActivityFileStore {
             id: params.id,
             spec_type: params.spec_type,
             description: params.description,
-            instruction: params.instruction,
             input_schema_json: params.input_schema_json,
             output_schema_json: params.output_schema_json,
-            skill_refs: params.skill_refs,
-            tools: params.tools,
+            spec_config: params.spec_config,
             identity_id: params.identity_id,
             created_by: params.created_by,
         })
@@ -118,11 +116,9 @@ impl ActivityStoreBackend for ActivityFileStore {
         self.update_activity(
             id,
             params.description,
-            params.instruction,
             params.input_schema_json,
             params.output_schema_json,
-            params.skill_refs,
-            params.tools,
+            params.spec_config,
             params.identity_id,
             params.is_active,
         )

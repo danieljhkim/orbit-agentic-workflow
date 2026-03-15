@@ -12,6 +12,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
     Ok(ExecRequest {
         program: "gh".to_string(),
         args: vec!["pr".to_string(), "checkout".to_string(), pr],
+        current_dir: None,
         timeout_ms: Some(60_000),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,

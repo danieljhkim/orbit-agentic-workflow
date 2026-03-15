@@ -46,6 +46,7 @@ impl Tool for GitStagePathsTool {
             &ExecRequest {
                 program: "git".to_string(),
                 args,
+                current_dir: None,
                 timeout_ms: Some(30_000),
                 stdin_mode: StdinMode::Null,
                 environment_mode: EnvironmentMode::Inherit,

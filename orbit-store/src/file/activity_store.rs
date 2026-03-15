@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use orbit_types::{Activity, OrbitError};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 #[derive(Clone)]
 pub(crate) struct ActivityFileStore {
@@ -15,11 +16,9 @@ pub(crate) struct FileWorkInsert {
     pub id: String,
     pub spec_type: String,
     pub description: String,
-    pub instruction: String,
-    pub input_schema_json: serde_json::Value,
-    pub output_schema_json: serde_json::Value,
-    pub skill_refs: Vec<String>,
-    pub tools: Vec<String>,
+    pub input_schema_json: Value,
+    pub output_schema_json: Value,
+    pub spec_config: Value,
     pub identity_id: Option<String>,
     pub created_by: Option<String>,
 }
@@ -29,14 +28,10 @@ struct ActivitySpecDocument {
     id: String,
     spec_type: String,
     description: String,
-    #[serde(default)]
-    instruction: String,
-    input_schema_json: serde_json::Value,
-    output_schema_json: serde_json::Value,
-    #[serde(default)]
-    skill_refs: Vec<String>,
-    #[serde(default)]
-    tools: Vec<String>,
+    input_schema_json: Value,
+    output_schema_json: Value,
+    #[serde(flatten)]
+    spec_config: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,15 +77,17 @@ impl ActivityFileStore {
                 id: params.id.clone(),
                 spec_type: params.spec_type.clone(),
                 description: params.description.clone(),
-                instruction: params.instruction.clone(),
                 input_schema_json: normalize_json_schema_for_storage(
                     params.input_schema_json.clone(),
                 ),
                 output_schema_json: normalize_json_schema_for_storage(
                     params.output_schema_json.clone(),
                 ),
-                skill_refs: params.skill_refs.clone(),
-                tools: params.tools.clone(),
+                spec_config: params
+                    .spec_config
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default(),
             },
         };
         self.write_doc_at(&self.active_doc_path(&doc.activity.id), &doc)?;
@@ -132,11 +129,9 @@ impl ActivityFileStore {
         &self,
         id: &str,
         description: Option<String>,
-        instruction: Option<String>,
-        input_schema_json: Option<serde_json::Value>,
-        output_schema_json: Option<serde_json::Value>,
-        skill_refs: Option<Vec<String>>,
-        tools: Option<Vec<String>>,
+        input_schema_json: Option<Value>,
+        output_schema_json: Option<Value>,
+        spec_config: Option<Value>,
         identity_id: Option<Option<String>>,
         is_active: Option<bool>,
     ) -> Result<Activity, OrbitError> {
@@ -154,20 +149,14 @@ impl ActivityFileStore {
         if let Some(v) = description {
             doc.activity.description = v;
         }
-        if let Some(v) = instruction {
-            doc.activity.instruction = v;
-        }
         if let Some(v) = input_schema_json {
             doc.activity.input_schema_json = normalize_json_schema_for_storage(v);
         }
         if let Some(v) = output_schema_json {
             doc.activity.output_schema_json = normalize_json_schema_for_storage(v);
         }
-        if let Some(v) = skill_refs {
-            doc.activity.skill_refs = v;
-        }
-        if let Some(v) = tools {
-            doc.activity.tools = v;
+        if let Some(v) = spec_config {
+            doc.activity.spec_config = v.as_object().cloned().unwrap_or_default();
         }
         if let Some(v) = identity_id {
             doc.identity_id = v;
@@ -267,11 +256,9 @@ fn doc_to_work(doc: ActivityFileDocument, is_active: bool) -> Activity {
         id: doc.activity.id,
         spec_type: doc.activity.spec_type,
         description: doc.activity.description,
-        instruction: doc.activity.instruction,
         input_schema_json: normalize_json_schema_for_runtime(doc.activity.input_schema_json),
         output_schema_json: normalize_json_schema_for_runtime(doc.activity.output_schema_json),
-        skill_refs: doc.activity.skill_refs,
-        tools: doc.activity.tools,
+        spec_config: Value::Object(doc.activity.spec_config),
         identity_id: doc.identity_id,
         created_by: doc.created_by,
         is_active,

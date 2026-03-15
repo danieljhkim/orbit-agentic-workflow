@@ -3,7 +3,7 @@ created_by: system
 identity_id: steve
 activity:
   id: oversee-orbit-operations
-  spec_type: operation_management
+  spec_type: agent_invoke
   description: As the CEO of orbit-workflow operations, reviews all the recent orbit operations - such as job-runs & tasks - and make sure everything is up to the standard.
   instruction: First refer to `orbit-operations-management` skill. The agent acts as the "CEO of orbit-workflow operations" and audits recent job executions. Any detected failures or operational issues must be investigated and converted into actionable Orbit tasks.
   input_schema_json:

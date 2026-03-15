@@ -1,38 +1,38 @@
-schemaVersion: 1
-id: triage-and-dispatch-task
-specType: task_dispatch
-description: CEO reviews backlog and dispatches the highest-priority task for execution
-instruction: |-
-  You are Steve (CEO). Your job is to pick the single best task from the current backlog and dispatch it for execution.
+schema_version: 1
+created_by: system
+identity_id: steve
+created_at: 2026-03-15T00:39:46.848611Z
+updated_at: 2026-03-15T00:39:46.848611Z
+activity:
+  id: triage-and-dispatch-task
+  spec_type: task_dispatch
+  description: CEO reviews backlog and dispatches the highest-priority task for execution
+  instruction: |-
+    You are Steve (CEO). Your job is to pick the single best task from the current backlog and dispatch it for execution.
 
-  Step 1: Run 'orbit task list --status backlog --json' to get all backlog tasks. If the backlog is empty, output 'Backlog is empty. Nothing to dispatch.' and exit.
+    Step 1: Run 'orbit task list --status backlog --json' to get all backlog tasks. If the backlog is empty, output 'Backlog is empty. Nothing to dispatch.' and exit.
 
-  Step 2: For promising candidates, call 'orbit task show <id>' to read description, plan, and priority.
+    Step 2: For promising candidates, call 'orbit task show <id>' to read description, plan, and priority.
 
-  Step 3: Select the single task most valuable to execute next. Prioritize: critical/high priority first; tasks that unblock others or reduce systemic risk; tasks with a clear executable plan; smaller contained changes over large sweeping ones.
+    Step 3: Select the single task most valuable to execute next. Prioritize: critical/high priority first; tasks that unblock others or reduce systemic risk; tasks with a clear executable plan; smaller contained changes over large sweeping ones.
 
-  Step 4: Run 'orbit job run job-resolve-backlogged-task --task-id <selected_task_id>' to dispatch.
+    Step 4: Run 'orbit job run job-resolve-backlogged-task --task-id <selected_task_id>' to dispatch.
 
-  Step 5: Record rationale: 'orbit task update <selected_task_id> --comment "Dispatched by Steve (CEO): <one sentence rationale>"'
+    Step 5: Record rationale: 'orbit task update <selected_task_id> --comment "Dispatched by Steve (CEO): <one sentence rationale>"'
 
-  Output: Dispatched <task_id>: <task_title>
-inputSchemaJson:
-  additionalProperties: false
-  type: object
-outputSchemaJson:
-  additionalProperties: false
-  properties:
-    comment:
-      type: string
-    task_id:
-      type: string
-  type: object
-artifactPathTemplate: null
-skillRefs:
-- orbit-skills
-- orbit-manage-tasks
-identityId: steve
-assignedTo: Steve (CEO)
-createdBy: system
-createdAt: 2026-03-12T03:26:17.765241Z
-updatedAt: 2026-03-12T03:26:17.765241Z
+    Output: Dispatched <task_id>: <task_title>
+  input_schema_json:
+    additional_properties: false
+    type: object
+  output_schema_json:
+    additional_properties: false
+    properties:
+      comment:
+        type: string
+      task_id:
+        type: string
+    type: object
+  skill_refs:
+  - orbit-skills
+  - orbit-manage-tasks
+  tools: []

@@ -100,8 +100,6 @@ After writing the report file, return the following JSON result:
 }
 ```
 
-Orbit will auto-commit the report file together with the run artifact. Do **not** include a `commit` field — Orbit handles the commit.
-
 ---
 
 # Operational Guidelines

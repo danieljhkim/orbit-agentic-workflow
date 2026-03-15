@@ -2,10 +2,12 @@ pub mod agent;
 pub mod command;
 mod config;
 pub mod context;
+pub mod executor;
 mod fs_utils;
 mod json_schema;
 mod paths;
 pub mod runtime;
+pub mod template;
 
 pub use orbit_store::identity_store as identity_catalog;
 pub use orbit_store::skill_store as skill_catalog;
@@ -108,13 +110,11 @@ mod tests {
         runtime
             .add_activity(ActivityAddParams {
                 id: "spec-core-double-run".to_string(),
-                spec_type: "analysis".to_string(),
+                spec_type: "agent_invoke".to_string(),
                 description: "spec for job test".to_string(),
-                instruction: String::new(),
                 input_schema_json: json!({}),
                 output_schema_json: json!({}),
-                skill_refs: Vec::new(),
-                tools: Vec::new(),
+                spec_config: json!({}),
                 identity_id: None,
                 created_by: None,
             })

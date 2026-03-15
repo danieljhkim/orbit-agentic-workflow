@@ -89,8 +89,13 @@ impl Execute for JobRunListArgs {
                     run.finished_at
                         .map(|value| value.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
-                    run.steps.last().and_then(|s| s.error_code.clone()).unwrap_or_else(|| "-".to_string()),
-                    summarize_error_message(run.steps.last().and_then(|s| s.error_message.as_deref())),
+                    run.steps
+                        .last()
+                        .and_then(|s| s.error_code.clone())
+                        .unwrap_or_else(|| "-".to_string()),
+                    summarize_error_message(
+                        run.steps.last().and_then(|s| s.error_message.as_deref())
+                    ),
                 );
             }
             Ok(())
@@ -177,7 +182,9 @@ fn print_job_run(run: &JobRun) {
     );
     println!(
         "Error Code:          {}",
-        last_step.and_then(|s| s.error_code.as_deref()).unwrap_or("-")
+        last_step
+            .and_then(|s| s.error_code.as_deref())
+            .unwrap_or("-")
     );
     println!(
         "Error Message:       {}",

@@ -5,9 +5,10 @@ use orbit_store::ActivityCreateParams as StoreWorkCreateParams;
 use orbit_store::ActivityUpdateParams as StoreActivityUpdateParams;
 use orbit_types::{Activity, JobRunState, OrbitError, OrbitEvent};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::OrbitRuntime;
+use crate::paths::ORBIT_ROOT_TOKEN;
 
 const DEFAULT_JOB_FILES: [(&str, &str); 5] = [
     (
@@ -31,18 +32,17 @@ const DEFAULT_JOB_FILES: [(&str, &str); 5] = [
         include_str!("../../assets/activities/triage-and-dispatch-task.yaml"),
     ),
 ];
-use crate::paths::ORBIT_ROOT_TOKEN;
+
+const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "api"];
 
 #[derive(Debug, Clone)]
 pub struct ActivityAddParams {
     pub id: String,
     pub spec_type: String,
     pub description: String,
-    pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
-    pub skill_refs: Vec<String>,
-    pub tools: Vec<String>,
+    pub spec_config: Value,
     pub identity_id: Option<String>,
     pub created_by: Option<String>,
 }
@@ -50,11 +50,9 @@ pub struct ActivityAddParams {
 #[derive(Debug, Clone, Default)]
 pub struct ActivityUpdateParams {
     pub description: Option<String>,
-    pub instruction: Option<String>,
     pub input_schema_json: Option<Value>,
     pub output_schema_json: Option<Value>,
-    pub skill_refs: Option<Vec<String>>,
-    pub tools: Option<Vec<String>>,
+    pub spec_config: Option<Value>,
     pub identity_id: Option<Option<String>>,
     pub is_active: Option<bool>,
 }
@@ -75,15 +73,11 @@ struct ActivityFileSpec {
     spec_type: String,
     description: String,
     #[serde(default)]
-    instruction: String,
-    #[serde(default)]
     input_schema_json: Value,
     #[serde(default)]
     output_schema_json: Value,
-    #[serde(default)]
-    skill_refs: Vec<String>,
-    #[serde(default)]
-    tools: Vec<String>,
+    #[serde(flatten)]
+    spec_config: Map<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +99,8 @@ pub struct ActivityRunResult {
 impl OrbitRuntime {
     pub fn add_activity(&self, params: ActivityAddParams) -> Result<Activity, OrbitError> {
         validate_activity_params(&params)?;
-        let _ = self.resolve_activity_skill_refs(&params.skill_refs)?;
+        let skill_refs = activity_skill_refs_from_spec_config(&params.spec_config)?;
+        let _ = self.resolve_activity_skill_refs(&skill_refs)?;
         let identity_id = params.identity_id.clone();
         let mut created_by = params.created_by.clone();
         if let Some(id) = identity_id.as_ref() {
@@ -122,11 +117,9 @@ impl OrbitRuntime {
                 id: params.id,
                 spec_type: params.spec_type,
                 description: params.description,
-                instruction: params.instruction,
                 input_schema_json: params.input_schema_json,
                 output_schema_json: params.output_schema_json,
-                skill_refs: params.skill_refs,
-                tools: params.tools,
+                spec_config: params.spec_config,
                 identity_id,
                 created_by,
             })?;
@@ -154,15 +147,19 @@ impl OrbitRuntime {
         id: &str,
         params: ActivityUpdateParams,
     ) -> Result<Activity, OrbitError> {
+        if let Some(spec_config) = params.spec_config.as_ref() {
+            ensure_spec_config_object(spec_config)?;
+            let skill_refs = activity_skill_refs_from_spec_config(spec_config)?;
+            let _ = self.resolve_activity_skill_refs(&skill_refs)?;
+        }
+
         let activity = self.context.activity_store.update_activity(
             id,
             StoreActivityUpdateParams {
                 description: params.description,
-                instruction: params.instruction,
                 input_schema_json: params.input_schema_json,
                 output_schema_json: params.output_schema_json,
-                skill_refs: params.skill_refs,
-                tools: params.tools,
+                spec_config: params.spec_config,
                 identity_id: params.identity_id,
                 is_active: params.is_active,
             },
@@ -190,13 +187,13 @@ impl OrbitRuntime {
                 "activity id must not be empty".to_string(),
             ));
         }
-        if params.agent_cli.trim().is_empty() {
-            return Err(OrbitError::InvalidInput(
-                "agent_cli must not be empty".to_string(),
-            ));
-        }
 
         let activity = self.show_activity(&params.activity_id)?;
+        if activity_requires_agent_cli(&activity.spec_type) && params.agent_cli.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "agent_cli must not be empty for agent_invoke activities".to_string(),
+            ));
+        }
         self.record_event(OrbitEvent::ActivityRunStarted {
             id: activity.id.clone(),
         })?;
@@ -277,11 +274,9 @@ fn load_default_activity_specs(
             id: spec.activity.id,
             spec_type: spec.activity.spec_type,
             description: spec.activity.description,
-            instruction: spec.activity.instruction,
             input_schema_json: spec.activity.input_schema_json,
             output_schema_json: spec.activity.output_schema_json,
-            skill_refs: spec.activity.skill_refs,
-            tools: spec.activity.tools,
+            spec_config: Value::Object(spec.activity.spec_config),
             identity_id: spec.identity_id,
             created_by: spec.created_by,
         });
@@ -320,6 +315,13 @@ fn validate_activity_params(params: &ActivityAddParams) -> Result<(), OrbitError
             "activity type must not be empty".to_string(),
         ));
     }
+    if !VALID_ACTIVITY_SPEC_TYPES.contains(&params.spec_type.as_str()) {
+        return Err(OrbitError::InvalidInput(format!(
+            "activity type '{}' is unsupported; valid values: {}",
+            params.spec_type,
+            VALID_ACTIVITY_SPEC_TYPES.join(", ")
+        )));
+    }
     if params.description.trim().is_empty() {
         return Err(OrbitError::InvalidInput(
             "activity description must not be empty".to_string(),
@@ -335,13 +337,45 @@ fn validate_activity_params(params: &ActivityAddParams) -> Result<(), OrbitError
             "output schema must be a JSON object".to_string(),
         ));
     }
-    if params.skill_refs.iter().any(|v| v.trim().is_empty()) {
+    ensure_spec_config_object(&params.spec_config)?;
+    if activity_skill_refs_from_spec_config(&params.spec_config)?
+        .iter()
+        .any(|value| value.trim().is_empty())
+    {
         return Err(OrbitError::InvalidInput(
             "skill_refs must not contain empty values".to_string(),
         ));
     }
 
     Ok(())
+}
+
+fn ensure_spec_config_object(spec_config: &Value) -> Result<(), OrbitError> {
+    if spec_config.is_object() {
+        Ok(())
+    } else {
+        Err(OrbitError::InvalidInput(
+            "spec_config must be a JSON object".to_string(),
+        ))
+    }
+}
+
+pub(crate) fn activity_requires_agent_cli(spec_type: &str) -> bool {
+    spec_type == "agent_invoke"
+}
+
+pub(crate) fn activity_skill_refs_from_spec_config(
+    spec_config: &Value,
+) -> Result<Vec<String>, OrbitError> {
+    ensure_spec_config_object(spec_config)?;
+    let Some(raw_refs) = spec_config.get("skill_refs") else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_value(raw_refs.clone()).map_err(|error| {
+        OrbitError::InvalidInput(format!(
+            "activity spec_config.skill_refs must be an array of strings: {error}"
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -359,7 +393,7 @@ mod tests {
 schema_version: 1
 activity:
   id: duplicate
-  spec_type: task
+  spec_type: agent_invoke
   description: first
   input_schema_json: {}
   output_schema_json: {}
@@ -371,7 +405,7 @@ activity:
 schema_version: 1
 activity:
   id: duplicate
-  spec_type: task
+  spec_type: agent_invoke
   description: second
   input_schema_json: {}
   output_schema_json: {}
@@ -390,7 +424,7 @@ activity:
 schema_version: 1
 activity:
   id: "  "
-  spec_type: task
+  spec_type: agent_invoke
   description: empty id
   input_schema_json: {}
   output_schema_json: {}
@@ -408,7 +442,7 @@ activity:
 schema_version: 1
 activity:
   id: actual-id
-  spec_type: task
+  spec_type: agent_invoke
   description: mismatch
   input_schema_json: {}
   output_schema_json: {}
@@ -426,7 +460,7 @@ activity:
 schema_version: 1
 activity:
   id: tokenized
-  spec_type: task
+  spec_type: agent_invoke
   description: "{{ORBIT_ROOT}}/agents/executions/{{date}}-tokenized.md"
   input_schema_json: {}
   output_schema_json: {}

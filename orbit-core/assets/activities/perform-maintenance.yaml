@@ -3,7 +3,7 @@ created_by: system
 identity_id: prii
 activity:
   id: perform-maintenance
-  spec_type: maintenance
+  spec_type: agent_invoke
   description: perform system maintenance, using `orbit-maintain-system`
   instruction: Use `orbit-maintain-system` skill to perform system maintenance. Output a brief summary in the comment
   input_schema_json:

@@ -24,6 +24,7 @@ pub enum EnvironmentMode {
 pub struct ExecRequest {
     pub program: String,
     pub args: Vec<String>,
+    pub current_dir: Option<String>,
     pub timeout_ms: Option<u64>,
     pub stdin_mode: StdinMode,
     pub environment_mode: EnvironmentMode,
@@ -72,6 +73,7 @@ mod tests {
             &ExecRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "printf hello".to_string()],
+                current_dir: None,
                 timeout_ms: Some(1000),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::Inherit,
@@ -90,6 +92,7 @@ mod tests {
             &ExecRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "cat".to_string()],
+                current_dir: None,
                 timeout_ms: Some(1000),
                 stdin_mode: StdinMode::Bytes(b"hello-stdin".to_vec()),
                 environment_mode: EnvironmentMode::Inherit,
@@ -108,6 +111,7 @@ mod tests {
             &ExecRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "sleep 1".to_string()],
+                current_dir: None,
                 timeout_ms: Some(100),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::Inherit,
@@ -126,6 +130,7 @@ mod tests {
             &ExecRequest {
                 program: "env".to_string(),
                 args: Vec::new(),
+                current_dir: None,
                 timeout_ms: Some(1000),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::ClearAndSet(Vec::new()),
@@ -144,6 +149,7 @@ mod tests {
             &ExecRequest {
                 program: "env".to_string(),
                 args: Vec::new(),
+                current_dir: None,
                 timeout_ms: Some(1000),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::ClearAndSet(vec![(
@@ -178,6 +184,7 @@ mod tests {
             &ExecRequest {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), "echo ok".to_string()],
+                current_dir: None,
                 timeout_ms: Some(2000),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::ClearAndSet(pairs),
@@ -196,6 +203,7 @@ mod tests {
             &ExecRequest {
                 program: "env".to_string(),
                 args: Vec::new(),
+                current_dir: None,
                 timeout_ms: Some(1000),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::Inherit,

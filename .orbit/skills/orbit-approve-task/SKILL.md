@@ -36,15 +36,7 @@ orbit task approve <id> --by "<identity_display_name>" --note "<note>" # approve
    - If the task is completed successfully and you accept code changes, approve with `orbit task approve <id> --by <identity_display_name> --note <reason>` and include `result.commit` in the approval response so Orbit can create the commit.
    - A `review approved` result that accepts code changes must include `result.commit`; do not approve changed code without commit intent.
    - If the task is incomplete, reject with `orbit task reject <id> --by <identity_display_name> --note <reason>` and explain what still needs to be resolved.
-5. When you return `result.commit` for an approved review, return commit intent for Orbit to execute instead of running `git commit` directly.
-   - Put the request under `result.commit`
-   - Required fields:
-     - `message`: commit message string — must include the task ID (e.g. `"Fix foo bar [T20260310-062435-1773123875457583000]"`)
-     - `files`: array of explicit file paths to stage
-   - The `files` list must include:
-     - the changed repository files that were accepted
-     - the approved Orbit task artifacts under `.orbit/tasks/done/<task_id>/`
-     - related job-run artifacts under `.orbit/jobs/jobs/runs/<job_run_id>/`
+
 
 ## Verification Rules
 
@@ -63,10 +55,6 @@ Report:
 - decision identity used
 - decision note
 - verification result
-- If the action is `review approved` and code changes were accepted, put the request under `result.commit`
-   - Required fields:
-      - `message`: commit message string — must include the task ID 
-      - `files`: array of explicit file paths to stage
 
 Keep output concise, operational, and auditable.
 

@@ -17,12 +17,18 @@ use serde_json::{Value, json};
 use tempfile::NamedTempFile;
 
 use crate::OrbitRuntime;
+use crate::command::activity::{
+    activity_requires_agent_cli, activity_skill_refs_from_spec_config,
+};
+use crate::executor::{api, cli_command};
 use crate::json_schema::validate_instance_against_schema;
 use crate::paths;
+use crate::template::TemplateContext;
 const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
 const AGENT_INVOCATION_FAILED: &str = "AGENT_INVOCATION_FAILED";
 const AGENT_COMMIT_FAILED: &str = "AGENT_COMMIT_FAILED";
 const AGENT_TIMEOUT: &str = "AGENT_TIMEOUT";
+const ACTIVITY_EXECUTION_FAILED: &str = "ACTIVITY_EXECUTION_FAILED";
 const STALE_RUN_GRACE_SECONDS: u64 = 30;
 
 #[derive(Debug, Clone)]
@@ -110,14 +116,17 @@ impl OrbitRuntime {
                     "step target_id must not be empty".to_string(),
                 ));
             }
-            if step.agent_cli.trim().is_empty() {
+            let activity = self.validate_activity_target_exists(step.target_type, &step.target_id)?;
+            if activity_requires_agent_cli(&activity.spec_type) && step.agent_cli.trim().is_empty()
+            {
                 return Err(OrbitError::JobValidation(
-                    "step agent_cli must not be empty".to_string(),
+                    "step agent_cli must not be empty for agent_invoke activities".to_string(),
                 ));
             }
-            self.validate_activity_target_exists(step.target_type, &step.target_id)?;
             // Validate runtime availability at add-time.
-            let _ = Agent::new(&AgentConfig::cli(step.agent_cli.clone()))?;
+            if activity_requires_agent_cli(&activity.spec_type) {
+                let _ = Agent::new(&AgentConfig::cli(step.agent_cli.clone()))?;
+            }
         }
 
         let initial_state = params
@@ -453,6 +462,24 @@ impl OrbitRuntime {
     }
 
     fn execute_single_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
+        match execution.activity.spec_type.as_str() {
+            "agent_invoke" => self.execute_agent_attempt(execution),
+            "cli_command" => self.execute_cli_command_attempt(execution),
+            "api" => self.execute_api_attempt(execution),
+            other => AttemptOutcome {
+                state: JobRunState::Failed,
+                exit_code: Some(1),
+                duration_ms: None,
+                response_json: None,
+                error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                error_message: Some(format!("unsupported activity spec_type '{other}'")),
+                protocol_violation: false,
+                created_file: None,
+            },
+        }
+    }
+
+    fn execute_agent_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
         let agent = match Agent::new(
             &AgentConfig::cli(execution.agent_cli.clone()).with_codex_execution(
                 self.context.codex_execution_policy.sandbox(),
@@ -564,6 +591,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             &ExecRequest {
                 program: invocation.program,
                 args,
+                current_dir: None,
                 timeout_ms: Some(execution.timeout_seconds.saturating_mul(1000)),
                 stdin_mode: StdinMode::Bytes(invocation.stdin),
                 environment_mode,
@@ -730,11 +758,102 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         }
     }
 
+    fn execute_cli_command_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
+        let template_context = self.execution_template_context(execution);
+        match cli_command::execute(
+            &execution.activity.spec_config,
+            &template_context,
+            execution.timeout_seconds,
+        ) {
+            Ok((result, duration_ms, exit_code)) => {
+                if let Err(err) = self.validate_activity_output_schema(&execution.activity, &result)
+                {
+                    return AttemptOutcome {
+                        state: JobRunState::Failed,
+                        exit_code,
+                        duration_ms: Some(duration_ms),
+                        response_json: Some(result),
+                        error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                        error_message: Some(err.to_string()),
+                        protocol_violation: false,
+                        created_file: None,
+                    };
+                }
+                AttemptOutcome {
+                    state: JobRunState::Success,
+                    exit_code,
+                    duration_ms: Some(duration_ms),
+                    response_json: Some(result),
+                    error_code: None,
+                    error_message: None,
+                    protocol_violation: false,
+                    created_file: None,
+                }
+            }
+            Err(err) => AttemptOutcome {
+                state: JobRunState::Failed,
+                exit_code: Some(1),
+                duration_ms: None,
+                response_json: None,
+                error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                error_message: Some(err.to_string()),
+                protocol_violation: false,
+                created_file: None,
+            },
+        }
+    }
+
+    fn execute_api_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
+        let template_context = self.execution_template_context(execution);
+        match api::execute(
+            &execution.activity.spec_config,
+            &template_context,
+            execution.timeout_seconds,
+        ) {
+            Ok(result) => {
+                if let Err(err) = self.validate_activity_output_schema(&execution.activity, &result)
+                {
+                    return AttemptOutcome {
+                        state: JobRunState::Failed,
+                        exit_code: Some(0),
+                        duration_ms: None,
+                        response_json: Some(result),
+                        error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                        error_message: Some(err.to_string()),
+                        protocol_violation: false,
+                        created_file: None,
+                    };
+                }
+                AttemptOutcome {
+                    state: JobRunState::Success,
+                    exit_code: Some(0),
+                    duration_ms: None,
+                    response_json: Some(result),
+                    error_code: None,
+                    error_message: None,
+                    protocol_violation: false,
+                    created_file: None,
+                }
+            }
+            Err(err) => AttemptOutcome {
+                state: JobRunState::Failed,
+                exit_code: Some(1),
+                duration_ms: None,
+                response_json: None,
+                error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                error_message: Some(err.to_string()),
+                protocol_violation: false,
+                created_file: None,
+            },
+        }
+    }
+
     fn build_stdin_envelope_payload(
         &self,
         execution: &ExecutionContext,
     ) -> Result<Vec<u8>, OrbitError> {
-        let skills = self.resolve_activity_skill_refs(&execution.activity.skill_refs)?;
+        let skill_refs = activity_skill_refs_from_spec_config(&execution.activity.spec_config)?;
+        let skills = self.resolve_activity_skill_refs(&skill_refs)?;
         let identity = execution
             .activity
             .identity_id
@@ -751,18 +870,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             });
         let envelope = ExecutionEnvelope {
             schema_version: 1,
-            activity: json!({
-                "id": execution.activity.id,
-                "type": execution.activity.spec_type,
-                "description": execution.activity.description,
-                "instruction": execution.activity.instruction,
-                "input_schema_json": execution.activity.input_schema_json,
-                "output_schema_json": execution.activity.output_schema_json,
-                "skill_refs": execution.activity.skill_refs,
-                "tools": execution.activity.tools,
-                "identity_id": execution.activity.identity_id,
-                "created_by": execution.activity.created_by,
-            }),
+            activity: activity_envelope_json(&execution.activity),
             job: execution.job.as_ref().map(|job| {
                 json!({
                     "id": job.job_id,
@@ -798,7 +906,8 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         activity: &Activity,
         envelope: &AgentResponseEnvelope,
     ) -> Result<(), OrbitError> {
-        let skills = self.resolve_activity_skill_refs(&activity.skill_refs)?;
+        let skill_refs = activity_skill_refs_from_spec_config(&activity.spec_config)?;
+        let skills = self.resolve_activity_skill_refs(&skill_refs)?;
         let Some(result) = envelope.result.as_ref() else {
             return Err(OrbitError::AgentProtocolViolation(
                 "success response must include result payload".to_string(),
@@ -821,6 +930,26 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         }
 
         Ok(())
+    }
+
+    fn execution_template_context(&self, execution: &ExecutionContext) -> TemplateContext {
+        TemplateContext {
+            input: execution.input.clone(),
+            env: std::env::vars().collect(),
+            workspace_path: Some(self.context.data_root.to_string_lossy().into_owned()),
+        }
+    }
+
+    fn validate_activity_output_schema(
+        &self,
+        activity: &Activity,
+        output: &Value,
+    ) -> Result<(), OrbitError> {
+        let context = format!(
+            "activity '{}' output does not match output schema",
+            activity.id
+        );
+        validate_instance_against_schema(&activity.output_schema_json, output, &context)
     }
 
     fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError> {
@@ -1032,11 +1161,12 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
         &self,
         target_type: JobTargetType,
         target_id: &str,
-    ) -> Result<(), OrbitError> {
+    ) -> Result<Activity, OrbitError> {
         let _ = target_type;
         let activity = self.show_activity(target_id)?;
-        let _ = self.resolve_activity_skill_refs(&activity.skill_refs)?;
-        Ok(())
+        let skill_refs = activity_skill_refs_from_spec_config(&activity.spec_config)?;
+        let _ = self.resolve_activity_skill_refs(&skill_refs)?;
+        Ok(activity)
     }
 
     fn list_jobs_backend(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
@@ -1143,6 +1273,28 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
         return "agent timed out before producing JSON stdout".to_string();
     }
     format!("agent timed out before producing JSON stdout; stderr: {stderr}")
+}
+
+fn activity_envelope_json(activity: &Activity) -> Value {
+    let mut envelope = json!({
+        "id": activity.id,
+        "type": activity.spec_type,
+        "description": activity.description,
+        "input_schema_json": activity.input_schema_json,
+        "output_schema_json": activity.output_schema_json,
+        "identity_id": activity.identity_id,
+        "created_by": activity.created_by,
+    });
+
+    if let Some(activity_map) = envelope.as_object_mut()
+        && let Some(spec_config) = activity.spec_config.as_object()
+    {
+        for (key, value) in spec_config {
+            activity_map.insert(key.clone(), value.clone());
+        }
+    }
+
+    envelope
 }
 
 const DEFAULT_JOB_FILES: &[(&str, &str)] = &[

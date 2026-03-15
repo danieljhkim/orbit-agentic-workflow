@@ -10,13 +10,10 @@ pub struct Activity {
     pub spec_type: String,
     pub description: String,
     #[serde(default)]
-    pub instruction: String,
     pub input_schema_json: Value,
     pub output_schema_json: Value,
     #[serde(default)]
-    pub skill_refs: Vec<String>,
-    #[serde(default)]
-    pub tools: Vec<String>,
+    pub spec_config: Value,
     #[serde(default)]
     pub identity_id: Option<String>,
     #[serde(default)]

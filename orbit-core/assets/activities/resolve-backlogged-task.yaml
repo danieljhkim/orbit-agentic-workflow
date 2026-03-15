@@ -3,7 +3,7 @@ created_by: system
 identity_id: kent
 activity:
   id: resolve-backlogged-task
-  spec_type: task
+  spec_type: agent_invoke
   description: Work on a single orbit task that is in "rejected" or "backlog" status.
   instruction: If input.task_id is provided, work on that specific orbit task and do not select a different backlog item. Otherwise, first check if there exists any orbit tasks with "rejected" status (else, check for "backlog" status), and pick a single task to work on. Once done, update the orbit task to "review" status. Output a brief summary in the comment.
   input_schema_json:

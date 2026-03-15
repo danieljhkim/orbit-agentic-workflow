@@ -144,10 +144,7 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     .expect("canonical reported jobs path");
     let expected_jobs_path =
         std::fs::canonicalize(orbit_dir.join("custom-jobs")).expect("canonical expected jobs path");
-    assert_eq!(
-        reported_jobs_path,
-        expected_jobs_path
-    );
+    assert_eq!(reported_jobs_path, expected_jobs_path);
 }
 
 #[test]

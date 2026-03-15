@@ -17,9 +17,7 @@ use crate::config::RuntimeConfig;
 use crate::identity_catalog::IdentityCatalog;
 use crate::skill_catalog::SkillCatalog;
 
-pub(crate) fn build_context_from_data_root(
-    data_root: &Path,
-) -> Result<OrbitContext, OrbitError> {
+pub(crate) fn build_context_from_data_root(data_root: &Path) -> Result<OrbitContext, OrbitError> {
     let runtime_config = RuntimeConfig::load_from_data_root(data_root)?;
     let db_path = runtime_config.persistence.audit.path.clone();
     let store = Store::open(&db_path)?;

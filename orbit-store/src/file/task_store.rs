@@ -989,9 +989,15 @@ mod tests {
         assert!(task.id.starts_with('T'), "must start with T");
         let (date, time) = task.id[1..].split_once('-').expect("has dash");
         assert_eq!(date.len(), 8, "date part must be 8 digits");
-        assert!(date.chars().all(|c| c.is_ascii_digit()), "date must be numeric");
+        assert!(
+            date.chars().all(|c| c.is_ascii_digit()),
+            "date must be numeric"
+        );
         assert_eq!(time.len(), 6, "time part must be 6 digits");
-        assert!(time.chars().all(|c| c.is_ascii_digit()), "time must be numeric");
+        assert!(
+            time.chars().all(|c| c.is_ascii_digit()),
+            "time must be numeric"
+        );
     }
 
     #[test]

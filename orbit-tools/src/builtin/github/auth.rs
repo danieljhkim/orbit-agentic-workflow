@@ -10,6 +10,7 @@ pub(super) fn build_exec_request(_input: &Value) -> Result<ExecRequest, OrbitErr
     Ok(ExecRequest {
         program: "gh".to_string(),
         args: vec!["auth".to_string(), "status".to_string()],
+        current_dir: None,
         timeout_ms: Some(15_000),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
