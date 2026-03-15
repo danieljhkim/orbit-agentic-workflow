@@ -280,6 +280,24 @@ fn job_delete_flow() {
 }
 
 #[test]
+fn job_delete_json_returns_deleted_true() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-cli-delete-json");
+    let job_id = add_job(dir.path(), &spec_id, "mock-agent");
+
+    let output = orbit_in(dir.path())
+        .args(["job", "delete", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let deleted: Value = serde_json::from_slice(&output).expect("delete json");
+    assert_eq!(deleted["id"], job_id);
+    assert_eq!(deleted["deleted"], true);
+}
+
+#[test]
 fn job_run_failure_json_includes_error_details() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity(dir.path(), "spec-cli-run-fail");

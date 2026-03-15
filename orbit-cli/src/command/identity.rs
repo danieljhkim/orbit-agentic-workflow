@@ -46,10 +46,7 @@ impl Execute for IdentityListArgs {
         let role = self
             .role
             .as_deref()
-            .map(|r| {
-                r.parse::<IdentityRole>()
-                    .map_err(|e| OrbitError::IdentityValidation(e))
-            })
+            .map(|r| r.parse::<IdentityRole>().map_err(OrbitError::IdentityValidation))
             .transpose()?;
         let identities = runtime.list_identities_filtered(role)?;
         if self.json {

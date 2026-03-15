@@ -253,13 +253,22 @@ impl Execute for JobHistoryArgs {
 #[derive(Args)]
 pub struct JobDeleteArgs {
     pub job_id: String,
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for JobDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.delete_job(&self.job_id)?;
-        println!("Deleted job '{}'", self.job_id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&json!({
+                "id": self.job_id,
+                "deleted": true,
+            }))
+        } else {
+            println!("Deleted job '{}'", self.job_id);
+            Ok(())
+        }
     }
 }
 

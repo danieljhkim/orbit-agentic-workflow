@@ -106,6 +106,35 @@ fn activity_add_show_list_delete_json_flow() {
 }
 
 #[test]
+fn activity_delete_json_returns_deleted_true() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    orbit_in(dir.path())
+        .args([
+            "activity",
+            "add",
+            "--id",
+            "spec-delete-json",
+            "--description",
+            "delete json test",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let output = orbit_in(dir.path())
+        .args(["activity", "delete", "spec-delete-json", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let deleted: Value = serde_json::from_slice(&output).expect("delete json");
+    assert_eq!(deleted["id"], "spec-delete-json");
+    assert_eq!(deleted["deleted"], true);
+}
+
+#[test]
 fn activity_add_defaults_type_and_schemas_when_omitted() {
     let dir = tempfile::tempdir().expect("tempdir");
 

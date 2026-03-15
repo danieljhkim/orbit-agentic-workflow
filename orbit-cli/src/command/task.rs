@@ -95,6 +95,9 @@ pub struct TaskAddArgs {
     /// Who proposed this task
     #[arg(long)]
     pub proposed_by: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskAddArgs {
@@ -113,8 +116,12 @@ impl Execute for TaskAddArgs {
             proposed_by: Some(self.proposed_by),
         })?;
 
-        println!("{}", task.id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("{}", task.id);
+            Ok(())
+        }
     }
 }
 
@@ -279,6 +286,9 @@ pub struct TaskUpdateArgs {
     /// Pull request number (empty string clears)
     #[arg(long)]
     pub pr_number: Option<String>,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskUpdateArgs {
@@ -320,8 +330,12 @@ impl Execute for TaskUpdateArgs {
             },
         )?;
 
-        println!("Updated task '{}'", task.id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("Updated task '{}'", task.id);
+            Ok(())
+        }
     }
 }
 
@@ -366,13 +380,20 @@ pub struct TaskApproveArgs {
     /// Append a task comment
     #[arg(long)]
     pub comment: Option<String>,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskApproveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let task = runtime.approve_task(&self.id, &self.by, self.note, self.comment)?;
-        println!("Approved task '{}'", task.id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("Approved task '{}'", task.id);
+            Ok(())
+        }
     }
 }
 
@@ -391,13 +412,20 @@ pub struct TaskRejectArgs {
     /// Append a task comment
     #[arg(long)]
     pub comment: Option<String>,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskRejectArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let task = runtime.reject_task(&self.id, &self.by, self.note, self.comment)?;
-        println!("Rejected task '{}'", task.id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("Rejected task '{}'", task.id);
+            Ok(())
+        }
     }
 }
 
@@ -407,13 +435,21 @@ impl Execute for TaskRejectArgs {
 pub struct TaskArchiveArgs {
     /// Task ID
     pub id: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskArchiveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.archive_task(&self.id)?;
-        println!("Archived task '{}'", self.id);
-        Ok(())
+        if self.json {
+            let task = runtime.get_task(&self.id)?;
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("Archived task '{}'", self.id);
+            Ok(())
+        }
     }
 }
 
@@ -423,13 +459,21 @@ impl Execute for TaskArchiveArgs {
 pub struct TaskUnarchiveArgs {
     /// Task ID
     pub id: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskUnarchiveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.unarchive_task(&self.id)?;
-        println!("Unarchived task '{}'", self.id);
-        Ok(())
+        if self.json {
+            let task = runtime.get_task(&self.id)?;
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("Unarchived task '{}'", self.id);
+            Ok(())
+        }
     }
 }
 
@@ -439,13 +483,23 @@ impl Execute for TaskUnarchiveArgs {
 pub struct TaskDeleteArgs {
     /// Task ID
     pub id: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for TaskDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.delete_task(&self.id)?;
-        println!("Deleted task '{}'", self.id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&json!({
+                "id": self.id,
+                "deleted": true,
+            }))
+        } else {
+            println!("Deleted task '{}'", self.id);
+            Ok(())
+        }
     }
 }
 

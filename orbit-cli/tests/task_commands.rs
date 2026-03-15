@@ -98,6 +98,44 @@ fn task_add_prints_id() {
 }
 
 #[test]
+fn task_add_json_returns_task_object() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir
+        .path()
+        .canonicalize()
+        .expect("canonical workspace")
+        .to_string_lossy()
+        .to_string();
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "add",
+            "--title",
+            "json add task",
+            "--description",
+            "json description",
+            "--plan",
+            "json plan",
+            "--workspace",
+            &workspace,
+            "--proposed-by",
+            "test-user",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+    assert_eq!(task["title"], "json add task");
+    assert_eq!(task["description"], "json description");
+    assert_eq!(task["plan"], "json plan");
+    assert_eq!(task["workspace_path"], workspace);
+}
+
+#[test]
 fn task_add_creates_bundle_layout() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "bundle task");
@@ -282,6 +320,30 @@ fn task_update_updates_description_and_plan() {
 }
 
 #[test]
+fn task_update_json_returns_task_object() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "json update");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "update",
+            &id,
+            "--title",
+            "json updated title",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+    assert_eq!(task["id"], id);
+    assert_eq!(task["title"], "json updated title");
+}
+
+#[test]
 fn task_update_accepts_in_progress_status_alias() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
@@ -461,6 +523,53 @@ fn task_archive_and_unarchive() {
 }
 
 #[test]
+fn task_archive_unarchive_and_delete_support_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "json lifecycle");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--status", "backlog"])
+        .assert()
+        .success();
+
+    let archive_output = orbit_in(dir.path())
+        .args(["task", "archive", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let archived: serde_json::Value =
+        serde_json::from_slice(&archive_output).expect("archive json");
+    assert_eq!(archived["id"], id);
+    assert_eq!(archived["status"], "archived");
+
+    let unarchive_output = orbit_in(dir.path())
+        .args(["task", "unarchive", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let unarchived: serde_json::Value =
+        serde_json::from_slice(&unarchive_output).expect("unarchive json");
+    assert_eq!(unarchived["id"], id);
+    assert_eq!(unarchived["status"], "backlog");
+
+    let delete_output = orbit_in(dir.path())
+        .args(["task", "delete", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let deleted: serde_json::Value =
+        serde_json::from_slice(&delete_output).expect("delete json");
+    assert_eq!(deleted["id"], id);
+    assert_eq!(deleted["deleted"], true);
+}
+
+#[test]
 fn task_delete_removes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "deletable");
@@ -580,6 +689,39 @@ fn task_approve_proposed_to_backlog() {
 }
 
 #[test]
+fn task_approve_json_returns_updated_task() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "approve json");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "approve",
+            &id,
+            "--by",
+            "daniel",
+            "--note",
+            "json approved",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+    assert_eq!(task["id"], id);
+    assert_eq!(task["proposal_approved_by"], "daniel");
+    assert_eq!(task["status"], "backlog");
+}
+
+#[test]
 fn task_approve_comment_appends_with_approver_identity() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
@@ -657,6 +799,39 @@ fn task_reject_proposed_to_rejected() {
         "Duplicate of an existing task"
     );
     assert_eq!(show["status"], "rejected");
+}
+
+#[test]
+fn task_reject_json_returns_updated_task() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "reject json");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "reject",
+            &id,
+            "--by",
+            "daniel",
+            "--note",
+            "json rejected",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+    assert_eq!(task["id"], id);
+    assert_eq!(task["proposal_rejected_by"], "daniel");
+    assert_eq!(task["status"], "rejected");
 }
 
 #[test]

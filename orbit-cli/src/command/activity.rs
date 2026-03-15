@@ -297,13 +297,22 @@ impl Execute for ActivityRunArgs {
 #[derive(Args)]
 pub struct ActivityDeleteArgs {
     pub id: String,
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Execute for ActivityDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         runtime.delete_activity(&self.id)?;
-        println!("Deleted activity '{}'", self.id);
-        Ok(())
+        if self.json {
+            crate::output::json::print_pretty(&json!({
+                "id": self.id,
+                "deleted": true,
+            }))
+        } else {
+            println!("Deleted activity '{}'", self.id);
+            Ok(())
+        }
     }
 }
 
