@@ -16,8 +16,9 @@ activity:
     orbit operations such as job-runs and tasks and makes sure
     everything is up to the standard.
   instruction: |
-    First refer to `orbit-operations-management` skill.
-    The agent acts as the "CEO of orbit-workflow operations" and audits recent job executions.
+    Only use skills listed in this activity's skill_refs. Ignore all others.
+    Use `orbit-maintain-system` skill to perform an operational audit of recent job runs.
+    Use `orbit-create-task` skill for any remediation tasks created.
     Any detected failures or operational issues must be investigated and converted into actionable Orbit tasks.
 
   # ---- interface ----
@@ -36,7 +37,7 @@ activity:
 
   # ---- execution ----
   skill_refs:
-    - orbit-skills
+    - orbit
     - orbit-create-task
-    - orbit-operations-management
+    - orbit-maintain-system
   tools: []

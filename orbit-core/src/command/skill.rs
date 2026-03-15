@@ -8,7 +8,11 @@ use crate::OrbitRuntime;
 use crate::fs_utils::write_text_with_parent;
 use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};
 
-const DEFAULT_SKILL_FILES: [(&str, &str); 9] = [
+const DEFAULT_SKILL_FILES: [(&str, &str); 6] = [
+    (
+        "orbit",
+        include_str!("../../assets/skills/orbit/SKILL.md"),
+    ),
     (
         "orbit-create-task",
         include_str!("../../assets/skills/orbit-create-task/SKILL.md"),
@@ -18,28 +22,12 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 9] = [
         include_str!("../../assets/skills/orbit-approve-task/SKILL.md"),
     ),
     (
-        "orbit-assess-codebase",
-        include_str!("../../assets/skills/orbit-assess-codebase/SKILL.md"),
-    ),
-    (
         "orbit-execute-change-request",
         include_str!("../../assets/skills/orbit-execute-change-request/SKILL.md"),
     ),
     (
         "orbit-maintain-system",
         include_str!("../../assets/skills/orbit-maintain-system/SKILL.md"),
-    ),
-    (
-        "orbit-operations-management",
-        include_str!("../../assets/skills/orbit-operations-management/SKILL.md"),
-    ),
-    (
-        "orbit-manage-tasks",
-        include_str!("../../assets/skills/orbit-manage-tasks/SKILL.md"),
-    ),
-    (
-        "orbit-skills",
-        include_str!("../../assets/skills/orbit-skills/SKILL.md"),
     ),
     (
         "orbit-track-issues",
@@ -62,7 +50,7 @@ pub struct SkillDoctorResult {
     pub message: String,
 }
 
-pub(crate) fn default_skill_ids() -> [&'static str; 9] {
+pub(crate) fn default_skill_ids() -> [&'static str; 6] {
     DEFAULT_SKILL_FILES.map(|(id, _)| id)
 }
 

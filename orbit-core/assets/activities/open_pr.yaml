@@ -12,6 +12,7 @@ activity:
   # ---- content ----
   description: Open a pull request for a completed Orbit task
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     You are opening a pull request for an Orbit task.
 
     Steps:
@@ -50,6 +51,8 @@ activity:
         description: URL of the created pull request
 
   # ---- execution ----
+  skill_refs:
+    - orbit
   tools:
     - orbit.task.show
     - github.pr.create

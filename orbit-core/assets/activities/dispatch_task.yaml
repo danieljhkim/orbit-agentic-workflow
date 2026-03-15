@@ -13,10 +13,11 @@ activity:
   # ---- content ----
   description: CEO reviews the backlog and dispatches the single highest-priority task for execution.
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     You are Steve (CEO). Pick the single best task from the backlog and dispatch it.
 
     1. Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
-       If the list is empty, return a comment "Backlog is empty. Nothing to dispatch." and exit.
+       If the list is empty, return a comment "Backlog is empty. Nothing to dispatch." and task_id "None" and exit.
 
     2. For the top candidates, call orbit.task.show with the task id to read description, plan, and priority.
 
@@ -46,6 +47,8 @@ activity:
     additional_properties: false
 
   # ---- execution ----
+  skill_refs:
+    - orbit
   tools:
     - orbit.task.list
     - orbit.task.show

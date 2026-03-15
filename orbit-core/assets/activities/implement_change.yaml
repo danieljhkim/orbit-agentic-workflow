@@ -12,6 +12,7 @@ activity:
   # ---- content ----
   description: Implement an Orbit task from plan to committed code, then move it to review
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to committed, tested code.
 
     Steps:
@@ -111,6 +112,8 @@ activity:
         description: List of files created or modified
 
   # ---- execution ----
+  skill_refs:
+    - orbit
   tools:
     - orbit.task.show
     - orbit.task.update

@@ -30,14 +30,11 @@ fn assert_default_skill_links(base_root: &std::path::Path) {
             std::fs::symlink_metadata(&skills_link_root).expect("skills link dir metadata");
         assert!(root_meta.file_type().is_dir());
         for skill_id in [
+            "orbit",
             "orbit-create-task",
             "orbit-approve-task",
-            "orbit-assess-codebase",
             "orbit-execute-change-request",
             "orbit-maintain-system",
-            "orbit-operations-management",
-            "orbit-manage-tasks",
-            "orbit-skills",
             "orbit-track-issues",
         ] {
             let link_path = skills_link_root.join(skill_id);
@@ -148,6 +145,7 @@ fn init_creates_default_identities_under_cwd_orbit() {
     assert!(!identity_root.join("rob.yaml").exists());
 
     let skills_root = workspace.path().join(".orbit").join("skills");
+    assert!(skills_root.join("orbit").join("SKILL.md").exists());
     assert!(
         skills_root
             .join("orbit-create-task")
@@ -157,12 +155,6 @@ fn init_creates_default_identities_under_cwd_orbit() {
     assert!(
         skills_root
             .join("orbit-approve-task")
-            .join("SKILL.md")
-            .exists()
-    );
-    assert!(
-        skills_root
-            .join("orbit-assess-codebase")
             .join("SKILL.md")
             .exists()
     );
@@ -178,19 +170,6 @@ fn init_creates_default_identities_under_cwd_orbit() {
             .join("SKILL.md")
             .exists()
     );
-    assert!(
-        skills_root
-            .join("orbit-operations-management")
-            .join("SKILL.md")
-            .exists()
-    );
-    assert!(
-        skills_root
-            .join("orbit-manage-tasks")
-            .join("SKILL.md")
-            .exists()
-    );
-    assert!(skills_root.join("orbit-skills").join("SKILL.md").exists());
     assert!(
         skills_root
             .join("orbit-track-issues")
@@ -277,7 +256,7 @@ fn init_is_idempotent_for_existing_identity_files() {
         .stdout(predicate::str::contains("identities: root="))
         .stdout(predicate::str::contains("refreshed=4"))
         .stdout(predicate::str::contains("skills: root="))
-        .stdout(predicate::str::contains("refreshed=9"));
+        .stdout(predicate::str::contains("refreshed=6"));
 
     // Second init also refreshes all defaults (overwrite in place).
     orbit_in(workspace.path())
@@ -288,7 +267,7 @@ fn init_is_idempotent_for_existing_identity_files() {
         .stdout(predicate::str::contains("identities: root="))
         .stdout(predicate::str::contains("refreshed=4"))
         .stdout(predicate::str::contains("skills: root="))
-        .stdout(predicate::str::contains("refreshed=9"));
+        .stdout(predicate::str::contains("refreshed=6"));
 }
 
 #[test]

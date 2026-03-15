@@ -1,6 +1,6 @@
 ---
 name: orbit-maintain-system
-description: Perform routine, low-risk maintenance to keep the system healthy, consistent, and up-to-date without changing intended behavior. Use this skill only when explicitly requested.
+description: Perform routine, low-risk maintenance and operational job-run audits to keep the system healthy, consistent, and up-to-date without changing intended behavior. Use this skill only when explicitly requested.
 ---
 
 # Orbit Maintain System
@@ -27,7 +27,7 @@ When maintenance finds any issue, create a tracking task immediately.
 - Record created task IDs in the final report.
 - If no issues are found, say "No maintenance issues found".
 
-Use `orbit-create-task` for task creation details and `orbit-manage-tasks` for update/show/search flows.
+Use `orbit-create-task` for task creation details.
 
 ## Execution Rules
 
@@ -41,8 +41,6 @@ Use `orbit-create-task` for task creation details and `orbit-manage-tasks` for u
 ## Output
 
 Write the report to `{{ORBIT_ROOT}}/agents/reports/YYYY-MM-DD/maintenance_<title>.md`.
-
-If an artifact belongs to exactly one Orbit task, store it under that task bundle's `artifacts/` directory instead.
 
 Use this structure:
 
@@ -83,6 +81,38 @@ After writing the report, return the following JSON result:
 ```
 
 Orbit will auto-commit the report file together with the run artifact. Do **not** include a `commit` field — Orbit handles the commit.
+
+## Operational Audit (Job Runs)
+
+When asked to perform an operational audit:
+
+**1. Archive successful runs**
+
+```bash
+orbit job-run list --status success
+orbit job-run archive <job_run_id>   # repeat for each result
+```
+
+**2. Inspect failed runs**
+
+```bash
+orbit job-run list --status failed
+```
+
+If none, report operations are healthy and stop.
+
+```bash
+orbit job-run show <job_run_id>   # review: job_id, command, error, exit code, timestamps
+```
+
+**3. Create one remediation task per failure**
+
+```bash
+orbit task add --type issue --title "..." --description "..." --plan "..." \
+  --workspace "." --proposed-by "<identity>"
+```
+
+Record created task IDs in the report.
 
 ## Exit Criteria
 

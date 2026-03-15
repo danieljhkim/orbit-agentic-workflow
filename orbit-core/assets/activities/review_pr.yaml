@@ -12,6 +12,7 @@ activity:
   # ---- content ----
   description: Review a pull request for a completed Orbit task against its acceptance criteria
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     You are reviewing a pull request for an Orbit task.
 
     Steps:
@@ -68,6 +69,8 @@ activity:
         description: Review body summarising findings
 
   # ---- execution ----
+  skill_refs:
+    - orbit
   tools:
     - orbit.task.show
     - github.pr.view

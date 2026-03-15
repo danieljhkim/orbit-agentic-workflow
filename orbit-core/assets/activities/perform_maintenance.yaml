@@ -13,6 +13,7 @@ activity:
   # ---- content ----
   description: perform system maintenance, using `orbit-maintain-system`
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     Use `orbit-maintain-system` skill to perform system maintenance.
     Output a brief summary in the comment.
 
@@ -32,6 +33,5 @@ activity:
 
   # ---- execution ----
   skill_refs:
-    - orbit-skills
     - orbit-maintain-system
   tools: []

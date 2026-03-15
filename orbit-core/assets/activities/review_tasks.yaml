@@ -13,6 +13,7 @@ activity:
   # ---- content ----
   description: reviewer reviews all Orbit tasks in "proposed" or "review" and records explicit approvals or rejections.
   instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
     Use `orbit-approve-task` to check for any orbit tasks with "proposed" or "review" status,
     review them carefully, and update the status accordingly.
     Output the task_id's that have been approved and rejected and leave a brief summary in the comment.
@@ -30,7 +31,5 @@ activity:
 
   # ---- execution ----
   skill_refs:
-    - orbit-skills
     - orbit-approve-task
-    - orbit-manage-tasks
   tools: []
