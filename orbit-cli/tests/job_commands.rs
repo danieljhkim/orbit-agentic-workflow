@@ -219,8 +219,8 @@ fn job_run_with_task_id_passes_input_to_agent() {
             "job",
             "run",
             &job_id,
-            "--task-id",
-            "T20260310-045900-1773118740023227000",
+            "--input",
+            "task_id=T20260310-045900-1773118740023227000",
             "--json",
         ])
         .assert()
@@ -235,7 +235,7 @@ fn job_run_with_task_id_passes_input_to_agent() {
 }
 
 #[test]
-fn job_run_with_task_id_rejects_incompatible_activity_input_schema() {
+fn job_run_with_input_rejects_incompatible_activity_input_schema() {
     let dir = tempfile::tempdir().expect("tempdir");
     let spec_id = add_activity_with_input_schema(
         dir.path(),
@@ -246,7 +246,7 @@ fn job_run_with_task_id_rejects_incompatible_activity_input_schema() {
     let job_id = add_job(dir.path(), &spec_id, &agent_cli);
 
     orbit_in(dir.path())
-        .args(["job", "run", &job_id, "--task-id", "T123"])
+        .args(["job", "run", &job_id, "--input", "task_id=T123"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(

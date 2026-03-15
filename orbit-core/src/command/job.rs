@@ -263,9 +263,10 @@ impl OrbitRuntime {
         let mut total_duration_ms: u64 = 0;
         let mut last_protocol_violation = false;
         let mut last_created_file: Option<String> = None;
+        let mut current_input = input;
 
         for (step_index, step) in job.steps.iter().enumerate() {
-            let execution = self.build_execution_context_for_step(&job, step, input.clone())?;
+            let execution = self.build_execution_context_for_step(&job, step, current_input.clone())?;
             let step_started = Utc::now();
             let outcome = self.execute_single_attempt(&execution);
             let step_finished = Utc::now();
@@ -274,6 +275,18 @@ impl OrbitRuntime {
                 total_duration_ms += d;
             }
             let step_state = outcome.state;
+
+            // Merge step output into current_input so subsequent steps receive
+            // both the original inputs and any values produced by prior steps.
+            if step_state == JobRunState::Success {
+                if let Some(Value::Object(output_map)) = outcome.response_json.as_ref() {
+                    if let Value::Object(ref mut input_map) = current_input {
+                        for (k, v) in output_map {
+                            input_map.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
 
             let changed = self.complete_job_run_step_backend(
                 &run.run_id,

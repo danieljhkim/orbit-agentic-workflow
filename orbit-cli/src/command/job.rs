@@ -162,8 +162,10 @@ impl Execute for JobShowArgs {
 #[derive(Args)]
 pub struct JobRunArgs {
     pub job_id: String,
+    /// Input key=value pairs passed to all job steps (repeatable).
+    /// Example: --input task_id=T123 --input base=main
     #[arg(long)]
-    pub task_id: Option<String>,
+    pub input: Vec<String>,
     #[arg(long)]
     pub json: bool,
 }
@@ -171,7 +173,7 @@ pub struct JobRunArgs {
 impl Execute for JobRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let run = runtime
-            .run_job_now_with_input(&self.job_id, build_job_run_input(self.task_id.as_deref())?)?;
+            .run_job_now_with_input(&self.job_id, build_job_run_input(&self.input)?)?;
         let run_details = runtime
             .job_history(&self.job_id)?
             .into_iter()
@@ -363,17 +365,21 @@ pub(crate) fn summarize_error_message(raw: Option<&str>) -> String {
     format!("{truncated}...")
 }
 
-fn build_job_run_input(task_id: Option<&str>) -> Result<Value, OrbitError> {
-    match task_id {
-        None => Ok(json!({})),
-        Some(task_id) => {
-            let task_id = task_id.trim();
-            if task_id.is_empty() {
-                return Err(OrbitError::InvalidInput(
-                    "task_id must not be empty".to_string(),
-                ));
-            }
-            Ok(json!({ "task_id": task_id }))
+fn build_job_run_input(pairs: &[String]) -> Result<Value, OrbitError> {
+    let mut map = serde_json::Map::new();
+    for pair in pairs {
+        let (key, value) = pair.split_once('=').ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "invalid --input entry \"{pair}\": expected key=value"
+            ))
+        })?;
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(OrbitError::InvalidInput(format!(
+                "invalid --input entry \"{pair}\": key must not be empty"
+            )));
         }
+        map.insert(key.to_string(), Value::String(value.to_string()));
     }
+    Ok(Value::Object(map))
 }
