@@ -17,9 +17,7 @@ use serde_json::{Value, json};
 use tempfile::NamedTempFile;
 
 use crate::OrbitRuntime;
-use crate::command::activity::{
-    activity_requires_agent_cli, activity_skill_refs_from_spec_config,
-};
+use crate::command::activity::{activity_requires_agent_cli, activity_skill_refs_from_spec_config};
 use crate::executor::{api, cli_command};
 use crate::json_schema::validate_instance_against_schema;
 use crate::paths;
@@ -116,7 +114,8 @@ impl OrbitRuntime {
                     "step target_id must not be empty".to_string(),
                 ));
             }
-            let activity = self.validate_activity_target_exists(step.target_type, &step.target_id)?;
+            let activity =
+                self.validate_activity_target_exists(step.target_type, &step.target_id)?;
             if activity_requires_agent_cli(&activity.spec_type) && step.agent_cli.trim().is_empty()
             {
                 return Err(OrbitError::JobValidation(

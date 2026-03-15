@@ -147,8 +147,7 @@ impl Execute for ActivityShowArgs {
             println!("Description:         {}", spec.description);
             println!(
                 "Spec Config:         {}",
-                serde_json::to_string(&spec.spec_config)
-                    .unwrap_or_else(|_| "{}".to_string())
+                serde_json::to_string(&spec.spec_config).unwrap_or_else(|_| "{}".to_string())
             );
             if let Some(ref identity_id) = spec.identity_id {
                 println!("Identity:            {}", identity_id);

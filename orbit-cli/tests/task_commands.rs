@@ -563,8 +563,7 @@ fn task_archive_unarchive_and_delete_support_json() {
         .get_output()
         .stdout
         .clone();
-    let deleted: serde_json::Value =
-        serde_json::from_slice(&delete_output).expect("delete json");
+    let deleted: serde_json::Value = serde_json::from_slice(&delete_output).expect("delete json");
     assert_eq!(deleted["id"], id);
     assert_eq!(deleted["deleted"], true);
 }

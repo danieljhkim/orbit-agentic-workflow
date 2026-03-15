@@ -18,9 +18,7 @@ pub fn render(template: &str, ctx: &TemplateContext) -> Result<String, OrbitErro
         output.push_str(&remaining[..start]);
         let after_start = &remaining[start + 2..];
         let end = after_start.find("}}").ok_or_else(|| {
-            OrbitError::InvalidInput(format!(
-                "unterminated template token in '{template}'"
-            ))
+            OrbitError::InvalidInput(format!("unterminated template token in '{template}'"))
         })?;
         let token = after_start[..end].trim();
         output.push_str(&resolve_token(token, ctx)?);
@@ -59,10 +57,7 @@ fn resolve_token(token: &str, ctx: &TemplateContext) -> Result<String, OrbitErro
                 )));
             }
             ctx.env.get(path[0]).cloned().ok_or_else(|| {
-                OrbitError::InvalidInput(format!(
-                    "missing environment variable '{}'",
-                    path[0]
-                ))
+                OrbitError::InvalidInput(format!("missing environment variable '{}'", path[0]))
             })
         }
         "secrets" => Err(OrbitError::InvalidInput(

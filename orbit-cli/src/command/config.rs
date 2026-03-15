@@ -76,7 +76,10 @@ impl Execute for ConfigShowArgs {
                 "persistence": persistence,
             }))
         } else {
-            println!("ORBIT_ROOT (Selected Root): {}", selected_root.to_string_lossy());
+            println!(
+                "ORBIT_ROOT (Selected Root): {}",
+                selected_root.to_string_lossy()
+            );
             println!("Config path:         {}", config_path.to_string_lossy());
             println!("Exists:              {}", config_path.exists());
             println!("Execution env inherit: {}", inherit);

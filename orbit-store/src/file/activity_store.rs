@@ -87,11 +87,7 @@ impl ActivityFileStore {
                     params.output_schema_json.clone(),
                 ),
                 workspace_path: params.workspace_path.clone(),
-                spec_config: params
-                    .spec_config
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default(),
+                spec_config: params.spec_config.as_object().cloned().unwrap_or_default(),
             },
         };
         self.write_doc_at(&self.active_doc_path(&doc.activity.id), &doc)?;

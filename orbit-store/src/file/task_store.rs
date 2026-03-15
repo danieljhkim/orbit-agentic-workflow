@@ -626,9 +626,18 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
 
     yaml.push_str(&yaml_section("proposal workflow"));
     yaml.push_str(&yaml_field("proposedBy", &doc.proposed_by)?);
-    yaml.push_str(&yaml_field("proposalApprovedBy", &doc.proposal_approved_by)?);
-    yaml.push_str(&yaml_field("proposalRejectedBy", &doc.proposal_rejected_by)?);
-    yaml.push_str(&yaml_field("proposalDecisionNote", &doc.proposal_decision_note)?);
+    yaml.push_str(&yaml_field(
+        "proposalApprovedBy",
+        &doc.proposal_approved_by,
+    )?);
+    yaml.push_str(&yaml_field(
+        "proposalRejectedBy",
+        &doc.proposal_rejected_by,
+    )?);
+    yaml.push_str(&yaml_field(
+        "proposalDecisionNote",
+        &doc.proposal_decision_note,
+    )?);
 
     yaml.push_str(&yaml_section("implementation"));
     yaml.push_str(&yaml_field("branch", &doc.branch)?);
@@ -637,7 +646,10 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_section("review workflow"));
     yaml.push_str(&yaml_field("reviewApprovedBy", &doc.review_approved_by)?);
     yaml.push_str(&yaml_field("reviewRejectedBy", &doc.review_rejected_by)?);
-    yaml.push_str(&yaml_field("reviewDecisionNote", &doc.review_decision_note)?);
+    yaml.push_str(&yaml_field(
+        "reviewDecisionNote",
+        &doc.review_decision_note,
+    )?);
 
     yaml.push_str(&yaml_section("execution references"));
     yaml.push_str(&yaml_field("activityId", &doc.activity_id)?);
@@ -831,8 +843,13 @@ mod tests {
         let task = store
             .create_task(sample_insert(TaskStatus::Backlog))
             .expect("create task");
-        let yaml = fs::read_to_string(dir.path().join("backlog").join(&task.id).join(TASK_DOC_FILE_NAME))
-            .expect("read yaml");
+        let yaml = fs::read_to_string(
+            dir.path()
+                .join("backlog")
+                .join(&task.id)
+                .join(TASK_DOC_FILE_NAME),
+        )
+        .expect("read yaml");
 
         let identity_idx = yaml.find("# ---- identity ----").expect("identity section");
         let id_idx = yaml.find("id: ").expect("id field");
@@ -841,9 +858,18 @@ mod tests {
         let audit_idx = yaml.find("# ---- audit trail ----").expect("audit section");
         let history_idx = yaml.find("history:").expect("history field");
 
-        assert!(identity_idx < id_idx, "identity section should precede id field");
-        assert!(content_idx < title_idx, "content section should precede title field");
-        assert!(audit_idx < history_idx, "audit section should precede history field");
+        assert!(
+            identity_idx < id_idx,
+            "identity section should precede id field"
+        );
+        assert!(
+            content_idx < title_idx,
+            "content section should precede title field"
+        );
+        assert!(
+            audit_idx < history_idx,
+            "audit section should precede history field"
+        );
     }
 
     #[test]

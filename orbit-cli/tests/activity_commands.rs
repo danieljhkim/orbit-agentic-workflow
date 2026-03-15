@@ -64,7 +64,10 @@ fn activity_add_show_list_delete_json_flow() {
         show["spec_config"]["instruction"],
         "Inspect repository metrics and summarize them."
     );
-    assert_eq!(show["spec_config"]["skill_refs"][0], "orbit-assess-codebase");
+    assert_eq!(
+        show["spec_config"]["skill_refs"][0],
+        "orbit-assess-codebase"
+    );
     assert_eq!(show["is_active"], true);
 
     let list_output = orbit_in(dir.path())

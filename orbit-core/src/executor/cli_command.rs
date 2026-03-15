@@ -86,11 +86,13 @@ pub fn execute(
     }
 
     let output = match std::fs::read_to_string(&output_path) {
-        Ok(raw) if !raw.trim().is_empty() => serde_json::from_str::<Value>(&raw).map_err(|error| {
-            OrbitError::Execution(format!(
-                "cli_command wrote invalid JSON to ORBIT_OUTPUT_FILE: {error}"
-            ))
-        })?,
+        Ok(raw) if !raw.trim().is_empty() => {
+            serde_json::from_str::<Value>(&raw).map_err(|error| {
+                OrbitError::Execution(format!(
+                    "cli_command wrote invalid JSON to ORBIT_OUTPUT_FILE: {error}"
+                ))
+            })?
+        }
         Ok(_) => json!({ "exit_code": exit_code }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             json!({ "exit_code": exit_code })
