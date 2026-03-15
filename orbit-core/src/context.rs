@@ -15,7 +15,6 @@ use crate::skill_catalog::SkillCatalog;
 #[derive(Clone)]
 pub struct OrbitContext {
     pub(crate) data_root: PathBuf,
-    pub(crate) orbit_home: PathBuf,
     pub(crate) task_store: Arc<dyn TaskStoreBackend>,
     pub(crate) activity_store: Arc<dyn ActivityStoreBackend>,
     pub(crate) job_store: Arc<dyn JobStoreBackend>,

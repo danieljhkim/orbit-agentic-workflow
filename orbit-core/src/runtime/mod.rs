@@ -92,10 +92,6 @@ impl OrbitRuntime {
         self.context.data_root.clone()
     }
 
-    pub fn orbit_home(&self) -> PathBuf {
-        self.context.orbit_home.clone()
-    }
-
     pub fn config_path(&self) -> PathBuf {
         self.data_root().join("config.toml")
     }

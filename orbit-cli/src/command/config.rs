@@ -37,8 +37,7 @@ pub struct ConfigShowArgs {
 
 impl Execute for ConfigShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let orbit_root = runtime.data_root();
-        let orbit_home = runtime.orbit_home();
+        let selected_root = runtime.data_root();
         let config_path = runtime.config_path();
         let (inherit, pass) = runtime.execution_env_config();
         let (codex_sandbox, codex_approval_policy) = runtime.codex_execution_config();
@@ -49,8 +48,8 @@ impl Execute for ConfigShowArgs {
         let identity_role_overrides = runtime.identity_role_overrides();
         if self.json {
             crate::output::json::print_pretty(&json!({
-                "root": orbit_root.to_string_lossy(),
-                "home": orbit_home.to_string_lossy(),
+                "root": selected_root.to_string_lossy(),
+                "selected_root": selected_root.to_string_lossy(),
                 "path": config_path.to_string_lossy(),
                 "config_path": config_path.to_string_lossy(),
                 "exists": config_path.exists(),
@@ -77,8 +76,7 @@ impl Execute for ConfigShowArgs {
                 "persistence": persistence,
             }))
         } else {
-            println!("ORBIT_ROOT (Root):   {}", orbit_root.to_string_lossy());
-            println!("ORBIT_HOME (Home):   {}", orbit_home.to_string_lossy());
+            println!("ORBIT_ROOT (Selected Root): {}", selected_root.to_string_lossy());
             println!("Config path:         {}", config_path.to_string_lossy());
             println!("Exists:              {}", config_path.exists());
             println!("Execution env inherit: {}", inherit);

@@ -26,6 +26,14 @@ fn config_show_json_bootstraps_cwd_orbit_when_missing() {
     let value: Value = serde_json::from_slice(&output).expect("json");
 
     assert_eq!(value["exists"], true);
+    assert_eq!(value["root"], value["selected_root"]);
+    assert!(
+        value
+            .as_object()
+            .expect("config object")
+            .get("home")
+            .is_none()
+    );
     assert_eq!(value["execution"]["env"]["inherit"], false);
     let expected_pass = if cfg!(target_os = "macos") {
         serde_json::json!([
@@ -115,6 +123,14 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     let value: Value = serde_json::from_slice(&output).expect("json");
 
     assert_eq!(value["exists"], true);
+    assert_eq!(value["root"], value["selected_root"]);
+    assert!(
+        value
+            .as_object()
+            .expect("config object")
+            .get("home")
+            .is_none()
+    );
     assert_eq!(value["execution"]["env"]["inherit"], true);
     assert_eq!(
         value["execution"]["env"]["pass"],
@@ -220,6 +236,14 @@ fn config_show_json_reports_workspace_config_path_when_local_config_is_used() {
 
     let expected_path = std::fs::canonicalize(local_orbit_dir.join("config.toml"))
         .expect("canonical workspace config");
+    assert_eq!(value["root"], value["selected_root"]);
+    assert!(
+        value
+            .as_object()
+            .expect("config object")
+            .get("home")
+            .is_none()
+    );
     let reported_path = std::fs::canonicalize(
         value["path"]
             .as_str()

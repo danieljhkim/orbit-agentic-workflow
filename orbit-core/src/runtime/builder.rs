@@ -29,7 +29,6 @@ pub(crate) fn build_context_from_data_root(data_root: &Path) -> Result<OrbitCont
     build_context_common(
         store,
         data_root.to_path_buf(),
-        data_root.to_path_buf(),
         runtime_config,
         task_store,
         activity_store,
@@ -58,7 +57,6 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
     build_context_common(
         store,
         data_root,
-        orbit_root,
         runtime_config,
         task_store,
         activity_store,
@@ -69,7 +67,6 @@ pub(crate) fn build_context_in_memory() -> Result<OrbitContext, OrbitError> {
 fn build_context_common(
     store: Store,
     data_root: PathBuf,
-    orbit_home: PathBuf,
     runtime_config: RuntimeConfig,
     task_store: Arc<dyn orbit_store::TaskStoreBackend>,
     activity_store: Arc<dyn orbit_store::ActivityStoreBackend>,
@@ -101,7 +98,6 @@ fn build_context_common(
 
     Ok(OrbitContext {
         data_root,
-        orbit_home,
         task_store,
         activity_store,
         job_store,
