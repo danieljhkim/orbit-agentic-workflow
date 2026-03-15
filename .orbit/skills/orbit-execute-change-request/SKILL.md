@@ -30,13 +30,18 @@ Use `orbit-manage-tasks` for canonical CLI mutation and verification details.
 
 ## Output
 
-Persist the summary at:
+Persist the execution summary via the CLI — do NOT write to a file path directly:
 
-```text
-/Users/daniel/workspace/repos/orbit/.orbit/tasks/<current-status>/<task-id>/execution-summary.md
+```bash
+orbit task update <task-id> --execution-summary "$(cat <<'EOF'
+<summary content>
+EOF
+)"
 ```
 
-Use this structure:
+The CLI resolves the correct bundle path automatically. Never hardcode or guess the file location.
+
+Use this structure for the summary content:
 
 ```markdown
 # Execution Summary - <Change Request Title>
