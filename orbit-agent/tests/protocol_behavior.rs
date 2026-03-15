@@ -189,20 +189,17 @@ fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
 fn claude_runtime_declares_required_env_vars() {
     let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
-    assert_eq!(
-        invocation.required_env_vars,
-        &["HOME", "PATH", "ANTHROPIC_API_KEY"]
-    );
+    assert_eq!(invocation.required_env_vars, &["HOME", "PATH"]);
     assert!(invocation.stdout_schema_json.is_none());
 }
 
 #[test]
-fn claude_runtime_requires_anthropic_api_key() {
+fn claude_runtime_does_not_require_anthropic_api_key() {
     let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert!(
-        invocation.required_env_vars.contains(&"ANTHROPIC_API_KEY"),
-        "ANTHROPIC_API_KEY must be in Claude required_env_vars"
+        !invocation.required_env_vars.contains(&"ANTHROPIC_API_KEY"),
+        "ANTHROPIC_API_KEY must NOT be in Claude required_env_vars; HOME is sufficient"
     );
 }
 

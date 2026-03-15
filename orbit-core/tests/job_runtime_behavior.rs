@@ -1365,10 +1365,10 @@ fn claude_job_run_succeeds_with_mock_binary() {
     );
     let agent_cli = write_agent_script(&script_path, &script);
 
-    // Runtime config: hermetic env but ANTHROPIC_API_KEY in the pass list.
+    // Runtime config: hermetic env — HOME and PATH are sufficient for Claude Code auth.
     write_runtime_config(
         dir.path(),
-        "[execution.env]\npass = [\"HOME\", \"PATH\", \"ANTHROPIC_API_KEY\"]\n",
+        "[execution.env]\npass = [\"HOME\", \"PATH\"]\n",
     );
 
     let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
@@ -1389,17 +1389,9 @@ fn claude_job_run_succeeds_with_mock_binary() {
         .expect("add job")
         .job_id;
 
-    // Set a dummy ANTHROPIC_API_KEY so the env check passes.
-    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-    // SAFETY: guarded by env_lock; safe within the test.
-    unsafe { std::env::set_var("ANTHROPIC_API_KEY", "test-dummy-key") };
-
     let result = runtime
         .run_job_now(&job_id)
         .expect("claude job must succeed");
-
-    unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
-    drop(_guard);
 
     assert_eq!(result.state, JobRunState::Success, "job must succeed");
 

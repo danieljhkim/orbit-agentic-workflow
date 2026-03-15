@@ -31,7 +31,7 @@ impl AgentProvider {
         match self {
             AgentProvider::MockAgent => &[],
             AgentProvider::Codex => &["HOME", "PATH"],
-            AgentProvider::Claude => &["HOME", "PATH", "ANTHROPIC_API_KEY"],
+            AgentProvider::Claude => &["HOME", "PATH"],
         }
     }
 
