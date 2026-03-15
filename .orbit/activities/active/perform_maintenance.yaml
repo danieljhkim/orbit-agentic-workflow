@@ -1,8 +1,8 @@
 schema_version: 1
 created_by: system
 identity_id: prii
-created_at: 2026-03-15T06:04:12.084045Z
-updated_at: 2026-03-15T06:04:12.084045Z
+created_at: 2026-03-15T18:02:22.040784Z
+updated_at: 2026-03-15T18:02:22.040784Z
 activity:
   id: perform_maintenance
   spec_type: agent_invoke
@@ -19,7 +19,9 @@ activity:
         description: Repo-relative or absolute path to the markdown report written during this run. Orbit auto-commits this file together with the run artifact.
         type: string
     type: object
-  instruction: Use `orbit-maintain-system` skill to perform system maintenance. Output a brief summary in the comment
+  instruction: |
+    Use `orbit-maintain-system` skill to perform system maintenance.
+    Output a brief summary in the comment.
   skill_refs:
   - orbit-skills
   - orbit-maintain-system
