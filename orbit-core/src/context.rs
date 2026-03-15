@@ -29,6 +29,7 @@ pub struct OrbitContext {
     pub(crate) execution_env_policy: ExecutionEnvPolicy,
     pub(crate) codex_execution_policy: CodexExecutionPolicy,
     pub(crate) persistence: PersistenceConfig,
+    pub(crate) user_name: String,
     pub(crate) task_approval_required_for_agent: bool,
     pub(crate) task_delegate_approval: bool,
 }

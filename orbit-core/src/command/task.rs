@@ -59,6 +59,8 @@ impl OrbitRuntime {
         } else {
             TaskStatus::Backlog
         };
+        let actor = self.user_name().to_string();
+        let created_by = params.created_by.clone().or_else(|| Some(actor.clone()));
         let proposed_by = params
             .proposed_by
             .clone()
@@ -69,11 +71,12 @@ impl OrbitRuntime {
                 .created_by
                 .as_deref()
                 .or(params.proposed_by.as_deref())
-                .unwrap_or("human"),
+                .unwrap_or(actor.as_str()),
         )?;
 
         self.with_mutation(|| {
             let task = self.context.task_store.create_task(StoreTaskCreateParams {
+                actor: actor.clone(),
                 title: params.title.clone(),
                 description: params.description.clone(),
                 plan: params.plan.clone(),
@@ -81,7 +84,7 @@ impl OrbitRuntime {
                 context_files: params.context_files.clone(),
                 workspace_path: workspace_path.clone(),
                 assigned_to: params.assigned_to.clone(),
-                created_by: params.created_by.clone(),
+                created_by: created_by.clone(),
                 status: initial_status,
                 priority: params.priority,
                 task_type: params.task_type,
@@ -153,12 +156,14 @@ impl OrbitRuntime {
             }
         }
 
-        let append_comments = build_task_comments(params.comment.clone(), "human")?;
+        let actor = self.user_name().to_string();
+        let append_comments = build_task_comments(params.comment.clone(), actor.as_str())?;
 
         let task = self.with_mutation(|| {
             let task = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
+                    actor: actor.clone(),
                     title: params.title,
                     description: params.description,
                     plan: params.plan,
@@ -199,6 +204,7 @@ impl OrbitRuntime {
                     let task = self.context.task_store.update_task(
                         id,
                         StoreTaskUpdateParams {
+                            actor: approver.to_string(),
                             status: Some(TaskStatus::Backlog),
                             proposal_approved_by: Some(Some(approver.to_string())),
                             proposal_decision_note: Some(note.clone()),
@@ -221,6 +227,7 @@ impl OrbitRuntime {
                     let task = self.context.task_store.update_task(
                         id,
                         StoreTaskUpdateParams {
+                            actor: approver.to_string(),
                             status: Some(TaskStatus::Done),
                             review_approved_by: Some(Some(approver.to_string())),
                             review_decision_note: Some(note.clone()),
@@ -273,6 +280,7 @@ impl OrbitRuntime {
                     let task = self.context.task_store.update_task(
                         id,
                         StoreTaskUpdateParams {
+                            actor: rejector.to_string(),
                             status: Some(TaskStatus::Rejected),
                             proposal_rejected_by: Some(Some(rejector.to_string())),
                             proposal_decision_note: Some(Some(reason.clone())),
@@ -295,6 +303,7 @@ impl OrbitRuntime {
                     let task = self.context.task_store.update_task(
                         id,
                         StoreTaskUpdateParams {
+                            actor: rejector.to_string(),
                             status: Some(TaskStatus::Rejected),
                             review_rejected_by: Some(Some(rejector.to_string())),
                             review_decision_note: Some(Some(reason.clone())),
@@ -331,6 +340,7 @@ impl OrbitRuntime {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
+                    actor: self.user_name().to_string(),
                     status: Some(TaskStatus::Archived),
                     ..Default::default()
                 },
@@ -353,6 +363,7 @@ impl OrbitRuntime {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
+                    actor: self.user_name().to_string(),
                     status: Some(TaskStatus::Backlog),
                     ..Default::default()
                 },

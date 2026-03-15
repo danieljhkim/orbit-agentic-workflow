@@ -19,6 +19,7 @@ pub(crate) struct TaskFileStore {
 
 #[derive(Clone)]
 pub(crate) struct FileTaskInsert {
+    pub actor: String,
     pub title: String,
     pub description: String,
     pub plan: String,
@@ -38,6 +39,7 @@ pub(crate) struct FileTaskInsert {
 
 #[derive(Default, Clone)]
 pub(crate) struct FileTaskUpdate {
+    pub actor: String,
     pub title: Option<String>,
     pub description: Option<String>,
     pub plan: Option<String>,
@@ -219,13 +221,14 @@ impl TaskFileStore {
                 "task title must not be empty".to_string(),
             ));
         }
+        if params.actor.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "task actor must not be empty".to_string(),
+            ));
+        }
 
         let now = Utc::now();
         let id = self.next_task_id(now)?;
-        let history_actor = params
-            .created_by
-            .clone()
-            .unwrap_or_else(|| "human".to_string());
         let initial_state = TaskStateDir::from_status(params.status);
         let bundle = TaskBundle {
             doc: TaskFileDocument {
@@ -253,7 +256,7 @@ impl TaskFileStore {
                 acceptance_criteria: Vec::new(),
                 history: vec![TaskHistoryEntry {
                     at: now,
-                    by: history_actor,
+                    by: params.actor,
                     event: "created".to_string(),
                 }],
                 comments: params.comments,
@@ -336,6 +339,11 @@ impl TaskFileStore {
         id: &str,
         fields: &FileTaskUpdate,
     ) -> Result<Task, OrbitError> {
+        if fields.actor.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "task actor must not be empty".to_string(),
+            ));
+        }
         let Some((current_state, current_dir)) = self.locate_task(id)? else {
             return Err(OrbitError::TaskNotFound(id.to_string()));
         };
@@ -427,14 +435,14 @@ impl TaskFileStore {
         if let Some(event) = event {
             bundle.doc.history.push(TaskHistoryEntry {
                 at: bundle.doc.updated_at,
-                by: "human".to_string(),
+                by: fields.actor.clone(),
                 event,
             });
         }
         if title_changed {
             bundle.doc.history.push(TaskHistoryEntry {
                 at: bundle.doc.updated_at,
-                by: "human".to_string(),
+                by: fields.actor.clone(),
                 event: "renamed".to_string(),
             });
         }
@@ -753,6 +761,7 @@ mod tests {
 
     fn sample_insert(status: TaskStatus) -> FileTaskInsert {
         FileTaskInsert {
+            actor: "Codex".to_string(),
             title: "Bundle task".to_string(),
             description: "Task description".to_string(),
             plan: "Task plan".to_string(),
@@ -811,6 +820,7 @@ mod tests {
             .update_task(
                 &task.id,
                 &FileTaskUpdate {
+                    actor: "Codex".to_string(),
                     description: Some("Updated description".to_string()),
                     plan: Some("Updated plan".to_string()),
                     execution_summary: Some("Validated bundle layout".to_string()),
@@ -888,6 +898,7 @@ mod tests {
             .update_task(
                 &task.id,
                 &FileTaskUpdate {
+                    actor: "daniel".to_string(),
                     status: Some(TaskStatus::InProgress),
                     ..Default::default()
                 },
@@ -898,6 +909,8 @@ mod tests {
         assert_eq!(updated.status, TaskStatus::InProgress);
         assert!(!backlog_dir.exists());
         assert!(in_progress_dir.exists());
+        let yaml = fs::read_to_string(in_progress_dir.join(TASK_DOC_FILE_NAME)).expect("read yaml");
+        assert!(yaml.contains("by: daniel"));
         assert_eq!(
             fs::read_to_string(in_progress_dir.join(ARTIFACTS_DIR_NAME).join("report.md"))
                 .expect("artifact"),
@@ -934,6 +947,7 @@ mod tests {
             .expect("create first task");
         let two = store
             .create_task(FileTaskInsert {
+                actor: "Codex".to_string(),
                 title: "Another task".to_string(),
                 description: "Searchable phrase".to_string(),
                 plan: "Other plan".to_string(),
@@ -1064,6 +1078,7 @@ mod tests {
             .update_task(
                 &task.id,
                 &FileTaskUpdate {
+                    actor: "Codex".to_string(),
                     append_comments: vec![TaskComment {
                         at: Utc::now(),
                         by: "reviewer".to_string(),

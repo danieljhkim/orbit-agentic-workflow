@@ -462,6 +462,43 @@ mod tests {
     }
 
     #[test]
+    fn configured_user_name_is_used_for_created_by_and_update_comments() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("config.toml"), "[user]\nname = \"daniel\"\n")
+            .expect("write config");
+        let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "configured author".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+        assert_eq!(task.created_by.as_deref(), Some("daniel"));
+
+        let updated = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: None,
+                    description: None,
+                    plan: None,
+                    execution_summary: None,
+                    comment: Some("configured follow-up".to_string()),
+                    assigned_to: None,
+                    status: None,
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("update");
+
+        assert_eq!(runtime.user_name(), "daniel");
+        assert_eq!(updated.comments[0].by, "daniel");
+        assert_eq!(updated.comments[0].message, "configured follow-up");
+    }
+
+    #[test]
     fn approve_task_comment_uses_approver_identity() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime

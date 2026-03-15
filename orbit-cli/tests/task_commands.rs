@@ -450,6 +450,45 @@ fn task_update_comment_appends_without_replacing_existing_comments() {
 }
 
 #[test]
+fn task_uses_configured_user_name_for_created_by_and_comment_author() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[user]\nname = \"daniel\"\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "configured actor");
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["created_by"], "daniel");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--comment", "follow-up"])
+        .assert()
+        .success();
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    let comments = show["comments"].as_array().expect("comments");
+    assert_eq!(comments[0]["by"], "daniel");
+    assert_eq!(comments[0]["message"], "follow-up");
+}
+
+#[test]
 fn task_update_rejects_blank_comment() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "blank comment");
@@ -718,6 +757,34 @@ fn task_approve_json_returns_updated_task() {
     assert_eq!(task["id"], id);
     assert_eq!(task["proposal_approved_by"], "daniel");
     assert_eq!(task["status"], "backlog");
+}
+
+#[test]
+fn task_approve_defaults_to_configured_user_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n[user]\nname = \"daniel\"\n",
+    )
+    .expect("write config");
+    let id = add_task(dir.path(), "approve defaults");
+
+    orbit_in(dir.path())
+        .args(["task", "approve", &id, "--note", "config default approver"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Approved task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["proposal_approved_by"], "daniel");
 }
 
 #[test]

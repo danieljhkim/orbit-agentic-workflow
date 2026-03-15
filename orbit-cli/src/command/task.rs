@@ -371,9 +371,9 @@ impl From<TaskUpdateStatusArg> for TaskStatus {
 pub struct TaskApproveArgs {
     /// Task ID
     pub id: String,
-    /// Approver identity
-    #[arg(long, default_value = "human")]
-    pub by: String,
+    /// Approver identity, defaults to the configured user.name
+    #[arg(long)]
+    pub by: Option<String>,
     /// Optional approval note
     #[arg(long)]
     pub note: Option<String>,
@@ -387,7 +387,8 @@ pub struct TaskApproveArgs {
 
 impl Execute for TaskApproveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let task = runtime.approve_task(&self.id, &self.by, self.note, self.comment)?;
+        let by = self.by.unwrap_or_else(|| runtime.user_name().to_string());
+        let task = runtime.approve_task(&self.id, &by, self.note, self.comment)?;
         if self.json {
             crate::output::json::print_pretty(&task_to_json(&task))
         } else {
@@ -403,9 +404,9 @@ impl Execute for TaskApproveArgs {
 pub struct TaskRejectArgs {
     /// Task ID
     pub id: String,
-    /// Rejector identity
-    #[arg(long, default_value = "human")]
-    pub by: String,
+    /// Rejector identity, defaults to the configured user.name
+    #[arg(long)]
+    pub by: Option<String>,
     /// Rejection note
     #[arg(long)]
     pub note: String,
@@ -419,7 +420,8 @@ pub struct TaskRejectArgs {
 
 impl Execute for TaskRejectArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let task = runtime.reject_task(&self.id, &self.by, self.note, self.comment)?;
+        let by = self.by.unwrap_or_else(|| runtime.user_name().to_string());
+        let task = runtime.reject_task(&self.id, &by, self.note, self.comment)?;
         if self.json {
             crate::output::json::print_pretty(&task_to_json(&task))
         } else {

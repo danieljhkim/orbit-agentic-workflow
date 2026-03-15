@@ -14,6 +14,7 @@ use crate::file::task_store::{FileTaskInsert, FileTaskUpdate, TaskFileStore};
 impl TaskStoreBackend for TaskFileStore {
     fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
         self.create_task(FileTaskInsert {
+            actor: params.actor,
             title: params.title,
             description: params.description,
             plan: params.plan,
@@ -56,6 +57,7 @@ impl TaskStoreBackend for TaskFileStore {
         self.update_task(
             id,
             &FileTaskUpdate {
+                actor: params.actor,
                 title: params.title,
                 description: params.description,
                 plan: params.plan,

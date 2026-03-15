@@ -5,6 +5,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawRuntimeConfig {
     pub(super) execution: Option<RawExecutionConfig>,
+    pub(super) user: Option<RawUserSection>,
     pub(super) identity: Option<RawIdentitySection>,
     pub(super) job: Option<RawEntitySection>,
     pub(super) activity: Option<RawEntitySection>,
@@ -18,6 +19,11 @@ pub(super) struct RawRuntimeConfig {
 pub(super) struct RawExecutionConfig {
     pub(super) env: Option<RawExecutionEnvConfig>,
     pub(super) codex: Option<RawCodexExecutionConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(super) struct RawUserSection {
+    pub(super) name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

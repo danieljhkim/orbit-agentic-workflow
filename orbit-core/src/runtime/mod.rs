@@ -108,6 +108,10 @@ impl OrbitRuntime {
         self.context.task_delegate_approval
     }
 
+    pub fn user_name(&self) -> &str {
+        &self.context.user_name
+    }
+
     pub fn identity_root(&self) -> PathBuf {
         self.context.identity_catalog.root().to_path_buf()
     }

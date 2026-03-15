@@ -11,10 +11,12 @@ pub(crate) use runtime::{
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::Path;
 
     use super::PersistenceConfig;
-    use super::runtime::{CodexExecutionPolicy, ExecutionEnvPolicy, normalize_pass_list};
+    use super::runtime::{CodexExecutionPolicy, ExecutionEnvPolicy, RuntimeConfig, normalize_pass_list};
+    use tempfile::tempdir;
 
     #[test]
     fn normalize_pass_list_rejects_invalid_identifiers() {
@@ -77,6 +79,32 @@ mod tests {
         let policy = CodexExecutionPolicy::default();
         assert_eq!(policy.sandbox(), "workspace-write");
         assert_eq!(policy.approval_policy(), None);
+    }
+
+    #[test]
+    fn runtime_config_defaults_user_name_to_human() {
+        let config = RuntimeConfig::default_for_data_root(Path::new("/tmp/orbit"));
+        assert_eq!(config.user_name, "human");
+    }
+
+    #[test]
+    fn runtime_config_loads_user_name_from_config() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("config.toml"), "[user]\nname = \"daniel\"\n")
+            .expect("write config");
+
+        let config = RuntimeConfig::load_from_data_root(dir.path()).expect("load config");
+        assert_eq!(config.user_name, "daniel");
+    }
+
+    #[test]
+    fn runtime_config_rejects_blank_user_name() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("config.toml"), "[user]\nname = \"   \"\n")
+            .expect("write config");
+
+        let err = RuntimeConfig::load_from_data_root(dir.path()).expect_err("blank user name");
+        assert!(err.to_string().contains("user.name must not be empty"));
     }
 
     #[test]

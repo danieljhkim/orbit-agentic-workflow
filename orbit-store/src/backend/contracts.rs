@@ -10,6 +10,7 @@ use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams}
 
 #[derive(Debug, Clone)]
 pub struct TaskCreateParams {
+    pub actor: String,
     pub title: String,
     pub description: String,
     pub plan: String,
@@ -29,6 +30,7 @@ pub struct TaskCreateParams {
 
 #[derive(Debug, Default, Clone)]
 pub struct TaskUpdateParams {
+    pub actor: String,
     pub title: Option<String>,
     pub description: Option<String>,
     pub plan: Option<String>,
