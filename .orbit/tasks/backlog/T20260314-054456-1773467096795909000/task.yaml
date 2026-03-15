@@ -29,7 +29,7 @@ description: |-
   **Risks:**
   - Existing persisted tasks may already contain free-form values, so the implementation needs a compatibility story.
   - Tightening validation without a smooth CLI contract could make task operations more cumbersome before the UX is improved.
-contextFiles:
+context_files:
 - orbit-types/src/task.rs
 - orbit-core/src/command/task.rs
 - orbit-cli/src/command/task.rs
@@ -39,23 +39,23 @@ contextFiles:
 - orbit-core/assets/skills/orbit-approve-task/SKILL.md
 - .orbit/skills/orbit-create-task/SKILL.md
 - .orbit/skills/orbit-approve-task/SKILL.md
-workspacePath: /Users/daniel/workspace/repos/orbit
-assignedTo: Kent
-createdBy: codex-gpt-5.4-high
+workspace_path: /Users/daniel/workspace/repos/orbit
+assigned_to: Kent
+created_by: codex-gpt-5.4-high
 priority: high
 type: refactor
 branch: null
-prNumber: null
-proposedBy: daniel
-proposalApprovedBy: Prii (Maintainer)
-proposalRejectedBy: null
-proposalDecisionNote: 'Approved: task attribution should follow one identity contract instead of mixing identity-backed approvals with free-form creator and assignee fields.'
-reviewApprovedBy: null
-reviewRejectedBy: null
-reviewDecisionNote: null
-createdAt: 2026-03-14T05:44:56.795908Z
-updatedAt: 2026-03-14T23:04:15.501668Z
-acceptanceCriteria: []
+pr_number: null
+proposed_by: daniel
+proposal_approved_by: Prii (Maintainer)
+proposal_rejected_by: null
+proposal_decision_note: 'Approved: task attribution should follow one identity contract instead of mixing identity-backed approvals with free-form creator and assignee fields.'
+review_approved_by: null
+review_rejected_by: null
+review_decision_note: null
+created_at: 2026-03-14T05:44:56.795908Z
+updated_at: 2026-03-14T23:04:15.501668Z
+acceptance_criteria: []
 history:
 - at: 2026-03-14T05:44:56.795908Z
   by: codex-gpt-5.4-high
@@ -64,6 +64,6 @@ history:
   by: human
   event: moved
 comments: []
-activityId: null
-jobId: null
-jobRunId: null
+activity_id: null
+job_id: null
+job_run_id: null

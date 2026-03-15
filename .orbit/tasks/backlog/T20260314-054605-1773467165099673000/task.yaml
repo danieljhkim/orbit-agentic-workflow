@@ -29,7 +29,7 @@ description: |-
   **Risks:**
   - A shortcut command could blur important approval semantics if it is not designed carefully.
   - Adding multiple overlapping task-mutation commands could make the CLI harder to learn if the new path is not clearly preferable.
-contextFiles:
+context_files:
 - orbit-cli/src/command/task.rs
 - orbit-core/src/command/task.rs
 - orbit-types/src/task.rs
@@ -38,23 +38,23 @@ contextFiles:
 - orbit-core/assets/skills/orbit-manage-tasks/SKILL.md
 - .orbit/skills/orbit-approve-task/SKILL.md
 - .orbit/skills/orbit-manage-tasks/SKILL.md
-workspacePath: /Users/daniel/workspace/repos/orbit
-assignedTo: John
-createdBy: codex-gpt-5.4-high
+workspace_path: /Users/daniel/workspace/repos/orbit
+assigned_to: John
+created_by: codex-gpt-5.4-high
 priority: medium
 type: feature
 branch: null
-prNumber: null
-proposedBy: daniel
-proposalApprovedBy: Prii (Maintainer)
-proposalRejectedBy: null
-proposalDecisionNote: 'Approved: reducing multi-command lifecycle friction is worthwhile if the shortcut preserves explicit lifecycle audit fields and one clearly preferred path.'
-reviewApprovedBy: null
-reviewRejectedBy: null
-reviewDecisionNote: null
-createdAt: 2026-03-14T05:46:05.099672Z
-updatedAt: 2026-03-14T23:04:15.463036Z
-acceptanceCriteria: []
+pr_number: null
+proposed_by: daniel
+proposal_approved_by: Prii (Maintainer)
+proposal_rejected_by: null
+proposal_decision_note: 'Approved: reducing multi-command lifecycle friction is worthwhile if the shortcut preserves explicit lifecycle audit fields and one clearly preferred path.'
+review_approved_by: null
+review_rejected_by: null
+review_decision_note: null
+created_at: 2026-03-14T05:46:05.099672Z
+updated_at: 2026-03-14T23:04:15.463036Z
+acceptance_criteria: []
 history:
 - at: 2026-03-14T05:46:05.099672Z
   by: codex-gpt-5.4-high
@@ -63,6 +63,6 @@ history:
   by: human
   event: moved
 comments: []
-activityId: null
-jobId: null
-jobRunId: null
+activity_id: null
+job_id: null
+job_run_id: null

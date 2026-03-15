@@ -7,33 +7,33 @@ description: |-
   Current Orbit lifecycle validation only allows `rejected -> backlog`, which forces an extra status hop before an agent can resume work after feedback. We want to add support for `rejected -> in-progress` through the standard `orbit task update <id> --status in-progress` flow.
 
   Implement the change consistently across the transition rules, command handling, and regression coverage while preserving existing proposal and review rejection audit metadata. Out of scope: changing how `orbit task reject` works or weakening the existing `in-progress -> review` execution-summary requirement.
-contextFiles:
+context_files:
 - orbit-types/src/task.rs
 - orbit-core/src/command/task.rs
 - orbit-core/src/lib.rs
 - orbit-cli/tests/task_commands.rs
-workspacePath: /Users/daniel/workspace/repos/orbit
-assignedTo: Codex
-createdBy: Codex
+workspace_path: /Users/daniel/workspace/repos/orbit
+assigned_to: Codex
+created_by: Codex
 priority: medium
 type: feature
 branch: null
-prNumber: null
-proposedBy: daniel
-proposalApprovedBy: null
-proposalRejectedBy: null
-proposalDecisionNote: null
-reviewApprovedBy: null
-reviewRejectedBy: null
-reviewDecisionNote: null
-createdAt: 2026-03-14T23:29:45.267829Z
-updatedAt: 2026-03-14T23:29:45.267829Z
-acceptanceCriteria: []
+pr_number: null
+proposed_by: daniel
+proposal_approved_by: null
+proposal_rejected_by: null
+proposal_decision_note: null
+review_approved_by: null
+review_rejected_by: null
+review_decision_note: null
+created_at: 2026-03-14T23:29:45.267829Z
+updated_at: 2026-03-14T23:29:45.267829Z
+acceptance_criteria: []
 history:
 - at: 2026-03-14T23:29:45.267829Z
   by: Codex
   event: created
 comments: []
-activityId: null
-jobId: null
-jobRunId: null
+activity_id: null
+job_id: null
+job_run_id: null

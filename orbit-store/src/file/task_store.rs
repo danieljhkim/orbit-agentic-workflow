@@ -130,9 +130,8 @@ impl TaskStateDir {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct TaskFileDocument {
-    #[serde(rename = "schema_version", alias = "schemaVersion")]
+    #[serde(rename = "schema_version")]
     schema_version: u8,
     id: String,
     #[serde(rename = "type", default = "default_task_type")]
@@ -622,51 +621,51 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_section("content"));
     yaml.push_str(&yaml_field("title", &doc.title)?);
     yaml.push_str(&yaml_field("description", &doc.description)?);
-    yaml.push_str(&yaml_field("acceptanceCriteria", &doc.acceptance_criteria)?);
+    yaml.push_str(&yaml_field("acceptance_criteria", &doc.acceptance_criteria)?);
 
     yaml.push_str(&yaml_section("context"));
-    yaml.push_str(&yaml_field("contextFiles", &doc.context_files)?);
-    yaml.push_str(&yaml_field("workspacePath", &doc.workspace_path)?);
+    yaml.push_str(&yaml_field("context_files", &doc.context_files)?);
+    yaml.push_str(&yaml_field("workspace_path", &doc.workspace_path)?);
 
     yaml.push_str(&yaml_section("ownership"));
-    yaml.push_str(&yaml_field("createdBy", &doc.created_by)?);
-    yaml.push_str(&yaml_field("assignedTo", &doc.assigned_to)?);
+    yaml.push_str(&yaml_field("created_by", &doc.created_by)?);
+    yaml.push_str(&yaml_field("assigned_to", &doc.assigned_to)?);
 
     yaml.push_str(&yaml_section("proposal workflow"));
-    yaml.push_str(&yaml_field("proposedBy", &doc.proposed_by)?);
+    yaml.push_str(&yaml_field("proposed_by", &doc.proposed_by)?);
     yaml.push_str(&yaml_field(
-        "proposalApprovedBy",
+        "proposal_approved_by",
         &doc.proposal_approved_by,
     )?);
     yaml.push_str(&yaml_field(
-        "proposalRejectedBy",
+        "proposal_rejected_by",
         &doc.proposal_rejected_by,
     )?);
     yaml.push_str(&yaml_field(
-        "proposalDecisionNote",
+        "proposal_decision_note",
         &doc.proposal_decision_note,
     )?);
 
     yaml.push_str(&yaml_section("implementation"));
     yaml.push_str(&yaml_field("branch", &doc.branch)?);
-    yaml.push_str(&yaml_field("prNumber", &doc.pr_number)?);
+    yaml.push_str(&yaml_field("pr_number", &doc.pr_number)?);
 
     yaml.push_str(&yaml_section("review workflow"));
-    yaml.push_str(&yaml_field("reviewApprovedBy", &doc.review_approved_by)?);
-    yaml.push_str(&yaml_field("reviewRejectedBy", &doc.review_rejected_by)?);
+    yaml.push_str(&yaml_field("review_approved_by", &doc.review_approved_by)?);
+    yaml.push_str(&yaml_field("review_rejected_by", &doc.review_rejected_by)?);
     yaml.push_str(&yaml_field(
-        "reviewDecisionNote",
+        "review_decision_note",
         &doc.review_decision_note,
     )?);
 
     yaml.push_str(&yaml_section("execution references"));
-    yaml.push_str(&yaml_field("activityId", &doc.activity_id)?);
-    yaml.push_str(&yaml_field("jobId", &doc.job_id)?);
-    yaml.push_str(&yaml_field("jobRunId", &doc.job_run_id)?);
+    yaml.push_str(&yaml_field("activity_id", &doc.activity_id)?);
+    yaml.push_str(&yaml_field("job_id", &doc.job_id)?);
+    yaml.push_str(&yaml_field("job_run_id", &doc.job_run_id)?);
 
     yaml.push_str(&yaml_section("timestamps"));
-    yaml.push_str(&yaml_field("createdAt", &doc.created_at)?);
-    yaml.push_str(&yaml_field("updatedAt", &doc.updated_at)?);
+    yaml.push_str(&yaml_field("created_at", &doc.created_at)?);
+    yaml.push_str(&yaml_field("updated_at", &doc.updated_at)?);
 
     yaml.push_str(&yaml_section("audit trail"));
     yaml.push_str(&yaml_field("history", &doc.history)?);
@@ -798,6 +797,20 @@ mod tests {
         let yaml = fs::read_to_string(task_dir.join(TASK_DOC_FILE_NAME)).expect("read yaml");
         assert!(yaml.contains("schema_version: 4"));
         assert!(yaml.contains("description: Task description"));
+        assert!(yaml.contains("context_files:"));
+        assert!(yaml.contains("workspace_path: /tmp/workspace"));
+        assert!(yaml.contains("created_by: Codex"));
+        assert!(yaml.contains("assigned_to: Codex"));
+        assert!(yaml.contains("proposed_by: daniel"));
+        assert!(yaml.contains("created_at:"));
+        assert!(yaml.contains("updated_at:"));
+        assert!(!yaml.contains("contextFiles:"));
+        assert!(!yaml.contains("workspacePath:"));
+        assert!(!yaml.contains("createdBy:"));
+        assert!(!yaml.contains("assignedTo:"));
+        assert!(!yaml.contains("proposedBy:"));
+        assert!(!yaml.contains("createdAt:"));
+        assert!(!yaml.contains("updatedAt:"));
         assert!(!yaml.contains("plan:"));
         assert!(!yaml.contains("execution_summary:"));
         assert_eq!(
@@ -835,6 +848,8 @@ mod tests {
         let yaml = fs::read_to_string(task_dir.join(TASK_DOC_FILE_NAME)).expect("read yaml");
         assert!(yaml.contains("schema_version: 4"));
         assert!(yaml.contains("description: Updated description"));
+        assert!(yaml.contains("updated_at:"));
+        assert!(!yaml.contains("updatedAt:"));
         assert_eq!(
             fs::read_to_string(task_dir.join(PLAN_FILE_NAME)).expect("plan"),
             "Updated plan"
