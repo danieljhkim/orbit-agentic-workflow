@@ -82,12 +82,14 @@ pub struct ActivityUpdateParams {
 #[derive(Debug, Clone)]
 pub struct JobCreateParams {
     pub job_id: Option<String>,
+    pub default_input: Option<Value>,
     pub steps: Vec<JobStep>,
     pub initial_state: JobScheduleState,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct JobUpdateParams {
+    pub default_input: Option<Option<Value>>,
     pub steps: Option<Vec<JobStep>>,
     pub state: Option<JobScheduleState>,
 }

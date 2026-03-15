@@ -10,14 +10,13 @@ activity:
   input_schema_json:
     properties:
       base:
-        description: Branch or commit to start from (e.g. main)
+        description: Branch or commit to start from (e.g. main). Defaults to main in job_task_pipeline.
         type: string
       task_id:
         description: The Orbit task ID to create a branch for
         type: string
     required:
     - task_id
-    - base
     type: object
   output_schema_json:
     properties:

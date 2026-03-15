@@ -2,6 +2,8 @@ schemaVersion: 1
 job:
   job_id: job_task_pipeline
   state: enabled
+  default_input:
+    base: main
   steps:
   - target_type: activity
     target_id: dispatch_task

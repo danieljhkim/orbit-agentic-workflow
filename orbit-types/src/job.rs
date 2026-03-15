@@ -141,10 +141,12 @@ pub struct JobStep {
     pub env_extra: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Job {
     pub job_id: OrbitId,
     pub state: JobScheduleState,
+    #[serde(default)]
+    pub default_input: Option<Value>,
     pub steps: Vec<JobStep>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

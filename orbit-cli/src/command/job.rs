@@ -63,6 +63,7 @@ impl Execute for JobAddArgs {
 
         let job = runtime.add_job(JobAddParams {
             job_id: self.job_id,
+            default_input: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: self.target_id,
@@ -144,6 +145,11 @@ impl Execute for JobShowArgs {
         } else {
             println!("Job ID:            {}", job.job_id);
             println!("State:             {}", job.state);
+            if let Some(default_input) = &job.default_input {
+                let rendered = serde_json::to_string(default_input)
+                    .unwrap_or_else(|_| "<invalid-json>".to_string());
+                println!("Default Input:     {}", rendered);
+            }
             println!("Steps:             {}", job.steps.len());
             for (i, step) in job.steps.iter().enumerate() {
                 println!("  Step {}:", i + 1);
@@ -312,6 +318,7 @@ fn job_to_json(job: &Job) -> Value {
     json!({
         "job_id": job.job_id,
         "state": job.state.to_string(),
+        "default_input": job.default_input,
         "created_at": job.created_at.to_rfc3339(),
         "updated_at": job.updated_at.to_rfc3339(),
         "steps": job.steps.iter().map(|s| json!({

@@ -103,6 +103,7 @@ mod tests {
         let job = Job {
             job_id: "job-1".to_string(),
             state: JobScheduleState::Enabled,
+            default_input: Some(serde_json::json!({"base": "main"})),
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "exec-1".to_string(),
@@ -115,6 +116,7 @@ mod tests {
         };
         let job_value = serde_json::to_value(job).expect("serialize job");
         assert_eq!(job_value["state"], "enabled");
+        assert_eq!(job_value["default_input"]["base"], "main");
         assert_eq!(job_value["steps"][0]["target_type"], "activity");
 
         let run = JobRun {

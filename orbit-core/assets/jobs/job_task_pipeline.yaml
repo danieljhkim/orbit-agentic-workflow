@@ -16,6 +16,8 @@ job:
   #   open_pr          — open PR from orbit/<task_id> into base
   #   checkout_branch  — return to base branch + pull/rebase
   #   review_pr        — review the opened PR against task acceptance criteria
+  default_input:
+    base: main
   steps:
     - target_type: activity
       target_id: dispatch_task

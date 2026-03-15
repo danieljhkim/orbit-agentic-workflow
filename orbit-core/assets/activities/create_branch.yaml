@@ -17,14 +17,13 @@ activity:
     type: object
     required:
       - task_id
-      - base
     properties:
       task_id:
         type: string
         description: The Orbit task ID to create a branch for
       base:
         type: string
-        description: Branch or commit to start from (e.g. main)
+        description: Branch or commit to start from (e.g. main). Defaults to main in job_task_pipeline.
   output_schema_json:
     type: object
     properties:

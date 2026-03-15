@@ -50,6 +50,7 @@ impl JobFileStore {
     pub(crate) fn insert_activity_v2(
         &self,
         job_id: Option<String>,
+        default_input: Option<serde_json::Value>,
         steps: Vec<JobStep>,
         initial_state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
@@ -69,6 +70,7 @@ impl JobFileStore {
         let job = Job {
             job_id: resolved_id,
             state: initial_state,
+            default_input,
             steps,
             created_at: now,
             updated_at: now,
@@ -105,6 +107,7 @@ impl JobFileStore {
     pub(crate) fn update_job(
         &self,
         job_id: &str,
+        default_input: Option<Option<serde_json::Value>>,
         steps: Option<Vec<JobStep>>,
         state: Option<JobScheduleState>,
     ) -> Result<Job, OrbitError> {
@@ -113,6 +116,9 @@ impl JobFileStore {
             return Err(OrbitError::JobNotFound(job_id.to_string()));
         };
 
+        if let Some(default_input) = default_input {
+            job.default_input = default_input;
+        }
         if let Some(steps) = steps {
             job.steps = steps;
         }
@@ -672,6 +678,7 @@ fn is_yaml(path: &Path) -> bool {
 mod tests {
     use chrono::Utc;
     use orbit_types::{JobRunState, JobScheduleState, JobStep, JobTargetType, OrbitError};
+    use serde_json::json;
 
     use super::JobFileStore;
 
@@ -693,7 +700,12 @@ mod tests {
 
     fn insert_test_job(store: &JobFileStore, target_id: &str) -> orbit_types::Job {
         store
-            .insert_activity_v2(None, vec![make_step(target_id)], JobScheduleState::Enabled)
+            .insert_activity_v2(
+                None,
+                None,
+                vec![make_step(target_id)],
+                JobScheduleState::Enabled,
+            )
             .expect("insert job")
     }
 
@@ -849,6 +861,7 @@ mod tests {
         let written = store
             .insert_activity_v2(
                 Some("job-roundtrip-test".to_string()),
+                Some(json!({"base": "main"})),
                 vec![step],
                 JobScheduleState::Disabled,
             )
@@ -878,6 +891,7 @@ mod tests {
 
         assert_eq!(read_back.job_id, written.job_id);
         assert_eq!(read_back.state, JobScheduleState::Disabled);
+        assert_eq!(read_back.default_input, Some(json!({"base": "main"})));
         assert_eq!(read_back.steps.len(), 1);
         assert_eq!(read_back.steps[0].target_id, "target-roundtrip");
         assert_eq!(read_back.steps[0].agent_cli, "my-agent-cli");

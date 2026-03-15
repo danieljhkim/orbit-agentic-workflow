@@ -137,11 +137,16 @@ impl ActivityStoreBackend for ActivityFileStore {
 
 impl JobStoreBackend for JobFileStore {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
-        self.insert_activity_v2(params.job_id, params.steps, params.initial_state)
+        self.insert_activity_v2(
+            params.job_id,
+            params.default_input,
+            params.steps,
+            params.initial_state,
+        )
     }
 
     fn update_job(&self, job_id: &str, params: JobUpdateParams) -> Result<Job, OrbitError> {
-        self.update_job(job_id, params.steps, params.state)
+        self.update_job(job_id, params.default_input, params.steps, params.state)
     }
 
     fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {

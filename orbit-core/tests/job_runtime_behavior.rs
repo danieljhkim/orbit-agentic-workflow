@@ -78,6 +78,7 @@ fn add_scheduled_activity_with_timeout(
     runtime
         .add_job(JobAddParams {
             job_id: None,
+            default_input: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: target_id.to_string(),
@@ -174,6 +175,7 @@ fn cli_command_activity_executes_without_agent_cli_and_captures_output_file() {
     let job = runtime
         .add_job(JobAddParams {
             job_id: None,
+            default_input: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-cli-command".to_string(),
@@ -402,6 +404,106 @@ fn run_job_now_with_input_passes_manual_input_to_agent() {
     let stdin_raw = std::fs::read_to_string(stdin_capture).expect("stdin capture");
     let payload: serde_json::Value = serde_json::from_str(&stdin_raw).expect("valid stdin payload");
     assert_eq!(payload["input"]["task_id"], "T123");
+}
+
+#[test]
+fn run_job_now_uses_job_default_input_when_manual_input_is_absent() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let stdin_capture = dir.path().join("job-default-input.json");
+    let script_path = dir.path().join("mock-agent");
+    let script = format!(
+        "#!/bin/sh\ncat > \"{stdin}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        stdin = stdin_capture.to_string_lossy(),
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    add_activity_with_input_schema(
+        &runtime,
+        "spec-default-input",
+        json!({
+            "type": "object",
+            "properties": {
+                "base": { "type": "string" }
+            },
+            "required": ["base"],
+            "additionalProperties": false
+        }),
+    );
+
+    let job = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({ "base": "main" })),
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-default-input".to_string(),
+                agent_cli,
+                timeout_seconds: 10,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job");
+
+    let run = runtime.run_job_now(&job.job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let stdin_raw = std::fs::read_to_string(stdin_capture).expect("stdin capture");
+    let payload: serde_json::Value = serde_json::from_str(&stdin_raw).expect("valid stdin payload");
+    assert_eq!(payload["input"]["base"], "main");
+}
+
+#[test]
+fn run_job_now_with_input_overrides_job_default_input() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let stdin_capture = dir.path().join("job-default-override.json");
+    let script_path = dir.path().join("mock-agent");
+    let script = format!(
+        "#!/bin/sh\ncat > \"{stdin}\"\nprintf '{{\"schemaVersion\":1,\"status\":\"success\",\"result\":{{}},\"error\":null,\"durationMs\":1}}'\n",
+        stdin = stdin_capture.to_string_lossy(),
+    );
+    let agent_cli = write_agent_script(&script_path, &script);
+
+    add_activity_with_input_schema(
+        &runtime,
+        "spec-default-override",
+        json!({
+            "type": "object",
+            "properties": {
+                "base": { "type": "string" },
+                "mode": { "type": "string" }
+            },
+            "required": ["base", "mode"],
+            "additionalProperties": false
+        }),
+    );
+
+    let job = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({ "base": "main", "mode": "auto" })),
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-default-override".to_string(),
+                agent_cli,
+                timeout_seconds: 10,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job");
+
+    let run = runtime
+        .run_job_now_with_input(&job.job_id, json!({ "base": "release" }))
+        .expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let stdin_raw = std::fs::read_to_string(stdin_capture).expect("stdin capture");
+    let payload: serde_json::Value = serde_json::from_str(&stdin_raw).expect("valid stdin payload");
+    assert_eq!(payload["input"]["base"], "release");
+    assert_eq!(payload["input"]["mode"], "auto");
 }
 
 #[test]
@@ -1374,6 +1476,7 @@ fn claude_job_run_succeeds_with_mock_binary() {
     let job_id = runtime
         .add_job(JobAddParams {
             job_id: None,
+            default_input: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-claude-run".to_string(),
@@ -1421,6 +1524,7 @@ fn run_job_now_executes_job_successfully() {
     let job_id = runtime
         .add_job(JobAddParams {
             job_id: None,
+            default_input: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-manual-run".to_string(),
@@ -1511,6 +1615,7 @@ fn agent_step_result_fields_flow_into_next_step_input() {
     let job_id = runtime
         .add_job(JobAddParams {
             job_id: None,
+            default_input: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,
@@ -1597,6 +1702,7 @@ pass = ["HOME", "PATH"]
     let job_id = runtime
         .add_job(JobAddParams {
             job_id: None,
+            default_input: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,

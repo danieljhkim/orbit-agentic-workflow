@@ -33,6 +33,7 @@ const STALE_RUN_GRACE_SECONDS: u64 = 30;
 #[derive(Debug, Clone)]
 pub struct JobAddParams {
     pub job_id: Option<String>,
+    pub default_input: Option<Value>,
     pub steps: Vec<JobStep>,
     pub initial_state_override: Option<JobScheduleState>,
 }
@@ -108,6 +109,7 @@ impl OrbitRuntime {
                 "job must have at least one step".to_string(),
             ));
         }
+        let default_input = normalize_job_default_input(params.default_input)?;
 
         for step in &params.steps {
             if step.target_id.trim().is_empty() {
@@ -145,6 +147,7 @@ impl OrbitRuntime {
 
         let job = self.context.job_store.add_job(StoreActivityCreateParams {
             job_id: params.job_id,
+            default_input,
             steps,
             initial_state,
         })?;
@@ -157,12 +160,14 @@ impl OrbitRuntime {
     pub(crate) fn update_job_definition(
         &self,
         job_id: &str,
+        default_input: Option<Value>,
         steps: Vec<JobStep>,
         state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
         let job = self.context.job_store.update_job(
             job_id,
             StoreJobUpdateParams {
+                default_input: Some(normalize_job_default_input(default_input)?),
                 steps: Some(steps),
                 state: Some(state),
             },
@@ -283,7 +288,7 @@ impl OrbitRuntime {
         let mut total_duration_ms: u64 = 0;
         let mut last_protocol_violation = false;
         let mut last_created_file: Option<String> = None;
-        let mut current_input = input;
+        let mut current_input = merge_job_input(job.default_input.as_ref(), input)?;
 
         for (step_index, step) in job.steps.iter().enumerate() {
             let execution =
@@ -910,6 +915,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
                 json!({
                     "id": job.job_id,
                     "state": job.state,
+                    "default_input": job.default_input,
                     "steps": job.steps.iter().map(|s| json!({
                         "target_type": s.target_type,
                         "target_id": s.target_id,
@@ -1322,6 +1328,57 @@ fn step_output_for_following_input<'a>(
     }
 }
 
+fn normalize_job_default_input(default_input: Option<Value>) -> Result<Option<Value>, OrbitError> {
+    match default_input {
+        None => Ok(None),
+        Some(Value::Object(map)) => Ok(Some(Value::Object(map))),
+        Some(other) => Err(OrbitError::JobValidation(format!(
+            "job default_input must be an object, got {}",
+            json_value_type_name(&other)
+        ))),
+    }
+}
+
+fn merge_job_input(default_input: Option<&Value>, input: Value) -> Result<Value, OrbitError> {
+    let mut merged = match default_input {
+        None => serde_json::Map::new(),
+        Some(Value::Object(map)) => map.clone(),
+        Some(other) => {
+            return Err(OrbitError::InvalidInput(format!(
+                "job default_input must be an object, got {}",
+                json_value_type_name(other)
+            )));
+        }
+    };
+
+    let input_map = match input {
+        Value::Object(map) => map,
+        other => {
+            return Err(OrbitError::InvalidInput(format!(
+                "job run input must be an object, got {}",
+                json_value_type_name(&other)
+            )));
+        }
+    };
+
+    for (key, value) in input_map {
+        merged.insert(key, value);
+    }
+
+    Ok(Value::Object(merged))
+}
+
+fn json_value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 fn activity_envelope_json(activity: &Activity) -> Value {
     let mut envelope = json!({
         "id": activity.id,
@@ -1372,6 +1429,8 @@ struct DefaultJobFileSpec {
 struct DefaultJobEntry {
     job_id: String,
     state: String,
+    #[serde(default)]
+    default_input: Option<Value>,
     steps: Vec<DefaultJobStep>,
 }
 
@@ -1418,7 +1477,12 @@ pub(crate) fn seed_default_jobs(
             }
             let initial_state = parse_default_job_state(&entry.state, &entry.job_id)?;
             let steps = default_job_steps(&entry)?;
-            runtime.update_job_definition(&entry.job_id, steps, initial_state)?;
+            runtime.update_job_definition(
+                &entry.job_id,
+                entry.default_input.clone(),
+                steps,
+                initial_state,
+            )?;
             created += 1;
             continue;
         }
@@ -1426,6 +1490,7 @@ pub(crate) fn seed_default_jobs(
         let steps = default_job_steps(&entry)?;
         runtime.add_job(JobAddParams {
             job_id: Some(entry.job_id),
+            default_input: entry.default_input,
             steps,
             initial_state_override: Some(initial_state),
         })?;
