@@ -58,6 +58,7 @@ pub struct TaskAutomationUpdate {
     pub status: Option<TaskStatus>,
     pub branch: Option<String>,
     pub pr_number: Option<String>,
+    pub execution_summary: Option<String>,
 }
 
 pub trait EngineHost {

@@ -18,6 +18,8 @@ activity:
     required:
       - task_id
       - repo_root
+      - commit_message
+      - changed_files
     properties:
       task_id:
         type: string
@@ -31,6 +33,14 @@ activity:
       base:
         type: string
         description: Base branch to merge into (defaults to agent-main)
+      commit_message:
+        type: string
+        description: Commit message from the preceding commit_task_changes step, used as PR body header.
+      changed_files:
+        type: array
+        items:
+          type: string
+        description: List of changed file paths from the preceding commit_task_changes step.
   output_schema_json:
     type: object
     required:
@@ -50,7 +60,7 @@ activity:
         description: Pull request title derived from the Orbit task title.
       body:
         type: string
-        description: Pull request body derived from the Orbit task execution summary.
+        description: Pull request body built from commit_message and changed_files pipeline inputs.
 
   # ---- execution ----
   action: open_pr_from_task
