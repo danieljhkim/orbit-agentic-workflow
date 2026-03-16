@@ -353,6 +353,32 @@ fn init_git_repo(path: &std::path::Path) {
     assert!(status.success(), "git config name must succeed");
 }
 
+fn git_current_branch(path: &std::path::Path) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(path)
+        .output()
+        .expect("git rev-parse");
+    assert!(output.status.success(), "git rev-parse must succeed");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn git_commit_all(path: &std::path::Path, message: &str) {
+    let status = Command::new("git")
+        .args(["add", "--all"])
+        .current_dir(path)
+        .status()
+        .expect("git add --all");
+    assert!(status.success(), "git add --all must succeed");
+
+    let status = Command::new("git")
+        .args(["commit", "-m", message])
+        .current_dir(path)
+        .status()
+        .expect("git commit");
+    assert!(status.success(), "git commit must succeed");
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JobRunFileDocument {
@@ -668,7 +694,7 @@ fn run_job_now_finalizes_failed_when_pre_step_setup_errors_after_running() {
 
 #[test]
 fn job_run_resolves_activity_identity_from_data_root_when_home_differs() {
-    let _guard = env_lock().lock().expect("env lock");
+    let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let repo_orbit = tempdir().expect("repo orbit");
     let home = tempdir().expect("home");
     let previous_home = std::env::var("HOME").ok();
@@ -1901,6 +1927,264 @@ fn agent_step_workspace_path_flows_into_cli_working_directory() {
         cli_output["cwd"],
         json!(expected_cwd.to_string_lossy().to_string())
     );
+}
+
+#[test]
+fn agent_step_uses_workspace_path_as_process_current_dir() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let workspace_dir = dir.path().join("task-worktree");
+    std::fs::create_dir_all(&workspace_dir).expect("create workspace");
+
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{\"cwd\":\"%s\"},\"error\":null,\"durationMs\":1}' \"$PWD\"\n",
+    );
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-agent-current-dir".to_string(),
+            spec_type: "agent_invoke".to_string(),
+            description: "agent step runs inside workspace_path".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "workspace_path": { "type": "string" }
+                }
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "cwd": { "type": "string" }
+                },
+                "required": ["cwd"]
+            }),
+            spec_config: json!({
+                "instruction": "Return the current working directory."
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({
+                "workspace_path": workspace_dir.to_string_lossy().to_string()
+            })),
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-agent-current-dir".to_string(),
+                agent_cli,
+                timeout_seconds: 10,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let result = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(result.state, JobRunState::Success);
+
+    let history = runtime.job_history(&job_id).expect("job history");
+    let response = history[0]
+        .steps
+        .first()
+        .and_then(|step| step.agent_response_json.as_ref())
+        .expect("agent response");
+    let expected_cwd = workspace_dir.canonicalize().expect("canonical workspace");
+    assert_eq!(
+        response["result"]["cwd"],
+        json!(expected_cwd.to_string_lossy().to_string())
+    );
+}
+
+#[test]
+fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
+    let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let dir = tempdir().expect("tempdir");
+    let data_root = dir.path().join("orbit");
+    std::fs::create_dir_all(&data_root).expect("create data root");
+    let repo_root = dir.path().join("repo");
+    std::fs::create_dir_all(&repo_root).expect("create repo root");
+    init_git_repo(&repo_root);
+    std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
+    git_commit_all(&repo_root, "chore: seed repo");
+
+    let rename_status = Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
+    assert!(rename_status.success(), "git branch -M must succeed");
+    assert_eq!(git_current_branch(&repo_root), "agent-main");
+
+    let worktree_root = dir.path().join("worktrees");
+    let previous_worktree_root = std::env::var("ORBIT_WORKTREE_ROOT").ok();
+    unsafe {
+        std::env::set_var("ORBIT_WORKTREE_ROOT", &worktree_root);
+    }
+
+    let runtime = OrbitRuntime::from_data_root(&data_root).expect("runtime");
+    let create_script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts/orbit-create-task-worktree.sh");
+    let capture_script = dir.path().join("capture-worktree-context.sh");
+    std::fs::write(
+        &capture_script,
+        "#!/bin/sh\nbranch=$(git rev-parse --abbrev-ref HEAD)\nprintf '{\"cwd\":\"%s\",\"branch\":\"%s\"}' \"$PWD\" \"$branch\" > \"$ORBIT_OUTPUT_FILE\"\n",
+    )
+    .expect("write capture script");
+    #[cfg(unix)]
+    std::fs::set_permissions(&capture_script, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod capture script");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-create-task-worktree".to_string(),
+            spec_type: "cli_command".to_string(),
+            description: "create isolated task worktree".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "base": { "type": "string" },
+                    "workspace_path": { "type": "string" }
+                },
+                "required": ["task_id", "base", "workspace_path"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "exit_code": { "type": "integer" },
+                    "workspace_path": { "type": "string" },
+                    "repo_root": { "type": "string" },
+                    "branch": { "type": "string" }
+                },
+                "required": ["exit_code", "workspace_path", "repo_root", "branch"]
+            }),
+            spec_config: json!({
+                "command": "bash",
+                "args": [
+                    create_script.to_string_lossy().to_string(),
+                    "{{workspace_path}}",
+                    "{{input.task_id}}",
+                    "{{input.base}}"
+                ],
+                "working_dir": "{{workspace_path}}",
+                "expected_exit_codes": [0]
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add create activity");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-capture-worktree-context".to_string(),
+            spec_type: "cli_command".to_string(),
+            description: "capture task worktree context".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "workspace_path": { "type": "string" },
+                    "repo_root": { "type": "string" },
+                    "branch": { "type": "string" }
+                },
+                "required": ["workspace_path", "repo_root", "branch"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "cwd": { "type": "string" },
+                    "branch": { "type": "string" }
+                },
+                "required": ["cwd", "branch"]
+            }),
+            spec_config: json!({
+                "command": capture_script.to_string_lossy().to_string(),
+                "working_dir": "{{workspace_path}}",
+                "expected_exit_codes": [0]
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add capture activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({
+                "task_id": "Tworktree",
+                "base": "agent-main",
+                "workspace_path": repo_root.to_string_lossy().to_string()
+            })),
+            steps: vec![
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-create-task-worktree".to_string(),
+                    agent_cli: String::new(),
+                    timeout_seconds: 30,
+                    env_extra: vec![],
+                },
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-capture-worktree-context".to_string(),
+                    agent_cli: String::new(),
+                    timeout_seconds: 30,
+                    env_extra: vec![],
+                },
+            ],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let run_result = runtime.run_job_now(&job_id);
+    match previous_worktree_root {
+        Some(value) => unsafe { std::env::set_var("ORBIT_WORKTREE_ROOT", value) },
+        None => unsafe { std::env::remove_var("ORBIT_WORKTREE_ROOT") },
+    }
+
+    let result = run_result.expect("run job");
+    assert_eq!(result.state, JobRunState::Success);
+
+    let history = runtime.job_history(&job_id).expect("job history");
+    let create_output = history[0]
+        .steps
+        .first()
+        .and_then(|step| step.agent_response_json.as_ref())
+        .expect("create output");
+    let capture_output = history[0]
+        .steps
+        .get(1)
+        .and_then(|step| step.agent_response_json.as_ref())
+        .expect("capture output");
+
+    let task_worktree = create_output["workspace_path"]
+        .as_str()
+        .expect("workspace_path");
+    let canonical_task_worktree = std::path::PathBuf::from(task_worktree)
+        .canonicalize()
+        .expect("canonical task worktree");
+    assert_ne!(task_worktree, repo_root.to_string_lossy().as_ref());
+    assert!(task_worktree.starts_with(worktree_root.to_string_lossy().as_ref()));
+    assert_eq!(
+        create_output["repo_root"],
+        json!(repo_root.to_string_lossy().to_string())
+    );
+    assert_eq!(create_output["branch"], json!("orbit/Tworktree"));
+    assert_eq!(capture_output["branch"], json!("orbit/Tworktree"));
+    assert_eq!(
+        capture_output["cwd"],
+        json!(canonical_task_worktree.to_string_lossy().to_string())
+    );
+    assert_eq!(git_current_branch(&repo_root), "agent-main");
 }
 
 #[test]

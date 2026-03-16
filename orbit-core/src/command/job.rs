@@ -720,7 +720,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             &ExecRequest {
                 program: invocation.program,
                 args,
-                current_dir: None,
+                current_dir: execution_working_directory(execution),
                 timeout_ms: Some(execution.timeout_seconds.saturating_mul(1000)),
                 stdin_mode: StdinMode::Bytes(invocation.stdin),
                 environment_mode,
@@ -1436,6 +1436,14 @@ fn input_workspace_path(input: &Value) -> Option<String> {
         .and_then(|map| map.get("workspace_path"))
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
+}
+
+fn execution_working_directory(execution: &ExecutionContext) -> Option<String> {
+    execution
+        .activity
+        .workspace_path
+        .clone()
+        .or_else(|| input_workspace_path(&execution.input))
 }
 
 fn redact_attempt_outcome(mut outcome: AttemptOutcome) -> AttemptOutcome {

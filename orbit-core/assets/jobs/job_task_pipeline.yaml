@@ -10,11 +10,11 @@ job:
   #
   # Step flow:
   #   dispatch_task
-  #   create_branch    — checkout base + pull/rebase + create orbit/<task_id>
-  #   implement_change — fetch task, implement plan, run tests, commit, move to review
-  #   run_tests        — verify tests pass on the task branch
+  #   create_branch    — create or reuse isolated worktree + orbit/<task_id> branch
+  #   implement_change — implement in the task worktree, run tests, commit, move to review
+  #   run_tests        — verify tests pass inside the task worktree
   #   open_pr          — open PR from orbit/<task_id> into base
-  #   checkout_branch  — return to base branch + pull/rebase
+  #   checkout_branch  — finalize task worktree execution without mutating the main checkout
   #   review_pr        — review the opened PR against task acceptance criteria
   default_input:
     base: agent-main

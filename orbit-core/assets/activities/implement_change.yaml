@@ -19,6 +19,7 @@ activity:
     1. Call orbit.task.show with id: "{{input.task_id}}" to fetch the task.
        - Read the task title, description, plan, acceptanceCriteria, contextFiles,
          and workspacePath carefully before touching any code.
+       - If input.workspace_path is provided, treat that as the authoritative implementation workspace.
 
     2. Call orbit.task.update with:
        - id: "{{input.task_id}}"
@@ -27,6 +28,7 @@ activity:
     3. Explore the workspace:
        - Use fs.list and fs.read to read the files listed in contextFiles and any
          other files the plan references. Understand the existing code before writing.
+       - All relative file and process work should happen inside input.workspace_path when provided.
 
     4. Implement the plan:
        - Follow the plan steps in order.
@@ -34,13 +36,17 @@ activity:
        - Do not refactor unrelated code or add unrequested features.
 
     5. Verify the implementation:
-       - Use proc.spawn to run the project's test and lint commands from workspacePath.
+       - Use proc.spawn to run the project's test and lint commands from input.workspace_path when provided,
+         otherwise from the task workspacePath.
          Common commands: `cargo test --workspace`, `make check`, `npm test`.
        - If tests fail, fix the issue before continuing. Do not move to review with
          failing tests.
 
     6. Commit the changes:
-       - Call git.stage_paths with the list of files you created or modified.
+       - Call git.stage_paths with repo_root set to input.workspace_path when provided,
+         otherwise the task workspacePath.
+       - Call git.commit with repo_root set to input.workspace_path when provided,
+         otherwise the task workspacePath.
        - Call git.commit with a concise commit message following the project's convention.
          Include the task ID in the message, e.g. "feat: <summary> [{{input.task_id}}]".
 
@@ -93,6 +99,15 @@ activity:
       task_id:
         type: string
         description: The Orbit task ID to implement
+      workspace_path:
+        type: string
+        description: Optional task worktree path. If provided, it is the authoritative implementation workspace.
+      repo_root:
+        type: string
+        description: Optional repository root or task worktree path to use for git operations.
+      branch:
+        type: string
+        description: Optional task branch name expected to be checked out in the implementation workspace.
   output_schema_json:
     type: object
     required:

@@ -107,6 +107,29 @@ fn pipeline_cli_activity_assets_document_workspace_path_input() {
 }
 
 #[test]
+fn worktree_pipeline_assets_document_isolated_worktree_contract() {
+    let create_branch = include_str!("../assets/activities/create_branch.yaml");
+    assert!(
+        create_branch.contains("repo_root:\n        type: string"),
+        "create_branch should declare repo_root output for downstream finalization"
+    );
+    assert!(
+        create_branch.contains("branch:\n        type: string"),
+        "create_branch should declare the task branch it checked out"
+    );
+
+    let checkout_branch = include_str!("../assets/activities/checkout_branch.yaml");
+    assert!(
+        checkout_branch.contains("cleanup_strategy:\n        type: string"),
+        "checkout_branch should describe how the task worktree was finalized"
+    );
+    assert!(
+        checkout_branch.contains("required:\n      - workspace_path\n      - repo_root"),
+        "checkout_branch should require the worktree and repo_root inputs it consumes"
+    );
+}
+
+#[test]
 fn identity_assets_use_grouped_sections_and_literal_description_blocks() {
     let assets = [
         ("lamport", include_str!("../assets/identities/lamport.yaml")),

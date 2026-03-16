@@ -6,28 +6,47 @@ updated_at: 2026-03-15T22:46:27.210753Z
 activity:
   id: checkout_branch
   spec_type: cli_command
-  description: Check out a git branch, typically used to return to the base branch after task work is complete
+  description: Finalize isolated task worktree execution without mutating the human checkout
   input_schema_json:
     properties:
       base:
         description: Branch name to check out (e.g. main)
         type: string
+      repo_root:
+        description: Canonical repository root that owns the task worktree.
+        type: string
       workspace_path:
-        description: Task workspace path propagated from dispatch_task for CLI execution.
+        description: Task worktree path propagated from create_branch for downstream execution.
         type: string
     required:
-    - base
+      - workspace_path
+      - repo_root
     type: object
   output_schema_json:
     properties:
+      cleanup_strategy:
+        description: Summary of how the task worktree was left after finalization.
+        type: string
       exit_code:
         type: integer
+      repo_root:
+        description: Canonical repository root that owns the task worktree.
+        type: string
+      workspace_path:
+        description: Task worktree path retained after pipeline completion.
+        type: string
+    required:
+      - exit_code
+      - workspace_path
+      - repo_root
+      - cleanup_strategy
     type: object
   args:
-  - -c
-  - git checkout '{{input.base}}' && git pull --rebase origin '{{input.base}}'
+    - scripts/orbit-finalize-task-worktree.sh
+    - '{{input.repo_root}}'
+    - '{{workspace_path}}'
   command: bash
   expected_exit_codes:
-  - 0
+    - 0
   timeout_seconds: 60
-  working_dir: '{{workspace_path}}'
+  working_dir: "{{input.repo_root}}"
