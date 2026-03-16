@@ -94,14 +94,15 @@ fn commit_task_changes<H: EngineHost>(host: &H, input: &Value) -> Result<Value, 
     )?;
     let repo_root = canonicalize_existing_dir(&input_repo_root(input)?, "repo_root")?;
     let expected_branch = input_string_field(input, "branch");
-    let task = host.get_task(task_id)?;
-
-    if task.execution_summary.trim().is_empty() {
+    let summary = input_string_field(input, "summary").unwrap_or_default();
+    if summary.trim().is_empty() {
         return Err(OrbitError::Execution(format!(
-            "task '{}' must have a non-empty execution_summary before commit_task_changes",
-            task.id
+            "task '{}' commit_task_changes requires a non-empty summary from implement_change",
+            task_id
         )));
     }
+
+    let task = host.get_task(task_id)?;
 
     let actual_branch = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if let Some(expected_branch) = expected_branch.as_deref()
@@ -128,7 +129,7 @@ fn commit_task_changes<H: EngineHost>(host: &H, input: &Value) -> Result<Value, 
         )));
     }
 
-    let message = task_commit_message(&task.task_type, &task.title, &task.id);
+    let message = task_commit_message(&task.task_type, &task.title, &task.id, &summary);
     git_success(&workspace_path, &["commit", "-m", &message])?;
     let commit_sha = git_output(&workspace_path, &["rev-parse", "HEAD"])?;
 
@@ -147,14 +148,23 @@ fn open_pr_from_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, Or
     let repo_root = canonicalize_existing_dir(&input_repo_root(input)?, "repo_root")?;
     let branch = input_string_field(input, "branch");
     let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
-    let task = host.get_task(task_id)?;
+    let commit_message = input_string_field(input, "commit_message").unwrap_or_default();
+    let changed_files: Vec<String> = input
+        .get("changed_files")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default();
+    let body = format!(
+        "## Changes\n{}\n\n## Files Changed\n{}",
+        commit_message,
+        changed_files
+            .iter()
+            .map(|f| format!("- `{f}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 
-    if task.execution_summary.trim().is_empty() {
-        return Err(OrbitError::Execution(format!(
-            "task '{}' must have a non-empty execution_summary before open_pr_from_task",
-            task.id
-        )));
-    }
+    let task = host.get_task(task_id)?;
 
     let head = branch.or_else(|| task.branch.clone()).ok_or_else(|| {
         OrbitError::Execution(format!(
@@ -163,7 +173,6 @@ fn open_pr_from_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, Or
         ))
     })?;
     let title = task.title.trim().to_string();
-    let body = task.execution_summary.clone();
     let tool_context = ToolContext {
         cwd: Some(repo_root.to_string_lossy().to_string()),
     };
@@ -212,6 +221,7 @@ fn open_pr_from_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, Or
             status: target_status,
             branch: Some(head.clone()),
             pr_number: Some(pr_number.clone()),
+            execution_summary: Some(body.clone()),
         },
     )?;
 
@@ -517,7 +527,7 @@ fn git_command_success(current_dir: &Path, args: &[&str]) -> Result<bool, OrbitE
     Ok(result.success)
 }
 
-fn task_commit_message(task_type: &TaskType, title: &str, task_id: &str) -> String {
+fn task_commit_message(task_type: &TaskType, title: &str, task_id: &str, body: &str) -> String {
     let prefix = match task_type {
         TaskType::Task | TaskType::Feature => "feat",
         TaskType::Issue => "fix",
@@ -525,7 +535,7 @@ fn task_commit_message(task_type: &TaskType, title: &str, task_id: &str) -> Stri
         TaskType::Refactor => "refactor",
     };
     let summary = title.split_whitespace().collect::<Vec<_>>().join(" ");
-    format!("{prefix}: {summary} [{task_id}]")
+    format!("{prefix}: {summary} [{task_id}]\n\n{body}")
 }
 
 fn json_number_to_string(value: &Value) -> Option<String> {

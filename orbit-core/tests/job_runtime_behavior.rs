@@ -2147,22 +2147,6 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
         .expect("branch")
         .to_string();
 
-    runtime
-        .update_task(
-            &task_id,
-            TaskUpdateParams {
-                title: None,
-                description: None,
-                plan: None,
-                execution_summary: Some("Implemented the automation refactor.".to_string()),
-                comment: None,
-                status: None,
-                branch: None,
-                pr_number: None,
-            },
-        )
-        .expect("set execution summary");
-
     let worktree_path = std::path::PathBuf::from(&workspace_path);
     std::fs::write(worktree_path.join("README.md"), "seed\nupdated\n").expect("update tracked");
     std::fs::write(worktree_path.join("new-file.txt"), "new\n").expect("write new file");
@@ -2210,7 +2194,8 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
                 "task_id": task_id,
                 "workspace_path": workspace_path,
                 "repo_root": repo_root.to_string_lossy().to_string(),
-                "branch": branch
+                "branch": branch,
+                "summary": "Implemented the automation refactor."
             })),
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
@@ -2239,7 +2224,9 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
     assert_eq!(commit_output["branch"], json!(format!("orbit/{task_id}")));
     assert_eq!(
         commit_output["commit_message"],
-        json!(format!("refactor: Refactor automation flow [{task_id}]"))
+        json!(format!(
+            "refactor: Refactor automation flow [{task_id}]\n\nImplemented the automation refactor."
+        ))
     );
     assert_eq!(
         commit_output["changed_files"],
@@ -2253,13 +2240,151 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
         .expect("git log");
     assert_eq!(
         String::from_utf8_lossy(&log.stdout).trim(),
-        format!("refactor: Refactor automation flow [{task_id}]")
+        format!("refactor: Refactor automation flow [{task_id}]\n\nImplemented the automation refactor.")
     );
     assert_eq!(git_current_branch(&repo_root), "agent-main");
 }
 
 #[test]
-fn open_pr_automation_uses_task_title_and_execution_summary() {
+fn commit_task_changes_uses_summary_from_input() {
+    // Regression: commit_task_changes must accept summary from pipeline input, not from task store.
+    // The task store has no execution_summary; the automation should succeed because summary is in input.
+    // When summary is absent from input the automation must fail with a clear error.
+    let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let dir = tempdir().expect("tempdir");
+    let data_root = dir.path().join("orbit");
+    std::fs::create_dir_all(&data_root).expect("create data root");
+    let repo_root = dir.path().join("repo");
+    std::fs::create_dir_all(&repo_root).expect("create repo root");
+    init_git_repo(&repo_root);
+    std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
+    git_commit_all(&repo_root, "chore: seed repo");
+    Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
+
+    let worktree_root = dir.path().join("worktrees");
+    let previous_worktree_root = std::env::var("ORBIT_WORKTREE_ROOT").ok();
+    unsafe {
+        std::env::set_var("ORBIT_WORKTREE_ROOT", &worktree_root);
+    }
+
+    let runtime = OrbitRuntime::from_data_root(&data_root).expect("runtime");
+    let task_id = runtime
+        .add_task(TaskAddParams {
+            title: "Fix bundle atomicity".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: Some(repo_root.to_string_lossy().to_string()),
+            priority: TaskPriority::High,
+            task_type: TaskType::Issue,
+        })
+        .expect("add task")
+        .id;
+    // Intentionally do NOT set execution_summary on the task — the automation must not need it.
+
+    // Create worktree via automation so the branch exists.
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-create-wt-regression".to_string(),
+            spec_type: "automation".to_string(),
+            description: "create worktree".to_string(),
+            input_schema_json: json!({"type":"object","properties":{"task_id":{"type":"string"},"base":{"type":"string"},"workspace_path":{"type":"string"}},"required":["task_id","base","workspace_path"]}),
+            output_schema_json: json!({"type":"object","properties":{"workspace_path":{"type":"string"},"branch":{"type":"string"}},"required":["workspace_path","branch"]}),
+            spec_config: json!({"action":"create_task_worktree"}),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add create activity");
+    let create_job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({"task_id": task_id, "base": "agent-main", "workspace_path": repo_root.to_string_lossy().to_string()})),
+            steps: vec![JobStep { target_type: JobTargetType::Activity, target_id: "spec-create-wt-regression".to_string(), agent_cli: String::new(), timeout_seconds: 30, env_extra: vec![] }],
+            initial_state_override: None,
+        })
+        .expect("add create job")
+        .job_id;
+    let create_run = runtime.run_job_now(&create_job_id).expect("run create");
+    assert_eq!(create_run.state, JobRunState::Success);
+    let create_history = runtime.job_history(&create_job_id).expect("create history");
+    let create_output = create_history[0].steps[0].agent_response_json.as_ref().expect("output");
+    let workspace_path = create_output["workspace_path"].as_str().expect("workspace_path").to_string();
+    let branch = create_output["branch"].as_str().expect("branch").to_string();
+
+    std::fs::write(std::path::Path::new(&workspace_path).join("fix.rs"), "fixed\n").expect("write");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-commit-regression".to_string(),
+            spec_type: "automation".to_string(),
+            description: "commit changes".to_string(),
+            input_schema_json: json!({"type":"object","properties":{"task_id":{"type":"string"},"workspace_path":{"type":"string"},"repo_root":{"type":"string"},"branch":{"type":"string"},"summary":{"type":"string"}},"required":["task_id","workspace_path","repo_root","branch","summary"]}),
+            output_schema_json: json!({"type":"object","properties":{"commit_message":{"type":"string"}},"required":["commit_message"]}),
+            spec_config: json!({"action":"commit_task_changes"}),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add commit activity");
+
+    // Case 1: summary present in input, no execution_summary in store → must succeed.
+    let success_job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({"task_id": task_id, "workspace_path": workspace_path, "repo_root": repo_root.to_string_lossy().to_string(), "branch": branch, "summary": "Hardened bundle writes using staged directory rename."})),
+            steps: vec![JobStep { target_type: JobTargetType::Activity, target_id: "spec-commit-regression".to_string(), agent_cli: String::new(), timeout_seconds: 30, env_extra: vec![] }],
+            initial_state_override: None,
+        })
+        .expect("add success job")
+        .job_id;
+    let success_run = runtime.run_job_now(&success_job_id).expect("run success job");
+    match previous_worktree_root.as_ref() {
+        Some(value) => unsafe { std::env::set_var("ORBIT_WORKTREE_ROOT", value) },
+        None => unsafe { std::env::remove_var("ORBIT_WORKTREE_ROOT") },
+    }
+    assert_eq!(success_run.state, JobRunState::Success, "must succeed when summary is in input");
+
+    // Case 2: summary absent from input → must fail with clear error.
+    let task2_id = runtime
+        .add_task(TaskAddParams {
+            title: "Fix bundle atomicity 2".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: Some(repo_root.to_string_lossy().to_string()),
+            priority: TaskPriority::High,
+            task_type: TaskType::Issue,
+        })
+        .expect("add task2")
+        .id;
+    let fail_job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({"task_id": task2_id, "workspace_path": workspace_path, "repo_root": repo_root.to_string_lossy().to_string(), "branch": branch, "summary": ""})),
+            steps: vec![JobStep { target_type: JobTargetType::Activity, target_id: "spec-commit-regression".to_string(), agent_cli: String::new(), timeout_seconds: 30, env_extra: vec![] }],
+            initial_state_override: None,
+        })
+        .expect("add fail job")
+        .job_id;
+    let fail_run = runtime.run_job_now(&fail_job_id).expect("run fail job");
+    assert_eq!(fail_run.state, JobRunState::Failed, "must fail when summary is absent");
+    let fail_history = runtime.job_history(&fail_job_id).expect("fail history");
+    let error_msg = fail_history[0].steps[0].error_message.as_deref().unwrap_or("");
+    assert!(
+        error_msg.contains("requires a non-empty summary"),
+        "error should mention missing summary, got: {error_msg}"
+    );
+}
+
+#[test]
+fn open_pr_automation_uses_task_title_and_commit_output() {
     let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let dir = tempdir().expect("tempdir");
     let data_root = dir.path().join("orbit");
@@ -2335,10 +2460,7 @@ fn open_pr_automation_uses_task_title_and_execution_summary() {
                 title: None,
                 description: None,
                 plan: None,
-                execution_summary: Some(
-                    "## Status\nsuccess\n\n## 1. Summary of Changes\nOrbit owns PR creation now."
-                        .to_string(),
-                ),
+                execution_summary: None,
                 comment: None,
                 status: Some(TaskStatus::InProgress),
                 branch: Some(Some(format!("orbit/{task_id}"))),
@@ -2388,7 +2510,9 @@ fn open_pr_automation_uses_task_title_and_execution_summary() {
                 "task_id": task_id,
                 "repo_root": repo_root.to_string_lossy().to_string(),
                 "branch": format!("orbit/{task_id}"),
-                "base": "agent-main"
+                "base": "agent-main",
+                "commit_message": format!("feat: Wire Orbit PR automation [{task_id}]\n\nOrbit owns PR creation now."),
+                "changed_files": ["orbit-core/src/lib.rs", "orbit-engine/src/executor/automation.rs"]
             })),
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
@@ -2424,11 +2548,10 @@ fn open_pr_automation_uses_task_title_and_execution_summary() {
         std::fs::read_to_string(title_capture).expect("title"),
         "Wire Orbit PR automation"
     );
-    assert!(
-        std::fs::read_to_string(body_capture)
-            .expect("body")
-            .contains("Orbit owns PR creation now.")
-    );
+    let body_content = std::fs::read_to_string(body_capture).expect("body");
+    assert!(body_content.contains("Orbit owns PR creation now."), "body: {body_content}");
+    assert!(body_content.contains("## Files Changed"), "body: {body_content}");
+    assert!(body_content.contains("automation.rs"), "body: {body_content}");
     assert_eq!(
         std::fs::read_to_string(base_capture).expect("base"),
         "agent-main"

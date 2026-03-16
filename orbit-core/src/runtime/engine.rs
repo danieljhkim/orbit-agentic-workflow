@@ -305,7 +305,7 @@ impl EngineHost for OrbitRuntime {
                 title: None,
                 description: None,
                 plan: None,
-                execution_summary: None,
+                execution_summary: update.execution_summary,
                 comment: None,
                 status: update.status,
                 branch: update.branch.map(Some),

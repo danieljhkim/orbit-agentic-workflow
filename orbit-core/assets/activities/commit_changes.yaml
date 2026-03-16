@@ -20,10 +20,14 @@ activity:
       - workspace_path
       - repo_root
       - branch
+      - summary
     properties:
       task_id:
         type: string
         description: The Orbit task ID whose changes should be committed.
+      summary:
+        type: string
+        description: One-paragraph summary of what was implemented, passed from implement_change output.
       workspace_path:
         type: string
         description: Dedicated task worktree path where implementation completed.
@@ -54,7 +58,7 @@ activity:
         description: Branch the commit was created on.
       commit_message:
         type: string
-        description: Deterministic commit message generated from task metadata.
+        description: Commit message generated from task metadata with implementation summary as body.
       commit_sha:
         type: string
         description: Commit SHA created by Orbit automation.

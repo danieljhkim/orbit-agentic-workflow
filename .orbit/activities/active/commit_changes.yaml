@@ -13,6 +13,9 @@ activity:
       repo_root:
         description: Canonical repository root that owns the task worktree.
         type: string
+      summary:
+        description: One-paragraph summary of what was implemented, passed from implement_change output.
+        type: string
       task_id:
         description: The Orbit task ID whose changes should be committed.
         type: string
@@ -24,6 +27,7 @@ activity:
     - workspace_path
     - repo_root
     - branch
+    - summary
     type: object
   output_schema_json:
     properties:
@@ -36,7 +40,7 @@ activity:
           type: string
         type: array
       commit_message:
-        description: Deterministic commit message generated from task metadata.
+        description: Commit message generated from task metadata with implementation summary as body.
         type: string
       commit_sha:
         description: Commit SHA created by Orbit automation.
