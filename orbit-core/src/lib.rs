@@ -17,9 +17,9 @@ pub use context::OrbitContext;
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
-    Activity, AgentSessionStatus, AuditEvent, AuditEventStatus, AuditStats, IdentityRole, Job,
-    JobRun, JobRunState, JobScheduleState, JobStep, JobTargetType, Role, Skill, Task, TaskComment,
-    TaskPriority, TaskStatus, TaskType,
+    Activity, AuditEvent, AuditEventStatus, AuditStats, IdentityRole, Job, JobRun, JobRunState,
+    JobScheduleState, JobStep, JobTargetType, Role, Skill, Task, TaskComment, TaskPriority,
+    TaskStatus, TaskType,
 };
 pub use orbit_types::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,

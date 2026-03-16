@@ -15,7 +15,7 @@ pub mod task;
 pub mod tool;
 
 pub use activity::Activity;
-pub use agent_session::{AgentSession, AgentSessionStatus, AgentToolCall};
+pub use agent_session::AgentToolCall;
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use error::OrbitError;

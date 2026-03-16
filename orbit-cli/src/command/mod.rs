@@ -1,5 +1,4 @@
 pub mod activity;
-pub mod agent;
 pub mod audit;
 pub mod config;
 pub mod identity;
@@ -38,7 +37,6 @@ pub enum Commands {
     Init(init::InitCommand),
     Tool(tool::ToolCommand),
     Task(task::TaskCommand),
-    Agent(agent::AgentCommand),
     Audit(audit::AuditCommand),
     Activity(activity::ActivityCommand),
     Skill(skill::SkillCommand),
@@ -54,7 +52,6 @@ impl Execute for Commands {
             Commands::Init(cmd) => cmd.execute(runtime),
             Commands::Tool(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => cmd.execute(runtime),
-            Commands::Agent(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Activity(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),

@@ -1,9 +1,7 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{
-    AgentSession, AgentSessionStatus, AgentToolCall, AuditEvent, OrbitError, StoredTool,
-};
+use orbit_types::{AuditEvent, OrbitError, StoredTool};
 
-use super::contracts::{AgentSessionStoreBackend, AuditEventStoreBackend, ToolStoreBackend};
+use super::contracts::{AuditEventStoreBackend, ToolStoreBackend};
 use crate::Store;
 use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 
@@ -71,32 +69,5 @@ impl AuditEventStoreBackend for SqliteAuditEventStoreBackend {
 
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         self.store.prune_audit_events(older_than)
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct SqliteAgentSessionStoreBackend {
-    pub(crate) store: Store,
-}
-
-impl AgentSessionStoreBackend for SqliteAgentSessionStoreBackend {
-    fn get_agent_session(&self, session_id: &str) -> Result<Option<AgentSession>, OrbitError> {
-        self.store.get_agent_session(session_id)
-    }
-
-    fn insert_agent_session(&self, session: &AgentSession) -> Result<(), OrbitError> {
-        self.store
-            .with_transaction(|tx| tx.insert_agent_session(session))
-    }
-
-    fn update_agent_session(
-        &self,
-        session_id: &str,
-        tool_calls: &[AgentToolCall],
-        outcome: &str,
-        status: AgentSessionStatus,
-    ) -> Result<bool, OrbitError> {
-        self.store
-            .with_transaction(|tx| tx.update_agent_session(session_id, tool_calls, outcome, status))
     }
 }

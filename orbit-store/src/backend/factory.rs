@@ -4,13 +4,11 @@ use std::sync::Arc;
 use orbit_types::OrbitError;
 
 use super::contracts::{
-    ActivityStoreBackend, AgentSessionStoreBackend, AuditEventStoreBackend, JobStoreBackend,
-    LockStoreBackend, TaskStoreBackend, ToolStoreBackend,
+    ActivityStoreBackend, AuditEventStoreBackend, JobStoreBackend, LockStoreBackend,
+    TaskStoreBackend, ToolStoreBackend,
 };
 use super::memory_backends::MemoryLockStoreBackend;
-use super::sqlite_backends::{
-    SqliteAgentSessionStoreBackend, SqliteAuditEventStoreBackend, SqliteToolStoreBackend,
-};
+use super::sqlite_backends::{SqliteAuditEventStoreBackend, SqliteToolStoreBackend};
 use crate::Store;
 use crate::file::activity_store::ActivityFileStore;
 use crate::file::job_store::JobFileStore;
@@ -40,10 +38,6 @@ pub fn tool_store_sqlite(store: Store) -> Arc<dyn ToolStoreBackend> {
 
 pub fn audit_event_store_sqlite(store: Store) -> Arc<dyn AuditEventStoreBackend> {
     Arc::new(SqliteAuditEventStoreBackend { store })
-}
-
-pub fn agent_session_store_sqlite(store: Store) -> Arc<dyn AgentSessionStoreBackend> {
-    Arc::new(SqliteAgentSessionStoreBackend { store })
 }
 
 pub fn lock_store_memory() -> Arc<dyn LockStoreBackend> {

@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Activity, AgentSession, AgentSessionStatus, AgentToolCall, AuditEvent, Job, JobRun,
-    JobRunState, JobScheduleState, JobStep, OrbitError, StoredTool, Task, TaskComment,
-    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    Activity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep, OrbitError,
+    StoredTool, Task, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
 
@@ -201,18 +200,6 @@ pub trait AuditEventStoreBackend: Send + Sync {
         tool: Option<&str>,
     ) -> Result<Vec<i64>, OrbitError>;
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError>;
-}
-
-pub trait AgentSessionStoreBackend: Send + Sync {
-    fn get_agent_session(&self, session_id: &str) -> Result<Option<AgentSession>, OrbitError>;
-    fn insert_agent_session(&self, session: &AgentSession) -> Result<(), OrbitError>;
-    fn update_agent_session(
-        &self,
-        session_id: &str,
-        tool_calls: &[AgentToolCall],
-        outcome: &str,
-        status: AgentSessionStatus,
-    ) -> Result<bool, OrbitError>;
 }
 
 pub trait LockStoreBackend: Send + Sync {

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "data")]
@@ -139,30 +138,5 @@ pub enum OrbitEvent {
     ActivityProtocolViolation {
         id: String,
         message: String,
-    },
-    AgentSessionStarted {
-        session_id: String,
-        task_id: String,
-        identity_id: Option<String>,
-        identity_name: Option<String>,
-        identity_role: Option<String>,
-        identity_block: Option<String>,
-        skill_names: Vec<String>,
-        composed_context_hash: String,
-        effective_allowed_tools: Vec<String>,
-    },
-    AgentToolCall {
-        session_id: String,
-        task_id: String,
-        skill_names: Vec<String>,
-        tool_name: String,
-        input: Value,
-        output: Option<Value>,
-        success: bool,
-    },
-    AgentSessionCompleted {
-        session_id: String,
-        task_id: String,
-        status: String,
     },
 }

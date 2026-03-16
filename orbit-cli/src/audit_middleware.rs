@@ -257,15 +257,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Agent(_) => CommandMeta {
-            command: "agent".to_string(),
-            subcommand: Some("run".to_string()),
-            tool_name: None,
-            target_type: None,
-            target_id: None,
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
         Commands::Activity(cmd) => {
             use crate::command::activity::ActivitySubcommand;
             let (sub, target_id) = match &cmd.command {
