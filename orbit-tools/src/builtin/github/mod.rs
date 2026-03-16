@@ -44,7 +44,7 @@ pub(super) fn require_pr(input: &Value) -> Result<String, OrbitError> {
 mod tests {
     use serde_json::json;
 
-    use crate::ToolRegistry;
+    use crate::{ToolContext, ToolRegistry};
 
     fn registry() -> ToolRegistry {
         let mut r = ToolRegistry::new();
@@ -82,44 +82,56 @@ mod tests {
 
     #[test]
     fn pr_create_rejects_missing_title() {
-        let err = super::pr_create::build_exec_request(&json!({
-            "head": "feature",
-            "base": "main",
-            "body": "desc",
-        }))
+        let err = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "head": "feature",
+                "base": "main",
+                "body": "desc",
+            }),
+        )
         .expect_err("must fail");
         assert!(err.to_string().contains("title"), "{err}");
     }
 
     #[test]
     fn pr_create_rejects_missing_base() {
-        let err = super::pr_create::build_exec_request(&json!({
-            "title": "T",
-            "head": "feature",
-            "body": "desc",
-        }))
+        let err = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "T",
+                "head": "feature",
+                "body": "desc",
+            }),
+        )
         .expect_err("must fail");
         assert!(err.to_string().contains("base"), "{err}");
     }
 
     #[test]
     fn pr_create_rejects_missing_head() {
-        let err = super::pr_create::build_exec_request(&json!({
-            "title": "T",
-            "base": "main",
-            "body": "desc",
-        }))
+        let err = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "T",
+                "base": "main",
+                "body": "desc",
+            }),
+        )
         .expect_err("must fail");
         assert!(err.to_string().contains("head"), "{err}");
     }
 
     #[test]
     fn pr_create_rejects_missing_body_and_body_file() {
-        let err = super::pr_create::build_exec_request(&json!({
-            "title": "T",
-            "base": "main",
-            "head": "feature",
-        }))
+        let err = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "T",
+                "base": "main",
+                "head": "feature",
+            }),
+        )
         .expect_err("must fail");
         assert!(err.to_string().contains("body"), "{err}");
     }
@@ -176,12 +188,15 @@ mod tests {
 
     #[test]
     fn pr_create_builds_correct_args() {
-        let req = super::pr_create::build_exec_request(&json!({
-            "title": "my PR",
-            "base": "main",
-            "head": "feature/foo",
-            "body": "description",
-        }))
+        let req = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "my PR",
+                "base": "main",
+                "head": "feature/foo",
+                "body": "description",
+            }),
+        )
         .expect("valid input");
         assert_eq!(req.program, "gh");
         assert!(req.args.contains(&"create".to_string()));
@@ -197,13 +212,16 @@ mod tests {
 
     #[test]
     fn pr_create_uses_custom_label() {
-        let req = super::pr_create::build_exec_request(&json!({
-            "title": "T",
-            "base": "main",
-            "head": "branch",
-            "body": "b",
-            "label": "custom",
-        }))
+        let req = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "T",
+                "base": "main",
+                "head": "branch",
+                "body": "b",
+                "label": "custom",
+            }),
+        )
         .expect("valid");
         let label_pos = req.args.iter().position(|a| a == "--label").unwrap();
         assert_eq!(req.args[label_pos + 1], "custom");
@@ -211,12 +229,15 @@ mod tests {
 
     #[test]
     fn pr_create_uses_body_file_when_body_absent() {
-        let req = super::pr_create::build_exec_request(&json!({
-            "title": "T",
-            "base": "main",
-            "head": "branch",
-            "body_file": "/tmp/pr.md",
-        }))
+        let req = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "T",
+                "base": "main",
+                "head": "branch",
+                "body_file": "/tmp/pr.md",
+            }),
+        )
         .expect("valid");
         assert!(req.args.contains(&"--body-file".to_string()));
         assert!(req.args.contains(&"/tmp/pr.md".to_string()));

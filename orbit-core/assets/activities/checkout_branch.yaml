@@ -7,7 +7,7 @@ created_by: system
 activity:
   # ---- identity ----
   id: checkout_branch
-  spec_type: cli_command
+  spec_type: automation
 
   # ---- content ----
   description: Finalize isolated task worktree execution without mutating the human checkout
@@ -19,9 +19,6 @@ activity:
       - workspace_path
       - repo_root
     properties:
-      base:
-        type: string
-        description: Branch name to check out (e.g. main)
       workspace_path:
         type: string
         description: Task worktree path propagated from create_branch for downstream execution.
@@ -31,13 +28,10 @@ activity:
   output_schema_json:
     type: object
     required:
-      - exit_code
       - workspace_path
       - repo_root
       - cleanup_strategy
     properties:
-      exit_code:
-        type: integer
       workspace_path:
         type: string
         description: Task worktree path retained after pipeline completion.
@@ -49,12 +43,4 @@ activity:
         description: Summary of how the task worktree was left after finalization.
 
   # ---- execution ----
-  command: bash
-  args:
-    - scripts/orbit-finalize-task-worktree.sh
-    - "{{input.repo_root}}"
-    - "{{workspace_path}}"
-  working_dir: "{{input.repo_root}}"
-  timeout_seconds: 60
-  expected_exit_codes:
-    - 0
+  action: finalize_task_worktree

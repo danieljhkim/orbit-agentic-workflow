@@ -7,7 +7,7 @@ created_by: system
 activity:
   # ---- identity ----
   id: create_branch
-  spec_type: cli_command
+  spec_type: automation
 
   # ---- content ----
   description: Create or reuse an isolated git worktree for a task branch using the orbit/<task_id> naming convention
@@ -30,13 +30,10 @@ activity:
   output_schema_json:
     type: object
     required:
-      - exit_code
       - workspace_path
       - repo_root
       - branch
     properties:
-      exit_code:
-        type: integer
       workspace_path:
         type: string
         description: Dedicated task worktree path for downstream execution.
@@ -48,13 +45,4 @@ activity:
         description: Task branch checked out inside the worktree.
 
   # ---- execution ----
-  command: bash
-  args:
-    - scripts/orbit-create-task-worktree.sh
-    - "{{workspace_path}}"
-    - "{{input.task_id}}"
-    - "{{input.base}}"
-  working_dir: "{{workspace_path}}"
-  timeout_seconds: 60
-  expected_exit_codes:
-    - 0
+  action: create_task_worktree

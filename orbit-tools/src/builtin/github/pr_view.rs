@@ -6,7 +6,10 @@ use crate::{Tool, ToolContext};
 
 pub struct GithubPrViewTool;
 
-pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
+pub(super) fn build_exec_request(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<ExecRequest, OrbitError> {
     let pr = super::require_pr(input)?;
 
     let mut args = vec![
@@ -25,7 +28,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
     Ok(ExecRequest {
         program: "gh".to_string(),
         args,
-        current_dir: None,
+        current_dir: ctx.cwd.clone(),
         timeout_ms: Some(15_000),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
@@ -55,8 +58,8 @@ impl Tool for GithubPrViewTool {
         }
     }
 
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(&input)?;
+    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let req = build_exec_request(ctx, &input)?;
         let result = run_process(&req, &NoSandbox)?;
 
         if !result.success {

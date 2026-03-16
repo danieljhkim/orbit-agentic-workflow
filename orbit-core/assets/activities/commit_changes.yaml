@@ -1,0 +1,68 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- identity ----
+  id: commit_changes
+  spec_type: automation
+
+  # ---- content ----
+  description: Stage and commit task worktree changes through Orbit-owned automation
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+      - workspace_path
+      - repo_root
+      - branch
+    properties:
+      task_id:
+        type: string
+        description: The Orbit task ID whose changes should be committed.
+      workspace_path:
+        type: string
+        description: Dedicated task worktree path where implementation completed.
+      repo_root:
+        type: string
+        description: Canonical repository root that owns the task worktree.
+      branch:
+        type: string
+        description: Task branch expected to be checked out in the worktree.
+  output_schema_json:
+    type: object
+    required:
+      - repo_root
+      - workspace_path
+      - branch
+      - commit_message
+      - commit_sha
+      - changed_files
+    properties:
+      repo_root:
+        type: string
+        description: Canonical repository root that owns the task worktree.
+      workspace_path:
+        type: string
+        description: Task worktree path where the commit was created.
+      branch:
+        type: string
+        description: Branch the commit was created on.
+      commit_message:
+        type: string
+        description: Deterministic commit message generated from task metadata.
+      commit_sha:
+        type: string
+        description: Commit SHA created by Orbit automation.
+      changed_files:
+        type: array
+        items:
+          type: string
+        description: Repository-relative file paths included in the commit.
+
+  # ---- execution ----
+  action: commit_task_changes

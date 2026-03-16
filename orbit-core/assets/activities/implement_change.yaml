@@ -10,10 +10,10 @@ activity:
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Implement an Orbit task from plan to committed code, then move it to review
+  description: Implement an Orbit task from plan to tested code, then record the execution summary
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
-    You are implementing an Orbit task from plan to committed, tested code.
+    You are implementing an Orbit task from plan to tested code.
 
     Steps:
     1. Call orbit.task.show with id: "{{input.task_id}}" to fetch the task.
@@ -42,18 +42,9 @@ activity:
        - If tests fail, fix the issue before continuing. Do not move to review with
          failing tests.
 
-    6. Commit the changes:
-       - Call git.stage_paths with repo_root set to input.workspace_path when provided,
-         otherwise the task workspacePath.
-       - Call git.commit with repo_root set to input.workspace_path when provided,
-         otherwise the task workspacePath.
-       - Call git.commit with a concise commit message following the project's convention.
-         Include the task ID in the message, e.g. "feat: <summary> [{{input.task_id}}]".
-
-    7. Write an execution summary and move to review:
+    6. Write an execution summary:
        - Call orbit.task.update with:
            - id: "{{input.task_id}}"
-           - status: "review"
            - execution_summary: a markdown summary using this structure:
                ## Status
                success
@@ -80,15 +71,16 @@ activity:
 
                ## 7. Recommended Follow-Ups
                - <next step>
+       - Do not stage files, create commits, or open pull requests. Orbit automation will handle those steps after implementation succeeds.
 
-    8. Return output:
+    7. Return output:
        - status: "success"
        - summary: one paragraph describing what was implemented
        - files_changed: list of file paths you modified or created
 
     If any step fails unrecoverably (tests cannot be fixed, plan is ambiguous, required
     files are missing), set status to "failed" in the execution summary, call
-    orbit.task.update to add a comment explaining the blocker, and return status: "failed".
+    orbit.task.update to add the failed execution_summary and a comment explaining the blocker, and return status: "failed".
 
   # ---- interface ----
   input_schema_json:
@@ -137,7 +129,5 @@ activity:
     - fs.list
     - fs.write
     - fs.delete
-    - git.stage_paths
-    - git.commit
     - proc.spawn
     - proc.which

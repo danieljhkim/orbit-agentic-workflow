@@ -20,7 +20,7 @@ use tempfile::NamedTempFile;
 
 use crate::OrbitRuntime;
 use crate::command::activity::{activity_requires_agent_cli, activity_skill_refs_from_spec_config};
-use crate::executor::{api, cli_command};
+use crate::executor::{api, automation, cli_command};
 use crate::json_schema::validate_instance_against_schema;
 use crate::paths;
 use crate::template::TemplateContext;
@@ -594,6 +594,7 @@ impl OrbitRuntime {
             "agent_invoke" => self.execute_agent_attempt(execution),
             "cli_command" => self.execute_cli_command_attempt(execution),
             "api" => self.execute_api_attempt(execution),
+            "automation" => self.execute_automation_attempt(execution),
             other => AttemptOutcome {
                 state: JobRunState::Failed,
                 exit_code: Some(1),
@@ -939,6 +940,46 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
             &template_context,
             execution.timeout_seconds,
         ) {
+            Ok(result) => {
+                if let Err(err) = self.validate_activity_output_schema(&execution.activity, &result)
+                {
+                    return AttemptOutcome {
+                        state: JobRunState::Failed,
+                        exit_code: Some(0),
+                        duration_ms: None,
+                        response_json: Some(result),
+                        error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                        error_message: Some(err.to_string()),
+                        protocol_violation: false,
+                        created_file: None,
+                    };
+                }
+                AttemptOutcome {
+                    state: JobRunState::Success,
+                    exit_code: Some(0),
+                    duration_ms: None,
+                    response_json: Some(result),
+                    error_code: None,
+                    error_message: None,
+                    protocol_violation: false,
+                    created_file: None,
+                }
+            }
+            Err(err) => AttemptOutcome {
+                state: JobRunState::Failed,
+                exit_code: Some(1),
+                duration_ms: None,
+                response_json: None,
+                error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                error_message: Some(err.to_string()),
+                protocol_violation: false,
+                created_file: None,
+            },
+        }
+    }
+
+    fn execute_automation_attempt(&self, execution: &ExecutionContext) -> AttemptOutcome {
+        match automation::execute(self, &execution.activity, &execution.input) {
             Ok(result) => {
                 if let Err(err) = self.validate_activity_output_schema(&execution.activity, &result)
                 {

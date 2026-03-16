@@ -18,6 +18,16 @@ impl OrbitRuntime {
         input: Value,
         role: Role,
     ) -> Result<Value, OrbitError> {
+        self.run_tool_with_context_and_role(name, input, role, ToolContext::default())
+    }
+
+    pub(crate) fn run_tool_with_context_and_role(
+        &self,
+        name: &str,
+        input: Value,
+        role: Role,
+        tool_context: ToolContext,
+    ) -> Result<Value, OrbitError> {
         self.check_tool_enabled(name)?;
 
         let decision = self.context.policy.evaluate(&PolicyContext {
@@ -42,7 +52,7 @@ impl OrbitRuntime {
                 let output = self
                     .context
                     .registry
-                    .execute(name, &ToolContext::default(), input)
+                    .execute(name, &tool_context, input)
                     .map_err(redact_sensitive_env_error)?;
                 let output = redact_sensitive_env_json(output);
 

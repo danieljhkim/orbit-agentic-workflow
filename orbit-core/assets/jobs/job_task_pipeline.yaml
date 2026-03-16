@@ -11,10 +11,10 @@ job:
   # Step flow:
   #   dispatch_task
   #   create_branch    — create or reuse isolated worktree + orbit/<task_id> branch
-  #   implement_change — implement in the task worktree, run tests, commit, move to review
+  #   implement_change — implement in the task worktree and persist an execution summary
   #   run_tests        — verify tests pass inside the task worktree
-  #   open_pr          — open PR from orbit/<task_id> into base
-  #   checkout_branch  — finalize task worktree execution without mutating the main checkout
+  #   commit_changes   — let Orbit stage and commit repository changes in the task worktree
+  #   open_pr          — let Orbit open a PR using task title + execution_summary
   #   review_pr        — review the opened PR against task acceptance criteria
   default_input:
     base: agent-main
@@ -38,13 +38,12 @@ job:
       timeout_seconds: 600
 
     - target_type: activity
-      target_id: open_pr
-      agent_cli: codex
-      timeout_seconds: 300
+      target_id: commit_changes
+      timeout_seconds: 60
 
     - target_type: activity
-      target_id: checkout_branch
-      timeout_seconds: 60
+      target_id: open_pr
+      timeout_seconds: 300
 
     - target_type: activity
       target_id: review_pr

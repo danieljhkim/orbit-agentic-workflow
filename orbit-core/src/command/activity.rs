@@ -16,6 +16,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/checkout_branch.yaml"),
     ),
     (
+        "commit_changes",
+        include_str!("../../assets/activities/commit_changes.yaml"),
+    ),
+    (
         "create_branch",
         include_str!("../../assets/activities/create_branch.yaml"),
     ),
@@ -53,7 +57,7 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
     ),
 ];
 
-const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "api"];
+const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "api", "automation"];
 
 #[derive(Debug, Clone)]
 pub struct ActivityAddParams {
@@ -539,6 +543,7 @@ activity:
             ids,
             vec![
                 "checkout_branch",
+                "commit_changes",
                 "create_branch",
                 "dispatch_task",
                 "implement_change",

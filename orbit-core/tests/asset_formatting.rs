@@ -16,6 +16,10 @@ fn activity_assets_use_grouped_sections_and_literal_instruction_blocks() {
             include_str!("../assets/activities/checkout_branch.yaml"),
         ),
         (
+            "commit_changes",
+            include_str!("../assets/activities/commit_changes.yaml"),
+        ),
+        (
             "create_branch",
             include_str!("../assets/activities/create_branch.yaml"),
         ),
@@ -126,6 +130,16 @@ fn worktree_pipeline_assets_document_isolated_worktree_contract() {
     assert!(
         checkout_branch.contains("required:\n      - workspace_path\n      - repo_root"),
         "checkout_branch should require the worktree and repo_root inputs it consumes"
+    );
+
+    let commit_changes = include_str!("../assets/activities/commit_changes.yaml");
+    assert!(
+        commit_changes.contains("commit_message:\n        type: string"),
+        "commit_changes should declare the deterministic commit message output"
+    );
+    assert!(
+        commit_changes.contains("commit_sha:\n        type: string"),
+        "commit_changes should declare the commit sha output"
     );
 }
 

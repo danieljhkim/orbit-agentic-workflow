@@ -7,52 +7,50 @@ created_by: system
 activity:
   # ---- identity ----
   id: open_pr
-  spec_type: agent_invoke
+  spec_type: automation
 
   # ---- content ----
-  description: Open a pull request for a completed Orbit task
-  instruction: |
-    Only use skills listed in this activity's skill_refs. Ignore all others.
-    You are opening a pull request for an Orbit task.
-
-    Steps:
-    1. Call orbit.task.show with id: "{{input.task_id}}" to fetch the task.
-    2. Use the task `title` as the PR title.
-    3. Build the PR body from the task `description` and `plan` fields.
-    4. Call github.pr.create with:
-       - title: the task title
-       - head: "orbit/{{input.task_id}}"
-       - base: the value of input.base if provided, otherwise "main"
-       - body: the formatted execution summary and plan
-       - label: "orbit"
-    5. Return the PR URL in the output as `pr_url`.
-
-    If the task is not found or the branch does not exist, return a clear error.
+  description: Open a pull request from Orbit task metadata through Orbit-owned automation
 
   # ---- interface ----
   input_schema_json:
     type: object
     required:
       - task_id
+      - repo_root
     properties:
       task_id:
         type: string
         description: The Orbit task ID whose branch should be opened as a PR
+      repo_root:
+        type: string
+        description: Canonical repository root or task worktree used to resolve the current repository context.
+      branch:
+        type: string
+        description: Task branch to open as a PR. If omitted, Orbit falls back to the task's stored branch.
       base:
         type: string
-        description: Base branch to merge into (defaults to main)
+        description: Base branch to merge into (defaults to agent-main)
   output_schema_json:
     type: object
     required:
       - pr_url
+      - pr_number
+      - title
+      - body
     properties:
       pr_url:
         type: string
         description: URL of the created pull request
+      pr_number:
+        type: string
+        description: Pull request number returned after creation.
+      title:
+        type: string
+        description: Pull request title derived from the Orbit task title.
+      body:
+        type: string
+        description: Pull request body derived from the Orbit task execution summary.
 
   # ---- execution ----
-  skill_refs:
-    - orbit
-  tools:
-    - orbit.task.show
-    - github.pr.create
+  action: open_pr_from_task
