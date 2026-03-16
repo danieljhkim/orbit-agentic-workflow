@@ -2,8 +2,8 @@
 name = "orbit-agent"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 orbit-types = { path = "../orbit-types" }
 serde_json.workspace = true
-

@@ -2,6 +2,7 @@
 name = "orbit-exec"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 orbit-types = { path = "../orbit-types" }

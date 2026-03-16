@@ -1,0 +1,55 @@
+schema_version: 4
+
+# ---- identity ----
+id: T20260316-025328
+type: issue
+priority: medium
+
+# ---- content ----
+title: Harden task bundle creation against malformed partial writes
+description: |-
+  A newly created task bundle was observed in a malformed state: the task directory existed, `task.yaml` existed as a zero-byte file, and the required sidecars were missing. `orbit task show` then failed with `missing field schema_version` when trying to read the bundle.
+
+  I was not able to reproduce this through the normal happy-path `orbit task add` flow in an isolated temporary Orbit root. That suggests the failure is either intermittent or caused by a partial/interrupted write rather than a deterministic argument-parsing bug.
+
+  What the code shows today:
+  - task bundle persistence writes files one by one into the final task directory
+  - each file write is individually atomic-ish via temp-file rename
+  - the bundle as a whole is not created atomically
+  - the create path does not re-read or verify the completed bundle before returning success
+  - there is no rollback/cleanup path if bundle creation leaves malformed state on disk
+
+  Even if the exact trigger is still unclear, Orbit should be hardened so malformed task bundles cannot be reported as successful task creation.
+acceptance_criteria: []
+
+# ---- context ----
+context_files: []
+workspace_path: /Users/daniel/workspace/repos/orbit
+
+# ---- ownership ----
+created_by: human
+assigned_to: human
+
+# ---- proposal workflow ----
+proposed_by: human
+
+# ---- implementation ----
+branch: null
+pr_number: null
+
+# ---- execution references ----
+activity_id: null
+job_id: null
+job_run_id: null
+
+# ---- timestamps ----
+created_at: 2026-03-16T02:53:28.337269Z
+updated_at: 2026-03-16T02:53:28.337269Z
+
+# ---- audit trail ----
+history:
+- at: 2026-03-16T02:53:28.337269Z
+  by: human
+  event: created
+  note: null
+comments: []
