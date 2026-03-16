@@ -697,6 +697,113 @@ fn task_workspace_is_normalized_on_add() {
 }
 
 #[test]
+fn task_start_backlog_moves_to_in_progress() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "start backlog");
+
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "start",
+            &id,
+            "--note",
+            "picked up for implementation",
+            "--comment",
+            "starting now",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Started task"));
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["status"], "in-progress");
+    assert_eq!(show["assigned_to"], "human");
+    assert_eq!(show["comments"][0]["message"], "starting now");
+    let history = show["history"].as_array().expect("history");
+    assert_eq!(history.last().expect("latest")["event"], "started");
+    assert_eq!(
+        history.last().expect("latest")["note"],
+        "picked up for implementation"
+    );
+}
+
+#[test]
+fn task_start_proposed_records_approval_and_start() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+    let id = add_agent_task(dir.path(), "start proposed");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "start",
+            &id,
+            "--note",
+            "approved to begin immediately",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+    assert_eq!(task["status"], "in-progress");
+    let history = task["history"].as_array().expect("history");
+    assert!(
+        history.iter().any(|entry| {
+            entry["event"] == "proposal_approved"
+                && entry["note"] == "approved to begin immediately"
+        }),
+        "proposal approval must remain visible in history"
+    );
+    assert_eq!(history.last().expect("latest")["event"], "started");
+}
+
+#[test]
+fn task_start_rejects_review_status() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "start review");
+
+    orbit_in(dir.path())
+        .args(["task", "update", &id, "--status", "in-progress"])
+        .assert()
+        .success();
+    orbit_in(dir.path())
+        .args([
+            "task",
+            "update",
+            &id,
+            "--status",
+            "review",
+            "--execution-summary",
+            "Implemented initial change set",
+        ])
+        .assert()
+        .success();
+
+    orbit_in(dir.path())
+        .args(["task", "start", &id])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "start requires 'proposed', 'backlog', or 'blocked'",
+        ));
+}
+
+#[test]
 fn task_approve_proposed_to_backlog() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");

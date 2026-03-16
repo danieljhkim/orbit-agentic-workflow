@@ -9,6 +9,7 @@ pub mod task_approve;
 pub mod task_list;
 pub mod task_reject;
 pub mod task_show;
+pub mod task_start;
 pub mod task_update;
 
 use std::collections::HashMap;
@@ -25,6 +26,7 @@ const ORBIT_TASK_ACTOR_KIND: &str = "ORBIT_TASK_ACTOR_KIND";
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(task_add::OrbitTaskAddTool);
     registry.register(task_approve::OrbitTaskApproveTool);
+    registry.register(task_start::OrbitTaskStartTool);
     registry.register(task_reject::OrbitTaskRejectTool);
     registry.register(task_show::OrbitTaskShowTool);
     registry.register(task_list::OrbitTaskListTool);
@@ -162,6 +164,7 @@ mod tests {
         for expected in &[
             "orbit.task.add",
             "orbit.task.approve",
+            "orbit.task.start",
             "orbit.task.reject",
             "orbit.task.show",
             "orbit.task.list",
@@ -217,6 +220,33 @@ mod tests {
         let err = super::task_show::build_exec_request(&ToolContext::default(), &json!({}))
             .expect_err("missing id must fail");
         assert!(err.to_string().contains("missing `id`"), "{err}");
+    }
+
+    #[test]
+    fn task_start_builds_request_with_optional_fields() {
+        let req = super::task_start::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260316-010101",
+                "note": "approved and ready",
+                "comment": "starting implementation",
+            }),
+        )
+        .expect("valid start input");
+
+        assert_eq!(
+            req.args,
+            vec![
+                "task".to_string(),
+                "start".to_string(),
+                "T20260316-010101".to_string(),
+                "--note".to_string(),
+                "approved and ready".to_string(),
+                "--comment".to_string(),
+                "starting implementation".to_string(),
+                "--json".to_string(),
+            ]
+        );
     }
 
     #[test]

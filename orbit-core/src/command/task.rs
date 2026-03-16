@@ -2,7 +2,9 @@ use chrono::Utc;
 use orbit_store::{
     TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
 };
-use orbit_types::{OrbitError, OrbitEvent, Task, TaskComment, TaskPriority, TaskStatus, TaskType};
+use orbit_types::{
+    OrbitError, OrbitEvent, Task, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+};
 
 use crate::OrbitRuntime;
 use crate::paths::normalize_path;
@@ -267,6 +269,82 @@ impl OrbitRuntime {
             }
             other => Err(OrbitError::InvalidInput(format!(
                 "task '{id}' is in status '{other}'; approve requires 'proposed' or 'review'"
+            ))),
+        }
+    }
+
+    pub fn start_task(
+        &self,
+        id: &str,
+        note: Option<String>,
+        comment: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        let task = self.get_task(id)?;
+        let actor = effective_task_actor();
+        let append_comments = build_task_comments(comment, actor.label.as_str())?;
+
+        match task.status {
+            TaskStatus::Proposed => {
+                let task = self.with_mutation(|| {
+                    let at = Utc::now();
+                    let task = self.context.task_store.update_task(
+                        id,
+                        StoreTaskUpdateParams {
+                            actor: actor.label.clone(),
+                            status: Some(TaskStatus::InProgress),
+                            status_event: Some("started".to_string()),
+                            assigned_to: Some(Some(actor.label.clone())),
+                            append_history: vec![TaskHistoryEntry {
+                                at,
+                                by: actor.label.clone(),
+                                event: "proposal_approved".to_string(),
+                                note: note.clone(),
+                            }],
+                            append_comments: append_comments.clone(),
+                            ..Default::default()
+                        },
+                    )?;
+                    Ok((
+                        task.clone(),
+                        OrbitEvent::TaskStarted {
+                            id: id.to_string(),
+                            started_by: actor.label.clone(),
+                            approved_from_proposed: true,
+                        },
+                    ))
+                })?;
+                Ok(task)
+            }
+            TaskStatus::Backlog | TaskStatus::Blocked => {
+                let task = self.with_mutation(|| {
+                    let task = self.context.task_store.update_task(
+                        id,
+                        StoreTaskUpdateParams {
+                            actor: actor.label.clone(),
+                            status: Some(TaskStatus::InProgress),
+                            status_event: Some("started".to_string()),
+                            status_note: note.clone(),
+                            assigned_to: Some(Some(actor.label.clone())),
+                            append_comments: append_comments.clone(),
+                            ..Default::default()
+                        },
+                    )?;
+                    Ok((
+                        task.clone(),
+                        OrbitEvent::TaskStarted {
+                            id: id.to_string(),
+                            started_by: actor.label.clone(),
+                            approved_from_proposed: false,
+                        },
+                    ))
+                })?;
+                Ok(task)
+            }
+            TaskStatus::InProgress => Err(OrbitError::InvalidInput(format!(
+                "task '{id}' is already in-progress"
+            ))),
+            other => Err(OrbitError::InvalidInput(format!(
+                "task '{id}' is in status '{other}'; start requires 'proposed', 'backlog', or 'blocked'"
             ))),
         }
     }

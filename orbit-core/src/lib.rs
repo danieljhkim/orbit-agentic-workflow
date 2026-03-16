@@ -32,7 +32,10 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_types::{JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus};
+    use orbit_store::TaskCreateParams as StoreTaskCreateParams;
+    use orbit_types::{
+        JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus, TaskType,
+    };
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -519,6 +522,129 @@ mod tests {
         assert_eq!(runtime.user_name(), "daniel");
         assert_eq!(updated.comments[0].by, "human");
         assert_eq!(updated.comments[0].message, "configured follow-up");
+    }
+
+    #[test]
+    fn start_task_moves_backlog_work_into_progress() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "ready to start".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        let started = runtime
+            .start_task(
+                &task.id,
+                Some("picked up for implementation".to_string()),
+                Some("starting now".to_string()),
+            )
+            .expect("start");
+
+        assert_eq!(started.status, TaskStatus::InProgress);
+        assert_eq!(started.assigned_to.as_deref(), Some("human"));
+        assert_eq!(started.comments[0].message, "starting now");
+        let history = started.history.last().expect("history");
+        assert_eq!(history.event, "started");
+        assert_eq!(
+            history.note.as_deref(),
+            Some("picked up for implementation")
+        );
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskStarted"));
+    }
+
+    #[test]
+    fn start_task_from_proposed_records_approval_before_starting() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .context
+            .task_store
+            .create_task(StoreTaskCreateParams {
+                actor: "agent".to_string(),
+                title: "proposal to start".to_string(),
+                description: String::new(),
+                plan: String::new(),
+                execution_summary: String::new(),
+                context_files: Vec::new(),
+                workspace_path: None,
+                created_by: Some("agent".to_string()),
+                assigned_to: Some("agent".to_string()),
+                status: TaskStatus::Proposed,
+                priority: TaskPriority::Medium,
+                task_type: TaskType::Task,
+                branch: None,
+                pr_number: None,
+                proposed_by: Some("agent".to_string()),
+                comments: Vec::new(),
+            })
+            .expect("create proposed task");
+
+        let started = runtime
+            .start_task(&task.id, Some("approved in planning".to_string()), None)
+            .expect("start");
+
+        assert_eq!(started.status, TaskStatus::InProgress);
+        let proposal_approved = started
+            .history
+            .iter()
+            .find(|entry| entry.event == "proposal_approved")
+            .expect("proposal approval history");
+        assert_eq!(
+            proposal_approved.note.as_deref(),
+            Some("approved in planning")
+        );
+        assert_eq!(started.history.last().expect("history").event, "started");
+
+        let audits = runtime.list_audits(10).expect("audits");
+        assert!(audits.iter().any(|a| a.event_type == "TaskStarted"));
+    }
+
+    #[test]
+    fn start_task_rejects_review_work() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "already reviewed".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: None,
+                    description: None,
+                    plan: None,
+                    execution_summary: None,
+                    comment: None,
+                    status: Some(TaskStatus::InProgress),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("in progress");
+        let review = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: None,
+                    description: None,
+                    plan: None,
+                    execution_summary: Some("Implemented and verified".to_string()),
+                    comment: None,
+                    status: Some(TaskStatus::Review),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("review");
+
+        let result = runtime.start_task(&review.id, None, None);
+        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
     }
 
     #[test]

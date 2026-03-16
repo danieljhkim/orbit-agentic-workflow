@@ -13,17 +13,19 @@ Handle a human-requested engineering change or existing Orbit task from intent t
 
 1. Clarify intent and success criteria.
 2. Create or link the tracking task in Orbit. If creating, use `orbit-create-task`.
-3. Ensure `proposed` work is explicitly approved before execution.
-4. Mark in-progress before making changes:
+3. Start the task before making changes:
    ```bash
-   orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "in-progress"}'
+   orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready now>"}'
    ```
-5. Implement and validate the change according to the task plan.
-6. Move to review after validation:
+   - `task start` moves `backlog -> in-progress`
+   - `task start` also handles `proposed -> in-progress` and records `proposal_approved` before `started`
+   - Keep using explicit `approve` plus later status updates when approval and execution should stay separate
+4. Implement and validate the change according to the task plan.
+5. Move to review after validation:
    ```bash
    orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'
    ```
-7. Persist the execution summary (see below).
+6. Persist the execution summary (see below).
 
 See the `orbit` skill for full invocation patterns and lifecycle facts.
 
@@ -31,7 +33,7 @@ See the `orbit` skill for full invocation patterns and lifecycle facts.
 
 - Manage a single Orbit task per change request.
 - If material ambiguity remains, ask clarifying questions before implementation.
-- If approval cannot be obtained for `proposed` work, stop after recording that state.
+- If approval cannot be obtained for `proposed` work, stop after recording that state instead of calling `task start`.
 - Do not skip lifecycle updates.
 
 ## Output
@@ -82,6 +84,6 @@ Task ID: <orbit-task-id>
 
 - Requested change implemented
 - Validation completed
-- Task approved before execution, if required
+- Task started via `orbit.task.start` before execution
 - Task advanced through `review`
 - Execution summary persisted via `orbit tool run orbit.task.update --input '{"id": "...", "execution_summary": "..."}'`

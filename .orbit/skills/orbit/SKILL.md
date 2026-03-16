@@ -19,6 +19,7 @@ orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "p
 orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'
 orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<note>"}'
 orbit tool run orbit.task.show --input '{"id": "T20260315-123456"}'
+orbit tool run orbit.task.start --input '{"id": "T20260315-123456", "note": "ready to execute"}'
 orbit tool run orbit.task.update --input '{"id": "T20260315-123456", "status": "review"}'
 orbit tool run orbit.task.update --input '{"id": "T20260315-123456", "comment": "notes here"}'
 orbit tool run orbit.identity.list --input '{"role": "engineer"}'

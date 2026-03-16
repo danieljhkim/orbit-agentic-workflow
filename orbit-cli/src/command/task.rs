@@ -27,6 +27,8 @@ pub enum TaskSubcommand {
     Show(TaskShowArgs),
     /// Update task fields
     Update(TaskUpdateArgs),
+    /// Start work on a task, approving proposed work when needed
+    Start(TaskStartArgs),
     /// Approve a task (proposed → backlog, or review → done)
     Approve(TaskApproveArgs),
     /// Reject a task (proposed → archived, or review → backlog)
@@ -48,6 +50,7 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::List(args) => args.execute(runtime),
             TaskSubcommand::Show(args) => args.execute(runtime),
             TaskSubcommand::Update(args) => args.execute(runtime),
+            TaskSubcommand::Start(args) => args.execute(runtime),
             TaskSubcommand::Approve(args) => args.execute(runtime),
             TaskSubcommand::Reject(args) => args.execute(runtime),
             TaskSubcommand::Archive(args) => args.execute(runtime),
@@ -341,6 +344,35 @@ impl From<TaskUpdateStatusArg> for TaskStatus {
             TaskUpdateStatusArg::Done => TaskStatus::Done,
             TaskUpdateStatusArg::Blocked => TaskStatus::Blocked,
             TaskUpdateStatusArg::Rejected => TaskStatus::Rejected,
+        }
+    }
+}
+
+// --- Start ---
+
+#[derive(Args)]
+pub struct TaskStartArgs {
+    /// Task ID
+    pub id: String,
+    /// Optional lifecycle note (records proposal approval when starting proposed work)
+    #[arg(long)]
+    pub note: Option<String>,
+    /// Append a task comment
+    #[arg(long)]
+    pub comment: Option<String>,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for TaskStartArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let task = runtime.start_task(&self.id, self.note, self.comment)?;
+        if self.json {
+            crate::output::json::print_pretty(&task_to_json(&task))
+        } else {
+            println!("Started task '{}'", task.id);
+            Ok(())
         }
     }
 }
