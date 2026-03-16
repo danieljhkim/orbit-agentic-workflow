@@ -1,8 +1,6 @@
 schema_version: 1
 created_by: system
 identity_id: null
-created_at: 2026-03-15T21:22:59.073238Z
-updated_at: 2026-03-15T22:46:27.211356Z
 activity:
   id: create_branch
   spec_type: cli_command
@@ -19,14 +17,9 @@ activity:
         description: Task workspace path propagated from dispatch_task for CLI execution.
         type: string
     required:
-      - task_id
+    - task_id
     type: object
   output_schema_json:
-    required:
-      - exit_code
-      - workspace_path
-      - repo_root
-      - branch
     properties:
       branch:
         description: Task branch checked out inside the worktree.
@@ -39,14 +32,19 @@ activity:
       workspace_path:
         description: Dedicated task worktree path for downstream execution.
         type: string
+    required:
+    - exit_code
+    - workspace_path
+    - repo_root
+    - branch
     type: object
   args:
-    - scripts/orbit-create-task-worktree.sh
-    - '{{workspace_path}}'
-    - '{{input.task_id}}'
-    - '{{input.base}}'
+  - scripts/orbit-create-task-worktree.sh
+  - '{{workspace_path}}'
+  - '{{input.task_id}}'
+  - '{{input.base}}'
   command: bash
   expected_exit_codes:
-    - 0
+  - 0
   timeout_seconds: 60
-  working_dir: "{{workspace_path}}"
+  working_dir: '{{workspace_path}}'
