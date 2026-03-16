@@ -44,8 +44,6 @@ struct ActivityFileDocument {
     created_by: Option<String>,
     #[serde(default)]
     identity_id: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
     activity: ActivitySpecDocument,
 }
 
@@ -69,13 +67,10 @@ impl ActivityFileStore {
             )));
         }
 
-        let now = Utc::now();
         let doc = ActivityFileDocument {
             schema_version: 1,
             created_by: params.created_by.clone(),
             identity_id: params.identity_id.clone(),
-            created_at: now,
-            updated_at: now,
             activity: ActivitySpecDocument {
                 id: params.id.clone(),
                 spec_type: params.spec_type.clone(),
@@ -90,8 +85,9 @@ impl ActivityFileStore {
                 spec_config: params.spec_config.as_object().cloned().unwrap_or_default(),
             },
         };
-        self.write_doc_at(&self.active_doc_path(&doc.activity.id), &doc)?;
-        Ok(doc_to_work(doc, true))
+        let path = self.active_doc_path(&doc.activity.id);
+        self.write_doc_at(&path, &doc)?;
+        self.read_activity_at(&path, true)
     }
 
     pub(crate) fn list_activities(
@@ -113,13 +109,11 @@ impl ActivityFileStore {
     pub(crate) fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError> {
         let active = self.active_doc_path(id);
         if active.exists() {
-            let doc = self.read_doc_at(&active)?;
-            return Ok(Some(doc_to_work(doc, true)));
+            return Ok(Some(self.read_activity_at(&active, true)?));
         }
         let inactive = self.inactive_doc_path(id);
         if inactive.exists() {
-            let doc = self.read_doc_at(&inactive)?;
-            return Ok(Some(doc_to_work(doc, false)));
+            return Ok(Some(self.read_activity_at(&inactive, false)?));
         }
         Ok(None)
     }
@@ -169,8 +163,6 @@ impl ActivityFileStore {
         if let Some(v) = created_by {
             doc.created_by = v;
         }
-        doc.updated_at = Utc::now();
-
         let new_active = is_active.unwrap_or(current_active);
         if new_active != current_active {
             // Move the file to the new location.
@@ -181,18 +173,17 @@ impl ActivityFileStore {
             };
             self.write_doc_at(&new_path, &doc)?;
             fs::remove_file(&path).map_err(|e| OrbitError::Io(e.to_string()))?;
-            return Ok(doc_to_work(doc, new_active));
+            return self.read_activity_at(&new_path, new_active);
         }
         self.write_doc_at(&path, &doc)?;
-        Ok(doc_to_work(doc, new_active))
+        self.read_activity_at(&path, new_active)
     }
 
     pub(crate) fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {
         self.ensure_layout()?;
         let active = self.active_doc_path(id);
         if active.exists() {
-            let mut doc = self.read_doc_at(&active)?;
-            doc.updated_at = Utc::now();
+            let doc = self.read_doc_at(&active)?;
             let inactive = self.inactive_doc_path(id);
             self.write_doc_at(&inactive, &doc)?;
             fs::remove_file(&active).map_err(|e| OrbitError::Io(e.to_string()))?;
@@ -201,8 +192,7 @@ impl ActivityFileStore {
 
         let inactive = self.inactive_doc_path(id);
         if inactive.exists() {
-            let mut doc = self.read_doc_at(&inactive)?;
-            doc.updated_at = Utc::now();
+            let doc = self.read_doc_at(&inactive)?;
             self.write_doc_at(&inactive, &doc)?;
             return Ok(true);
         }
@@ -224,8 +214,7 @@ impl ActivityFileStore {
 
         let mut activities = Vec::new();
         for path in paths {
-            let doc = self.read_doc_at(&path)?;
-            activities.push(doc_to_work(doc, active));
+            activities.push(self.read_activity_at(&path, active)?);
         }
         Ok(activities)
     }
@@ -235,6 +224,12 @@ impl ActivityFileStore {
         serde_yaml::from_str::<ActivityFileDocument>(&raw).map_err(|e| {
             OrbitError::Store(format!("invalid activity file '{}': {e}", path.display()))
         })
+    }
+
+    fn read_activity_at(&self, path: &Path, is_active: bool) -> Result<Activity, OrbitError> {
+        let doc = self.read_doc_at(path)?;
+        let (created_at, updated_at) = file_timestamps(path)?;
+        Ok(doc_to_work(doc, is_active, created_at, updated_at))
     }
 
     fn write_doc_at(&self, path: &Path, doc: &ActivityFileDocument) -> Result<(), OrbitError> {
@@ -259,7 +254,12 @@ impl ActivityFileStore {
     }
 }
 
-fn doc_to_work(doc: ActivityFileDocument, is_active: bool) -> Activity {
+fn doc_to_work(
+    doc: ActivityFileDocument,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+) -> Activity {
     Activity {
         id: doc.activity.id,
         spec_type: doc.activity.spec_type,
@@ -271,9 +271,20 @@ fn doc_to_work(doc: ActivityFileDocument, is_active: bool) -> Activity {
         identity_id: doc.identity_id,
         created_by: doc.created_by,
         is_active,
-        created_at: doc.created_at,
-        updated_at: doc.updated_at,
+        created_at,
+        updated_at,
     }
+}
+
+fn file_timestamps(path: &Path) -> Result<(DateTime<Utc>, DateTime<Utc>), OrbitError> {
+    let metadata = fs::metadata(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+    let created_at = metadata.created().ok().map(DateTime::<Utc>::from);
+    let updated_at = metadata.modified().ok().map(DateTime::<Utc>::from);
+    let now = Utc::now();
+
+    let created_at = created_at.or(updated_at).unwrap_or(now);
+    let updated_at = updated_at.unwrap_or(created_at);
+    Ok((created_at, updated_at))
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), OrbitError> {
@@ -326,5 +337,76 @@ fn rename_json_schema_key(value: serde_json::Value, from: &str, to: &str) -> ser
                 .collect(),
         ),
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    use super::{ActivityFileStore, FileWorkInsert};
+
+    fn sample_insert() -> FileWorkInsert {
+        FileWorkInsert {
+            id: "review_tasks".to_string(),
+            spec_type: "agent".to_string(),
+            description: "Review pending tasks".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "additionalProperties": false
+            }),
+            output_schema_json: json!({
+                "type": "object"
+            }),
+            spec_config: json!({
+                "model": "gpt-5"
+            }),
+            workspace_path: Some("/tmp/workspace".to_string()),
+            identity_id: Some("linus".to_string()),
+            created_by: Some("human".to_string()),
+        }
+    }
+
+    #[test]
+    fn insert_work_omits_timestamp_fields_from_yaml() {
+        let dir = tempdir().expect("tempdir");
+        let store = ActivityFileStore::new(dir.path().to_path_buf());
+
+        let activity = store
+            .insert_work(&sample_insert())
+            .expect("insert activity");
+        let yaml_path = dir
+            .path()
+            .join("active")
+            .join(format!("{}.yaml", activity.id));
+        let yaml = fs::read_to_string(yaml_path).expect("read activity yaml");
+
+        assert!(yaml.contains("schema_version: 1"));
+        assert!(yaml.contains("created_by: human"));
+        assert!(yaml.contains("identity_id: linus"));
+        assert!(!yaml.contains("created_at:"));
+        assert!(!yaml.contains("updated_at:"));
+    }
+
+    #[test]
+    fn get_activity_returns_runtime_timestamps_without_yaml_fields() {
+        let dir = tempdir().expect("tempdir");
+        let store = ActivityFileStore::new(dir.path().to_path_buf());
+
+        let inserted = store
+            .insert_work(&sample_insert())
+            .expect("insert activity");
+        let fetched = store
+            .get_activity(&inserted.id)
+            .expect("get activity")
+            .expect("activity exists");
+
+        assert_eq!(fetched.id, inserted.id);
+        assert_eq!(fetched.created_by.as_deref(), Some("human"));
+        assert_eq!(fetched.identity_id.as_deref(), Some("linus"));
+        assert!(fetched.updated_at >= fetched.created_at);
     }
 }
