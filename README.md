@@ -4,7 +4,6 @@ Orbit is a lightweight, local-first execution engine designed for agent-driven s
 
 Orbit runs directly on agent CLIs - no API keys required.
 
-
 ---
 
 ## Quick Start
@@ -34,22 +33,6 @@ orbit job run job_task_pipeline
 
 ## Overview
 
-### Task Lifecycle
-
-Tasks move through a linear lifecycle with defined gates at each transition:
-
-```
-proposed → backlog → in-progress → review → done
-```
-
-Rejection and recovery paths:
-
-```
-proposed  → rejected
-review    → rejected
-rejected  → backlog   (reconsider)
-```
-
 ### Orbit Artifacts
 
 Orbit operates through a structured filesystem hierarchy under `.orbit/`:
@@ -66,8 +49,80 @@ Orbit operates through a structured filesystem hierarchy under `.orbit/`:
 └── orbit.db          # SQLite audit store
 ```
 
+### Tasks
 
-### Architecture
+Tasks are work items for agent/human coordination and project tracking. You can think of them as jira tickets.
+- **Work unit for execution**: Represents a discrete piece of work (feature, bug fix, chore, refactor)
+- **Lifecycle states**: Proposed → Backlog → InProgress → Review → Done (with branching to Blocked, Archived, Rejected)
+- **Execution tracking**:
+    - execution_summary for recording what was actually done
+    - Branch and PR number for code changes
+    - Comments from team members
+    - History log of all transitions and updates
+
+### Activities
+
+Activities are atomic, reusable units of work:
+
+- Self-contained operations with defined schemas (input/output)
+- Each has a spec_type that determines how it's implemented (i.e. automation, agent_invoke, api, cli_command)
+- Can be run individually via CLI or as part of a job
+- Example activities: run_tests, review_pr, review_tasks, implement_change
+
+### Jobs
+
+You can chain one or more **activities** and run them as a single job.
+- Jobs are workflows/pipelines that orchestrate activities. 
+- Designed for automation/repeatability
+
+```yaml
+schemaVersion: 1
+job:
+  job_id: job_task_pipeline
+  state: enabled
+  default_input:
+    base: agent-main
+  steps:
+    - target_type: activity
+      target_id: dispatch_task
+      agent_cli: claude
+      timeout_seconds: 1000
+      env_extra: []
+    - target_type: activity
+      target_id: create_branch
+      agent_cli: ""
+      timeout_seconds: 60
+      env_extra: []
+    - target_type: activity
+      target_id: implement_change
+      agent_cli: codex
+      timeout_seconds: 1800
+      env_extra: []
+    - target_type: activity
+      target_id: run_tests
+      agent_cli: ""
+      timeout_seconds: 600
+      env_extra: []
+    - target_type: activity
+      target_id: commit_changes
+      agent_cli: ""
+      timeout_seconds: 60
+      env_extra: []
+    - target_type: activity
+      target_id: open_pr
+      agent_cli: ""
+      timeout_seconds: 300
+      env_extra: []
+    - target_type: activity
+      target_id: review_pr
+      agent_cli: claude
+      timeout_seconds: 600
+      env_extra: []
+```
+
+---
+
+## Architecture
 
 Orbit is structured as a layered set of Rust crates. Lower layers have no knowledge of higher layers.
 

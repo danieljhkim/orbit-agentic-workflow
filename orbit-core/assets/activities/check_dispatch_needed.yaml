@@ -11,6 +11,18 @@ activity:
 
   # ---- content ----
   description: Exits 0 if backlog or rejected tasks exist; exits 1 if both queues are empty.
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    properties: {}
+    additional_properties: false
+  output_schema_json:
+    type: object
+    properties: {}
+    additional_properties: false
+
+  # ---- execution ----
   command: bash
   args:
     - -c
