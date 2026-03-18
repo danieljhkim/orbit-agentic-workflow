@@ -50,6 +50,7 @@ fn create_task_worktree<H: EngineHost>(host: &H, input: &Value) -> Result<Value,
     if worktree_path.exists() {
         ensure_existing_task_worktree(&worktree_path, &branch)?;
     } else {
+        fetch_remote_base(&repo_root, &base);
         let start_point = resolve_worktree_start_point(&repo_root, &base)?;
         create_or_attach_task_worktree(&repo_root, &worktree_path, &branch, &start_point)?;
     }
@@ -374,14 +375,25 @@ fn ensure_existing_task_worktree(
     Ok(())
 }
 
-fn resolve_worktree_start_point(repo_root: &Path, base: &str) -> Result<String, OrbitError> {
-    if git_command_success(
-        repo_root,
-        &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
-    )? {
-        return Ok(base.to_string());
-    }
+fn fetch_remote_base(repo_root: &Path, base: &str) {
+    let _ = run_process(
+        &ExecRequest {
+            program: "git".to_string(),
+            args: vec![
+                "fetch".to_string(),
+                "origin".to_string(),
+                base.to_string(),
+            ],
+            current_dir: Some(repo_root.to_string_lossy().to_string()),
+            timeout_ms: Some(60_000),
+            stdin_mode: StdinMode::Null,
+            environment_mode: EnvironmentMode::Inherit,
+        },
+        &NoSandbox,
+    );
+}
 
+fn resolve_worktree_start_point(repo_root: &Path, base: &str) -> Result<String, OrbitError> {
     let remote_base = format!("origin/{base}");
     if git_command_success(
         repo_root,
@@ -392,6 +404,13 @@ fn resolve_worktree_start_point(repo_root: &Path, base: &str) -> Result<String, 
         ],
     )? {
         return Ok(remote_base);
+    }
+
+    if git_command_success(
+        repo_root,
+        &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
+    )? {
+        return Ok(base.to_string());
     }
 
     Err(OrbitError::Execution(format!(
