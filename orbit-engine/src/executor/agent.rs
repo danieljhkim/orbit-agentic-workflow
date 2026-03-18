@@ -163,7 +163,6 @@ fn validate_agent_success<H: EngineHost>(
     run_state: JobRunState,
 ) -> Option<AttemptOutcome> {
     if run_state == JobRunState::Success
-        && envelope.result.is_some()
         && let Err(err) = host.validate_skill_output_schema(&execution.activity, envelope)
     {
         return Some(AttemptOutcome {

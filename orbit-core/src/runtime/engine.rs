@@ -101,6 +101,10 @@ fn validate_skill_output_schema(
     envelope: &AgentResponseEnvelope,
 ) -> Result<(), OrbitError> {
     let skill_refs = activity_skill_refs_from_spec_config(&activity.spec_config)?;
+    if skill_refs.is_empty() {
+        // No skill_refs means no structured output contract; nothing to enforce.
+        return Ok(());
+    }
     let skills = runtime.resolve_activity_skill_refs(&skill_refs)?;
     let Some(result) = envelope.result.as_ref() else {
         return Err(OrbitError::AgentProtocolViolation(
