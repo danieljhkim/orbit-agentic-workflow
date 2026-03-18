@@ -7,6 +7,7 @@ fn orbit_in(dir: &std::path::Path) -> Command {
     cmd.current_dir(dir);
     cmd.env("HOME", dir);
     cmd.env("USERPROFILE", dir);
+    cmd.env("ORBIT_ROOT", dir.join(".orbit"));
     cmd
 }
 

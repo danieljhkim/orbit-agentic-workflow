@@ -8,6 +8,7 @@ fn orbit_in(dir: &Path) -> Command {
     cmd.current_dir(dir);
     cmd.env("HOME", dir);
     cmd.env("USERPROFILE", dir);
+    cmd.env("ORBIT_ROOT", dir.join(".orbit"));
     cmd
 }
 
@@ -17,6 +18,7 @@ fn orbit_in_with_home(dir: &Path, home: &Path) -> Command {
     cmd.current_dir(dir);
     cmd.env("HOME", home);
     cmd.env("USERPROFILE", home);
+    cmd.env("ORBIT_ROOT", dir.join(".orbit"));
     cmd
 }
 

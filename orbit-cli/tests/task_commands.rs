@@ -8,6 +8,9 @@ fn orbit_in(dir: &Path) -> Command {
     cmd.current_dir(dir);
     cmd.env("HOME", dir);
     cmd.env("USERPROFILE", dir);
+    // Prevent find_git_repo_root() from walking up to the real repo's .git
+    // and writing task artifacts into the project's .orbit/ directory.
+    cmd.env("ORBIT_ROOT", dir.join(".orbit"));
     cmd
 }
 
