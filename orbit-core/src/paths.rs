@@ -96,11 +96,84 @@ pub(crate) fn resolve_path_value(
 
 pub(crate) fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
     for ancestor in start.ancestors() {
-        if ancestor.join(".git").exists() {
+        let git_path = ancestor.join(".git");
+        if git_path.is_dir() {
             return Some(ancestor.to_path_buf());
+        }
+        if git_path.is_file() {
+            // Git worktree: .git is a file pointing to the main repo's gitdir.
+            // Follow the pointer so orbit tool calls from within a worktree resolve
+            // to the main repo's .orbit directory rather than creating a new one.
+            if let Some(main_root) = resolve_main_repo_from_worktree_gitfile(&git_path) {
+                return Some(main_root);
+            }
         }
     }
     None
+}
+
+/// Parses a worktree `.git` file to find the main repository root.
+///
+/// A worktree `.git` file contains a single line:
+///   `gitdir: /path/to/main/repo/.git/worktrees/<name>`
+///
+/// The main repo root is three levels up from that path.
+fn resolve_main_repo_from_worktree_gitfile(git_file: &Path) -> Option<PathBuf> {
+    let content = std::fs::read_to_string(git_file).ok()?;
+    let raw_path = content.strip_prefix("gitdir:")?.trim();
+    let gitdir = if Path::new(raw_path).is_absolute() {
+        PathBuf::from(raw_path)
+    } else {
+        git_file.parent()?.join(raw_path)
+    };
+    // gitdir = /main/repo/.git/worktrees/<name>
+    // repo root = gitdir/../../../  (up past worktrees/, .git/, repo/)
+    let repo_root = gitdir.parent()?.parent()?.parent()?;
+    if repo_root.join(".git").is_dir() {
+        Some(repo_root.to_path_buf())
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_git_repo_root_returns_main_repo_from_worktree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // Set up a fake main repo with a .git directory.
+        let main_repo = dir.path().join("main");
+        std::fs::create_dir_all(main_repo.join(".git/worktrees/task-branch"))
+            .expect("create gitdir");
+
+        // Set up a fake worktree directory with a .git file pointing back.
+        let worktree = dir.path().join("worktrees/task-branch");
+        std::fs::create_dir_all(&worktree).expect("create worktree");
+        let gitdir_target = main_repo.join(".git/worktrees/task-branch");
+        std::fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", gitdir_target.display()),
+        )
+        .expect("write .git file");
+
+        // A subdirectory inside the worktree (simulates agent CWD).
+        let cwd = worktree.join("src");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+
+        let root = find_git_repo_root(&cwd);
+        assert_eq!(root, Some(main_repo), "should resolve to main repo, not worktree");
+    }
+
+    #[test]
+    fn find_git_repo_root_returns_none_for_non_git_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cwd = dir.path().join("workspace");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        assert_eq!(find_git_repo_root(&cwd), None);
+    }
 }
 
 pub(crate) fn normalize_path_components(path: &Path) -> PathBuf {
