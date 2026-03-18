@@ -169,7 +169,7 @@ fn validate_agent_success<H: EngineHost>(
             state: JobRunState::Failed,
             exit_code: exec_result.exit_code,
             duration_ms: Some(exec_result.duration_ms),
-            response_json: None,
+            response_json: serde_json::to_value(envelope).ok(),
             error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
             error_message: Some(err.to_string()),
             protocol_violation: true,

@@ -3,12 +3,12 @@ pub(crate) fn render_prompt_with_embedded_envelope(envelope_json: &[u8]) -> Vec<
 Read the execution envelope JSON and perform the requested work.\n\
 Return exactly one JSON object and nothing else.\n\
 Required response schema:\n\
-{\"schemaVersion\":1,\"status\":\"success|failed|timeout\",\"result\":{},\"error\":null,\"durationMs\":123}\n\
+{\"schemaVersion\":1,\"status\":\"success|failed|timeout\",\"result\":{...},\"error\":null,\"durationMs\":123}\n\
 Rules:\n\
-- Output valid JSON only.\n\
-- No markdown fences.\n\
-- If execution cannot complete, return status=\"failed\" with non-empty error.code and error.message.\n\
-- Keep result as a JSON object.";
+- Output valid JSON only. No markdown fences. No explanatory text.\n\
+- result MUST be a JSON object (never null, never omitted). Populate it with the fields from the activity's output_schema_json.\n\
+- If execution cannot complete, return status=\"failed\" with non-empty error.code and error.message (result may be {}).\n\
+- On success, result must contain all required fields declared in output_schema_json.";
     let envelope_text = String::from_utf8_lossy(envelope_json);
     format!("{prompt}\nExecution envelope:\n{envelope_text}\n").into_bytes()
 }

@@ -2,15 +2,20 @@
 
 Orbit is a lightweight, local-first execution engine designed for agent-driven software delivery. It provides the core primitives necessary to orchestrate complex, multi-step AI workflows directly within a development environment.
 
-Unlike centralized AI orchestration platforms, Orbit is built to be a decoupled execution layer. It focuses on the "how" of agentic task completion, leaving scheduling and higher-level management to external tools or manual triggers.
+Orbit runs directly on agent CLIs - no API keys required.
+
 
 ---
 
 ## Quick Start
 
-**1. Initialize Orbit in your repository:**
+**Prerequisites**: Rust + Codex CLI / Claude Code (subscriptions required)
+
+Example flow:
 
 ```bash
+# install orbit binary
+make install
 
 # Initialize `.orbit/` directory with default configuration.
 orbit init
