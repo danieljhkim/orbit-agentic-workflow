@@ -19,13 +19,21 @@ activity:
     1. Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
        If the list is empty, return a comment "Backlog is empty. Nothing to dispatch." and task_id "None" and exit.
 
-    2. For the top candidates, call orbit.task.show with the task id to read description, plan, and priority.
+    2. Call github.pr.list with state: "open" to retrieve all currently open pull requests.
+       Note the head branch and title of each open PR.
 
-    3. Select the single task most valuable to execute next.
+    3. Call orbit.task.list with status: "in_progress" to retrieve tasks currently being worked on.
+       For each in-progress task, call orbit.task.show to read its description and plan.
+
+    4. For the top backlog candidates, call orbit.task.show with the task id to read description, plan, and priority.
+
+    5. Select the single task most valuable to execute next.
        Prioritise: critical/high priority first; tasks that unblock others or reduce systemic risk;
        tasks with a clear, executable plan; smaller contained changes over large sweeping ones.
+       Skip any task whose scope or target files clearly overlap with an open PR or an in-progress task —
+       prefer work that can land independently without causing merge conflicts or duplicating effort.
 
-    4. Call orbit.task.update with id: "<selected_task_id>" and comment: "Dispatched by Steve (CEO): <one sentence rationale>"
+    6. Call orbit.task.update with id: "<selected_task_id>" and comment: "Dispatched by Steve (CEO): <one sentence rationale>"
        to record the dispatch rationale.
 
     Output the selected task_id, workspace_path, and the rationale comment.
@@ -59,3 +67,4 @@ activity:
     - orbit.task.list
     - orbit.task.show
     - orbit.task.update
+    - github.pr.list
