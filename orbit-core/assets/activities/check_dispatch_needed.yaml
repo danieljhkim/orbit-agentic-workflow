@@ -15,12 +15,8 @@ activity:
   # ---- interface ----
   input_schema_json:
     type: object
-    properties: {}
-    additional_properties: false
   output_schema_json:
     type: object
-    properties: {}
-    additional_properties: false
 
   # ---- execution ----
   command: bash
