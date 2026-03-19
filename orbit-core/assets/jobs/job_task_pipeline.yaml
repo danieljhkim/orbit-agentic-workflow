@@ -30,7 +30,7 @@ job:
 
     - target_type: activity
       target_id: implement_change
-      agent_cli: claude
+      agent_cli: codex
       timeout_seconds: 1800
 
     - target_type: activity
