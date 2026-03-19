@@ -97,16 +97,42 @@ fn add_scheduled_activity(runtime: &OrbitRuntime, target_id: &str, agent_cli: &s
     add_scheduled_activity_with_timeout(runtime, target_id, agent_cli, 10)
 }
 
+fn add_scheduled_activity_with_limit(
+    runtime: &OrbitRuntime,
+    target_id: &str,
+    agent_cli: &str,
+    max_active_runs: u32,
+) -> String {
+    add_scheduled_activity_with_timeout_and_limit(
+        runtime,
+        target_id,
+        agent_cli,
+        10,
+        max_active_runs,
+    )
+}
+
 fn add_scheduled_activity_with_timeout(
     runtime: &OrbitRuntime,
     target_id: &str,
     agent_cli: &str,
     timeout_seconds: u64,
 ) -> String {
+    add_scheduled_activity_with_timeout_and_limit(runtime, target_id, agent_cli, timeout_seconds, 1)
+}
+
+fn add_scheduled_activity_with_timeout_and_limit(
+    runtime: &OrbitRuntime,
+    target_id: &str,
+    agent_cli: &str,
+    timeout_seconds: u64,
+    max_active_runs: u32,
+) -> String {
     runtime
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: Some(max_active_runs),
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: target_id.to_string(),
@@ -203,6 +229,7 @@ fn cli_command_activity_executes_without_agent_cli_and_captures_output_file() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-cli-command".to_string(),
@@ -263,6 +290,7 @@ fn cli_command_failures_redact_sensitive_environment_values_from_error_messages(
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-cli-secret-redaction".to_string(),
@@ -376,6 +404,7 @@ fn cli_command_receives_only_baseline_allowlisted_and_orbit_env_vars() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-cli-allowlisted-env".to_string(),
@@ -475,6 +504,7 @@ fn cli_command_step_env_extra_is_scoped_per_step() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,
@@ -641,10 +671,11 @@ struct JobRunFileDocument {
     run: orbit_types::JobRun,
 }
 
-fn insert_stale_running_run(
+fn rewrite_run_as_running(
     runtime: &OrbitRuntime,
     data_root: &std::path::Path,
     job_id: &str,
+    started_at: chrono::DateTime<Utc>,
 ) -> String {
     let run = runtime.run_job_now(job_id).expect("seed run");
     // jrun.yaml lives inside the run bundle directory
@@ -656,16 +687,41 @@ fn insert_stale_running_run(
         .join("jrun.yaml");
     let raw = std::fs::read_to_string(&jrun_path).expect("read jrun.yaml");
     let mut doc: JobRunFileDocument = serde_yaml::from_str(&raw).expect("parse run doc");
-    let old_time = Utc::now() - ChronoDuration::hours(2);
     // Only manipulate run-level fields; step-level fields live in steps/*.yaml
     doc.run.state = JobRunState::Running;
-    doc.run.started_at = Some(old_time);
+    doc.run.started_at = Some(started_at);
     doc.run.finished_at = None;
     doc.run.duration_ms = None;
-    doc.run.created_at = old_time;
+    doc.run.created_at = started_at;
     let updated = serde_yaml::to_string(&doc).expect("serialize run doc");
     std::fs::write(&jrun_path, updated).expect("write jrun.yaml");
     run.run_id
+}
+
+fn insert_stale_running_run(
+    runtime: &OrbitRuntime,
+    data_root: &std::path::Path,
+    job_id: &str,
+) -> String {
+    rewrite_run_as_running(
+        runtime,
+        data_root,
+        job_id,
+        Utc::now() - ChronoDuration::hours(2),
+    )
+}
+
+fn insert_fresh_running_run(
+    runtime: &OrbitRuntime,
+    data_root: &std::path::Path,
+    job_id: &str,
+) -> String {
+    rewrite_run_as_running(
+        runtime,
+        data_root,
+        job_id,
+        Utc::now() - ChronoDuration::seconds(5),
+    )
 }
 
 #[test]
@@ -778,6 +834,7 @@ fn run_job_now_uses_job_default_input_when_manual_input_is_absent() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "base": "main" })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-default-input".to_string(),
@@ -827,6 +884,7 @@ fn run_job_now_with_input_overrides_job_default_input() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "base": "main", "mode": "auto" })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-default-override".to_string(),
@@ -895,6 +953,7 @@ fn run_job_now_finalizes_failed_when_pre_step_setup_errors_after_running() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "base": "main" })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-invalid-default-input".to_string(),
@@ -1434,7 +1493,7 @@ fn run_job_now_rejects_when_active_run_exists() {
         .run_job_now(&job_id)
         .expect_err("second run should be rejected while first is active");
     assert!(matches!(err, OrbitError::JobValidation(_)));
-    assert!(err.to_string().contains("already has an active run"));
+    assert!(err.to_string().contains("max_active_runs=1"));
 
     let first = handle.join().expect("join");
     assert!(first.is_ok(), "first run should complete successfully");
@@ -1446,6 +1505,37 @@ fn run_job_now_rejects_when_active_run_exists() {
         "second invocation must not insert a pending row"
     );
     assert_eq!(history[0].state, JobRunState::Success);
+}
+
+#[test]
+fn run_job_now_allows_parallel_runs_when_job_limit_is_higher() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = Arc::new(OrbitRuntime::from_data_root(dir.path()).expect("runtime"));
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\nsleep 0.5\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
+    );
+
+    add_activity(&runtime, "spec-parallel-runs");
+    let job_id = add_scheduled_activity_with_limit(&runtime, "spec-parallel-runs", &agent_cli, 2);
+
+    let r1 = Arc::clone(&runtime);
+    let job_id_thread = job_id.clone();
+    let handle = thread::spawn(move || r1.run_job_now(&job_id_thread));
+    thread::sleep(std::time::Duration::from_millis(100));
+
+    let second = runtime
+        .run_job_now(&job_id)
+        .expect("second run should be allowed");
+    assert_eq!(second.state, JobRunState::Success);
+
+    let first = handle.join().expect("join");
+    assert!(first.is_ok(), "first run should complete successfully");
+
+    let history = runtime.job_history(&job_id).expect("history");
+    assert_eq!(history.len(), 2, "parallel runs should both be persisted");
+    assert!(history.iter().all(|run| run.state == JobRunState::Success));
 }
 
 #[test]
@@ -1516,6 +1606,49 @@ fn run_job_now_recovers_stale_running_run_and_executes_new_attempt() {
     assert!(
         history.iter().any(|run| run.state == JobRunState::Success),
         "new attempt should complete successfully"
+    );
+}
+
+#[test]
+fn run_job_now_recovers_only_stale_runs_when_multiple_active_runs_exist() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let script_path = dir.path().join("mock-agent");
+    let agent_cli = write_agent_script(
+        &script_path,
+        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
+    );
+
+    add_activity(&runtime, "spec-multi-active-stale");
+    let job_id =
+        add_scheduled_activity_with_limit(&runtime, "spec-multi-active-stale", &agent_cli, 2);
+    let healthy_run_id = insert_fresh_running_run(&runtime, dir.path(), &job_id);
+    let stale_run_id = insert_stale_running_run(&runtime, dir.path(), &job_id);
+
+    let result = runtime.run_job_now(&job_id).expect("run now");
+    assert_eq!(result.state, JobRunState::Success);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    let healthy = history
+        .iter()
+        .find(|run| run.run_id == healthy_run_id)
+        .expect("healthy run should exist");
+    assert_eq!(healthy.state, JobRunState::Running);
+
+    let stale = history
+        .iter()
+        .find(|run| run.run_id == stale_run_id)
+        .expect("stale run should exist");
+    assert_eq!(stale.state, JobRunState::Failed);
+    assert_eq!(
+        stale.steps.last().and_then(|s| s.error_code.as_deref()),
+        Some("AGENT_INVOCATION_FAILED")
+    );
+    assert!(
+        history
+            .iter()
+            .any(|run| run.run_id == result.run_id && run.state == JobRunState::Success),
+        "new run should complete while a healthy active run remains"
     );
 }
 
@@ -1724,6 +1857,7 @@ fn claude_job_run_succeeds_with_mock_binary() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-claude-run".to_string(),
@@ -1772,6 +1906,7 @@ fn run_job_now_executes_job_successfully() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-manual-run".to_string(),
@@ -1861,6 +1996,7 @@ fn agent_step_result_fields_flow_into_next_step_input() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,
@@ -1976,6 +2112,7 @@ fn agent_step_workspace_path_flows_into_cli_working_directory() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,
@@ -2058,6 +2195,7 @@ fn agent_step_uses_workspace_path_as_process_current_dir() {
             default_input: Some(json!({
                 "workspace_path": workspace_dir.to_string_lossy().to_string()
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-agent-current-dir".to_string(),
@@ -2209,6 +2347,7 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
                     .to_string_lossy()
                     .to_string()
             })),
+            max_active_runs: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,
@@ -2331,6 +2470,7 @@ fn start_task_automation_moves_task_into_progress() {
                 "task_id": task.id,
                 "note": "pipeline ready to implement"
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-start-task".to_string(),
@@ -2427,6 +2567,7 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
                 "comment": "Ready for review",
                 "note": "handing off for review"
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-update-task".to_string(),
@@ -2448,7 +2589,10 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
         updated.execution_summary,
         "Implemented the task and validated targeted tests."
     );
-    assert_eq!(updated.comments.last().expect("comment").message, "Ready for review");
+    assert_eq!(
+        updated.comments.last().expect("comment").message,
+        "Ready for review"
+    );
     let history = updated.history.last().expect("history");
     assert_eq!(history.event, "moved");
     assert_eq!(history.note.as_deref(), Some("handing off for review"));
@@ -2561,6 +2705,7 @@ fn implement_change_result_status_flows_into_update_task_as_task_status() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "task_id": task.id })),
+            max_active_runs: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,
@@ -2592,7 +2737,10 @@ fn implement_change_result_status_flows_into_update_task_as_task_status() {
         "Implemented the change and validated tests."
     );
     assert_eq!(
-        updated.history.last().and_then(|entry| entry.note.as_deref()),
+        updated
+            .history
+            .last()
+            .and_then(|entry| entry.note.as_deref()),
         Some("ready for review")
     );
 }
@@ -2676,6 +2824,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
                 "base": "agent-main",
                 "workspace_path": repo_root.to_string_lossy().to_string()
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-create-task-worktree-for-commit".to_string(),
@@ -2753,6 +2902,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
                 "branch": branch,
                 "summary": "Implemented the automation refactor."
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-commit-task-worktree".to_string(),
@@ -2862,6 +3012,7 @@ fn commit_task_changes_uses_summary_from_input() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({"task_id": task_id, "base": "agent-main", "workspace_path": repo_root.to_string_lossy().to_string()})),
+            max_active_runs: None,
             steps: vec![JobStep { target_type: JobTargetType::Activity, target_id: "spec-create-wt-regression".to_string(), agent_cli: String::new(), timeout_seconds: 30, env_extra: vec![] }],
             initial_state_override: None,
         })
@@ -2907,6 +3058,7 @@ fn commit_task_changes_uses_summary_from_input() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({"task_id": task_id, "workspace_path": workspace_path, "repo_root": repo_root.to_string_lossy().to_string(), "branch": branch, "summary": "Hardened bundle writes using staged directory rename."})),
+            max_active_runs: None,
             steps: vec![JobStep { target_type: JobTargetType::Activity, target_id: "spec-commit-regression".to_string(), agent_cli: String::new(), timeout_seconds: 30, env_extra: vec![] }],
             initial_state_override: None,
         })
@@ -2943,6 +3095,7 @@ fn commit_task_changes_uses_summary_from_input() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({"task_id": task2_id, "workspace_path": workspace_path, "repo_root": repo_root.to_string_lossy().to_string(), "branch": branch, "summary": ""})),
+            max_active_runs: None,
             steps: vec![JobStep { target_type: JobTargetType::Activity, target_id: "spec-commit-regression".to_string(), agent_cli: String::new(), timeout_seconds: 30, env_extra: vec![] }],
             initial_state_override: None,
         })
@@ -3040,6 +3193,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
                 "base": "agent-main",
                 "workspace_path": repo_root.to_string_lossy().to_string()
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-create-wt-task-only".to_string(),
@@ -3119,6 +3273,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "task_id": task_id })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-commit-task-only".to_string(),
@@ -3323,6 +3478,7 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
                 "commit_message": format!("feat: Wire Orbit PR automation [{task_id}]\n\nOrbit owns PR creation now."),
                 "changed_files": ["orbit-core/src/lib.rs", "orbit-engine/src/executor/automation.rs"]
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-open-pr-from-task".to_string(),
@@ -3517,6 +3673,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
                 "base": "agent-main",
                 "workspace_path": repo_root.to_string_lossy().to_string()
             })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-create-wt-open-pr-task-only".to_string(),
@@ -3589,6 +3746,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "task_id": task_id })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-commit-open-pr-task-only".to_string(),
@@ -3635,6 +3793,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
         .add_job(JobAddParams {
             job_id: None,
             default_input: Some(json!({ "task_id": task_id })),
+            max_active_runs: None,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-open-pr-task-only".to_string(),
@@ -3691,6 +3850,8 @@ fn open_pr_automation_supports_task_id_only_inputs() {
 fn multi_step_same_agent_cli_each_step_gets_its_own_env_extra() {
     // Regression: env_extra was looked up by matching agent_cli (first match), so step 2
     // sharing the same agent_cli as step 1 would receive step 1's allowlist.
+    let _lock = env_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _snapshot = EnvSnapshot::capture(&["STEP1_SECRET", "STEP2_SECRET"]);
     let dir = tempdir().expect("tempdir");
 
     // Hermetic env: only the codex-required vars pass by default; each step adds its own.
@@ -3741,6 +3902,7 @@ pass = ["HOME", "PATH"]
         .add_job(JobAddParams {
             job_id: None,
             default_input: None,
+            max_active_runs: None,
             steps: vec![
                 JobStep {
                     target_type: JobTargetType::Activity,

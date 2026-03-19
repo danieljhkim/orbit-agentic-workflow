@@ -2,7 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError};
+use orbit_types::{
+    Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError,
+    default_job_max_active_runs,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::backend::JobRunStepParams;
@@ -21,6 +24,8 @@ struct PersistedJob {
     state: JobScheduleState,
     #[serde(default)]
     default_input: Option<serde_json::Value>,
+    #[serde(default = "default_job_max_active_runs")]
+    max_active_runs: u32,
     steps: Vec<JobStep>,
     // Legacy fields: tolerated when reading old artifacts, never written to new ones.
     #[serde(default, skip_serializing)]
@@ -68,10 +73,12 @@ impl JobFileStore {
         &self,
         job_id: Option<String>,
         default_input: Option<serde_json::Value>,
+        max_active_runs: u32,
         steps: Vec<JobStep>,
         initial_state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
         self.ensure_layout()?;
+        validate_max_active_runs(max_active_runs)?;
         let resolved_id = match job_id {
             Some(id) => {
                 if self.job_path(&id).exists() {
@@ -88,6 +95,7 @@ impl JobFileStore {
             job_id: resolved_id,
             state: initial_state,
             default_input,
+            max_active_runs,
             steps,
             created_at: now,
             updated_at: now,
@@ -125,6 +133,7 @@ impl JobFileStore {
         &self,
         job_id: &str,
         default_input: Option<Option<serde_json::Value>>,
+        max_active_runs: Option<u32>,
         steps: Option<Vec<JobStep>>,
         state: Option<JobScheduleState>,
     ) -> Result<Job, OrbitError> {
@@ -135,6 +144,10 @@ impl JobFileStore {
 
         if let Some(default_input) = default_input {
             job.default_input = default_input;
+        }
+        if let Some(max_active_runs) = max_active_runs {
+            validate_max_active_runs(max_active_runs)?;
+            job.max_active_runs = max_active_runs;
         }
         if let Some(steps) = steps {
             job.steps = steps;
@@ -210,17 +223,17 @@ impl JobFileStore {
         Ok(Some(self.read_run_at(&run_dir)?))
     }
 
-    pub(crate) fn get_pending_or_running_job_run(
+    pub(crate) fn list_pending_or_running_job_runs(
         &self,
         job_id: &str,
-    ) -> Result<Option<JobRun>, OrbitError> {
+    ) -> Result<Vec<JobRun>, OrbitError> {
         let mut runs = self
             .read_runs_for_activity(job_id)?
             .into_iter()
             .filter(|run| run.state == JobRunState::Pending || run.state == JobRunState::Running)
             .collect::<Vec<_>>();
         runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-        Ok(runs.into_iter().next())
+        Ok(runs)
     }
 
     pub(crate) fn set_job_state(
@@ -263,6 +276,7 @@ impl JobFileStore {
                 job_id: job.job_id.clone(),
                 state: job.state,
                 default_input: job.default_input.clone(),
+                max_active_runs: job.max_active_runs,
                 steps: job.steps.clone(),
                 created_at: None,
                 updated_at: None,
@@ -494,6 +508,7 @@ impl JobFileStore {
             job_id: p.job_id,
             state: p.state,
             default_input: p.default_input,
+            max_active_runs: validate_max_active_runs(p.max_active_runs)?,
             steps: p.steps,
             created_at,
             updated_at,
@@ -546,6 +561,7 @@ impl JobFileStore {
                 job_id: job.job_id.clone(),
                 state: job.state,
                 default_input: job.default_input.clone(),
+                max_active_runs: job.max_active_runs,
                 steps: job.steps.clone(),
                 created_at: None,
                 updated_at: None,
@@ -694,6 +710,15 @@ impl JobFileStore {
     }
 }
 
+fn validate_max_active_runs(max_active_runs: u32) -> Result<u32, OrbitError> {
+    if max_active_runs == 0 {
+        return Err(OrbitError::JobValidation(
+            "job max_active_runs must be at least 1".to_string(),
+        ));
+    }
+    Ok(max_active_runs)
+}
+
 /// Derive a UTC timestamp from a job ID of the form `job-YYYYMMDD-HHMMSS[-N]`.
 /// Falls back to `Utc::now()` for IDs that don't embed a parseable timestamp.
 fn parse_timestamp_from_job_id(job_id: &str) -> DateTime<Utc> {
@@ -762,6 +787,7 @@ mod tests {
             .insert_activity_v2(
                 None,
                 None,
+                1,
                 vec![make_step(target_id)],
                 JobScheduleState::Enabled,
             )
@@ -921,6 +947,7 @@ mod tests {
             .insert_activity_v2(
                 Some("job-roundtrip-test".to_string()),
                 Some(json!({"base": "main"})),
+                3,
                 vec![step],
                 JobScheduleState::Disabled,
             )
@@ -957,6 +984,7 @@ mod tests {
         assert_eq!(read_back.job_id, written.job_id);
         assert_eq!(read_back.state, JobScheduleState::Disabled);
         assert_eq!(read_back.default_input, Some(json!({"base": "main"})));
+        assert_eq!(read_back.max_active_runs, 3);
         assert_eq!(read_back.steps.len(), 1);
         assert_eq!(read_back.steps[0].target_id, "target-roundtrip");
         assert_eq!(read_back.steps[0].agent_cli, "my-agent-cli");
@@ -964,6 +992,39 @@ mod tests {
         assert_eq!(read_back.steps[0].env_extra, vec!["MY_VAR", "OTHER_VAR"]);
         // Timestamps are no longer stored in YAML; they are derived at read time
         // (from the job_id for standard IDs, or Utc::now() as fallback).
+    }
+
+    #[test]
+    fn list_pending_or_running_job_runs_returns_all_active_runs() {
+        let (_dir, store) = make_store();
+        let job = insert_test_job(&store, "target-active-runs");
+        let now = Utc::now();
+
+        let first = store
+            .insert_job_run(&job.job_id, 1, now)
+            .expect("insert first run");
+        let second = store
+            .insert_job_run(&job.job_id, 2, now)
+            .expect("insert second run");
+        let completed = store
+            .insert_job_run(&job.job_id, 3, now)
+            .expect("insert completed run");
+        store
+            .finalize_job_run(&completed.run_id, JobRunState::Success, now, Some(1))
+            .expect("finalize completed run");
+
+        let active_runs = store
+            .list_pending_or_running_job_runs(&job.job_id)
+            .expect("list active runs");
+        let active_ids = active_runs
+            .iter()
+            .map(|run| run.run_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(active_runs.len(), 2);
+        assert!(active_ids.contains(&first.run_id.as_str()));
+        assert!(active_ids.contains(&second.run_id.as_str()));
+        assert!(!active_ids.contains(&completed.run_id.as_str()));
     }
 
     #[test]

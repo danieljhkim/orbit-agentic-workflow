@@ -44,6 +44,8 @@ impl Execute for JobSubcommand {
 pub struct JobAddArgs {
     #[arg(long)]
     pub job_id: Option<String>,
+    #[arg(long, default_value_t = 1)]
+    pub max_active_runs: u32,
     #[arg(long)]
     pub target_id: String,
     #[arg(long)]
@@ -64,6 +66,7 @@ impl Execute for JobAddArgs {
         let job = runtime.add_job(JobAddParams {
             job_id: self.job_id,
             default_input: None,
+            max_active_runs: Some(self.max_active_runs),
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: self.target_id,
@@ -145,6 +148,7 @@ impl Execute for JobShowArgs {
         } else {
             println!("Job ID:            {}", job.job_id);
             println!("State:             {}", job.state);
+            println!("Max Active Runs:   {}", job.max_active_runs);
             if let Some(default_input) = &job.default_input {
                 let rendered = serde_json::to_string(default_input)
                     .unwrap_or_else(|_| "<invalid-json>".to_string());
@@ -319,6 +323,7 @@ fn job_to_json(job: &Job) -> Value {
         "job_id": job.job_id,
         "state": job.state.to_string(),
         "default_input": job.default_input,
+        "max_active_runs": job.max_active_runs,
         "created_at": job.created_at.to_rfc3339(),
         "updated_at": job.updated_at.to_rfc3339(),
         "steps": job.steps.iter().map(|s| json!({

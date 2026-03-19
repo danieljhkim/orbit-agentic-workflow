@@ -82,6 +82,33 @@ fn add_job_with_default_timeout(dir: &Path, target_id: &str, agent_cli: &str) ->
     String::from_utf8(output).expect("utf8").trim().to_string()
 }
 
+fn add_job_with_max_active_runs(
+    dir: &Path,
+    target_id: &str,
+    agent_cli: &str,
+    max_active_runs: u32,
+) -> String {
+    let output = orbit_in(dir)
+        .args([
+            "job",
+            "add",
+            "--target-id",
+            target_id,
+            "--agent-cli",
+            agent_cli,
+            "--timeout",
+            "30s",
+            "--max-active-runs",
+            &max_active_runs.to_string(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("utf8").trim().to_string()
+}
+
 fn write_mock_agent(dir: &Path) -> String {
     let path = dir.join("mock-agent");
     std::fs::write(
@@ -167,6 +194,24 @@ fn job_add_defaults_timeout_to_twenty_minutes() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["steps"][0]["timeout_seconds"], 1200); // 20m default = 1200 seconds
+}
+
+#[test]
+fn job_add_persists_max_active_runs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec_id = add_activity(dir.path(), "spec-cli-max-active-runs");
+
+    let job_id = add_job_with_max_active_runs(dir.path(), &spec_id, "mock-agent", 3);
+
+    let show_output = orbit_in(dir.path())
+        .args(["job", "show", &job_id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["max_active_runs"], 3);
 }
 
 #[test]

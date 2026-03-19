@@ -222,6 +222,7 @@ mod tests {
             .add_job(JobAddParams {
                 job_id: None,
                 default_input: None,
+                max_active_runs: None,
                 steps: vec![JobStep {
                     target_type: JobTargetType::Activity,
                     target_id: "spec-core-double-run".to_string(),

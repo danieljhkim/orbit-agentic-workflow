@@ -7,6 +7,10 @@ use serde_json::Value;
 
 use crate::OrbitId;
 
+pub const fn default_job_max_active_runs() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
@@ -147,6 +151,8 @@ pub struct Job {
     pub state: JobScheduleState,
     #[serde(default)]
     pub default_input: Option<Value>,
+    #[serde(default = "default_job_max_active_runs")]
+    pub max_active_runs: u32,
     pub steps: Vec<JobStep>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

@@ -80,6 +80,7 @@ pub struct ActivityUpdateParams {
 pub struct JobCreateParams {
     pub job_id: Option<String>,
     pub default_input: Option<Value>,
+    pub max_active_runs: u32,
     pub steps: Vec<JobStep>,
     pub initial_state: JobScheduleState,
 }
@@ -87,6 +88,7 @@ pub struct JobCreateParams {
 #[derive(Debug, Default, Clone)]
 pub struct JobUpdateParams {
     pub default_input: Option<Option<Value>>,
+    pub max_active_runs: Option<u32>,
     pub steps: Option<Vec<JobStep>>,
     pub state: Option<JobScheduleState>,
 }
@@ -133,7 +135,7 @@ pub trait JobStoreBackend: Send + Sync {
     fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
     fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError>;
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError>;
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError>;
+    fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
     fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError>;
     fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError>;
     fn insert_job_run(

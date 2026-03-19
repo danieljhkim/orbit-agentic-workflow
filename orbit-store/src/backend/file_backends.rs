@@ -141,13 +141,20 @@ impl JobStoreBackend for JobFileStore {
         self.insert_activity_v2(
             params.job_id,
             params.default_input,
+            params.max_active_runs,
             params.steps,
             params.initial_state,
         )
     }
 
     fn update_job(&self, job_id: &str, params: JobUpdateParams) -> Result<Job, OrbitError> {
-        self.update_job(job_id, params.default_input, params.steps, params.state)
+        self.update_job(
+            job_id,
+            params.default_input,
+            params.max_active_runs,
+            params.steps,
+            params.state,
+        )
     }
 
     fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
@@ -170,8 +177,8 @@ impl JobStoreBackend for JobFileStore {
         self.get_job_run(run_id)
     }
 
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.get_pending_or_running_job_run(job_id)
+    fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
+        self.list_pending_or_running_job_runs(job_id)
     }
 
     fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError> {
