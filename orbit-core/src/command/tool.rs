@@ -37,6 +37,7 @@ impl OrbitRuntime {
         let tool_context = ToolContext {
             cwd: None,
             allowed_tools,
+            ..Default::default()
         };
         self.run_tool_with_context_and_role(name, input, Role::Admin, tool_context)
     }

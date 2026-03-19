@@ -64,6 +64,7 @@ mod tests {
         let tool_context = ToolContext {
             cwd: None,
             allowed_tools: vec!["time.now".to_string()],
+            ..Default::default()
         };
         let result = runtime.run_tool_with_context_and_role(
             "fs.read",
@@ -92,6 +93,7 @@ mod tests {
         let tool_context = ToolContext {
             cwd: None,
             allowed_tools: vec!["time.now".to_string()],
+            ..Default::default()
         };
         let result = runtime.run_tool_with_context_and_role(
             "time.now",
