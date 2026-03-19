@@ -2234,6 +2234,139 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
 }
 
 #[test]
+fn implement_change_result_status_flows_into_update_task_as_task_status() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+
+    let task = runtime
+        .add_task(TaskAddParams {
+            title: "Implement then persist".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: None,
+            priority: TaskPriority::Medium,
+            task_type: TaskType::Task,
+        })
+        .expect("add task");
+    runtime
+        .start_task(&task.id, None, None)
+        .expect("start task");
+
+    let script_path = dir.path().join("mock-agent");
+    let script = concat!(
+        "#!/bin/sh\n",
+        "cat >/dev/null\n",
+        "printf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{\"status\":\"review\",\"summary\":\"Implemented the change.\",\"execution_summary\":\"Implemented the change and validated tests.\",\"files_changed\":[\"orbit-core/src/lib.rs\"],\"note\":\"ready for review\"},\"error\":null,\"durationMs\":1}'\n",
+    );
+    let agent_cli = write_agent_script(&script_path, script);
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-implement-like".to_string(),
+            spec_type: "agent_invoke".to_string(),
+            description: "implement step".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" }
+                },
+                "required": ["task_id"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "status": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "execution_summary": { "type": "string" },
+                    "files_changed": { "type": "array", "items": { "type": "string" } },
+                    "note": { "type": "string" }
+                },
+                "required": ["status", "summary", "execution_summary"]
+            }),
+            spec_config: json!({
+                "instruction": "Return a synthetic implement_change result."
+            }),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add implement-like activity");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-update-task-from-implement".to_string(),
+            spec_type: "automation".to_string(),
+            description: "update task".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "execution_summary": { "type": "string" },
+                    "files_changed": { "type": "array", "items": { "type": "string" } },
+                    "note": { "type": "string" }
+                },
+                "required": ["task_id", "status"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "execution_summary": { "type": "string" }
+                },
+                "required": ["id", "status", "execution_summary"]
+            }),
+            spec_config: json!({"action":"update_task"}),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add update activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({ "task_id": task.id })),
+            steps: vec![
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-implement-like".to_string(),
+                    agent_cli,
+                    timeout_seconds: 30,
+                    env_extra: vec![],
+                },
+                JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: "spec-update-task-from-implement".to_string(),
+                    agent_cli: String::new(),
+                    timeout_seconds: 30,
+                    env_extra: vec![],
+                },
+            ],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let updated = runtime.get_task(task.id.as_ref()).expect("updated task");
+    assert_eq!(updated.status, TaskStatus::Review);
+    assert_eq!(
+        updated.execution_summary,
+        "Implemented the change and validated tests."
+    );
+    assert_eq!(
+        updated.history.last().and_then(|entry| entry.note.as_deref()),
+        Some("ready for review")
+    );
+}
+
+#[test]
 fn commit_changes_automation_commits_dirty_task_worktree() {
     let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let dir = tempdir().expect("tempdir");

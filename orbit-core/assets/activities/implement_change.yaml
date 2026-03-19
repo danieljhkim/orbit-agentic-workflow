@@ -10,7 +10,7 @@ activity:
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Implement an Orbit task from plan to tested code, then record the execution summary
+  description: Implement an Orbit task from plan to tested code, then return the next task status and execution summary
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to tested code.
@@ -71,14 +71,15 @@ activity:
        - Do not stage files, create commits, or open pull requests. The job pipeline will handle persistence and those steps after this activity succeeds.
 
     7. Return output:
-       - status: "success" or "failed"
+       - status: "review" when implementation is ready for persistence and verification
+       - status: "blocked" when implementation could not be completed safely
        - summary: one paragraph describing what was implemented
        - execution_summary: the full markdown summary (will be passed to update_task for persistence)
        - files_changed: list of file paths you modified or created
        - note: optional lifecycle note for the status transition
 
     If any step fails unrecoverably (tests cannot be fixed, plan is ambiguous, required
-    files are missing), return status: "failed" with the execution_summary documenting
+    files are missing), return status: "blocked" with the execution_summary documenting
     the failure reason (will be passed to update_task for persistence).
 
   # ---- interface ----
@@ -124,7 +125,7 @@ activity:
     properties:
       status:
         type: string
-        description: "Outcome: success or failed"
+        description: Target Orbit task status for the follow-up update_task step, typically review or blocked.
       summary:
         type: string
         description: One-paragraph summary of what was implemented
