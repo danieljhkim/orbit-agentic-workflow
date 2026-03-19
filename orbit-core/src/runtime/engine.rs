@@ -183,10 +183,10 @@ impl EngineHost for OrbitRuntime {
         OrbitRuntime::validate_activity_target_exists(self, target_type, target_id)
     }
 
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError> {
+    fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
         self.context
             .job_store
-            .get_pending_or_running_job_run(job_id)
+            .list_pending_or_running_job_runs(job_id)
     }
 
     fn insert_job_run(

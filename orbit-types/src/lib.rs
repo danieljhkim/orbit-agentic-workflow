@@ -20,7 +20,7 @@ pub use event::OrbitEvent;
 pub use id::OrbitId;
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
-    JobScheduleState, JobStep, JobTargetType,
+    JobScheduleState, JobStep, JobTargetType, default_job_max_active_runs,
 };
 pub use memo::Memo;
 pub use redaction::{
@@ -105,6 +105,7 @@ mod tests {
             job_id: "job-1".to_string(),
             state: JobScheduleState::Enabled,
             default_input: Some(serde_json::json!({"base": "main"})),
+            max_active_runs: 2,
             steps: vec![JobStep {
                 target_type: JobTargetType::Activity,
                 target_id: "exec-1".to_string(),
@@ -118,6 +119,7 @@ mod tests {
         let job_value = serde_json::to_value(job).expect("serialize job");
         assert_eq!(job_value["state"], "enabled");
         assert_eq!(job_value["default_input"]["base"], "main");
+        assert_eq!(job_value["max_active_runs"], 2);
         assert_eq!(job_value["steps"][0]["target_type"], "activity");
 
         let run = JobRun {

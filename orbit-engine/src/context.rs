@@ -73,7 +73,7 @@ pub trait EngineHost {
         target_type: JobTargetType,
         target_id: &str,
     ) -> Result<Activity, OrbitError>;
-    fn get_pending_or_running_job_run(&self, job_id: &str) -> Result<Option<JobRun>, OrbitError>;
+    fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
     fn insert_job_run(
         &self,
         job_id: &str,

@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use orbit_agent::{Agent, AgentConfig};
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobUpdateParams as StoreJobUpdateParams;
-use orbit_types::{Job, JobRun, JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent};
+use orbit_types::{
+    Job, JobRun, JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent,
+    default_job_max_active_runs,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -39,6 +42,8 @@ struct DefaultJobEntry {
     state: String,
     #[serde(default)]
     default_input: Option<Value>,
+    #[serde(default = "default_job_max_active_runs")]
+    max_active_runs: u32,
     steps: Vec<DefaultJobStep>,
 }
 
@@ -57,6 +62,7 @@ struct DefaultJobStep {
 pub struct JobAddParams {
     pub job_id: Option<String>,
     pub default_input: Option<Value>,
+    pub max_active_runs: Option<u32>,
     pub steps: Vec<JobStep>,
     pub initial_state_override: Option<JobScheduleState>,
 }
@@ -89,6 +95,7 @@ impl OrbitRuntime {
                 "job must have at least one step".to_string(),
             ));
         }
+        let max_active_runs = validate_job_max_active_runs(params.max_active_runs)?;
         let default_input = normalize_job_default_input(params.default_input)?;
 
         for step in &params.steps {
@@ -127,6 +134,7 @@ impl OrbitRuntime {
         let job = self.context.job_store.add_job(StoreActivityCreateParams {
             job_id: params.job_id,
             default_input,
+            max_active_runs,
             steps,
             initial_state,
         })?;
@@ -140,6 +148,7 @@ impl OrbitRuntime {
         &self,
         job_id: &str,
         default_input: Option<Value>,
+        max_active_runs: u32,
         steps: Vec<JobStep>,
         state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
@@ -147,6 +156,7 @@ impl OrbitRuntime {
             job_id,
             StoreJobUpdateParams {
                 default_input: Some(normalize_job_default_input(default_input)?),
+                max_active_runs: Some(validate_job_max_active_runs(Some(max_active_runs))?),
                 steps: Some(steps),
                 state: Some(state),
             },
@@ -269,6 +279,7 @@ pub(crate) fn seed_default_jobs(
             runtime.update_job_definition(
                 &entry.job_id,
                 entry.default_input.clone(),
+                entry.max_active_runs,
                 steps,
                 initial_state,
             )?;
@@ -280,6 +291,7 @@ pub(crate) fn seed_default_jobs(
         runtime.add_job(JobAddParams {
             job_id: Some(entry.job_id),
             default_input: entry.default_input,
+            max_active_runs: Some(entry.max_active_runs),
             steps,
             initial_state_override: Some(initial_state),
         })?;
@@ -324,6 +336,16 @@ fn default_job_steps(entry: &DefaultJobEntry) -> Result<Vec<JobStep>, OrbitError
         .collect()
 }
 
+fn validate_job_max_active_runs(max_active_runs: Option<u32>) -> Result<u32, OrbitError> {
+    let value = max_active_runs.unwrap_or_else(default_job_max_active_runs);
+    if value == 0 {
+        return Err(OrbitError::JobValidation(
+            "job max_active_runs must be at least 1".to_string(),
+        ));
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{DEFAULT_JOB_FILES, load_default_job_specs};
@@ -348,12 +370,18 @@ mod tests {
         );
         for spec in &specs {
             assert!(!spec.job_id.is_empty(), "job_id must not be empty");
+            assert!(spec.max_active_runs > 0, "max_active_runs must be positive");
             assert!(!spec.steps.is_empty(), "steps must not be empty");
             for step in &spec.steps {
                 assert!(!step.target_id.is_empty(), "target_id must not be empty");
                 assert!(step.timeout_seconds > 0, "timeout_seconds must be positive");
             }
         }
+        let pipeline = specs
+            .iter()
+            .find(|spec| spec.job_id == "job_task_pipeline")
+            .expect("task pipeline spec present");
+        assert_eq!(pipeline.max_active_runs, 4);
     }
 
     #[test]

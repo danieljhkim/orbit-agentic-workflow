@@ -17,6 +17,7 @@ job:
   #   commit_changes   — let Orbit stage and commit repository changes in the task worktree
   #   open_pr          — let Orbit open a PR using task title + execution_summary
   #   review_pr        — review the opened PR against task acceptance criteria
+  max_active_runs: 4
   default_input:
     base: agent-main
   steps:

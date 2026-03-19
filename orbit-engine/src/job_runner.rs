@@ -15,10 +15,16 @@ pub fn run_job_with_input<H: EngineHost>(
     input: Value,
 ) -> Result<JobRunResult, OrbitError> {
     let _ = recover_stale_active_run_for_job(host, &job, Utc::now())?;
-    if let Some(active_run) = host.get_pending_or_running_job_run(&job.job_id)? {
+    let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
+    if active_runs.len() as u32 >= job.max_active_runs {
+        let latest_active_run = active_runs.first().expect("active run exists");
         return Err(OrbitError::JobValidation(format!(
-            "job '{}' already has an active run '{}' in state '{}'",
-            job.job_id, active_run.run_id, active_run.state
+            "job '{}' already has {} active run(s), reaching max_active_runs={} (latest active run '{}' in state '{}')",
+            job.job_id,
+            active_runs.len(),
+            job.max_active_runs,
+            latest_active_run.run_id,
+            latest_active_run.state,
         )));
     }
     host.record_event(OrbitEvent::JobTriggered {
@@ -181,59 +187,68 @@ pub fn recover_stale_active_run_for_job<H: EngineHost>(
     job: &Job,
     now: DateTime<Utc>,
 ) -> Result<bool, OrbitError> {
-    let Some(active_run) = host.get_pending_or_running_job_run(&job.job_id)? else {
-        return Ok(false);
-    };
-
-    if !is_stale_active_run(job, &active_run, now) {
+    let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
+    if active_runs.is_empty() {
         return Ok(false);
     }
+    let mut recovered_any = false;
 
-    let reference_time = active_run.started_at.unwrap_or(active_run.created_at);
-    let age_seconds = now
-        .signed_duration_since(reference_time)
-        .num_seconds()
-        .max(0) as u64;
-    let duration_ms = active_run
-        .started_at
-        .map(|started| now.signed_duration_since(started).num_milliseconds().max(0) as u64);
-    let total_timeout: u64 = job.steps.iter().map(|s| s.timeout_seconds).sum();
-    let message = format!(
-        "stale active run recovered: run '{}' remained '{}' for {}s (timeout={}s, grace={}s)",
-        active_run.run_id, active_run.state, age_seconds, total_timeout, STALE_RUN_GRACE_SECONDS
-    );
+    for active_run in active_runs {
+        if !is_stale_active_run(job, &active_run, now) {
+            continue;
+        }
 
-    if let Some(first_step) = job.steps.first() {
-        let _ = host.complete_job_run_step(
-            &active_run.run_id,
-            &JobRunStepParams {
-                step_index: 0,
-                target_type: first_step.target_type,
-                target_id: first_step.target_id.clone(),
-                started_at: active_run.started_at.unwrap_or(active_run.created_at),
-                finished_at: now,
-                duration_ms,
-                exit_code: Some(1),
-                agent_response_json: None,
-                state: JobRunState::Failed,
-                error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
-                error_message: Some(message.clone()),
-            },
+        let reference_time = active_run.started_at.unwrap_or(active_run.created_at);
+        let age_seconds = now
+            .signed_duration_since(reference_time)
+            .num_seconds()
+            .max(0) as u64;
+        let duration_ms = active_run
+            .started_at
+            .map(|started| now.signed_duration_since(started).num_milliseconds().max(0) as u64);
+        let total_timeout: u64 = job.steps.iter().map(|s| s.timeout_seconds).sum();
+        let message = format!(
+            "stale active run recovered: run '{}' remained '{}' for {}s (timeout={}s, grace={}s)",
+            active_run.run_id,
+            active_run.state,
+            age_seconds,
+            total_timeout,
+            STALE_RUN_GRACE_SECONDS
         );
+
+        if let Some(first_step) = job.steps.first() {
+            let _ = host.complete_job_run_step(
+                &active_run.run_id,
+                &JobRunStepParams {
+                    step_index: 0,
+                    target_type: first_step.target_type,
+                    target_id: first_step.target_id.clone(),
+                    started_at: active_run.started_at.unwrap_or(active_run.created_at),
+                    finished_at: now,
+                    duration_ms,
+                    exit_code: Some(1),
+                    agent_response_json: None,
+                    state: JobRunState::Failed,
+                    error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
+                    error_message: Some(message.clone()),
+                },
+            );
+        }
+
+        let changed =
+            host.finalize_job_run(&active_run.run_id, JobRunState::Failed, now, duration_ms)?;
+        if !changed {
+            return Err(OrbitError::JobRunNotFound(active_run.run_id.clone()));
+        }
+        host.record_event(OrbitEvent::JobRunCompleted {
+            job_id: job.job_id.clone(),
+            run_id: active_run.run_id.clone(),
+            state: JobRunState::Failed.to_string(),
+        })?;
+        recovered_any = true;
     }
 
-    let changed =
-        host.finalize_job_run(&active_run.run_id, JobRunState::Failed, now, duration_ms)?;
-    if !changed {
-        return Err(OrbitError::JobRunNotFound(active_run.run_id.clone()));
-    }
-    host.record_event(OrbitEvent::JobRunCompleted {
-        job_id: job.job_id.clone(),
-        run_id: active_run.run_id.clone(),
-        state: JobRunState::Failed.to_string(),
-    })?;
-
-    Ok(true)
+    Ok(recovered_any)
 }
 
 fn finalize_failed_started_run<H: EngineHost>(

@@ -189,6 +189,10 @@ fn job_assets_use_grouped_sections() {
 #[test]
 fn task_pipeline_starts_task_after_worktree_creation() {
     let raw = include_str!("../assets/jobs/job_task_pipeline.yaml");
+    assert!(
+        raw.contains("max_active_runs: 4"),
+        "task pipeline should opt into explicit parallel run capacity"
+    );
     assert_in_order(
         raw,
         &[
