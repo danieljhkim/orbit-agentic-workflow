@@ -21,9 +21,11 @@ activity:
          and workspacePath carefully before touching any code.
        - If input.workspace_path is provided, treat that as the authoritative implementation workspace.
 
-    2. Call orbit.task.update with:
-       - id: "{{input.task_id}}"
-       - status: "in-progress"
+    2. Confirm the task lifecycle state:
+       - In the standard `job_task_pipeline`, Orbit has already moved the task to `in-progress`
+         before this activity runs.
+       - If you are invoked outside that standard pipeline and the task is not already
+         `in-progress`, call orbit.task.start with id: "{{input.task_id}}" before continuing.
 
     3. Explore the workspace:
        - Read the files listed in contextFiles and any
@@ -123,6 +125,7 @@ activity:
     - orbit
   tools:
     - orbit.task.show
+    - orbit.task.start
     - orbit.task.update
     - orbit.task.list
     - fs.write

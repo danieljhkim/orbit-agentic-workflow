@@ -46,6 +46,7 @@ activity:
        to record the dispatch rationale.
 
     7. Return a JSON result with EXACTLY these fields (no prose, no explanation):
+       Output the selected task_id, workspace_path, and the rationale comment.
        {
          "task_id": "<selected task id, or the string 'None' if nothing is available>",
          "workspace_path": "<workspace_path from orbit.task.show, or null if not set>",

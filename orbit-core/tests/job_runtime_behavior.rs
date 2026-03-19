@@ -2040,6 +2040,90 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
 }
 
 #[test]
+fn start_task_automation_moves_task_into_progress() {
+    let dir = tempdir().expect("tempdir");
+    let data_root = dir.path().join("orbit");
+    std::fs::create_dir_all(&data_root).expect("create data root");
+    let runtime = OrbitRuntime::from_data_root(&data_root).expect("runtime");
+
+    let task = runtime
+        .add_task(TaskAddParams {
+            title: "Start me".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: None,
+            priority: TaskPriority::Medium,
+            task_type: TaskType::Task,
+        })
+        .expect("add task");
+    assert_eq!(task.status, TaskStatus::Backlog);
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-start-task".to_string(),
+            spec_type: "automation".to_string(),
+            description: "start task".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "note": { "type": "string" }
+                },
+                "required": ["task_id"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "status": { "type": "string" }
+                },
+                "required": ["id", "status"]
+            }),
+            spec_config: json!({"action":"start_task"}),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add start activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({
+                "task_id": task.id,
+                "note": "pipeline ready to implement"
+            })),
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-start-task".to_string(),
+                agent_cli: String::new(),
+                timeout_seconds: 30,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let updated = runtime.get_task(task.id.as_ref()).expect("updated task");
+    assert_eq!(updated.status, TaskStatus::InProgress);
+    assert_eq!(updated.history.last().expect("history").event, "started");
+
+    let history = runtime.job_history(&job_id).expect("job history");
+    let output = history[0].steps[0]
+        .agent_response_json
+        .as_ref()
+        .expect("start output");
+    assert_eq!(output["id"], json!(task.id));
+    assert_eq!(output["status"], json!("in_progress"));
+}
+
+#[test]
 fn commit_changes_automation_commits_dirty_task_worktree() {
     let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let dir = tempdir().expect("tempdir");

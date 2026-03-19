@@ -309,6 +309,15 @@ impl EngineHost for OrbitRuntime {
         OrbitRuntime::get_task(self, task_id)
     }
 
+    fn start_task(
+        &self,
+        task_id: &str,
+        note: Option<String>,
+        comment: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        OrbitRuntime::start_task(self, task_id, note, comment)
+    }
+
     fn apply_task_automation_update(
         &self,
         task_id: &str,

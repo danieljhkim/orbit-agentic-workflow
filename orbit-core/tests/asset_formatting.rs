@@ -24,6 +24,10 @@ fn activity_assets_use_grouped_sections_and_literal_instruction_blocks() {
             include_str!("../assets/activities/create_branch.yaml"),
         ),
         (
+            "start_task",
+            include_str!("../assets/activities/start_task.yaml"),
+        ),
+        (
             "dispatch_task",
             include_str!("../assets/activities/dispatch_task.yaml"),
         ),
@@ -213,4 +217,18 @@ fn job_assets_use_grouped_sections() {
             "job asset '{name}' should declare job_id inside the identity group"
         );
     }
+}
+
+#[test]
+fn task_pipeline_starts_task_after_worktree_creation() {
+    let raw = include_str!("../assets/jobs/job_task_pipeline.yaml");
+    assert_in_order(
+        raw,
+        &[
+            "target_id: dispatch_task",
+            "target_id: create_branch",
+            "target_id: start_task",
+            "target_id: implement_change",
+        ],
+    );
 }

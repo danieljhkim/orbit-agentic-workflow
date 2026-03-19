@@ -1,0 +1,53 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- identity ----
+  id: start_task
+  spec_type: automation
+
+  # ---- content ----
+  description: Move the selected Orbit task into in-progress before implementation begins
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+    properties:
+      task_id:
+        type: string
+        description: The Orbit task ID to start.
+      note:
+        type: string
+        description: Optional lifecycle note recorded with the start transition.
+      comment:
+        type: string
+        description: Optional task comment to append while starting the task.
+  output_schema_json:
+    type: object
+    required:
+      - id
+      - status
+    properties:
+      id:
+        type: string
+        description: The started task ID.
+      status:
+        type: string
+        description: Updated task status after the start transition.
+      workspace_path:
+        type: string
+        description: Task workspace path preserved for downstream pipeline steps when present.
+      repo_root:
+        type: string
+        description: Task repo root preserved for downstream pipeline steps when present.
+      branch:
+        type: string
+        description: Task branch preserved for downstream pipeline steps when present.
+
+  # ---- execution ----
+  action: start_task

@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use crate::context::{EngineHost, TaskAutomationUpdate};
 
 const AUTOMATION_CREATE_TASK_WORKTREE: &str = "create_task_worktree";
+const AUTOMATION_START_TASK: &str = "start_task";
 const AUTOMATION_COMMIT_TASK_CHANGES: &str = "commit_task_changes";
 const AUTOMATION_OPEN_PR_FROM_TASK: &str = "open_pr_from_task";
 const AUTOMATION_FINALIZE_TASK_WORKTREE: &str = "finalize_task_worktree";
@@ -30,6 +31,7 @@ pub fn execute<H: EngineHost>(
 
     match spec.action.as_str() {
         AUTOMATION_CREATE_TASK_WORKTREE => create_task_worktree(host, input),
+        AUTOMATION_START_TASK => start_task(host, input),
         AUTOMATION_COMMIT_TASK_CHANGES => commit_task_changes(host, input),
         AUTOMATION_OPEN_PR_FROM_TASK => open_pr_from_task(host, input),
         AUTOMATION_FINALIZE_TASK_WORKTREE => finalize_task_worktree(input),
@@ -81,6 +83,17 @@ fn create_task_worktree<H: EngineHost>(host: &H, input: &Value) -> Result<Value,
         "repo_root": canonical_repo_root.to_string_lossy().to_string(),
         "branch": branch,
     }))
+}
+
+fn start_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitError> {
+    let task_id = required_input_string(input, "task_id")?;
+    let task = host.start_task(
+        task_id,
+        input_string_field(input, "note"),
+        input_string_field(input, "comment"),
+    )?;
+    serde_json::to_value(task)
+        .map_err(|error| OrbitError::Execution(format!("failed to serialize started task: {error}")))
 }
 
 fn commit_task_changes<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitError> {
