@@ -28,6 +28,10 @@ fn activity_assets_use_grouped_sections_and_literal_instruction_blocks() {
             include_str!("../assets/activities/start_task.yaml"),
         ),
         (
+            "update_task",
+            include_str!("../assets/activities/update_task.yaml"),
+        ),
+        (
             "dispatch_task",
             include_str!("../assets/activities/dispatch_task.yaml"),
         ),

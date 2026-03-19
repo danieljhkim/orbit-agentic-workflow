@@ -2124,6 +2124,113 @@ fn start_task_automation_moves_task_into_progress() {
 }
 
 #[test]
+fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
+    let dir = tempdir().expect("tempdir");
+    let data_root = dir.path().join("orbit");
+    std::fs::create_dir_all(&data_root).expect("create data root");
+    let runtime = OrbitRuntime::from_data_root(&data_root).expect("runtime");
+
+    let task = runtime
+        .add_task(TaskAddParams {
+            title: "Review me".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: None,
+            priority: TaskPriority::Medium,
+            task_type: TaskType::Task,
+        })
+        .expect("add task");
+    let started = runtime
+        .start_task(&task.id, Some("picked up".to_string()), None)
+        .expect("start task");
+    assert_eq!(started.status, TaskStatus::InProgress);
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-update-task".to_string(),
+            spec_type: "automation".to_string(),
+            description: "update task".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "execution_summary": { "type": "string" },
+                    "files_changed": { "type": "array", "items": { "type": "string" } },
+                    "comment": { "type": "string" },
+                    "note": { "type": "string" }
+                },
+                "required": ["task_id", "status"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "status": { "type": "string" },
+                    "execution_summary": { "type": "string" }
+                },
+                "required": ["id", "status", "execution_summary"]
+            }),
+            spec_config: json!({"action":"update_task"}),
+            workspace_path: None,
+            identity_id: None,
+            created_by: None,
+        })
+        .expect("add update activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({
+                "task_id": task.id,
+                "status": "review",
+                "execution_summary": "Implemented the task and validated targeted tests.",
+                "files_changed": ["orbit-core/src/command/task.rs"],
+                "comment": "Ready for review",
+                "note": "handing off for review"
+            })),
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-update-task".to_string(),
+                agent_cli: String::new(),
+                timeout_seconds: 30,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Success);
+
+    let updated = runtime.get_task(task.id.as_ref()).expect("updated task");
+    assert_eq!(updated.status, TaskStatus::Review);
+    assert_eq!(
+        updated.execution_summary,
+        "Implemented the task and validated targeted tests."
+    );
+    assert_eq!(updated.comments.last().expect("comment").message, "Ready for review");
+    let history = updated.history.last().expect("history");
+    assert_eq!(history.event, "moved");
+    assert_eq!(history.note.as_deref(), Some("handing off for review"));
+
+    let history = runtime.job_history(&job_id).expect("job history");
+    let output = history[0].steps[0]
+        .agent_response_json
+        .as_ref()
+        .expect("update output");
+    assert_eq!(output["id"], json!(task.id));
+    assert_eq!(output["status"], json!("review"));
+    assert_eq!(
+        output["execution_summary"],
+        json!("Implemented the task and validated targeted tests.")
+    );
+}
+
+#[test]
 fn commit_changes_automation_commits_dirty_task_worktree() {
     let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let dir = tempdir().expect("tempdir");

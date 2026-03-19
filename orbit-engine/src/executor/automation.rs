@@ -10,6 +10,7 @@ use crate::context::{EngineHost, TaskAutomationUpdate};
 
 const AUTOMATION_CREATE_TASK_WORKTREE: &str = "create_task_worktree";
 const AUTOMATION_START_TASK: &str = "start_task";
+const AUTOMATION_UPDATE_TASK: &str = "update_task";
 const AUTOMATION_COMMIT_TASK_CHANGES: &str = "commit_task_changes";
 const AUTOMATION_OPEN_PR_FROM_TASK: &str = "open_pr_from_task";
 const AUTOMATION_FINALIZE_TASK_WORKTREE: &str = "finalize_task_worktree";
@@ -32,6 +33,7 @@ pub fn execute<H: EngineHost>(
     match spec.action.as_str() {
         AUTOMATION_CREATE_TASK_WORKTREE => create_task_worktree(host, input),
         AUTOMATION_START_TASK => start_task(host, input),
+        AUTOMATION_UPDATE_TASK => update_task(host, input),
         AUTOMATION_COMMIT_TASK_CHANGES => commit_task_changes(host, input),
         AUTOMATION_OPEN_PR_FROM_TASK => open_pr_from_task(host, input),
         AUTOMATION_FINALIZE_TASK_WORKTREE => finalize_task_worktree(input),
@@ -94,6 +96,24 @@ fn start_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitErro
     )?;
     serde_json::to_value(task)
         .map_err(|error| OrbitError::Execution(format!("failed to serialize started task: {error}")))
+}
+
+fn update_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitError> {
+    let task_id = required_input_string(input, "task_id")?;
+    let status = required_input_string(input, "status")?
+        .parse::<TaskStatus>()
+        .map_err(|error| OrbitError::InvalidInput(format!("invalid input.status: {error}")))?;
+    let task = host.update_task_from_activity(
+        task_id,
+        status,
+        input_string_field(input, "execution_summary"),
+        input_string_array_field(input, "files_changed")?,
+        input_string_field(input, "comment"),
+        input_string_field(input, "note"),
+    )?;
+    serde_json::to_value(task).map_err(|error| {
+        OrbitError::Execution(format!("failed to serialize updated task: {error}"))
+    })
 }
 
 fn commit_task_changes<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitError> {
@@ -306,6 +326,33 @@ fn input_string_field(input: &Value, key: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn input_string_array_field(input: &Value, key: &str) -> Result<Vec<String>, OrbitError> {
+    let Some(values) = input
+        .as_object()
+        .and_then(|map| map.get(key))
+        .and_then(Value::as_array)
+    else {
+        return Ok(Vec::new());
+    };
+
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput(format!(
+                        "input.{key}[{index}] must be a non-empty string"
+                    ))
+                })
+        })
+        .collect()
 }
 
 fn input_workspace_path(input: &Value) -> Option<String> {

@@ -39,6 +39,10 @@ job:
       timeout_seconds: 1800
 
     - target_type: activity
+      target_id: update_task
+      timeout_seconds: 15
+
+    - target_type: activity
       target_id: run_tests
       timeout_seconds: 600
 

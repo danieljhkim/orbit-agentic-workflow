@@ -16,83 +16,96 @@ activity:
     You are implementing an Orbit task from plan to tested code.
 
     Steps:
-    1. Call orbit.task.show with id: "{{input.task_id}}" to fetch the task.
-       - Read the task title, description, plan, acceptanceCriteria, contextFiles,
-         and workspacePath carefully before touching any code.
-       - If input.workspace_path is provided, treat that as the authoritative implementation workspace.
+    1. Review the task metadata provided as input.
+       - Read input.title, input.description, and input.context_files carefully before touching any code.
+       - input.workspace_path is the authoritative implementation workspace.
 
     2. Confirm the task lifecycle state:
-       - In the standard `job_task_pipeline`, Orbit has already moved the task to `in-progress`
-         before this activity runs.
+       - In the standard `job_task_pipeline`, the `start_task` activity automatically moves
+         the task to `in-progress` before this activity runs.
        - If you are invoked outside that standard pipeline and the task is not already
-         `in-progress`, call orbit.task.start with id: "{{input.task_id}}" before continuing.
+         `in-progress`, it is the caller's responsibility to transition it first.
 
     3. Explore the workspace:
-       - Read the files listed in contextFiles and any
-         other files the plan references. Understand the existing code before writing.
-       - All relative file and process work should happen inside input.workspace_path when provided.
+       - Read the files listed in input.context_files. Understand the existing code before writing.
+       - All relative file and process work should happen inside input.workspace_path.
 
-    4. Implement the plan:
-       - Follow the plan steps in order.
+    4. Implement the task:
+       - If input.plan is provided, follow the plan steps in order.
        - Write code with fs.write. Keep changes minimal and focused on the task scope.
        - Do not refactor unrelated code or add unrequested features.
 
     5. Verify the implementation:
-       - Use proc.spawn to run the project's test and lint commands from input.workspace_path when provided,
-         otherwise from the task workspacePath.
+       - Use proc.spawn to run the project's test and lint commands from input.workspace_path.
          Common commands: `cargo test --workspace`, `make check`, `npm test`.
        - If tests fail, fix the issue before continuing. Do not move to review with
          failing tests.
 
-    6. Write an execution summary:
-       - Call orbit.task.update with:
-           - id: "{{input.task_id}}"
-           - execution_summary: a markdown summary using this structure:
-               ## Status
-               success
+    6. Prepare output for task persistence:
+       - Construct an execution summary markdown with this structure:
+           ## Status
+           success
 
-               ## 1. Summary of Changes
-               <what changed and why>
+           ## 1. Summary of Changes
+           <what changed and why>
 
-               ## 2. Strategic Decisions
-               - <decision> | Rationale: <why> | Trade-offs: <trade-offs>
+           ## 2. Strategic Decisions
+           - <decision> | Rationale: <why> | Trade-offs: <trade-offs>
 
-               ## 3. Assumptions Made
-               - <assumption> | Impact if incorrect: <impact>
+           ## 3. Assumptions Made
+           - <assumption> | Impact if incorrect: <impact>
 
-               ## 4. Design Weaknesses / Risks
-               - <risk> | Severity: Low/Medium/High | Mitigation: <mitigation>
+           ## 4. Design Weaknesses / Risks
+           - <risk> | Severity: Low/Medium/High | Mitigation: <mitigation>
 
-               ## 5. Deviations from Original Plan
-               - <deviation> | Justification: <why>
-               (or "None" if the plan was followed exactly)
+           ## 5. Deviations from Original Plan
+           - <deviation> | Justification: <why>
+           (or "None" if the plan was followed exactly)
 
-               ## 6. Technical Debt Introduced
-               - <item> | Recommended resolution: <next step>
-               (or "None")
+           ## 6. Technical Debt Introduced
+           - <item> | Recommended resolution: <next step>
+           (or "None")
 
-               ## 7. Recommended Follow-Ups
-               - <next step>
-       - Do not stage files, create commits, or open pull requests. Orbit automation will handle those steps after implementation succeeds.
+           ## 7. Recommended Follow-Ups
+           - <next step>
+       - Do not stage files, create commits, or open pull requests. The job pipeline will handle persistence and those steps after this activity succeeds.
 
     7. Return output:
-       - status: "success"
+       - status: "success" or "failed"
        - summary: one paragraph describing what was implemented
+       - execution_summary: the full markdown summary (will be passed to update_task for persistence)
        - files_changed: list of file paths you modified or created
+       - note: optional lifecycle note for the status transition
 
     If any step fails unrecoverably (tests cannot be fixed, plan is ambiguous, required
-    files are missing), set status to "failed" in the execution summary, call
-    orbit.task.update to add the failed execution_summary and a comment explaining the blocker, and return status: "failed".
+    files are missing), return status: "failed" with the execution_summary documenting
+    the failure reason (will be passed to update_task for persistence).
 
   # ---- interface ----
   input_schema_json:
     type: object
     required:
       - task_id
+      - title
+      - description
     properties:
       task_id:
         type: string
         description: The Orbit task ID to implement
+      title:
+        type: string
+        description: Task title
+      description:
+        type: string
+        description: Task description with context and requirements
+      plan:
+        type: string
+        description: Detailed implementation plan with numbered steps
+      context_files:
+        type: array
+        items:
+          type: string
+        description: Optional list of relevant file paths for context
       workspace_path:
         type: string
         description: Optional task worktree path. If provided, it is the authoritative implementation workspace.
@@ -107,6 +120,7 @@ activity:
     required:
       - status
       - summary
+      - execution_summary
     properties:
       status:
         type: string
@@ -114,20 +128,22 @@ activity:
       summary:
         type: string
         description: One-paragraph summary of what was implemented
+      execution_summary:
+        type: string
+        description: Full markdown execution summary (passed to update_task activity for persistence)
       files_changed:
         type: array
         items:
           type: string
         description: List of files created or modified
+      note:
+        type: string
+        description: Optional lifecycle note for the status transition
 
   # ---- execution ----
   skill_refs:
     - orbit
   tools:
-    - orbit.task.show
-    - orbit.task.start
-    - orbit.task.update
-    - orbit.task.list
     - fs.write
     - fs.delete
     - proc.spawn

@@ -115,6 +115,15 @@ pub trait EngineHost {
         note: Option<String>,
         comment: Option<String>,
     ) -> Result<Task, OrbitError>;
+    fn update_task_from_activity(
+        &self,
+        task_id: &str,
+        status: TaskStatus,
+        execution_summary: Option<String>,
+        files_changed: Vec<String>,
+        comment: Option<String>,
+        note: Option<String>,
+    ) -> Result<Task, OrbitError>;
     fn apply_task_automation_update(
         &self,
         task_id: &str,

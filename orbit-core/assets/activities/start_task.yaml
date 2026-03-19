@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Move the selected Orbit task into in-progress before implementation begins
+  description: Transition task to in-progress and pass task metadata to downstream steps
 
   # ---- interface ----
   input_schema_json:
@@ -32,6 +32,8 @@ activity:
     required:
       - id
       - status
+      - title
+      - description
     properties:
       id:
         type: string
@@ -39,15 +41,29 @@ activity:
       status:
         type: string
         description: Updated task status after the start transition.
+      title:
+        type: string
+        description: Task title for implementation.
+      description:
+        type: string
+        description: Task description with context and requirements.
+      plan:
+        type: string
+        description: Detailed implementation plan with numbered steps.
+      context_files:
+        type: array
+        items:
+          type: string
+        description: List of relevant file paths for context.
       workspace_path:
         type: string
-        description: Task workspace path preserved for downstream pipeline steps when present.
+        description: Task workspace path for implementation.
       repo_root:
         type: string
-        description: Task repo root preserved for downstream pipeline steps when present.
+        description: Task repo root for git operations.
       branch:
         type: string
-        description: Task branch preserved for downstream pipeline steps when present.
+        description: Task branch name checked out in the workspace.
 
   # ---- execution ----
   action: start_task

@@ -84,6 +84,8 @@ fn assert_default_named_activities_visible(base_root: &std::path::Path) {
         "checkout_branch",
         "commit_changes",
         "create_branch",
+        "start_task",
+        "update_task",
         "dispatch_task",
         "implement_change",
         "open_pr",
@@ -189,7 +191,7 @@ fn init_refreshes_full_bundled_activity_and_job_set() {
         .args(["init"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("default_activities_refreshed=11"))
+        .stdout(predicate::str::contains("default_activities_refreshed=13"))
         .stdout(predicate::str::contains("default_jobs_refreshed=4"));
 
     let activities_dir = workspace
@@ -306,7 +308,7 @@ fn explicit_init_refreshes_builtin_activities_and_jobs_but_implicit_bootstrap_do
         .args(["init"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("default_activities_refreshed=11"))
+        .stdout(predicate::str::contains("default_activities_refreshed=13"))
         .stdout(predicate::str::contains("default_jobs_refreshed=4"));
 
     let refreshed_activity_raw = std::fs::read_to_string(&activity_path).expect("read activity");

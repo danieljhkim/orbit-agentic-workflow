@@ -8,7 +8,7 @@ use orbit_store::JobRunStepParams;
 use orbit_tools::ToolContext;
 use orbit_types::{
     Activity, AgentCommitRequest, AgentResponseEnvelope, JobRun, JobRunState, JobTargetType,
-    OrbitError, OrbitEvent, Role, Task,
+    OrbitError, OrbitEvent, Role, Task, TaskStatus,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -316,6 +316,26 @@ impl EngineHost for OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         OrbitRuntime::start_task(self, task_id, note, comment)
+    }
+
+    fn update_task_from_activity(
+        &self,
+        task_id: &str,
+        status: TaskStatus,
+        execution_summary: Option<String>,
+        files_changed: Vec<String>,
+        comment: Option<String>,
+        note: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        OrbitRuntime::update_task_from_activity(
+            self,
+            task_id,
+            status,
+            execution_summary,
+            files_changed,
+            comment,
+            note,
+        )
     }
 
     fn apply_task_automation_update(

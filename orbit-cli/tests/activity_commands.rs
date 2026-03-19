@@ -24,6 +24,67 @@ fn write_skill(dir: &Path, id: &str) {
     .expect("write skill");
 }
 
+fn init_orbit(dir: &Path) {
+    orbit_in(dir).args(["init"]).assert().success();
+}
+
+fn add_task(dir: &Path, title: &str) -> Value {
+    let output = orbit_in(dir)
+        .args([
+            "task",
+            "add",
+            "--title",
+            title,
+            "--description",
+            "task description",
+            "--plan",
+            "task plan",
+            "--workspace",
+            &dir.to_string_lossy(),
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).expect("task json")
+}
+
+fn show_task(dir: &Path, id: &str) -> Value {
+    let output = orbit_in(dir)
+        .args(["task", "show", id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).expect("task show json")
+}
+
+fn add_job(dir: &Path, target_id: &str, agent_cli: &str) -> String {
+    let output = orbit_in(dir)
+        .args([
+            "job",
+            "add",
+            "--target-id",
+            target_id,
+            "--agent-cli",
+            agent_cli,
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice::<Value>(&output)
+        .expect("job json")["job_id"]
+        .as_str()
+        .expect("job id")
+        .to_string()
+}
+
 #[test]
 fn activity_add_show_list_delete_json_flow() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -531,6 +592,158 @@ fn activity_update_active_reactivates_inactive_activity() {
         .clone();
     let show: Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["is_active"], true);
+}
+
+#[test]
+fn update_task_activity_is_seeded_on_init() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init_orbit(dir.path());
+
+    let output = orbit_in(dir.path())
+        .args(["activity", "show", "update_task", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let activity: Value = serde_json::from_slice(&output).expect("activity json");
+    assert_eq!(activity["id"], "update_task");
+    assert_eq!(activity["type"], "automation");
+    assert_eq!(activity["spec_config"]["action"], "update_task");
+}
+
+#[test]
+fn update_task_activity_job_run_updates_task_and_history() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init_orbit(dir.path());
+
+    let task = add_task(dir.path(), "Ship update_task");
+    let task_id = task["id"].as_str().expect("task id").to_string();
+
+    orbit_in(dir.path())
+        .args(["task", "start", &task_id, "--json"])
+        .assert()
+        .success();
+
+    let job_id = add_job(dir.path(), "update_task", "");
+    let run_output = orbit_in(dir.path())
+        .args([
+            "job",
+            "run",
+            &job_id,
+            "--input",
+            &format!("task_id={task_id}"),
+            "--input",
+            "status=review",
+            "--input",
+            "execution_summary=Implemented change and validated tests.",
+            "--input",
+            "comment=Ready for review",
+            "--input",
+            "note=handoff ready",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&run_output).expect("run json");
+    assert_eq!(run["state"], "success");
+
+    let updated = show_task(dir.path(), &task_id);
+    assert_eq!(updated["status"], "review");
+    assert_eq!(
+        updated["execution_summary"],
+        "Implemented change and validated tests."
+    );
+    assert!(
+        updated["comments"]
+            .as_array()
+            .expect("comments")
+            .iter()
+            .any(|comment| comment["message"] == "Ready for review")
+    );
+    let history = updated["history"].as_array().expect("history");
+    assert_eq!(history.last().expect("history entry")["event"], "moved");
+    assert_eq!(history.last().expect("history entry")["note"], "handoff ready");
+}
+
+#[test]
+fn update_task_activity_requires_execution_summary_for_review() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init_orbit(dir.path());
+
+    let task = add_task(dir.path(), "Need summary");
+    let task_id = task["id"].as_str().expect("task id").to_string();
+
+    orbit_in(dir.path())
+        .args(["task", "start", &task_id, "--json"])
+        .assert()
+        .success();
+
+    let job_id = add_job(dir.path(), "update_task", "");
+    let run_output = orbit_in(dir.path())
+        .args([
+            "job",
+            "run",
+            &job_id,
+            "--input",
+            &format!("task_id={task_id}"),
+            "--input",
+            "status=review",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&run_output).expect("run json");
+    assert_eq!(run["state"], "failed");
+    assert!(
+        run["error_message"]
+            .as_str()
+            .expect("error message")
+            .contains("requires non-empty execution_summary")
+    );
+}
+
+#[test]
+fn update_task_activity_rejects_invalid_status_transition() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init_orbit(dir.path());
+
+    let task = add_task(dir.path(), "Wrong transition");
+    let task_id = task["id"].as_str().expect("task id").to_string();
+
+    let job_id = add_job(dir.path(), "update_task", "");
+    let run_output = orbit_in(dir.path())
+        .args([
+            "job",
+            "run",
+            &job_id,
+            "--input",
+            &format!("task_id={task_id}"),
+            "--input",
+            "status=done",
+            "--input",
+            "execution_summary=Should not matter",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&run_output).expect("run json");
+    assert_eq!(run["state"], "failed");
+    assert!(
+        run["error_message"]
+            .as_str()
+            .expect("error message")
+            .contains("invalid status transition")
+    );
 }
 
 #[test]

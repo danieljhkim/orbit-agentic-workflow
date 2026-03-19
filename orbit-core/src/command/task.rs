@@ -144,6 +144,40 @@ impl OrbitRuntime {
     }
 
     pub fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
+        self.update_task_with_status_note(id, params, None)
+    }
+
+    pub fn update_task_from_activity(
+        &self,
+        id: &str,
+        status: TaskStatus,
+        execution_summary: Option<String>,
+        _files_changed: Vec<String>,
+        comment: Option<String>,
+        note: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        self.update_task_with_status_note(
+            id,
+            TaskUpdateParams {
+                title: None,
+                description: None,
+                plan: None,
+                execution_summary,
+                comment,
+                status: Some(status),
+                branch: None,
+                pr_number: None,
+            },
+            note,
+        )
+    }
+
+    fn update_task_with_status_note(
+        &self,
+        id: &str,
+        params: TaskUpdateParams,
+        status_note: Option<String>,
+    ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let is_field_update = params.title.is_some()
             || params.description.is_some()
@@ -191,6 +225,11 @@ impl OrbitRuntime {
         }
 
         let actor = effective_task_actor();
+        let status_note = status_note
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
         let append_comments = build_task_comments(params.comment.clone(), actor.label.as_str())?;
         let assigned_to = params.status.and_then(|status| {
             if status == TaskStatus::InProgress {
@@ -211,6 +250,7 @@ impl OrbitRuntime {
                     execution_summary: params.execution_summary,
                     assigned_to,
                     status: params.status,
+                    status_note,
                     branch: params.branch,
                     pr_number: params.pr_number,
                     append_comments: append_comments.clone(),
