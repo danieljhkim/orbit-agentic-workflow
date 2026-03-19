@@ -19,17 +19,14 @@ activity:
     1. Call orbit.task.list with status: "rejected" to retrieve all rejected tasks.
        Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
        If both lists are empty, return this JSON and exit:
-       {"task_id": "None", "workspace_path": null, "comment": "No tasks available. Nothing to dispatch."}
+       {"task_id": "None", "comment": "No tasks available. Nothing to dispatch."}
 
-    2. Call github.pr.list with state: "open" to retrieve all currently open pull requests.
-       Note the head branch and title of each open PR.
-
-    3. Call orbit.task.list with status: "in_progress" to retrieve tasks currently being worked on.
+    2. Call orbit.task.list with status: "in_progress" to retrieve tasks currently being worked on.
        For each in-progress task, call orbit.task.show to read its description and plan.
 
-    4. For the top candidates, call orbit.task.show with the task id to read description, plan, and priority.
+    3. For the top candidates, call orbit.task.show with the task id to read description, plan, and priority.
 
-    5. Select the single task most valuable to execute next using this priority order:
+    4. Select the single task most valuable to execute next using this priority order:
 
        a. Rejected tasks take precedence over backlog tasks. A rejected task represents work
           already reviewed and found incomplete — it is a regression or incomplete change that
@@ -38,18 +35,17 @@ activity:
        b. Within each group (rejected first, then backlog), apply priority rules:
           critical > high > medium > low.
 
-       c. Skip any task whose scope or target files clearly overlap with an open PR or an
+       c. Skip any task whose scope or target files clearly overlap with an
           in-progress task — prefer work that can land independently without causing merge
           conflicts or duplicating effort.
 
-    6. Call orbit.task.update with id: "<selected_task_id>" and comment: "Dispatched by Steve (CEO): <one sentence rationale>"
+    5. Call orbit.task.update with id: "<selected_task_id>" and comment: "Dispatched by Steve (CEO): <one sentence rationale>"
        to record the dispatch rationale.
 
-    7. Return a JSON result with EXACTLY these fields (no prose, no explanation):
-       Output the selected task_id, workspace_path, and the rationale comment.
+    6. Return a JSON result with EXACTLY these fields (no prose, no explanation):
+       Output the selected task_id and the rationale comment.
        {
          "task_id": "<selected task id, or the string 'None' if nothing is available>",
-         "workspace_path": "<workspace_path from orbit.task.show, or null if not set>",
          "comment": "<the rationale string you passed to orbit.task.update>"
        }
        This JSON result is REQUIRED. The run will be marked as failed if it is missing.
@@ -71,9 +67,6 @@ activity:
         type: string
       comment:
         type: string
-      workspace_path:
-        type: string
-        description: Workspace path of the selected task for downstream CLI steps.
     additional_properties: false
 
   # ---- execution ----
@@ -83,4 +76,3 @@ activity:
     - orbit.task.list
     - orbit.task.show
     - orbit.task.update
-    - github.pr.list

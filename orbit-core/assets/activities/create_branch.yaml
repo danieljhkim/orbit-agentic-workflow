@@ -24,9 +24,6 @@ activity:
       base:
         type: string
         description: Branch or commit to start from (e.g. main). Defaults to main in job_task_pipeline.
-      workspace_path:
-        type: string
-        description: Task workspace path propagated from dispatch_task for CLI execution.
   output_schema_json:
     type: object
     required:

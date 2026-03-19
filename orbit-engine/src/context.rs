@@ -63,6 +63,7 @@ pub struct TaskAutomationUpdate {
 
 pub trait EngineHost {
     fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError>;
+    fn repo_root(&self) -> Result<String, OrbitError>;
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,

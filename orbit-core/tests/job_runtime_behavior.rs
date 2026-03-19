@@ -1908,10 +1908,9 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
                 "type": "object",
                 "properties": {
                     "task_id": { "type": "string" },
-                    "base": { "type": "string" },
-                    "workspace_path": { "type": "string" }
+                    "base": { "type": "string" }
                 },
-                "required": ["task_id", "base", "workspace_path"]
+                "required": ["task_id", "base"]
             }),
             output_schema_json: json!({
                 "type": "object",
@@ -1970,7 +1969,10 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
             default_input: Some(json!({
                 "task_id": task_id.clone(),
                 "base": "agent-main",
-                "workspace_path": repo_root.to_string_lossy().to_string()
+                "workspace_path": worktree_root
+                    .join(task_id.as_str())
+                    .to_string_lossy()
+                    .to_string()
             })),
             steps: vec![
                 JobStep {
@@ -2076,10 +2078,10 @@ fn start_task_automation_moves_task_into_progress() {
             output_schema_json: json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "string" },
+                    "task_id": { "type": "string" },
                     "status": { "type": "string" }
                 },
-                "required": ["id", "status"]
+                "required": ["task_id", "status"]
             }),
             spec_config: json!({"action":"start_task"}),
             workspace_path: None,
@@ -2119,8 +2121,9 @@ fn start_task_automation_moves_task_into_progress() {
         .agent_response_json
         .as_ref()
         .expect("start output");
-    assert_eq!(output["id"], json!(task.id));
+    assert_eq!(output["task_id"], json!(task.id));
     assert_eq!(output["status"], json!("in_progress"));
+    assert!(output.get("workspace_path").is_none());
 }
 
 #[test]

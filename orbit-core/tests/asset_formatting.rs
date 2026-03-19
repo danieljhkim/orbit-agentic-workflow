@@ -93,19 +93,14 @@ fn dispatch_task_asset_accepts_shared_pipeline_base_input() {
         "dispatch_task should accept the shared pipeline base input"
     );
     assert!(
-        raw.contains("workspace_path:\n        type: string"),
-        "dispatch_task should declare the propagated task workspace output"
-    );
-    assert!(
-        raw.contains("Output the selected task_id, workspace_path, and the rationale comment."),
-        "dispatch_task should instruct the agent to return workspace_path for downstream CLI steps"
+        raw.contains("Output the selected task_id and the rationale comment."),
+        "dispatch_task should instruct the agent to return only the selected task id and rationale"
     );
 }
 
 #[test]
 fn pipeline_cli_activity_assets_document_workspace_path_input() {
     let assets = [
-        include_str!("../assets/activities/create_branch.yaml"),
         include_str!("../assets/activities/run_tests.yaml"),
         include_str!("../assets/activities/checkout_branch.yaml"),
     ];

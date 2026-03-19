@@ -189,6 +189,10 @@ impl EngineHost for OrbitRuntime {
         OrbitRuntime::record_event(self, event)
     }
 
+    fn repo_root(&self) -> Result<String, OrbitError> {
+        current_repo_root(self)
+    }
+
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,
@@ -390,4 +394,14 @@ fn activity_envelope_json(activity: &Activity) -> Value {
     }
 
     envelope
+}
+
+fn current_repo_root(runtime: &OrbitRuntime) -> Result<String, OrbitError> {
+    let repo_root = paths::find_git_repo_root(&runtime.context.data_root).ok_or_else(|| {
+        OrbitError::Execution(format!(
+            "cannot locate git repository root from Orbit data root '{}'",
+            runtime.context.data_root.display()
+        ))
+    })?;
+    Ok(repo_root.to_string_lossy().to_string())
 }

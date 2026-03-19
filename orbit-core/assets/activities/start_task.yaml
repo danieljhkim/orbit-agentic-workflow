@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Transition task to in-progress and pass task metadata to downstream steps
+  description: Transition task to in-progress and pass implementation metadata to downstream steps
 
   # ---- interface ----
   input_schema_json:
@@ -30,12 +30,12 @@ activity:
   output_schema_json:
     type: object
     required:
-      - id
+      - task_id
       - status
       - title
       - description
     properties:
-      id:
+      task_id:
         type: string
         description: The started task ID.
       status:
@@ -55,15 +55,6 @@ activity:
         items:
           type: string
         description: List of relevant file paths for context.
-      workspace_path:
-        type: string
-        description: Task workspace path for implementation.
-      repo_root:
-        type: string
-        description: Task repo root for git operations.
-      branch:
-        type: string
-        description: Task branch name checked out in the workspace.
 
   # ---- execution ----
   action: start_task

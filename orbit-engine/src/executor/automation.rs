@@ -45,7 +45,14 @@ pub fn execute<H: EngineHost>(
 
 fn create_task_worktree<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
-    let repo_root = input_repo_root(input)?;
+    let repo_root = host.repo_root().or_else(|_| {
+        let task = host.get_task(task_id)?;
+        task.workspace_path.ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "task '{task_id}' must define workspace_path when Orbit cannot derive the repository root automatically"
+            ))
+        })
+    })?;
     let repo_root = canonicalize_existing_dir(&repo_root, "repo_root")?;
     let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
     let branch = format!("orbit/{task_id}");
@@ -94,8 +101,14 @@ fn start_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitErro
         input_string_field(input, "note"),
         input_string_field(input, "comment"),
     )?;
-    serde_json::to_value(task)
-        .map_err(|error| OrbitError::Execution(format!("failed to serialize started task: {error}")))
+    Ok(json!({
+        "task_id": task.id.to_string(),
+        "status": task.status,
+        "title": task.title,
+        "description": task.description,
+        "plan": task.plan,
+        "context_files": task.context_files,
+    }))
 }
 
 fn update_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, OrbitError> {
