@@ -18,7 +18,8 @@ activity:
 
     1. Call orbit.task.list with status: "rejected" to retrieve all rejected tasks.
        Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
-       If both lists are empty, return a comment "No tasks available. Nothing to dispatch." and task_id "None" and exit.
+       If both lists are empty, return this JSON and exit:
+       {"task_id": "None", "workspace_path": null, "comment": "No tasks available. Nothing to dispatch."}
 
     2. Call github.pr.list with state: "open" to retrieve all currently open pull requests.
        Note the head branch and title of each open PR.
@@ -44,7 +45,13 @@ activity:
     6. Call orbit.task.update with id: "<selected_task_id>" and comment: "Dispatched by Steve (CEO): <one sentence rationale>"
        to record the dispatch rationale.
 
-    Output the selected task_id, workspace_path, and the rationale comment.
+    7. Return a JSON result with EXACTLY these fields (no prose, no explanation):
+       {
+         "task_id": "<selected task id, or the string 'None' if nothing is available>",
+         "workspace_path": "<workspace_path from orbit.task.show, or null if not set>",
+         "comment": "<the rationale string you passed to orbit.task.update>"
+       }
+       This JSON result is REQUIRED. The run will be marked as failed if it is missing.
 
   # ---- interface ----
   input_schema_json:

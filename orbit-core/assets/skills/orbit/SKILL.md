@@ -49,7 +49,14 @@ Use `blocked` when execution cannot safely continue.
 
 ## Identity
 
-Run `orbit tool run orbit.identity.list --input '{"role": "engineer"}'` (or another role), then `orbit tool run orbit.identity.show --input '{"id": "<id>"}'`. Assume this identity for the session.
+If the execution envelope includes an `identity` block, use it directly — no tool calls needed. The identity has already been resolved server-side.
+
+Only call the identity tools when no identity is pre-loaded in the envelope:
+
+```bash
+orbit tool run orbit.identity.list --input '{"role": "engineer"}'
+orbit tool run orbit.identity.show --input '{"id": "<id>"}'
+```
 
 Task commands infer actor provenance automatically:
 - `orbit tool run ...` is treated as agent-driven
