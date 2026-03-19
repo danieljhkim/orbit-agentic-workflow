@@ -11,6 +11,8 @@ pub use registry::ToolRegistry;
 #[derive(Debug, Clone, Default)]
 pub struct ToolContext {
     pub cwd: Option<String>,
+    /// If non-empty, only tools in this list may be called. Empty means unrestricted.
+    pub allowed_tools: Vec<String>,
 }
 
 pub trait Tool: Send + Sync {

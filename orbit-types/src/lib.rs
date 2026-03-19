@@ -158,6 +158,7 @@ mod tests {
                 "skill_refs": ["orbit-assess-codebase"],
                 "tools": ["fs.read", "fs.write"]
             }),
+            tools: vec!["fs.read".to_string(), "fs.write".to_string()],
             workspace_path: None,
             identity_id: Some("prii".to_string()),
             created_by: Some("human".to_string()),
