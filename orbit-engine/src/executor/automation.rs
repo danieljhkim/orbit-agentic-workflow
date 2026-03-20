@@ -614,16 +614,19 @@ fn fetch_review_decision_from_gh(repo_root: &Path, pr_number: &str) -> Result<St
             "failed to parse gh pr view reviewDecision output for '{pr_number}': {error}"
         ))
     })?;
-    payload
-        .get("reviewDecision")
-        .and_then(Value::as_str)
-        .map(normalize_review_decision)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            OrbitError::Execution(format!(
-                "gh pr view did not return reviewDecision for '{pr_number}'"
-            ))
-        })
+    match payload.get("reviewDecision") {
+        // GitHub returns null when no reviews exist or branch protection doesn't require them.
+        Some(Value::Null) | None => Ok("NONE".to_string()),
+        Some(v) => v
+            .as_str()
+            .map(normalize_review_decision)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                OrbitError::Execution(format!(
+                    "gh pr view returned unexpected reviewDecision type for '{pr_number}'"
+                ))
+            }),
+    }
 }
 
 fn canonicalize_existing_dir(raw: &str, field_name: &str) -> Result<PathBuf, OrbitError> {
@@ -1112,10 +1115,13 @@ mod tests {
         let decision_map = decisions
             .iter()
             .map(|(pr_number, decision)| {
-                (
-                    pr_number.to_string(),
-                    format!("{{\"reviewDecision\":\"{decision}\"}}"),
-                )
+                // Pass "null" (the literal string) to emit a JSON null value unquoted.
+                let payload = if *decision == "null" {
+                    "{\"reviewDecision\":null}".to_string()
+                } else {
+                    format!("{{\"reviewDecision\":\"{decision}\"}}")
+                };
+                (pr_number.to_string(), payload)
             })
             .collect::<HashMap<_, _>>();
         let cases = decision_map
@@ -1202,6 +1208,7 @@ mod tests {
             changed_files: None,
             pr_number: Some("18".to_string()),
             proposed_by: None,
+            complexity: None,
             comments: vec![],
             history: vec![],
             created_at: Utc::now(),
@@ -1269,6 +1276,33 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "execution failed: pull request '18' is not approved (review_decision=COMMENTED)"
+        );
+        assert!(host.tool_invocations.borrow().is_empty());
+        assert!(host.automation_updates.borrow().is_empty());
+    }
+
+    #[test]
+    fn merge_pr_from_task_returns_none_when_github_review_decision_is_null() {
+        let repo_dir = init_repo();
+        let (_gh_dir, _path_guard) = use_fake_gh(&[("20", "null")]);
+        let mut task = test_task(repo_dir.path());
+        task.id = "T20260320-025301".to_string();
+        task.pr_number = Some("20".to_string());
+        let host = FakeHost::new(task);
+
+        let error = merge_pr_from_task(
+            &host,
+            &json!({
+                "task_id": "T20260320-025301",
+                "repo_root": repo_dir.path().to_string_lossy().to_string(),
+                "pr_number": "20",
+            }),
+        )
+        .expect_err("merge should fail when reviewDecision is null");
+
+        assert_eq!(
+            error.to_string(),
+            "execution failed: pull request '20' is not approved (review_decision=NONE)"
         );
         assert!(host.tool_invocations.borrow().is_empty());
         assert!(host.automation_updates.borrow().is_empty());
