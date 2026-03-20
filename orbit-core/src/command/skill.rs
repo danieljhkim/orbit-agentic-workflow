@@ -76,15 +76,15 @@ fn inject_skill_template_tokens(raw: &str, orbit_root: &Path) -> String {
 
 impl OrbitRuntime {
     pub fn list_file_skills(&self) -> Result<Vec<LoadedSkill>, OrbitError> {
-        self.context.skill_catalog.list()
+        self.skill_catalog().list()
     }
 
     pub fn show_file_skill(&self, name: &str) -> Result<LoadedSkill, OrbitError> {
-        self.context.skill_catalog.load(name)
+        self.skill_catalog().load(name)
     }
 
     pub fn doctor_file_skills(&self) -> Result<Vec<SkillDoctorResult>, OrbitError> {
-        let rows = self.context.skill_catalog.doctor()?;
+        let rows = self.skill_catalog().doctor()?;
         Ok(rows
             .into_iter()
             .map(|row| SkillDoctorResult {
@@ -108,7 +108,7 @@ impl OrbitRuntime {
             if !dedup.insert(skill_id.clone()) {
                 continue;
             }
-            output.push(self.context.skill_catalog.load(skill_id)?);
+            output.push(self.skill_catalog().load(skill_id)?);
         }
         Ok(output)
     }

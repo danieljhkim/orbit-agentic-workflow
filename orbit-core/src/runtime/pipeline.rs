@@ -46,7 +46,7 @@ impl OrbitRuntime {
             )));
         }
 
-        let decision = self.context.policy.evaluate(&PolicyContext {
+        let decision = self.policy_engine().evaluate(&PolicyContext {
             entrypoint: "cli".to_string(),
             tool_name: Some(name.to_string()),
             role,
@@ -66,8 +66,7 @@ impl OrbitRuntime {
             }
             PolicyDecision::Allow => {
                 let output = self
-                    .context
-                    .registry
+                    .tool_registry()
                     .execute(name, &tool_context, input)
                     .map_err(redact_sensitive_env_error)?;
                 let output = redact_sensitive_env_json(output);
@@ -90,12 +89,11 @@ impl OrbitRuntime {
         self.check_tool_enabled(name)?;
 
         let schema = self
-            .context
-            .registry
+            .tool_registry()
             .get_schema(name)
             .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
 
-        let decision = self.context.policy.evaluate(&PolicyContext {
+        let decision = self.policy_engine().evaluate(&PolicyContext {
             entrypoint: "cli".to_string(),
             tool_name: Some(name.to_string()),
             role: Role::Admin,
@@ -127,7 +125,7 @@ impl OrbitRuntime {
     }
 
     fn check_tool_enabled(&self, name: &str) -> Result<(), OrbitError> {
-        if let Some(stored) = self.context.tool_store.get_tool(name)?
+        if let Some(stored) = self.get_tool_record(name)?
             && !stored.enabled
         {
             return Err(OrbitError::Execution(format!(

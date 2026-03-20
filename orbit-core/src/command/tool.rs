@@ -61,8 +61,8 @@ fn read_activity_tools_from_env() -> Vec<String> {
 
 impl OrbitRuntime {
     pub fn list_tools(&self) -> Result<Vec<ToolInfo>, OrbitError> {
-        let registry_schemas = self.context.registry.schemas();
-        let stored_tools = self.context.tool_store.list_tools()?;
+        let registry_schemas = self.tool_registry().schemas();
+        let stored_tools = self.list_tool_records()?;
 
         let mut tools: Vec<ToolInfo> = registry_schemas
             .into_iter()
@@ -98,12 +98,11 @@ impl OrbitRuntime {
 
     pub fn show_tool(&self, name: &str) -> Result<ToolInfo, OrbitError> {
         let schema = self
-            .context
-            .registry
+            .tool_registry()
             .get_schema(name)
             .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
 
-        let stored = self.context.tool_store.get_tool(name)?;
+        let stored = self.get_tool_record(name)?;
         let enabled = stored.is_none_or(|s| s.enabled);
 
         Ok(ToolInfo {
@@ -123,7 +122,7 @@ impl OrbitRuntime {
             )));
         }
 
-        if let Some(schema) = self.context.registry.get_schema(name)
+        if let Some(schema) = self.tool_registry().get_schema(name)
             && schema.builtin
         {
             return Err(OrbitError::InvalidInput(format!(
@@ -140,7 +139,7 @@ impl OrbitRuntime {
         };
 
         self.with_mutation(|| {
-            self.context.tool_store.insert_tool(&tool)?;
+            self.insert_tool_record(&tool)?;
             Ok((
                 (),
                 OrbitEvent::ToolAdded {
@@ -151,7 +150,7 @@ impl OrbitRuntime {
     }
 
     pub fn remove_tool(&self, name: &str) -> Result<(), OrbitError> {
-        if let Some(schema) = self.context.registry.get_schema(name)
+        if let Some(schema) = self.tool_registry().get_schema(name)
             && schema.builtin
         {
             return Err(OrbitError::InvalidInput(format!(
@@ -160,7 +159,7 @@ impl OrbitRuntime {
         }
 
         self.with_mutation(|| {
-            let deleted = self.context.tool_store.delete_tool(name)?;
+            let deleted = self.delete_tool_record(name)?;
             if !deleted {
                 return Err(OrbitError::ToolNotFound(name.to_string()));
             }
@@ -197,7 +196,7 @@ impl OrbitRuntime {
             }
 
             if !tool.builtin
-                && let Some(stored) = self.context.tool_store.get_tool(&tool.name)?
+                && let Some(stored) = self.get_tool_record(&tool.name)?
                 && !stored.path.is_empty()
             {
                 let path = std::path::Path::new(&stored.path);
@@ -230,15 +229,14 @@ impl OrbitRuntime {
     }
 
     fn set_tool_enabled_state(&self, name: &str, enabled: bool) -> Result<(), OrbitError> {
-        if !self.context.registry.has(name) {
+        if !self.tool_registry().has(name) {
             return Err(OrbitError::ToolNotFound(name.to_string()));
         }
 
-        let existing = self.context.tool_store.get_tool(name)?;
+        let existing = self.get_tool_record(name)?;
         if existing.is_none() {
             let schema = self
-                .context
-                .registry
+                .tool_registry()
                 .get_schema(name)
                 .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
             let tool = StoredTool {
@@ -249,7 +247,7 @@ impl OrbitRuntime {
                 builtin: schema.builtin,
             };
             return self.with_mutation(|| {
-                self.context.tool_store.insert_tool(&tool)?;
+                self.insert_tool_record(&tool)?;
                 let event = if enabled {
                     OrbitEvent::ToolEnabled {
                         name: name.to_string(),
@@ -264,7 +262,7 @@ impl OrbitRuntime {
         }
 
         self.with_mutation(|| {
-            self.context.tool_store.set_tool_enabled(name, enabled)?;
+            self.set_tool_enabled_record(name, enabled)?;
             let event = if enabled {
                 OrbitEvent::ToolEnabled {
                     name: name.to_string(),

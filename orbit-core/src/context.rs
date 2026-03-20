@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use orbit_policy::PolicyEngine;
@@ -68,22 +68,135 @@ impl Default for ActorIdentity {
 
 #[derive(Clone)]
 pub struct OrbitContext {
-    pub(crate) data_root: PathBuf,
-    pub(crate) task_store: Arc<dyn TaskStoreBackend>,
-    pub(crate) activity_store: Arc<dyn ActivityStoreBackend>,
-    pub(crate) job_store: Arc<dyn JobStoreBackend>,
-    pub(crate) tool_store: Arc<dyn ToolStoreBackend>,
-    pub(crate) audit_event_store: Arc<dyn AuditEventStoreBackend>,
-    pub(crate) policy: PolicyEngine,
-    pub(crate) registry: Arc<ToolRegistry>,
-    pub(crate) skill_catalog: SkillCatalog,
-    pub(crate) execution_env_policy: ExecutionEnvPolicy,
-    pub(crate) codex_execution_policy: CodexExecutionPolicy,
-    pub(crate) persistence: PersistenceConfig,
-    pub(crate) user_name: String,
-    pub(crate) actor: ActorIdentity,
-    pub(crate) task_approval_required_for_agent: bool,
-    pub(crate) task_delegate_approval: bool,
+    data_root: PathBuf,
+    task_store: Arc<dyn TaskStoreBackend>,
+    activity_store: Arc<dyn ActivityStoreBackend>,
+    job_store: Arc<dyn JobStoreBackend>,
+    tool_store: Arc<dyn ToolStoreBackend>,
+    audit_event_store: Arc<dyn AuditEventStoreBackend>,
+    policy: PolicyEngine,
+    registry: Arc<ToolRegistry>,
+    skill_catalog: SkillCatalog,
+    execution_env_policy: ExecutionEnvPolicy,
+    codex_execution_policy: CodexExecutionPolicy,
+    persistence: PersistenceConfig,
+    user_name: String,
+    actor: ActorIdentity,
+    task_approval_required_for_agent: bool,
+    task_delegate_approval: bool,
+}
+
+impl OrbitContext {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        data_root: PathBuf,
+        task_store: Arc<dyn TaskStoreBackend>,
+        activity_store: Arc<dyn ActivityStoreBackend>,
+        job_store: Arc<dyn JobStoreBackend>,
+        tool_store: Arc<dyn ToolStoreBackend>,
+        audit_event_store: Arc<dyn AuditEventStoreBackend>,
+        policy: PolicyEngine,
+        registry: Arc<ToolRegistry>,
+        skill_catalog: SkillCatalog,
+        execution_env_policy: ExecutionEnvPolicy,
+        codex_execution_policy: CodexExecutionPolicy,
+        persistence: PersistenceConfig,
+        user_name: String,
+        actor: ActorIdentity,
+        task_approval_required_for_agent: bool,
+        task_delegate_approval: bool,
+    ) -> Self {
+        Self {
+            data_root,
+            task_store,
+            activity_store,
+            job_store,
+            tool_store,
+            audit_event_store,
+            policy,
+            registry,
+            skill_catalog,
+            execution_env_policy,
+            codex_execution_policy,
+            persistence,
+            user_name,
+            actor,
+            task_approval_required_for_agent,
+            task_delegate_approval,
+        }
+    }
+
+    pub(crate) fn data_root(&self) -> &Path {
+        &self.data_root
+    }
+
+    pub(crate) fn task_store(&self) -> &Arc<dyn TaskStoreBackend> {
+        &self.task_store
+    }
+
+    pub(crate) fn activity_store(&self) -> &Arc<dyn ActivityStoreBackend> {
+        &self.activity_store
+    }
+
+    pub(crate) fn job_store(&self) -> &Arc<dyn JobStoreBackend> {
+        &self.job_store
+    }
+
+    pub(crate) fn tool_store(&self) -> &Arc<dyn ToolStoreBackend> {
+        &self.tool_store
+    }
+
+    pub(crate) fn audit_event_store(&self) -> &Arc<dyn AuditEventStoreBackend> {
+        &self.audit_event_store
+    }
+
+    pub(crate) fn policy(&self) -> &PolicyEngine {
+        &self.policy
+    }
+
+    pub(crate) fn set_policy(&mut self, policy: PolicyEngine) {
+        self.policy = policy;
+    }
+
+    pub(crate) fn registry(&self) -> &ToolRegistry {
+        self.registry.as_ref()
+    }
+
+    pub(crate) fn skill_catalog(&self) -> &SkillCatalog {
+        &self.skill_catalog
+    }
+
+    pub(crate) fn execution_env_policy(&self) -> &ExecutionEnvPolicy {
+        &self.execution_env_policy
+    }
+
+    pub(crate) fn codex_execution_policy(&self) -> &CodexExecutionPolicy {
+        &self.codex_execution_policy
+    }
+
+    pub(crate) fn persistence(&self) -> &PersistenceConfig {
+        &self.persistence
+    }
+
+    pub(crate) fn user_name(&self) -> &str {
+        &self.user_name
+    }
+
+    pub(crate) fn actor(&self) -> &ActorIdentity {
+        &self.actor
+    }
+
+    pub(crate) fn set_actor(&mut self, actor: ActorIdentity) {
+        self.actor = actor;
+    }
+
+    pub(crate) fn task_approval_required_for_agent(&self) -> bool {
+        self.task_approval_required_for_agent
+    }
+
+    pub(crate) fn task_delegate_approval(&self) -> bool {
+        self.task_delegate_approval
+    }
 }
 
 fn normalize_actor_label(label: String, default_label: &str) -> String {

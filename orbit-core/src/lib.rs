@@ -28,9 +28,8 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_store::TaskCreateParams as StoreTaskCreateParams;
     use orbit_types::{
-        JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus, TaskType,
+        JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
     };
     use serde_json::json;
     use tempfile::tempdir;
@@ -593,26 +592,7 @@ mod tests {
     fn update_task_rejects_field_mutations_for_done_tasks() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
-            .context
-            .task_store
-            .create_task(StoreTaskCreateParams {
-                actor: "human".to_string(),
-                title: "done task".to_string(),
-                description: String::new(),
-                plan: String::new(),
-                execution_summary: "already shipped".to_string(),
-                context_files: Vec::new(),
-                workspace_path: None,
-                created_by: Some("human".to_string()),
-                assigned_to: Some("human".to_string()),
-                status: TaskStatus::Done,
-                priority: TaskPriority::Medium,
-                task_type: TaskType::Task,
-                branch: None,
-                pr_number: None,
-                proposed_by: None,
-                comments: Vec::new(),
-            })
+            .add_task_with_status("done task", TaskStatus::Done)
             .expect("create done task");
 
         let result = runtime.update_task(
@@ -639,26 +619,7 @@ mod tests {
     fn update_task_rejects_field_mutations_for_archived_tasks() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
-            .context
-            .task_store
-            .create_task(StoreTaskCreateParams {
-                actor: "human".to_string(),
-                title: "archived task".to_string(),
-                description: String::new(),
-                plan: String::new(),
-                execution_summary: "archived after review".to_string(),
-                context_files: Vec::new(),
-                workspace_path: None,
-                created_by: Some("human".to_string()),
-                assigned_to: Some("human".to_string()),
-                status: TaskStatus::Archived,
-                priority: TaskPriority::Medium,
-                task_type: TaskType::Task,
-                branch: None,
-                pr_number: None,
-                proposed_by: None,
-                comments: Vec::new(),
-            })
+            .add_task_with_status("archived task", TaskStatus::Archived)
             .expect("create archived task");
 
         let result = runtime.update_task(
@@ -685,26 +646,7 @@ mod tests {
     fn update_task_allows_field_mutations_for_in_progress_tasks() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
-            .context
-            .task_store
-            .create_task(StoreTaskCreateParams {
-                actor: "human".to_string(),
-                title: "active task".to_string(),
-                description: String::new(),
-                plan: String::new(),
-                execution_summary: String::new(),
-                context_files: Vec::new(),
-                workspace_path: None,
-                created_by: Some("human".to_string()),
-                assigned_to: Some("human".to_string()),
-                status: TaskStatus::InProgress,
-                priority: TaskPriority::Medium,
-                task_type: TaskType::Task,
-                branch: None,
-                pr_number: None,
-                proposed_by: None,
-                comments: Vec::new(),
-            })
+            .add_task_with_status("active task", TaskStatus::InProgress)
             .expect("create in-progress task");
 
         let updated = runtime
@@ -849,26 +791,7 @@ mod tests {
     fn start_task_from_proposed_records_approval_before_starting() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
-            .context
-            .task_store
-            .create_task(StoreTaskCreateParams {
-                actor: "agent".to_string(),
-                title: "proposal to start".to_string(),
-                description: String::new(),
-                plan: String::new(),
-                execution_summary: String::new(),
-                context_files: Vec::new(),
-                workspace_path: None,
-                created_by: Some("agent".to_string()),
-                assigned_to: Some("agent".to_string()),
-                status: TaskStatus::Proposed,
-                priority: TaskPriority::Medium,
-                task_type: TaskType::Task,
-                branch: None,
-                pr_number: None,
-                proposed_by: Some("agent".to_string()),
-                comments: Vec::new(),
-            })
+            .add_task_with_status("proposal to start", TaskStatus::Proposed)
             .expect("create proposed task");
 
         let started = runtime

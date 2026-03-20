@@ -153,19 +153,16 @@ impl OrbitRuntime {
         validate_activity_params(&params)?;
         let skill_refs = activity_skill_refs_from_spec_config(&params.spec_config)?;
         let _ = self.resolve_activity_skill_refs(&skill_refs)?;
-        let activity = self
-            .context
-            .activity_store
-            .add_activity(StoreWorkCreateParams {
-                id: params.id,
-                spec_type: params.spec_type,
-                description: params.description,
-                input_schema_json: params.input_schema_json,
-                output_schema_json: params.output_schema_json,
-                spec_config: params.spec_config,
-                workspace_path: params.workspace_path,
-                created_by: params.created_by,
-            })?;
+        let activity = self.add_activity_record(StoreWorkCreateParams {
+            id: params.id,
+            spec_type: params.spec_type,
+            description: params.description,
+            input_schema_json: params.input_schema_json,
+            output_schema_json: params.output_schema_json,
+            spec_config: params.spec_config,
+            workspace_path: params.workspace_path,
+            created_by: params.created_by,
+        })?;
         self.record_event(OrbitEvent::ActivityAdded {
             id: activity.id.clone(),
         })?;
@@ -173,15 +170,11 @@ impl OrbitRuntime {
     }
 
     pub fn list_activities(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError> {
-        self.context
-            .activity_store
-            .list_activities(include_inactive)
+        self.list_activity_records(include_inactive)
     }
 
     pub fn show_activity(&self, id: &str) -> Result<Activity, OrbitError> {
-        self.context
-            .activity_store
-            .get_activity(id)?
+        self.get_activity_record(id)?
             .ok_or_else(|| OrbitError::ActivityNotFound(id.to_string()))
     }
 
@@ -196,7 +189,7 @@ impl OrbitRuntime {
             let _ = self.resolve_activity_skill_refs(&skill_refs)?;
         }
 
-        let activity = self.context.activity_store.update_activity(
+        let activity = self.update_activity_record(
             id,
             StoreActivityUpdateParams {
                 description: params.description,
@@ -215,7 +208,7 @@ impl OrbitRuntime {
     }
 
     pub fn delete_activity(&self, id: &str) -> Result<(), OrbitError> {
-        let changed = self.context.activity_store.disable_activity(id)?;
+        let changed = self.disable_activity_record(id)?;
         if !changed {
             return Err(OrbitError::ActivityNotFound(id.to_string()));
         }

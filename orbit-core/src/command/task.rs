@@ -50,9 +50,9 @@ pub struct TaskUpdateParams {
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
         let workspace_path = normalize_path(params.workspace_path)?;
-        let actor = self.context.actor.clone();
-        let initial_status =
-            if actor.kind == ActorKind::Agent && self.context.task_approval_required_for_agent {
+        let actor = self.actor().clone();
+        let initial_status = if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent()
+        {
                 TaskStatus::Proposed
             } else {
                 TaskStatus::Backlog
@@ -60,7 +60,7 @@ impl OrbitRuntime {
         let comments = build_task_comments(params.comment.clone(), actor.label.as_str())?;
 
         self.with_mutation(|| {
-            let task = self.context.task_store.create_task(StoreTaskCreateParams {
+            let task = self.create_task_record(StoreTaskCreateParams {
                 actor: actor.label.clone(),
                 title: params.title.clone(),
                 description: params.description.clone(),
@@ -88,14 +88,12 @@ impl OrbitRuntime {
     }
 
     pub fn get_task(&self, id: &str) -> Result<Task, OrbitError> {
-        self.context
-            .task_store
-            .get_task(id)?
+        self.get_task_record(id)?
             .ok_or_else(|| OrbitError::TaskNotFound(id.to_string()))
     }
 
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
-        self.context.task_store.list_tasks()
+        self.list_task_records()
     }
 
     pub fn list_tasks_filtered(
@@ -103,9 +101,7 @@ impl OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.context
-            .task_store
-            .list_tasks_filtered(status, priority)
+        self.list_task_records_filtered(status, priority)
     }
 
     pub fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
@@ -189,7 +185,7 @@ impl OrbitRuntime {
             }
         }
 
-        let actor = self.context.actor.clone();
+        let actor = self.actor().clone();
         let status_note = status_note
             .as_deref()
             .map(str::trim)
@@ -205,7 +201,7 @@ impl OrbitRuntime {
         });
 
         let task = self.with_mutation(|| {
-            let task = self.context.task_store.update_task(
+            let task = self.update_task_record(
                 id,
                 StoreTaskUpdateParams {
                     actor: actor.label.clone(),
@@ -235,13 +231,13 @@ impl OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
-        let actor = self.context.actor.clone();
+        let actor = self.actor().clone();
         let append_comments = build_task_comments(comment, actor.label.as_str())?;
 
         match task.status {
             TaskStatus::Proposed => {
                 let task = self.with_mutation(|| {
-                    let task = self.context.task_store.update_task(
+                    let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
                             actor: actor.label.clone(),
@@ -265,7 +261,7 @@ impl OrbitRuntime {
             }
             TaskStatus::Review => {
                 let task = self.with_mutation(|| {
-                    let task = self.context.task_store.update_task(
+                    let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
                             actor: actor.label.clone(),
@@ -299,14 +295,14 @@ impl OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
-        let actor = self.context.actor.clone();
+        let actor = self.actor().clone();
         let append_comments = build_task_comments(comment, actor.label.as_str())?;
 
         match task.status {
             TaskStatus::Proposed => {
                 let task = self.with_mutation(|| {
                     let at = Utc::now();
-                    let task = self.context.task_store.update_task(
+                    let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
                             actor: actor.label.clone(),
@@ -338,7 +334,7 @@ impl OrbitRuntime {
             }
             TaskStatus::Backlog | TaskStatus::Blocked => {
                 let task = self.with_mutation(|| {
-                    let task = self.context.task_store.update_task(
+                    let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
                             actor: actor.label.clone(),
@@ -377,7 +373,7 @@ impl OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
-        let actor = self.context.actor.clone();
+        let actor = self.actor().clone();
         let reason = note.trim();
         if reason.is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -390,7 +386,7 @@ impl OrbitRuntime {
         match task.status {
             TaskStatus::Proposed => {
                 let task = self.with_mutation(|| {
-                    let task = self.context.task_store.update_task(
+                    let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
                             actor: actor.label.clone(),
@@ -413,7 +409,7 @@ impl OrbitRuntime {
             }
             TaskStatus::Review => {
                 let task = self.with_mutation(|| {
-                    let task = self.context.task_store.update_task(
+                    let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
                             actor: actor.label.clone(),
@@ -450,10 +446,10 @@ impl OrbitRuntime {
         }
 
         self.with_mutation(|| {
-            let _ = self.context.task_store.update_task(
+            let _ = self.update_task_record(
                 id,
                 StoreTaskUpdateParams {
-                    actor: self.context.actor.label.clone(),
+                    actor: self.actor_label().to_string(),
                     status: Some(TaskStatus::Archived),
                     ..Default::default()
                 },
@@ -473,10 +469,10 @@ impl OrbitRuntime {
         }
 
         self.with_mutation(|| {
-            let _ = self.context.task_store.update_task(
+            let _ = self.update_task_record(
                 id,
                 StoreTaskUpdateParams {
-                    actor: self.context.actor.label.clone(),
+                    actor: self.actor_label().to_string(),
                     status: Some(TaskStatus::Backlog),
                     ..Default::default()
                 },
@@ -487,7 +483,7 @@ impl OrbitRuntime {
 
     pub fn delete_task(&self, id: &str) -> Result<(), OrbitError> {
         self.with_mutation(|| {
-            let deleted = self.context.task_store.delete_task(id)?;
+            let deleted = self.delete_task_record(id)?;
             if !deleted {
                 return Err(OrbitError::TaskNotFound(id.to_string()));
             }
@@ -496,7 +492,47 @@ impl OrbitRuntime {
     }
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
-        self.context.task_store.search_tasks(query)
+        self.search_task_records(query)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_task_with_status(
+        &self,
+        title: &str,
+        status: TaskStatus,
+    ) -> Result<Task, OrbitError> {
+        let actor = if status == TaskStatus::Proposed {
+            "agent".to_string()
+        } else {
+            self.actor_label().to_string()
+        };
+        let execution_summary = if matches!(
+            status,
+            TaskStatus::Review | TaskStatus::Done | TaskStatus::Archived
+        ) {
+            "seeded by runtime test helper".to_string()
+        } else {
+            String::new()
+        };
+
+        self.create_task_record(StoreTaskCreateParams {
+            actor: actor.clone(),
+            title: title.to_string(),
+            description: String::new(),
+            plan: String::new(),
+            execution_summary,
+            context_files: Vec::new(),
+            workspace_path: None,
+            created_by: Some(actor.clone()),
+            assigned_to: Some(actor.clone()),
+            status,
+            priority: TaskPriority::Medium,
+            task_type: TaskType::Task,
+            branch: None,
+            pr_number: None,
+            proposed_by: (status == TaskStatus::Proposed).then_some(actor),
+            comments: Vec::new(),
+        })
     }
 }
 
