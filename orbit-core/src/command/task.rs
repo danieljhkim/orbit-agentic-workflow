@@ -7,6 +7,7 @@ use orbit_types::{
 };
 
 use crate::OrbitRuntime;
+use crate::context::ActorKind;
 use crate::paths::normalize_path;
 
 pub struct TaskAddParams {
@@ -46,54 +47,16 @@ pub struct TaskUpdateParams {
     pub pr_number: Option<Option<String>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TaskActorKind {
-    Human,
-    Agent,
-}
-
-#[derive(Debug, Clone)]
-struct EffectiveTaskActor {
-    kind: TaskActorKind,
-    label: String,
-}
-
-const ORBIT_TASK_ACTOR_KIND: &str = "ORBIT_TASK_ACTOR_KIND";
-const ORBIT_TASK_ACTOR_LABEL: &str = "ORBIT_TASK_ACTOR_LABEL";
-const LEGACY_ORBIT_TASK_ACTOR_IDENTITY_ID: &str = "ORBIT_TASK_ACTOR_IDENTITY_ID";
-
-fn effective_task_actor() -> EffectiveTaskActor {
-    let kind_raw = std::env::var(ORBIT_TASK_ACTOR_KIND).ok();
-    let actor_label = std::env::var(ORBIT_TASK_ACTOR_LABEL)
-        .ok()
-        .or_else(|| std::env::var(LEGACY_ORBIT_TASK_ACTOR_IDENTITY_ID).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    let kind = match kind_raw.as_deref() {
-        Some("agent") => TaskActorKind::Agent,
-        _ if actor_label.is_some() => TaskActorKind::Agent,
-        _ => TaskActorKind::Human,
-    };
-    let label = actor_label.unwrap_or_else(|| match kind {
-        TaskActorKind::Human => "human".to_string(),
-        TaskActorKind::Agent => "agent".to_string(),
-    });
-
-    EffectiveTaskActor { kind, label }
-}
-
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
         let workspace_path = normalize_path(params.workspace_path)?;
-        let actor = effective_task_actor();
-        let initial_status = if actor.kind == TaskActorKind::Agent
-            && self.context.task_approval_required_for_agent
-        {
-            TaskStatus::Proposed
-        } else {
-            TaskStatus::Backlog
-        };
+        let actor = self.context.actor.clone();
+        let initial_status =
+            if actor.kind == ActorKind::Agent && self.context.task_approval_required_for_agent {
+                TaskStatus::Proposed
+            } else {
+                TaskStatus::Backlog
+            };
         let comments = build_task_comments(params.comment.clone(), actor.label.as_str())?;
 
         self.with_mutation(|| {
@@ -226,7 +189,7 @@ impl OrbitRuntime {
             }
         }
 
-        let actor = effective_task_actor();
+        let actor = self.context.actor.clone();
         let status_note = status_note
             .as_deref()
             .map(str::trim)
@@ -272,7 +235,7 @@ impl OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
-        let actor = effective_task_actor();
+        let actor = self.context.actor.clone();
         let append_comments = build_task_comments(comment, actor.label.as_str())?;
 
         match task.status {
@@ -336,7 +299,7 @@ impl OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
-        let actor = effective_task_actor();
+        let actor = self.context.actor.clone();
         let append_comments = build_task_comments(comment, actor.label.as_str())?;
 
         match task.status {
@@ -414,7 +377,7 @@ impl OrbitRuntime {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
-        let actor = effective_task_actor();
+        let actor = self.context.actor.clone();
         let reason = note.trim();
         if reason.is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -490,7 +453,7 @@ impl OrbitRuntime {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
-                    actor: effective_task_actor().label,
+                    actor: self.context.actor.label.clone(),
                     status: Some(TaskStatus::Archived),
                     ..Default::default()
                 },
@@ -513,7 +476,7 @@ impl OrbitRuntime {
             let _ = self.context.task_store.update_task(
                 id,
                 StoreTaskUpdateParams {
-                    actor: effective_task_actor().label,
+                    actor: self.context.actor.label.clone(),
                     status: Some(TaskStatus::Backlog),
                     ..Default::default()
                 },

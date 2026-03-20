@@ -143,16 +143,16 @@ fn ensure_skill_links(
         fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
     }
 
-    if let Ok(metadata) = fs::symlink_metadata(skills_links_dir) {
-        if !metadata.file_type().is_dir() {
-            if force {
-                remove_path_if_exists(skills_links_dir)?;
-            } else {
-                return Err(OrbitError::InvalidInput(format!(
-                    "expected '{}' to be a directory for skill links; found non-directory path",
-                    skills_links_dir.display()
-                )));
-            }
+    if let Ok(metadata) = fs::symlink_metadata(skills_links_dir)
+        && !metadata.file_type().is_dir()
+    {
+        if force {
+            remove_path_if_exists(skills_links_dir)?;
+        } else {
+            return Err(OrbitError::InvalidInput(format!(
+                "expected '{}' to be a directory for skill links; found non-directory path",
+                skills_links_dir.display()
+            )));
         }
     }
 

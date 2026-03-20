@@ -4,6 +4,7 @@ use crate::providers::{ClaudeRuntime, CodexRuntime, MockAgentRuntime};
 use crate::runtime::AgentRuntime;
 use crate::types::{AgentRequest, AgentResponse};
 
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum RuntimeBackend {
     CodexCli(CodexRuntime),
     ClaudeCli(ClaudeRuntime),

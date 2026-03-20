@@ -14,6 +14,7 @@ use orbit_types::OrbitError;
 
 use crate::OrbitContext;
 use crate::config::RuntimeConfig;
+use crate::context::ActorIdentity;
 use crate::skill_catalog::SkillCatalog;
 
 pub(crate) fn build_context_from_data_root(data_root: &Path) -> Result<OrbitContext, OrbitError> {
@@ -86,6 +87,7 @@ fn build_context_common(
     let codex_execution_policy = runtime_config.codex_execution.clone();
     let persistence = runtime_config.persistence.clone();
     let user_name = runtime_config.user_name.clone();
+    let actor = ActorIdentity::from_env();
     let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
     let task_delegate_approval = runtime_config.task_approval.delegate_approval;
 
@@ -103,6 +105,7 @@ fn build_context_common(
         codex_execution_policy,
         persistence,
         user_name,
+        actor,
         task_approval_required_for_agent,
         task_delegate_approval,
     })
