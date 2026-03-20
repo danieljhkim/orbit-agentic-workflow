@@ -2366,6 +2366,7 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task")
@@ -2539,6 +2540,7 @@ fn start_task_automation_moves_task_into_progress() {
             context_files: vec![],
             workspace_path: None,
             priority: TaskPriority::Medium,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task");
@@ -2625,6 +2627,7 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
             context_files: vec![],
             workspace_path: None,
             priority: TaskPriority::Medium,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task");
@@ -2736,6 +2739,7 @@ fn implement_change_result_status_flows_into_update_task_as_task_status() {
             context_files: vec![],
             workspace_path: None,
             priority: TaskPriority::Medium,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task");
@@ -2894,6 +2898,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Refactor,
         })
         .expect("add task")
@@ -3105,6 +3110,7 @@ fn commit_task_changes_uses_summary_from_input() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Issue,
         })
         .expect("add task")
@@ -3203,6 +3209,7 @@ fn commit_task_changes_uses_summary_from_input() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Issue,
         })
         .expect("add task2")
@@ -3267,6 +3274,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Issue,
         })
         .expect("add task")
@@ -3522,6 +3530,7 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task")
@@ -3763,6 +3772,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Feature,
         })
         .expect("add task")
@@ -4031,6 +4041,7 @@ fn open_pr_automation_rejects_stale_task_branches_before_pr_creation() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task")
@@ -4204,6 +4215,7 @@ fn merge_pr_automation_uses_input_review_decision_without_extra_gh_lookup() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task")
@@ -4355,6 +4367,7 @@ fn merge_pr_automation_rejects_stale_task_branches_before_merging() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task")
@@ -4533,6 +4546,7 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
             context_files: vec![],
             workspace_path: Some(repo_root.to_string_lossy().to_string()),
             priority: TaskPriority::High,
+            complexity: None,
             task_type: TaskType::Task,
         })
         .expect("add task")

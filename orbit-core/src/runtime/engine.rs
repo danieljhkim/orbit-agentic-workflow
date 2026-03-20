@@ -283,7 +283,8 @@ impl EnvironmentHost for OrbitRuntime {
     }
 
     fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String> {
-        self.execution_env_policy().missing_required(required_env_vars)
+        self.execution_env_policy()
+            .missing_required(required_env_vars)
     }
 }
 

@@ -158,6 +158,42 @@ fn task_add_json_returns_task_object() {
     assert_eq!(task["description"], "json description");
     assert_eq!(task["plan"], "json plan");
     assert_eq!(task["workspace_path"], workspace);
+    assert!(task["complexity"].is_null());
+}
+
+#[test]
+fn task_add_json_includes_complexity_when_provided() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = dir
+        .path()
+        .canonicalize()
+        .expect("canonical workspace")
+        .to_string_lossy()
+        .to_string();
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "add",
+            "--title",
+            "complex task",
+            "--description",
+            "json description",
+            "--plan",
+            "json plan",
+            "--workspace",
+            &workspace,
+            "--complexity",
+            "hard",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+    assert_eq!(task["complexity"], "hard");
 }
 
 #[test]

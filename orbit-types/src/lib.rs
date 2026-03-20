@@ -29,7 +29,9 @@ pub use redaction::{
 };
 pub use role::Role;
 pub use skill::Skill;
-pub use task::{Task, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType};
+pub use task::{
+    Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+};
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
 
 #[cfg(test)]

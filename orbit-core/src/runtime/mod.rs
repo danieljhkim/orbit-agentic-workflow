@@ -16,8 +16,8 @@ use orbit_store::{
     TaskUpdateParams as StoreTaskUpdateParams,
 };
 use orbit_types::{
-    Activity, Audit, AuditEvent, Job, JobRun, JobRunState, OrbitError, OrbitEvent,
-    StoredTool, Task, TaskPriority, TaskStatus,
+    Activity, Audit, AuditEvent, Job, JobRun, JobRunState, OrbitError, OrbitEvent, StoredTool,
+    Task, TaskPriority, TaskStatus,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -160,10 +160,7 @@ impl OrbitRuntime {
         self.context.codex_execution_policy()
     }
 
-    pub(crate) fn create_task_record(
-        &self,
-        params: TaskCreateParams,
-    ) -> Result<Task, OrbitError> {
+    pub(crate) fn create_task_record(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
         self.context.task_store().create_task(params)
     }
 
@@ -180,7 +177,9 @@ impl OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.context.task_store().list_tasks_filtered(status, priority)
+        self.context
+            .task_store()
+            .list_tasks_filtered(status, priority)
     }
 
     pub(crate) fn update_task_record(
@@ -297,7 +296,9 @@ impl OrbitRuntime {
         run_id: &str,
         params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
-        self.context.job_store().complete_job_run_step(run_id, params)
+        self.context
+            .job_store()
+            .complete_job_run_step(run_id, params)
     }
 
     pub(crate) fn finalize_job_run_record(

@@ -3,7 +3,8 @@ use orbit_store::{
     TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
 };
 use orbit_types::{
-    OrbitError, OrbitEvent, Task, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    OrbitError, OrbitEvent, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority,
+    TaskStatus, TaskType,
 };
 
 use crate::OrbitRuntime;
@@ -18,6 +19,7 @@ pub struct TaskAddParams {
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
     pub priority: TaskPriority,
+    pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
 }
 
@@ -31,6 +33,7 @@ impl Default for TaskAddParams {
             context_files: Vec::new(),
             workspace_path: None,
             priority: TaskPriority::Medium,
+            complexity: None,
             task_type: TaskType::Task,
         }
     }
@@ -51,8 +54,8 @@ impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
         let workspace_path = normalize_path(params.workspace_path)?;
         let actor = self.actor().clone();
-        let initial_status = if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent()
-        {
+        let initial_status =
+            if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent() {
                 TaskStatus::Proposed
             } else {
                 TaskStatus::Backlog
@@ -72,6 +75,7 @@ impl OrbitRuntime {
                 assigned_to: Some(actor.label.clone()),
                 status: initial_status,
                 priority: params.priority,
+                complexity: params.complexity,
                 task_type: params.task_type,
                 branch: None,
                 pr_number: None,
@@ -527,6 +531,7 @@ impl OrbitRuntime {
             assigned_to: Some(actor.clone()),
             status,
             priority: TaskPriority::Medium,
+            complexity: None,
             task_type: TaskType::Task,
             branch: None,
             pr_number: None,
