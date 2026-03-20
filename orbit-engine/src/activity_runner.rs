@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use crate::context::{
     ACTIVITY_EXECUTION_FAILED, AttemptOutcome, DirectActivityRunOutcome, EngineHost,
-    ExecutionContext, input_workspace_path, redact_attempt_outcome,
+    ExecutionContext, RuntimeHost, input_workspace_path, redact_attempt_outcome,
 };
 use crate::executor::builtin_activity_executor_registry;
 use crate::json_schema::validate_instance_against_schema;
@@ -34,7 +34,7 @@ pub fn run_activity_direct<H: EngineHost>(
     })
 }
 
-pub fn build_execution_context_for_step<H: EngineHost>(
+pub fn build_execution_context_for_step<H: RuntimeHost>(
     host: &H,
     job: &Job,
     step: &JobStep,

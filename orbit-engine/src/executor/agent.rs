@@ -8,7 +8,8 @@ use tempfile::NamedTempFile;
 use super::ActivityExecutor;
 use crate::context::{
     AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED, AGENT_PROTOCOL_VIOLATION, AGENT_TIMEOUT,
-    AttemptOutcome, EngineHost, ExecutionContext, execution_working_directory,
+    AgentProtocolHost, AttemptOutcome, EngineHost, EnvironmentHost, ExecutionContext,
+    execution_working_directory,
 };
 
 pub struct AgentExecutor;
@@ -23,7 +24,10 @@ impl ActivityExecutor for AgentExecutor {
     }
 }
 
-pub fn execute<H: EngineHost + ?Sized>(host: &H, execution: &ExecutionContext) -> AttemptOutcome {
+pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
+    host: &H,
+    execution: &ExecutionContext,
+) -> AttemptOutcome {
     let invocation = match build_agent_invocation(host, execution) {
         Ok(invocation) => invocation,
         Err(outcome) => return outcome,
@@ -70,7 +74,7 @@ pub fn execute<H: EngineHost + ?Sized>(host: &H, execution: &ExecutionContext) -
     }
 }
 
-fn build_agent_invocation<H: EngineHost + ?Sized>(
+fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
 ) -> Result<orbit_agent::AgentResponse, AttemptOutcome> {
@@ -114,7 +118,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
     Ok(invocation)
 }
 
-fn execute_agent_process<H: EngineHost + ?Sized>(
+fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
     invocation: orbit_agent::AgentResponse,
@@ -159,7 +163,7 @@ fn inject_activity_tools(mode: EnvironmentMode, tools: &[String]) -> Environment
     }
 }
 
-fn process_agent_response<H: EngineHost + ?Sized>(
+fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
     exec_result: &orbit_types::ExecutionResult,
@@ -191,7 +195,7 @@ fn process_agent_response<H: EngineHost + ?Sized>(
     }
 }
 
-fn validate_agent_success<H: EngineHost + ?Sized>(
+fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
     exec_result: &orbit_types::ExecutionResult,

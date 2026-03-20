@@ -66,14 +66,7 @@ pub struct TaskAutomationUpdate {
     pub execution_summary: Option<String>,
 }
 
-pub trait EngineHost {
-    fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError>;
-    fn repo_root(&self) -> Result<String, OrbitError>;
-    fn validate_activity_target_exists(
-        &self,
-        target_type: JobTargetType,
-        target_id: &str,
-    ) -> Result<Activity, OrbitError>;
+pub trait JobRunHost {
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
     fn insert_job_run(
         &self,
@@ -99,26 +92,9 @@ pub trait EngineHost {
         duration_ms: Option<u64>,
     ) -> Result<bool, OrbitError>;
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError>;
+}
 
-    fn agent_config_for(
-        &self,
-        agent_cli: &str,
-        model: Option<&str>,
-    ) -> Result<AgentConfig, OrbitError>;
-    fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode;
-    fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)>;
-    fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String>;
-    fn build_agent_stdin_envelope_payload(
-        &self,
-        execution: &ExecutionContext,
-    ) -> Result<Vec<u8>, OrbitError>;
-    fn validate_skill_output_schema(
-        &self,
-        activity: &Activity,
-        envelope: &orbit_types::AgentResponseEnvelope,
-    ) -> Result<(), OrbitError>;
-    fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError>;
-
+pub trait TaskHost {
     fn get_task(&self, task_id: &str) -> Result<Task, OrbitError>;
     fn start_task(
         &self,
@@ -140,6 +116,40 @@ pub trait EngineHost {
         task_id: &str,
         update: TaskAutomationUpdate,
     ) -> Result<(), OrbitError>;
+}
+
+pub trait AgentProtocolHost {
+    fn build_agent_stdin_envelope_payload(
+        &self,
+        execution: &ExecutionContext,
+    ) -> Result<Vec<u8>, OrbitError>;
+    fn validate_skill_output_schema(
+        &self,
+        activity: &Activity,
+        envelope: &orbit_types::AgentResponseEnvelope,
+    ) -> Result<(), OrbitError>;
+    fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError>;
+}
+
+pub trait EnvironmentHost {
+    fn agent_config_for(
+        &self,
+        agent_cli: &str,
+        model: Option<&str>,
+    ) -> Result<AgentConfig, OrbitError>;
+    fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode;
+    fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)>;
+    fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String>;
+}
+
+pub trait RuntimeHost {
+    fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError>;
+    fn repo_root(&self) -> Result<String, OrbitError>;
+    fn validate_activity_target_exists(
+        &self,
+        target_type: JobTargetType,
+        target_id: &str,
+    ) -> Result<Activity, OrbitError>;
     fn run_tool_with_context_and_role(
         &self,
         name: &str,
@@ -147,6 +157,16 @@ pub trait EngineHost {
         role: Role,
         tool_context: ToolContext,
     ) -> Result<Value, OrbitError>;
+}
+
+pub trait EngineHost:
+    JobRunHost + TaskHost + AgentProtocolHost + EnvironmentHost + RuntimeHost
+{
+}
+
+impl<T> EngineHost for T where
+    T: JobRunHost + TaskHost + AgentProtocolHost + EnvironmentHost + RuntimeHost
+{
 }
 
 pub fn step_output_for_following_input<'a>(
