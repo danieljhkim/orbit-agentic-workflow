@@ -23,6 +23,7 @@ impl Execute for JobRunCommand {
 pub enum JobRunSubcommand {
     List(JobRunListArgs),
     Show(JobRunShowArgs),
+    Cancel(JobRunCancelArgs),
     Archive(JobRunArchiveArgs),
     Delete(JobRunDeleteArgs),
 }
@@ -32,6 +33,7 @@ impl Execute for JobRunSubcommand {
         match self {
             JobRunSubcommand::List(args) => args.execute(runtime),
             JobRunSubcommand::Show(args) => args.execute(runtime),
+            JobRunSubcommand::Cancel(args) => args.execute(runtime),
             JobRunSubcommand::Archive(args) => args.execute(runtime),
             JobRunSubcommand::Delete(args) => args.execute(runtime),
         }
@@ -132,6 +134,19 @@ impl Execute for JobRunShowArgs {
             print_job_run(&run);
             Ok(())
         }
+    }
+}
+
+#[derive(Args)]
+pub struct JobRunCancelArgs {
+    pub run_id: String,
+}
+
+impl Execute for JobRunCancelArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        runtime.cancel_job_run(&self.run_id)?;
+        println!("Cancelled job run '{}'", self.run_id);
+        Ok(())
     }
 }
 

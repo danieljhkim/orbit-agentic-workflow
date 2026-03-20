@@ -83,6 +83,15 @@ pub enum JobRunState {
     Timeout,
     /// Transient state emitted while the engine is sleeping between retry attempts.
     Retrying,
+    /// Run was explicitly cancelled by the user before it completed.
+    Cancelled,
+}
+
+impl JobRunState {
+    /// Returns true if this state cannot be overwritten by a later finalization.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Success | Self::Failed | Self::Timeout | Self::Cancelled)
+    }
 }
 
 impl Display for JobRunState {
@@ -94,6 +103,7 @@ impl Display for JobRunState {
             JobRunState::Failed => write!(f, "failed"),
             JobRunState::Timeout => write!(f, "timeout"),
             JobRunState::Retrying => write!(f, "retrying"),
+            JobRunState::Cancelled => write!(f, "cancelled"),
         }
     }
 }
@@ -109,6 +119,7 @@ impl FromStr for JobRunState {
             "failed" => Ok(JobRunState::Failed),
             "timeout" => Ok(JobRunState::Timeout),
             "retrying" => Ok(JobRunState::Retrying),
+            "cancelled" => Ok(JobRunState::Cancelled),
             other => Err(format!("unknown job run state: {other}")),
         }
     }

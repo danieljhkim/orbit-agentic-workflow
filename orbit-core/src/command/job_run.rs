@@ -13,6 +13,25 @@ pub struct JobRunListParams {
 }
 
 impl OrbitRuntime {
+    pub fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        let run = self.show_job_run(run_id)?;
+        if !matches!(run.state, JobRunState::Pending | JobRunState::Running) {
+            return Err(OrbitError::JobValidation(format!(
+                "job run '{}' is not active (state: {}); only pending or running runs can be cancelled",
+                run_id, run.state
+            )));
+        }
+        let now = chrono::Utc::now();
+        let duration_ms = run
+            .started_at
+            .map(|s| now.signed_duration_since(s).num_milliseconds().max(0) as u64);
+        self.finalize_job_run_record(run_id, JobRunState::Cancelled, now, duration_ms)?;
+        self.record_event(OrbitEvent::JobRunCancelled {
+            job_id: run.job_id,
+            run_id: run_id.to_string(),
+        })
+    }
+
     pub fn archive_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
         let run = self.show_job_run(run_id)?;
         if matches!(run.state, JobRunState::Pending | JobRunState::Running) {

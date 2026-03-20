@@ -257,6 +257,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             let (sub, target_id) = match &job_run_cmd.command {
                 JobRunSubcommand::List(_) => ("list", None),
                 JobRunSubcommand::Show(args) => ("show", Some(args.run_id.as_str())),
+                JobRunSubcommand::Cancel(args) => ("cancel", Some(args.run_id.as_str())),
                 JobRunSubcommand::Archive(args) => ("archive", Some(args.run_id.as_str())),
                 JobRunSubcommand::Delete(args) => ("delete", Some(args.run_id.as_str())),
             };

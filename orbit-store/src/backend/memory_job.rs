@@ -310,6 +310,10 @@ impl JobStoreBackend for MemoryJobStoreBackend {
         let Some(run) = inner.active_runs.get_mut(run_id) else {
             return Ok(false);
         };
+        // Do not overwrite a terminal state (e.g. Cancelled) with a later outcome.
+        if run.state.is_terminal() {
+            return Ok(true);
+        }
         run.state = state;
         run.finished_at = Some(finished_at);
         run.duration_ms = duration_ms;

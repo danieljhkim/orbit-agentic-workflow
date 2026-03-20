@@ -59,6 +59,10 @@ pub enum OrbitEvent {
         job_id: String,
         run_id: String,
     },
+    JobRunCancelled {
+        job_id: String,
+        run_id: String,
+    },
     JobRunDeleted {
         job_id: String,
         run_id: String,
