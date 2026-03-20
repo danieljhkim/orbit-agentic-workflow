@@ -55,8 +55,9 @@ fn fetch_review_decision_from_gh(repo_root: &Path, pr_number: &str) -> Result<St
         ))
     })?;
     match payload.get("reviewDecision") {
-        // GitHub returns null when no reviews exist or branch protection doesn't require them.
+        // GitHub returns null or "" when no reviews exist or branch protection doesn't require them.
         Some(Value::Null) | None => Ok("NONE".to_string()),
+        Some(Value::String(s)) if s.trim().is_empty() => Ok("NONE".to_string()),
         Some(v) => v
             .as_str()
             .map(normalize_review_decision)
