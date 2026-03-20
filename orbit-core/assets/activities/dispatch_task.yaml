@@ -9,14 +9,13 @@ activity:
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Review the backlog and rejected queues and dispatch the single highest-priority task for execution.
+  description: Review the backlog and dispatch the single highest-priority task for execution.
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
     Pick the single best task and dispatch it.
 
-    1. Call orbit.task.list with status: "rejected" to retrieve all rejected tasks.
-       Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
-       If both lists are empty, return this JSON and exit:
+    1. Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
+       If the list is empty, return this JSON and exit:
        {"task_id": "None", "comment": "No tasks available. Nothing to dispatch."}
 
     2. Call orbit.task.list with status: "in_progress" to retrieve tasks currently being worked on.
@@ -26,14 +25,9 @@ activity:
 
     4. Select the single task most valuable to execute next using this priority order:
 
-       a. Rejected tasks take precedence over backlog tasks. A rejected task represents work
-          already reviewed and found incomplete — it is a regression or incomplete change that
-          needs remediation, not net-new work.
+       a. Apply priority rules: critical > high > medium > low.
 
-       b. Within each group (rejected first, then backlog), apply priority rules:
-          critical > high > medium > low.
-
-       c. Skip any task whose scope or target files clearly overlap with an
+       b. Skip any task whose scope or target files clearly overlap with an
           in-progress task — prefer work that can land independently without causing merge
           conflicts or duplicating effort.
 
