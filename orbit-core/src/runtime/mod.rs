@@ -69,7 +69,10 @@ impl OrbitRuntime {
         self
     }
 
-    pub fn list_audits(&self, limit: usize) -> Result<Vec<Audit>, OrbitError> {
+    /// Returns in-process events recorded during this session only. Not persisted across process
+    /// boundaries — the log is empty at startup and discarded on exit. For the persistent CLI
+    /// audit log written on every invocation, see [`OrbitRuntime::list_audit_events`].
+    pub fn list_session_events(&self, limit: usize) -> Result<Vec<Audit>, OrbitError> {
         let events = self.event_log.snapshot();
         let audits = events
             .into_iter()

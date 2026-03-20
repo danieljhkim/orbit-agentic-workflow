@@ -185,7 +185,7 @@ fn activity_run_executes_without_persisted_job() {
     assert!(stdin_raw.contains("\"activity\""));
     assert!(!stdin_raw.contains("\"job\""));
 
-    let audits = runtime.list_audits(25).expect("audits");
+    let audits = runtime.list_session_events(25).expect("audits");
     assert!(
         audits
             .iter()
@@ -1111,7 +1111,7 @@ fn invalid_agent_json_with_zero_exit_falls_back_to_success() {
             .is_none()
     );
 
-    let audits = runtime.list_audits(25).expect("audits");
+    let audits = runtime.list_session_events(25).expect("audits");
     assert!(
         !audits
             .iter()

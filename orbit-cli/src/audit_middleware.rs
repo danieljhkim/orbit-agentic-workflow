@@ -16,6 +16,15 @@ pub struct CommandMeta {
     pub arguments_json: Option<String>,
 }
 
+/// Feeds the **persistent** SQLite audit event store on every CLI invocation.
+///
+/// This is a separate mechanism from the in-process `EventLog` (`OrbitRuntime.event_log`), which
+/// is session-scoped and not persisted. The two channels serve different purposes:
+/// - `AuditGuard` (this file): records structured CLI invocation metadata to SQLite; survives
+///   process restarts; queryable via `orbit audit list`.
+/// - `EventLog`: records in-memory `OrbitEvent` mutations for the current session only; used for
+///   internal runtime tracking, not for persistent audit history.
+///
 /// RAII audit guard that writes an audit record on scope exit via `Drop`.
 ///
 /// Guarantees exactly one audit record per command execution — even on

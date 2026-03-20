@@ -47,7 +47,7 @@ mod tests {
         let result = runtime.run_tool("fs.read", json!({"path": "missing"}));
         assert!(matches!(result, Err(crate::OrbitError::PolicyDenied(_))));
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert_eq!(audits.len(), 1);
         assert_eq!(audits[0].event_type, "PolicyDenied");
     }
@@ -76,7 +76,7 @@ mod tests {
             "expected PolicyDenied for tool not in allowlist"
         );
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert_eq!(audits.len(), 1);
         assert_eq!(audits[0].event_type, "PolicyDenied");
     }
@@ -139,7 +139,7 @@ mod tests {
 
         assert_eq!(output["content"], "ok");
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert_eq!(audits.len(), 1);
         assert_eq!(audits[0].event_type, "ToolExecuted");
 
@@ -182,7 +182,7 @@ mod tests {
             .expect("add task");
 
         let tasks = runtime.list_tasks().expect("tasks");
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(audits.len(), 1);
@@ -291,7 +291,7 @@ mod tests {
         let result = runtime.run_tool("fs.read", json!({"path": file.to_string_lossy()}));
         assert!(result.is_err());
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert_eq!(audits.len(), 1);
         assert_eq!(audits[0].event_type, "ToolDisabled");
     }
@@ -331,7 +331,7 @@ mod tests {
         assert!(result.missing_params.is_empty());
 
         // No audit records from dry run
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert_eq!(audits.len(), 0);
     }
 
@@ -585,7 +585,7 @@ mod tests {
         assert_eq!(updated.execution_summary, "validated with unit tests");
         assert_eq!(updated.assigned_to.as_deref(), Some("human"));
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskUpdated"));
     }
 
@@ -784,7 +784,7 @@ mod tests {
             Some("picked up for implementation")
         );
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskStarted"));
     }
 
@@ -811,7 +811,7 @@ mod tests {
         );
         assert_eq!(started.history.last().expect("history").event, "started");
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskStarted"));
     }
 
@@ -940,7 +940,7 @@ mod tests {
         let archived = runtime.get_task(&task.id).expect("get");
         assert_eq!(archived.status, TaskStatus::Archived);
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskArchived"));
     }
 
@@ -995,7 +995,7 @@ mod tests {
         assert_eq!(history.event, "review_rejected");
         assert_eq!(history.note.as_deref(), Some("Missing regression coverage"));
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskReviewRejected"));
     }
 
@@ -1120,7 +1120,7 @@ mod tests {
         let unarchived = runtime.get_task(&task.id).expect("get");
         assert_eq!(unarchived.status, TaskStatus::Backlog);
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskUnarchived"));
     }
 
@@ -1152,7 +1152,7 @@ mod tests {
         let result = runtime.get_task(&task.id);
         assert!(matches!(result, Err(crate::OrbitError::TaskNotFound(_))));
 
-        let audits = runtime.list_audits(10).expect("audits");
+        let audits = runtime.list_session_events(10).expect("audits");
         assert!(audits.iter().any(|a| a.event_type == "TaskDeleted"));
     }
 

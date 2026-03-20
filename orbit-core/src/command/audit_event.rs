@@ -5,6 +5,9 @@ use orbit_types::{AuditEvent, AuditEventStatus, AuditStats, OrbitError};
 use crate::OrbitRuntime;
 
 impl OrbitRuntime {
+    /// Returns persistent audit events recorded by the CLI middleware across all invocations.
+    /// Backed by SQLite; survives process restarts. For in-process session events only, see
+    /// [`OrbitRuntime::list_session_events`].
     pub fn list_audit_events(
         &self,
         since: Option<DateTime<Utc>>,
