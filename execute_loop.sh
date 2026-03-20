@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INTERVAL=1800
-TOTAL=8000
-START=$(date +%s)
-END=$((START + TOTAL))
-NEXT=$START
+if ! command -v orbit >/dev/null 2>&1; then
+  echo "[orbit] error: orbit CLI is not installed or not in PATH" >&2
+  exit 1
+fi
 
-while [ "$NEXT" -lt "$END" ]; do
-  NOW=$(date +%s)
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[orbit] error: jq is required (brew install jq)" >&2
+  exit 1
+fi
 
-  if [ "$NOW" -lt "$NEXT" ]; then
-    sleep $((NEXT - NOW))
+while :; do
+  BACKLOG_COUNT="$(orbit task list --status backlog --json | jq 'length')"
+  if [[ "$BACKLOG_COUNT" == "0" ]]; then
+    echo "[orbit] no backlog tasks remaining at $(date -Is)"
+    break
   fi
 
-  echo "[orbit] run at $(date -Is)"
+  echo "[orbit] backlog tasks: ${BACKLOG_COUNT}; running pipeline at $(date -Is)"
 
   if ! orbit job run job_task_pipeline; then
     echo "[orbit] job failed at $(date -Is)" >&2
-    # optional: break or continue depending on semantics
+    # Keep trying until backlog is empty.
   fi
-
-  NEXT=$((NEXT + INTERVAL))
 done
