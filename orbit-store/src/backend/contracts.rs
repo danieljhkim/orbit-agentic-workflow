@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
     Activity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep, OrbitError,
-    StoredTool, Task, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    StoredTool, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
+    TaskType,
 };
 use serde_json::Value;
 
@@ -20,6 +21,7 @@ pub struct TaskCreateParams {
     pub assigned_to: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
+    pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
     pub branch: Option<String>,
     pub pr_number: Option<String>,
@@ -41,6 +43,7 @@ pub struct TaskUpdateParams {
     pub created_by: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
+    pub complexity: Option<TaskComplexity>,
     pub task_type: Option<TaskType>,
     pub branch: Option<Option<String>>,
     pub commit_message: Option<Option<String>>,

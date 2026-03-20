@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
-use orbit_core::{OrbitError, OrbitRuntime, TaskPriority, TaskStatus, TaskType};
+use orbit_core::{OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskStatus, TaskType};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -86,6 +86,9 @@ pub struct TaskAddArgs {
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
+    /// Task complexity
+    #[arg(long, value_enum)]
+    pub complexity: Option<TaskComplexity>,
     /// Task type
     #[arg(long = "type", value_enum, default_value_t = TaskType::Task)]
     pub task_type: TaskType,
@@ -104,6 +107,7 @@ impl Execute for TaskAddArgs {
             context_files: parse_context_csv(&self.context),
             workspace_path: Some(self.workspace),
             priority: self.priority,
+            complexity: self.complexity,
             task_type: self.task_type,
         })?;
 
@@ -177,6 +181,9 @@ impl Execute for TaskShowArgs {
             println!("Title:       {}", task.title);
             println!("Status:      {}", task.status);
             println!("Priority:    {}", task.priority);
+            if let Some(complexity) = task.complexity {
+                println!("Complexity:  {}", complexity);
+            }
             println!("Type:        {}", task.task_type);
             if !task.description.is_empty() {
                 println!("Description: {}", task.description);
@@ -556,6 +563,7 @@ fn task_to_signal_json(task: &orbit_core::Task) -> Value {
         "type": task.task_type.to_string(),
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
+        "complexity": task.complexity.map(|value| value.to_string()),
     })
 }
 
@@ -573,6 +581,7 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "created_by": task.created_by,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
+        "complexity": task.complexity.map(|value| value.to_string()),
         "type": task.task_type.to_string(),
         "branch": task.branch,
         "pr_number": task.pr_number,

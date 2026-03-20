@@ -257,6 +257,7 @@ mod tests {
                 "comment": "seed comment",
                 "context": "a.rs,b.rs",
                 "priority": "high",
+                "complexity": "hard",
                 "type": "feature",
             }),
         )
@@ -281,6 +282,8 @@ mod tests {
                 "a.rs,b.rs".to_string(),
                 "--priority".to_string(),
                 "high".to_string(),
+                "--complexity".to_string(),
+                "hard".to_string(),
                 "--type".to_string(),
                 "feature".to_string(),
                 "--json".to_string(),

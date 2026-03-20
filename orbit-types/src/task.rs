@@ -133,6 +133,39 @@ impl FromStr for TaskPriority {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
+pub enum TaskComplexity {
+    Low,
+    Medium,
+    Hard,
+}
+
+impl Display for TaskComplexity {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TaskComplexity::Low => "low",
+            TaskComplexity::Medium => "medium",
+            TaskComplexity::Hard => "hard",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl FromStr for TaskComplexity {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "low" => Ok(TaskComplexity::Low),
+            "medium" => Ok(TaskComplexity::Medium),
+            "hard" => Ok(TaskComplexity::Hard),
+            other => Err(format!("unknown task complexity: {other}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[serde(rename_all = "snake_case")]
 pub enum TaskType {
     Task,
     Feature,
@@ -215,6 +248,8 @@ pub struct Task {
     pub created_by: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
+    #[serde(default)]
+    pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
     #[serde(default)]
     pub branch: Option<String>,
@@ -264,5 +299,47 @@ mod tests {
                 .validate_transition(TaskStatus::Backlog)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn task_complexity_round_trips_all_values() {
+        for (raw, expected) in [
+            ("low", TaskComplexity::Low),
+            ("medium", TaskComplexity::Medium),
+            ("hard", TaskComplexity::Hard),
+        ] {
+            assert_eq!(
+                TaskComplexity::from_str(raw).expect("parse complexity"),
+                expected
+            );
+            assert_eq!(expected.to_string(), raw);
+            assert_eq!(
+                serde_json::from_str::<TaskComplexity>(&format!("\"{raw}\""))
+                    .expect("deserialize complexity"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn task_missing_complexity_deserializes_to_none() {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "id": "T20260320-000001",
+            "title": "Missing complexity",
+            "description": "desc",
+            "plan": "plan",
+            "execution_summary": "",
+            "context_files": [],
+            "status": "backlog",
+            "priority": "medium",
+            "task_type": "task",
+            "comments": [],
+            "history": [],
+            "created_at": "2026-03-20T00:00:00Z",
+            "updated_at": "2026-03-20T00:00:00Z"
+        }))
+        .expect("deserialize task");
+
+        assert_eq!(task.complexity, None);
     }
 }

@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    OrbitError, Task, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    OrbitError, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
+    TaskType,
 };
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as YamlValue};
@@ -33,6 +34,7 @@ pub(crate) struct FileTaskInsert {
     pub assigned_to: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
+    pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
     pub branch: Option<String>,
     pub commit_message: Option<String>,
@@ -56,6 +58,7 @@ pub(crate) struct FileTaskUpdate {
     pub created_by: Option<Option<String>>,
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
+    pub complexity: Option<TaskComplexity>,
     pub task_type: Option<TaskType>,
     pub branch: Option<Option<String>>,
     pub commit_message: Option<Option<String>>,
@@ -143,6 +146,8 @@ struct TaskFileDocument {
     #[serde(rename = "type", default = "default_task_type")]
     task_type: TaskType,
     priority: TaskPriority,
+    #[serde(default)]
+    complexity: Option<TaskComplexity>,
     title: String,
     #[serde(default)]
     description: String,
@@ -234,6 +239,7 @@ impl TaskFileStore {
                 assigned_to: params.assigned_to,
                 created_by: params.created_by,
                 priority: params.priority,
+                complexity: params.complexity,
                 task_type: params.task_type,
                 branch: params.branch,
                 commit_message: params.commit_message,
@@ -374,6 +380,9 @@ impl TaskFileStore {
         }
         if let Some(value) = fields.priority {
             bundle.doc.priority = value;
+        }
+        if let Some(value) = fields.complexity {
+            bundle.doc.complexity = Some(value);
         }
         if let Some(value) = fields.task_type {
             bundle.doc.task_type = value;
@@ -608,6 +617,9 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_field("id", &doc.id)?);
     yaml.push_str(&yaml_field("type", &doc.task_type)?);
     yaml.push_str(&yaml_field("priority", &doc.priority)?);
+    if let Some(complexity) = doc.complexity {
+        yaml.push_str(&yaml_field("complexity", &complexity)?);
+    }
 
     yaml.push_str(&yaml_section("content"));
     yaml.push_str(&yaml_field("title", &doc.title)?);
@@ -710,6 +722,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         created_by: bundle.doc.created_by,
         status: state.to_status(),
         priority: bundle.doc.priority,
+        complexity: bundle.doc.complexity,
         task_type: bundle.doc.task_type,
         branch: bundle.doc.branch,
         commit_message: bundle.doc.commit_message,
@@ -730,7 +743,7 @@ mod tests {
     use super::{ARTIFACTS_DIR_NAME, EXECUTION_SUMMARY_FILE_NAME, FileTaskInsert, FileTaskUpdate};
     use super::{PLAN_FILE_NAME, TASK_DOC_FILE_NAME, TaskFileStore};
     use chrono::Utc;
-    use orbit_types::{TaskComment, TaskPriority, TaskStatus, TaskType};
+    use orbit_types::{TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType};
     use tempfile::tempdir;
 
     fn sample_insert(status: TaskStatus) -> FileTaskInsert {
@@ -747,6 +760,7 @@ mod tests {
             created_by: Some("Codex".to_string()),
             status,
             priority: TaskPriority::High,
+            complexity: Some(TaskComplexity::Medium),
             task_type: TaskType::Refactor,
             branch: None,
             commit_message: None,
@@ -981,6 +995,7 @@ mod tests {
                 created_by: None,
                 status: TaskStatus::Done,
                 priority: TaskPriority::Medium,
+                complexity: None,
                 task_type: TaskType::Task,
                 branch: None,
                 commit_message: None,
@@ -1058,6 +1073,21 @@ mod tests {
             err.to_string()
                 .contains("unsupported task schema version: 9")
         );
+    }
+
+    #[test]
+    fn create_task_persists_complexity_when_present() {
+        let dir = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(dir.path().to_path_buf());
+
+        let task = store
+            .create_task(sample_insert(TaskStatus::Backlog))
+            .expect("create task");
+        let task_dir = dir.path().join("backlog").join(&task.id);
+        let yaml = fs::read_to_string(task_dir.join(TASK_DOC_FILE_NAME)).expect("read yaml");
+
+        assert!(yaml.contains("complexity: medium"));
+        assert_eq!(task.complexity, Some(TaskComplexity::Medium));
     }
 
     #[test]

@@ -40,6 +40,10 @@ pub(super) fn build_exec_request(
         args.push("--priority".to_string());
         args.push(priority);
     }
+    if let Some(complexity) = super::optional_string(input, "complexity")? {
+        args.push("--complexity".to_string());
+        args.push(complexity);
+    }
     if let Some(task_type) =
         super::optional_string_alias(input, &["type", "task_type", "taskType"])?
     {
@@ -96,6 +100,12 @@ impl Tool for OrbitTaskAddTool {
                 ToolParam {
                     name: "priority".to_string(),
                     description: "Optional priority level".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "complexity".to_string(),
+                    description: "Optional task complexity level".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

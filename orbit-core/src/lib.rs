@@ -14,7 +14,8 @@ pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
     Activity, AuditEvent, AuditEventStatus, AuditStats, Job, JobRun, JobRunState, JobScheduleState,
-    JobStep, JobTargetType, Role, Skill, Task, TaskComment, TaskPriority, TaskStatus, TaskType,
+    JobStep, JobTargetType, Role, Skill, Task, TaskComment, TaskComplexity, TaskPriority,
+    TaskStatus, TaskType,
 };
 pub use orbit_types::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
@@ -28,9 +29,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use orbit_policy::PolicyEngine;
-    use orbit_types::{
-        JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus,
-    };
+    use orbit_types::{JobRunState, JobStep, JobTargetType, OrbitEvent, TaskPriority, TaskStatus};
     use serde_json::json;
     use tempfile::tempdir;
 
