@@ -3446,6 +3446,11 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
     init_git_repo(&repo_root);
     std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
     git_commit_all(&repo_root, "chore: seed repo");
+    Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
 
     // Set up a local bare repo as "origin" so git.push succeeds without a real remote.
     let bare_dir = dir.path().join("origin.git");
@@ -3639,6 +3644,14 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
     );
     assert!(
         body_content.contains("## Files Changed"),
+        "body: {body_content}"
+    );
+    assert!(
+        body_content.contains("## Branch Freshness"),
+        "body: {body_content}"
+    );
+    assert!(
+        body_content.contains("Behind base: 0"),
         "body: {body_content}"
     );
     assert!(
@@ -3969,6 +3982,174 @@ fn open_pr_automation_supports_task_id_only_inputs() {
 }
 
 #[test]
+fn open_pr_automation_rejects_stale_task_branches_before_pr_creation() {
+    let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _snapshot = EnvSnapshot::capture(&["PATH"]);
+    let dir = tempdir().expect("tempdir");
+    let data_root = dir.path().join("orbit");
+    std::fs::create_dir_all(&data_root).expect("create data root");
+    let repo_root = dir.path().join("repo");
+    std::fs::create_dir_all(&repo_root).expect("create repo root");
+    init_git_repo(&repo_root);
+    std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
+    git_commit_all(&repo_root, "chore: seed repo");
+    Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
+
+    let gh_dir = dir.path().join("bin");
+    std::fs::create_dir_all(&gh_dir).expect("create gh dir");
+    let body_capture = dir.path().join("gh-body-stale.txt");
+    let gh_script = gh_dir.join("gh");
+    let gh_body = format!(
+        concat!(
+            "#!/bin/sh\n",
+            "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"create\" ]; then\n",
+            "  printf '%s' \"$@\" > \"{body}\"\n",
+            "  exit 0\n",
+            "fi\n",
+            "exit 1\n",
+        ),
+        body = body_capture.display(),
+    );
+    std::fs::write(&gh_script, gh_body).expect("write gh script");
+    #[cfg(unix)]
+    std::fs::set_permissions(&gh_script, std::fs::Permissions::from_mode(0o755)).expect("chmod gh");
+    unsafe {
+        std::env::set_var("PATH", prepend_path(&gh_dir));
+    }
+
+    let runtime = OrbitRuntime::from_data_root(&data_root).expect("runtime");
+    let task_id = runtime
+        .add_task(TaskAddParams {
+            title: "Reject stale PR branches".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: Some(repo_root.to_string_lossy().to_string()),
+            priority: TaskPriority::High,
+            task_type: TaskType::Task,
+        })
+        .expect("add task")
+        .id;
+    let branch_name = format!("orbit/{task_id}");
+
+    let status = Command::new("git")
+        .args(["checkout", "-b", &branch_name])
+        .current_dir(&repo_root)
+        .status()
+        .expect("create task branch");
+    assert!(status.success(), "task branch checkout must succeed");
+    std::fs::write(repo_root.join("feature.txt"), "branch work\n").expect("write feature");
+    git_commit_all(&repo_root, "feat: add branch work");
+    let status = Command::new("git")
+        .args(["checkout", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("checkout base");
+    assert!(status.success(), "checkout base must succeed");
+    std::fs::write(repo_root.join("base.txt"), "base drift\n").expect("write base drift");
+    git_commit_all(&repo_root, "chore: advance base");
+
+    runtime
+        .update_task(
+            &task_id,
+            TaskUpdateParams {
+                title: None,
+                description: None,
+                plan: None,
+                execution_summary: None,
+                comment: None,
+                status: Some(TaskStatus::InProgress),
+                branch: Some(Some(branch_name.clone())),
+                pr_number: None,
+            },
+        )
+        .expect("prepare task");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-open-pr-stale".to_string(),
+            spec_type: "automation".to_string(),
+            description: "open pr from stale branch".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "repo_root": { "type": "string" },
+                    "branch": { "type": "string" },
+                    "base": { "type": "string" }
+                },
+                "required": ["task_id", "repo_root"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "pr_url": { "type": "string" },
+                    "pr_number": { "type": "string" },
+                    "title": { "type": "string" },
+                    "body": { "type": "string" }
+                },
+                "required": ["pr_url", "pr_number", "title", "body"]
+            }),
+            spec_config: json!({"action":"open_pr_from_task"}),
+            workspace_path: None,
+            created_by: None,
+        })
+        .expect("add open pr activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({
+                "task_id": task_id,
+                "repo_root": repo_root.to_string_lossy().to_string(),
+                "branch": branch_name,
+                "base": "agent-main",
+                "commit_message": "feat: add branch work",
+                "changed_files": ["feature.txt"]
+            })),
+            max_active_runs: None,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-open-pr-stale".to_string(),
+                agent_cli: String::new(),
+                model: None,
+                timeout_seconds: 30,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add open pr job")
+        .job_id;
+
+    let run = runtime.run_job_now(&job_id).expect("run open pr job");
+    assert_eq!(run.state, JobRunState::Failed);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    let error_message = history[0]
+        .steps
+        .last()
+        .and_then(|step| step.error_message.as_deref())
+        .expect("error message");
+    assert!(
+        error_message.contains("behind base"),
+        "error message: {error_message}"
+    );
+    assert!(
+        !body_capture.exists(),
+        "stale branch should fail before invoking gh pr create"
+    );
+
+    let updated_task = runtime.get_task(&task_id).expect("updated task");
+    assert_eq!(updated_task.status, TaskStatus::InProgress);
+    assert_eq!(updated_task.pr_number, None);
+}
+
+#[test]
 fn merge_pr_automation_uses_input_review_decision_without_extra_gh_lookup() {
     let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let _snapshot = EnvSnapshot::capture(&["PATH"]);
@@ -3980,6 +4161,11 @@ fn merge_pr_automation_uses_input_review_decision_without_extra_gh_lookup() {
     init_git_repo(&repo_root);
     std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
     git_commit_all(&repo_root, "chore: seed repo");
+    Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
 
     let gh_dir = dir.path().join("bin");
     std::fs::create_dir_all(&gh_dir).expect("create gh dir");
@@ -4022,6 +4208,18 @@ fn merge_pr_automation_uses_input_review_decision_without_extra_gh_lookup() {
         })
         .expect("add task")
         .id;
+    let status = Command::new("git")
+        .args(["checkout", "-b", &format!("orbit/{task_id}")])
+        .current_dir(&repo_root)
+        .status()
+        .expect("create merge branch");
+    assert!(status.success(), "create merge branch must succeed");
+    let status = Command::new("git")
+        .args(["checkout", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("checkout base");
+    assert!(status.success(), "checkout base must succeed");
     runtime
         .start_task(&task_id, None, None)
         .expect("start task");
@@ -4081,6 +4279,7 @@ fn merge_pr_automation_uses_input_review_decision_without_extra_gh_lookup() {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-merge-pr-from-input".to_string(),
                 agent_cli: String::new(),
+                model: None,
                 timeout_seconds: 30,
                 env_extra: vec![],
             }],
@@ -4107,6 +4306,170 @@ fn merge_pr_automation_uses_input_review_decision_without_extra_gh_lookup() {
 }
 
 #[test]
+fn merge_pr_automation_rejects_stale_task_branches_before_merging() {
+    let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _snapshot = EnvSnapshot::capture(&["PATH"]);
+    let dir = tempdir().expect("tempdir");
+    let data_root = dir.path().join("orbit");
+    std::fs::create_dir_all(&data_root).expect("create data root");
+    let repo_root = dir.path().join("repo");
+    std::fs::create_dir_all(&repo_root).expect("create repo root");
+    init_git_repo(&repo_root);
+    std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
+    git_commit_all(&repo_root, "chore: seed repo");
+    Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
+
+    let gh_dir = dir.path().join("bin");
+    std::fs::create_dir_all(&gh_dir).expect("create gh dir");
+    let merge_capture = dir.path().join("gh-merge-stale.txt");
+    let gh_script = gh_dir.join("gh");
+    let gh_body = format!(
+        concat!(
+            "#!/bin/sh\n",
+            "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"merge\" ]; then\n",
+            "  printf '%s' \"$3\" > \"{merge_capture}\"\n",
+            "  exit 0\n",
+            "fi\n",
+            "exit 1\n",
+        ),
+        merge_capture = merge_capture.display(),
+    );
+    std::fs::write(&gh_script, gh_body).expect("write gh script");
+    #[cfg(unix)]
+    std::fs::set_permissions(&gh_script, std::fs::Permissions::from_mode(0o755)).expect("chmod gh");
+    unsafe {
+        std::env::set_var("PATH", prepend_path(&gh_dir));
+    }
+
+    let runtime = OrbitRuntime::from_data_root(&data_root).expect("runtime");
+    let task_id = runtime
+        .add_task(TaskAddParams {
+            title: "Reject stale merge branches".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            comment: None,
+            context_files: vec![],
+            workspace_path: Some(repo_root.to_string_lossy().to_string()),
+            priority: TaskPriority::High,
+            task_type: TaskType::Task,
+        })
+        .expect("add task")
+        .id;
+    let branch_name = format!("orbit/{task_id}");
+
+    let status = Command::new("git")
+        .args(["checkout", "-b", &branch_name])
+        .current_dir(&repo_root)
+        .status()
+        .expect("create task branch");
+    assert!(status.success(), "task branch checkout must succeed");
+    std::fs::write(repo_root.join("feature.txt"), "branch work\n").expect("write feature");
+    git_commit_all(&repo_root, "feat: add branch work");
+    let status = Command::new("git")
+        .args(["checkout", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("checkout base");
+    assert!(status.success(), "checkout base must succeed");
+    std::fs::write(repo_root.join("base.txt"), "base drift\n").expect("write base drift");
+    git_commit_all(&repo_root, "chore: advance base");
+
+    runtime
+        .start_task(&task_id, None, None)
+        .expect("start task");
+    runtime
+        .update_task(
+            &task_id,
+            TaskUpdateParams {
+                title: None,
+                description: None,
+                plan: None,
+                execution_summary: Some("Ready to merge".to_string()),
+                comment: None,
+                status: Some(TaskStatus::Review),
+                branch: Some(Some(branch_name)),
+                pr_number: Some(Some("42".to_string())),
+            },
+        )
+        .expect("prepare task");
+
+    runtime
+        .add_activity(ActivityAddParams {
+            id: "spec-merge-pr-stale".to_string(),
+            spec_type: "automation".to_string(),
+            description: "merge pr from stale branch".to_string(),
+            input_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string" },
+                    "review_decision": { "type": "string" }
+                },
+                "required": ["task_id", "review_decision"]
+            }),
+            output_schema_json: json!({
+                "type": "object",
+                "properties": {
+                    "pr_number": { "type": "string" },
+                    "merged": { "type": "boolean" },
+                    "review_decision": { "type": "string" }
+                },
+                "required": ["pr_number", "merged", "review_decision"]
+            }),
+            spec_config: json!({"action":"merge_pr_from_task"}),
+            workspace_path: None,
+            created_by: None,
+        })
+        .expect("add merge activity");
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: Some(json!({
+                "task_id": task_id,
+                "review_decision": "APPROVED",
+                "base": "agent-main",
+            })),
+            max_active_runs: None,
+            steps: vec![JobStep {
+                target_type: JobTargetType::Activity,
+                target_id: "spec-merge-pr-stale".to_string(),
+                agent_cli: String::new(),
+                model: None,
+                timeout_seconds: 30,
+                env_extra: vec![],
+            }],
+            initial_state_override: None,
+        })
+        .expect("add merge job")
+        .job_id;
+
+    let run = runtime.run_job_now(&job_id).expect("run merge job");
+    assert_eq!(run.state, JobRunState::Failed);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    let error_message = history[0]
+        .steps
+        .last()
+        .and_then(|step| step.error_message.as_deref())
+        .expect("error message");
+    assert!(
+        error_message.contains("behind base"),
+        "error message: {error_message}"
+    );
+    assert!(
+        !merge_capture.exists(),
+        "stale branch should fail before invoking gh pr merge"
+    );
+
+    let updated_task = runtime.get_task(&task_id).expect("updated task");
+    assert_eq!(updated_task.status, TaskStatus::Review);
+}
+
+#[test]
 fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
     let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
     let _snapshot = EnvSnapshot::capture(&["PATH"]);
@@ -4118,6 +4481,11 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
     init_git_repo(&repo_root);
     std::fs::write(repo_root.join("README.md"), "seed\n").expect("write seed file");
     git_commit_all(&repo_root, "chore: seed repo");
+    Command::new("git")
+        .args(["branch", "-M", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("rename branch");
 
     let gh_dir = dir.path().join("bin");
     std::fs::create_dir_all(&gh_dir).expect("create gh dir");
@@ -4169,6 +4537,18 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
         })
         .expect("add task")
         .id;
+    let status = Command::new("git")
+        .args(["checkout", "-b", &format!("orbit/{task_id}")])
+        .current_dir(&repo_root)
+        .status()
+        .expect("create merge branch");
+    assert!(status.success(), "create merge branch must succeed");
+    let status = Command::new("git")
+        .args(["checkout", "agent-main"])
+        .current_dir(&repo_root)
+        .status()
+        .expect("checkout base");
+    assert!(status.success(), "checkout base must succeed");
     runtime
         .start_task(&task_id, None, None)
         .expect("start task");
@@ -4226,6 +4606,7 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
                 target_type: JobTargetType::Activity,
                 target_id: "spec-merge-pr-from-gh".to_string(),
                 agent_cli: String::new(),
+                model: None,
                 timeout_seconds: 30,
                 env_extra: vec![],
             }],

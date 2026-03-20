@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Merge an approved Orbit pull request and advance the task to done
+  description: Merge an approved Orbit pull request, rechecking task branch freshness against the base branch before advancing the task to done
 
   # ---- interface ----
   input_schema_json:
@@ -30,6 +30,12 @@ activity:
       repo_root:
         type: string
         description: Canonical repository root or task worktree used to resolve the current repository context. Optional when task_id is provided; falls back to input.workspace_path, task.repo_root, and then task.workspace_path.
+      branch:
+        type: string
+        description: Task branch expected to be merged. Optional when task_id is provided; falls back to the task branch.
+      base:
+        type: string
+        description: Base branch the PR targets (defaults to agent-main) and to compare for branch freshness before merging.
       strategy:
         type: string
         description: Merge strategy passed to github.pr.merge. Defaults to squash.

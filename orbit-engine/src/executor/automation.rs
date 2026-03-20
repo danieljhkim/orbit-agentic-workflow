@@ -21,6 +21,14 @@ struct AutomationSpec {
     action: String,
 }
 
+#[derive(Debug, Clone)]
+struct BranchFreshness {
+    base_ref: String,
+    head_ref: String,
+    commits_behind: u64,
+    commits_ahead: u64,
+}
+
 pub fn execute<H: EngineHost>(
     host: &H,
     activity: &Activity,
@@ -238,6 +246,15 @@ fn merge_pr_from_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, O
                 "merge_pr_from_task requires input.pr_number or task.pr_number".to_string(),
             )
         })?;
+    let head = input_string_field(input, "branch")
+        .or_else(|| task.branch.clone())
+        .ok_or_else(|| {
+            OrbitError::Execution(format!(
+                "task '{}' does not have a branch for PR merge",
+                task.id
+            ))
+        })?;
+    let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
     let review_decision = resolve_review_decision(input, &repo_root, &pr_number)?;
     if review_decision != "APPROVED" {
         return Err(OrbitError::Execution(format!(
@@ -251,6 +268,7 @@ fn merge_pr_from_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, O
             task.id, task.status
         )));
     }
+    ensure_branch_fresh_against_base(&repo_root, &head, &base)?;
 
     let tool_context = ToolContext {
         cwd: Some(repo_root.to_string_lossy().to_string()),
@@ -312,22 +330,26 @@ fn open_pr_from_task<H: EngineHost>(host: &H, input: &Value) -> Result<Value, Or
         Some(_) => input_string_array_field(input, "changed_files")?,
         None => task.changed_files.clone().unwrap_or_default(),
     };
-    let body = format!(
-        "## Changes\n{}\n\n## Files Changed\n{}",
-        commit_message,
-        changed_files
-            .iter()
-            .map(|f| format!("- `{f}`"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-
     let head = branch.or_else(|| task.branch.clone()).ok_or_else(|| {
         OrbitError::Execution(format!(
             "task '{}' does not have a branch for PR creation",
             task.id
         ))
     })?;
+    let freshness = ensure_branch_fresh_against_base(&repo_root, &head, &base)?;
+    let body = format!(
+        "## Changes\n{}\n\n## Branch Freshness\n- Base ref: `{}`\n- Head ref: `{}`\n- Behind base: {}\n- Ahead of base: {}\n\n## Files Changed\n{}",
+        commit_message,
+        freshness.base_ref,
+        freshness.head_ref,
+        freshness.commits_behind,
+        freshness.commits_ahead,
+        changed_files
+            .iter()
+            .map(|f| format!("- `{f}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
     let title = task.title.trim().to_string();
     let tool_context = ToolContext {
         cwd: Some(repo_root.to_string_lossy().to_string()),
@@ -640,6 +662,63 @@ fn fetch_remote_base(repo_root: &Path, base: &str) {
         },
         &NoSandbox,
     );
+}
+
+fn ensure_branch_fresh_against_base(
+    repo_root: &Path,
+    head: &str,
+    base: &str,
+) -> Result<BranchFreshness, OrbitError> {
+    fetch_remote_base(repo_root, base);
+    let base_ref = resolve_worktree_start_point(repo_root, base)?;
+    let divergence = git_output(
+        repo_root,
+        &[
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("{base_ref}...{head}"),
+        ],
+    )?;
+    let mut parts = divergence.split_whitespace();
+    let commits_behind = parse_divergence_count(parts.next(), "behind", base, head)?;
+    let commits_ahead = parse_divergence_count(parts.next(), "ahead", base, head)?;
+    if parts.next().is_some() {
+        return Err(OrbitError::Execution(format!(
+            "unexpected git divergence output while comparing '{head}' to '{base_ref}': {divergence}"
+        )));
+    }
+
+    if commits_behind > 0 {
+        return Err(OrbitError::Execution(format!(
+            "task branch '{head}' is behind base '{base_ref}' by {commits_behind} commit(s); refresh the task branch before opening or merging the PR"
+        )));
+    }
+
+    Ok(BranchFreshness {
+        base_ref,
+        head_ref: head.to_string(),
+        commits_behind,
+        commits_ahead,
+    })
+}
+
+fn parse_divergence_count(
+    value: Option<&str>,
+    label: &str,
+    base: &str,
+    head: &str,
+) -> Result<u64, OrbitError> {
+    let raw = value.ok_or_else(|| {
+        OrbitError::Execution(format!(
+            "missing {label} divergence count while comparing '{head}' to '{base}'"
+        ))
+    })?;
+    raw.parse::<u64>().map_err(|error| {
+        OrbitError::Execution(format!(
+            "invalid {label} divergence count '{raw}' while comparing '{head}' to '{base}': {error}"
+        ))
+    })
 }
 
 fn resolve_worktree_start_point(repo_root: &Path, base: &str) -> Result<String, OrbitError> {

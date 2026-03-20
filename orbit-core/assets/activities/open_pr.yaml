@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Open a pull request from Orbit task metadata through Orbit-owned automation
+  description: Open a pull request from Orbit task metadata through Orbit-owned automation after confirming the task branch is fresh against the base branch
 
   # ---- interface ----
   input_schema_json:
@@ -29,7 +29,7 @@ activity:
         description: Task branch to open as a PR. Optional when task_id is provided; falls back to the task branch.
       base:
         type: string
-        description: Base branch to merge into (defaults to agent-main)
+        description: Base branch to merge into (defaults to agent-main) and to compare for branch freshness before PR creation.
       commit_message:
         type: string
         description: Commit message from the preceding commit_task_changes step, used as PR body header. Optional when task_id is provided; falls back to the task commit_message.
@@ -57,7 +57,7 @@ activity:
         description: Pull request title derived from the Orbit task title.
       body:
         type: string
-        description: Pull request body built from commit_message and changed_files, whether passed explicitly or loaded from the task.
+        description: Pull request body built from commit_message, branch freshness details, and changed_files, whether passed explicitly or loaded from the task.
 
   # ---- execution ----
   action: open_pr_from_task
