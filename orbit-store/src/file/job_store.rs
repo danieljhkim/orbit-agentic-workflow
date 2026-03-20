@@ -375,6 +375,10 @@ impl JobFileStore {
             return Ok(false);
         };
         let mut run = self.read_run_at(&run_dir)?;
+        // Do not overwrite a terminal state (e.g. Cancelled) with a later outcome.
+        if run.state.is_terminal() {
+            return Ok(true);
+        }
         run.state = state;
         run.finished_at = Some(finished_at);
         run.duration_ms = duration_ms;
