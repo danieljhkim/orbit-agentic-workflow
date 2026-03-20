@@ -50,6 +50,21 @@ pub struct TaskUpdateParams {
     pub pr_number: Option<Option<String>>,
 }
 
+impl From<TaskUpdateParams> for StoreTaskUpdateParams {
+    fn from(p: TaskUpdateParams) -> Self {
+        Self {
+            title: p.title,
+            description: p.description,
+            plan: p.plan,
+            execution_summary: p.execution_summary,
+            status: p.status,
+            branch: p.branch,
+            pr_number: p.pr_number,
+            ..Default::default()
+        }
+    }
+}
+
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
         let workspace_path = normalize_path(params.workspace_path)?;
@@ -209,17 +224,10 @@ impl OrbitRuntime {
                 id,
                 StoreTaskUpdateParams {
                     actor: actor.label.clone(),
-                    title: params.title,
-                    description: params.description,
-                    plan: params.plan,
-                    execution_summary: params.execution_summary,
                     assigned_to,
-                    status: params.status,
                     status_note,
-                    branch: params.branch,
-                    pr_number: params.pr_number,
                     append_comments: append_comments.clone(),
-                    ..Default::default()
+                    ..StoreTaskUpdateParams::from(params)
                 },
             )?;
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))

@@ -94,6 +94,35 @@ pub struct ActivityUpdateParams {
     pub is_active: Option<bool>,
 }
 
+impl From<ActivityAddParams> for StoreWorkCreateParams {
+    fn from(p: ActivityAddParams) -> Self {
+        Self {
+            id: p.id,
+            spec_type: p.spec_type,
+            description: p.description,
+            input_schema_json: p.input_schema_json,
+            output_schema_json: p.output_schema_json,
+            spec_config: p.spec_config,
+            workspace_path: p.workspace_path,
+            created_by: p.created_by,
+        }
+    }
+}
+
+impl From<ActivityUpdateParams> for StoreActivityUpdateParams {
+    fn from(p: ActivityUpdateParams) -> Self {
+        Self {
+            description: p.description,
+            input_schema_json: p.input_schema_json,
+            output_schema_json: p.output_schema_json,
+            spec_config: p.spec_config,
+            workspace_path: p.workspace_path,
+            created_by: p.created_by,
+            is_active: p.is_active,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct ActivityFileEnvelope {
     schema_version: u8,
@@ -153,16 +182,7 @@ impl OrbitRuntime {
         validate_activity_params(&params)?;
         let skill_refs = activity_skill_refs_from_spec_config(&params.spec_config)?;
         let _ = self.resolve_activity_skill_refs(&skill_refs)?;
-        let activity = self.add_activity_record(StoreWorkCreateParams {
-            id: params.id,
-            spec_type: params.spec_type,
-            description: params.description,
-            input_schema_json: params.input_schema_json,
-            output_schema_json: params.output_schema_json,
-            spec_config: params.spec_config,
-            workspace_path: params.workspace_path,
-            created_by: params.created_by,
-        })?;
+        let activity = self.add_activity_record(params.into())?;
         self.record_event(OrbitEvent::ActivityAdded {
             id: activity.id.clone(),
         })?;
@@ -189,18 +209,7 @@ impl OrbitRuntime {
             let _ = self.resolve_activity_skill_refs(&skill_refs)?;
         }
 
-        let activity = self.update_activity_record(
-            id,
-            StoreActivityUpdateParams {
-                description: params.description,
-                input_schema_json: params.input_schema_json,
-                output_schema_json: params.output_schema_json,
-                spec_config: params.spec_config,
-                workspace_path: params.workspace_path,
-                created_by: params.created_by,
-                is_active: params.is_active,
-            },
-        )?;
+        let activity = self.update_activity_record(id, params.into())?;
         self.record_event(OrbitEvent::ActivityUpdated {
             id: activity.id.clone(),
         })?;
