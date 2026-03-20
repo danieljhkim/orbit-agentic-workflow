@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use crate::OrbitContext;
 use crate::command::init::ensure_orbit_root_initialized;
+use crate::context::ActorIdentity;
 use crate::paths;
 
 #[derive(Clone)]
@@ -52,6 +53,11 @@ impl OrbitRuntime {
 
     pub fn with_policy(mut self, policy: PolicyEngine) -> Self {
         self.context.policy = policy;
+        self
+    }
+
+    pub fn with_actor(mut self, actor: ActorIdentity) -> Self {
+        self.context.actor = actor;
         self
     }
 
@@ -161,10 +167,10 @@ pub(crate) fn resolve_initialize_data_root(
     if let Some(repo_root) = find_git_repo_root(cwd) {
         let repo_orbit_root = repo_root.join(".orbit");
         let repo_config = repo_orbit_root.join("config.toml");
-        if repo_config.exists() {
-            if let Some(configured_root) = configured_root_from_config(&repo_config)? {
-                return Ok(configured_root);
-            }
+        if repo_config.exists()
+            && let Some(configured_root) = configured_root_from_config(&repo_config)?
+        {
+            return Ok(configured_root);
         }
         return Ok(repo_orbit_root);
     }

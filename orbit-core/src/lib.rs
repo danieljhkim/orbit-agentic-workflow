@@ -9,7 +9,7 @@ pub mod runtime;
 pub use orbit_engine::JobRunResult;
 pub use orbit_store::skill_store as skill_catalog;
 
-pub use context::OrbitContext;
+pub use context::{ActorIdentity, ActorKind, OrbitContext};
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
@@ -35,10 +35,10 @@ mod tests {
     use serde_json::json;
     use tempfile::tempdir;
 
-    use crate::OrbitRuntime;
     use crate::command::activity::ActivityAddParams;
     use crate::command::job::JobAddParams;
     use crate::command::task::{TaskAddParams, TaskUpdateParams};
+    use crate::{ActorIdentity, OrbitRuntime};
 
     #[test]
     fn policy_denied_records_audit_and_no_side_effects() {
@@ -390,6 +390,86 @@ mod tests {
         assert_eq!(task.task_type, orbit_types::TaskType::Issue);
         // Default status depends on task_approval_required_for_agent (false in memory → Backlog)
         assert_eq!(task.status, TaskStatus::Backlog);
+    }
+
+    #[test]
+    fn bound_agent_actor_uses_proposed_status_when_approval_is_required() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "[task.approval]\nrequired_for_agent = true\n",
+        )
+        .expect("write config");
+        let runtime = OrbitRuntime::from_data_root(dir.path())
+            .expect("runtime")
+            .with_actor(ActorIdentity::agent("codex"));
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "agent proposal".to_string(),
+                ..Default::default()
+            })
+            .expect("add");
+
+        assert_eq!(task.status, TaskStatus::Proposed);
+        assert_eq!(task.created_by.as_deref(), Some("codex"));
+        assert_eq!(task.assigned_to.as_deref(), Some("codex"));
+        assert_eq!(task.proposed_by.as_deref(), Some("codex"));
+    }
+
+    #[test]
+    fn bound_actor_identity_is_reused_across_task_commands() {
+        let runtime = OrbitRuntime::in_memory()
+            .expect("runtime")
+            .with_actor(ActorIdentity::agent("codex"));
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "agent owned task".to_string(),
+                comment: Some("initial context".to_string()),
+                ..Default::default()
+            })
+            .expect("add");
+
+        assert_eq!(task.created_by.as_deref(), Some("codex"));
+        assert_eq!(task.comments[0].by, "codex");
+
+        let started = runtime
+            .start_task(
+                &task.id,
+                Some("picked up by the agent".to_string()),
+                Some("implementation started".to_string()),
+            )
+            .expect("start");
+        assert_eq!(started.assigned_to.as_deref(), Some("codex"));
+        assert_eq!(started.comments.last().expect("comment").by, "codex");
+        assert_eq!(started.history.last().expect("history").by, "codex");
+
+        let review = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    title: None,
+                    description: None,
+                    plan: None,
+                    execution_summary: Some("verified by tests".to_string()),
+                    comment: Some("ready for review".to_string()),
+                    status: Some(TaskStatus::Review),
+                    branch: None,
+                    pr_number: None,
+                },
+            )
+            .expect("review");
+        assert_eq!(review.comments.last().expect("comment").by, "codex");
+
+        let approved = runtime
+            .approve_task(
+                &task.id,
+                Some("ship it".to_string()),
+                Some("approved for merge".to_string()),
+            )
+            .expect("approve");
+        assert_eq!(approved.status, TaskStatus::Done);
+        assert_eq!(approved.comments.last().expect("comment").by, "codex");
     }
 
     #[test]
