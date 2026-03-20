@@ -162,9 +162,12 @@ pub enum OutputFormat {
 pub struct ToolRunArgs {
     /// Tool name
     pub name: String,
-    /// JSON input for the tool
+    /// JSON input for the tool (use --input-file to avoid shell escaping issues with rich content)
     #[arg(long)]
     pub input: Option<String>,
+    /// Path to a JSON file to use as input (bypasses shell escaping; preferred for markdown or multi-line content)
+    #[arg(long, conflicts_with = "input")]
+    pub input_file: Option<String>,
     /// Execution timeout (e.g. "30s", "5000ms")
     #[arg(long)]
     pub timeout: Option<String>,
@@ -178,10 +181,17 @@ pub struct ToolRunArgs {
 
 impl Execute for ToolRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input: Value = match &self.input {
-            Some(raw) => serde_json::from_str(raw)
-                .map_err(|e| OrbitError::InvalidInput(format!("invalid JSON input: {e}")))?,
-            None => Value::Object(Default::default()),
+        let input: Value = if let Some(path) = &self.input_file {
+            let raw = std::fs::read_to_string(path)
+                .map_err(|e| OrbitError::InvalidInput(format!("cannot read input file '{path}': {e}")))?;
+            serde_json::from_str(&raw)
+                .map_err(|e| OrbitError::InvalidInput(format!("invalid JSON in '{path}': {e}")))?
+        } else {
+            match &self.input {
+                Some(raw) => serde_json::from_str(raw)
+                    .map_err(|e| OrbitError::InvalidInput(format!("invalid JSON input: {e}")))?,
+                None => Value::Object(Default::default()),
+            }
         };
 
         if self.dry_run {

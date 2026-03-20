@@ -1330,6 +1330,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "jsonschema",
+ "libc",
  "orbit-agent",
  "orbit-exec",
  "orbit-store",
