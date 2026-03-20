@@ -124,12 +124,15 @@ impl Execute for TaskAddArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit task list\n  orbit task list --status backlog\n  orbit task list --status in-progress\n  orbit task list --priority high\n  orbit task list --json"
+    after_help = "Examples:\n  orbit task list\n  orbit task list --all\n  orbit task list --status backlog\n  orbit task list --status in-progress,review\n  orbit task list --priority high\n  orbit task list --json"
 )]
 pub struct TaskListArgs {
-    /// Filter by task status (proposed, backlog, in-progress, review, done, blocked, rejected, archived)
-    #[arg(long, value_enum)]
-    pub status: Option<TaskStatus>,
+    /// Filter by one or more statuses (comma-separated). Defaults to backlog,in-progress.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub status: Vec<TaskStatus>,
+    /// Show all tasks regardless of status
+    #[arg(long, conflicts_with = "status")]
+    pub all: bool,
     /// Filter by priority level (low, medium, high)
     #[arg(long, value_enum)]
     pub priority: Option<TaskPriority>,
@@ -143,11 +146,25 @@ pub struct TaskListArgs {
 
 impl Execute for TaskListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let tasks = if self.status.is_some() || self.priority.is_some() {
-            runtime.list_tasks_filtered(self.status, self.priority)?
+        let all = self.all;
+        let status = self.status;
+        let priority = self.priority;
+
+        let all_tasks = runtime.list_tasks()?;
+        let active_statuses = [TaskStatus::Backlog, TaskStatus::InProgress];
+        let status_filter: &[TaskStatus] = if all {
+            &[]
+        } else if !status.is_empty() {
+            &status
         } else {
-            runtime.list_tasks()?
+            &active_statuses
         };
+
+        let tasks: Vec<_> = all_tasks
+            .into_iter()
+            .filter(|t| status_filter.is_empty() || status_filter.contains(&t.status))
+            .filter(|t| priority.is_none_or(|p| t.priority == p))
+            .collect();
 
         if self.ops {
             let json_tasks: Vec<Value> = tasks.iter().map(task_to_signal_json).collect();

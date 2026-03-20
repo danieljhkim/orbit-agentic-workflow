@@ -1439,6 +1439,108 @@ fn task_list_filtered_by_rejected_shows_rejected_tasks() {
 }
 
 #[test]
+fn task_list_default_shows_only_active_work() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let backlog_id = add_task(dir.path(), "backlog-task");
+    let proposed_id = add_agent_task(dir.path(), "proposed-task");
+
+    let output = orbit_in(dir.path())
+        .args(["task", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let tasks: serde_json::Value = serde_json::from_slice(&output).expect("json");
+    let tasks = tasks.as_array().expect("array");
+
+    assert!(
+        tasks.iter().any(|t| t["id"] == backlog_id),
+        "backlog task must appear in default list"
+    );
+    assert!(
+        !tasks.iter().any(|t| t["id"] == proposed_id),
+        "proposed task must not appear in default list"
+    );
+}
+
+#[test]
+fn task_list_all_shows_every_status() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let backlog_id = add_task(dir.path(), "backlog-task-all");
+    let proposed_id = add_agent_task(dir.path(), "proposed-task-all");
+
+    let output = orbit_in(dir.path())
+        .args(["task", "list", "--all", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let tasks: serde_json::Value = serde_json::from_slice(&output).expect("json");
+    let tasks = tasks.as_array().expect("array");
+
+    assert!(
+        tasks.iter().any(|t| t["id"] == backlog_id),
+        "backlog task must appear with --all"
+    );
+    assert!(
+        tasks.iter().any(|t| t["id"] == proposed_id),
+        "proposed task must appear with --all"
+    );
+}
+
+#[test]
+fn task_list_multi_status_filter() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
+    std::fs::write(
+        dir.path().join(".orbit").join("config.toml"),
+        "[task.approval]\nrequired_for_agent = true\n",
+    )
+    .expect("write config");
+
+    let backlog_id = add_task(dir.path(), "multi-backlog");
+    let proposed_id = add_agent_task(dir.path(), "multi-proposed");
+
+    let output = orbit_in(dir.path())
+        .args(["task", "list", "--status", "backlog,proposed", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let tasks: serde_json::Value = serde_json::from_slice(&output).expect("json");
+    let tasks = tasks.as_array().expect("array");
+
+    assert!(
+        tasks.iter().any(|t| t["id"] == backlog_id),
+        "backlog task must appear with --status backlog,proposed"
+    );
+    assert!(
+        tasks.iter().any(|t| t["id"] == proposed_id),
+        "proposed task must appear with --status backlog,proposed"
+    );
+}
+
+#[test]
 fn task_update_status_rejected_is_blocked() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "direct-reject-blocked");
