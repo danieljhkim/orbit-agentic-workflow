@@ -11,8 +11,9 @@ pub use activity_runner::{
 };
 pub use context::{
     ACTIVITY_EXECUTION_FAILED, AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED,
-    AGENT_PROTOCOL_VIOLATION, AGENT_TIMEOUT, AttemptOutcome, DirectActivityRunOutcome, EngineHost,
-    ExecutionContext, JobRunResult, STALE_RUN_GRACE_SECONDS, TaskAutomationUpdate,
+    AGENT_PROTOCOL_VIOLATION, AGENT_TIMEOUT, AgentProtocolHost, AttemptOutcome,
+    DirectActivityRunOutcome, EngineHost, EnvironmentHost, ExecutionContext, JobRunHost,
+    JobRunResult, RuntimeHost, STALE_RUN_GRACE_SECONDS, TaskAutomationUpdate, TaskHost,
     execution_working_directory, input_workspace_path, redact_attempt_outcome,
     step_output_for_following_input,
 };

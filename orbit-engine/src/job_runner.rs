@@ -5,8 +5,8 @@ use serde_json::Value;
 
 use crate::activity_runner::{build_execution_context_for_step, execute_single_attempt};
 use crate::context::{
-    ACTIVITY_EXECUTION_FAILED, AGENT_INVOCATION_FAILED, EngineHost, JobRunResult,
-    STALE_RUN_GRACE_SECONDS, step_output_for_following_input,
+    ACTIVITY_EXECUTION_FAILED, AGENT_INVOCATION_FAILED, EngineHost, JobRunHost, JobRunResult,
+    RuntimeHost, STALE_RUN_GRACE_SECONDS, step_output_for_following_input,
 };
 
 pub fn run_job_with_input<H: EngineHost>(
@@ -182,7 +182,7 @@ fn execute_activity_with_retries<H: EngineHost>(
     }
 }
 
-pub fn recover_stale_active_run_for_job<H: EngineHost>(
+pub fn recover_stale_active_run_for_job<H: JobRunHost + RuntimeHost>(
     host: &H,
     job: &Job,
     now: DateTime<Utc>,
@@ -251,7 +251,7 @@ pub fn recover_stale_active_run_for_job<H: EngineHost>(
     Ok(recovered_any)
 }
 
-fn finalize_failed_started_run<H: EngineHost>(
+fn finalize_failed_started_run<H: JobRunHost + RuntimeHost>(
     host: &H,
     job: &Job,
     run: &JobRun,

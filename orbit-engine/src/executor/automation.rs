@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use super::ActivityExecutor;
 use crate::activity_runner::validate_activity_output_schema;
 use crate::context::{
-    ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, ExecutionContext, TaskAutomationUpdate,
+    ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, ExecutionContext, RuntimeHost,
+    TaskAutomationUpdate, TaskHost,
 };
 
 const AUTOMATION_CREATE_TASK_WORKTREE: &str = "create_task_worktree";
@@ -77,7 +78,7 @@ impl ActivityExecutor for AutomationExecutor {
     }
 }
 
-pub fn execute<H: EngineHost + ?Sized>(
+pub fn execute<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     activity: &Activity,
     input: &Value,
@@ -101,7 +102,7 @@ pub fn execute<H: EngineHost + ?Sized>(
     }
 }
 
-fn create_task_worktree<H: EngineHost + ?Sized>(
+fn create_task_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
@@ -157,7 +158,7 @@ fn create_task_worktree<H: EngineHost + ?Sized>(
     }))
 }
 
-fn start_task<H: EngineHost + ?Sized>(host: &H, input: &Value) -> Result<Value, OrbitError> {
+fn start_task<H: TaskHost + ?Sized>(host: &H, input: &Value) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
     let task = host.start_task(
         task_id,
@@ -174,7 +175,7 @@ fn start_task<H: EngineHost + ?Sized>(host: &H, input: &Value) -> Result<Value, 
     }))
 }
 
-fn update_task<H: EngineHost + ?Sized>(host: &H, input: &Value) -> Result<Value, OrbitError> {
+fn update_task<H: TaskHost + ?Sized>(host: &H, input: &Value) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
     let status = required_input_string(input, "status")?
         .parse::<TaskStatus>()
@@ -192,10 +193,7 @@ fn update_task<H: EngineHost + ?Sized>(host: &H, input: &Value) -> Result<Value,
     })
 }
 
-fn commit_task_changes<H: EngineHost + ?Sized>(
-    host: &H,
-    input: &Value,
-) -> Result<Value, OrbitError> {
+fn commit_task_changes<H: TaskHost + ?Sized>(host: &H, input: &Value) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
     let task = host.get_task(task_id)?;
     let workspace_path = canonicalize_existing_dir(
@@ -277,7 +275,7 @@ fn commit_task_changes<H: EngineHost + ?Sized>(
     }))
 }
 
-fn merge_pr_from_task<H: EngineHost + ?Sized>(
+fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
@@ -363,7 +361,10 @@ fn merge_pr_from_task<H: EngineHost + ?Sized>(
     }))
 }
 
-fn open_pr_from_task<H: EngineHost + ?Sized>(host: &H, input: &Value) -> Result<Value, OrbitError> {
+fn open_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
+    host: &H,
+    input: &Value,
+) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
     let task = host.get_task(task_id)?;
     let repo_root = canonicalize_existing_dir(

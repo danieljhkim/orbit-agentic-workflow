@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_agent::AgentConfig;
 use orbit_engine::{
-    EngineHost, ExecutionContext, TaskAutomationUpdate, activity_skill_refs_from_spec_config,
+    AgentProtocolHost, EnvironmentHost, ExecutionContext, JobRunHost, RuntimeHost,
+    TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
 };
 use orbit_exec::EnvironmentMode;
 use orbit_store::{JobRunStepParams, TaskUpdateParams as StoreTaskUpdateParams};
@@ -167,7 +168,7 @@ fn execute_commit_request_if_present(
     Ok(())
 }
 
-impl EngineHost for OrbitRuntime {
+impl RuntimeHost for OrbitRuntime {
     fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError> {
         OrbitRuntime::record_event(self, event)
     }
@@ -184,6 +185,18 @@ impl EngineHost for OrbitRuntime {
         OrbitRuntime::validate_activity_target_exists(self, target_type, target_id)
     }
 
+    fn run_tool_with_context_and_role(
+        &self,
+        name: &str,
+        input: Value,
+        role: Role,
+        tool_context: ToolContext,
+    ) -> Result<Value, OrbitError> {
+        OrbitRuntime::run_tool_with_context_and_role(self, name, input, role, tool_context)
+    }
+}
+
+impl JobRunHost for OrbitRuntime {
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
         self.context
             .job_store
@@ -234,7 +247,9 @@ impl EngineHost for OrbitRuntime {
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
         self.context.job_store.get_job_run(run_id)
     }
+}
 
+impl EnvironmentHost for OrbitRuntime {
     fn agent_config_for(
         &self,
         agent_cli: &str,
@@ -282,7 +297,9 @@ impl EngineHost for OrbitRuntime {
             .execution_env_policy
             .missing_required(required_env_vars)
     }
+}
 
+impl AgentProtocolHost for OrbitRuntime {
     fn build_agent_stdin_envelope_payload(
         &self,
         execution: &ExecutionContext,
@@ -301,7 +318,9 @@ impl EngineHost for OrbitRuntime {
     fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError> {
         execute_commit_request_if_present(self, result)
     }
+}
 
+impl TaskHost for OrbitRuntime {
     fn get_task(&self, task_id: &str) -> Result<Task, OrbitError> {
         OrbitRuntime::get_task(self, task_id)
     }
@@ -364,16 +383,6 @@ impl EngineHost for OrbitRuntime {
             ))
         })?;
         Ok(())
-    }
-
-    fn run_tool_with_context_and_role(
-        &self,
-        name: &str,
-        input: Value,
-        role: Role,
-        tool_context: ToolContext,
-    ) -> Result<Value, OrbitError> {
-        OrbitRuntime::run_tool_with_context_and_role(self, name, input, role, tool_context)
     }
 }
 
