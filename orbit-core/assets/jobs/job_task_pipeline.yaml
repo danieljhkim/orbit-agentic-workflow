@@ -24,8 +24,8 @@ job:
   steps:
     - target_type: activity
       target_id: dispatch_task
-      agent_cli: claude
-      model: claude-sonnet-4-6
+      agent_cli: codex
+      model: gpt-4.1-mini
       timeout_seconds: 1000
 
     - target_type: activity
