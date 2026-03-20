@@ -21,7 +21,7 @@ impl OrbitRuntime {
                 run_id
             )));
         }
-        let job_id = self.context.job_store.archive_job_run(run_id)?;
+        let job_id = self.archive_job_run_record(run_id)?;
         self.record_event(OrbitEvent::JobRunArchived {
             job_id,
             run_id: run_id.to_string(),
@@ -37,7 +37,7 @@ impl OrbitRuntime {
                 run_id
             )));
         }
-        let job_id = self.context.job_store.delete_job_run(run_id)?;
+        let job_id = self.delete_job_run_record(run_id)?;
         self.record_event(OrbitEvent::JobRunDeleted {
             job_id,
             run_id: run_id.to_string(),
@@ -87,17 +87,17 @@ impl OrbitRuntime {
     }
 
     fn list_job_history_backend(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.context.job_store.list_job_runs(job_id)
+        self.list_job_run_records(job_id)
     }
 
     fn list_job_runs_filtered_backend(
         &self,
         query: &JobRunQuery,
     ) -> Result<Vec<JobRun>, OrbitError> {
-        self.context.job_store.list_job_runs_filtered(query)
+        self.list_job_runs_filtered_record(query)
     }
 
     fn get_job_run_backend(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.context.job_store.get_job_run(run_id)
+        self.get_job_run_record(run_id)
     }
 }

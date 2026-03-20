@@ -135,7 +135,7 @@ impl OrbitRuntime {
             })
             .collect::<Result<Vec<_>, OrbitError>>()?;
 
-        let job = self.context.job_store.add_job(StoreActivityCreateParams {
+        let job = self.add_job_record(StoreActivityCreateParams {
             job_id: params.job_id,
             default_input,
             max_active_runs,
@@ -156,7 +156,7 @@ impl OrbitRuntime {
         steps: Vec<JobStep>,
         state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
-        let job = self.context.job_store.update_job(
+        let job = self.update_job_record(
             job_id,
             StoreJobUpdateParams {
                 default_input: Some(normalize_job_default_input(default_input)?),
@@ -187,9 +187,7 @@ impl OrbitRuntime {
         for job in jobs {
             let _ = self.recover_stale_active_run_for_job(&job, now);
             let last_run = self
-                .context
-                .job_store
-                .list_job_runs_filtered(&JobRunQuery {
+                .list_job_runs_filtered_record(&JobRunQuery {
                     job_id: Some(job.job_id.clone()),
                     state: None,
                     created_since: None,
@@ -208,7 +206,7 @@ impl OrbitRuntime {
     }
 
     pub fn delete_job(&self, job_id: &str) -> Result<(), OrbitError> {
-        let changed = self.context.job_store.mark_job_disabled(job_id)?;
+        let changed = self.mark_job_disabled_record(job_id)?;
         if !changed {
             return Err(OrbitError::JobNotFound(job_id.to_string()));
         }
@@ -218,11 +216,11 @@ impl OrbitRuntime {
     }
 
     fn list_jobs_backend(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        self.context.job_store.list_jobs(include_disabled)
+        self.list_job_records(include_disabled)
     }
 
     fn get_job_backend(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        self.context.job_store.get_job(job_id)
+        self.get_job_record(job_id)
     }
 }
 

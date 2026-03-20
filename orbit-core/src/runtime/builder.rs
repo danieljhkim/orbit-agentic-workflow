@@ -91,15 +91,15 @@ fn build_context_common(
     let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
     let task_delegate_approval = runtime_config.task_approval.delegate_approval;
 
-    Ok(OrbitContext {
+    Ok(OrbitContext::new(
         data_root,
         task_store,
         activity_store,
         job_store,
         tool_store,
         audit_event_store,
-        policy: PolicyEngine::new_local_default_allow(),
-        registry: Arc::new(registry),
+        PolicyEngine::new_local_default_allow(),
+        Arc::new(registry),
         skill_catalog,
         execution_env_policy,
         codex_execution_policy,
@@ -108,7 +108,7 @@ fn build_context_common(
         actor,
         task_approval_required_for_agent,
         task_delegate_approval,
-    })
+    ))
 }
 fn load_external_tools(store: &Store, registry: &mut ToolRegistry) -> Result<(), OrbitError> {
     let stored_tools = store.list_tools()?;

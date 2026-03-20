@@ -142,10 +142,10 @@ fn execute_commit_request_if_present(
     let files = commit.files.clone();
     let message = commit.message.clone();
 
-    let repo_root = paths::find_git_repo_root(&runtime.context.data_root).ok_or_else(|| {
+    let repo_root = paths::find_git_repo_root(runtime.data_root_path()).ok_or_else(|| {
         OrbitError::Execution(format!(
             "cannot locate git repository root from Orbit data root '{}'",
-            runtime.context.data_root.display()
+            runtime.data_root_path().display()
         ))
     })?;
     let repo_root_str = repo_root.to_string_lossy().to_string();
@@ -198,9 +198,7 @@ impl RuntimeHost for OrbitRuntime {
 
 impl JobRunHost for OrbitRuntime {
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.context
-            .job_store
-            .list_pending_or_running_job_runs(job_id)
+        self.list_pending_or_running_job_runs_record(job_id)
     }
 
     fn insert_job_run(
@@ -209,9 +207,7 @@ impl JobRunHost for OrbitRuntime {
         attempt: u32,
         scheduled_at: DateTime<Utc>,
     ) -> Result<JobRun, OrbitError> {
-        self.context
-            .job_store
-            .insert_job_run(job_id, attempt, scheduled_at)
+        self.insert_job_run_record(job_id, attempt, scheduled_at)
     }
 
     fn mark_job_run_running(
@@ -219,9 +215,7 @@ impl JobRunHost for OrbitRuntime {
         run_id: &str,
         started_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        self.context
-            .job_store
-            .mark_job_run_running(run_id, started_at)
+        self.mark_job_run_running_record(run_id, started_at)
     }
 
     fn complete_job_run_step(
@@ -229,7 +223,7 @@ impl JobRunHost for OrbitRuntime {
         run_id: &str,
         params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
-        self.context.job_store.complete_job_run_step(run_id, params)
+        self.complete_job_run_step_record(run_id, params)
     }
 
     fn finalize_job_run(
@@ -239,13 +233,11 @@ impl JobRunHost for OrbitRuntime {
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
     ) -> Result<bool, OrbitError> {
-        self.context
-            .job_store
-            .finalize_job_run(run_id, state, finished_at, duration_ms)
+        self.finalize_job_run_record(run_id, state, finished_at, duration_ms)
     }
 
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.context.job_store.get_job_run(run_id)
+        self.get_job_run_record(run_id)
     }
 }
 
@@ -258,27 +250,26 @@ impl EnvironmentHost for OrbitRuntime {
         Ok(AgentConfig::cli(agent_cli.to_string())
             .with_model(model)
             .with_codex_execution(
-                self.context.codex_execution_policy.sandbox(),
-                self.context.codex_execution_policy.approval_policy(),
+                self.codex_execution_policy().sandbox(),
+                self.codex_execution_policy().approval_policy(),
             ))
     }
 
     fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode {
-        if self.context.execution_env_policy.inherit() {
+        if self.execution_env_policy().inherit() {
             // Full inheritance: ORBIT_ROOT resolution relies on find_git_repo_root
             // handling git worktrees correctly (which it does after the worktree fix).
             EnvironmentMode::Inherit
         } else {
             let mut env = self
-                .context
-                .execution_env_policy
+                .execution_env_policy()
                 .hydrated_allowlist_env_with_extras(env_extra);
             // Explicitly inject ORBIT_ROOT so that any orbit CLI invocation made
             // by the agent subprocess (e.g., `orbit tool run orbit.task.*`) resolves
             // to the same data root regardless of its working directory. Without this,
             // a Codex or Claude agent running inside a git worktree would either create
             // a spurious .orbit/ in the worktree or resolve to the wrong database.
-            let orbit_root = self.context.data_root.to_string_lossy().into_owned();
+            let orbit_root = self.data_root_path().to_string_lossy().into_owned();
             if !env.iter().any(|(k, _)| k == "ORBIT_ROOT") {
                 env.push(("ORBIT_ROOT".to_string(), orbit_root));
             }
@@ -287,15 +278,12 @@ impl EnvironmentHost for OrbitRuntime {
     }
 
     fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)> {
-        self.context
-            .execution_env_policy
+        self.execution_env_policy()
             .hydrated_cli_command_env_with_extras(env_extra)
     }
 
     fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String> {
-        self.context
-            .execution_env_policy
-            .missing_required(required_env_vars)
+        self.execution_env_policy().missing_required(required_env_vars)
     }
 }
 
@@ -360,7 +348,7 @@ impl TaskHost for OrbitRuntime {
         update: TaskAutomationUpdate,
     ) -> Result<(), OrbitError> {
         let _ = self.with_mutation(|| {
-            let task = self.context.task_store.update_task(
+            let task = self.update_task_record(
                 task_id,
                 StoreTaskUpdateParams {
                     actor: "agent".to_string(),
@@ -408,10 +396,10 @@ fn activity_envelope_json(activity: &Activity) -> Value {
 }
 
 fn current_repo_root(runtime: &OrbitRuntime) -> Result<String, OrbitError> {
-    let repo_root = paths::find_git_repo_root(&runtime.context.data_root).ok_or_else(|| {
+    let repo_root = paths::find_git_repo_root(runtime.data_root_path()).ok_or_else(|| {
         OrbitError::Execution(format!(
             "cannot locate git repository root from Orbit data root '{}'",
-            runtime.context.data_root.display()
+            runtime.data_root_path().display()
         ))
     })?;
     Ok(repo_root.to_string_lossy().to_string())
