@@ -18,6 +18,8 @@ pub const AGENT_TRANSPORT_FAILURE: &str = "AGENT_TRANSPORT_FAILURE";
 pub const AGENT_PROVIDER_OVERLOAD: &str = "AGENT_PROVIDER_OVERLOAD";
 /// HTTP 429 rate-limit from provider — safe to retry with backoff.
 pub const AGENT_RATE_LIMIT: &str = "AGENT_RATE_LIMIT";
+/// Agent exited 0 but produced no parseable JSON envelope — safe to retry.
+pub const AGENT_OUTPUT_MISSING: &str = "AGENT_OUTPUT_MISSING";
 pub const ACTIVITY_EXECUTION_FAILED: &str = "ACTIVITY_EXECUTION_FAILED";
 pub const RUN_ABANDONED: &str = "RUN_ABANDONED";
 pub const STALE_RUN_GRACE_SECONDS: u64 = 30;
@@ -28,7 +30,11 @@ pub const STALE_RUN_GRACE_SECONDS: u64 = 30;
 pub fn is_transient_error(code: &str) -> bool {
     matches!(
         code,
-        AGENT_TRANSPORT_FAILURE | AGENT_PROVIDER_OVERLOAD | AGENT_RATE_LIMIT | AGENT_TIMEOUT
+        AGENT_TRANSPORT_FAILURE
+            | AGENT_PROVIDER_OVERLOAD
+            | AGENT_RATE_LIMIT
+            | AGENT_TIMEOUT
+            | AGENT_OUTPUT_MISSING
     )
 }
 
@@ -51,6 +57,11 @@ mod tests {
         assert!(!is_transient_error(AGENT_COMMIT_FAILED));
         assert!(!is_transient_error(ACTIVITY_EXECUTION_FAILED));
         assert!(!is_transient_error("UNKNOWN_CODE"));
+    }
+
+    #[test]
+    fn agent_output_missing_is_retryable() {
+        assert!(is_transient_error(AGENT_OUTPUT_MISSING));
     }
 }
 

@@ -7,7 +7,7 @@ use tempfile::NamedTempFile;
 
 use super::ActivityExecutor;
 use crate::context::{
-    AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED, AGENT_PROTOCOL_VIOLATION,
+    AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED, AGENT_OUTPUT_MISSING, AGENT_PROTOCOL_VIOLATION,
     AGENT_PROVIDER_OVERLOAD, AGENT_RATE_LIMIT, AGENT_TIMEOUT, AGENT_TRANSPORT_FAILURE,
     AgentProtocolHost, AttemptOutcome, EngineHost, EnvironmentHost, ExecutionContext,
     execution_working_directory,
@@ -52,6 +52,27 @@ pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
 
     match parse_and_validate_response(&exec_result) {
         Ok((envelope, state)) => {
+            // Detect synthesized success: agent exited 0 but produced no parseable JSON
+            // envelope (result is None only when synthesize_response was used). This is
+            // retryable — the agent may succeed on a subsequent attempt.
+            if state == AgentResponseStatus::Success
+                && envelope.result.is_none()
+                && exec_result.exit_code == Some(0)
+                && !orbit_agent::is_timeout(&exec_result)
+            {
+                return AttemptOutcome {
+                    state: JobRunState::Failed,
+                    exit_code: exec_result.exit_code,
+                    duration_ms: Some(exec_result.duration_ms),
+                    response_json: None,
+                    error_code: Some(AGENT_OUTPUT_MISSING.to_string()),
+                    error_message: Some(
+                        "agent exited successfully but produced no JSON result envelope"
+                            .to_string(),
+                    ),
+                    protocol_violation: false,
+                };
+            }
             process_agent_response(host, execution, &exec_result, envelope, state)
         }
         Err(OrbitError::AgentProtocolViolation(message)) => AttemptOutcome {
