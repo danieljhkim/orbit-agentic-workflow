@@ -22,3 +22,4 @@ Agents are expected to take ownership of Orbit as a product, not just complete i
 - Do not leave the repository configured with the agent identity after the commit; preserve the human's normal git profile outside the commit itself.
 - Take ownership of what you produce and be proud of.
 - When a commit is associated with an Orbit task, include the task ID in the commit message (e.g. `[T20260320-001234]`).
+- Do not commit until the human has explicitly approved the task.
