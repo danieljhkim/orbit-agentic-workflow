@@ -101,19 +101,14 @@ fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     let missing_env = host.missing_required_environment_vars(invocation.required_env_vars);
     if !missing_env.is_empty() {
         let vars = missing_env.join(", ");
-        return Err(AttemptOutcome {
-            state: JobRunState::Failed,
-            exit_code: Some(1),
-            duration_ms: None,
-            response_json: None,
-            error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
-            error_message: Some(format!(
+        return Err(AttemptOutcome::failed(
+            AGENT_INVOCATION_FAILED,
+            format!(
                 "missing required environment variable(s) for provider '{}': {vars}. \
 configure .orbit/config.toml [execution.env].pass and set these variables in the parent shell.",
                 invocation.runtime_key
-            )),
-            protocol_violation: false,
-        });
+            ),
+        ));
     }
 
     Ok(invocation)
@@ -242,15 +237,7 @@ fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
 fn invocation_failed_outcome(err: OrbitError) -> AttemptOutcome {
     let message = err.to_string();
     let error_code = classify_invocation_error(&message);
-    AttemptOutcome {
-        state: JobRunState::Failed,
-        exit_code: Some(1),
-        duration_ms: None,
-        response_json: None,
-        error_code: Some(error_code),
-        error_message: Some(message),
-        protocol_violation: false,
-    }
+    AttemptOutcome::failed(&error_code, message)
 }
 
 fn classify_invocation_error(message: &str) -> String {

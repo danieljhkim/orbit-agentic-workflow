@@ -77,6 +77,32 @@ pub struct AttemptOutcome {
     pub protocol_violation: bool,
 }
 
+impl AttemptOutcome {
+    pub fn failed(error_code: &str, message: String) -> Self {
+        Self {
+            state: JobRunState::Failed,
+            exit_code: Some(1),
+            duration_ms: None,
+            response_json: None,
+            error_code: Some(error_code.to_string()),
+            error_message: Some(message),
+            protocol_violation: false,
+        }
+    }
+
+    pub fn success(exit_code: i32, duration_ms: u64, response_json: Value) -> Self {
+        Self {
+            state: JobRunState::Success,
+            exit_code: Some(exit_code),
+            duration_ms: Some(duration_ms),
+            response_json: Some(response_json),
+            error_code: None,
+            error_message: None,
+            protocol_violation: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DirectActivityRunOutcome {
     pub state: JobRunState,

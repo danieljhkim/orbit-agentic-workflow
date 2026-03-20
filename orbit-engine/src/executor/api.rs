@@ -46,13 +46,9 @@ impl ActivityExecutor for ApiExecutor {
             Ok(result) => {
                 if let Err(err) = validate_activity_output_schema(&execution.activity, &result) {
                     return AttemptOutcome {
-                        state: JobRunState::Failed,
                         exit_code: Some(0),
-                        duration_ms: None,
                         response_json: Some(result),
-                        error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
-                        error_message: Some(err.to_string()),
-                        protocol_violation: false,
+                        ..AttemptOutcome::failed(ACTIVITY_EXECUTION_FAILED, err.to_string())
                     };
                 }
                 AttemptOutcome {
@@ -65,15 +61,7 @@ impl ActivityExecutor for ApiExecutor {
                     protocol_violation: false,
                 }
             }
-            Err(err) => AttemptOutcome {
-                state: JobRunState::Failed,
-                exit_code: Some(1),
-                duration_ms: None,
-                response_json: None,
-                error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
-                error_message: Some(err.to_string()),
-                protocol_violation: false,
-            },
+            Err(err) => AttemptOutcome::failed(ACTIVITY_EXECUTION_FAILED, err.to_string()),
         }
     }
 }

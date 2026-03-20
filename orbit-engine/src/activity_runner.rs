@@ -1,4 +1,4 @@
-use orbit_types::{Activity, Job, JobRunState, JobStep, OrbitError};
+use orbit_types::{Activity, Job, JobStep, OrbitError};
 use serde_json::{Value, json};
 
 use crate::context::{
@@ -124,17 +124,10 @@ pub fn execute_single_attempt<H: EngineHost>(
 }
 
 fn unsupported_spec_type_outcome(spec_type: &str, supported_spec_types: &str) -> AttemptOutcome {
-    AttemptOutcome {
-        state: JobRunState::Failed,
-        exit_code: Some(1),
-        duration_ms: None,
-        response_json: None,
-        error_code: Some(ACTIVITY_EXECUTION_FAILED.to_string()),
-        error_message: Some(format!(
-            "unsupported activity spec_type '{spec_type}' (supported: {supported_spec_types})"
-        )),
-        protocol_violation: false,
-    }
+    AttemptOutcome::failed(
+        ACTIVITY_EXECUTION_FAILED,
+        format!("unsupported activity spec_type '{spec_type}' (supported: {supported_spec_types})"),
+    )
 }
 
 pub fn execution_template_context(execution: &ExecutionContext) -> TemplateContext {
@@ -174,15 +167,7 @@ mod retry_tests {
     };
 
     fn failed_outcome(error_code: &str) -> AttemptOutcome {
-        AttemptOutcome {
-            state: JobRunState::Failed,
-            exit_code: Some(1),
-            duration_ms: None,
-            response_json: None,
-            error_code: Some(error_code.to_string()),
-            error_message: Some(format!("error: {error_code}")),
-            protocol_violation: false,
-        }
+        AttemptOutcome::failed(error_code, format!("error: {error_code}"))
     }
 
     fn success_outcome() -> AttemptOutcome {
