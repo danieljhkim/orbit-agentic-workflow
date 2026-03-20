@@ -25,7 +25,7 @@ job:
     - target_type: activity
       target_id: dispatch_task
       agent_cli: codex
-      model: gpt-4.1-mini
+      model: gpt-5.4-mini
       timeout_seconds: 1000
 
     - target_type: activity
