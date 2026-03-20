@@ -13,7 +13,7 @@ impl CodexRuntime {
     pub(crate) fn new(
         command: String,
         model: Option<String>,
-        sandbox: Option<String>,
+        sandbox: String,
         approval_policy: Option<String>,
     ) -> Self {
         Self {

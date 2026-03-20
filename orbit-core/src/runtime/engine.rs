@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_agent::AgentConfig;
+use orbit_agent::{AgentConfig, ProviderOptions};
 use orbit_engine::{
     AgentProtocolHost, EnvironmentHost, ExecutionContext, JobRunHost, RuntimeHost,
     TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
@@ -247,12 +247,16 @@ impl EnvironmentHost for OrbitRuntime {
         agent_cli: &str,
         model: Option<&str>,
     ) -> Result<AgentConfig, OrbitError> {
-        Ok(AgentConfig::cli(agent_cli.to_string())
-            .with_model(model)
-            .with_codex_execution(
-                self.codex_execution_policy().sandbox(),
-                self.codex_execution_policy().approval_policy(),
-            ))
+        let provider_options = ProviderOptions::for_agent_cli(
+            agent_cli,
+            self.codex_execution_policy().sandbox().to_string(),
+            self.codex_execution_policy().approval_policy().map(|s| s.to_string()),
+        )?;
+        Ok(AgentConfig {
+            command: agent_cli.to_string(),
+            model: model.map(|m| m.to_string()),
+            provider_options,
+        })
     }
 
     fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode {

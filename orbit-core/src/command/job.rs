@@ -129,7 +129,7 @@ impl OrbitRuntime {
             }
             if activity_requires_agent_cli(&activity.spec_type) {
                 let _ = Agent::new(
-                    &AgentConfig::cli(step.agent_cli.clone()).with_model(step.model.as_deref()),
+                    &AgentConfig::cli(step.agent_cli.clone())?.with_model(step.model.as_deref()),
                 )?;
             }
         }

@@ -3,14 +3,14 @@ use crate::types::AgentOperation;
 
 pub(crate) struct CodexCliTransport {
     model: Option<String>,
-    sandbox: Option<String>,
+    sandbox: String,
     approval_policy: Option<String>,
 }
 
 impl CodexCliTransport {
     pub(crate) fn new(
         model: Option<String>,
-        sandbox: Option<String>,
+        sandbox: String,
         approval_policy: Option<String>,
     ) -> Self {
         Self {
@@ -32,11 +32,7 @@ impl CodexCliTransport {
             args.push(model.clone());
         }
         args.push("--sandbox".to_string());
-        args.push(
-            self.sandbox
-                .clone()
-                .unwrap_or_else(|| "workspace-write".to_string()),
-        );
+        args.push(self.sandbox.clone());
         args
     }
 

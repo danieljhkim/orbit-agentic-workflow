@@ -1,5 +1,6 @@
 use orbit_agent::{
-    Agent, AgentConfig, AgentRequest, AgentResponseStatus, parse_and_validate_response,
+    Agent, AgentConfig, AgentRequest, AgentResponseStatus, ProviderOptions,
+    parse_and_validate_response,
 };
 use orbit_types::{ExecutionResult, OrbitError};
 use serde_json::json;
@@ -44,7 +45,7 @@ fn expected_activity_args() -> Vec<String> {
 
 #[test]
 fn provider_mapper_supports_claude() {
-    let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
+    let agent = Agent::new(&AgentConfig::cli("claude").expect("claude config")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert_eq!(invocation.program, "claude");
     assert_eq!(
@@ -65,7 +66,7 @@ fn provider_mapper_supports_claude() {
 
 #[test]
 fn provider_mapper_supports_codex() {
-    let agent = Agent::new(&AgentConfig::cli("codex")).expect("codex runtime");
+    let agent = Agent::new(&AgentConfig::cli("codex").expect("codex config")).expect("codex runtime");
     let invocation = agent.invoke(job_request()).expect("codex invocation");
     assert_eq!(invocation.program, "codex");
     assert_eq!(
@@ -84,10 +85,15 @@ fn provider_mapper_supports_codex() {
 
 #[test]
 fn provider_mapper_supports_codex_approval_override() {
-    let agent = Agent::new(
-        &AgentConfig::cli("codex").with_codex_execution("workspace-write", Some("on-request")),
-    )
-    .expect("codex runtime");
+    let config = AgentConfig {
+        command: "codex".to_string(),
+        model: None,
+        provider_options: ProviderOptions::Codex {
+            sandbox: "workspace-write".to_string(),
+            approval_policy: Some("on-request".to_string()),
+        },
+    };
+    let agent = Agent::new(&config).expect("codex runtime");
     let invocation = agent.invoke(job_request()).expect("codex invocation");
     assert_eq!(invocation.program, "codex");
     assert_eq!(
@@ -104,8 +110,12 @@ fn provider_mapper_supports_codex_approval_override() {
 
 #[test]
 fn provider_mapper_supports_codex_model_override() {
-    let agent =
-        Agent::new(&AgentConfig::cli("codex").with_model(Some("gpt-5.4"))).expect("codex runtime");
+    let agent = Agent::new(
+        &AgentConfig::cli("codex")
+            .expect("codex config")
+            .with_model(Some("gpt-5.4")),
+    )
+    .expect("codex runtime");
     let invocation = agent.invoke(job_request()).expect("codex invocation");
     assert_eq!(
         invocation.args,
@@ -121,7 +131,8 @@ fn provider_mapper_supports_codex_model_override() {
 
 #[test]
 fn provider_mapper_supports_mock_agent() {
-    let agent = Agent::new(&AgentConfig::cli("mock-agent")).expect("mock-agent runtime");
+    let agent =
+        Agent::new(&AgentConfig::cli("mock-agent").expect("mock config")).expect("mock-agent runtime");
     let invocation = agent.invoke(job_request()).expect("mock-agent invocation");
     assert_eq!(invocation.program, "mock-agent");
     assert_eq!(invocation.args, expected_job_args());
@@ -131,7 +142,8 @@ fn provider_mapper_supports_mock_agent() {
 
 #[test]
 fn provider_mapper_supports_direct_activity_mode() {
-    let agent = Agent::new(&AgentConfig::cli("mock-agent")).expect("mock-agent runtime");
+    let agent =
+        Agent::new(&AgentConfig::cli("mock-agent").expect("mock config")).expect("mock-agent runtime");
     let invocation = agent
         .invoke(activity_request())
         .expect("mock-agent invocation");
@@ -143,7 +155,8 @@ fn provider_mapper_supports_direct_activity_mode() {
 
 #[test]
 fn provider_mapper_uses_binary_basename_for_paths() {
-    let agent = Agent::new(&AgentConfig::cli("/usr/local/bin/claude")).expect("path-based runtime");
+    let agent =
+        Agent::new(&AgentConfig::cli("/usr/local/bin/claude").expect("path config")).expect("path-based runtime");
     let invocation = agent.invoke(job_request()).expect("path invocation");
     assert_eq!(invocation.program, "/usr/local/bin/claude");
     assert_eq!(
@@ -161,8 +174,12 @@ fn provider_mapper_uses_binary_basename_for_paths() {
 
 #[test]
 fn provider_mapper_supports_claude_model_override() {
-    let agent = Agent::new(&AgentConfig::cli("claude").with_model(Some("sonnet-4.5")))
-        .expect("claude runtime");
+    let agent = Agent::new(
+        &AgentConfig::cli("claude")
+            .expect("claude config")
+            .with_model(Some("sonnet-4.5")),
+    )
+    .expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert_eq!(
         invocation.args,
@@ -181,7 +198,7 @@ fn provider_mapper_supports_claude_model_override() {
 
 #[test]
 fn provider_mapper_rejects_unsupported_provider() {
-    let err = Agent::new(&AgentConfig::cli("custom-agent"))
+    let err = AgentConfig::cli("custom-agent")
         .err()
         .expect("unsupported provider must fail");
     assert!(matches!(
@@ -215,7 +232,7 @@ fn protocol_parser_accepts_success_envelope() {
 
 #[test]
 fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
-    let agent = Agent::new(&AgentConfig::cli("codex")).expect("codex runtime");
+    let agent = Agent::new(&AgentConfig::cli("codex").expect("codex config")).expect("codex runtime");
     let invocation = agent.invoke(job_request()).expect("codex invocation");
     let text = String::from_utf8(invocation.stdin).expect("utf8");
     assert!(text.contains("Execution envelope"));
@@ -224,7 +241,7 @@ fn stdin_payload_wraps_envelope_for_prompt_based_providers() {
 
 #[test]
 fn claude_runtime_declares_required_env_vars() {
-    let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
+    let agent = Agent::new(&AgentConfig::cli("claude").expect("claude config")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert_eq!(invocation.required_env_vars, &["HOME", "PATH"]);
     assert!(invocation.stdout_schema_json.is_none());
@@ -232,7 +249,7 @@ fn claude_runtime_declares_required_env_vars() {
 
 #[test]
 fn claude_runtime_does_not_require_anthropic_api_key() {
-    let agent = Agent::new(&AgentConfig::cli("claude")).expect("claude runtime");
+    let agent = Agent::new(&AgentConfig::cli("claude").expect("claude config")).expect("claude runtime");
     let invocation = agent.invoke(job_request()).expect("claude invocation");
     assert!(
         !invocation.required_env_vars.contains(&"ANTHROPIC_API_KEY"),
