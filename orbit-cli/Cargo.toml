@@ -11,6 +11,8 @@ path = "src/main.rs"
 [dependencies]
 chrono.workspace = true
 clap.workspace = true
+colored = "2"
+comfy-table = "7"
 csv = "1"
 orbit-core = { path = "../orbit-core", features = ["clap"] }
 serde_json.workspace = true

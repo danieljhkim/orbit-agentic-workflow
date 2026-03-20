@@ -123,14 +123,15 @@ impl Execute for TaskAddArgs {
 // --- List ---
 
 #[derive(Args)]
+#[command(after_help = "Examples:\n  orbit task list\n  orbit task list --status backlog\n  orbit task list --status in-progress\n  orbit task list --priority high\n  orbit task list --json")]
 pub struct TaskListArgs {
-    /// Filter by status
+    /// Filter by task status (proposed, backlog, in-progress, review, done, blocked, rejected, archived)
     #[arg(long, value_enum)]
     pub status: Option<TaskStatus>,
-    /// Filter by priority
+    /// Filter by priority level (low, medium, high)
     #[arg(long, value_enum)]
     pub priority: Option<TaskPriority>,
-    /// Output as JSON
+    /// Output full task objects as JSON
     #[arg(long)]
     pub json: bool,
     /// Output signal-tier JSON (id, title, type, status, priority only)
@@ -177,61 +178,62 @@ impl Execute for TaskShowArgs {
         if self.json {
             crate::output::json::print_pretty(&task_to_json(&task))
         } else {
-            println!("ID:          {}", task.id);
-            println!("Title:       {}", task.title);
-            println!("Status:      {}", task.status);
-            println!("Priority:    {}", task.priority);
+            use crate::output::color::{bold, dimmed, priority_color, status_color};
+            println!("{} {}", bold("ID:"), task.id);
+            println!("{} {}", bold("Title:"), task.title);
+            println!("{} {}", bold("Status:"), status_color(&task.status.to_string()));
+            println!("{} {}", bold("Priority:"), priority_color(&task.priority.to_string()));
             if let Some(complexity) = task.complexity {
-                println!("Complexity:  {}", complexity);
+                println!("{} {}", bold("Complexity:"), complexity);
             }
-            println!("Type:        {}", task.task_type);
+            println!("{} {}", bold("Type:"), task.task_type);
             if !task.description.is_empty() {
-                println!("Description: {}", task.description);
+                println!("{} {}", bold("Description:"), task.description);
             }
             if !task.plan.is_empty() {
-                println!("Plan:        {}", task.plan);
+                println!("{} {}", bold("Plan:"), task.plan);
             }
             if !task.execution_summary.is_empty() {
-                println!("Execution Summary: {}", task.execution_summary);
+                println!("{} {}", bold("Execution Summary:"), task.execution_summary);
             }
             if !task.comments.is_empty() {
-                println!("Comments:");
+                println!("{}", bold("Comments:"));
                 for comment in &task.comments {
                     println!(
-                        "  [{}] {}: {}",
-                        comment.at.to_rfc3339(),
+                        "  {} {}: {}",
+                        dimmed(&format!("[{}]", comment.at.to_rfc3339())),
                         comment.by,
                         comment.message
                     );
                 }
             }
             if !task.context_files.is_empty() {
-                println!("Context:     {}", task.context_files.join(", "));
+                println!("{} {}", bold("Context:"), task.context_files.join(", "));
             }
             if let Some(ref workspace_path) = task.workspace_path {
-                println!("Workspace:   {}", workspace_path);
+                println!("{} {}", bold("Workspace:"), workspace_path);
             }
             if let Some(ref assigned_to) = task.assigned_to {
-                println!("Assigned To: {}", assigned_to);
+                println!("{} {}", bold("Assigned To:"), assigned_to);
             }
             if let Some(ref created_by) = task.created_by {
-                println!("Created By:  {}", created_by);
+                println!("{} {}", bold("Created By:"), created_by);
             }
             if !task.history.is_empty() {
-                println!("History:");
+                println!("{}", bold("History:"));
                 for entry in &task.history {
                     if let Some(note) = &entry.note {
                         println!(
-                            "  [{}] {}: {} ({})",
-                            entry.at.to_rfc3339(),
+                            "  {} {}: {} ({})",
+                            dimmed(&format!("[{}]", entry.at.to_rfc3339())),
                             entry.by,
                             entry.event,
                             note
                         );
                     } else {
                         println!(
-                            "  [{}] {}: {}",
-                            entry.at.to_rfc3339(),
+                            "  {} {}: {}",
+                            dimmed(&format!("[{}]", entry.at.to_rfc3339())),
                             entry.by,
                             entry.event
                         );
@@ -239,16 +241,16 @@ impl Execute for TaskShowArgs {
                 }
             }
             if let Some(ref branch) = task.branch {
-                println!("Branch:      {}", branch);
+                println!("{} {}", bold("Branch:"), branch);
             }
             if let Some(ref pr_number) = task.pr_number {
-                println!("PR Number:   {}", pr_number);
+                println!("{} {}", bold("PR Number:"), pr_number);
             }
             if let Some(ref proposed_by) = task.proposed_by {
-                println!("Proposed By: {}", proposed_by);
+                println!("{} {}", bold("Proposed By:"), proposed_by);
             }
-            println!("Created:     {}", task.created_at.to_rfc3339());
-            println!("Updated:     {}", task.updated_at.to_rfc3339());
+            println!("{} {}", bold("Created:"), dimmed(&task.created_at.to_rfc3339()));
+            println!("{} {}", bold("Updated:"), dimmed(&task.updated_at.to_rfc3339()));
             Ok(())
         }
     }
@@ -544,16 +546,17 @@ impl Execute for TaskSearchArgs {
 // --- Helpers ---
 
 fn print_task_table(tasks: &[orbit_core::Task]) {
-    println!(
-        "{:<28} {:<12} {:<8} {:<8} TITLE",
-        "ID", "STATUS", "PRI", "TYPE"
-    );
+    let mut table = crate::output::table::build_table(&["ID", "STATUS", "PRI", "TYPE", "TITLE"]);
     for task in tasks {
-        println!(
-            "{:<28} {:<12} {:<8} {:<8} {}",
-            task.id, task.status, task.priority, task.task_type, task.title
-        );
+        table.add_row(vec![
+            task.id.clone(),
+            crate::output::color::status_color(&task.status.to_string()),
+            crate::output::color::priority_color(&task.priority.to_string()),
+            task.task_type.to_string(),
+            task.title.clone(),
+        ]);
     }
+    println!("{table}");
 }
 
 fn task_to_signal_json(task: &orbit_core::Task) -> Value {

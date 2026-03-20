@@ -92,9 +92,12 @@ impl Execute for JobAddArgs {
 }
 
 #[derive(Args)]
+#[command(after_help = "Examples:\n  orbit job list\n  orbit job list --all\n  orbit job list --json")]
 pub struct JobListArgs {
+    /// Include disabled jobs
     #[arg(long)]
     pub all: bool,
+    /// Output full job objects as JSON
     #[arg(long)]
     pub json: bool,
     /// Output signal-tier JSON (job_id, target_id, state only)
@@ -118,22 +121,28 @@ impl Execute for JobListArgs {
                 .collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
-            println!(
-                "{:<26} {:<15} {:<28} {:<16} {:<9} LAST_RUN",
-                "JOB_ID", "TARGET_TYPE", "TARGET_ID", "MODEL", "STATE"
-            );
+            let mut table = crate::output::table::build_table(&[
+                "JOB_ID",
+                "TARGET_TYPE",
+                "TARGET_ID",
+                "MODEL",
+                "STATE",
+                "LAST_RUN",
+            ]);
             for (job, last_run) in &jobs_with_runs {
                 let first = job.steps.first();
-                println!(
-                    "{:<26} {:<15} {:<28} {:<16} {:<9} {}",
-                    job.job_id,
+                table.add_row(vec![
+                    job.job_id.clone(),
                     first.map(|s| s.target_type.to_string()).unwrap_or_default(),
-                    first.map(|s| s.target_id.as_str()).unwrap_or("-"),
-                    first.and_then(|s| s.model.as_deref()).unwrap_or("-"),
-                    job.state,
+                    first.map(|s| s.target_id.clone()).unwrap_or_else(|| "-".to_string()),
+                    first
+                        .and_then(|s| s.model.clone())
+                        .unwrap_or_else(|| "-".to_string()),
+                    crate::output::color::job_state_color(&job.state.to_string()),
                     format_last_run(last_run.as_ref()),
-                );
+                ]);
             }
+            println!("{table}");
             Ok(())
         }
     }
@@ -152,27 +161,28 @@ impl Execute for JobShowArgs {
         if self.json {
             crate::output::json::print_pretty(&job_to_json(&job))
         } else {
-            println!("Job ID:            {}", job.job_id);
-            println!("State:             {}", job.state);
-            println!("Max Active Runs:   {}", job.max_active_runs);
+            use crate::output::color::{bold, dimmed, job_state_color};
+            println!("{} {}", bold("Job ID:"), job.job_id);
+            println!("{} {}", bold("State:"), job_state_color(&job.state.to_string()));
+            println!("{} {}", bold("Max Active Runs:"), job.max_active_runs);
             if let Some(default_input) = &job.default_input {
                 let rendered = serde_json::to_string(default_input)
                     .unwrap_or_else(|_| "<invalid-json>".to_string());
-                println!("Default Input:     {}", rendered);
+                println!("{} {}", bold("Default Input:"), rendered);
             }
-            println!("Steps:             {}", job.steps.len());
+            println!("{} {}", bold("Steps:"), job.steps.len());
             for (i, step) in job.steps.iter().enumerate() {
-                println!("  Step {}:", i + 1);
-                println!("    Target Type:    {}", step.target_type);
-                println!("    Target ID:      {}", step.target_id);
-                println!("    Agent CLI:      {}", step.agent_cli);
+                println!("  {}:", bold(&format!("Step {}", i + 1)));
+                println!("    {} {}", bold("Target Type:"), step.target_type);
+                println!("    {} {}", bold("Target ID:"), step.target_id);
+                println!("    {} {}", bold("Agent CLI:"), step.agent_cli);
                 if let Some(model) = &step.model {
-                    println!("    Model:          {}", model);
+                    println!("    {} {}", bold("Model:"), model);
                 }
-                println!("    Timeout (s):    {}", step.timeout_seconds);
+                println!("    {} {}", bold("Timeout (s):"), step.timeout_seconds);
             }
-            println!("Created:           {}", job.created_at.to_rfc3339());
-            println!("Updated:           {}", job.updated_at.to_rfc3339());
+            println!("{} {}", bold("Created:"), dimmed(&job.created_at.to_rfc3339()));
+            println!("{} {}", bold("Updated:"), dimmed(&job.updated_at.to_rfc3339()));
             Ok(())
         }
     }
@@ -247,16 +257,20 @@ impl Execute for JobHistoryArgs {
             let values = runs.iter().map(job_run_to_json).collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
-            println!(
-                "{:<30} {:<7} {:<10} {:<26} {:<26} {:<24} ERROR_MESSAGE",
-                "RUN_ID", "ATTEMPT", "STATE", "STARTED_AT", "FINISHED_AT", "ERROR_CODE"
-            );
+            let mut table = crate::output::table::build_table(&[
+                "RUN_ID",
+                "ATTEMPT",
+                "STATE",
+                "STARTED_AT",
+                "FINISHED_AT",
+                "ERROR_CODE",
+                "ERROR_MESSAGE",
+            ]);
             for run in &runs {
-                println!(
-                    "{:<30} {:<7} {:<10} {:<26} {:<26} {:<24} {}",
-                    run.run_id,
-                    run.attempt,
-                    run.state,
+                table.add_row(vec![
+                    run.run_id.clone(),
+                    run.attempt.to_string(),
+                    crate::output::color::job_state_color(&run.state.to_string()),
                     run.started_at
                         .map(|v| v.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
@@ -268,10 +282,11 @@ impl Execute for JobHistoryArgs {
                         .and_then(|s| s.error_code.clone())
                         .unwrap_or_else(|| "-".to_string()),
                     summarize_error_message(
-                        run.steps.last().and_then(|s| s.error_message.as_deref())
+                        run.steps.last().and_then(|s| s.error_message.as_deref()),
                     ),
-                );
+                ]);
             }
+            println!("{table}");
             Ok(())
         }
     }

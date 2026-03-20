@@ -72,17 +72,22 @@ impl Execute for JobRunListArgs {
             let values = runs.iter().map(job_run_to_json).collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
-            println!(
-                "{:<30} {:<26} {:<7} {:<10} {:<26} {:<26} {:<24} ERROR_MESSAGE",
-                "RUN_ID", "JOB_ID", "ATTEMPT", "STATE", "STARTED_AT", "FINISHED_AT", "ERROR_CODE"
-            );
+            let mut table = crate::output::table::build_table(&[
+                "RUN_ID",
+                "JOB_ID",
+                "ATTEMPT",
+                "STATE",
+                "STARTED_AT",
+                "FINISHED_AT",
+                "ERROR_CODE",
+                "ERROR_MESSAGE",
+            ]);
             for run in &runs {
-                println!(
-                    "{:<30} {:<26} {:<7} {:<10} {:<26} {:<26} {:<24} {}",
-                    run.run_id,
-                    run.job_id,
-                    run.attempt,
-                    run.state,
+                table.add_row(vec![
+                    run.run_id.clone(),
+                    run.job_id.clone(),
+                    run.attempt.to_string(),
+                    crate::output::color::job_state_color(&run.state.to_string()),
                     run.started_at
                         .map(|value| value.to_rfc3339())
                         .unwrap_or_else(|| "-".to_string()),
@@ -94,10 +99,11 @@ impl Execute for JobRunListArgs {
                         .and_then(|s| s.error_code.clone())
                         .unwrap_or_else(|| "-".to_string()),
                     summarize_error_message(
-                        run.steps.last().and_then(|s| s.error_message.as_deref())
+                        run.steps.last().and_then(|s| s.error_message.as_deref()),
                     ),
-                );
+                ]);
             }
+            println!("{table}");
             Ok(())
         }
     }
@@ -149,49 +155,56 @@ impl Execute for JobRunDeleteArgs {
 }
 
 fn print_job_run(run: &JobRun) {
-    println!("Run ID:              {}", run.run_id);
-    println!("Job ID:              {}", run.job_id);
-    println!("Attempt:             {}", run.attempt);
-    println!("State:               {}", run.state);
-    println!("Scheduled:           {}", run.scheduled_at.to_rfc3339());
+    use crate::output::color::{bold, dimmed, job_state_color};
+    println!("{} {}", bold("Run ID:"), run.run_id);
+    println!("{} {}", bold("Job ID:"), run.job_id);
+    println!("{} {}", bold("Attempt:"), run.attempt);
+    println!("{} {}", bold("State:"), job_state_color(&run.state.to_string()));
+    println!("{} {}", bold("Scheduled:"), dimmed(&run.scheduled_at.to_rfc3339()));
     println!(
-        "Started:             {}",
+        "{} {}",
+        bold("Started:"),
         run.started_at
             .map(|value| value.to_rfc3339())
             .unwrap_or_else(|| "-".to_string())
     );
     println!(
-        "Finished:            {}",
+        "{} {}",
+        bold("Finished:"),
         run.finished_at
             .map(|value| value.to_rfc3339())
             .unwrap_or_else(|| "-".to_string())
     );
     println!(
-        "Duration (ms):       {}",
+        "{} {}",
+        bold("Duration (ms):"),
         run.duration_ms
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string())
     );
     let last_step = run.steps.last();
     println!(
-        "Exit Code:           {}",
+        "{} {}",
+        bold("Exit Code:"),
         last_step
             .and_then(|s| s.exit_code)
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string())
     );
     println!(
-        "Error Code:          {}",
+        "{} {}",
+        bold("Error Code:"),
         last_step
             .and_then(|s| s.error_code.as_deref())
             .unwrap_or("-")
     );
     println!(
-        "Error Message:       {}",
+        "{} {}",
+        bold("Error Message:"),
         last_step
             .and_then(|s| s.error_message.as_deref())
             .map(|value| value.replace('\n', " "))
             .unwrap_or_else(|| "-".to_string())
     );
-    println!("Created:             {}", run.created_at.to_rfc3339());
+    println!("{} {}", bold("Created:"), dimmed(&run.created_at.to_rfc3339()));
 }

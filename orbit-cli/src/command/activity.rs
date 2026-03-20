@@ -114,13 +114,22 @@ impl Execute for ActivityListArgs {
             let values = specs.iter().map(activity_to_json).collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
-            println!("{:<24} {:<14} {:<8} DESCRIPTION", "ID", "TYPE", "ACTIVE");
+            let mut table =
+                crate::output::table::build_table(&["ID", "TYPE", "ACTIVE", "DESCRIPTION"]);
             for spec in &specs {
-                println!(
-                    "{:<24} {:<14} {:<8} {}",
-                    spec.id, spec.spec_type, spec.is_active, spec.description
-                );
+                let active = if spec.is_active {
+                    crate::output::color::job_state_color("active")
+                } else {
+                    crate::output::color::job_state_color("disabled")
+                };
+                table.add_row(vec![
+                    spec.id.clone(),
+                    spec.spec_type.clone(),
+                    active,
+                    spec.description.clone(),
+                ]);
             }
+            println!("{table}");
             Ok(())
         }
     }
@@ -139,19 +148,22 @@ impl Execute for ActivityShowArgs {
         if self.json {
             crate::output::json::print_pretty(&activity_to_json(&spec))
         } else {
-            println!("ID:                  {}", spec.id);
-            println!("Type:                {}", spec.spec_type);
-            println!("Description:         {}", spec.description);
+            use crate::output::color::{bold, dimmed, job_state_color};
+            println!("{} {}", bold("ID:"), spec.id);
+            println!("{} {}", bold("Type:"), spec.spec_type);
+            println!("{} {}", bold("Description:"), spec.description);
             println!(
-                "Spec Config:         {}",
+                "{} {}",
+                bold("Spec Config:"),
                 serde_json::to_string(&spec.spec_config).unwrap_or_else(|_| "{}".to_string())
             );
             if let Some(ref created_by) = spec.created_by {
-                println!("Created By:          {}", created_by);
+                println!("{} {}", bold("Created By:"), created_by);
             }
-            println!("Active:              {}", spec.is_active);
-            println!("Created:             {}", spec.created_at.to_rfc3339());
-            println!("Updated:             {}", spec.updated_at.to_rfc3339());
+            let active_str = if spec.is_active { "active" } else { "disabled" };
+            println!("{} {}", bold("Active:"), job_state_color(active_str));
+            println!("{} {}", bold("Created:"), dimmed(&spec.created_at.to_rfc3339()));
+            println!("{} {}", bold("Updated:"), dimmed(&spec.updated_at.to_rfc3339()));
             Ok(())
         }
     }

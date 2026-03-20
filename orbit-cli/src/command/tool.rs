@@ -80,18 +80,26 @@ impl Execute for ToolListArgs {
                 .collect();
             crate::output::json::print_pretty(&Value::Array(json_tools))
         } else {
-            println!(
-                "{:<20} {:<8} {:<8} DESCRIPTION",
-                "NAME", "ENABLED", "BUILTIN"
-            );
+            let mut table =
+                crate::output::table::build_table(&["NAME", "ENABLED", "BUILTIN", "DESCRIPTION"]);
             for tool in &tools {
-                let enabled = if tool.enabled { "yes" } else { "no" };
-                let builtin = if tool.builtin { "yes" } else { "no" };
-                println!(
-                    "{:<20} {:<8} {:<8} {}",
-                    tool.name, enabled, builtin, tool.description
-                );
+                let enabled = if tool.enabled {
+                    crate::output::color::job_state_color("active")
+                } else {
+                    crate::output::color::job_state_color("disabled")
+                };
+                table.add_row(vec![
+                    tool.name.clone(),
+                    enabled,
+                    if tool.builtin {
+                        "yes".to_string()
+                    } else {
+                        "no".to_string()
+                    },
+                    tool.description.clone(),
+                ]);
             }
+            println!("{table}");
             Ok(())
         }
     }
@@ -109,22 +117,32 @@ impl Execute for ToolShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let tool = runtime.show_tool(&self.name)?;
 
-        println!("Name:        {}", tool.name);
-        println!("Description: {}", tool.description);
-        println!("Builtin:     {}", if tool.builtin { "yes" } else { "no" });
-        println!("Enabled:     {}", if tool.enabled { "yes" } else { "no" });
+        use crate::output::color::{bold, job_state_color};
+        println!("{} {}", bold("Name:"), tool.name);
+        println!("{} {}", bold("Description:"), tool.description);
+        println!("{} {}", bold("Builtin:"), if tool.builtin { "yes" } else { "no" });
+        println!(
+            "{} {}",
+            bold("Enabled:"),
+            job_state_color(if tool.enabled { "active" } else { "disabled" })
+        );
 
         if tool.parameters.is_empty() {
-            println!("Parameters:  (none)");
+            println!("{} (none)", bold("Parameters:"));
         } else {
-            println!("Parameters:");
+            println!("{}", bold("Parameters:"));
+            let mut table =
+                crate::output::table::build_table(&["NAME", "TYPE", "REQUIRED", "DESCRIPTION"]);
             for p in &tool.parameters {
                 let req = if p.required { "required" } else { "optional" };
-                println!(
-                    "  {:<16} {:<10} {:<10} {}",
-                    p.name, p.param_type, req, p.description
-                );
+                table.add_row(vec![
+                    p.name.clone(),
+                    p.param_type.clone(),
+                    req.to_string(),
+                    p.description.clone(),
+                ]);
             }
+            println!("{table}");
         }
 
         Ok(())
@@ -283,7 +301,7 @@ fn execute_doctor(runtime: &OrbitRuntime) -> Result<(), OrbitError> {
     let results = runtime.doctor()?;
     let mut issues = 0;
 
-    println!("{:<20} {:<10} DETAILS", "TOOL", "STATUS");
+    let mut table = crate::output::table::build_table(&["TOOL", "STATUS", "DETAILS"]);
     for r in &results {
         let status_str = match r.status {
             DoctorStatus::Ok => "ok",
@@ -293,13 +311,18 @@ fn execute_doctor(runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         if r.status != DoctorStatus::Ok {
             issues += 1;
         }
-        println!("{:<20} {:<10} {}", r.tool_name, status_str, r.message);
+        table.add_row(vec![
+            r.tool_name.clone(),
+            crate::output::color::doctor_status_color(status_str),
+            r.message.clone(),
+        ]);
     }
+    println!("{table}");
 
     if issues == 0 {
-        println!("\nAll tools healthy.");
+        println!("\n{}", crate::output::color::job_state_color("All tools healthy."));
     } else {
-        println!("\n{issues} issue(s) found.");
+        eprintln!("\n{} issue(s) found.", issues);
     }
 
     Ok(())

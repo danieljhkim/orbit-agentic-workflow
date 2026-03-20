@@ -452,7 +452,8 @@ fn task_show_and_list_use_cli_status_spelling() {
         .args(["task", "show", &id])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Status:      in-progress"));
+        .stdout(predicate::str::contains("Status:"))
+        .stdout(predicate::str::contains("in-progress"));
 
     orbit_in(dir.path())
         .args(["task", "list"])

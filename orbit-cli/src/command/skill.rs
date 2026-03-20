@@ -48,7 +48,8 @@ impl Execute for SkillListArgs {
             let values = skills.iter().map(skill_summary_json).collect::<Vec<_>>();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
-            println!("{:<24} {:<10} {:<8} SUMMARY", "ID", "HASH", "TAGS");
+            let mut table =
+                crate::output::table::build_table(&["ID", "HASH", "TAGS", "SUMMARY"]);
             for skill in skills {
                 let summary = skill
                     .meta
@@ -56,14 +57,14 @@ impl Execute for SkillListArgs {
                     .and_then(|meta| meta.summary.clone())
                     .unwrap_or_default();
                 let tags = skill.meta.as_ref().map(|meta| meta.tags.len()).unwrap_or(0);
-                println!(
-                    "{:<24} {:<10} {:<8} {}",
-                    skill.id,
-                    &skill.content_hash[..10],
-                    tags,
-                    summary
-                );
+                table.add_row(vec![
+                    skill.id.clone(),
+                    skill.content_hash[..10].to_string(),
+                    tags.to_string(),
+                    summary,
+                ]);
             }
+            println!("{table}");
             Ok(())
         }
     }
@@ -116,7 +117,7 @@ impl Execute for SkillDoctorArgs {
         }
 
         let mut issues = 0usize;
-        println!("{:<24} {:<10} DETAILS", "SKILL", "STATUS");
+        let mut table = crate::output::table::build_table(&["SKILL", "STATUS", "DETAILS"]);
         for row in &rows {
             let status = match row.status {
                 SkillDoctorStatus::Ok => "ok",
@@ -126,13 +127,18 @@ impl Execute for SkillDoctorArgs {
             if row.status != SkillDoctorStatus::Ok {
                 issues += 1;
             }
-            println!("{:<24} {:<10} {}", row.skill_name, status, row.message);
+            table.add_row(vec![
+                row.skill_name.clone(),
+                crate::output::color::doctor_status_color(status),
+                row.message.clone(),
+            ]);
         }
+        println!("{table}");
 
         if issues == 0 {
-            println!("\nAll skills healthy.");
+            println!("\n{}", crate::output::color::job_state_color("All skills healthy."));
         } else {
-            println!("\n{} issue(s) found.", issues);
+            eprintln!("\n{} issue(s) found.", issues);
         }
         Ok(())
     }
