@@ -61,7 +61,6 @@ job:
     - target_type: activity
       target_id: review_pr
       agent_cli: claude
-      model: sonnet-4.6
       timeout_seconds: 600
 
     - target_type: activity
