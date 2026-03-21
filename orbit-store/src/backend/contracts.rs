@@ -16,7 +16,14 @@ pub struct TaskCreateParams {
     pub plan: String,
     pub execution_summary: String,
     pub context_files: Vec<String>,
+    /// The working directory the agent should use when executing this task.
+    /// Typically the root of the repository being modified. Used to set `cwd`
+    /// for tool calls and to resolve relative `context_files` paths.
     pub workspace_path: Option<String>,
+    /// The git repository root for this task, when it differs from
+    /// `workspace_path`. Most tasks leave this `None` (the repo root is the
+    /// same as the workspace). Set explicitly when the task targets a
+    /// sub-directory of a monorepo and git operations must run from the root.
     pub repo_root: Option<String>,
     pub created_by: Option<String>,
     pub assigned_to: Option<String>,
@@ -29,6 +36,13 @@ pub struct TaskCreateParams {
     pub comments: Vec<TaskComment>,
 }
 
+/// Parameters for a partial update to an existing task.
+///
+/// Fields that are `None` are left unchanged. Fields of type `Option<Option<T>>`
+/// follow the "outer = whether to update, inner = new value" convention:
+/// - `None`           → leave the field untouched
+/// - `Some(Some(v))`  → set the field to `v`
+/// - `Some(None)`     → explicitly clear the field (set it to null/absent)
 #[derive(Debug, Default, Clone)]
 pub struct TaskUpdateParams {
     pub actor: String,

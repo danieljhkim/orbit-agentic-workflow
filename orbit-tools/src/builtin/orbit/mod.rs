@@ -34,6 +34,13 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(activity_show::OrbitActivityShowTool);
 }
 
+/// Build an [`ExecRequest`] that runs the `orbit` CLI with `args`.
+///
+/// The environment is deliberately rebuilt from the current process's env vars
+/// rather than passed through wholesale, then `ORBIT_TASK_ACTOR_KIND=agent` is
+/// injected. This lets the orbit CLI distinguish agent-initiated mutations from
+/// human-initiated ones (e.g. for audit attribution and policy checks) without
+/// requiring callers to set the variable themselves.
 pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRequest {
     let mut env = std::env::vars().collect::<HashMap<_, _>>();
     env.insert(ORBIT_TASK_ACTOR_KIND.to_string(), "agent".to_string());
@@ -115,6 +122,13 @@ pub(super) fn optional_string(input: &Value, key: &str) -> Result<Option<String>
     }
 }
 
+/// Extract an optional string from the first matching key in `keys`.
+///
+/// Tools accept multiple key names for the same logical field to stay
+/// friendly to agents that may use slightly different naming conventions
+/// (e.g. `"type"`, `"task_type"`, `"taskType"` all map to the task type
+/// parameter). The first non-absent key wins; absence of all keys returns
+/// `None`. An explicitly empty value is rejected as an error.
 pub(super) fn optional_string_alias(
     input: &Value,
     keys: &[&str],

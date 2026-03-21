@@ -98,6 +98,9 @@ where
         if attempt >= effective_max || !is_retryable {
             return outcome;
         }
+        // Exponential backoff: delay = backoff_seconds * 2^(attempt-1).
+        // The bit-shift `.min(30)` caps the exponent so the shift never
+        // overflows a u64 (2^31 would exceed u64 range when multiplied).
         let delay_seconds = backoff_seconds.saturating_mul(1_u64 << (attempt - 1).min(30));
         eprintln!(
             "[orbit] step '{step_id}' transient error {} (attempt {}/{effective_max}), retrying in {delay_seconds}s",

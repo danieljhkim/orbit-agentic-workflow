@@ -1,3 +1,41 @@
+//! Task types: status lifecycle, priority, complexity, and the [`Task`] struct itself.
+//!
+//! ## Task Status Lifecycle
+//!
+//! ```text
+//!                     ┌──────────┐
+//!               ┌────►│ Proposed │────► Rejected ──┐
+//!               │     └──────────┘                  │
+//!               │           │ approve                │
+//!               │           ▼                        │
+//!               │       ┌────────┐                   │
+//!               │       │Backlog │◄──────────────────┘
+//!               │       └────────┘  (re-open)
+//!               │           │ start
+//!               │           ▼
+//!               │     ┌───────────┐
+//!               │     │InProgress │────► Review ────► Done
+//!               │     └───────────┘         │
+//!               │           ▲               │ reject
+//!               │           │               ▼
+//!               │       ┌───────┐       Rejected ───► Backlog / InProgress
+//!               │       │Blocked│         (can be re-opened)
+//!               │       └───────┘
+//!               │           ▲
+//!               │           │  (any state except Archived/Rejected can block)
+//!               │
+//!               └── Archived ──► Backlog  (archive is always allowed; unarchive restores to backlog)
+//! ```
+//!
+//! ### Key invariants
+//! - **Archived** is always reachable from any state and from Archived you can only go back to Backlog.
+//! - **Blocked** is reachable from any state except Archived and Rejected. Unblocking resumes to
+//!   Backlog or InProgress depending on where you want to re-enter.
+//! - **Done** is terminal — no further transitions are permitted.
+//! - **Rejected** tasks can be re-opened to Backlog or InProgress (second-chance policy).
+//!
+//! See [`TaskStatus::validate_transition`] for the machine implementation.
+
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -6,18 +44,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::OrbitId;
 
+/// Current lifecycle state of a task.
+///
+/// See the module-level doc for the full state transition diagram.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
+    /// Awaiting human approval before entering the backlog.
     Proposed,
+    /// Approved and queued for work; not yet started.
     Backlog,
+    /// Actively being worked on.
     #[cfg_attr(feature = "clap", value(name = "in-progress", alias = "in_progress"))]
     InProgress,
+    /// Implementation complete; awaiting review/merge.
     Review,
+    /// Accepted and closed. Terminal — no further transitions.
     Done,
+    /// Temporarily paused (waiting on a dependency or decision).
     Blocked,
+    /// Soft-deleted. Can be restored to Backlog.
     Archived,
+    /// Declined. Can be re-opened to Backlog or InProgress.
     Rejected,
 }
 

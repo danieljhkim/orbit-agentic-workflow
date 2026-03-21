@@ -102,6 +102,16 @@ fn execute_activity_with_retries<H: EngineHost>(
             }
             let step_state = outcome.state;
 
+            // Pipe this step's output fields into the next step's input.
+            //
+            // `step_output_for_following_input` extracts the activity's
+            // declared output fields from the agent response JSON. We then
+            // apply `step.output_map` — a rename table of `{source: target}`
+            // pairs — before merging into `current_input`. The remove+insert
+            // dance is needed because we cannot borrow `merged` mutably for
+            // the rename while also iterating it; removing first avoids the
+            // conflict and is safe because any key missing from `output_map`
+            // is left untouched by the loop.
             if step_state == JobRunState::Success
                 && let Some(output_map) = step_output_for_following_input(
                     &execution.activity,
