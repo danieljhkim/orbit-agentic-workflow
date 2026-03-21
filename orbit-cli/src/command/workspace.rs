@@ -18,8 +18,6 @@ pub enum WorkspaceSubcommand {
     Init(WorkspaceInitArgs),
     /// List all registered workspaces
     List(WorkspaceListArgs),
-    /// Bind the current directory to a workspace
-    Use(WorkspaceUseArgs),
     /// Show the current workspace
     Show(WorkspaceShowArgs),
     /// Remove a workspace from the registry (does not delete .orbit)
@@ -40,12 +38,6 @@ pub struct WorkspaceInitArgs {
 pub struct WorkspaceListArgs {}
 
 #[derive(Args)]
-pub struct WorkspaceUseArgs {
-    /// Workspace name or id
-    pub workspace: String,
-}
-
-#[derive(Args)]
 pub struct WorkspaceShowArgs {}
 
 #[derive(Args)]
@@ -62,7 +54,6 @@ impl Execute for WorkspaceCommand {
                 unreachable!("workspace init should be handled before runtime initialization")
             }
             WorkspaceSubcommand::List(args) => args.execute(runtime),
-            WorkspaceSubcommand::Use(args) => args.execute(runtime),
             WorkspaceSubcommand::Show(args) => args.execute(runtime),
             WorkspaceSubcommand::Remove(args) => args.execute(runtime),
         }
@@ -131,25 +122,6 @@ impl Execute for WorkspaceListArgs {
                 ws.root.display()
             );
         }
-        Ok(())
-    }
-}
-
-impl Execute for WorkspaceUseArgs {
-    fn execute(self, _runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
-        let registry_path = workspace_registry::registry_path()?;
-        let mut registry = workspace_registry::load_registry_from(&registry_path)?;
-
-        let ws = workspace_registry::find_workspace(&registry, &self.workspace)
-            .ok_or_else(|| OrbitError::WorkspaceNotFound(self.workspace.clone()))?;
-        let ws_id = ws.id.clone();
-        let ws_name = ws.name.clone();
-
-        workspace_registry::set_path_override(&mut registry, cwd.clone(), &ws_id)?;
-        workspace_registry::save_registry_to(&registry, &registry_path)?;
-
-        println!("workspace '{}' bound to {}", ws_name, cwd.display());
         Ok(())
     }
 }

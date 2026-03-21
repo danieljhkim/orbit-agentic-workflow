@@ -317,7 +317,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             let sub = match &cmd.command {
                 WorkspaceSubcommand::Init(_) => "init",
                 WorkspaceSubcommand::List(_) => "list",
-                WorkspaceSubcommand::Use(_) => "use",
                 WorkspaceSubcommand::Show(_) => "show",
                 WorkspaceSubcommand::Remove(_) => "remove",
             };
