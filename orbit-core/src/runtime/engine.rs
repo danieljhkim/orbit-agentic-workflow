@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
-use crate::json_schema::validate_instance_against_schema;
+use orbit_store::validate_instance_against_schema;
 use crate::paths;
 
 #[derive(Debug, Clone, Serialize)]

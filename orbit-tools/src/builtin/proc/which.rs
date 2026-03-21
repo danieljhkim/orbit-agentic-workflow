@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_FAST_MS};
 
 pub struct ProcWhichTool;
 
@@ -38,7 +38,7 @@ impl Tool for ProcWhichTool {
                 program: which_program.to_string(),
                 args: vec![command.to_string()],
                 current_dir: None,
-                timeout_ms: Some(1_000),
+                timeout_ms: Some(TIMEOUT_FAST_MS),
                 stdin_mode: StdinMode::Inherit,
                 environment_mode: EnvironmentMode::Inherit,
                 debug: false,

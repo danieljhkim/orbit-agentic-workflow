@@ -5,7 +5,7 @@ pub mod error;
 pub mod event;
 pub mod id;
 pub mod job;
-pub mod memo;
+pub mod policy_decision;
 pub mod redaction;
 pub mod role;
 pub mod skill;
@@ -24,7 +24,6 @@ pub use job::{
     JobScheduleState, JobStep, JobTargetType, default_job_max_active_runs,
     default_retry_backoff_seconds,
 };
-pub use memo::Memo;
 pub use redaction::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
     redact_sensitive_env_text,
@@ -34,7 +33,8 @@ pub use skill::Skill;
 pub use task::{
     Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
-pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
+pub use policy_decision::PolicyDecision;
+pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
 pub use workspace::{Workspace, WorkspaceRegistry, WorkspaceStatus};
 
 #[cfg(test)]

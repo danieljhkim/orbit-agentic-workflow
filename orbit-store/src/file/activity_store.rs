@@ -3,24 +3,15 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_types::{Activity, OrbitError};
+
+use crate::backend::ActivityCreateParams;
+use crate::file::fs_utils::write_atomic;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 #[derive(Clone)]
 pub(crate) struct ActivityFileStore {
     root: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct FileWorkInsert {
-    pub id: String,
-    pub spec_type: String,
-    pub description: String,
-    pub input_schema_json: Value,
-    pub output_schema_json: Value,
-    pub spec_config: Value,
-    pub workspace_path: Option<String>,
-    pub created_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,7 +49,7 @@ impl ActivityFileStore {
         Ok(())
     }
 
-    pub(crate) fn insert_work(&self, params: &FileWorkInsert) -> Result<Activity, OrbitError> {
+    pub(crate) fn insert_work(&self, params: &ActivityCreateParams) -> Result<Activity, OrbitError> {
         self.ensure_layout()?;
         if self.get_activity(&params.id)?.is_some() {
             return Err(OrbitError::InvalidInput(format!(
@@ -295,22 +286,6 @@ fn file_timestamps(path: &Path) -> Result<(DateTime<Utc>, DateTime<Utc>), OrbitE
     Ok((created_at, updated_at))
 }
 
-fn write_atomic(path: &Path, content: &str) -> Result<(), OrbitError> {
-    let parent = path.parent().ok_or_else(|| {
-        OrbitError::Io(format!("cannot determine parent for '{}'", path.display()))
-    })?;
-    fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
-
-    let mut tmp = path.to_path_buf();
-    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
-    tmp.set_extension(format!("yaml.tmp.{nanos}"));
-    fs::write(&tmp, content).map_err(|e| OrbitError::Io(e.to_string()))?;
-    if let Err(err) = fs::rename(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(OrbitError::Io(err.to_string()));
-    }
-    Ok(())
-}
 
 fn is_yaml(path: &Path) -> bool {
     path.extension()
@@ -355,10 +330,12 @@ mod tests {
     use serde_json::json;
     use tempfile::tempdir;
 
-    use super::{ActivityFileStore, FileWorkInsert};
+    use crate::backend::ActivityCreateParams;
 
-    fn sample_insert() -> FileWorkInsert {
-        FileWorkInsert {
+    use super::ActivityFileStore;
+
+    fn sample_insert() -> ActivityCreateParams {
+        ActivityCreateParams {
             id: "review_tasks".to_string(),
             spec_type: "agent".to_string(),
             description: "Review pending tasks".to_string(),

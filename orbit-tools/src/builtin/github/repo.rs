@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_DEFAULT_MS, check_exec_result};
 
 pub struct GithubRepoViewTool;
 
@@ -21,7 +21,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         program: "gh".to_string(),
         args,
         current_dir: None,
-        timeout_ms: Some(15_000),
+        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,
@@ -48,13 +48,7 @@ impl Tool for GithubRepoViewTool {
     fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(&input)?;
         let result = run_process(&req, &NoSandbox)?;
-
-        if !result.success {
-            return Err(OrbitError::Execution(format!(
-                "gh repo view failed: {}",
-                result.stderr.trim()
-            )));
-        }
+        check_exec_result(&result, "gh repo view")?;
 
         let parsed: Value = serde_json::from_str(&result.stdout).map_err(|e| {
             OrbitError::Execution(format!("failed to parse gh repo view output: {e}"))

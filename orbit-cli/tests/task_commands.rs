@@ -339,7 +339,6 @@ fn task_update_updates_description_and_plan() {
     let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["description"], "updated description");
     assert_eq!(show["plan"], "updated plan");
-    assert_eq!(show["instructions"], "updated plan");
 }
 
 #[test]
@@ -444,7 +443,6 @@ fn task_update_accepts_instructions_alias_for_plan() {
         .clone();
     let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
     assert_eq!(show["plan"], "updated via alias");
-    assert_eq!(show["instructions"], "updated via alias");
 }
 
 #[test]

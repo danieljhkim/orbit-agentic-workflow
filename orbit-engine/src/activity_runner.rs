@@ -7,7 +7,7 @@ use crate::context::{
     redact_attempt_outcome,
 };
 use crate::executor::builtin_activity_executor_registry;
-use crate::json_schema::validate_instance_against_schema;
+use orbit_store::validate_instance_against_schema;
 use crate::template::TemplateContext;
 
 pub fn run_activity_direct<H: EngineHost>(

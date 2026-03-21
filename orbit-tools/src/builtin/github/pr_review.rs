@@ -2,22 +2,17 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_DEFAULT_MS, check_exec_result, require_str};
 
 pub struct GithubPrReviewTool;
 
 pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
     let pr = super::require_pr(input)?;
-
-    let action = input
-        .get("action")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| OrbitError::InvalidInput("missing `action`".to_string()))?;
+    let action = require_str(input, "action")?;
 
     let body = input.get("body").and_then(Value::as_str);
 
-    let action_flag = match action {
+    let action_flag = match action.as_str() {
         "approve" => "--approve",
         "request-changes" => "--request-changes",
         "comment" => "--comment",
@@ -28,7 +23,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         }
     };
 
-    if matches!(action, "request-changes" | "comment") && body.is_none() {
+    if matches!(action.as_str(), "request-changes" | "comment") && body.is_none() {
         return Err(OrbitError::InvalidInput(format!(
             "`body` is required for action \"{action}\""
         )));
@@ -55,7 +50,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         program: "gh".to_string(),
         args,
         current_dir: None,
-        timeout_ms: Some(15_000),
+        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,
@@ -102,14 +97,7 @@ impl Tool for GithubPrReviewTool {
     fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(&input)?;
         let result = run_process(&req, &NoSandbox)?;
-
-        if !result.success {
-            return Err(OrbitError::Execution(format!(
-                "gh pr review failed: {}",
-                result.stderr.trim()
-            )));
-        }
-
+        check_exec_result(&result, "gh pr review")?;
         Ok(json!({
             "stdout": result.stdout,
             "stderr": result.stderr,

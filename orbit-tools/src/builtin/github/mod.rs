@@ -13,7 +13,7 @@ pub mod repo;
 use orbit_types::OrbitError;
 use serde_json::Value;
 
-use crate::ToolRegistry;
+use crate::{ToolRegistry, require_str};
 
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(auth::GithubAuthStatusTool);
@@ -31,13 +31,7 @@ pub fn register(registry: &mut ToolRegistry) {
 
 /// Extract a non-empty `pr` field from the tool input.
 pub(super) fn require_pr(input: &Value) -> Result<String, OrbitError> {
-    input
-        .get("pr")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string)
-        .ok_or_else(|| OrbitError::InvalidInput("missing `pr`".to_string()))
+    require_str(input, "pr")
 }
 
 #[cfg(test)]

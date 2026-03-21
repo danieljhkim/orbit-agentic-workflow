@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_DEFAULT_MS};
 
 pub struct GithubAuthStatusTool;
 
@@ -11,7 +11,7 @@ pub(super) fn build_exec_request(_input: &Value) -> Result<ExecRequest, OrbitErr
         program: "gh".to_string(),
         args: vec!["auth".to_string(), "status".to_string()],
         current_dir: None,
-        timeout_ms: Some(15_000),
+        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,

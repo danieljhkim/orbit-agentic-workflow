@@ -60,11 +60,19 @@ impl PersistenceConfig {
         };
 
         Self {
+            // Tasks are workspace-local: each repo tracks its own task backlog.
+            // Using WorkspaceOnly ensures task IDs never collide across projects
+            // and that agents only see work relevant to their current repo.
             task: ArtifactScope {
                 global_path: global_root.join("tasks"),
                 workspace_path: ws.map(|p| p.join("tasks")),
                 resolution: ScopeResolution::WorkspaceOnly,
             },
+            // Activities and jobs use MergeByKey: global definitions provide a
+            // shared library of activities/jobs (e.g. orbit's built-in workflows),
+            // while workspace-local files can add or override individual entries
+            // by key. This lets per-repo config extend the baseline without
+            // losing globally registered activities.
             activity: ArtifactScope {
                 global_path: global_root.join("activities"),
                 workspace_path: ws.map(|p| p.join("activities")),
@@ -75,11 +83,18 @@ impl PersistenceConfig {
                 workspace_path: ws.map(|p| p.join("jobs")),
                 resolution: ScopeResolution::MergeByKey,
             },
+            // Skills use WorkspaceReplaces: if a workspace defines a skill
+            // directory, it completely replaces the global skill set for that
+            // session. This gives workspace owners full control over which
+            // skills agents can invoke, preventing unintended global skill bleed.
             skill: ArtifactScope {
                 global_path: global_root.join("skills"),
                 workspace_path: ws.map(|p| p.join("skills")),
                 resolution: ScopeResolution::WorkspaceReplaces,
             },
+            // Audit is a single global database; there is no per-workspace audit
+            // log. Using GlobalOnly keeps a single authoritative event trail
+            // regardless of which workspace triggered the operation.
             audit: ArtifactScope {
                 global_path: global_root.join("orbit.db"),
                 workspace_path: None,

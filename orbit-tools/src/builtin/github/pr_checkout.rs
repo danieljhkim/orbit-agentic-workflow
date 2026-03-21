@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_LONG_MS, check_exec_result};
 
 pub struct GithubPrCheckoutTool;
 
@@ -13,7 +13,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         program: "gh".to_string(),
         args: vec!["pr".to_string(), "checkout".to_string(), pr],
         current_dir: None,
-        timeout_ms: Some(60_000),
+        timeout_ms: Some(TIMEOUT_LONG_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,
@@ -38,14 +38,7 @@ impl Tool for GithubPrCheckoutTool {
     fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(&input)?;
         let result = run_process(&req, &NoSandbox)?;
-
-        if !result.success {
-            return Err(OrbitError::Execution(format!(
-                "gh pr checkout failed: {}",
-                result.stderr.trim()
-            )));
-        }
-
+        check_exec_result(&result, "gh pr checkout")?;
         Ok(json!({
             "stdout": result.stdout,
             "stderr": result.stderr,

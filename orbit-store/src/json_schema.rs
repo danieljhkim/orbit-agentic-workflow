@@ -2,7 +2,7 @@ use jsonschema::JSONSchema;
 use orbit_types::OrbitError;
 use serde_json::Value;
 
-pub(crate) fn validate_schema_document(
+pub fn validate_schema_document(
     schema: &Value,
     context: &str,
 ) -> Result<JSONSchema, OrbitError> {
@@ -14,7 +14,7 @@ pub(crate) fn validate_schema_document(
     })
 }
 
-pub(crate) fn validate_instance_against_schema(
+pub fn validate_instance_against_schema(
     schema: &Value,
     instance: &Value,
     context: &str,

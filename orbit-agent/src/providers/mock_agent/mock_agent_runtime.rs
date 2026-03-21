@@ -1,6 +1,6 @@
 use orbit_types::OrbitError;
 
-use crate::providers::AgentProvider;
+use crate::providers::{AgentProvider, build_agent_response};
 use crate::providers::mock_agent::mock_agent_cli::MockAgentCliTransport;
 use crate::runtime::AgentRuntime;
 use crate::types::{AgentRequest, AgentResponse};
@@ -21,13 +21,11 @@ impl MockAgentRuntime {
 
 impl AgentRuntime for MockAgentRuntime {
     fn invoke(&self, req: AgentRequest) -> Result<AgentResponse, OrbitError> {
-        Ok(AgentResponse {
-            runtime_key: AgentProvider::MockAgent.key(),
-            program: self.command.clone(),
-            args: self.cli.args(&req.operation),
-            stdin: self.cli.stdin(&req.envelope_json),
-            stdout_schema_json: None,
-            required_env_vars: AgentProvider::MockAgent.required_env_vars(),
-        })
+        Ok(build_agent_response(
+            AgentProvider::MockAgent,
+            self.command.clone(),
+            self.cli.args(&req.operation),
+            self.cli.stdin(&req.envelope_json),
+        ))
     }
 }
