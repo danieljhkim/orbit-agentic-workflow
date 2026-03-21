@@ -55,19 +55,26 @@ The goal is to help future agents avoid the same issue.
 
 ---
 
-# Task Creation Guidelines
+# How to Create the Task
 
-Refer to `orbit-create-task` skill.
+```bash
+orbit tool run orbit.task.add --input '{
+  "title": "<short, specific problem statement>",
+  "description": "<what happened, where, and why it caused friction>",
+  "plan": "<suggested fix or investigation steps>",
+  "workspace": ".",
+  "type": "issue",
+  "priority": "<low|medium|high|critical>"
+}'
+```
+
+Required fields: `title`, `description`, `plan`, `workspace`. Keep the description concrete — name the command, file, or workflow that broke.
 
 ---
 
 # Important Rules
 
-- Do not silently ignore Orbit problems
-- Do not implement large design changes without a task
-- Always document the root issue clearly
-
-Orbit improves through tracked issues.
-
-Future agents depend on these tasks.
+- Do not silently ignore Orbit problems — always create a task.
+- Do not implement large design changes inline — track them first.
+- Document the root issue clearly so the next agent can act on it.
 

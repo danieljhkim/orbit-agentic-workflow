@@ -9,25 +9,47 @@ description: Use this when executing human-initiated code change or existing orb
 
 Handle a human-requested engineering change or existing Orbit task from intent to verified implementation, with explicit task lifecycle tracking.
 
-## Responsibilities
+## Workflow
 
-1. Clarify intent and success criteria.
-2. Create or link the tracking task in Orbit. If creating, use `orbit-create-task`.
-3. Start the task before making changes:
-   ```bash
-   orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready now>"}'
-   ```
-   - `task start` moves `backlog -> in-progress`
-   - `task start` also handles `proposed -> in-progress` and records `proposal_approved` before `started`
-   - Keep using explicit `approve` plus later status updates when approval and execution should stay separate
-4. Implement and validate the change according to the task plan.
-5. Move to review after validation:
-   ```bash
-   orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'
-   ```
-6. Persist the execution summary (see below).
+### Step 1: Load or create the task
 
-See the `orbit` skill for full invocation patterns and lifecycle facts.
+**If given an existing task ID**, load it first:
+
+```bash
+orbit tool run orbit.task.show --input '{"id": "<task-id>"}'
+```
+
+Read the returned JSON carefully. Extract:
+- `plan` — this is your implementation guide. Follow its steps.
+- `context_files` — read each file listed before making changes.
+- `description` — the problem statement and success criteria.
+- `status` — confirms the task is ready to start.
+
+**If this is a new change request** (no task ID), clarify intent and success criteria with the human, then create a task using `orbit-create-task`.
+
+### Step 2: Start the task
+
+```bash
+orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready now>"}'
+```
+
+- `task start` moves `backlog -> in-progress`
+- `task start` also handles `proposed -> in-progress` and records `proposal_approved` before `started`
+- Keep using explicit `approve` plus later status updates when approval and execution should stay separate
+
+### Step 3: Implement and validate
+
+Follow the task's `plan` field step by step. Read the `context_files` before touching code. If the plan has verification commands, run them.
+
+### Step 4: Move to review
+
+```bash
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'
+```
+
+### Step 5: Persist the execution summary
+
+See Output section below.
 
 ## Lifecycle Rules
 
