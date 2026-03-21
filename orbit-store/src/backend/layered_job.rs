@@ -31,14 +31,6 @@ impl LayeredJobStore {
         }
     }
 
-    /// Returns the store that owns a given run_id.
-    fn owning_store_for_run(&self, run_id: &str) -> Result<&dyn JobStoreBackend, OrbitError> {
-        if self.workspace.get_job_run(run_id)?.is_some() {
-            Ok(self.workspace.as_ref())
-        } else {
-            Ok(self.global.as_ref())
-        }
-    }
 }
 
 impl JobStoreBackend for LayeredJobStore {
@@ -75,37 +67,19 @@ impl JobStoreBackend for LayeredJobStore {
     }
 
     fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        // Runs live in workspace; fall back to global for legacy runs.
-        let ws_runs = self.workspace.list_job_runs(job_id)?;
-        if !ws_runs.is_empty() {
-            return Ok(ws_runs);
-        }
-        self.global.list_job_runs(job_id)
+        self.workspace.list_job_runs(job_id)
     }
 
     fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError> {
-        // Runs live in workspace. Check workspace first, fall back to global.
-        let ws_runs = self.workspace.list_job_runs_filtered(query)?;
-        if !ws_runs.is_empty() {
-            return Ok(ws_runs);
-        }
-        self.global.list_job_runs_filtered(query)
+        self.workspace.list_job_runs_filtered(query)
     }
 
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        if let Some(run) = self.workspace.get_job_run(run_id)? {
-            return Ok(Some(run));
-        }
-        self.global.get_job_run(run_id)
+        self.workspace.get_job_run(run_id)
     }
 
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        // Runs live in workspace. Check workspace first, fall back to global.
-        let ws_runs = self.workspace.list_pending_or_running_job_runs(job_id)?;
-        if !ws_runs.is_empty() {
-            return Ok(ws_runs);
-        }
-        self.global.list_pending_or_running_job_runs(job_id)
+        self.workspace.list_pending_or_running_job_runs(job_id)
     }
 
     fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError> {
@@ -133,8 +107,7 @@ impl JobStoreBackend for LayeredJobStore {
         started_at: DateTime<Utc>,
         pid: u32,
     ) -> Result<bool, OrbitError> {
-        self.owning_store_for_run(run_id)?
-            .mark_job_run_running(run_id, started_at, pid)
+        self.workspace.mark_job_run_running(run_id, started_at, pid)
     }
 
     fn abandon_job_run(
@@ -142,8 +115,7 @@ impl JobStoreBackend for LayeredJobStore {
         run_id: &str,
         finished_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        self.owning_store_for_run(run_id)?
-            .abandon_job_run(run_id, finished_at)
+        self.workspace.abandon_job_run(run_id, finished_at)
     }
 
     fn complete_job_run_step(
@@ -151,8 +123,7 @@ impl JobStoreBackend for LayeredJobStore {
         run_id: &str,
         params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
-        self.owning_store_for_run(run_id)?
-            .complete_job_run_step(run_id, params)
+        self.workspace.complete_job_run_step(run_id, params)
     }
 
     fn finalize_job_run(
@@ -162,16 +133,16 @@ impl JobStoreBackend for LayeredJobStore {
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
     ) -> Result<bool, OrbitError> {
-        self.owning_store_for_run(run_id)?
+        self.workspace
             .finalize_job_run(run_id, state, finished_at, duration_ms)
     }
 
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
-        self.owning_store_for_run(run_id)?.archive_job_run(run_id)
+        self.workspace.archive_job_run(run_id)
     }
 
     fn delete_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
-        self.owning_store_for_run(run_id)?.delete_job_run(run_id)
+        self.workspace.delete_job_run(run_id)
     }
 }
 
@@ -287,5 +258,37 @@ mod tests {
         };
         let updated = layered.update_job("gj", update).unwrap();
         assert_eq!(updated.max_active_runs, 5);
+    }
+
+    #[test]
+    fn job_runs_are_workspace_scoped_only() {
+        // A run created via a global-only job must land in workspace,
+        // and must NOT be visible when querying the global store directly.
+        let (_ws, global, layered, _dir) = make_layered();
+        global.add_job(make_params("global-job")).unwrap();
+
+        let now = chrono::Utc::now();
+        let run = layered
+            .insert_job_run("global-job", 1, now)
+            .expect("insert run");
+
+        // Visible via layered (workspace-scoped).
+        let runs = layered.list_job_runs("global-job").unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, run.run_id);
+
+        // NOT visible directly from global store.
+        let global_runs = global.list_job_runs("global-job").unwrap();
+        assert!(
+            global_runs.is_empty(),
+            "runs must not leak into global store"
+        );
+
+        // get_job_run must resolve from workspace only.
+        assert!(layered.get_job_run(&run.run_id).unwrap().is_some());
+        assert!(
+            global.get_job_run(&run.run_id).unwrap().is_none(),
+            "get_job_run must not cross into global store"
+        );
     }
 }
