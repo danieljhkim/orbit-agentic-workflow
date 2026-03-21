@@ -86,9 +86,6 @@ pub struct TaskAddArgs {
     /// Comma-separated context file paths
     #[arg(long, default_value = "")]
     pub context: String,
-    /// Working directory for this task
-    #[arg(long)]
-    pub work_dir: String,
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
@@ -147,7 +144,7 @@ impl Execute for TaskAddArgs {
             plan,
             comment: self.comment,
             context_files: parse_context_csv(&self.context),
-            workspace_path: Some(self.work_dir),
+            workspace_path: None,
             priority,
             complexity: self.complexity,
             task_type,
@@ -359,9 +356,6 @@ impl Execute for TaskShowArgs {
             }
             if !task.context_files.is_empty() {
                 println!("{} {}", bold("Context:"), task.context_files.join(", "));
-            }
-            if let Some(ref workspace_path) = task.workspace_path {
-                println!("{} {}", bold("Workspace:"), workspace_path);
             }
             if let Some(ref assigned_to) = task.assigned_to {
                 println!("{} {}", bold("Assigned To:"), assigned_to);
@@ -836,7 +830,6 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "instructions": task.plan,
         "execution_summary": task.execution_summary,
         "context_files": task.context_files,
-        "workspace_path": task.workspace_path,
         "assigned_to": task.assigned_to,
         "created_by": task.created_by,
         "status": task.status.to_string(),

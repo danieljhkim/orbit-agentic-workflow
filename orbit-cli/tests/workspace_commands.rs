@@ -103,37 +103,6 @@ fn workspace_list_shows_registered_workspaces() {
 }
 
 #[test]
-fn workspace_use_binds_cwd_to_workspace() {
-    let home = tempfile::tempdir().unwrap();
-    let project = home.path().join("proj");
-    let other_dir = home.path().join("other");
-    std::fs::create_dir_all(&project).unwrap();
-    std::fs::create_dir_all(&other_dir).unwrap();
-
-    // Init workspace
-    orbit_ws(home.path(), &project)
-        .args(["workspace", "init", "--name", "proj"])
-        .assert()
-        .success();
-
-    // Init orbit in other_dir so we have a runtime
-    orbit_in(&other_dir).args(["init"]).assert().success();
-
-    // Use workspace from other_dir
-    orbit_ws(home.path(), &other_dir)
-        .env("ORBIT_ROOT", other_dir.join(".orbit"))
-        .args(["workspace", "use", "proj"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("bound to"));
-
-    // Verify path_overrides in registry
-    let registry_path = home.path().join(".orbit").join("workspaces.json");
-    let content = std::fs::read_to_string(&registry_path).unwrap();
-    assert!(content.contains("path_overrides"));
-}
-
-#[test]
 fn workspace_show_displays_current_workspace() {
     let home = tempfile::tempdir().unwrap();
     let project = home.path().join("proj");
@@ -247,44 +216,6 @@ fn workspace_list_shows_invalid_for_missing_root() {
 }
 
 #[test]
-fn workspace_flag_targets_specific_workspace() {
-    let home = tempfile::tempdir().unwrap();
-    let project_a = home.path().join("project_a");
-    let project_b = home.path().join("project_b");
-    std::fs::create_dir_all(&project_a).unwrap();
-    std::fs::create_dir_all(&project_b).unwrap();
-
-    // Init two workspaces
-    orbit_ws(home.path(), &project_a)
-        .args(["workspace", "init", "--name", "alpha"])
-        .assert()
-        .success();
-
-    orbit_ws(home.path(), &project_b)
-        .args(["workspace", "init", "--name", "beta"])
-        .assert()
-        .success();
-
-    // Init orbit in project_a so its .orbit is a valid runtime
-    orbit_in(&project_a).args(["init"]).assert().success();
-    orbit_in(&project_b).args(["init"]).assert().success();
-
-    // Use --workspace flag from a different directory to target alpha
-    orbit_ws(home.path(), home.path())
-        .args(["--workspace", "alpha", "workspace", "show"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("alpha"));
-
-    // Same for beta
-    orbit_ws(home.path(), home.path())
-        .args(["--workspace", "beta", "workspace", "show"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("beta"));
-}
-
-#[test]
 fn backward_compat_orbit_root_still_works() {
     let home = tempfile::tempdir().unwrap();
     let custom_root = home.path().join("custom-root");
@@ -300,7 +231,7 @@ fn backward_compat_orbit_root_still_works() {
     // Task add should work with ORBIT_ROOT
     orbit_in(home.path())
         .env("ORBIT_ROOT", &custom_root)
-        .args(["task", "add", "--title", "test task", "--work-dir", "."])
+        .args(["task", "add", "--title", "test task"])
         .assert()
         .success();
 }

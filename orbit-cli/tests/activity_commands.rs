@@ -39,8 +39,6 @@ fn add_task(dir: &Path, title: &str) -> Value {
             "task description",
             "--plan",
             "task plan",
-            "--work-dir",
-            &dir.to_string_lossy(),
             "--json",
         ])
         .assert()

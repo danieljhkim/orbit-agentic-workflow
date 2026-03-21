@@ -26,10 +26,6 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub root: Option<PathBuf>,
 
-    /// Target a specific workspace by name or id
-    #[arg(long, global = true)]
-    pub workspace: Option<String>,
-
     #[command(subcommand)]
     pub command: Commands,
 }

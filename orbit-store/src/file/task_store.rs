@@ -754,7 +754,7 @@ mod tests {
             plan: "Task plan".to_string(),
             execution_summary: String::new(),
             context_files: vec!["orbit-store/src/file/task_store.rs".to_string()],
-            workspace_path: Some("/tmp/workspace".to_string()),
+            workspace_path: None,
             repo_root: Some("/tmp/repo".to_string()),
             assigned_to: Some("Codex".to_string()),
             created_by: Some("Codex".to_string()),
@@ -790,7 +790,6 @@ mod tests {
         assert!(yaml.contains("schema_version: 4"));
         assert!(yaml.contains("description: Task description"));
         assert!(yaml.contains("context_files:"));
-        assert!(yaml.contains("workspace_path: /tmp/workspace"));
         assert!(yaml.contains("created_by: Codex"));
         assert!(yaml.contains("assigned_to: Codex"));
         assert!(yaml.contains("proposed_by: daniel"));

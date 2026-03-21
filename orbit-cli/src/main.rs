@@ -12,7 +12,6 @@ use crate::command::{Commands, Execute, init::InitCommand};
 fn main() {
     let cli = command::Cli::parse();
     let root_override = cli.root.clone();
-    let workspace_override = cli.workspace.clone();
 
     // Commands that run without a pre-existing runtime
     match cli.command {
@@ -35,10 +34,7 @@ fn main() {
         _ => {}
     }
 
-    let runtime = match OrbitRuntime::initialize_with_overrides(
-        root_override.as_deref(),
-        workspace_override.as_deref(),
-    ) {
+    let runtime = match OrbitRuntime::initialize_with_root_override(root_override.as_deref()) {
         Ok(runtime) => runtime,
         Err(err) => {
             eprintln!("failed to initialize runtime: {err}");

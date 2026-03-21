@@ -15,11 +15,6 @@ fn orbit_in(dir: &Path) -> Command {
 }
 
 fn add_task(dir: &Path, title: &str) -> String {
-    let workspace = dir
-        .canonicalize()
-        .expect("canonical workspace")
-        .to_string_lossy()
-        .to_string();
     let output = orbit_in(dir)
         .args([
             "task",
@@ -30,8 +25,6 @@ fn add_task(dir: &Path, title: &str) -> String {
             "test description",
             "--plan",
             "test plan",
-            "--work-dir",
-            &workspace,
         ])
         .assert()
         .success()
@@ -42,11 +35,6 @@ fn add_task(dir: &Path, title: &str) -> String {
 }
 
 fn add_task_with_comment(dir: &Path, title: &str, comment: &str) -> String {
-    let workspace = dir
-        .canonicalize()
-        .expect("canonical workspace")
-        .to_string_lossy()
-        .to_string();
     let output = orbit_in(dir)
         .args([
             "task",
@@ -59,8 +47,6 @@ fn add_task_with_comment(dir: &Path, title: &str, comment: &str) -> String {
             "test plan",
             "--comment",
             comment,
-            "--work-dir",
-            &workspace,
         ])
         .assert()
         .success()
@@ -71,11 +57,6 @@ fn add_task_with_comment(dir: &Path, title: &str, comment: &str) -> String {
 }
 
 fn add_agent_task(dir: &Path, title: &str) -> String {
-    let workspace = dir
-        .canonicalize()
-        .expect("canonical workspace")
-        .to_string_lossy()
-        .to_string();
     let output = orbit_in(dir)
         .env("ORBIT_TASK_ACTOR_KIND", "agent")
         .args([
@@ -87,8 +68,6 @@ fn add_agent_task(dir: &Path, title: &str) -> String {
             "test description",
             "--plan",
             "test plan",
-            "--work-dir",
-            &workspace,
         ])
         .assert()
         .success()
@@ -127,12 +106,6 @@ fn task_add_prints_id() {
 #[test]
 fn task_add_json_returns_task_object() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let workspace = dir
-        .path()
-        .canonicalize()
-        .expect("canonical workspace")
-        .to_string_lossy()
-        .to_string();
 
     let output = orbit_in(dir.path())
         .args([
@@ -144,8 +117,6 @@ fn task_add_json_returns_task_object() {
             "json description",
             "--plan",
             "json plan",
-            "--work-dir",
-            &workspace,
             "--json",
         ])
         .assert()
@@ -157,19 +128,12 @@ fn task_add_json_returns_task_object() {
     assert_eq!(task["title"], "json add task");
     assert_eq!(task["description"], "json description");
     assert_eq!(task["plan"], "json plan");
-    assert_eq!(task["workspace_path"], workspace);
     assert!(task["complexity"].is_null());
 }
 
 #[test]
 fn task_add_json_includes_complexity_when_provided() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let workspace = dir
-        .path()
-        .canonicalize()
-        .expect("canonical workspace")
-        .to_string_lossy()
-        .to_string();
 
     let output = orbit_in(dir.path())
         .args([
@@ -181,8 +145,6 @@ fn task_add_json_includes_complexity_when_provided() {
             "json description",
             "--plan",
             "json plan",
-            "--work-dir",
-            &workspace,
             "--complexity",
             "hard",
             "--json",
@@ -692,48 +654,6 @@ fn task_search_matches() {
         .assert()
         .success()
         .stdout(predicate::str::contains("unique-searchable-xyz"));
-}
-
-#[test]
-fn task_workspace_is_normalized_on_add() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let workspace = dir.path().join("repo");
-    std::fs::create_dir_all(&workspace).expect("workspace dir");
-    let workspace_canonical = workspace.canonicalize().expect("canonical workspace");
-
-    let output = orbit_in(dir.path())
-        .args([
-            "task",
-            "add",
-            "--title",
-            "workspace task",
-            "--description",
-            "workspace description",
-            "--instructions",
-            "workspace plan",
-            "--work-dir",
-            workspace.to_string_lossy().as_ref(),
-        ])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let id = String::from_utf8(output).expect("utf8").trim().to_string();
-
-    let show_output = orbit_in(dir.path())
-        .args(["task", "show", &id, "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
-    assert_eq!(
-        show["workspace_path"],
-        workspace_canonical.to_string_lossy().to_string()
-    );
-    assert_eq!(show["plan"], "workspace plan");
 }
 
 #[test]

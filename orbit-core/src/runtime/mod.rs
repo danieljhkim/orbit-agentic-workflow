@@ -26,9 +26,7 @@ use crate::OrbitContext;
 use crate::command::init::ensure_orbit_root_initialized;
 use crate::context::ActorIdentity;
 
-pub(crate) use resolve::{
-    resolve_data_root_full, resolve_global_root, resolve_initialize_data_root,
-};
+pub(crate) use resolve::{resolve_global_root, resolve_initialize_data_root};
 
 #[derive(Clone)]
 pub struct OrbitRuntime {
@@ -43,15 +41,8 @@ impl OrbitRuntime {
     }
 
     pub fn initialize_with_root_override(root_override: Option<&Path>) -> Result<Self, OrbitError> {
-        Self::initialize_with_overrides(root_override, None)
-    }
-
-    pub fn initialize_with_overrides(
-        root_override: Option<&Path>,
-        workspace_override: Option<&str>,
-    ) -> Result<Self, OrbitError> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let workspace_root = resolve_data_root_full(&cwd, root_override, workspace_override)?;
+        let workspace_root = resolve_initialize_data_root(&cwd, root_override)?;
         let global_root = resolve_global_root()?;
         ensure_orbit_root_initialized(&global_root, &workspace_root)?;
         Self::from_roots(&global_root, &workspace_root)

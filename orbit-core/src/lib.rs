@@ -493,17 +493,6 @@ mod tests {
     }
 
     #[test]
-    fn add_task_rejects_nonexistent_workspace() {
-        let runtime = OrbitRuntime::in_memory().expect("runtime");
-        let result = runtime.add_task(TaskAddParams {
-            title: "invalid workspace".to_string(),
-            workspace_path: Some("/path/does/not/exist".to_string()),
-            ..Default::default()
-        });
-        assert!(matches!(result, Err(crate::OrbitError::InvalidInput(_))));
-    }
-
-    #[test]
     fn list_tasks_filters_by_status() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         runtime

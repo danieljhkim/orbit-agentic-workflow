@@ -27,33 +27,6 @@ pub(crate) fn current_dir_orbit_root() -> PathBuf {
     cwd_orbit_root(&cwd)
 }
 
-pub(crate) fn normalize_path(raw: Option<String>) -> Result<Option<String>, OrbitError> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-
-    let path = Path::new(trimmed);
-    if !path.exists() {
-        return Err(OrbitError::InvalidInput(format!(
-            "path does not exist: {trimmed}"
-        )));
-    }
-    if !path.is_dir() {
-        return Err(OrbitError::InvalidInput(format!(
-            "path is not a directory: {trimmed}"
-        )));
-    }
-
-    let canonical = path.canonicalize().map_err(|e| {
-        OrbitError::InvalidInput(format!("failed to canonicalize path '{trimmed}': {e}"))
-    })?;
-    Ok(Some(canonical.to_string_lossy().to_string()))
-}
 
 pub(crate) fn resolve_path_value(
     raw: &str,

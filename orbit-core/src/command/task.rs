@@ -9,7 +9,6 @@ use orbit_types::{
 
 use crate::OrbitRuntime;
 use crate::context::ActorKind;
-use crate::paths::normalize_path;
 
 pub struct TaskAddParams {
     pub title: String,
@@ -67,7 +66,6 @@ impl From<TaskUpdateParams> for StoreTaskUpdateParams {
 
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
-        let workspace_path = normalize_path(params.workspace_path)?;
         let actor = self.actor().clone();
         let initial_status =
             if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent() {
@@ -85,7 +83,7 @@ impl OrbitRuntime {
                 plan: params.plan.clone(),
                 execution_summary: String::new(),
                 context_files: params.context_files.clone(),
-                workspace_path: workspace_path.clone(),
+                workspace_path: params.workspace_path.clone(),
                 created_by: Some(actor.label.clone()),
                 assigned_to: Some(actor.label.clone()),
                 status: initial_status,
