@@ -115,21 +115,30 @@ mod tests {
     #[test]
     fn persistence_defaults_to_file_for_activities_and_uses_sqlite_for_audit() {
         let config = PersistenceConfig::default_for_data_root(Path::new("/tmp/orbit"));
-        assert_eq!(config.job.path, std::path::PathBuf::from("/tmp/orbit/jobs"));
         assert_eq!(
-            config.activity.path,
+            config.job.global_path,
+            std::path::PathBuf::from("/tmp/orbit/jobs")
+        );
+        assert_eq!(
+            config.activity.global_path,
             std::path::PathBuf::from("/tmp/orbit/activities")
         );
-        assert_eq!(config.job.format.as_deref(), Some("yaml"));
-        assert_eq!(config.activity.format.as_deref(), Some("yaml"));
-        assert_eq!(config.task, std::path::PathBuf::from("/tmp/orbit/tasks"));
-        assert_eq!(config.skill, std::path::PathBuf::from("/tmp/orbit/skills"));
+        assert_eq!(config.job_format.format.as_deref(), Some("yaml"));
+        assert_eq!(config.activity_format.format.as_deref(), Some("yaml"));
         assert_eq!(
-            config.audit.path,
+            config.task.global_path,
+            std::path::PathBuf::from("/tmp/orbit/tasks")
+        );
+        assert_eq!(
+            config.skill.global_path,
+            std::path::PathBuf::from("/tmp/orbit/skills")
+        );
+        assert_eq!(
+            config.audit.global_path,
             std::path::PathBuf::from("/tmp/orbit/orbit.db")
         );
         assert_eq!(
-            config.audit.persistence_type,
+            config.audit_format.persistence_type,
             super::persistence::PersistenceType::Sqlite
         );
     }

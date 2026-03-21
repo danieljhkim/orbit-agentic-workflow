@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use orbit_policy::PolicyEngine;
 use orbit_store::{
-    Store, activity_store_layered, activity_store_memory, audit_event_store_sqlite,
-    job_store_layered, job_store_memory, task_store_file, task_store_memory, tool_store_sqlite,
+    Store, activity_store_memory, activity_store_resolved, audit_event_store_sqlite,
+    job_store_memory, job_store_resolved, task_store_memory, task_store_resolved, tool_store_sqlite,
 };
 
 use orbit_tools::ToolRegistry;
@@ -29,32 +29,14 @@ pub(crate) fn build_context_from_roots(
     workspace_root: &Path,
 ) -> Result<OrbitContext, OrbitError> {
     let runtime_config = RuntimeConfig::load_layered(global_root, workspace_root)?;
-    let db_path = runtime_config.persistence.audit.path.clone();
+    let persistence = &runtime_config.persistence;
+
+    let db_path = persistence.audit.resolve().into_single();
     let store = Store::open(&db_path)?;
 
-    let task_store = task_store_file(runtime_config.persistence.task.clone())?;
-
-    let ws_activities_dir = workspace_root.join("activities");
-    let ws_activities = if ws_activities_dir.is_dir() {
-        Some(ws_activities_dir)
-    } else {
-        None
-    };
-    let activity_store = activity_store_layered(
-        runtime_config.persistence.activity.path.clone(),
-        ws_activities,
-    )?;
-
-    let ws_jobs_dir = workspace_root.join("jobs");
-    let ws_jobs = if ws_jobs_dir.is_dir() {
-        Some(ws_jobs_dir)
-    } else {
-        None
-    };
-    let job_store = job_store_layered(
-        runtime_config.persistence.job.path.clone(),
-        ws_jobs,
-    )?;
+    let task_store = task_store_resolved(persistence.task.resolve())?;
+    let activity_store = activity_store_resolved(persistence.activity.resolve())?;
+    let job_store = job_store_resolved(persistence.job.resolve())?;
 
     build_context_common(
         store,
@@ -98,7 +80,7 @@ fn build_context_common(
     let tool_store = tool_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
 
-    let skill_root = runtime_config.persistence.skill.clone();
+    let skill_root = runtime_config.persistence.skill.resolve().into_single();
     let skill_catalog = SkillCatalog::new(skill_root);
     skill_catalog.ensure_layout()?;
 

@@ -82,19 +82,16 @@ impl JobStoreBackend for LayeredJobStore {
     }
 
     fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError> {
-        let ws_runs = self.workspace.list_job_runs_filtered(query)?;
-        let global_runs = self.global.list_job_runs_filtered(query)?;
-
-        let ws_ids: std::collections::HashSet<String> =
-            ws_runs.iter().map(|r| r.run_id.clone()).collect();
-
-        let mut merged = ws_runs;
-        for run in global_runs {
-            if !ws_ids.contains(&run.run_id) {
-                merged.push(run);
-            }
+        // Job runs are scoped to the store that owns the job — no cross-store merge.
+        if let Some(ref job_id) = query.job_id {
+            return self.owning_store(job_id)?.list_job_runs_filtered(query);
         }
-        Ok(merged)
+        // No job_id filter: query each store independently and concatenate.
+        // Runs stay scoped to their owning store; no dedup needed since
+        // run IDs are unique per store.
+        let mut runs = self.workspace.list_job_runs_filtered(query)?;
+        runs.extend(self.global.list_job_runs_filtered(query)?);
+        Ok(runs)
     }
 
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use orbit_store::{ResolvedScope, ScopeResolution};
 use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
@@ -33,13 +34,50 @@ impl EntityPersistenceConfig {
     }
 }
 
+/// Carries a global path, optional workspace path, and the resolution strategy
+/// for a single artifact type. Call `resolve()` to get the effective store path(s).
+#[derive(Debug, Clone)]
+pub(crate) struct ArtifactScope {
+    pub(crate) global_path: PathBuf,
+    pub(crate) workspace_path: Option<PathBuf>,
+    pub(crate) resolution: ScopeResolution,
+}
+
+impl ArtifactScope {
+    pub(crate) fn resolve(&self) -> ResolvedScope {
+        match self.resolution {
+            ScopeResolution::GlobalOnly => ResolvedScope::Single(self.global_path.clone()),
+            ScopeResolution::WorkspaceOnly => ResolvedScope::Single(
+                self.workspace_path
+                    .clone()
+                    .unwrap_or_else(|| self.global_path.clone()),
+            ),
+            ScopeResolution::WorkspaceReplaces => match &self.workspace_path {
+                Some(ws) if ws.is_dir() => ResolvedScope::Single(ws.clone()),
+                _ => ResolvedScope::Single(self.global_path.clone()),
+            },
+            ScopeResolution::MergeByKey => match &self.workspace_path {
+                Some(ws) if ws.is_dir() => ResolvedScope::Layered {
+                    global: self.global_path.clone(),
+                    workspace: ws.clone(),
+                },
+                _ => ResolvedScope::Single(self.global_path.clone()),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct PersistenceConfig {
-    pub(crate) job: EntityPersistenceConfig,
-    pub(crate) activity: EntityPersistenceConfig,
-    pub(crate) skill: PathBuf,
-    pub(crate) task: PathBuf,
-    pub(crate) audit: EntityPersistenceConfig,
+    pub(crate) job: ArtifactScope,
+    pub(crate) activity: ArtifactScope,
+    pub(crate) skill: ArtifactScope,
+    pub(crate) task: ArtifactScope,
+    pub(crate) audit: ArtifactScope,
+    // Format metadata for file-based entities (used for config parsing/validation and JSON output)
+    pub(crate) job_format: EntityPersistenceConfig,
+    pub(crate) activity_format: EntityPersistenceConfig,
+    pub(crate) audit_format: EntityPersistenceConfig,
 }
 
 impl PersistenceConfig {
@@ -47,32 +85,55 @@ impl PersistenceConfig {
         Self::default_for_roots(data_root, data_root)
     }
 
-    /// Two-root defaults: tasks in workspace, everything else in global.
-    /// Skills use workspace if `workspace_root/skills` exists, else global.
+    /// Two-root defaults. This is the **single source of truth** for which
+    /// artifact gets which scope resolution strategy.
     pub(crate) fn default_for_roots(global_root: &Path, workspace_root: &Path) -> Self {
-        let sqlite_default = global_root.join("orbit.db");
-        let ws_skills = workspace_root.join("skills");
-        let skill_path = if ws_skills.is_dir() {
-            ws_skills
+        let ws = if global_root == workspace_root {
+            None
         } else {
-            global_root.join("skills")
+            Some(workspace_root)
         };
+
         Self {
-            job: EntityPersistenceConfig {
+            task: ArtifactScope {
+                global_path: global_root.join("tasks"),
+                workspace_path: ws.map(|p| p.join("tasks")),
+                resolution: ScopeResolution::WorkspaceOnly,
+            },
+            activity: ArtifactScope {
+                global_path: global_root.join("activities"),
+                workspace_path: ws.map(|p| p.join("activities")),
+                resolution: ScopeResolution::MergeByKey,
+            },
+            job: ArtifactScope {
+                global_path: global_root.join("jobs"),
+                workspace_path: ws.map(|p| p.join("jobs")),
+                resolution: ScopeResolution::MergeByKey,
+            },
+            skill: ArtifactScope {
+                global_path: global_root.join("skills"),
+                workspace_path: ws.map(|p| p.join("skills")),
+                resolution: ScopeResolution::WorkspaceReplaces,
+            },
+            audit: ArtifactScope {
+                global_path: global_root.join("orbit.db"),
+                workspace_path: None,
+                resolution: ScopeResolution::GlobalOnly,
+            },
+            // Format metadata (used for config validation and JSON output)
+            job_format: EntityPersistenceConfig {
                 persistence_type: PersistenceType::File,
                 path: global_root.join("jobs"),
                 format: Some("yaml".to_string()),
             },
-            activity: EntityPersistenceConfig {
+            activity_format: EntityPersistenceConfig {
                 persistence_type: PersistenceType::File,
                 path: global_root.join("activities"),
                 format: Some("yaml".to_string()),
             },
-            skill: skill_path,
-            task: workspace_root.join("tasks"),
-            audit: EntityPersistenceConfig {
+            audit_format: EntityPersistenceConfig {
                 persistence_type: PersistenceType::Sqlite,
-                path: sqlite_default,
+                path: global_root.join("orbit.db"),
                 format: None,
             },
         }
@@ -100,53 +161,76 @@ impl PersistenceConfig {
             ));
         }
 
-        let skill = resolve_path_only_entity(
+        let skill_path = resolve_path_only_entity(
             raw.skill.as_ref().and_then(|v| v.persistence.as_ref()),
-            &defaults.skill,
+            &defaults.skill.global_path,
             config_root,
         )?;
 
-        let task = resolve_path_only_entity(
+        let task_path = resolve_path_only_entity(
             raw.task.as_ref().and_then(|v| v.persistence.as_ref()),
-            &defaults.task,
+            &defaults.task.global_path,
             config_root,
         )?;
 
+        let job_format = parse_configurable_entity(
+            "job",
+            raw.job.as_ref().and_then(|v| v.persistence.as_ref()),
+            &defaults.job_format,
+            false,
+            "yaml",
+            config_root,
+        )?;
+        let activity_format = parse_configurable_entity(
+            "activity",
+            raw.activity.as_ref().and_then(|v| v.persistence.as_ref()),
+            &defaults.activity_format,
+            false,
+            "yaml",
+            config_root,
+        )?;
+        let audit_format = parse_sqlite_only_entity(
+            "audit",
+            raw.audit.as_ref().and_then(|v| v.persistence.as_ref()),
+            &defaults.audit_format,
+            config_root,
+        )?;
+
+        // Rebuild scopes with config-overridden paths while preserving resolution strategies
         Ok(Self {
-            job: parse_configurable_entity(
-                "job",
-                raw.job.as_ref().and_then(|v| v.persistence.as_ref()),
-                &defaults.job,
-                false,
-                "yaml",
-                config_root,
-            )?,
-            activity: parse_configurable_entity(
-                "activity",
-                raw.activity.as_ref().and_then(|v| v.persistence.as_ref()),
-                &defaults.activity,
-                false,
-                "yaml",
-                config_root,
-            )?,
-            skill,
-            task,
-            audit: parse_sqlite_only_entity(
-                "audit",
-                raw.audit.as_ref().and_then(|v| v.persistence.as_ref()),
-                &defaults.audit,
-                config_root,
-            )?,
+            task: ArtifactScope {
+                global_path: task_path,
+                ..defaults.task
+            },
+            activity: ArtifactScope {
+                global_path: activity_format.path.clone(),
+                ..defaults.activity
+            },
+            job: ArtifactScope {
+                global_path: job_format.path.clone(),
+                ..defaults.job
+            },
+            skill: ArtifactScope {
+                global_path: skill_path,
+                ..defaults.skill
+            },
+            audit: ArtifactScope {
+                global_path: audit_format.path.clone(),
+                ..defaults.audit
+            },
+            job_format,
+            activity_format,
+            audit_format,
         })
     }
 
     pub(crate) fn as_json_value(&self) -> Value {
         json!({
-            "job": { "persistence": self.job.to_json_value() },
-            "activity": { "persistence": self.activity.to_json_value() },
-            "skill": { "path": self.skill.to_string_lossy() },
-            "task": { "path": self.task.to_string_lossy() },
-            "audit": { "persistence": self.audit.to_json_value() },
+            "job": { "persistence": self.job_format.to_json_value() },
+            "activity": { "persistence": self.activity_format.to_json_value() },
+            "skill": { "path": self.skill.global_path.to_string_lossy() },
+            "task": { "path": self.task.global_path.to_string_lossy() },
+            "audit": { "persistence": self.audit_format.to_json_value() },
         })
     }
 }
