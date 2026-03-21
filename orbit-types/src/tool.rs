@@ -36,8 +36,3 @@ pub struct ExecutionResult {
     pub output: Option<Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PolicyDecision {
-    Allow,
-    Deny { reason: String },
-}

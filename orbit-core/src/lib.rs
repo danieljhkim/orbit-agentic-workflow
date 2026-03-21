@@ -2,7 +2,6 @@ pub mod command;
 mod config;
 pub mod context;
 pub(crate) mod fs_utils;
-mod json_schema;
 mod paths;
 pub mod runtime;
 pub mod workspace_registry;

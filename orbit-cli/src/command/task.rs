@@ -813,7 +813,6 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "title": task.title,
         "description": task.description,
         "plan": task.plan,
-        "instructions": task.plan,
         "execution_summary": task.execution_summary,
         "context_files": task.context_files,
         "assigned_to": task.assigned_to,

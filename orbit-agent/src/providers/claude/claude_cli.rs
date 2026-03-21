@@ -1,5 +1,4 @@
 use crate::providers::common::render_prompt_with_embedded_envelope;
-use crate::types::AgentOperation;
 
 pub(crate) struct ClaudeCliTransport {
     model: Option<String>,
@@ -10,7 +9,9 @@ impl ClaudeCliTransport {
         Self { model }
     }
 
-    pub(crate) fn args(&self, _operation: &AgentOperation) -> Vec<String> {
+    // Claude is prompt-in-stdin; operation metadata is embedded in the envelope,
+    // so CLI args are identical for all operation types.
+    pub(crate) fn args(&self) -> Vec<String> {
         let mut args = vec![
             "-p".to_string(),
             "--permission-mode".to_string(),

@@ -249,6 +249,18 @@ pub trait RuntimeHost {
     ) -> Result<(), OrbitError>;
 }
 
+/// Aggregates all five sub-traits required at the top-level engine boundary.
+///
+/// All five sub-traits are always needed together because:
+/// - `ActivityExecutor::execute` takes `&dyn EngineHost` as a single dispatch target,
+///   allowing each executor implementation to use whatever sub-traits it needs.
+/// - `run_job_with_input` and `execute_single_attempt` call `executor.execute(host, ...)`,
+///   which requires the full `EngineHost` bound on the host value passed in.
+///
+/// Individual free functions (e.g. `automation::execute`, `agent::execute`) use narrower
+/// bounds where possible — `RuntimeHost + TaskHost`, `EnvironmentHost + AgentProtocolHost` —
+/// but the trait object boundary at `ActivityExecutor::execute` forces `EngineHost` at the
+/// top level.
 pub trait EngineHost:
     JobRunHost + TaskHost + AgentProtocolHost + EnvironmentHost + RuntimeHost
 {

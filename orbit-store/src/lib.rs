@@ -1,5 +1,6 @@
 pub mod backend;
 mod file;
+pub mod json_schema;
 pub mod sqlite;
 
 pub mod skill_store {
@@ -15,6 +16,7 @@ pub use backend::{
     ToolStoreBackend, activity_store_file, activity_store_resolved, audit_event_store_sqlite,
     job_store_file, job_store_resolved, task_store_file, task_store_resolved, tool_store_sqlite,
 };
+pub use json_schema::{validate_instance_against_schema, validate_schema_document};
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
 pub use sqlite::connection::{Store, StoreTx};
 

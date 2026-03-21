@@ -9,6 +9,7 @@ use orbit_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::backend::JobRunStepParams;
+use crate::file::fs_utils::write_atomic;
 
 #[derive(Clone)]
 pub(crate) struct JobFileStore {
@@ -750,22 +751,6 @@ fn parse_timestamp_from_job_id(job_id: &str) -> DateTime<Utc> {
     Utc::now()
 }
 
-fn write_atomic(path: &Path, content: &str) -> Result<(), OrbitError> {
-    let parent = path.parent().ok_or_else(|| {
-        OrbitError::Io(format!("cannot determine parent for '{}'", path.display()))
-    })?;
-    fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
-
-    let mut tmp = path.to_path_buf();
-    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
-    tmp.set_extension(format!("yaml.tmp.{nanos}"));
-    fs::write(&tmp, content).map_err(|e| OrbitError::Io(e.to_string()))?;
-    if let Err(err) = fs::rename(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(OrbitError::Io(err.to_string()));
-    }
-    Ok(())
-}
 
 fn is_yaml(path: &Path) -> bool {
     path.extension()
@@ -776,7 +761,7 @@ fn is_yaml(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use orbit_types::{JobRunState, JobScheduleState, JobStep, JobTargetType, OrbitError};
+    use orbit_types::{JobRunState, JobScheduleState, JobStep, OrbitError};
     use serde_json::json;
 
     use super::JobFileStore;

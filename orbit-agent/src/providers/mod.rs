@@ -11,6 +11,26 @@ pub(crate) use claude::ClaudeRuntime;
 pub(crate) use codex::CodexRuntime;
 pub(crate) use mock_agent::MockAgentRuntime;
 
+use crate::types::AgentResponse;
+
+/// Builds the `AgentResponse` for a provider, combining CLI args and stdin.
+/// All three runtimes share this same structure; only the provider differs.
+pub(crate) fn build_agent_response(
+    provider: AgentProvider,
+    command: String,
+    args: Vec<String>,
+    stdin: Vec<u8>,
+) -> AgentResponse {
+    AgentResponse {
+        runtime_key: provider.key(),
+        program: command,
+        args,
+        stdin,
+        stdout_schema_json: None,
+        required_env_vars: provider.required_env_vars(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentProvider {
     MockAgent,

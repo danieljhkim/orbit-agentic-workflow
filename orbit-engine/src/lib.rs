@@ -2,7 +2,6 @@ mod activity_runner;
 mod context;
 mod executor;
 mod job_runner;
-mod json_schema;
 mod template;
 
 pub use activity_runner::{

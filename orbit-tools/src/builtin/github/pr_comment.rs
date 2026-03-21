@@ -2,18 +2,13 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_DEFAULT_MS, check_exec_result, require_str};
 
 pub struct GithubPrCommentTool;
 
 pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
     let pr = super::require_pr(input)?;
-
-    let body = input
-        .get("body")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| OrbitError::InvalidInput("missing `body`".to_string()))?;
+    let body = require_str(input, "body")?;
 
     let mut args = vec![
         "pr".to_string(),
@@ -32,7 +27,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         program: "gh".to_string(),
         args,
         current_dir: None,
-        timeout_ms: Some(15_000),
+        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,
@@ -71,14 +66,7 @@ impl Tool for GithubPrCommentTool {
     fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(&input)?;
         let result = run_process(&req, &NoSandbox)?;
-
-        if !result.success {
-            return Err(OrbitError::Execution(format!(
-                "gh pr comment failed: {}",
-                result.stderr.trim()
-            )));
-        }
-
+        check_exec_result(&result, "gh pr comment")?;
         Ok(json!({
             "stdout": result.stdout,
             "stderr": result.stderr,

@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_SLOW_MS, check_exec_result, require_str};
 
 pub struct GithubPrCreateTool;
 
@@ -10,23 +10,9 @@ pub(super) fn build_exec_request(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
-    let title = input
-        .get("title")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| OrbitError::InvalidInput("missing `title`".to_string()))?;
-
-    let base = input
-        .get("base")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| OrbitError::InvalidInput("missing `base`".to_string()))?;
-
-    let head = input
-        .get("head")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| OrbitError::InvalidInput("missing `head`".to_string()))?;
+    let title = require_str(input, "title")?;
+    let base = require_str(input, "base")?;
+    let head = require_str(input, "head")?;
 
     let body = input.get("body").and_then(Value::as_str);
     let body_file = input.get("body_file").and_then(Value::as_str);
@@ -72,7 +58,7 @@ pub(super) fn build_exec_request(
         program: "gh".to_string(),
         args,
         current_dir: ctx.cwd.clone(),
-        timeout_ms: Some(30_000),
+        timeout_ms: Some(TIMEOUT_SLOW_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,
@@ -138,14 +124,7 @@ impl Tool for GithubPrCreateTool {
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(ctx, &input)?;
         let result = run_process(&req, &NoSandbox)?;
-
-        if !result.success {
-            return Err(OrbitError::Execution(format!(
-                "gh pr create failed: {}",
-                result.stderr.trim()
-            )));
-        }
-
+        check_exec_result(&result, "gh pr create")?;
         Ok(json!({
             "url": result.stdout.trim(),
             "stdout": result.stdout,

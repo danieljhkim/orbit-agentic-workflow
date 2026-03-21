@@ -8,6 +8,21 @@ use serde_json::{Map, Value};
 
 use orbit_types::{OrbitError, ToolSchema};
 
+/// Fast operation timeout (1 s). Used for local command resolution (e.g. `which`).
+pub const TIMEOUT_FAST_MS: u64 = 1_000;
+
+/// Default network operation timeout (15 s). Used for most GitHub API calls
+/// and Orbit CLI commands where a quick response is expected.
+pub const TIMEOUT_DEFAULT_MS: u64 = 15_000;
+
+/// Slow operation timeout (30 s). Used for git network operations and PR creation,
+/// which may involve larger payloads or slower remotes.
+pub const TIMEOUT_SLOW_MS: u64 = 30_000;
+
+/// Long operation timeout (60 s). Used for `gh pr checkout`, which clones or
+/// fetches a branch and may transfer significant data over the network.
+pub const TIMEOUT_LONG_MS: u64 = 60_000;
+
 pub use registry::ToolRegistry;
 
 #[derive(Debug, Clone, Default)]
@@ -24,6 +39,39 @@ pub struct ToolContext {
 pub trait Tool: Send + Sync {
     fn schema(&self) -> ToolSchema;
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError>;
+}
+
+/// Extract a non-empty string field from a tool input value.
+///
+/// Returns `Err(OrbitError::InvalidInput)` if the key is absent, not a string,
+/// or contains only whitespace. The returned string is trimmed.
+pub fn require_str(input: &Value, key: &str) -> Result<String, OrbitError> {
+    input
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| OrbitError::InvalidInput(format!("missing `{key}`")))
+}
+
+/// Assert that a process result succeeded, returning a descriptive error if not.
+///
+/// Use this instead of the repeated `if !result.success { return Err(...) }` pattern.
+/// The `label` should be the command name (e.g. `"gh pr comment"`) and is included
+/// in the error message for diagnostics.
+pub fn check_exec_result(
+    result: &orbit_types::ExecutionResult,
+    label: &str,
+) -> Result<(), OrbitError> {
+    if result.success {
+        Ok(())
+    } else {
+        Err(OrbitError::Execution(format!(
+            "{label} failed: {}",
+            result.stderr.trim()
+        )))
+    }
 }
 
 pub fn map_input_from_pairs(pairs: impl IntoIterator<Item = (String, String)>) -> Value {

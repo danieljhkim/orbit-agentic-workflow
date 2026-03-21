@@ -49,7 +49,15 @@ impl RuntimeConfig {
     }
 
     /// Load config with workspace-replaces-global semantics for execution/approval/user.
+    ///
     /// Persistence paths are always derived from the two roots (not configurable).
+    ///
+    /// **Workspace config REPLACES global config** — this is intentional and
+    /// different from a merge/layer model. When `workspace_root/config.toml`
+    /// exists, it is used exclusively; the `global_root/config.toml` is ignored.
+    /// Rationale: per-repo agent behaviour (sandbox mode, approval policy,
+    /// allowed env vars) must be fully deterministic and cannot be accidentally
+    /// influenced by whatever happens to be in the user's global config.
     /// If workspace_root/config.toml exists, it replaces global config entirely.
     /// Otherwise falls back to global_root/config.toml.
     pub(crate) fn load_layered(

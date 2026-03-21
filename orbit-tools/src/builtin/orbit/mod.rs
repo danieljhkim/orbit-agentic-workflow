@@ -16,9 +16,8 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam};
 use serde_json::Value;
 
-use crate::{ToolContext, ToolRegistry};
+use crate::{ToolContext, ToolRegistry, TIMEOUT_DEFAULT_MS};
 
-const ORBIT_TIMEOUT_MS: u64 = 15_000;
 const ORBIT_TASK_ACTOR_KIND: &str = "ORBIT_TASK_ACTOR_KIND";
 
 pub fn register(registry: &mut ToolRegistry) {
@@ -43,7 +42,7 @@ pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRe
         program: "orbit".to_string(),
         args,
         current_dir: ctx.cwd.clone(),
-        timeout_ms: Some(ORBIT_TIMEOUT_MS),
+        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::ClearAndSet(env.into_iter().collect()),
         debug: false,

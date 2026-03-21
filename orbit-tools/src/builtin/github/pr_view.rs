@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_DEFAULT_MS, check_exec_result};
 
 pub struct GithubPrViewTool;
 
@@ -29,7 +29,7 @@ pub(super) fn build_exec_request(
         program: "gh".to_string(),
         args,
         current_dir: ctx.cwd.clone(),
-        timeout_ms: Some(15_000),
+        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
         stdin_mode: StdinMode::Null,
         environment_mode: EnvironmentMode::Inherit,
         debug: false,
@@ -62,13 +62,7 @@ impl Tool for GithubPrViewTool {
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(ctx, &input)?;
         let result = run_process(&req, &NoSandbox)?;
-
-        if !result.success {
-            return Err(OrbitError::Execution(format!(
-                "gh pr view failed: {}",
-                result.stderr.trim()
-            )));
-        }
+        check_exec_result(&result, "gh pr view")?;
 
         let pr: Value = serde_json::from_str(&result.stdout).map_err(|e| {
             OrbitError::Execution(format!("failed to parse gh pr view output: {e}"))

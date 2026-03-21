@@ -36,6 +36,13 @@ impl FromStr for AuditEventStatus {
     }
 }
 
+/// A comprehensive, persistent audit trail record for a CLI command execution.
+/// Stored in SQLite and exposed via `orbit audit list` / `orbit audit show`.
+/// Captures execution context including timing, exit code, role, tool name, and
+/// truncated stdout/stderr for post-hoc review.
+///
+/// Contrast with [`orbit_types::Audit`], which is the lightweight in-memory
+/// event log entry produced by the runtime for internal observability.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditEvent {
     pub id: i64,

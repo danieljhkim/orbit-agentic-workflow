@@ -3,7 +3,7 @@ use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::builtin::git::{require_relative_file_paths, require_repo_root};
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_SLOW_MS};
 
 pub struct GitStagePathsTool;
 
@@ -47,7 +47,7 @@ impl Tool for GitStagePathsTool {
                 program: "git".to_string(),
                 args,
                 current_dir: None,
-                timeout_ms: Some(30_000),
+                timeout_ms: Some(TIMEOUT_SLOW_MS),
                 stdin_mode: StdinMode::Null,
                 environment_mode: EnvironmentMode::Inherit,
                 debug: false,

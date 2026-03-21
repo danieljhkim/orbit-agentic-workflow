@@ -1,5 +1,4 @@
 use crate::providers::common::render_prompt_with_embedded_envelope;
-use crate::types::AgentOperation;
 
 pub(crate) struct CodexCliTransport {
     model: Option<String>,
@@ -20,7 +19,9 @@ impl CodexCliTransport {
         }
     }
 
-    pub(crate) fn args(&self, _operation: &AgentOperation) -> Vec<String> {
+    // Codex is prompt-in-stdin; operation metadata is embedded in the envelope,
+    // so CLI args are identical for all operation types.
+    pub(crate) fn args(&self) -> Vec<String> {
         let mut args = Vec::new();
         if let Some(approval_policy) = &self.approval_policy {
             args.push("--ask-for-approval".to_string());

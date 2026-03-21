@@ -3,7 +3,7 @@ use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::builtin::git::require_repo_root;
-use crate::{Tool, ToolContext};
+use crate::{Tool, ToolContext, TIMEOUT_LONG_MS};
 
 pub struct GitPushTool;
 
@@ -62,7 +62,7 @@ impl Tool for GitPushTool {
                     branch.to_string(),
                 ],
                 current_dir: None,
-                timeout_ms: Some(60_000),
+                timeout_ms: Some(TIMEOUT_LONG_MS),
                 stdin_mode: StdinMode::Null,
                 environment_mode: EnvironmentMode::Inherit,
                 debug: false,

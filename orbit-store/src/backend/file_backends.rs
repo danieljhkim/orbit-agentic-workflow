@@ -8,9 +8,9 @@ use super::contracts::{
     JobRunStepParams, JobStoreBackend, JobUpdateParams, TaskCreateParams, TaskStoreBackend,
     TaskUpdateParams,
 };
-use crate::file::activity_store::{ActivityFileStore, FileWorkInsert};
+use crate::file::activity_store::ActivityFileStore;
 use crate::file::job_store::JobFileStore;
-use crate::file::task_store::{FileTaskInsert, FileTaskUpdate, TaskFileStore};
+use crate::file::task_store::{FileTaskInsert, TaskFileStore};
 
 impl TaskStoreBackend for TaskFileStore {
     fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
@@ -56,31 +56,7 @@ impl TaskStoreBackend for TaskFileStore {
     }
 
     fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
-        self.update_task(
-            id,
-            &FileTaskUpdate {
-                actor: params.actor,
-                title: params.title,
-                description: params.description,
-                plan: params.plan,
-                execution_summary: params.execution_summary,
-                context_files: params.context_files,
-                workspace_path: params.workspace_path,
-                repo_root: params.repo_root,
-                assigned_to: params.assigned_to,
-                created_by: params.created_by,
-                status: params.status,
-                priority: params.priority,
-                complexity: params.complexity,
-                task_type: params.task_type,
-                pr_number: params.pr_number,
-                proposed_by: params.proposed_by,
-                status_event: params.status_event,
-                status_note: params.status_note,
-                append_history: params.append_history,
-                append_comments: params.append_comments,
-            },
-        )
+        self.update_task(id, &params)
     }
 
     fn delete_task(&self, id: &str) -> Result<bool, OrbitError> {
@@ -90,16 +66,7 @@ impl TaskStoreBackend for TaskFileStore {
 
 impl ActivityStoreBackend for ActivityFileStore {
     fn add_activity(&self, params: ActivityCreateParams) -> Result<Activity, OrbitError> {
-        self.insert_work(&FileWorkInsert {
-            id: params.id,
-            spec_type: params.spec_type,
-            description: params.description,
-            input_schema_json: params.input_schema_json,
-            output_schema_json: params.output_schema_json,
-            spec_config: params.spec_config,
-            workspace_path: params.workspace_path,
-            created_by: params.created_by,
-        })
+        self.insert_work(&params)
     }
 
     fn list_activities(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError> {

@@ -9,6 +9,9 @@ use orbit_types::{
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as YamlValue};
 
+use crate::backend::TaskUpdateParams;
+use crate::file::fs_utils::write_atomic;
+
 const TASK_DOC_FILE_NAME: &str = "task.yaml";
 const PLAN_FILE_NAME: &str = "plan.md";
 const EXECUTION_SUMMARY_FILE_NAME: &str = "execution-summary.md";
@@ -39,30 +42,6 @@ pub(crate) struct FileTaskInsert {
     pub pr_number: Option<String>,
     pub proposed_by: Option<String>,
     pub comments: Vec<TaskComment>,
-}
-
-#[derive(Default, Clone)]
-pub(crate) struct FileTaskUpdate {
-    pub actor: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub plan: Option<String>,
-    pub execution_summary: Option<String>,
-    pub context_files: Option<Vec<String>>,
-    pub workspace_path: Option<Option<String>>,
-    pub repo_root: Option<Option<String>>,
-    pub assigned_to: Option<Option<String>>,
-    pub created_by: Option<Option<String>>,
-    pub status: Option<TaskStatus>,
-    pub priority: Option<TaskPriority>,
-    pub complexity: Option<TaskComplexity>,
-    pub task_type: Option<TaskType>,
-    pub pr_number: Option<Option<String>>,
-    pub proposed_by: Option<Option<String>>,
-    pub status_event: Option<String>,
-    pub status_note: Option<String>,
-    pub append_history: Vec<TaskHistoryEntry>,
-    pub append_comments: Vec<TaskComment>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,7 +290,7 @@ impl TaskFileStore {
     pub(crate) fn update_task(
         &self,
         id: &str,
-        fields: &FileTaskUpdate,
+        fields: &TaskUpdateParams,
     ) -> Result<Task, OrbitError> {
         if fields.actor.trim().is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -474,12 +453,12 @@ impl TaskFileStore {
         fs::create_dir_all(self.artifacts_dir(task_dir))
             .map_err(|e| OrbitError::Io(e.to_string()))?;
 
-        atomic_write_string(
+        write_atomic(
             &self.task_doc_path(task_dir),
             &serialize_task_doc_yaml(&bundle.doc)?,
         )?;
-        atomic_write_string(&self.plan_path(task_dir), &bundle.plan)?;
-        atomic_write_string(
+        write_atomic(&self.plan_path(task_dir), &bundle.plan)?;
+        write_atomic(
             &self.execution_summary_path(task_dir),
             &bundle.execution_summary,
         )?;
@@ -635,25 +614,6 @@ fn yaml_field(key: &str, value: &impl Serialize) -> Result<String, OrbitError> {
     serde_yaml::to_string(&mapping).map_err(|e| OrbitError::Store(e.to_string()))
 }
 
-fn atomic_write_string(path: &Path, contents: &str) -> Result<(), OrbitError> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| OrbitError::Io(format!("path {} has no parent", path.display())))?;
-    fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
-
-    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| OrbitError::Io(format!("path {} has no file name", path.display())))?;
-    let tmp_path = parent.join(format!(".{file_name}.tmp.{nanos}"));
-    fs::write(&tmp_path, contents).map_err(|e| OrbitError::Io(e.to_string()))?;
-    if let Err(err) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(&tmp_path);
-        return Err(OrbitError::Io(err.to_string()));
-    }
-    Ok(())
-}
 
 fn read_required_text(path: &Path, label: &str) -> Result<String, OrbitError> {
     fs::read_to_string(path).map_err(|e| bundle_read_error(path, label, e))
@@ -696,8 +656,9 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
 mod tests {
     use std::fs;
 
-    use super::{ARTIFACTS_DIR_NAME, EXECUTION_SUMMARY_FILE_NAME, FileTaskInsert, FileTaskUpdate};
+    use super::{ARTIFACTS_DIR_NAME, EXECUTION_SUMMARY_FILE_NAME, FileTaskInsert};
     use super::{PLAN_FILE_NAME, TASK_DOC_FILE_NAME, TaskFileStore};
+    use crate::backend::TaskUpdateParams;
     use chrono::Utc;
     use orbit_types::{TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType};
     use tempfile::tempdir;
@@ -776,7 +737,7 @@ mod tests {
         let updated = store
             .update_task(
                 &task.id,
-                &FileTaskUpdate {
+                &TaskUpdateParams {
                     actor: "Codex".to_string(),
                     description: Some("Updated description".to_string()),
                     plan: Some("Updated plan".to_string()),
@@ -882,7 +843,7 @@ mod tests {
         let updated = store
             .update_task(
                 &task.id,
-                &FileTaskUpdate {
+                &TaskUpdateParams {
                     actor: "daniel".to_string(),
                     status: Some(TaskStatus::InProgress),
                     ..Default::default()
@@ -1111,7 +1072,7 @@ mod tests {
         let updated = store
             .update_task(
                 &task.id,
-                &FileTaskUpdate {
+                &TaskUpdateParams {
                     actor: "Codex".to_string(),
                     append_comments: vec![TaskComment {
                         at: Utc::now(),

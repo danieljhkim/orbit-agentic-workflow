@@ -1,4 +1,4 @@
-use crate::providers::AgentProvider;
+use crate::providers::{AgentProvider, build_agent_response};
 use crate::providers::codex::codex_cli::CodexCliTransport;
 use crate::runtime::AgentRuntime;
 use crate::types::{AgentRequest, AgentResponse};
@@ -25,16 +25,15 @@ impl CodexRuntime {
 
 impl AgentRuntime for CodexRuntime {
     fn invoke(&self, req: AgentRequest) -> Result<AgentResponse, OrbitError> {
-        Ok(AgentResponse {
-            runtime_key: AgentProvider::Codex.key(),
-            program: self.command.clone(),
-            args: self.cli.args(&req.operation),
-            stdin: self.cli.stdin(&req.envelope_json),
-            // Codex now rejects Orbit's generic envelope schema because open-ended
-            // object branches must be closed with additionalProperties=false.
-            // Orbit still validates the returned JSON envelope after execution.
-            stdout_schema_json: None,
-            required_env_vars: AgentProvider::Codex.required_env_vars(),
-        })
+        // Note: stdout_schema_json is intentionally None — Codex rejects Orbit's
+        // generic envelope schema because open-ended object branches must be closed
+        // with additionalProperties=false. Orbit validates the returned envelope
+        // after execution instead.
+        Ok(build_agent_response(
+            AgentProvider::Codex,
+            self.command.clone(),
+            self.cli.args(),
+            self.cli.stdin(&req.envelope_json),
+        ))
     }
 }
