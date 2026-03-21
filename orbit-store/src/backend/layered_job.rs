@@ -75,20 +75,21 @@ impl JobStoreBackend for LayeredJobStore {
     }
 
     fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.owning_store(job_id)?.list_job_runs(job_id)
+        // Runs live in workspace; fall back to global for legacy runs.
+        let ws_runs = self.workspace.list_job_runs(job_id)?;
+        if !ws_runs.is_empty() {
+            return Ok(ws_runs);
+        }
+        self.global.list_job_runs(job_id)
     }
 
     fn list_job_runs_filtered(&self, query: &JobRunQuery) -> Result<Vec<JobRun>, OrbitError> {
-        // Job runs are scoped to the store that owns the job — no cross-store merge.
-        if let Some(ref job_id) = query.job_id {
-            return self.owning_store(job_id)?.list_job_runs_filtered(query);
+        // Runs live in workspace. Check workspace first, fall back to global.
+        let ws_runs = self.workspace.list_job_runs_filtered(query)?;
+        if !ws_runs.is_empty() {
+            return Ok(ws_runs);
         }
-        // No job_id filter: query each store independently and concatenate.
-        // Runs stay scoped to their owning store; no dedup needed since
-        // run IDs are unique per store.
-        let mut runs = self.workspace.list_job_runs_filtered(query)?;
-        runs.extend(self.global.list_job_runs_filtered(query)?);
-        Ok(runs)
+        self.global.list_job_runs_filtered(query)
     }
 
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
@@ -99,8 +100,12 @@ impl JobStoreBackend for LayeredJobStore {
     }
 
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        self.owning_store(job_id)?
-            .list_pending_or_running_job_runs(job_id)
+        // Runs live in workspace. Check workspace first, fall back to global.
+        let ws_runs = self.workspace.list_pending_or_running_job_runs(job_id)?;
+        if !ws_runs.is_empty() {
+            return Ok(ws_runs);
+        }
+        self.global.list_pending_or_running_job_runs(job_id)
     }
 
     fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError> {
@@ -117,8 +122,9 @@ impl JobStoreBackend for LayeredJobStore {
         attempt: u32,
         scheduled_at: DateTime<Utc>,
     ) -> Result<JobRun, OrbitError> {
-        self.owning_store(job_id)?
-            .insert_job_run(job_id, attempt, scheduled_at)
+        // Runs are always created in the workspace store, regardless of
+        // where the job definition lives.
+        self.workspace.insert_job_run(job_id, attempt, scheduled_at)
     }
 
     fn mark_job_run_running(

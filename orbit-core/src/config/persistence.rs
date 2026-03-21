@@ -26,11 +26,11 @@ impl ArtifactScope {
                 _ => ResolvedScope::Single(self.global_path.clone()),
             },
             ScopeResolution::MergeByKey => match &self.workspace_path {
-                Some(ws) if ws.is_dir() => ResolvedScope::Layered {
+                Some(ws) => ResolvedScope::Layered {
                     global: self.global_path.clone(),
                     workspace: ws.clone(),
                 },
-                _ => ResolvedScope::Single(self.global_path.clone()),
+                None => ResolvedScope::Single(self.global_path.clone()),
             },
         }
     }

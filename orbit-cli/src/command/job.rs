@@ -125,7 +125,6 @@ impl Execute for JobListArgs {
                 "JOB_ID",
                 "TARGET_TYPE",
                 "TARGET_ID",
-                "MODEL",
                 "STATE",
                 "LAST_RUN",
             ]);
@@ -138,11 +137,6 @@ impl Execute for JobListArgs {
                     Cell::new(
                         first
                             .map(|s| s.target_id.clone())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                    Cell::new(
-                        first
-                            .and_then(|s| s.model.clone())
                             .unwrap_or_else(|| "-".to_string()),
                     ),
                     crate::output::color::job_state_color_cell(&job.state.to_string()),
