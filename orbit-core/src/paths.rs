@@ -55,18 +55,6 @@ pub(crate) fn normalize_path(raw: Option<String>) -> Result<Option<String>, Orbi
     Ok(Some(canonical.to_string_lossy().to_string()))
 }
 
-pub(crate) fn resolve_config_path(
-    raw: Option<&str>,
-    default: &Path,
-    base_dir: &Path,
-    field_name: &str,
-) -> Result<PathBuf, OrbitError> {
-    let Some(raw) = raw else {
-        return Ok(default.to_path_buf());
-    };
-    resolve_path_value(raw, base_dir, field_name)
-}
-
 pub(crate) fn resolve_path_value(
     raw: &str,
     base_dir: &Path,

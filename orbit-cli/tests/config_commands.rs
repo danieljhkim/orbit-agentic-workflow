@@ -61,25 +61,9 @@ fn config_show_json_bootstraps_cwd_orbit_when_missing() {
         value["task"]["approval"]["required_for_agent"],
         serde_json::json!(true)
     );
-    assert_eq!(
-        value["persistence"]["job"]["persistence"]["type"],
-        serde_json::json!("file")
-    );
-    assert_eq!(
-        value["persistence"]["activity"]["persistence"]["type"],
-        serde_json::json!("file")
-    );
-    assert_eq!(
-        value["persistence"]["audit"]["persistence"]["type"],
-        serde_json::json!("sqlite")
-    );
-    assert!(
-        value["persistence"]
-            .as_object()
-            .expect("persistence object")
-            .get("watch")
-            .is_none()
-    );
+    // Persistence paths are derived from roots, not config.toml
+    assert!(value["persistence"]["task"]["path"].is_string());
+    assert!(value["persistence"]["audit"]["path"].is_string());
 
     assert!(dir.path().join(".orbit").join("config.toml").exists());
     assert!(
@@ -94,6 +78,10 @@ fn config_show_json_bootstraps_cwd_orbit_when_missing() {
         .expect("read config");
     assert!(!config_raw.contains("[watch]"));
     assert!(config_raw.contains("[execution.codex]"));
+    // Persistence sections no longer in config.toml
+    assert!(!config_raw.contains("[job]"));
+    assert!(!config_raw.contains("[activity]"));
+    assert!(!config_raw.contains("[audit]"));
 }
 
 #[test]
@@ -103,7 +91,7 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
     std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
     std::fs::write(
         orbit_dir.join("config.toml"),
-        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[execution.codex]\nsandbox = \"danger-full-access\"\napproval_policy = \"on-request\"\n\n[task.approval]\nrequired_for_agent = true\n\n[job]\npersistence = { type = \"file\", path = \"./custom-jobs\", format = \"yaml\" }\n",
+        "[execution.env]\ninherit = true\npass = [\"PATH\",\"HOME\",\"PATH\"]\n\n[execution.codex]\nsandbox = \"danger-full-access\"\napproval_policy = \"on-request\"\n\n[task.approval]\nrequired_for_agent = true\n",
     )
     .expect("write config");
 
@@ -118,13 +106,6 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
 
     assert_eq!(value["exists"], true);
     assert_eq!(value["root"], value["selected_root"]);
-    assert!(
-        value
-            .as_object()
-            .expect("config object")
-            .get("home")
-            .is_none()
-    );
     assert_eq!(value["execution"]["env"]["inherit"], true);
     assert_eq!(
         value["execution"]["env"]["pass"],
@@ -142,59 +123,8 @@ fn config_show_json_reads_and_normalizes_runtime_file() {
         value["task"]["approval"]["required_for_agent"],
         serde_json::json!(true)
     );
-    assert_eq!(
-        value["persistence"]["job"]["persistence"]["type"],
-        serde_json::json!("file")
-    );
-    let reported_jobs_path = std::fs::canonicalize(
-        value["persistence"]["job"]["persistence"]["path"]
-            .as_str()
-            .expect("job persistence path"),
-    )
-    .expect("canonical reported jobs path");
-    let expected_jobs_path =
-        std::fs::canonicalize(orbit_dir.join("custom-jobs")).expect("canonical expected jobs path");
-    assert_eq!(reported_jobs_path, expected_jobs_path);
-}
-
-#[test]
-fn config_show_rejects_sqlite_jobs() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let orbit_dir = dir.path().join(".orbit");
-    std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
-    std::fs::write(
-        orbit_dir.join("config.toml"),
-        "[job]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
-    )
-    .expect("write config");
-
-    orbit_in(dir.path())
-        .args(["config", "show", "--json"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "job.persistence.type only supports 'file'",
-        ));
-}
-
-#[test]
-fn config_show_rejects_sqlite_activities() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let orbit_dir = dir.path().join(".orbit");
-    std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
-    std::fs::write(
-        orbit_dir.join("config.toml"),
-        "[activity]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
-    )
-    .expect("write config");
-
-    orbit_in(dir.path())
-        .args(["config", "show", "--json"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "activity.persistence.type only supports 'file'",
-        ));
+    // Persistence is derived from roots
+    assert!(value["persistence"]["task"]["path"].is_string());
 }
 
 #[test]
@@ -290,11 +220,8 @@ fn config_show_rejects_legacy_watch_section() {
     let dir = tempfile::tempdir().expect("tempdir");
     let orbit_dir = dir.path().join(".orbit");
     std::fs::create_dir_all(&orbit_dir).expect("create orbit dir");
-    std::fs::write(
-        orbit_dir.join("config.toml"),
-        "[watch]\npersistence = { type = \"sqlite\", path = \"./.orbit/orbit.db\" }\n",
-    )
-    .expect("write config");
+    std::fs::write(orbit_dir.join("config.toml"), "[watch]\nfoo = \"bar\"\n")
+        .expect("write config");
 
     orbit_in(dir.path())
         .args(["config", "show", "--json"])

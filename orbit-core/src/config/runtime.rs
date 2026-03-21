@@ -48,8 +48,9 @@ impl RuntimeConfig {
         Self::load_layered(data_root, data_root)
     }
 
-    /// Load config with workspace-replaces-global semantics.
-    /// If workspace_root/config.toml exists, it replaces global entirely.
+    /// Load config with workspace-replaces-global semantics for execution/approval/user.
+    /// Persistence paths are always derived from the two roots (not configurable).
+    /// If workspace_root/config.toml exists, it replaces global config entirely.
     /// Otherwise falls back to global_root/config.toml.
     pub(crate) fn load_layered(
         global_root: &Path,
@@ -58,14 +59,16 @@ impl RuntimeConfig {
         let ws_config = workspace_root.join("config.toml");
         let global_config = global_root.join("config.toml");
 
+        let persistence = PersistenceConfig::default_for_roots(global_root, workspace_root);
+
         // Workspace config replaces global entirely if present
-        let (config_path, config_root) = if ws_config.exists() && workspace_root != global_root {
-            (ws_config, workspace_root)
+        let config_path = if ws_config.exists() && workspace_root != global_root {
+            ws_config
         } else if global_config.exists() {
-            (global_config, global_root)
+            global_config
         } else {
             return Ok(Self {
-                persistence: PersistenceConfig::default_for_roots(global_root, workspace_root),
+                persistence,
                 ..Self::default_for_data_root(global_root)
             });
         };
@@ -83,6 +86,13 @@ impl RuntimeConfig {
             ))
         })?;
 
+        if parsed.watch.is_some() {
+            return Err(OrbitError::InvalidInput(
+                "watch config is no longer supported; remove the [watch] section from config.toml"
+                    .to_string(),
+            ));
+        }
+
         Ok(Self {
             execution_env: ExecutionEnvPolicy::from_raw(
                 parsed.execution.clone().and_then(|v| v.env),
@@ -90,12 +100,7 @@ impl RuntimeConfig {
             codex_execution: CodexExecutionPolicy::from_raw(
                 parsed.execution.clone().and_then(|v| v.codex),
             )?,
-            persistence: PersistenceConfig::from_raw_layered(
-                global_root,
-                workspace_root,
-                config_root,
-                &parsed,
-            )?,
+            persistence,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
             user_name: parse_user_name(parsed.user.as_ref())?,
         })
