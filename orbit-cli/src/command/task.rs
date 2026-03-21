@@ -1,8 +1,6 @@
 use clap::{Args, Subcommand};
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
-use orbit_core::{
-    OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskStatus, TaskType,
-};
+use orbit_core::{OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskStatus, TaskType};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -88,9 +86,9 @@ pub struct TaskAddArgs {
     /// Comma-separated context file paths
     #[arg(long, default_value = "")]
     pub context: String,
-    /// Repository workspace path
+    /// Working directory for this task
     #[arg(long)]
-    pub workspace: String,
+    pub work_dir: String,
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
@@ -149,7 +147,7 @@ impl Execute for TaskAddArgs {
             plan,
             comment: self.comment,
             context_files: parse_context_csv(&self.context),
-            workspace_path: Some(self.workspace),
+            workspace_path: Some(self.work_dir),
             priority,
             complexity: self.complexity,
             task_type,
@@ -222,8 +220,13 @@ impl Execute for TaskTemplatesListArgs {
             crate::output::json::print_pretty(&Value::Array(json_templates))
         } else {
             use comfy_table::Cell;
-            let mut table =
-                crate::output::table::build_table(&["NAME", "TYPE", "PRIORITY", "SOURCE", "DESCRIPTION"]);
+            let mut table = crate::output::table::build_table(&[
+                "NAME",
+                "TYPE",
+                "PRIORITY",
+                "SOURCE",
+                "DESCRIPTION",
+            ]);
             for t in &templates {
                 let source = if t.builtin { "built-in" } else { "user" };
                 table.add_row(vec![
@@ -580,7 +583,9 @@ impl Execute for TaskApproveArgs {
                 }
                 print!("Proceed? [y/N] ");
                 use std::io::Write;
-                std::io::stdout().flush().map_err(|e| OrbitError::Io(e.to_string()))?;
+                std::io::stdout()
+                    .flush()
+                    .map_err(|e| OrbitError::Io(e.to_string()))?;
                 let mut input = String::new();
                 std::io::stdin()
                     .read_line(&mut input)
@@ -656,7 +661,9 @@ impl Execute for TaskRejectArgs {
                 }
                 print!("Proceed? [y/N] ");
                 use std::io::Write;
-                std::io::stdout().flush().map_err(|e| OrbitError::Io(e.to_string()))?;
+                std::io::stdout()
+                    .flush()
+                    .map_err(|e| OrbitError::Io(e.to_string()))?;
                 let mut input = String::new();
                 std::io::stdin()
                     .read_line(&mut input)

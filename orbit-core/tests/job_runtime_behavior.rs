@@ -8,9 +8,7 @@ use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams};
 use orbit_core::command::job::JobAddParams;
 use orbit_core::command::job_run::JobRunListParams;
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
-use orbit_types::{
-    JobRunState, JobStep, OrbitError, TaskPriority, TaskStatus, TaskType,
-};
+use orbit_types::{JobRunState, JobStep, OrbitError, TaskPriority, TaskStatus, TaskType};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -4568,7 +4566,11 @@ fn failed_job_run_auto_creates_task_and_deduplicates() {
     assert_eq!(run2.state, JobRunState::Failed);
 
     let tasks = runtime.list_tasks().expect("list tasks after second run");
-    assert_eq!(tasks.len(), 1, "no duplicate failure task should be created");
+    assert_eq!(
+        tasks.len(),
+        1,
+        "no duplicate failure task should be created"
+    );
 }
 
 #[test]

@@ -30,7 +30,7 @@ fn add_task(dir: &Path, title: &str) -> String {
             "test description",
             "--plan",
             "test plan",
-            "--workspace",
+            "--work-dir",
             &workspace,
         ])
         .assert()
@@ -59,7 +59,7 @@ fn add_task_with_comment(dir: &Path, title: &str, comment: &str) -> String {
             "test plan",
             "--comment",
             comment,
-            "--workspace",
+            "--work-dir",
             &workspace,
         ])
         .assert()
@@ -87,7 +87,7 @@ fn add_agent_task(dir: &Path, title: &str) -> String {
             "test description",
             "--plan",
             "test plan",
-            "--workspace",
+            "--work-dir",
             &workspace,
         ])
         .assert()
@@ -144,7 +144,7 @@ fn task_add_json_returns_task_object() {
             "json description",
             "--plan",
             "json plan",
-            "--workspace",
+            "--work-dir",
             &workspace,
             "--json",
         ])
@@ -181,7 +181,7 @@ fn task_add_json_includes_complexity_when_provided() {
             "json description",
             "--plan",
             "json plan",
-            "--workspace",
+            "--work-dir",
             &workspace,
             "--complexity",
             "hard",
@@ -711,7 +711,7 @@ fn task_workspace_is_normalized_on_add() {
             "workspace description",
             "--instructions",
             "workspace plan",
-            "--workspace",
+            "--work-dir",
             workspace.to_string_lossy().as_ref(),
         ])
         .assert()
@@ -1583,7 +1583,15 @@ fn task_reject_multi_id_rejects_all() {
     let id2 = add_agent_task(dir.path(), "bulk-reject-2");
 
     let output = orbit_in(dir.path())
-        .args(["task", "reject", &id1, &id2, "--note", "out of scope", "--json"])
+        .args([
+            "task",
+            "reject",
+            &id1,
+            &id2,
+            "--note",
+            "out of scope",
+            "--json",
+        ])
         .assert()
         .success()
         .get_output()

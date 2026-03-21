@@ -164,12 +164,8 @@ fn execute_activity_with_retries<H: EngineHost>(
         if final_state != JobRunState::Success
             && let Some((ref error_code, ref error_message)) = last_failure
         {
-            let _ = host.maybe_create_failure_task(
-                &job.job_id,
-                &run.run_id,
-                error_code,
-                error_message,
-            );
+            let _ =
+                host.maybe_create_failure_task(&job.job_id, &run.run_id, error_code, error_message);
         }
 
         if last_protocol_violation {
@@ -231,9 +227,9 @@ pub fn recover_stale_active_run_for_job<H: JobRunHost + RuntimeHost>(
                 "orbit: abandoning stale run '{}' (owner pid {} is no longer alive)",
                 active_run.run_id, pid
             );
-            let duration_ms = active_run.started_at.map(|started| {
-                now.signed_duration_since(started).num_milliseconds().max(0) as u64
-            });
+            let duration_ms = active_run
+                .started_at
+                .map(|started| now.signed_duration_since(started).num_milliseconds().max(0) as u64);
             if let Some(first_step) = job.steps.first() {
                 let _ = host.complete_job_run_step(
                     &active_run.run_id,

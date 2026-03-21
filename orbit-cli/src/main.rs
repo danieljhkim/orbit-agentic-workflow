@@ -6,21 +6,39 @@ mod parse;
 use clap::Parser;
 use orbit_core::OrbitRuntime;
 
+use crate::command::workspace::{WorkspaceCommand, WorkspaceSubcommand};
 use crate::command::{Commands, Execute, init::InitCommand};
 
 fn main() {
     let cli = command::Cli::parse();
     let root_override = cli.root.clone();
+    let workspace_override = cli.workspace.clone();
 
-    if let Commands::Init(cmd) = cli.command {
-        if let Err(err) = execute_init_command(cmd, root_override.as_deref()) {
-            eprintln!("error: {err}");
-            std::process::exit(1);
+    // Commands that run without a pre-existing runtime
+    match cli.command {
+        Commands::Init(cmd) => {
+            if let Err(err) = execute_init_command(cmd, root_override.as_deref()) {
+                eprintln!("error: {err}");
+                std::process::exit(1);
+            }
+            return;
         }
-        return;
+        Commands::Workspace(WorkspaceCommand {
+            command: WorkspaceSubcommand::Init(args),
+        }) => {
+            if let Err(err) = args.execute_without_runtime() {
+                eprintln!("error: {err}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        _ => {}
     }
 
-    let runtime = match OrbitRuntime::initialize_with_root_override(cli.root.as_deref()) {
+    let runtime = match OrbitRuntime::initialize_with_overrides(
+        root_override.as_deref(),
+        workspace_override.as_deref(),
+    ) {
         Ok(runtime) => runtime,
         Err(err) => {
             eprintln!("failed to initialize runtime: {err}");

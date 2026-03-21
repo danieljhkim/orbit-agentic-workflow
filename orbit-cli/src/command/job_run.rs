@@ -132,13 +132,17 @@ impl Execute for JobRunShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let run = runtime.show_job_run(&self.run_id)?;
         if let Some(step_index) = self.step {
-            let step = run.steps.iter().find(|s| s.step_index as usize == step_index).ok_or_else(|| {
-                OrbitError::InvalidInput(format!(
-                    "step {step_index} not found in run '{}' (run has {} step(s))",
-                    self.run_id,
-                    run.steps.len()
-                ))
-            })?;
+            let step = run
+                .steps
+                .iter()
+                .find(|s| s.step_index as usize == step_index)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput(format!(
+                        "step {step_index} not found in run '{}' (run has {} step(s))",
+                        self.run_id,
+                        run.steps.len()
+                    ))
+                })?;
             if self.json {
                 use serde_json::json;
                 crate::output::json::print_pretty(&json!({
@@ -282,7 +286,10 @@ fn print_job_run(run: &JobRun) {
             ]);
         }
         println!("{table}");
-        println!("  {}", dimmed("Use --step <n> to inspect full details for a step."));
+        println!(
+            "  {}",
+            dimmed("Use --step <n> to inspect full details for a step.")
+        );
     }
 }
 
@@ -332,13 +339,11 @@ fn print_step_detail(step: &JobRunStep) {
     println!(
         "{} {}",
         bold("Error Message:"),
-        step.error_message
-            .as_deref()
-            .unwrap_or("-")
+        step.error_message.as_deref().unwrap_or("-")
     );
     if let Some(resp) = &step.agent_response_json {
-        let rendered = serde_json::to_string_pretty(resp)
-            .unwrap_or_else(|_| "<invalid-json>".to_string());
+        let rendered =
+            serde_json::to_string_pretty(resp).unwrap_or_else(|_| "<invalid-json>".to_string());
         println!("{}", bold("Agent Response:"));
         for line in rendered.lines() {
             println!("  {}", dimmed(line));

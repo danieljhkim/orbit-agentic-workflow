@@ -13,9 +13,7 @@ use serde_json::Value;
 
 use super::ActivityExecutor;
 use crate::activity_runner::validate_activity_output_schema;
-use crate::context::{
-    ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, ExecutionContext,
-};
+use crate::context::{ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, ExecutionContext};
 
 const AUTOMATION_CREATE_TASK_WORKTREE: &str = "create_task_worktree";
 const AUTOMATION_START_TASK: &str = "start_task";

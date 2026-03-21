@@ -8,10 +8,22 @@ use crate::OrbitRuntime;
 // ---------------------------------------------------------------------------
 
 const BUILTIN_TEMPLATES: [(&str, &str); 4] = [
-    ("bug-fix", include_str!("../../assets/task_templates/bug-fix.yaml")),
-    ("chore", include_str!("../../assets/task_templates/chore.yaml")),
-    ("feature", include_str!("../../assets/task_templates/feature.yaml")),
-    ("spike", include_str!("../../assets/task_templates/spike.yaml")),
+    (
+        "bug-fix",
+        include_str!("../../assets/task_templates/bug-fix.yaml"),
+    ),
+    (
+        "chore",
+        include_str!("../../assets/task_templates/chore.yaml"),
+    ),
+    (
+        "feature",
+        include_str!("../../assets/task_templates/feature.yaml"),
+    ),
+    (
+        "spike",
+        include_str!("../../assets/task_templates/spike.yaml"),
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -98,9 +110,8 @@ impl From<RawPriority> for TaskPriority {
 // ---------------------------------------------------------------------------
 
 fn parse_template(yaml: &str, builtin: bool) -> Result<TaskTemplate, OrbitError> {
-    let raw: RawTemplate = serde_yaml::from_str(yaml).map_err(|e| {
-        OrbitError::InvalidInput(format!("failed to parse task template: {e}"))
-    })?;
+    let raw: RawTemplate = serde_yaml::from_str(yaml)
+        .map_err(|e| OrbitError::InvalidInput(format!("failed to parse task template: {e}")))?;
 
     Ok(TaskTemplate {
         name: raw.name,
@@ -144,7 +155,8 @@ impl OrbitRuntime {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| {
                     let p = entry.path();
-                    p.extension().map_or(false, |ext| ext == "yaml" || ext == "yml")
+                    p.extension()
+                        .map_or(false, |ext| ext == "yaml" || ext == "yml")
                 })
                 .collect::<Vec<_>>();
             entries.sort_by_key(|e| e.file_name());
@@ -152,16 +164,10 @@ impl OrbitRuntime {
             for entry in entries {
                 let path = entry.path();
                 let yaml = std::fs::read_to_string(&path).map_err(|e| {
-                    OrbitError::Io(format!(
-                        "failed to read template '{}': {e}",
-                        path.display()
-                    ))
+                    OrbitError::Io(format!("failed to read template '{}': {e}", path.display()))
                 })?;
                 let tmpl = parse_template(&yaml, false).map_err(|e| {
-                    OrbitError::InvalidInput(format!(
-                        "invalid template '{}': {e}",
-                        path.display()
-                    ))
+                    OrbitError::InvalidInput(format!("invalid template '{}': {e}", path.display()))
                 })?;
                 // User-defined templates override built-ins of the same name.
                 if let Some(existing) = templates.iter_mut().find(|t| t.name == tmpl.name) {
@@ -184,10 +190,7 @@ impl OrbitRuntime {
                 let path = user_dir.join(format!("{name}.{ext}"));
                 if path.is_file() {
                     let yaml = std::fs::read_to_string(&path).map_err(|e| {
-                        OrbitError::Io(format!(
-                            "failed to read template '{}': {e}",
-                            path.display()
-                        ))
+                        OrbitError::Io(format!("failed to read template '{}': {e}", path.display()))
                     })?;
                     return parse_template(&yaml, false);
                 }
@@ -222,9 +225,18 @@ mod tests {
             let tmpl = parse_template(yaml, true)
                 .unwrap_or_else(|e| panic!("built-in template '{name}' failed to parse: {e}"));
             assert_eq!(tmpl.name, name, "template name should match file key");
-            assert!(!tmpl.description_template.is_empty(), "description_template should not be empty for '{name}'");
-            assert!(!tmpl.plan_template.is_empty(), "plan_template should not be empty for '{name}'");
-            assert!(!tmpl.instructions_template.is_empty(), "instructions_template should not be empty for '{name}'");
+            assert!(
+                !tmpl.description_template.is_empty(),
+                "description_template should not be empty for '{name}'"
+            );
+            assert!(
+                !tmpl.plan_template.is_empty(),
+                "plan_template should not be empty for '{name}'"
+            );
+            assert!(
+                !tmpl.instructions_template.is_empty(),
+                "instructions_template should not be empty for '{name}'"
+            );
             assert!(tmpl.builtin);
         }
     }
@@ -293,7 +305,10 @@ mod tests {
         let templates = runtime.list_task_templates().expect("list");
         // 4 builtins + 1 user-defined
         assert_eq!(templates.len(), 5);
-        let custom = templates.iter().find(|t| t.name == "my-custom").expect("custom");
+        let custom = templates
+            .iter()
+            .find(|t| t.name == "my-custom")
+            .expect("custom");
         assert!(!custom.builtin);
     }
 

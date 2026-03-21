@@ -182,8 +182,9 @@ pub struct ToolRunArgs {
 impl Execute for ToolRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let input: Value = if let Some(path) = &self.input_file {
-            let raw = std::fs::read_to_string(path)
-                .map_err(|e| OrbitError::InvalidInput(format!("cannot read input file '{path}': {e}")))?;
+            let raw = std::fs::read_to_string(path).map_err(|e| {
+                OrbitError::InvalidInput(format!("cannot read input file '{path}': {e}"))
+            })?;
             serde_json::from_str(&raw)
                 .map_err(|e| OrbitError::InvalidInput(format!("invalid JSON in '{path}': {e}")))?
         } else {

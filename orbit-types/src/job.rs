@@ -90,7 +90,10 @@ pub enum JobRunState {
 impl JobRunState {
     /// Returns true if this state cannot be overwritten by a later finalization.
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Success | Self::Failed | Self::Timeout | Self::Cancelled)
+        matches!(
+            self,
+            Self::Success | Self::Failed | Self::Timeout | Self::Cancelled
+        )
     }
 }
 

@@ -28,6 +28,22 @@ pub(crate) fn remove_path_if_exists(path: &Path) -> Result<(), OrbitError> {
     }
 }
 
+/// Atomically writes `content` to `path` by writing to a `.tmp` sibling, fsyncing, then renaming.
+pub fn atomic_write_text(path: &Path, content: &str) -> Result<(), OrbitError> {
+    use std::io::Write;
+
+    let tmp_path = path.with_extension("json.tmp");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
+    }
+    let mut file = fs::File::create(&tmp_path).map_err(|e| OrbitError::Io(e.to_string()))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| OrbitError::Io(e.to_string()))?;
+    file.sync_all().map_err(|e| OrbitError::Io(e.to_string()))?;
+    fs::rename(&tmp_path, path).map_err(|e| OrbitError::Io(e.to_string()))?;
+    Ok(())
+}
+
 pub(crate) fn write_text_with_parent(path: &Path, content: &str) -> Result<(), OrbitError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;

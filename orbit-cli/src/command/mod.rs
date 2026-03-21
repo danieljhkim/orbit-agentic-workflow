@@ -7,6 +7,7 @@ pub mod job_run;
 pub mod skill;
 pub mod task;
 pub mod tool;
+pub mod workspace;
 
 use std::path::PathBuf;
 
@@ -25,6 +26,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub root: Option<PathBuf>,
 
+    /// Target a specific workspace by name or id
+    #[arg(long, global = true)]
+    pub workspace: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -40,6 +45,7 @@ pub enum Commands {
     Skill(skill::SkillCommand),
     Job(job::JobCommand),
     JobRun(job_run::JobRunCommand),
+    Workspace(workspace::WorkspaceCommand),
 }
 
 impl Execute for Commands {
@@ -54,6 +60,7 @@ impl Execute for Commands {
             Commands::Skill(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::JobRun(cmd) => cmd.execute(runtime),
+            Commands::Workspace(cmd) => cmd.execute(runtime),
         }
     }
 }

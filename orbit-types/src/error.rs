@@ -36,6 +36,10 @@ pub enum OrbitError {
     Store(String),
     #[error("invalid task status transition: {0}")]
     TaskStatusTransition(String),
+    #[error("workspace not found: {0}")]
+    WorkspaceNotFound(String),
+    #[error("workspace error: {0}")]
+    WorkspaceError(String),
     #[error("io error: {0}")]
     Io(String),
 }

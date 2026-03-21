@@ -71,10 +71,7 @@ pub(super) fn git_success(current_dir: &Path, args: &[&str]) -> Result<(), Orbit
     Ok(())
 }
 
-pub(super) fn git_command_success(
-    current_dir: &Path,
-    args: &[&str],
-) -> Result<bool, OrbitError> {
+pub(super) fn git_command_success(current_dir: &Path, args: &[&str]) -> Result<bool, OrbitError> {
     let result = run_process(
         &ExecRequest {
             program: "git".to_string(),

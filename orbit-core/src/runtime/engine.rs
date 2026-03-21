@@ -221,7 +221,11 @@ impl RuntimeHost for OrbitRuntime {
         }
         let description = format!(
             "Job `{job_id}` failed during run `{run_id}` with error code `{error_code}`.\n\nError: {}",
-            if error_message.is_empty() { "No error message provided." } else { error_message }
+            if error_message.is_empty() {
+                "No error message provided."
+            } else {
+                error_message
+            }
         );
         let plan = format!(
             "1. Investigate the root cause for job `{job_id}` failure (error code: `{error_code}`)\n\

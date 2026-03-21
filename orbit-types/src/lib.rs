@@ -11,6 +11,7 @@ pub mod role;
 pub mod skill;
 pub mod task;
 pub mod tool;
+pub mod workspace;
 
 pub use activity::Activity;
 pub use audit::Audit;
@@ -34,6 +35,7 @@ pub use task::{
     Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 pub use tool::{ExecutionResult, PolicyDecision, StoredTool, ToolParam, ToolSchema};
+pub use workspace::{Workspace, WorkspaceRegistry, WorkspaceStatus};
 
 #[cfg(test)]
 mod tests {
