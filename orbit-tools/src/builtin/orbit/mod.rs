@@ -45,6 +45,16 @@ pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRe
     let mut env = std::env::vars().collect::<HashMap<_, _>>();
     env.insert(ORBIT_TASK_ACTOR_KIND.to_string(), "agent".to_string());
 
+    // Inject --root so the spawned orbit CLI resolves to the correct data root
+    // regardless of the agent's working directory (e.g. inside a git worktree).
+    let args = if let Some(root) = &ctx.orbit_root {
+        let mut full = vec!["--root".to_string(), root.to_string_lossy().into_owned()];
+        full.extend(args);
+        full
+    } else {
+        args
+    };
+
     ExecRequest {
         program: "orbit".to_string(),
         args,
@@ -204,6 +214,38 @@ mod tests {
 
         assert_eq!(req.program, "orbit");
         assert_eq!(req.current_dir.as_deref(), Some("/tmp/orbit-tools"));
+    }
+
+    #[test]
+    fn orbit_exec_request_injects_root_when_set() {
+        let req = super::orbit_exec_request(
+            &ToolContext {
+                orbit_root: Some(std::path::PathBuf::from("/repo/.orbit")),
+                ..Default::default()
+            },
+            vec!["task".to_string(), "list".to_string(), "--json".to_string()],
+        );
+
+        assert_eq!(
+            req.args,
+            vec![
+                "--root".to_string(),
+                "/repo/.orbit".to_string(),
+                "task".to_string(),
+                "list".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn orbit_exec_request_omits_root_when_none() {
+        let req = super::orbit_exec_request(
+            &ToolContext::default(),
+            vec!["task".to_string(), "list".to_string()],
+        );
+
+        assert_eq!(req.args, vec!["task".to_string(), "list".to_string()]);
     }
 
     #[test]

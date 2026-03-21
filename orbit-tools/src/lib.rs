@@ -56,6 +56,13 @@ pub struct ToolContext {
     /// Symlink escapes are blocked because paths are canonicalized before the check.
     /// If `None`, no boundary is enforced (used for tests and legacy callers).
     pub workspace_root: Option<PathBuf>,
+    /// The resolved `.orbit` data directory (e.g. `<repo>/.orbit`). Distinct from
+    /// `workspace_root` (the repo root used for fs sandboxing) because the data
+    /// directory can be redirected via `config.toml` or path overrides and is not
+    /// always `<workspace_root>/.orbit`. When set, orbit tool calls inject
+    /// `--root <path>` so the spawned orbit CLI resolves to the correct data root
+    /// regardless of the agent's working directory (e.g. inside a git worktree).
+    pub orbit_root: Option<PathBuf>,
 }
 
 pub trait Tool: Send + Sync {

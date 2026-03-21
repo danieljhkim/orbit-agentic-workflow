@@ -26,8 +26,14 @@ impl OrbitRuntime {
         name: &str,
         input: Value,
         role: Role,
-        tool_context: ToolContext,
+        mut tool_context: ToolContext,
     ) -> Result<Value, OrbitError> {
+        // Ensure orbit tools always know the resolved data root so they can
+        // inject --root into spawned orbit CLI calls (worktree-safe).
+        if tool_context.orbit_root.is_none() {
+            tool_context.orbit_root = Some(self.data_root_path().to_path_buf());
+        }
+
         self.check_tool_enabled(name)?;
 
         if !tool_context.allowed_tools.is_empty()
