@@ -4,7 +4,8 @@ use std::sync::Arc;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
     Store, activity_store_memory, activity_store_resolved, audit_event_store_sqlite,
-    job_store_memory, job_store_resolved, task_store_memory, task_store_resolved, tool_store_sqlite,
+    job_store_memory, job_store_resolved, task_store_memory, task_store_resolved,
+    tool_store_sqlite,
 };
 
 use orbit_tools::ToolRegistry;

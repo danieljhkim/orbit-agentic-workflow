@@ -32,10 +32,8 @@ impl ActivityStoreBackend for LayeredActivityStore {
         let workspace_activities = self.workspace.list_activities(include_inactive)?;
         let global_activities = self.global.list_activities(include_inactive)?;
 
-        let workspace_ids: std::collections::HashSet<String> = workspace_activities
-            .iter()
-            .map(|a| a.id.clone())
-            .collect();
+        let workspace_ids: std::collections::HashSet<String> =
+            workspace_activities.iter().map(|a| a.id.clone()).collect();
 
         let mut merged = workspace_activities;
         for activity in global_activities {

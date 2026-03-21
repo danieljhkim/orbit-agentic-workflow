@@ -180,11 +180,7 @@ fn init_refreshes_full_bundled_activity_and_job_set() {
         .stdout(predicate::str::contains("default_activities_refreshed=14"))
         .stdout(predicate::str::contains("default_jobs_refreshed=4"));
 
-    let activities_dir = home
-        .path()
-        .join(".orbit")
-        .join("activities")
-        .join("active");
+    let activities_dir = home.path().join(".orbit").join("activities").join("active");
     for activity_id in [
         "checkout_branch",
         "commit_changes",
@@ -323,10 +319,7 @@ fn init_repairs_broken_per_skill_symlink_targets() {
     }
 
     // orbit init targets HOME/.orbit and repairs broken symlinks
-    orbit_in(home.path())
-        .args(["init"])
-        .assert()
-        .success();
+    orbit_in(home.path()).args(["init"]).assert().success();
 
     let expected_target = home
         .path()
@@ -450,10 +443,7 @@ fn init_refreshes_modified_defaults_without_destroying_tasks() {
     let home = tempfile::tempdir().expect("home");
 
     // First init to seed everything at HOME/.orbit (global root).
-    orbit_in(home.path())
-        .args(["init"])
-        .assert()
-        .success();
+    orbit_in(home.path()).args(["init"]).assert().success();
 
     let global_orbit = home.path().join(".orbit");
 
@@ -466,7 +456,10 @@ fn init_refreshes_modified_defaults_without_destroying_tasks() {
 
     // Create a fake task artifact in global root (simulating pre-migration state).
     // Tasks normally live in workspace, but this ensures init doesn't wipe unrelated dirs.
-    let task_dir = global_orbit.join("tasks").join("backlog").join("T-fake-task");
+    let task_dir = global_orbit
+        .join("tasks")
+        .join("backlog")
+        .join("T-fake-task");
     std::fs::create_dir_all(&task_dir).expect("create task dir");
     std::fs::write(task_dir.join("task.yaml"), "id: T-fake-task\n").expect("write task");
 

@@ -107,7 +107,8 @@ fn init_workspace_at_root(
     }
 
     let init_runtime = OrbitRuntime::from_data_root(&orbit_root)?;
-    let refreshed_default_activities = seed_default_activities(&init_runtime, &orbit_root, overwrite)?;
+    let refreshed_default_activities =
+        seed_default_activities(&init_runtime, &orbit_root, overwrite)?;
     let refreshed_default_jobs = seed_default_jobs(&init_runtime, overwrite)?;
 
     Ok(InitResult {

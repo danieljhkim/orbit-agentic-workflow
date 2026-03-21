@@ -121,9 +121,7 @@ pub fn activity_store_resolved(
 }
 
 /// Creates a job store from a resolved scope. Supports both single and layered.
-pub fn job_store_resolved(
-    scope: ResolvedScope,
-) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
+pub fn job_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
     match scope {
         ResolvedScope::Single(path) => job_store_file(path),
         ResolvedScope::Layered { global, workspace } => {

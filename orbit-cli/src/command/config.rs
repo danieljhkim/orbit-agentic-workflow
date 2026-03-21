@@ -74,10 +74,7 @@ impl Execute for ConfigShowArgs {
             }))
         } else {
             println!("Global root:         {}", global_root.to_string_lossy());
-            println!(
-                "Workspace root:      {}",
-                workspace_root.to_string_lossy()
-            );
+            println!("Workspace root:      {}", workspace_root.to_string_lossy());
             println!("Config path:         {}", config_path.to_string_lossy());
             println!("Exists:              {}", config_path.exists());
             println!("Execution env inherit: {}", inherit);

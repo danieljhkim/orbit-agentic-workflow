@@ -18,10 +18,7 @@ pub struct LayeredJobStore {
 }
 
 impl LayeredJobStore {
-    pub fn new(
-        workspace: Arc<dyn JobStoreBackend>,
-        global: Arc<dyn JobStoreBackend>,
-    ) -> Self {
+    pub fn new(workspace: Arc<dyn JobStoreBackend>, global: Arc<dyn JobStoreBackend>) -> Self {
         Self { workspace, global }
     }
 
