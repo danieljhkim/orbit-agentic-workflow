@@ -1,3 +1,25 @@
+//! Builtin tool registry providing the standard Orbit toolset for agents and jobs.
+//!
+//! Implements and registers all built-in tools that agents can invoke during
+//! activity execution: filesystem, git, GitHub, Orbit CLI, process, time, and
+//! network tools. External (user-defined) tools are also supported via the registry.
+//!
+//! # Role
+//! Depends on `orbit-exec` for process spawning and `orbit-types` for shared
+//! types. Consumed by `orbit-engine` and `orbit-core`, which pass a configured
+//! [`ToolRegistry`] into the execution context.
+//!
+//! # Key exports
+//! - [`ToolRegistry`] — central registry; call `register_builtins()` to load all standard tools
+//! - [`Tool`] trait — implement this to add a custom tool
+//! - [`ToolContext`] — per-call context: cwd, allowed-tool allowlist, workspace root boundary
+//! - [`require_str`] — helper to extract and validate string fields from tool input JSON
+//! - [`check_exec_result`] — helper to turn a failed [`ExecutionResult`] into an `OrbitError`
+//! - Timeout constants: [`TIMEOUT_FAST_MS`], [`TIMEOUT_DEFAULT_MS`], [`TIMEOUT_SLOW_MS`], [`TIMEOUT_LONG_MS`]
+//!
+//! # Dependency direction
+//! `orbit-types` → `orbit-exec` → `orbit-tools` → orbit-engine, orbit-core
+
 pub mod builtin;
 pub mod external;
 pub mod registry;

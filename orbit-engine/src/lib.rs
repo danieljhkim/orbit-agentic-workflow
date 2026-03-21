@@ -1,3 +1,27 @@
+//! Activity and job execution engine with template rendering and retry logic.
+//!
+//! Orchestrates the full lifecycle of running an [`Activity`] or [`Job`]: resolving
+//! input via Handlebars templates, delegating to the appropriate [`ActivityExecutor`],
+//! recording step results, and handling retries and stale-run recovery.
+//!
+//! # Role
+//! Depends on `orbit-agent`, `orbit-exec`, `orbit-store`, `orbit-tools`, and
+//! `orbit-types`. Consumed by `orbit-core`, which constructs an [`EngineHost`] and
+//! uses the public runner functions to drive execution.
+//!
+//! # Key exports
+//! - [`run_activity_direct`] — execute a single activity with given input
+//! - [`run_job_with_input`] — run a full job pipeline, stepping through all `JobStep`s
+//! - [`recover_stale_active_run_for_job`] — resume or cancel orphaned job runs
+//! - [`EngineHost`] / [`RuntimeHost`] / [`JobRunHost`] / [`TaskHost`] — host traits
+//!   that orbit-core implements to provide store access and event emission
+//! - [`ExecutionContext`] — per-run context (working directory, actor, tool context)
+//! - [`JobRunResult`] — outcome of a completed job run
+//!
+//! # Dependency direction
+//! `orbit-types`, `orbit-agent`, `orbit-exec`, `orbit-store`, `orbit-tools`
+//! → `orbit-engine` → orbit-core
+
 mod activity_runner;
 mod context;
 mod executor;

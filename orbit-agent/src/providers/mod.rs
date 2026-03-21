@@ -1,3 +1,14 @@
+//! Concrete agent provider implementations and CLI transport helpers.
+//!
+//! Each provider (`claude`, `codex`, `mock_agent`) translates an [`AgentRequest`]
+//! into a CLI command invocation: a program path, argument list, and stdin bytes
+//! that the engine will pass to `orbit-exec`. Providers are detected by inspecting
+//! the `agent_cli` basename (e.g., `"claude"` → [`AgentProvider::Claude`]).
+//!
+//! The `common` module contains the shared `build_agent_response` helper used by
+//! all three providers so that the CLI transport shape stays consistent regardless
+//! of which AI backend is selected.
+
 mod claude;
 mod codex;
 mod common;

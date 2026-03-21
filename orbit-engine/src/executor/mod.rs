@@ -1,3 +1,15 @@
+//! Executor types and activity execution model for the Orbit engine.
+//!
+//! Defines the [`ActivityExecutor`] trait and its implementations:
+//! - `agent` — invokes an AI agent (Claude, Codex) via the `orbit-agent` provider
+//! - `api` — calls an HTTP endpoint as an activity
+//! - `automation` — runs built-in automation logic (task status updates, etc.)
+//! - `cli_command` — executes an Orbit CLI sub-command as an activity step
+//!
+//! The `registry` module maps `spec_type` strings (e.g., `"agent_invoke"`) to the
+//! appropriate executor. Each executor receives an [`ExecutionContext`] and returns
+//! an [`AttemptOutcome`], which the job runner uses to decide on retry or advance.
+
 pub mod agent;
 pub mod api;
 pub mod automation;

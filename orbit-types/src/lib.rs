@@ -1,3 +1,24 @@
+//! Shared domain types, error definitions, and ID generation for the Orbit workspace.
+//!
+//! This is the leaf crate in the dependency graph — it has no internal Orbit
+//! dependencies and is imported by every other crate in the workspace.
+//!
+//! # Role
+//! Acts as the single source of truth for all cross-crate data structures.
+//! All other crates depend on this crate; it depends on none of them.
+//!
+//! # Key exports
+//! - [`OrbitError`] — workspace-wide error enum; all crates use this exclusively
+//! - [`OrbitId`] — deterministic, human-readable ID generation
+//! - [`Activity`], [`Job`], [`JobRun`], [`Task`], [`Skill`] — core domain types
+//! - [`ExecutionResult`] — process execution output shared between orbit-exec and callers
+//! - [`AuditEvent`], [`OrbitEvent`] — event types for the audit trail and event bus
+//! - [`Role`], [`PolicyDecision`] — RBAC primitives consumed by orbit-policy
+//!
+//! # Dependency direction
+//! `orbit-types` ← orbit-policy, orbit-exec, orbit-tools, orbit-store,
+//!                  orbit-agent, orbit-engine, orbit-core, orbit-cli
+
 pub mod activity;
 pub mod audit;
 pub mod audit_event;

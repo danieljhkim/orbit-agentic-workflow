@@ -1,3 +1,16 @@
+//! Runtime bootstrap and the two-root architecture (global + workspace).
+//!
+//! `OrbitRuntime` is initialized by locating two roots:
+//! 1. **Global root** — `~/.orbit/` (or `ORBIT_ROOT`): houses global config,
+//!    the audit SQLite database, and globally-scoped artifacts.
+//! 2. **Workspace root** — the nearest ancestor `.orbit/` directory from cwd:
+//!    houses workspace-local tasks, jobs, activities, and skills.
+//!
+//! The `resolve` sub-module implements root discovery. The `builder` sub-module
+//! wires together stores, policy, tool registry, and event bus into a complete
+//! [`OrbitRuntime`]. The `engine`, `audit`, `mutation`, and `pipeline` sub-modules
+//! provide the high-level operations exposed to command handlers.
+
 pub mod audit;
 pub mod builder;
 mod engine;

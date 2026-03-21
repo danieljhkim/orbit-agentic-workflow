@@ -1,3 +1,18 @@
+//! CLI entry point for Orbit: command parsing, dispatch, and output formatting.
+//!
+//! Parses command-line arguments with `clap`, initializes the [`OrbitRuntime`],
+//! dispatches to the appropriate command handler, and formats results as JSON
+//! or human-readable table output. Wraps every command in an audit middleware
+//! that records success, failure, or policy-denial events.
+//!
+//! # Role
+//! The outermost crate in the dependency graph. Depends on `orbit-core` and
+//! `orbit-types`. All other crates are consumed transitively via `orbit-core`.
+//! This binary is the `orbit` executable.
+//!
+//! # Dependency direction
+//! orbit-core, orbit-types → `orbit-cli` (binary crate, no dependents)
+
 mod audit_middleware;
 mod command;
 mod output;
