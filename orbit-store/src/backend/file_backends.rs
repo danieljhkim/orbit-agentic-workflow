@@ -10,29 +10,11 @@ use super::contracts::{
 };
 use crate::file::activity_store::ActivityFileStore;
 use crate::file::job_store::JobFileStore;
-use crate::file::task_store::{FileTaskInsert, TaskFileStore};
+use crate::file::task_store::TaskFileStore;
 
 impl TaskStoreBackend for TaskFileStore {
     fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
-        self.create_task(FileTaskInsert {
-            actor: params.actor,
-            title: params.title,
-            description: params.description,
-            plan: params.plan,
-            execution_summary: params.execution_summary,
-            context_files: params.context_files,
-            workspace_path: params.workspace_path,
-            repo_root: None,
-            assigned_to: params.assigned_to,
-            created_by: params.created_by,
-            status: params.status,
-            priority: params.priority,
-            complexity: params.complexity,
-            task_type: params.task_type,
-            pr_number: params.pr_number,
-            proposed_by: params.proposed_by,
-            comments: params.comments,
-        })
+        self.create_task(params)
     }
 
     fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
@@ -82,16 +64,7 @@ impl ActivityStoreBackend for ActivityFileStore {
         id: &str,
         params: ActivityUpdateParams,
     ) -> Result<Activity, OrbitError> {
-        self.update_activity(
-            id,
-            params.description,
-            params.input_schema_json,
-            params.output_schema_json,
-            params.spec_config,
-            params.workspace_path,
-            params.created_by,
-            params.is_active,
-        )
+        self.update_activity(id, &params)
     }
 
     fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {
@@ -101,23 +74,11 @@ impl ActivityStoreBackend for ActivityFileStore {
 
 impl JobStoreBackend for JobFileStore {
     fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
-        self.insert_activity_v2(
-            params.job_id,
-            params.default_input,
-            params.max_active_runs,
-            params.steps,
-            params.initial_state,
-        )
+        self.add_job(params)
     }
 
     fn update_job(&self, job_id: &str, params: JobUpdateParams) -> Result<Job, OrbitError> {
-        self.update_job(
-            job_id,
-            params.default_input,
-            params.max_active_runs,
-            params.steps,
-            params.state,
-        )
+        self.update_job(job_id, &params)
     }
 
     fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {

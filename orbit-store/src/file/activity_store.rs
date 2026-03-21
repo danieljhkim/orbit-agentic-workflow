@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use orbit_types::{Activity, OrbitError};
 
-use crate::backend::ActivityCreateParams;
+use crate::backend::{ActivityCreateParams, ActivityUpdateParams};
 use crate::file::fs_utils::write_atomic;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -109,17 +109,10 @@ impl ActivityFileStore {
         Ok(None)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_activity(
         &self,
         id: &str,
-        description: Option<String>,
-        input_schema_json: Option<Value>,
-        output_schema_json: Option<Value>,
-        spec_config: Option<Value>,
-        workspace_path: Option<Option<String>>,
-        created_by: Option<Option<String>>,
-        is_active: Option<bool>,
+        params: &ActivityUpdateParams,
     ) -> Result<Activity, OrbitError> {
         self.ensure_layout()?;
         let (path, current_active) = if self.active_doc_path(id).exists() {
@@ -132,25 +125,25 @@ impl ActivityFileStore {
             )));
         };
         let mut doc = self.read_doc_at(&path)?;
-        if let Some(v) = description {
+        if let Some(v) = params.description.clone() {
             doc.activity.description = v;
         }
-        if let Some(v) = input_schema_json {
+        if let Some(v) = params.input_schema_json.clone() {
             doc.activity.input_schema_json = normalize_json_schema_for_storage(v);
         }
-        if let Some(v) = output_schema_json {
+        if let Some(v) = params.output_schema_json.clone() {
             doc.activity.output_schema_json = normalize_json_schema_for_storage(v);
         }
-        if let Some(v) = spec_config {
+        if let Some(v) = params.spec_config.clone() {
             doc.activity.spec_config = v.as_object().cloned().unwrap_or_default();
         }
-        if let Some(v) = workspace_path {
+        if let Some(v) = params.workspace_path.clone() {
             doc.activity.workspace_path = v;
         }
-        if let Some(v) = created_by {
+        if let Some(v) = params.created_by.clone() {
             doc.created_by = v;
         }
-        let new_active = is_active.unwrap_or(current_active);
+        let new_active = params.is_active.unwrap_or(current_active);
         if new_active != current_active {
             // Move the file to the new location.
             let new_path = if new_active {

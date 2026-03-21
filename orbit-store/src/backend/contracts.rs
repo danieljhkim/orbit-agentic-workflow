@@ -17,6 +17,7 @@ pub struct TaskCreateParams {
     pub execution_summary: String,
     pub context_files: Vec<String>,
     pub workspace_path: Option<String>,
+    pub repo_root: Option<String>,
     pub created_by: Option<String>,
     pub assigned_to: Option<String>,
     pub status: TaskStatus,

@@ -9,7 +9,7 @@ use orbit_types::{
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as YamlValue};
 
-use crate::backend::TaskUpdateParams;
+use crate::backend::{TaskCreateParams, TaskUpdateParams};
 use crate::file::fs_utils::write_atomic;
 
 const TASK_DOC_FILE_NAME: &str = "task.yaml";
@@ -23,26 +23,6 @@ pub(crate) struct TaskFileStore {
     root: PathBuf,
 }
 
-#[derive(Clone)]
-pub(crate) struct FileTaskInsert {
-    pub actor: String,
-    pub title: String,
-    pub description: String,
-    pub plan: String,
-    pub execution_summary: String,
-    pub context_files: Vec<String>,
-    pub workspace_path: Option<String>,
-    pub repo_root: Option<String>,
-    pub created_by: Option<String>,
-    pub assigned_to: Option<String>,
-    pub status: TaskStatus,
-    pub priority: TaskPriority,
-    pub complexity: Option<TaskComplexity>,
-    pub task_type: TaskType,
-    pub pr_number: Option<String>,
-    pub proposed_by: Option<String>,
-    pub comments: Vec<TaskComment>,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaskStateDir {
@@ -172,7 +152,7 @@ impl TaskFileStore {
         Ok(())
     }
 
-    pub(crate) fn create_task(&self, params: FileTaskInsert) -> Result<Task, OrbitError> {
+    pub(crate) fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
         self.ensure_layout()?;
         if params.title.trim().is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -656,15 +636,15 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
 mod tests {
     use std::fs;
 
-    use super::{ARTIFACTS_DIR_NAME, EXECUTION_SUMMARY_FILE_NAME, FileTaskInsert};
+    use super::{ARTIFACTS_DIR_NAME, EXECUTION_SUMMARY_FILE_NAME};
     use super::{PLAN_FILE_NAME, TASK_DOC_FILE_NAME, TaskFileStore};
-    use crate::backend::TaskUpdateParams;
+    use crate::backend::{TaskCreateParams, TaskUpdateParams};
     use chrono::Utc;
     use orbit_types::{TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType};
     use tempfile::tempdir;
 
-    fn sample_insert(status: TaskStatus) -> FileTaskInsert {
-        FileTaskInsert {
+    fn sample_insert(status: TaskStatus) -> TaskCreateParams {
+        TaskCreateParams {
             actor: "Codex".to_string(),
             title: "Bundle task".to_string(),
             description: "Task description".to_string(),
@@ -895,7 +875,7 @@ mod tests {
             .create_task(sample_insert(TaskStatus::Backlog))
             .expect("create first task");
         let two = store
-            .create_task(FileTaskInsert {
+            .create_task(TaskCreateParams {
                 actor: "Codex".to_string(),
                 title: "Another task".to_string(),
                 description: "Searchable phrase".to_string(),
@@ -1059,7 +1039,7 @@ mod tests {
         let store = TaskFileStore::new(dir.path().to_path_buf());
 
         let task = store
-            .create_task(FileTaskInsert {
+            .create_task(TaskCreateParams {
                 comments: vec![TaskComment {
                     at: Utc::now(),
                     by: "creator".to_string(),
