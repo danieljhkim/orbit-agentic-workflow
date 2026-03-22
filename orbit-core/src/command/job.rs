@@ -3,7 +3,7 @@ use orbit_agent::{Agent, AgentConfig};
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobUpdateParams as StoreJobUpdateParams;
 use orbit_types::{
-    Job, JobRun, JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent,
+    Job, JobRun, JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent, StepCondition,
     default_job_max_active_runs,
 };
 use serde::Deserialize;
@@ -62,6 +62,8 @@ struct DefaultJobStep {
     retry_max_attempts: u32,
     #[serde(default = "orbit_types::default_retry_backoff_seconds")]
     retry_backoff_seconds: u64,
+    #[serde(default)]
+    condition: StepCondition,
     #[serde(default)]
     output_map: std::collections::HashMap<String, String>,
 }
@@ -351,6 +353,7 @@ fn default_job_steps(entry: &DefaultJobEntry) -> Result<Vec<JobStep>, OrbitError
                 env_extra: s.env_extra.clone(),
                 retry_max_attempts: s.retry_max_attempts,
                 retry_backoff_seconds: s.retry_backoff_seconds,
+                condition: s.condition,
                 output_map: s.output_map.clone(),
             })
         })
@@ -369,6 +372,8 @@ fn validate_job_max_active_runs(max_active_runs: Option<u32>) -> Result<u32, Orb
 
 #[cfg(test)]
 mod tests {
+    use orbit_types::StepCondition;
+
     use super::{DEFAULT_JOB_FILES, load_default_job_specs};
 
     #[test]
@@ -404,6 +409,7 @@ mod tests {
             .expect("task pipeline spec present");
         assert_eq!(pipeline.max_active_runs, 4);
         assert_eq!(pipeline.steps[0].model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(pipeline.steps[1].condition, StepCondition::OnSuccess);
         let review = specs
             .iter()
             .find(|spec| spec.job_id == "job_review_tasks")

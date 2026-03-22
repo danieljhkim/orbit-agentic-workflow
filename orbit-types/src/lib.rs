@@ -45,7 +45,7 @@ pub use friction::FrictionEntry;
 pub use id::OrbitId;
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
-    JobScheduleState, JobStep, JobTargetType, default_job_max_active_runs,
+    JobScheduleState, JobStep, JobTargetType, StepCondition, default_job_max_active_runs,
     default_retry_backoff_seconds,
 };
 pub use metrics::MetricsEntry;
@@ -70,7 +70,7 @@ mod tests {
     use crate::{
         Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult, FrictionEntry, Job,
         JobRun, JobRunState, JobScheduleState, JobStep, MetricsEntry, OrbitEvent, Role, Skill,
-        TaskStatus,
+        StepCondition, TaskStatus,
     };
 
     #[test]
@@ -154,6 +154,7 @@ mod tests {
         assert_eq!(job_value["steps"][0]["target_type"], "activity");
         assert_eq!(job_value["steps"][0]["retry_max_attempts"], 3);
         assert_eq!(job_value["steps"][0]["retry_backoff_seconds"], 10);
+        assert_eq!(job_value["steps"][0]["condition"], "always");
 
         let run = JobRun {
             run_id: "run-1".to_string(),
@@ -185,9 +186,30 @@ mod tests {
             "retrying"
         );
         assert_eq!(
+            serde_json::to_value(JobRunState::Skipped).expect("serialize skipped"),
+            "skipped"
+        );
+        assert_eq!(
             "retrying".parse::<JobRunState>().expect("parse retrying"),
             JobRunState::Retrying
         );
+        assert_eq!(
+            "skipped".parse::<JobRunState>().expect("parse skipped"),
+            JobRunState::Skipped
+        );
+    }
+
+    #[test]
+    fn job_step_condition_defaults_to_always_when_missing() {
+        let step: JobStep = serde_json::from_value(serde_json::json!({
+            "target_type": "activity",
+            "target_id": "exec-1",
+            "agent_cli": "codex",
+            "timeout_seconds": 30
+        }))
+        .expect("deserialize step");
+
+        assert_eq!(step.condition, StepCondition::Always);
     }
 
     #[test]

@@ -5,6 +5,7 @@ use orbit_store::friction_log::append_friction_entry;
 use orbit_store::metrics_log::append_metrics_entry;
 use orbit_types::{
     FrictionEntry, Job, JobRun, JobRunState, JobStep, MetricsEntry, OrbitError, OrbitEvent,
+    StepCondition,
 };
 use serde_json::Value;
 use std::path::Path;
@@ -90,9 +91,35 @@ fn execute_activity_with_retries<H: EngineHost>(
         let mut last_protocol_violation = false;
         let mut current_input = merge_job_input(job.default_input.as_ref(), input)?;
         let mut last_failure: Option<(String, String)> = None;
+        let mut previous_step_state: Option<JobRunState> = None;
 
         for (step_index, step) in job.steps.iter().enumerate() {
             failure_step = (step_index, step.clone());
+
+            if !should_run_step(step.condition, previous_step_state) {
+                let skipped_at = Utc::now();
+                let changed = host.complete_job_run_step(
+                    &run.run_id,
+                    &JobRunStepParams {
+                        step_index,
+                        target_type: step.target_type,
+                        target_id: step.target_id.clone(),
+                        started_at: skipped_at,
+                        finished_at: skipped_at,
+                        duration_ms: Some(0),
+                        exit_code: None,
+                        agent_response_json: None,
+                        state: JobRunState::Skipped,
+                        error_code: None,
+                        error_message: None,
+                    },
+                )?;
+                if !changed {
+                    return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+                }
+                previous_step_state = Some(JobRunState::Skipped);
+                continue;
+            }
 
             let execution =
                 build_execution_context_for_step(host, &job, step, current_input.clone(), debug)?;
@@ -110,6 +137,7 @@ fn execute_activity_with_retries<H: EngineHost>(
                 total_duration_ms += d;
             }
             let step_state = outcome.state;
+            previous_step_state = Some(step_state);
 
             // Pipe this step's output fields into the next step's input.
             //
@@ -162,7 +190,7 @@ fn execute_activity_with_retries<H: EngineHost>(
                 return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
             }
 
-            if step_state != JobRunState::Success {
+            if step_state_records_failure(step_state) {
                 append_failed_step_friction(
                     data_root,
                     host,
@@ -190,13 +218,12 @@ fn execute_activity_with_retries<H: EngineHost>(
                 last_protocol_violation = true;
             }
 
-            if step_state != JobRunState::Success {
+            if step_state_records_failure(step_state) {
                 last_failure = Some((
                     outcome.error_code.clone().unwrap_or_default(),
                     outcome.error_message.clone().unwrap_or_default(),
                 ));
                 final_state = step_state;
-                break;
             }
         }
 
@@ -513,6 +540,26 @@ fn merge_job_input(default_input: Option<&Value>, input: Value) -> Result<Value,
     Ok(Value::Object(merged))
 }
 
+fn should_run_step(condition: StepCondition, previous_step_state: Option<JobRunState>) -> bool {
+    match condition {
+        StepCondition::Always => true,
+        StepCondition::OnSuccess => {
+            previous_step_state.is_none_or(|state| matches!(state, JobRunState::Success))
+        }
+        StepCondition::OnFailure => previous_step_state.is_some_and(step_state_records_failure),
+        StepCondition::OnTimeout => {
+            previous_step_state.is_some_and(|state| matches!(state, JobRunState::Timeout))
+        }
+    }
+}
+
+fn step_state_records_failure(state: JobRunState) -> bool {
+    matches!(
+        state,
+        JobRunState::Failed | JobRunState::Timeout | JobRunState::Cancelled
+    )
+}
+
 fn record_task_agent_context<H: EngineHost>(
     host: &H,
     execution: &crate::context::ExecutionContext,
@@ -694,5 +741,51 @@ fn json_value_type_name(value: &Value) -> &'static str {
         Value::String(_) => "string",
         Value::Array(_) => "array",
         Value::Object(_) => "object",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use orbit_types::{JobRunState, StepCondition};
+
+    use super::should_run_step;
+
+    #[test]
+    fn on_failure_condition_skips_after_success() {
+        assert!(!should_run_step(
+            StepCondition::OnFailure,
+            Some(JobRunState::Success)
+        ));
+    }
+
+    #[test]
+    fn on_failure_condition_runs_after_failure() {
+        assert!(should_run_step(
+            StepCondition::OnFailure,
+            Some(JobRunState::Failed)
+        ));
+    }
+
+    #[test]
+    fn on_failure_condition_runs_after_timeout() {
+        assert!(should_run_step(
+            StepCondition::OnFailure,
+            Some(JobRunState::Timeout)
+        ));
+    }
+
+    #[test]
+    fn always_condition_runs_regardless_of_previous_state() {
+        let states = [
+            None,
+            Some(JobRunState::Success),
+            Some(JobRunState::Failed),
+            Some(JobRunState::Timeout),
+            Some(JobRunState::Skipped),
+        ];
+
+        for state in states {
+            assert!(should_run_step(StepCondition::Always, state));
+        }
     }
 }

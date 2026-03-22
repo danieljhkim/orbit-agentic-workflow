@@ -9,7 +9,9 @@ use orbit_core::command::job::JobAddParams;
 use orbit_core::command::job_run::JobRunListParams;
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
 use orbit_store::friction_log::read_friction_entries_for_month;
-use orbit_types::{JobRunState, JobStep, OrbitError, TaskPriority, TaskStatus, TaskType};
+use orbit_types::{
+    JobRunState, JobStep, OrbitError, StepCondition, TaskPriority, TaskStatus, TaskType,
+};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -1556,6 +1558,94 @@ fn empty_stdout_timeout_marks_run_as_timeout() {
             .unwrap_or_default()
             .contains("timed out")
     );
+}
+
+#[test]
+fn job_conditions_record_skips_and_continue_after_failures() {
+    let dir = tempdir().expect("tempdir");
+    let runtime = OrbitRuntime::from_data_root(dir.path()).expect("runtime");
+    let success_dir = dir.path().join("success-agent");
+    let failed_dir = dir.path().join("failed-agent");
+    std::fs::create_dir_all(&success_dir).expect("create success agent dir");
+    std::fs::create_dir_all(&failed_dir).expect("create failed agent dir");
+
+    let success_agent = write_agent_script(
+        &success_dir.join("mock-agent"),
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{},\"error\":null,\"durationMs\":1}'\n",
+    );
+    let failed_agent = write_agent_script(
+        &failed_dir.join("mock-agent"),
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"schemaVersion\":1,\"status\":\"failed\",\"result\":null,\"error\":{\"code\":\"STEP_FAILED\",\"message\":\"boom\",\"details\":{}},\"durationMs\":1}'\n",
+    );
+
+    for activity_id in [
+        "spec-condition-success",
+        "spec-condition-failure",
+        "spec-condition-recovery",
+        "spec-condition-timeout-only",
+        "spec-condition-always",
+    ] {
+        add_activity(&runtime, activity_id);
+    }
+
+    let job_id = runtime
+        .add_job(JobAddParams {
+            job_id: None,
+            default_input: None,
+            max_active_runs: None,
+            steps: vec![
+                JobStep {
+                    target_id: "spec-condition-success".to_string(),
+                    agent_cli: success_agent.clone(),
+                    timeout_seconds: 10,
+                    ..Default::default()
+                },
+                JobStep {
+                    target_id: "spec-condition-failure".to_string(),
+                    agent_cli: failed_agent,
+                    timeout_seconds: 10,
+                    ..Default::default()
+                },
+                JobStep {
+                    target_id: "spec-condition-recovery".to_string(),
+                    agent_cli: success_agent.clone(),
+                    timeout_seconds: 10,
+                    condition: StepCondition::OnFailure,
+                    ..Default::default()
+                },
+                JobStep {
+                    target_id: "spec-condition-timeout-only".to_string(),
+                    agent_cli: success_agent.clone(),
+                    timeout_seconds: 10,
+                    condition: StepCondition::OnTimeout,
+                    ..Default::default()
+                },
+                JobStep {
+                    target_id: "spec-condition-always".to_string(),
+                    agent_cli: success_agent,
+                    timeout_seconds: 10,
+                    condition: StepCondition::Always,
+                    ..Default::default()
+                },
+            ],
+            initial_state_override: None,
+        })
+        .expect("add job")
+        .job_id;
+
+    let run = runtime.run_job_now(&job_id).expect("run job");
+    assert_eq!(run.state, JobRunState::Failed);
+
+    let history = runtime.job_history(&job_id).expect("history");
+    let steps = &history[0].steps;
+    assert_eq!(steps.len(), 5);
+    assert_eq!(steps[0].state, JobRunState::Success);
+    assert_eq!(steps[1].state, JobRunState::Failed);
+    assert_eq!(steps[2].state, JobRunState::Success);
+    assert_eq!(steps[3].state, JobRunState::Skipped);
+    assert_eq!(steps[4].state, JobRunState::Success);
+    assert_eq!(steps[3].error_code, None);
+    assert_eq!(steps[3].agent_response_json, None);
 }
 
 #[test]

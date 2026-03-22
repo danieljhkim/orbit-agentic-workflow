@@ -82,6 +82,7 @@ pub enum JobRunState {
     Success,
     Failed,
     Timeout,
+    Skipped,
     /// Transient state emitted while the engine is sleeping between retry attempts.
     Retrying,
     /// Run was explicitly cancelled by the user before it completed.
@@ -106,6 +107,7 @@ impl Display for JobRunState {
             JobRunState::Success => write!(f, "success"),
             JobRunState::Failed => write!(f, "failed"),
             JobRunState::Timeout => write!(f, "timeout"),
+            JobRunState::Skipped => write!(f, "skipped"),
             JobRunState::Retrying => write!(f, "retrying"),
             JobRunState::Cancelled => write!(f, "cancelled"),
         }
@@ -122,11 +124,23 @@ impl FromStr for JobRunState {
             "success" => Ok(JobRunState::Success),
             "failed" => Ok(JobRunState::Failed),
             "timeout" => Ok(JobRunState::Timeout),
+            "skipped" => Ok(JobRunState::Skipped),
             "retrying" => Ok(JobRunState::Retrying),
             "cancelled" => Ok(JobRunState::Cancelled),
             other => Err(format!("unknown job run state: {other}")),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[serde(rename_all = "snake_case")]
+pub enum StepCondition {
+    #[default]
+    Always,
+    OnSuccess,
+    OnFailure,
+    OnTimeout,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -179,6 +193,8 @@ pub struct JobStep {
     /// Initial backoff delay in seconds before the first retry; doubles with each attempt.
     #[serde(default = "default_retry_backoff_seconds")]
     pub retry_backoff_seconds: u64,
+    #[serde(default)]
+    pub condition: StepCondition,
     /// Rename output keys before merging into the next step's input.
     /// Each entry maps `source_key -> target_key`. Unmapped keys pass through unchanged.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -196,6 +212,7 @@ impl Default for JobStep {
             env_extra: Vec::new(),
             retry_max_attempts: 0,
             retry_backoff_seconds: default_retry_backoff_seconds(),
+            condition: StepCondition::Always,
             output_map: HashMap::new(),
         }
     }
