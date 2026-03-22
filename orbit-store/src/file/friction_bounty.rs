@@ -42,12 +42,7 @@ pub fn record_friction_rejected(
     increment(repo_root, "issues-rejected", agent, model)
 }
 
-fn increment(
-    repo_root: &Path,
-    metric: &str,
-    agent: &str,
-    model: &str,
-) -> Result<(), OrbitError> {
+fn increment(repo_root: &Path, metric: &str, agent: &str, model: &str) -> Result<(), OrbitError> {
     let path = repo_root.join("scoreboard").join("friction_bounty.json");
     let mut scoreboard: Scoreboard = if path.exists() {
         let content = fs::read_to_string(&path)
@@ -70,8 +65,7 @@ fn increment(
     let dir = path
         .parent()
         .ok_or_else(|| OrbitError::Io("no parent dir for friction_bounty.json".to_string()))?;
-    fs::create_dir_all(dir)
-        .map_err(|e| OrbitError::Io(format!("create scoreboard dir: {e}")))?;
+    fs::create_dir_all(dir).map_err(|e| OrbitError::Io(format!("create scoreboard dir: {e}")))?;
 
     let tmp = dir.join(".friction_bounty.json.tmp");
     fs::write(&tmp, format!("{json}\n"))
@@ -96,20 +90,17 @@ mod tests {
 
         let path = root.join("scoreboard/friction_bounty.json");
         assert!(path.exists());
-        let sb: Scoreboard =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 1);
 
         // Second increment bumps the counter
         record_friction_reported(root, "claude", "opus-4.6").unwrap();
-        let sb: Scoreboard =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 2);
 
         // Different metric
         record_friction_accepted(root, "claude", "opus-4.6").unwrap();
-        let sb: Scoreboard =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-accepted"]["claude"]["opus-4.6"], 1);
         // Original metric unchanged
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 2);
@@ -124,8 +115,7 @@ mod tests {
         record_friction_reported(root, "codex", "gpt-5.4").unwrap();
 
         let path = root.join("scoreboard/friction_bounty.json");
-        let sb: Scoreboard =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 1);
         assert_eq!(sb["issues-reported"]["codex"]["gpt-5.4"], 1);
     }

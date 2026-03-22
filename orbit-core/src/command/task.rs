@@ -78,7 +78,8 @@ impl OrbitRuntime {
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
         let actor = self.actor().clone();
-        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let initial_status =
             if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent() {
                 TaskStatus::Proposed
@@ -241,13 +242,15 @@ impl OrbitRuntime {
         }
 
         let actor = self.actor().clone();
-        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let status_note = status_note
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
-        let append_comments = build_task_comments(params.comment.clone(), effective_label.as_str())?;
+        let append_comments =
+            build_task_comments(params.comment.clone(), effective_label.as_str())?;
         let assigned_to = params.status.and_then(|status| {
             if status == TaskStatus::InProgress {
                 Some(Some(effective_label.clone()))
@@ -302,59 +305,56 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         let result = match task.status {
-            TaskStatus::Proposed => {
-                self.with_mutation(|| {
-                    let task = self.update_task_record(
-                        id,
-                        StoreTaskUpdateParams {
-                            actor: effective_label.clone(),
-                            status: Some(TaskStatus::Backlog),
-                            status_event: Some("proposal_approved".to_string()),
-                            status_note: note.clone(),
-                            assigned_to: Some(Some(effective_label.clone())),
-                            agent: agent.clone().map(Some),
-                            model: model.clone().map(Some),
-                            append_comments: append_comments.clone(),
-                            ..Default::default()
-                        },
-                    )?;
-                    Ok((
-                        task.clone(),
-                        OrbitEvent::TaskProposalApproved {
-                            id: id.to_string(),
-                            approved_by: effective_label.clone(),
-                        },
-                    ))
-                })
-            }
-            TaskStatus::Review => {
-                self.with_mutation(|| {
-                    let task = self.update_task_record(
-                        id,
-                        StoreTaskUpdateParams {
-                            actor: effective_label.clone(),
-                            status: Some(TaskStatus::Done),
-                            status_event: Some("review_approved".to_string()),
-                            status_note: note.clone(),
-                            agent: agent.clone().map(Some),
-                            model: model.clone().map(Some),
-                            append_comments: append_comments.clone(),
-                            ..Default::default()
-                        },
-                    )?;
-                    Ok((
-                        task.clone(),
-                        OrbitEvent::TaskReviewApproved {
-                            id: id.to_string(),
-                            approved_by: effective_label.clone(),
-                        },
-                    ))
-                })
-            }
+            TaskStatus::Proposed => self.with_mutation(|| {
+                let task = self.update_task_record(
+                    id,
+                    StoreTaskUpdateParams {
+                        actor: effective_label.clone(),
+                        status: Some(TaskStatus::Backlog),
+                        status_event: Some("proposal_approved".to_string()),
+                        status_note: note.clone(),
+                        assigned_to: Some(Some(effective_label.clone())),
+                        agent: agent.clone().map(Some),
+                        model: model.clone().map(Some),
+                        append_comments: append_comments.clone(),
+                        ..Default::default()
+                    },
+                )?;
+                Ok((
+                    task.clone(),
+                    OrbitEvent::TaskProposalApproved {
+                        id: id.to_string(),
+                        approved_by: effective_label.clone(),
+                    },
+                ))
+            }),
+            TaskStatus::Review => self.with_mutation(|| {
+                let task = self.update_task_record(
+                    id,
+                    StoreTaskUpdateParams {
+                        actor: effective_label.clone(),
+                        status: Some(TaskStatus::Done),
+                        status_event: Some("review_approved".to_string()),
+                        status_note: note.clone(),
+                        agent: agent.clone().map(Some),
+                        model: model.clone().map(Some),
+                        append_comments: append_comments.clone(),
+                        ..Default::default()
+                    },
+                )?;
+                Ok((
+                    task.clone(),
+                    OrbitEvent::TaskReviewApproved {
+                        id: id.to_string(),
+                        approved_by: effective_label.clone(),
+                    },
+                ))
+            }),
             other => Err(OrbitError::InvalidInput(format!(
                 "task '{id}' is in status '{other}'; approve requires 'proposed' or 'review'"
             ))),
@@ -363,7 +363,11 @@ impl OrbitRuntime {
         self.try_record_friction_transition(
             &task,
             task.status,
-            if task.status == TaskStatus::Proposed { TaskStatus::Backlog } else { TaskStatus::Done },
+            if task.status == TaskStatus::Proposed {
+                TaskStatus::Backlog
+            } else {
+                TaskStatus::Done
+            },
         );
 
         Ok(result)
@@ -388,7 +392,8 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         match task.status {
@@ -487,7 +492,8 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let reason = note.trim();
         if reason.is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -498,54 +504,50 @@ impl OrbitRuntime {
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         let result = match task.status {
-            TaskStatus::Proposed => {
-                self.with_mutation(|| {
-                    let task = self.update_task_record(
-                        id,
-                        StoreTaskUpdateParams {
-                            actor: effective_label.clone(),
-                            status: Some(TaskStatus::Rejected),
-                            status_event: Some("proposal_rejected".to_string()),
-                            status_note: Some(reason.clone()),
-                            agent: agent.clone().map(Some),
-                            model: model.clone().map(Some),
-                            append_comments: append_comments.clone(),
-                            ..Default::default()
-                        },
-                    )?;
-                    Ok((
-                        task.clone(),
-                        OrbitEvent::TaskProposalRejected {
-                            id: id.to_string(),
-                            rejected_by: effective_label.clone(),
-                        },
-                    ))
-                })
-            }
-            TaskStatus::Review => {
-                self.with_mutation(|| {
-                    let task = self.update_task_record(
-                        id,
-                        StoreTaskUpdateParams {
-                            actor: effective_label.clone(),
-                            status: Some(TaskStatus::Rejected),
-                            status_event: Some("review_rejected".to_string()),
-                            status_note: Some(reason.clone()),
-                            agent: agent.clone().map(Some),
-                            model: model.clone().map(Some),
-                            append_comments: append_comments.clone(),
-                            ..Default::default()
-                        },
-                    )?;
-                    Ok((
-                        task.clone(),
-                        OrbitEvent::TaskReviewRejected {
-                            id: id.to_string(),
-                            rejected_by: effective_label.clone(),
-                        },
-                    ))
-                })
-            }
+            TaskStatus::Proposed => self.with_mutation(|| {
+                let task = self.update_task_record(
+                    id,
+                    StoreTaskUpdateParams {
+                        actor: effective_label.clone(),
+                        status: Some(TaskStatus::Rejected),
+                        status_event: Some("proposal_rejected".to_string()),
+                        status_note: Some(reason.clone()),
+                        agent: agent.clone().map(Some),
+                        model: model.clone().map(Some),
+                        append_comments: append_comments.clone(),
+                        ..Default::default()
+                    },
+                )?;
+                Ok((
+                    task.clone(),
+                    OrbitEvent::TaskProposalRejected {
+                        id: id.to_string(),
+                        rejected_by: effective_label.clone(),
+                    },
+                ))
+            }),
+            TaskStatus::Review => self.with_mutation(|| {
+                let task = self.update_task_record(
+                    id,
+                    StoreTaskUpdateParams {
+                        actor: effective_label.clone(),
+                        status: Some(TaskStatus::Rejected),
+                        status_event: Some("review_rejected".to_string()),
+                        status_note: Some(reason.clone()),
+                        agent: agent.clone().map(Some),
+                        model: model.clone().map(Some),
+                        append_comments: append_comments.clone(),
+                        ..Default::default()
+                    },
+                )?;
+                Ok((
+                    task.clone(),
+                    OrbitEvent::TaskReviewRejected {
+                        id: id.to_string(),
+                        rejected_by: effective_label.clone(),
+                    },
+                ))
+            }),
             other => Err(OrbitError::InvalidInput(format!(
                 "task '{id}' is in status '{other}'; reject requires 'proposed' or 'review'"
             ))),
@@ -616,12 +618,7 @@ impl OrbitRuntime {
     }
 
     /// Best-effort friction bounty scoreboard update after a status transition.
-    fn try_record_friction_transition(
-        &self,
-        task: &Task,
-        from: TaskStatus,
-        to: TaskStatus,
-    ) {
+    fn try_record_friction_transition(&self, task: &Task, from: TaskStatus, to: TaskStatus) {
         if !task.task_type.is_friction() {
             return;
         }

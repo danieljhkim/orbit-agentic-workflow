@@ -16,7 +16,11 @@ pub(super) fn build_exec_request(
     let path = require_str(input, "path")?;
     let line = input
         .get("line")
-        .and_then(|v| v.as_u64().map(|n| n.to_string()).or_else(|| v.as_str().map(String::from)))
+        .and_then(|v| {
+            v.as_u64()
+                .map(|n| n.to_string())
+                .or_else(|| v.as_str().map(String::from))
+        })
         .filter(|s| !s.is_empty())
         .ok_or_else(|| OrbitError::InvalidInput("missing `line`".to_string()))?;
 
@@ -91,7 +95,9 @@ impl Tool for GithubPrReviewCommentTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "github.pr.review.comment".to_string(),
-            description: "Post an inline review comment on a specific file and line of a pull request".to_string(),
+            description:
+                "Post an inline review comment on a specific file and line of a pull request"
+                    .to_string(),
             parameters: vec![
                 ToolParam {
                     name: "repo".to_string(),
@@ -125,7 +131,8 @@ impl Tool for GithubPrReviewCommentTool {
                 },
                 ToolParam {
                     name: "commit_id".to_string(),
-                    description: "Optional commit SHA to anchor the comment (defaults to PR head)".to_string(),
+                    description: "Optional commit SHA to anchor the comment (defaults to PR head)"
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

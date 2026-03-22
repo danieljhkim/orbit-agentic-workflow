@@ -799,8 +799,14 @@ mod tests {
             )
             .expect("start");
         assert_eq!(started.assigned_to.as_deref(), Some("codex / gpt-5.4"));
-        assert_eq!(started.comments.last().expect("comment").by, "codex / gpt-5.4");
-        assert_eq!(started.history.last().expect("history").by, "codex / gpt-5.4");
+        assert_eq!(
+            started.comments.last().expect("comment").by,
+            "codex / gpt-5.4"
+        );
+        assert_eq!(
+            started.history.last().expect("history").by,
+            "codex / gpt-5.4"
+        );
     }
 
     #[test]
