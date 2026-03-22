@@ -3,6 +3,7 @@ pub mod pr_checkout;
 pub mod pr_checks;
 pub mod pr_close;
 pub mod pr_comment;
+pub mod pr_comment_reply;
 pub mod pr_create;
 pub mod pr_list;
 pub mod pr_merge;
@@ -23,6 +24,7 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(pr_view::GithubPrViewTool);
     registry.register(pr_checkout::GithubPrCheckoutTool);
     registry.register(pr_comment::GithubPrCommentTool);
+    registry.register(pr_comment_reply::GithubPrCommentReplyTool);
     registry.register(pr_review::GithubPrReviewTool);
     registry.register(pr_merge::GithubPrMergeTool);
     registry.register(pr_close::GithubPrCloseTool);
@@ -78,6 +80,7 @@ mod tests {
             "github.pr.view",
             "github.pr.checkout",
             "github.pr.comment",
+            "github.pr.comment.reply",
             "github.pr.review",
             "github.pr.merge",
             "github.pr.close",
@@ -162,6 +165,69 @@ mod tests {
             super::pr_comment::build_exec_request(&ToolContext::default(), &json!({ "pr": "42" }))
                 .expect_err("must fail");
         assert!(err.to_string().contains("body"), "{err}");
+    }
+
+    #[test]
+    fn pr_comment_reply_rejects_missing_repo() {
+        let err = super::pr_comment_reply::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "pr": "42", "comment_id": "123", "body": "reply" }),
+        )
+        .expect_err("must fail");
+        assert!(err.to_string().contains("repo"), "{err}");
+    }
+
+    #[test]
+    fn pr_comment_reply_rejects_missing_comment_id() {
+        let err = super::pr_comment_reply::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "repo": "owner/repo", "pr": "42", "body": "reply" }),
+        )
+        .expect_err("must fail");
+        assert!(err.to_string().contains("comment_id"), "{err}");
+    }
+
+    #[test]
+    fn pr_comment_reply_builds_correct_api_endpoint() {
+        let (req, _body) = super::pr_comment_reply::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "repo": "owner/repo",
+                "pr": "34",
+                "comment_id": "12345",
+                "body": "looks good",
+            }),
+        )
+        .expect("valid");
+        assert_eq!(req.program, "gh");
+        assert_eq!(req.args[0], "api");
+        assert_eq!(req.args[1], "repos/owner/repo/pulls/34/comments/12345/replies");
+        assert_eq!(req.args[2], "-f");
+        assert_eq!(req.args[3], "body=looks good");
+    }
+
+    #[test]
+    fn pr_comment_reply_appends_agent_signature() {
+        let ctx = ToolContext {
+            agent_name: Some("claude".to_string()),
+            model_name: Some("opus-4.6".to_string()),
+            ..Default::default()
+        };
+        let (req, _body) = super::pr_comment_reply::build_exec_request(
+            &ctx,
+            &json!({
+                "repo": "owner/repo",
+                "pr": "34",
+                "comment_id": "12345",
+                "body": "fixed",
+            }),
+        )
+        .expect("valid");
+        let body_arg = &req.args[3];
+        assert!(
+            body_arg.ends_with("\n\n*Reviewed by: claude / opus-4.6*"),
+            "body missing signature: {body_arg}"
+        );
     }
 
     #[test]
