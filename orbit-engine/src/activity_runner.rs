@@ -88,14 +88,23 @@ where
 {
     let effective_max = max_attempts.max(1);
     let mut attempt = 0_u32;
+    let mut accumulated_duration_ms: u64 = 0;
     loop {
         attempt += 1;
         let outcome = attempt_fn();
+        if let Some(d) = outcome.duration_ms {
+            accumulated_duration_ms += d;
+        }
         let is_retryable = outcome
             .error_code
             .as_deref()
             .is_some_and(is_transient_error);
         if attempt >= effective_max || !is_retryable {
+            let mut outcome = outcome;
+            outcome.retry_count = attempt - 1;
+            if attempt > 1 {
+                outcome.duration_ms = Some(accumulated_duration_ms);
+            }
             return outcome;
         }
         // Exponential backoff: delay = backoff_seconds * 2^(attempt-1).
@@ -181,6 +190,7 @@ mod retry_tests {
             error_code: None,
             error_message: None,
             protocol_violation: false,
+            retry_count: 0,
         }
     }
 

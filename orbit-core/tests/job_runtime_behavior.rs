@@ -779,6 +779,7 @@ fn agent_step_records_task_agent_and_model_when_execution_starts() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Feature,
+            source_task_id: None,
         })
         .expect("add task");
 
@@ -837,6 +838,7 @@ fn failed_steps_append_friction_entries_to_daily_log() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Issue,
+            source_task_id: None,
         })
         .expect("add task");
 
@@ -908,6 +910,7 @@ fn run_job_now_with_input_passes_manual_input_to_agent() {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task");
 
@@ -2683,6 +2686,7 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -2839,6 +2843,7 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task");
     let started = runtime
@@ -2940,6 +2945,7 @@ fn implement_change_result_status_flows_into_update_task_as_task_status() {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task");
     runtime
@@ -3106,6 +3112,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Refactor,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -3283,6 +3290,7 @@ fn commit_task_changes_uses_summary_from_task() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Issue,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -3453,6 +3461,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Issue,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -3691,6 +3700,7 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -3894,6 +3904,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Feature,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -4124,6 +4135,7 @@ fn open_pr_automation_rejects_stale_task_branches_before_pr_creation() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -4296,6 +4308,7 @@ fn merge_pr_automation_rejects_stale_task_branches_before_merging() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -4469,6 +4482,7 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task")
         .id;
@@ -4797,6 +4811,7 @@ fn create_branch_includes_local_base_commits_not_yet_pushed_to_remote() {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         })
         .expect("add task")
         .id;

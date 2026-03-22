@@ -26,6 +26,7 @@ pub mod error;
 pub mod event;
 pub mod friction;
 pub mod id;
+pub mod metrics;
 pub mod job;
 pub mod policy_decision;
 pub mod redaction;
@@ -42,6 +43,7 @@ pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use friction::FrictionEntry;
 pub use id::OrbitId;
+pub use metrics::MetricsEntry;
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
     JobScheduleState, JobStep, JobTargetType, default_job_max_active_runs,
@@ -67,7 +69,8 @@ mod tests {
 
     use crate::{
         Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult, FrictionEntry, Job,
-        JobRun, JobRunState, JobScheduleState, JobStep, OrbitEvent, Role, Skill, TaskStatus,
+        JobRun, JobRunState, JobScheduleState, JobStep, MetricsEntry, OrbitEvent, Role, Skill,
+        TaskStatus,
     };
 
     #[test]
@@ -283,6 +286,28 @@ mod tests {
         let json = serde_json::to_string(&entry).expect("serialize friction entry");
         let decoded: FrictionEntry =
             serde_json::from_str(&json).expect("deserialize friction entry");
+
+        assert_eq!(decoded, entry);
+    }
+
+    #[test]
+    fn metrics_entry_round_trips() {
+        let entry = MetricsEntry {
+            ts: Utc::now(),
+            job_run: "JR-456".to_string(),
+            step: "execute_task".to_string(),
+            task_id: Some("T20260322-024246".to_string()),
+            agent: Some("claude".to_string()),
+            model: Some("opus-4.6".to_string()),
+            tool_invocations: 12,
+            token_usage: Some(25000),
+            step_duration_ms: Some(60000),
+            retry_count: 1,
+        };
+
+        let json = serde_json::to_string(&entry).expect("serialize metrics entry");
+        let decoded: MetricsEntry =
+            serde_json::from_str(&json).expect("deserialize metrics entry");
 
         assert_eq!(decoded, entry);
     }

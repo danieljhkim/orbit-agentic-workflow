@@ -35,6 +35,7 @@ pub struct TaskCreateParams {
     pub task_type: TaskType,
     pub pr_number: Option<String>,
     pub proposed_by: Option<String>,
+    pub source_task_id: Option<String>,
     pub comments: Vec<TaskComment>,
 }
 
@@ -65,6 +66,7 @@ pub struct TaskUpdateParams {
     pub task_type: Option<TaskType>,
     pub pr_number: Option<Option<String>>,
     pub proposed_by: Option<Option<String>>,
+    pub source_task_id: Option<Option<String>>,
     pub status_event: Option<String>,
     pub status_note: Option<String>,
     pub append_history: Vec<TaskHistoryEntry>,

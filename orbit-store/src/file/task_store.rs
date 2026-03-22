@@ -128,6 +128,8 @@ struct TaskFileDocument {
     proposed_by: Option<String>,
     #[serde(default)]
     pr_number: Option<String>,
+    #[serde(default)]
+    source_task_id: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(default)]
@@ -194,6 +196,7 @@ impl TaskFileStore {
                 task_type: params.task_type,
                 pr_number: params.pr_number,
                 proposed_by: params.proposed_by,
+                source_task_id: params.source_task_id,
                 created_at: now,
                 updated_at: now,
                 acceptance_criteria: Vec::new(),
@@ -343,6 +346,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.proposed_by {
             bundle.doc.proposed_by = value.clone();
+        }
+        if let Some(value) = &fields.source_task_id {
+            bundle.doc.source_task_id = value.clone();
         }
         if !fields.append_history.is_empty() {
             bundle.doc.history.extend(fields.append_history.clone());
@@ -588,6 +594,11 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_field("model", &doc.model)?);
     yaml.push_str(&yaml_field("pr_number", &doc.pr_number)?);
 
+    if doc.source_task_id.is_some() {
+        yaml.push_str(&yaml_section("attribution"));
+        yaml.push_str(&yaml_field("source_task_id", &doc.source_task_id)?);
+    }
+
     yaml.push_str(&yaml_section("timestamps"));
     yaml.push_str(&yaml_field("created_at", &doc.created_at)?);
     yaml.push_str(&yaml_field("updated_at", &doc.updated_at)?);
@@ -644,6 +655,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         task_type: bundle.doc.task_type,
         pr_number: bundle.doc.pr_number,
         proposed_by: bundle.doc.proposed_by,
+        source_task_id: bundle.doc.source_task_id,
         comments: bundle.doc.comments,
         history: bundle.doc.history,
         created_at: bundle.doc.created_at,
@@ -682,6 +694,7 @@ mod tests {
             task_type: TaskType::Refactor,
             pr_number: None,
             proposed_by: Some("daniel".to_string()),
+            source_task_id: None,
             comments: Vec::new(),
         }
     }
@@ -921,6 +934,7 @@ mod tests {
                 task_type: TaskType::Task,
                 pr_number: None,
                 proposed_by: None,
+                source_task_id: None,
                 comments: Vec::new(),
             })
             .expect("create second task");

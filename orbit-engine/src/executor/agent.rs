@@ -47,6 +47,7 @@ pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             error_code: Some(AGENT_TIMEOUT.to_string()),
             error_message: Some(format_timeout_error_message(&exec_result)),
             protocol_violation: false,
+            retry_count: 0,
         };
     }
 
@@ -71,6 +72,7 @@ pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
                             .to_string(),
                     ),
                     protocol_violation: false,
+                    retry_count: 0,
                 };
             }
             process_agent_response(host, execution, &exec_result, envelope, state)
@@ -83,6 +85,7 @@ pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
             error_message: Some(message),
             protocol_violation: true,
+            retry_count: 0,
         },
         Err(err) => AttemptOutcome {
             state: JobRunState::Failed,
@@ -92,6 +95,7 @@ pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
             error_message: Some(err.to_string()),
             protocol_violation: false,
+            retry_count: 0,
         },
     }
 }
@@ -271,6 +275,7 @@ fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         error_code,
         error_message,
         protocol_violation: false,
+        retry_count: 0,
     }
 }
 
@@ -292,6 +297,7 @@ fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
             error_message: Some(err.to_string()),
             protocol_violation: true,
+            retry_count: 0,
         });
     }
     if run_state == JobRunState::Success
@@ -310,6 +316,7 @@ fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             error_code: Some(error_code),
             error_message: Some(err.to_string()),
             protocol_violation,
+            retry_count: 0,
         });
     }
 

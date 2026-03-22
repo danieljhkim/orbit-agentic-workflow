@@ -1,6 +1,6 @@
 name: bug-fix
 description: Template for reproducing and fixing a defect
-task_type: issue
+task_type: bug
 priority: high
 description_template: |
   <SUMMARY_OF_THE_BUG>

@@ -87,7 +87,8 @@ impl From<RawTaskType> for TaskType {
         match v {
             RawTaskType::Task => TaskType::Task,
             RawTaskType::Feature => TaskType::Feature,
-            RawTaskType::Issue | RawTaskType::Bug => TaskType::Issue,
+            RawTaskType::Issue => TaskType::Issue,
+            RawTaskType::Bug => TaskType::Bug,
             RawTaskType::Chore => TaskType::Chore,
             RawTaskType::Refactor => TaskType::Refactor,
         }

@@ -1,8 +1,11 @@
 use chrono::{DateTime, Utc};
 use orbit_agent::Agent;
 use orbit_store::friction_log::append_friction_entry;
+use orbit_store::metrics_log::append_metrics_entry;
 use orbit_store::JobRunStepParams;
-use orbit_types::{FrictionEntry, Job, JobRun, JobRunState, JobStep, OrbitError, OrbitEvent};
+use orbit_types::{
+    FrictionEntry, Job, JobRun, JobRunState, JobStep, MetricsEntry, OrbitError, OrbitEvent,
+};
 use serde_json::Value;
 use std::path::Path;
 
@@ -171,6 +174,17 @@ fn execute_activity_with_retries<H: EngineHost>(
                     step_finished,
                 );
             }
+
+            append_step_metrics(
+                data_root,
+                host,
+                &run.run_id,
+                &step.target_id,
+                &execution,
+                outcome.duration_ms,
+                outcome.retry_count,
+                step_finished,
+            );
 
             if outcome.protocol_violation {
                 last_protocol_violation = true;
@@ -635,6 +649,38 @@ fn normalize_agent_label(agent_cli: &str) -> String {
         .and_then(|value| value.to_str())
         .unwrap_or(agent_cli)
         .to_ascii_lowercase()
+}
+
+fn append_step_metrics<H: EngineHost>(
+    data_root: &Path,
+    host: &H,
+    run_id: &str,
+    step_id: &str,
+    execution: &crate::context::ExecutionContext,
+    duration_ms: Option<u64>,
+    retry_count: u32,
+    ts: DateTime<Utc>,
+) {
+    let agent = (!execution.agent_cli.trim().is_empty())
+        .then(|| normalize_agent_label(&execution.agent_cli));
+    let model = resolved_model_name(host, execution);
+    let task_id = extract_task_id(&execution.input).map(ToOwned::to_owned);
+
+    let entry = MetricsEntry {
+        ts,
+        job_run: run_id.to_string(),
+        step: step_id.to_string(),
+        task_id,
+        agent,
+        model,
+        tool_invocations: 0, // Not yet tracked at the engine level
+        token_usage: None,   // Not yet tracked at the engine level
+        step_duration_ms: duration_ms,
+        retry_count,
+    };
+    if let Err(error) = append_metrics_entry(data_root, &entry) {
+        eprintln!("orbit: failed to append metrics log entry: {error}");
+    }
 }
 
 fn json_value_type_name(value: &Value) -> &'static str {

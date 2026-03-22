@@ -242,6 +242,7 @@ impl RuntimeHost for OrbitRuntime {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         });
         Ok(())
     }

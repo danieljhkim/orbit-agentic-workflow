@@ -50,6 +50,12 @@ pub(super) fn build_exec_request(
         args.push("--type".to_string());
         args.push(task_type);
     }
+    if let Some(source_task) =
+        super::optional_string_alias(input, &["source_task_id", "source_task", "sourceTaskId"])?
+    {
+        args.push("--source-task".to_string());
+        args.push(source_task);
+    }
 
     args.push("--json".to_string());
     Ok(super::orbit_exec_request(ctx, args))
@@ -112,6 +118,13 @@ impl Tool for OrbitTaskAddTool {
                 ToolParam {
                     name: "type".to_string(),
                     description: "Optional task type".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "source_task_id".to_string(),
+                    description: "For bug tasks: originating task ID that introduced the defect"
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
