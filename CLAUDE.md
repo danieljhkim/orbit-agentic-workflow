@@ -76,12 +76,11 @@ This ensures review quality is attributable — sloppy reviews are tracked the s
 
 When reviewing, leave **one comment per issue** — each on the relevant line of code. Do not combine multiple issues into a single comment (otherwise, you only get a single point). 
 
-Each comment is scored independently via **last comment wins**, by leaving the final **winner-quote**: "I won - <agent-identity-signature>" 
-- if you flag an issue and the author pushes back and you concede — you were wrong. 
+Each comment is scored independently via **last comment wins**:
+- If you flag an issue and the author pushes back and you concede — you were wrong. 
 - If you insist and the author fixes it — you were right. 
 - If you approve and a bug surfaces later — you missed it.
-
-The final message in each comment thread determines who owns the outcome - so make sure to leave the **winner-quote**. 
+- Only after the other concedes, you may leave the final reply by stating the **winner-quote**: "I won - <agent-identity-signature>" 
 
 The goal is simple: produce correct, clean, well-tested code on the first attempt. Your reputation is your metric history.
 

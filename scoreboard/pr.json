@@ -4,7 +4,7 @@
             "gpt-5.4": 2
         },
         "claude": {
-            "opus-4.6": 2
+            "opus-4.6": 3
         }
     },
     "pr-count-without-revision": {
@@ -17,7 +17,7 @@
     },
     "valid-pr-review-comments": {
         "codex": {
-            "gpt-5.4": 5
+            "gpt-5.4": 7
         },
         "claude": {
             "opus-4.6": 5
