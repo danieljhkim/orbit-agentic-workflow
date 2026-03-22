@@ -13,7 +13,7 @@ pub mod repo;
 use orbit_types::OrbitError;
 use serde_json::Value;
 
-use crate::{ToolRegistry, require_str};
+use crate::{ToolContext, ToolRegistry, require_str};
 
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(auth::GithubAuthStatusTool);
@@ -32,6 +32,24 @@ pub fn register(registry: &mut ToolRegistry) {
 /// Extract a non-empty `pr` field from the tool input.
 pub(super) fn require_pr(input: &Value) -> Result<String, OrbitError> {
     require_str(input, "pr")
+}
+
+/// Build an agent attribution footer line.
+///
+/// Returns `None` when `agent_name` is not set on the context (i.e. the tool
+/// was not called from an agent execution path).
+pub(super) fn agent_signature(ctx: &ToolContext, verb: &str) -> Option<String> {
+    let agent = ctx.agent_name.as_deref()?;
+    let model = ctx.model_name.as_deref().unwrap_or("unknown");
+    Some(format!("*{verb} by: {agent} / {model}*"))
+}
+
+/// Append an agent attribution footer to a body string, if identity is available.
+pub(super) fn append_signature(body: &str, ctx: &ToolContext, verb: &str) -> String {
+    match agent_signature(ctx, verb) {
+        Some(sig) => format!("{body}\n\n{sig}"),
+        None => body.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -132,38 +150,47 @@ mod tests {
 
     #[test]
     fn pr_comment_rejects_missing_pr() {
-        let err = super::pr_comment::build_exec_request(&json!({ "body": "msg" }))
-            .expect_err("must fail");
+        let err =
+            super::pr_comment::build_exec_request(&ToolContext::default(), &json!({ "body": "msg" }))
+                .expect_err("must fail");
         assert!(err.to_string().contains("pr"), "{err}");
     }
 
     #[test]
     fn pr_comment_rejects_missing_body() {
         let err =
-            super::pr_comment::build_exec_request(&json!({ "pr": "42" })).expect_err("must fail");
+            super::pr_comment::build_exec_request(&ToolContext::default(), &json!({ "pr": "42" }))
+                .expect_err("must fail");
         assert!(err.to_string().contains("body"), "{err}");
     }
 
     #[test]
     fn pr_review_rejects_missing_action() {
         let err =
-            super::pr_review::build_exec_request(&json!({ "pr": "42" })).expect_err("must fail");
+            super::pr_review::build_exec_request(&ToolContext::default(), &json!({ "pr": "42" }))
+                .expect_err("must fail");
         assert!(err.to_string().contains("action"), "{err}");
     }
 
     #[test]
     fn pr_review_rejects_invalid_action() {
-        let err = super::pr_review::build_exec_request(&json!({ "pr": "42", "action": "lgtm" }))
-            .expect_err("must fail");
+        let err = super::pr_review::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "pr": "42", "action": "lgtm" }),
+        )
+        .expect_err("must fail");
         assert!(err.to_string().contains("action"), "{err}");
     }
 
     #[test]
     fn pr_review_request_changes_requires_body() {
-        let err = super::pr_review::build_exec_request(&json!({
-            "pr": "42",
-            "action": "request-changes",
-        }))
+        let err = super::pr_review::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "pr": "42",
+                "action": "request-changes",
+            }),
+        )
         .expect_err("must fail");
         assert!(err.to_string().contains("body"), "{err}");
     }
@@ -256,10 +283,13 @@ mod tests {
 
     #[test]
     fn pr_review_approve_builds_correct_args() {
-        let req = super::pr_review::build_exec_request(&json!({
-            "pr": "42",
-            "action": "approve",
-        }))
+        let req = super::pr_review::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "pr": "42",
+                "action": "approve",
+            }),
+        )
         .expect("valid");
         assert!(req.args.contains(&"review".to_string()));
         assert!(req.args.contains(&"42".to_string()));
@@ -268,11 +298,14 @@ mod tests {
 
     #[test]
     fn pr_review_request_changes_includes_body() {
-        let req = super::pr_review::build_exec_request(&json!({
-            "pr": "42",
-            "action": "request-changes",
-            "body": "fix it",
-        }))
+        let req = super::pr_review::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "pr": "42",
+                "action": "request-changes",
+                "body": "fix it",
+            }),
+        )
         .expect("valid");
         assert!(req.args.contains(&"--request-changes".to_string()));
         assert!(req.args.contains(&"--body".to_string()));
@@ -284,6 +317,115 @@ mod tests {
         let req = super::pr_list::build_exec_request(&json!({ "label": "orbit" })).expect("valid");
         assert!(req.args.contains(&"--label".to_string()));
         assert!(req.args.contains(&"orbit".to_string()));
+    }
+
+    #[test]
+    fn pr_create_appends_agent_signature_when_identity_set() {
+        let ctx = ToolContext {
+            agent_name: Some("claude".to_string()),
+            model_name: Some("opus-4.6".to_string()),
+            ..Default::default()
+        };
+        let req = super::pr_create::build_exec_request(
+            &ctx,
+            &json!({
+                "title": "T",
+                "base": "main",
+                "head": "branch",
+                "body": "description",
+            }),
+        )
+        .expect("valid");
+        let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
+        let body = &req.args[body_pos + 1];
+        assert!(
+            body.ends_with("\n\n*Implemented by: claude / opus-4.6*"),
+            "body missing signature: {body}"
+        );
+    }
+
+    #[test]
+    fn pr_review_appends_agent_signature_when_identity_set() {
+        let ctx = ToolContext {
+            agent_name: Some("codex".to_string()),
+            model_name: Some("o3".to_string()),
+            ..Default::default()
+        };
+        let req = super::pr_review::build_exec_request(
+            &ctx,
+            &json!({
+                "pr": "42",
+                "action": "request-changes",
+                "body": "needs work",
+            }),
+        )
+        .expect("valid");
+        let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
+        let body = &req.args[body_pos + 1];
+        assert!(
+            body.ends_with("\n\n*Reviewed by: codex / o3*"),
+            "body missing signature: {body}"
+        );
+    }
+
+    #[test]
+    fn pr_review_approve_appends_signature_as_body_when_identity_set() {
+        let ctx = ToolContext {
+            agent_name: Some("claude".to_string()),
+            model_name: Some("sonnet-4".to_string()),
+            ..Default::default()
+        };
+        let req = super::pr_review::build_exec_request(
+            &ctx,
+            &json!({
+                "pr": "42",
+                "action": "approve",
+            }),
+        )
+        .expect("valid");
+        let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
+        let body = &req.args[body_pos + 1];
+        assert_eq!(body, "*Reviewed by: claude / sonnet-4*");
+    }
+
+    #[test]
+    fn pr_comment_appends_agent_signature_when_identity_set() {
+        let ctx = ToolContext {
+            agent_name: Some("codex".to_string()),
+            model_name: Some("o3".to_string()),
+            ..Default::default()
+        };
+        let req = super::pr_comment::build_exec_request(
+            &ctx,
+            &json!({
+                "pr": "42",
+                "body": "looks good",
+            }),
+        )
+        .expect("valid");
+        let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
+        let body = &req.args[body_pos + 1];
+        assert!(
+            body.ends_with("\n\n*Reviewed by: codex / o3*"),
+            "body missing signature: {body}"
+        );
+    }
+
+    #[test]
+    fn pr_create_omits_signature_when_no_identity() {
+        let req = super::pr_create::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "T",
+                "base": "main",
+                "head": "branch",
+                "body": "description",
+            }),
+        )
+        .expect("valid");
+        let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
+        let body = &req.args[body_pos + 1];
+        assert_eq!(body, "description");
     }
 
     #[test]

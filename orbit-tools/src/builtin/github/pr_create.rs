@@ -36,7 +36,7 @@ pub(super) fn build_exec_request(
 
     if let Some(b) = body {
         args.push("--body".to_string());
-        args.push(b.to_string());
+        args.push(super::append_signature(b, ctx, "Implemented"));
     } else if let Some(f) = body_file {
         args.push("--body-file".to_string());
         args.push(f.to_string());

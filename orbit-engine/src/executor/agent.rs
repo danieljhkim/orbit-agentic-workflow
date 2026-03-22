@@ -143,9 +143,12 @@ fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     let (args, _stdout_schema_file) =
         prepare_exec_args(&invocation).map_err(invocation_failed_outcome)?;
 
-    let environment_mode = inject_activity_tools(
-        host.execution_environment_mode(&execution.env_extra),
-        &execution.activity.tools,
+    let environment_mode = inject_agent_identity(
+        inject_activity_tools(
+            host.execution_environment_mode(&execution.env_extra),
+            &execution.activity.tools,
+        ),
+        execution,
     );
 
     run_process(
@@ -179,6 +182,42 @@ fn inject_activity_tools(mode: EnvironmentMode, tools: &[String]) -> Environment
             EnvironmentMode::ClearAndSet(pairs)
         }
     }
+}
+
+fn inject_agent_identity(
+    mode: EnvironmentMode,
+    execution: &ExecutionContext,
+) -> EnvironmentMode {
+    let agent = normalize_agent_label(&execution.agent_cli);
+    if agent.is_empty() {
+        return mode;
+    }
+    let model = execution.model.clone().unwrap_or_default();
+    let inject = |pairs: &mut Vec<(String, String)>| {
+        pairs.push(("ORBIT_AGENT_NAME".to_string(), agent.clone()));
+        if !model.is_empty() {
+            pairs.push(("ORBIT_AGENT_MODEL".to_string(), model.clone()));
+        }
+    };
+    match mode {
+        EnvironmentMode::ClearAndSet(mut pairs) => {
+            inject(&mut pairs);
+            EnvironmentMode::ClearAndSet(pairs)
+        }
+        EnvironmentMode::Inherit => {
+            let mut pairs: Vec<(String, String)> = std::env::vars().collect();
+            inject(&mut pairs);
+            EnvironmentMode::ClearAndSet(pairs)
+        }
+    }
+}
+
+fn normalize_agent_label(agent_cli: &str) -> String {
+    std::path::Path::new(agent_cli)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(agent_cli)
+        .to_ascii_lowercase()
 }
 
 fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(

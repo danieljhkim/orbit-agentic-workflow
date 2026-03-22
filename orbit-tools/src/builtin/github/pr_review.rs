@@ -6,7 +6,10 @@ use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext, check_exec_result, require_st
 
 pub struct GithubPrReviewTool;
 
-pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
+pub(super) fn build_exec_request(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<ExecRequest, OrbitError> {
     let pr = super::require_pr(input)?;
     let action = require_str(input, "action")?;
 
@@ -38,7 +41,10 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
 
     if let Some(b) = body {
         args.push("--body".to_string());
-        args.push(b.to_string());
+        args.push(super::append_signature(b, ctx, "Reviewed"));
+    } else if let Some(sig) = super::agent_signature(ctx, "Reviewed") {
+        args.push("--body".to_string());
+        args.push(sig);
     }
 
     if let Some(repo) = input.get("repo").and_then(Value::as_str) {
@@ -94,8 +100,8 @@ impl Tool for GithubPrReviewTool {
         }
     }
 
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(&input)?;
+    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let req = build_exec_request(ctx, &input)?;
         let result = run_process(&req, &NoSandbox)?;
         check_exec_result(&result, "gh pr review")?;
         Ok(json!({
