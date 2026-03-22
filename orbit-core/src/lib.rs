@@ -767,6 +767,43 @@ mod tests {
     }
 
     #[test]
+    fn explicit_identity_overrides_default_actor_label_for_task_provenance() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+
+        let task = runtime
+            .add_task_with_identity(
+                TaskAddParams {
+                    title: "identity aware task".to_string(),
+                    comment: Some("seeded with explicit identity".to_string()),
+                    ..Default::default()
+                },
+                Some("codex".to_string()),
+                Some("gpt-5.4".to_string()),
+            )
+            .expect("add");
+
+        assert_eq!(task.created_by.as_deref(), Some("codex / gpt-5.4"));
+        assert_eq!(task.assigned_to.as_deref(), Some("codex / gpt-5.4"));
+        assert_eq!(task.proposed_by.as_deref(), Some("codex / gpt-5.4"));
+        assert_eq!(task.comments[0].by, "codex / gpt-5.4");
+        assert_eq!(task.agent.as_deref(), Some("codex"));
+        assert_eq!(task.model.as_deref(), Some("gpt-5.4"));
+
+        let started = runtime
+            .start_task_with_identity(
+                &task.id,
+                Some("picked up with explicit identity".to_string()),
+                Some("implementation started".to_string()),
+                Some("codex".to_string()),
+                Some("gpt-5.4".to_string()),
+            )
+            .expect("start");
+        assert_eq!(started.assigned_to.as_deref(), Some("codex / gpt-5.4"));
+        assert_eq!(started.comments.last().expect("comment").by, "codex / gpt-5.4");
+        assert_eq!(started.history.last().expect("history").by, "codex / gpt-5.4");
+    }
+
+    #[test]
     fn start_task_moves_backlog_work_into_progress() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime

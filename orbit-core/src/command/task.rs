@@ -76,17 +76,18 @@ impl OrbitRuntime {
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
         let actor = self.actor().clone();
+        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let initial_status =
             if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent() {
                 TaskStatus::Proposed
             } else {
                 TaskStatus::Backlog
             };
-        let comments = build_task_comments(params.comment.clone(), actor.label.as_str())?;
+        let comments = build_task_comments(params.comment.clone(), effective_label.as_str())?;
 
         self.with_mutation(|| {
             let task = self.create_task_record(StoreTaskCreateParams {
-                actor: actor.label.clone(),
+                actor: effective_label.clone(),
                 title: params.title.clone(),
                 description: params.description.clone(),
                 plan: params.plan.clone(),
@@ -94,16 +95,16 @@ impl OrbitRuntime {
                 context_files: params.context_files.clone(),
                 workspace_path: params.workspace_path.clone(),
                 repo_root: None,
-                created_by: Some(actor.label.clone()),
+                created_by: Some(effective_label.clone()),
                 agent: agent.clone(),
                 model: model.clone(),
-                assigned_to: Some(actor.label.clone()),
+                assigned_to: Some(effective_label.clone()),
                 status: initial_status,
                 priority: params.priority,
                 complexity: params.complexity,
                 task_type: params.task_type,
                 pr_number: None,
-                proposed_by: Some(actor.label.clone()),
+                proposed_by: Some(effective_label.clone()),
                 source_task_id: params.source_task_id.clone(),
                 comments: comments.clone(),
             })?;
@@ -227,15 +228,16 @@ impl OrbitRuntime {
         }
 
         let actor = self.actor().clone();
+        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let status_note = status_note
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
-        let append_comments = build_task_comments(params.comment.clone(), actor.label.as_str())?;
+        let append_comments = build_task_comments(params.comment.clone(), effective_label.as_str())?;
         let assigned_to = params.status.and_then(|status| {
             if status == TaskStatus::InProgress {
-                Some(Some(actor.label.clone()))
+                Some(Some(effective_label.clone()))
             } else {
                 None
             }
@@ -245,7 +247,7 @@ impl OrbitRuntime {
             let task = self.update_task_record(
                 id,
                 StoreTaskUpdateParams {
-                    actor: actor.label.clone(),
+                    actor: effective_label.clone(),
                     assigned_to,
                     status_note,
                     agent: agent.clone().map(Some),
@@ -279,7 +281,8 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let append_comments = build_task_comments(comment, actor.label.as_str())?;
+        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         match task.status {
             TaskStatus::Proposed => {
@@ -287,11 +290,11 @@ impl OrbitRuntime {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
-                            actor: actor.label.clone(),
+                            actor: effective_label.clone(),
                             status: Some(TaskStatus::Backlog),
                             status_event: Some("proposal_approved".to_string()),
                             status_note: note.clone(),
-                            assigned_to: Some(Some(actor.label.clone())),
+                            assigned_to: Some(Some(effective_label.clone())),
                             agent: agent.clone().map(Some),
                             model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
@@ -302,7 +305,7 @@ impl OrbitRuntime {
                         task.clone(),
                         OrbitEvent::TaskProposalApproved {
                             id: id.to_string(),
-                            approved_by: actor.label.clone(),
+                            approved_by: effective_label.clone(),
                         },
                     ))
                 })?;
@@ -313,7 +316,7 @@ impl OrbitRuntime {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
-                            actor: actor.label.clone(),
+                            actor: effective_label.clone(),
                             status: Some(TaskStatus::Done),
                             status_event: Some("review_approved".to_string()),
                             status_note: note.clone(),
@@ -327,7 +330,7 @@ impl OrbitRuntime {
                         task.clone(),
                         OrbitEvent::TaskReviewApproved {
                             id: id.to_string(),
-                            approved_by: actor.label.clone(),
+                            approved_by: effective_label.clone(),
                         },
                     ))
                 })?;
@@ -358,7 +361,8 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let append_comments = build_task_comments(comment, actor.label.as_str())?;
+        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         match task.status {
             TaskStatus::Proposed => {
@@ -367,15 +371,15 @@ impl OrbitRuntime {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
-                            actor: actor.label.clone(),
+                            actor: effective_label.clone(),
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
-                            assigned_to: Some(Some(actor.label.clone())),
+                            assigned_to: Some(Some(effective_label.clone())),
                             agent: agent.clone().map(Some),
                             model: model.clone().map(Some),
                             append_history: vec![TaskHistoryEntry {
                                 at,
-                                by: actor.label.clone(),
+                                by: effective_label.clone(),
                                 event: "proposal_approved".to_string(),
                                 note: note.clone(),
                                 from_status: Some(TaskStatus::Proposed),
@@ -389,7 +393,7 @@ impl OrbitRuntime {
                         task.clone(),
                         OrbitEvent::TaskStarted {
                             id: id.to_string(),
-                            started_by: actor.label.clone(),
+                            started_by: effective_label.clone(),
                             approved_from_proposed: true,
                         },
                     ))
@@ -401,11 +405,11 @@ impl OrbitRuntime {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
-                            actor: actor.label.clone(),
+                            actor: effective_label.clone(),
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
                             status_note: note.clone(),
-                            assigned_to: Some(Some(actor.label.clone())),
+                            assigned_to: Some(Some(effective_label.clone())),
                             agent: agent.clone().map(Some),
                             model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
@@ -416,7 +420,7 @@ impl OrbitRuntime {
                         task.clone(),
                         OrbitEvent::TaskStarted {
                             id: id.to_string(),
-                            started_by: actor.label.clone(),
+                            started_by: effective_label.clone(),
                             approved_from_proposed: false,
                         },
                     ))
@@ -451,6 +455,7 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
+        let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let reason = note.trim();
         if reason.is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -458,7 +463,7 @@ impl OrbitRuntime {
             ));
         }
         let reason = reason.to_string();
-        let append_comments = build_task_comments(comment, actor.label.as_str())?;
+        let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         match task.status {
             TaskStatus::Proposed => {
@@ -466,7 +471,7 @@ impl OrbitRuntime {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
-                            actor: actor.label.clone(),
+                            actor: effective_label.clone(),
                             status: Some(TaskStatus::Rejected),
                             status_event: Some("proposal_rejected".to_string()),
                             status_note: Some(reason.clone()),
@@ -480,7 +485,7 @@ impl OrbitRuntime {
                         task.clone(),
                         OrbitEvent::TaskProposalRejected {
                             id: id.to_string(),
-                            rejected_by: actor.label.clone(),
+                            rejected_by: effective_label.clone(),
                         },
                     ))
                 })?;
@@ -491,7 +496,7 @@ impl OrbitRuntime {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
-                            actor: actor.label.clone(),
+                            actor: effective_label.clone(),
                             status: Some(TaskStatus::Rejected),
                             status_event: Some("review_rejected".to_string()),
                             status_note: Some(reason.clone()),
@@ -505,7 +510,7 @@ impl OrbitRuntime {
                         task.clone(),
                         OrbitEvent::TaskReviewRejected {
                             id: id.to_string(),
-                            rejected_by: actor.label.clone(),
+                            rejected_by: effective_label.clone(),
                         },
                     ))
                 })?;
@@ -643,4 +648,13 @@ fn build_task_comments(message: Option<String>, by: &str) -> Result<Vec<TaskComm
         by: by.to_string(),
         message: message.to_string(),
     }])
+}
+
+fn effective_actor_label(default_label: &str, agent: Option<&str>, model: Option<&str>) -> String {
+    match (agent, model) {
+        (Some(agent), Some(model)) => format!("{agent} / {model}"),
+        (Some(agent), None) => agent.to_string(),
+        (None, Some(model)) => model.to_string(),
+        (None, None) => default_label.to_string(),
+    }
 }

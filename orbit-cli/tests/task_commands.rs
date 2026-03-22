@@ -774,6 +774,49 @@ fn task_start_with_explicit_identity_updates_provenance_fields() {
 }
 
 #[test]
+fn direct_task_start_with_explicit_identity_updates_provenance_fields() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "direct precise provenance");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "start",
+            &id,
+            "--note",
+            "picked up with explicit identity",
+            "--comment",
+            "starting with provenance",
+            "--agent",
+            "codex",
+            "--model",
+            "gpt-5.4",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+
+    assert_eq!(task["status"], "in-progress");
+    assert_eq!(task["assigned_to"], "codex / gpt-5.4");
+    assert_eq!(task["agent"], "codex");
+    assert_eq!(task["model"], "gpt-5.4");
+    assert_eq!(task["comments"][0]["by"], "codex / gpt-5.4");
+    assert_eq!(task["comments"][0]["message"], "starting with provenance");
+    assert_eq!(
+        task["history"]
+            .as_array()
+            .expect("history")
+            .last()
+            .expect("latest")["by"],
+        "codex / gpt-5.4"
+    );
+}
+
+#[test]
 fn task_start_proposed_records_approval_and_start() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join(".orbit")).expect("create .orbit");
