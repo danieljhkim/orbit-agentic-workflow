@@ -489,6 +489,7 @@ mod tests {
             task_type: TaskType::Issue,
             pr_number: Some("18".to_string()),
             proposed_by: None,
+            source_task_id: None,
             complexity: None,
             comments: vec![],
             history: vec![],

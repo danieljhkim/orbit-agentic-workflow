@@ -214,8 +214,10 @@ impl FromStr for TaskComplexity {
 pub enum TaskType {
     Task,
     Feature,
-    #[cfg_attr(feature = "clap", value(alias = "bug"))]
     Issue,
+    /// An attributable defect — tracks which agent/model introduced the bug
+    /// via the `agent`, `model`, and `source_task_id` fields on [`Task`].
+    Bug,
     #[cfg_attr(feature = "clap", value(alias = "other"))]
     #[serde(alias = "other")]
     Chore,
@@ -228,6 +230,7 @@ impl Display for TaskType {
             TaskType::Task => "task",
             TaskType::Feature => "feature",
             TaskType::Issue => "issue",
+            TaskType::Bug => "bug",
             TaskType::Chore => "chore",
             TaskType::Refactor => "refactor",
         };
@@ -243,7 +246,7 @@ impl FromStr for TaskType {
             "task" => Ok(TaskType::Task),
             "feature" => Ok(TaskType::Feature),
             "issue" => Ok(TaskType::Issue),
-            "bug" => Ok(TaskType::Issue),
+            "bug" => Ok(TaskType::Bug),
             "chore" => Ok(TaskType::Chore),
             // Backward-compatible mapping for legacy persisted values.
             "other" => Ok(TaskType::Chore),
@@ -304,6 +307,9 @@ pub struct Task {
     pub pr_number: Option<String>,
     #[serde(default)]
     pub proposed_by: Option<String>,
+    /// For `Bug` tasks: the originating task whose implementation introduced the defect.
+    #[serde(default)]
+    pub source_task_id: Option<String>,
     #[serde(default)]
     pub comments: Vec<TaskComment>,
     #[serde(default)]
@@ -411,5 +417,61 @@ mod tests {
 
         assert_eq!(task.agent, None);
         assert_eq!(task.model, None);
+    }
+
+    #[test]
+    fn bug_type_round_trips_via_display_and_from_str() {
+        assert_eq!(TaskType::Bug.to_string(), "bug");
+        assert_eq!(TaskType::from_str("bug").unwrap(), TaskType::Bug);
+        assert_ne!(TaskType::from_str("bug").unwrap(), TaskType::Issue);
+    }
+
+    #[test]
+    fn bug_type_deserializes_from_json() {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "id": "T20260322-000003",
+            "title": "Regression in login flow",
+            "description": "desc",
+            "plan": "",
+            "execution_summary": "",
+            "context_files": [],
+            "status": "backlog",
+            "priority": "high",
+            "task_type": "bug",
+            "agent": "claude",
+            "model": "opus-4.6",
+            "source_task_id": "T20260320-021158",
+            "comments": [],
+            "history": [],
+            "created_at": "2026-03-22T00:00:00Z",
+            "updated_at": "2026-03-22T00:00:00Z"
+        }))
+        .expect("deserialize bug task");
+
+        assert_eq!(task.task_type, TaskType::Bug);
+        assert_eq!(task.source_task_id.as_deref(), Some("T20260320-021158"));
+        assert_eq!(task.agent.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn source_task_id_defaults_to_none() {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "id": "T20260322-000004",
+            "title": "Regular task",
+            "description": "desc",
+            "plan": "",
+            "execution_summary": "",
+            "context_files": [],
+            "status": "backlog",
+            "priority": "medium",
+            "task_type": "feature",
+            "comments": [],
+            "history": [],
+            "created_at": "2026-03-22T00:00:00Z",
+            "updated_at": "2026-03-22T00:00:00Z"
+        }))
+        .expect("deserialize task");
+
+        assert_eq!(task.source_task_id, None);
     }
 }

@@ -87,6 +87,8 @@ pub struct AttemptOutcome {
     pub error_code: Option<String>,
     pub error_message: Option<String>,
     pub protocol_violation: bool,
+    /// Number of retries that occurred before this final outcome (0 = first attempt succeeded/failed).
+    pub retry_count: u32,
 }
 
 impl AttemptOutcome {
@@ -99,6 +101,7 @@ impl AttemptOutcome {
             error_code: Some(error_code.to_string()),
             error_message: Some(message),
             protocol_violation: false,
+            retry_count: 0,
         }
     }
 
@@ -111,6 +114,7 @@ impl AttemptOutcome {
             error_code: None,
             error_message: None,
             protocol_violation: false,
+            retry_count: 0,
         }
     }
 }

@@ -20,6 +20,7 @@ pub struct TaskAddParams {
     pub priority: TaskPriority,
     pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
+    pub source_task_id: Option<String>,
 }
 
 impl Default for TaskAddParams {
@@ -34,6 +35,7 @@ impl Default for TaskAddParams {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
+            source_task_id: None,
         }
     }
 }
@@ -93,6 +95,7 @@ impl OrbitRuntime {
                 task_type: params.task_type,
                 pr_number: None,
                 proposed_by: Some(actor.label.clone()),
+                source_task_id: params.source_task_id.clone(),
                 comments: comments.clone(),
             })?;
             Ok((
@@ -535,6 +538,7 @@ impl OrbitRuntime {
             task_type: TaskType::Task,
             pr_number: None,
             proposed_by: (status == TaskStatus::Proposed).then_some(actor),
+            source_task_id: None,
             comments: Vec::new(),
         })
     }

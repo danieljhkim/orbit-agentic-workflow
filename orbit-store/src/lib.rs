@@ -35,6 +35,10 @@ pub mod friction_log {
     pub use crate::file::friction_log::{append_friction_entry, read_friction_entries_for_month};
 }
 
+pub mod metrics_log {
+    pub use crate::file::metrics_log::{append_metrics_entry, read_metrics_entries_for_month};
+}
+
 use chrono::{DateTime, Utc};
 
 pub use backend::{

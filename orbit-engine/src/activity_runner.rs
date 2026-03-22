@@ -96,6 +96,8 @@ where
             .as_deref()
             .is_some_and(is_transient_error);
         if attempt >= effective_max || !is_retryable {
+            let mut outcome = outcome;
+            outcome.retry_count = attempt - 1;
             return outcome;
         }
         // Exponential backoff: delay = backoff_seconds * 2^(attempt-1).
@@ -181,6 +183,7 @@ mod retry_tests {
             error_code: None,
             error_message: None,
             protocol_violation: false,
+            retry_count: 0,
         }
     }
 

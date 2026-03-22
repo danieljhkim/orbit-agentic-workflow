@@ -95,6 +95,9 @@ pub struct TaskAddArgs {
     /// Task type
     #[arg(long = "type", value_enum, default_value_t = TaskType::Task)]
     pub task_type: TaskType,
+    /// For bug tasks: the originating task whose implementation introduced the defect
+    #[arg(long = "source-task")]
+    pub source_task: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -148,6 +151,7 @@ impl Execute for TaskAddArgs {
             priority,
             complexity: self.complexity,
             task_type,
+            source_task_id: self.source_task.clone(),
         })?;
 
         if self.json {
@@ -395,6 +399,9 @@ impl Execute for TaskShowArgs {
             }
             if let Some(ref proposed_by) = task.proposed_by {
                 println!("{} {}", bold("Proposed By:"), proposed_by);
+            }
+            if let Some(ref source_task_id) = task.source_task_id {
+                println!("{} {}", bold("Source Task:"), source_task_id);
             }
             println!(
                 "{} {}",
@@ -833,6 +840,7 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "type": task.task_type.to_string(),
         "pr_number": task.pr_number,
         "proposed_by": task.proposed_by,
+        "source_task_id": task.source_task_id,
         "comments": task.comments,
         "history": task.history,
         "created_at": task.created_at.to_rfc3339(),

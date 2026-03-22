@@ -52,6 +52,7 @@ impl ActivityExecutor for AutomationExecutor {
                     error_code: None,
                     error_message: None,
                     protocol_violation: false,
+                    retry_count: 0,
                 }
             }
             Err(err) => AttemptOutcome::failed(ACTIVITY_EXECUTION_FAILED, err.to_string()),

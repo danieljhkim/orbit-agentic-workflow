@@ -89,6 +89,7 @@ mod tests {
                 error_code: None,
                 error_message: None,
                 protocol_violation: false,
+                retry_count: 0,
             }
         }
     }
