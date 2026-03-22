@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_types::{OrbitError, TaskStatus};
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
@@ -54,20 +54,27 @@ pub(super) fn create_task_worktree<H: RuntimeHost + TaskHost + ?Sized>(
         ))
     })?;
 
+    // Transition task to in-progress when creating the worktree (replaces the
+    // former standalone start_task automation step).  Only apply the transition
+    // when the task is not already in-progress to keep the step idempotent.
+    let task = host.get_task(task_id)?;
+    let status = if task.status != TaskStatus::InProgress {
+        Some(TaskStatus::InProgress)
+    } else {
+        None
+    };
+
     host.apply_task_automation_update(
         task_id,
         TaskAutomationUpdate {
+            status,
             workspace_path: Some(canonical_worktree.to_string_lossy().to_string()),
             repo_root: Some(canonical_repo_root.to_string_lossy().to_string()),
             ..TaskAutomationUpdate::default()
         },
     )?;
 
-    Ok(json!({
-        "workspace_path": canonical_worktree.to_string_lossy().to_string(),
-        "repo_root": canonical_repo_root.to_string_lossy().to_string(),
-        "branch": branch,
-    }))
+    Ok(json!({}))
 }
 
 pub(super) fn finalize_task_worktree(input: &Value) -> Result<Value, OrbitError> {

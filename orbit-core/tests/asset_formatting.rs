@@ -24,10 +24,6 @@ fn activity_assets_use_grouped_sections_and_literal_instruction_blocks() {
             include_str!("../assets/activities/create_branch.yaml"),
         ),
         (
-            "start_task",
-            include_str!("../assets/activities/start_task.yaml"),
-        ),
-        (
             "update_task",
             include_str!("../assets/activities/update_task.yaml"),
         ),
@@ -120,30 +116,28 @@ fn dispatch_task_asset_checks_context_files_for_conflict() {
 }
 
 #[test]
-fn pipeline_cli_activity_assets_document_workspace_path_input() {
-    let assets = [
-        include_str!("../assets/activities/run_tests.yaml"),
-        include_str!("../assets/activities/checkout_branch.yaml"),
-    ];
-
-    for raw in assets {
-        assert!(
-            raw.contains("workspace_path:\n        type: string"),
-            "pipeline CLI activity assets should document workspace_path input"
-        );
-    }
+fn pipeline_cli_activity_assets_use_task_id_input() {
+    let run_tests = include_str!("../assets/activities/run_tests.yaml");
+    assert!(
+        run_tests.contains("task_id:\n        type: string"),
+        "run_tests should accept task_id input for template context resolution"
+    );
+    assert!(
+        !run_tests.contains("workspace_path:\n        type: string"),
+        "run_tests should not declare workspace_path input (resolved from task via engine)"
+    );
 }
 
 #[test]
-fn worktree_pipeline_assets_document_isolated_worktree_contract() {
+fn worktree_pipeline_assets_use_task_id_spine() {
     let create_branch = include_str!("../assets/activities/create_branch.yaml");
     assert!(
-        create_branch.contains("repo_root:\n        type: string"),
-        "create_branch should declare repo_root output for downstream finalization"
+        create_branch.contains("task_id:\n        type: string"),
+        "create_branch should require task_id input"
     );
     assert!(
-        create_branch.contains("branch:\n        type: string"),
-        "create_branch should declare the task branch it checked out"
+        create_branch.contains("properties: {}"),
+        "create_branch output should be empty (workspace_path/repo_root written to task)"
     );
 
     let checkout_branch = include_str!("../assets/activities/checkout_branch.yaml");
@@ -158,12 +152,12 @@ fn worktree_pipeline_assets_document_isolated_worktree_contract() {
 
     let commit_changes = include_str!("../assets/activities/commit_changes.yaml");
     assert!(
-        commit_changes.contains("commit_message:\n        type: string"),
-        "commit_changes should declare the deterministic commit message output"
+        commit_changes.contains("task_id:\n        type: string"),
+        "commit_changes should require task_id input"
     );
     assert!(
-        commit_changes.contains("commit_sha:\n        type: string"),
-        "commit_changes should declare the commit sha output"
+        commit_changes.contains("properties: {}"),
+        "commit_changes output should be empty (all fields on the task)"
     );
 }
 
@@ -208,7 +202,7 @@ fn job_assets_use_grouped_sections() {
 }
 
 #[test]
-fn task_pipeline_starts_task_after_worktree_creation() {
+fn task_pipeline_creates_branch_then_implements() {
     let raw = include_str!("../assets/jobs/job_task_pipeline.yaml");
     assert!(
         raw.contains("max_active_runs: 4"),
@@ -219,8 +213,12 @@ fn task_pipeline_starts_task_after_worktree_creation() {
         &[
             "target_id: dispatch_task",
             "target_id: create_branch",
-            "target_id: start_task",
             "target_id: implement_change",
         ],
+    );
+    // start_task was removed — create_branch now transitions to in-progress.
+    assert!(
+        !raw.contains("target_id: start_task"),
+        "start_task step should no longer exist in the pipeline"
     );
 }

@@ -24,10 +24,6 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/create_branch.yaml"),
     ),
     (
-        "start_task",
-        include_str!("../../assets/activities/start_task.yaml"),
-    ),
-    (
         "update_task",
         include_str!("../../assets/activities/update_task.yaml"),
     ),
@@ -562,7 +558,6 @@ activity:
                 "checkout_branch",
                 "commit_changes",
                 "create_branch",
-                "start_task",
                 "update_task",
                 "dispatch_task",
                 "implement_change",

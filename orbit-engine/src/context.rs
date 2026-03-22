@@ -188,7 +188,6 @@ pub trait TaskHost {
         task_id: &str,
         status: TaskStatus,
         execution_summary: Option<String>,
-        files_changed: Vec<String>,
         comment: Option<String>,
         note: Option<String>,
     ) -> Result<Task, OrbitError>;
