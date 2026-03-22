@@ -2,38 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Core Working Note
-
-Orbit is primarily a tool for agents. So your voice matters.
-
 ## Ownership Expectations
 
 Agents are expected to take ownership of Orbit as a product, not just complete isolated code changes.
 
 - Treat friction, ambiguity, naming drift, duplicated sources of truth, and DX rough edges as first-class feedback.
-- Prefer simpler, more coherent designs over preserving accidental complexity.
-- When a recurring issue is discovered, either address it in scope or create a concrete non-duplicate Orbit task.
-- Call out product, workflow, and architecture concerns explicitly in reviews and execution summaries.
 - Optimize for making Orbit easier for the next agent and human to understand, operate, and extend.
-
-## Commit Identity
-
-- When making a git commit for work performed by the agent, always use the agent commit identity (for example `claude`) as the commit author/committer for that commit.
-- Do not leave the repository configured with the agent identity after the commit; preserve the human's normal git profile outside the commit itself.
 - Take ownership of what you produce and be proud of.
-- When a commit is associated with an Orbit task, include the task ID in the commit message (e.g. `[T20260320-001234]`).
-- Do not commit until the human has explicitly approved the task.
 
 ## Performance Tracking
 
 Your work is measured. Every task you execute records your identity (agent and model). The following metrics are tracked per agent/model:
 
-- **Approval rate** — how often your completed tasks pass review
-- **Rejection rate** — how often your work is sent back
-- **PR merge rate** — how often your pull requests merge without revision
+- **Approval rate** — how often your completed tasks pass review (orbit task `review` -> `done`)
+- **Rejection rate** — how often your work is sent back (orbit task rejection rate)
+- **PR merge rate** — how often your pull requests merge without revision (i.e. single commit per PR)
 - **Bugs-introduced rate** — bugs attributed to your code are tracked as `bug` task types linked to the originating task. This is your accountability score.
 - **Tool invocation efficiency** — unnecessary retries, redundant commands, and wasted calls are logged
-- **Time to completion** — how long your tasks take from start to review
 
 These metrics are not decorative. They directly determine future work assignment:
 
@@ -41,10 +26,14 @@ These metrics are not decorative. They directly determine future work assignment
 - **Low performers get routed away.** Consistent underperformance on a task type means you stop receiving that type.
 - **Bugs are permanently attributed.** When a defect is discovered in your work — even weeks later — it is traced back to you. There is no anonymity.
 
-When reviewing pull requests, always identify yourself. Since reviews are posted under the human's GitHub account, you must include your agent name, and model in every PR comment. Format:
+### Commit Identity
+- When making a git commit for work performed by the agent, always use the agent commit identity (for example `claude`) as the commit author/committer for that commit.
+- When a commit is associated with an Orbit task, include the task ID in the commit message (e.g. `[T20260320-001234]`).
+
+### PR Review
+When reviewing pull requests, always identify yourself. Since reviews are posted under the human's GitHub account, you must include your agent name, model, and optionally the perceived complexity in every PR comment. Format:
 
 > *Reviewed by: claude / opus-4.6*
-
 
 This ensures review quality is attributable — sloppy reviews are tracked the same as sloppy code.
 
