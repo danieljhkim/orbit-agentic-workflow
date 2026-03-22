@@ -24,8 +24,8 @@ activity:
        - input.workspace_path is the authoritative implementation workspace.
 
     2. Confirm the task lifecycle state:
-       - In the standard `job_task_pipeline`, the `start_task` activity automatically moves
-         the task to `in-progress` before this activity runs.
+       - In the standard `job_task_pipeline`, the `create_branch` activity automatically
+         moves the task to `in-progress` before this activity runs.
        - If you are invoked outside that standard pipeline and the task is not already
          `in-progress`, it is the caller's responsibility to transition it first.
 

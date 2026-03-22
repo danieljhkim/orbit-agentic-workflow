@@ -67,11 +67,21 @@ pub(super) fn commit_task_changes<H: TaskHost + ?Sized>(
         &workspace_path,
         &["diff", "--cached", "--name-only", "-z", "--relative"],
     )?;
+
+    // Idempotent: if there are no uncommitted changes (e.g. the agent already
+    // committed), return success with skipped=true instead of erroring.
     if changed_files.is_empty() {
-        return Err(OrbitError::Execution(format!(
-            "task worktree '{}' has no changes to commit",
-            workspace_path.display()
-        )));
+        git_success(&workspace_path, &["reset", "HEAD"])?;
+        let commit_sha = git_output(&workspace_path, &["rev-parse", "HEAD"])?;
+        return Ok(json!({
+            "repo_root": repo_root.to_string_lossy().to_string(),
+            "workspace_path": workspace_path.to_string_lossy().to_string(),
+            "branch": actual_branch.trim(),
+            "commit_message": "",
+            "commit_sha": commit_sha,
+            "changed_files": [],
+            "skipped": true,
+        }));
     }
 
     let message = task_commit_message(&task.task_type, &task.title, &task.id, &summary);

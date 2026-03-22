@@ -16,7 +16,6 @@ use crate::activity_runner::validate_activity_output_schema;
 use crate::context::{ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, ExecutionContext};
 
 const AUTOMATION_CREATE_TASK_WORKTREE: &str = "create_task_worktree";
-const AUTOMATION_START_TASK: &str = "start_task";
 const AUTOMATION_UPDATE_TASK: &str = "update_task";
 const AUTOMATION_COMMIT_TASK_CHANGES: &str = "commit_task_changes";
 const AUTOMATION_MERGE_PR_FROM_TASK: &str = "merge_pr_from_task";
@@ -72,7 +71,6 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + ?Size
 
     match spec.action.as_str() {
         AUTOMATION_CREATE_TASK_WORKTREE => worktree::create_task_worktree(host, input),
-        AUTOMATION_START_TASK => task::start_task(host, input),
         AUTOMATION_UPDATE_TASK => task::update_task(host, input),
         AUTOMATION_COMMIT_TASK_CHANGES => commit::commit_task_changes(host, input),
         AUTOMATION_MERGE_PR_FROM_TASK => pr::merge_pr_from_task(host, input),

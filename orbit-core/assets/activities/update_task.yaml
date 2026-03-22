@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Persist task status and execution details from a completed automation step
+  description: "Safety net: persist task status and execution details if the task is not already at the target status. Skips with skipped=true when the task status already matches."
 
   # ---- interface ----
   input_schema_json:
@@ -39,6 +39,9 @@ activity:
       task_id:
         type: string
         description: The updated task ID.
+      skipped:
+        type: boolean
+        description: True when the task was already at the target status and no mutation occurred.
 
   # ---- execution ----
   action: update_task

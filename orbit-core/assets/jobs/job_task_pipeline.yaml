@@ -10,12 +10,12 @@ job:
   #
   # Step flow:
   #   dispatch_task
-  #   create_branch    — create or reuse isolated worktree + orbit/<task_id> branch
-  #   start_task       — move the selected task into in-progress once the worktree is ready
+  #   create_branch    — create or reuse isolated worktree + orbit/<task_id> branch (also moves task to in-progress)
   #   implement_change — implement in the task worktree and persist an execution summary
+  #   update_task      — safety net: persist task status from implement_change output (skips if already at target)
   #   run_tests        — verify tests pass inside the task worktree
-  #   commit_changes   — let Orbit stage and commit repository changes in the task worktree
-  #   open_pr          — let Orbit open a PR using task title + execution_summary, but stop if the task branch has fallen behind the base branch
+  #   commit_changes   — safety net: stage and commit if the agent left uncommitted changes (skips if clean)
+  #   open_pr          — safety net: open a PR if one doesn't already exist (skips if PR found on task)
   #   review_pr        — review the opened PR against task acceptance criteria
   #   merge_pr         — merge approved PRs only after rechecking branch freshness, then advance tasks to done
   max_active_runs: 4
@@ -31,10 +31,6 @@ job:
     - target_type: activity
       target_id: create_branch
       timeout_seconds: 60
-
-    - target_type: activity
-      target_id: start_task
-      timeout_seconds: 15
 
     - target_type: activity
       target_id: implement_change

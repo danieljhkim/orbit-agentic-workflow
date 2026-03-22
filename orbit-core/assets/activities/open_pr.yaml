@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Open a pull request from Orbit task metadata through Orbit-owned automation after confirming the task branch is fresh against the base branch
+  description: "Safety net: open a pull request from Orbit task metadata if the task does not already have one. Skips with skipped=true when the task already references an open PR."
 
   # ---- interface ----
   input_schema_json:
@@ -58,6 +58,9 @@ activity:
       body:
         type: string
         description: Pull request body built from commit_message, branch freshness details, and changed_files, whether passed explicitly or loaded from the task.
+      skipped:
+        type: boolean
+        description: True when the task already had an open PR and creation was skipped.
 
   # ---- execution ----
   action: open_pr_from_task

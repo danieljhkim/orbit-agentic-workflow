@@ -24,10 +24,6 @@ fn activity_assets_use_grouped_sections_and_literal_instruction_blocks() {
             include_str!("../assets/activities/create_branch.yaml"),
         ),
         (
-            "start_task",
-            include_str!("../assets/activities/start_task.yaml"),
-        ),
-        (
             "update_task",
             include_str!("../assets/activities/update_task.yaml"),
         ),
@@ -208,7 +204,7 @@ fn job_assets_use_grouped_sections() {
 }
 
 #[test]
-fn task_pipeline_starts_task_after_worktree_creation() {
+fn task_pipeline_creates_branch_then_implements() {
     let raw = include_str!("../assets/jobs/job_task_pipeline.yaml");
     assert!(
         raw.contains("max_active_runs: 4"),
@@ -219,8 +215,12 @@ fn task_pipeline_starts_task_after_worktree_creation() {
         &[
             "target_id: dispatch_task",
             "target_id: create_branch",
-            "target_id: start_task",
             "target_id: implement_change",
         ],
+    );
+    // start_task was removed — create_branch now transitions to in-progress.
+    assert!(
+        !raw.contains("target_id: start_task"),
+        "start_task step should no longer exist in the pipeline"
     );
 }

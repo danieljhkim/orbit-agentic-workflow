@@ -112,6 +112,43 @@ pub(super) fn open_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
     let head = input_string_field(input, "branch")
         .unwrap_or_else(|| format!("orbit/{task_id}"));
     let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
+
+    // Idempotent: if the task already has a PR number, skip creation and return
+    // the existing PR info.  This handles the case where the agent (or a
+    // previous run) already opened the PR.
+    if let Some(ref existing_pr) = task.pr_number {
+        let tool_context = ToolContext {
+            cwd: Some(repo_root.to_string_lossy().to_string()),
+            allowed_tools: vec![],
+            ..Default::default()
+        };
+        let pr_view = host.run_tool_with_context_and_role(
+            "github.pr.view",
+            json!({ "pr": existing_pr }),
+            Role::Admin,
+            tool_context,
+        );
+        if let Ok(view) = pr_view {
+            let pr_url = view
+                .get("pull_request")
+                .and_then(|pr| pr.get("url"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            return Ok(json!({
+                "pr_url": pr_url,
+                "pr_number": existing_pr,
+                "title": task.title.trim(),
+                "body": "",
+                "base": base,
+                "head": head,
+                "skipped": true,
+            }));
+        }
+        // If the PR view failed (e.g. PR was closed/deleted), fall through to
+        // create a new one.
+    }
+
     let commit_message = input_string_field(input, "commit_message")
         .unwrap_or_default();
     let changed_files = match input.get("changed_files") {

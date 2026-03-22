@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Stage and commit task worktree changes through Orbit-owned automation
+  description: "Safety net: stage and commit task worktree changes if the agent left uncommitted work. Skips with skipped=true when the worktree is already clean."
 
   # ---- interface ----
   input_schema_json:
@@ -62,7 +62,10 @@ activity:
         type: array
         items:
           type: string
-        description: Repository-relative file paths included in the commit.
+        description: Repository-relative file paths included in the commit. Empty when skipped.
+      skipped:
+        type: boolean
+        description: True when the worktree had no uncommitted changes (agent already committed).
 
   # ---- execution ----
   action: commit_task_changes
