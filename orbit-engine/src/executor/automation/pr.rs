@@ -284,7 +284,6 @@ mod tests {
             _task_id: &str,
             _status: TaskStatus,
             _execution_summary: Option<String>,
-            _files_changed: Vec<String>,
             _comment: Option<String>,
             _note: Option<String>,
         ) -> Result<Task, OrbitError> {

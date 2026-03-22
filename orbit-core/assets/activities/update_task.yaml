@@ -28,33 +28,17 @@ activity:
       execution_summary:
         type: string
         description: Optional replacement execution summary for the task. Required for in-progress to review transitions.
-      files_changed:
-        type: array
-        items:
-          type: string
-        description: Optional changed file paths from the agent result envelope. Accepted for compatibility with agent outputs and validated, but not yet persisted on the task record.
       comment:
         type: string
         description: Optional task comment to append while persisting the result.
-      note:
-        type: string
-        description: Optional lifecycle note recorded on the status transition history entry.
   output_schema_json:
     type: object
     required:
-      - id
-      - status
-      - execution_summary
+      - task_id
     properties:
-      id:
+      task_id:
         type: string
         description: The updated task ID.
-      status:
-        type: string
-        description: Updated task status after the mutation.
-      execution_summary:
-        type: string
-        description: The task execution summary after the mutation.
 
   # ---- execution ----
   action: update_task

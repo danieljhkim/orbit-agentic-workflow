@@ -14,13 +14,17 @@ activity:
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
     You are reviewing a pull request for an Orbit task.
-
     Steps:
-    1. Call orbit.task.show with id: "{{input.task_id}}" to fetch the task.
-       - Note the task title, description, plan, and acceptanceCriteria.
+    1. Load task context (if available):
+       - If input.task_id is present, call orbit.task.show with input: {"id": "<task_id>"}
+         to fetch the task's title, description, plan, and acceptanceCriteria.
+         Example: orbit.task.show --input '{"id": "T20260315-123456"}'
+       - If input.task_id is absent, proceed without task metadata — review the PR on its
+         own merits using the PR description and changed files.
     2. Determine the PR identifier:
        - If input.pr is provided, use it directly.
-       - Otherwise use the task's `prNumber` field if set, or fall back to the branch name "orbit/{{input.task_id}}".
+       - If input.task_id is present, use the task's `prNumber` field if set, or fall back
+         to the branch name "orbit/<task_id>".
     3. Call github.pr.view with pr: <identifier> (and repo: "{{input.repo}}" if provided).
        - Inspect the PR title, body, changed files, and commits.
     4. Evaluate the PR against the task:
@@ -55,17 +59,16 @@ activity:
        - repo: "{{input.repo}}" if provided
     7. Return the action and body in the output.
 
-    If the task is not found or the PR cannot be located, return a clear error.
+    If input.task_id was provided but the task is not found, or the PR cannot be located,
+    return a clear error.
 
   # ---- interface ----
   input_schema_json:
     type: object
-    required:
-      - task_id
     properties:
       task_id:
         type: string
-        description: The Orbit task ID whose PR should be reviewed
+        description: Optional Orbit task ID whose PR should be reviewed. When present, the agent loads task metadata via orbit.task.show.
       pr:
         type: string
         description: PR number, URL, or branch name. Optional when task_id is provided; falls back to the task prNumber and then the task branch.

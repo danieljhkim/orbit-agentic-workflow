@@ -21,9 +21,9 @@ activity:
       task_id:
         type: string
         description: The Orbit task ID whose changes should be committed.
-      summary:
+      execution_summary:
         type: string
-        description: One-paragraph summary of what was implemented. Optional when task_id is provided; falls back to the task execution_summary.
+        description: Execution summary for the commit message body. Optional when task_id is provided; falls back to the task execution_summary.
       workspace_path:
         type: string
         description: Dedicated task worktree path where implementation completed. Optional when task_id is provided; falls back to the task workspace_path.

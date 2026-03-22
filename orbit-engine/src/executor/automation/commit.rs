@@ -42,11 +42,11 @@ pub(super) fn commit_task_changes<H: TaskHost + ?Sized>(
     )?;
     let expected_branch =
         input_string_field(input, "branch").unwrap_or_else(|| format!("orbit/{task_id}"));
-    let summary =
-        input_string_field(input, "summary").unwrap_or_else(|| task.execution_summary.clone());
+    let summary = input_string_field(input, "execution_summary")
+        .unwrap_or_else(|| task.execution_summary.clone());
     if summary.trim().is_empty() {
         return Err(OrbitError::Execution(format!(
-            "task '{}' commit_task_changes requires a non-empty summary from input.summary or task.execution_summary",
+            "task '{}' commit_task_changes requires a non-empty execution_summary from input or task",
             task_id
         )));
     }

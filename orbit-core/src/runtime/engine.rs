@@ -394,7 +394,6 @@ impl TaskHost for OrbitRuntime {
         task_id: &str,
         status: TaskStatus,
         execution_summary: Option<String>,
-        files_changed: Vec<String>,
         comment: Option<String>,
         note: Option<String>,
     ) -> Result<Task, OrbitError> {
@@ -403,7 +402,6 @@ impl TaskHost for OrbitRuntime {
             task_id,
             status,
             execution_summary,
-            files_changed,
             comment,
             note,
         )

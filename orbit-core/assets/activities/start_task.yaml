@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Transition task to in-progress and pass implementation metadata to downstream steps
+  description: Transition task to in-progress
 
   # ---- interface ----
   input_schema_json:
@@ -21,19 +21,11 @@ activity:
       task_id:
         type: string
         description: The Orbit task ID to start.
-      note:
-        type: string
-        description: Optional lifecycle note recorded with the start transition.
-      comment:
-        type: string
-        description: Optional task comment to append while starting the task.
   output_schema_json:
     type: object
     required:
       - task_id
       - status
-      - title
-      - description
     properties:
       task_id:
         type: string
@@ -41,20 +33,6 @@ activity:
       status:
         type: string
         description: Updated task status after the start transition.
-      title:
-        type: string
-        description: Task title for implementation.
-      description:
-        type: string
-        description: Task description with context and requirements.
-      plan:
-        type: string
-        description: Detailed implementation plan with numbered steps.
-      context_files:
-        type: array
-        items:
-          type: string
-        description: List of relevant file paths for context.
 
   # ---- execution ----
   action: start_task

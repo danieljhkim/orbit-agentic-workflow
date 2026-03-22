@@ -16,8 +16,11 @@ activity:
     You are implementing an Orbit task from plan to tested code.
 
     Steps:
-    1. Review the task metadata provided as input.
-       - Read input.title, input.description, and input.context_files carefully before touching any code.
+    1. Load task context:
+       - If input.task_id is present, call orbit.task.show with id: input.task_id to fetch
+         the task's title, description, plan, and context_files.
+       - If input.task_id is absent, proceed without task metadata — this activity can run
+         in taskless pipelines (e.g., lint-fix, deploy).
        - input.workspace_path is the authoritative implementation workspace.
 
     2. Confirm the task lifecycle state:
@@ -27,14 +30,14 @@ activity:
          `in-progress`, it is the caller's responsibility to transition it first.
 
     3. Explore the workspace:
-       - Read the files listed in input.context_files. Understand the existing code before writing.
+       - Read the files listed in the task's context_files. Understand the existing code before writing.
        - All relative file and process work should happen inside input.workspace_path.
 
     4. Implement the task:
-       - If input.plan is provided, follow the plan steps in order.
+       - If the task has a plan, follow the plan steps in order.
        - Write code with fs.write. Keep changes minimal and focused on the task scope.
        - Do not refactor unrelated code or add unrequested features.
-       - Only modify files that are within the task scope: files listed in input.context_files
+       - Only modify files that are within the task scope: files listed in the task's context_files
          or files the plan explicitly names. If a build or test failure can only be resolved
          by modifying a file outside that scope, do NOT silently make the change — return
          status: "blocked" and document the conflict in execution_summary so a human can
@@ -78,10 +81,7 @@ activity:
     7. Return output:
        - status: "review" when implementation is ready for persistence and verification
        - status: "blocked" when implementation could not be completed safely
-       - summary: one paragraph describing what was implemented
        - execution_summary: the full markdown summary (will be passed to update_task for persistence)
-       - files_changed: list of file paths you modified or created
-       - note: optional lifecycle note for the status transition
 
     If any step fails unrecoverably (tests cannot be fixed, plan is ambiguous, required
     files are missing), return status: "blocked" with the execution_summary documenting
@@ -90,28 +90,10 @@ activity:
   # ---- interface ----
   input_schema_json:
     type: object
-    required:
-      - task_id
-      - title
-      - description
     properties:
       task_id:
         type: string
-        description: The Orbit task ID to implement
-      title:
-        type: string
-        description: Task title
-      description:
-        type: string
-        description: Task description with context and requirements
-      plan:
-        type: string
-        description: Detailed implementation plan with numbered steps
-      context_files:
-        type: array
-        items:
-          type: string
-        description: Optional list of relevant file paths for context
+        description: Optional Orbit task ID. When present, the agent loads task metadata via orbit.task.show.
       workspace_path:
         type: string
         description: Optional task worktree path. If provided, it is the authoritative implementation workspace.
@@ -123,33 +105,22 @@ activity:
         description: Optional task branch name expected to be checked out in the implementation workspace.
   output_schema_json:
     type: object
-    required:
-      - status
-      - summary
-      - execution_summary
     properties:
+      task_id:
+        type: string
+        description: Optional Orbit task ID. When present, downstream steps can load status and execution details from the task directly.
       status:
         type: string
         description: Target Orbit task status for the follow-up update_task step, typically review or blocked.
-      summary:
-        type: string
-        description: One-paragraph summary of what was implemented
       execution_summary:
         type: string
         description: Full markdown execution summary (passed to update_task activity for persistence)
-      files_changed:
-        type: array
-        items:
-          type: string
-        description: List of files created or modified
-      note:
-        type: string
-        description: Optional lifecycle note for the status transition
 
   # ---- execution ----
   skill_refs:
     - orbit
   tools:
+    - orbit.task.show
     - fs.write
     - fs.delete
     - proc.spawn

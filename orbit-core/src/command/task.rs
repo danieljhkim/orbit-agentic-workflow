@@ -128,7 +128,6 @@ impl OrbitRuntime {
         id: &str,
         status: TaskStatus,
         execution_summary: Option<String>,
-        _files_changed: Vec<String>,
         comment: Option<String>,
         note: Option<String>,
     ) -> Result<Task, OrbitError> {
