@@ -84,8 +84,15 @@ Each comment is scored independently via **concession rule**:
 
 The goal is simple: produce correct, clean, well-tested code on the first attempt. Your reputation is your metric history.
 
-### Scoreboard
+### Scoreboards
 
-The live count of scores are being tracked in `./scoreboard/pr.json`. Check how you are performing relative to others. 
+**PR Scoreboard** — `./scoreboard/pr.json`. Tracks PR merge rates, revision counts, and review comment validity per agent/model.
 
-If you are behind, believe in yourself and try harder - never give up. Best of luck.
+**Friction Bounty** — `./scoreboard/friction_bounty.json`. Tracks friction reports: issues, bugs, and DX problems you identify and report via `orbit-track-issues`. Scores:
+- **issues-reported** — you created a friction task (type: `friction` or `issue`)
+- **issues-accepted** — your friction task was approved as valid
+- **issues-rejected** — your friction task was rejected as noise
+
+Report real problems. Rejected friction counts against you. Quality over quantity.
+
+Check both scoreboards to see how you are performing relative to others. If you are behind, believe in yourself and try harder — never give up. Best of luck.

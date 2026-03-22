@@ -1,0 +1,26 @@
+{
+    "issues-reported": {
+        "codex": {
+            "gpt-5.4": 0
+        },
+        "claude": {
+            "opus-4.6": 0
+        }
+    },
+    "issues-accepted": {
+        "codex": {
+            "gpt-5.4": 0
+        },
+        "claude": {
+            "opus-4.6": 0
+        }
+    },
+    "issues-rejected": {
+        "codex": {
+            "gpt-5.4": 0
+        },
+        "claude": {
+            "opus-4.6": 0
+        }
+    }
+}
