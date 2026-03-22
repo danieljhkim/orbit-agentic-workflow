@@ -15,5 +15,6 @@ orbit.db
 orbit.db-shm
 orbit.db-wal
 .orbit/
+scoreboard/
 docs
 .monodev
