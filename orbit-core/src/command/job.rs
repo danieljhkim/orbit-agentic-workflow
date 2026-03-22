@@ -131,24 +131,46 @@ impl OrbitRuntime {
                 ));
             }
             if step.target_type == JobTargetType::Job {
-                // For Job-type steps, validate that the referenced job exists.
-                if self.get_job_backend(&step.target_id)?.is_none() {
-                    return Err(OrbitError::JobValidation(format!(
+                // Reject self-references.
+                if let Some(ref job_id) = params.job_id {
+                    if step.target_id == *job_id {
+                        return Err(OrbitError::JobValidation(format!(
+                            "job '{}' cannot reference itself as a step",
+                            job_id
+                        )));
+                    }
+                }
+                // Validate that the referenced job exists.
+                let referenced_job = self.get_job_backend(&step.target_id)?.ok_or_else(|| {
+                    OrbitError::JobValidation(format!(
                         "step references job '{}' which does not exist",
                         step.target_id
-                    )));
+                    ))
+                })?;
+                // Detect one-level cycles: if the referenced job has a step
+                // pointing back to this job, reject it.
+                if let Some(ref job_id) = params.job_id {
+                    for sub_step in &referenced_job.steps {
+                        if sub_step.target_type == JobTargetType::Job
+                            && sub_step.target_id == *job_id
+                        {
+                            return Err(OrbitError::JobValidation(format!(
+                                "cycle detected: job '{}' references '{}' which references back",
+                                job_id, step.target_id
+                            )));
+                        }
+                    }
                 }
                 continue;
             }
             let activity =
                 self.validate_activity_target_exists(step.target_type, &step.target_id)?;
-            if activity_requires_agent_cli(&activity.spec_type) && step.agent_cli.trim().is_empty()
+            // When agent_cli is specified, validate it eagerly. When empty,
+            // the runner resolves it from the task's agent field at runtime
+            // (e.g. review loop steps that route back to the original implementer).
+            if activity_requires_agent_cli(&activity.spec_type)
+                && !step.agent_cli.trim().is_empty()
             {
-                return Err(OrbitError::JobValidation(
-                    "step agent_cli must not be empty for agent_invoke activities".to_string(),
-                ));
-            }
-            if activity_requires_agent_cli(&activity.spec_type) {
                 let _ = Agent::new(
                     &AgentConfig::cli(step.agent_cli.clone())?.with_model(step.model.as_deref()),
                 )?;

@@ -186,9 +186,17 @@ fn execute_activity_with_retries<H: EngineHost>(
                 }
 
                 // ---- Activity step (existing behavior) ----
+                // If the step's agent_cli is empty, try to resolve it from the
+                // task's agent/model fields so the original implementer is used.
+                let resolved_step = resolve_step_agent_from_task(host, step, &current_input);
+                let effective_step = resolved_step.as_ref().unwrap_or(step);
                 let execution =
-                    build_execution_context_for_step(host, &job, step, current_input.clone(), debug)?;
-                record_task_agent_context(host, &execution)?;
+                    build_execution_context_for_step(host, &job, effective_step, current_input.clone(), debug)?;
+                // Only record agent context when the step explicitly specifies
+                // agent_cli — skip when resolved from the task to avoid overwriting.
+                if !step.agent_cli.trim().is_empty() {
+                    record_task_agent_context(host, &execution)?;
+                }
                 let step_started = Utc::now();
                 let outcome = execute_with_retry(
                     host,
@@ -648,6 +656,28 @@ fn step_state_records_failure(state: JobRunState) -> bool {
         state,
         JobRunState::Failed | JobRunState::Timeout | JobRunState::Cancelled
     )
+}
+
+/// When a step's `agent_cli` is empty, try to resolve it from the task's
+/// `agent` and `model` fields so the original implementer handles the step
+/// (e.g. in a review-loop where the fix should go back to the same agent).
+fn resolve_step_agent_from_task<H: EngineHost>(
+    host: &H,
+    step: &JobStep,
+    input: &Value,
+) -> Option<JobStep> {
+    if !step.agent_cli.trim().is_empty() {
+        return None;
+    }
+    let task_id = extract_task_id(input)?;
+    let task = host.get_task(task_id).ok()?;
+    let agent = task.agent.as_deref().filter(|a| !a.trim().is_empty())?;
+    let mut resolved = step.clone();
+    resolved.agent_cli = agent.to_string();
+    if resolved.model.is_none() {
+        resolved.model = task.model.clone();
+    }
+    Some(resolved)
 }
 
 fn record_task_agent_context<H: EngineHost>(

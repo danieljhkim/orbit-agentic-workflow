@@ -86,6 +86,8 @@ fn filter_unresolved_comments(
     comments: &[Value],
 ) -> Result<Vec<Value>, OrbitError> {
     // Fetch review threads to determine which are resolved.
+    // Each thread has `isResolved` and a `comments` array whose entries
+    // carry a `databaseId` that matches the REST API comment `id`.
     let result = run_process(
         &ExecRequest {
             program: "gh".to_string(),
@@ -113,29 +115,40 @@ fn filter_unresolved_comments(
 
     let payload: Value = serde_json::from_str(result.stdout.trim()).unwrap_or_default();
 
-    // Build a set of resolved thread IDs by checking isResolved.
-    let resolved_node_ids: std::collections::HashSet<String> = payload
+    // Collect databaseIds of all comments that belong to resolved threads.
+    let resolved_comment_ids: std::collections::HashSet<u64> = payload
         .get("reviewThreads")
         .and_then(Value::as_array)
         .map(|threads| {
             threads
                 .iter()
                 .filter(|t| t.get("isResolved").and_then(Value::as_bool).unwrap_or(false))
-                .filter_map(|t| t.get("id").and_then(Value::as_str).map(String::from))
+                .flat_map(|t| {
+                    t.get("comments")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|c| c.get("databaseId").and_then(Value::as_u64))
+                })
                 .collect()
         })
         .unwrap_or_default();
 
-    if resolved_node_ids.is_empty() {
-        // No resolved threads found — all comments are unresolved.
+    if resolved_comment_ids.is_empty() {
         return Ok(comments.to_vec());
     }
 
-    // Filter out comments whose in_reply_to_id chains back to a resolved thread.
-    // Since the REST API doesn't directly link comments to GraphQL thread IDs,
-    // we use a simpler heuristic: keep all comments (the agent can check resolution).
-    // This is a conservative approach — better to show too many than too few.
-    Ok(comments.to_vec())
+    // Keep only comments whose REST API `id` is NOT in a resolved thread.
+    let unresolved: Vec<Value> = comments
+        .iter()
+        .filter(|c| {
+            let id = c.get("id").and_then(Value::as_u64).unwrap_or(0);
+            !resolved_comment_ids.contains(&id)
+        })
+        .cloned()
+        .collect();
+
+    Ok(unresolved)
 }
 
 fn build_comment_summary(comments: &[Value]) -> String {
