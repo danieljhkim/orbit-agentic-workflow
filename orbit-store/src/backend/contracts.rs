@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Activity, AuditEvent, FrictionEntry, Job, JobRun, JobRunState, JobScheduleState, JobStep,
-    OrbitError, StoredTool, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority,
-    TaskStatus, TaskType,
+    Activity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep, OrbitError,
+    StoredTool, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
+    TaskType,
 };
 use serde_json::Value;
 
@@ -131,12 +131,6 @@ pub trait TaskStoreBackend: Send + Sync {
     fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError>;
     fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError>;
     fn delete_task(&self, id: &str) -> Result<bool, OrbitError>;
-}
-
-pub trait FrictionLogBackend: Send + Sync {
-    fn append_friction_entry(&self, entry: &FrictionEntry) -> Result<(), OrbitError>;
-    fn read_friction_entries_for_month(&self, year_month: &str)
-    -> Result<Vec<FrictionEntry>, OrbitError>;
 }
 
 pub trait ActivityStoreBackend: Send + Sync {

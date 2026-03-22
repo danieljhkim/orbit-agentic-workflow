@@ -246,9 +246,6 @@ impl RuntimeHost for OrbitRuntime {
         Ok(())
     }
 
-    fn data_root(&self) -> Result<std::path::PathBuf, OrbitError> {
-        Ok(self.data_root())
-    }
 }
 
 impl JobRunHost for OrbitRuntime {

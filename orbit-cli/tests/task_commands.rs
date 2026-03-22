@@ -516,11 +516,26 @@ fn task_show_json_includes_agent_and_model_when_present() {
     let id = add_task(dir.path(), "agent metadata");
     let task_yaml_path = task_dir(dir.path(), &id).join("task.yaml");
     let task_yaml = std::fs::read_to_string(&task_yaml_path).expect("read yaml");
-    let task_yaml = task_yaml.replace(
-        "agent: null\nmodel: null\n",
-        "agent: codex\nmodel: gpt-5.4\n",
-    );
-    std::fs::write(&task_yaml_path, task_yaml).expect("write yaml");
+    let mut saw_agent = false;
+    let mut saw_model = false;
+    let rewritten = task_yaml
+        .lines()
+        .map(|line| {
+            if line.starts_with("agent:") {
+                saw_agent = true;
+                "agent: codex".to_string()
+            } else if line.starts_with("model:") {
+                saw_model = true;
+                "model: gpt-5.4".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(saw_agent, "task yaml should contain agent field");
+    assert!(saw_model, "task yaml should contain model field");
+    std::fs::write(&task_yaml_path, format!("{rewritten}\n")).expect("write yaml");
 
     let show_output = orbit_in(dir.path())
         .args(["task", "show", &id, "--json"])

@@ -39,11 +39,10 @@ use chrono::{DateTime, Utc};
 
 pub use backend::{
     ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AuditEventStoreBackend,
-    FrictionLogBackend, JobCreateParams, JobRunQuery, JobRunStepParams, JobStoreBackend,
-    JobUpdateParams, ResolvedScope, ScopeResolution, TaskCreateParams, TaskStoreBackend,
-    TaskUpdateParams, ToolStoreBackend, activity_store_file, activity_store_resolved,
-    audit_event_store_sqlite, job_store_file, job_store_resolved, task_store_file,
-    task_store_resolved, tool_store_sqlite,
+    JobCreateParams, JobRunQuery, JobRunStepParams, JobStoreBackend, JobUpdateParams,
+    ResolvedScope, ScopeResolution, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
+    ToolStoreBackend, activity_store_file, activity_store_resolved, audit_event_store_sqlite,
+    job_store_file, job_store_resolved, task_store_file, task_store_resolved, tool_store_sqlite,
 };
 pub use json_schema::{validate_instance_against_schema, validate_schema_document};
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};

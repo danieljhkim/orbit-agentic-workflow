@@ -248,12 +248,6 @@ pub trait RuntimeHost {
         error_code: &str,
         error_message: &str,
     ) -> Result<(), OrbitError>;
-
-    fn data_root(&self) -> Result<std::path::PathBuf, OrbitError> {
-        Err(OrbitError::Execution(
-            "runtime host does not expose a data root".to_string(),
-        ))
-    }
 }
 
 /// Aggregates all five sub-traits required at the top-level engine boundary.
