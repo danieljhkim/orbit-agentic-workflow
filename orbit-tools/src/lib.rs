@@ -63,6 +63,12 @@ pub struct ToolContext {
     /// `--root <path>` so the spawned orbit CLI resolves to the correct data root
     /// regardless of the agent's working directory (e.g. inside a git worktree).
     pub orbit_root: Option<PathBuf>,
+    /// Normalized agent name (e.g. `"claude"`). When set, GitHub tools auto-append
+    /// an attribution footer to PR bodies and review comments.
+    pub agent_name: Option<String>,
+    /// Resolved model identifier (e.g. `"opus-4.6"`). Used alongside `agent_name`
+    /// for the attribution footer.
+    pub model_name: Option<String>,
 }
 
 pub trait Tool: Send + Sync {

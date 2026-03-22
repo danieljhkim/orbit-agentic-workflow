@@ -155,6 +155,8 @@ pub(super) fn open_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
     let tool_context = ToolContext {
         cwd: Some(repo_root.to_string_lossy().to_string()),
         allowed_tools: vec![],
+        agent_name: task.agent.clone(),
+        model_name: task.model.clone(),
         ..Default::default()
     };
 

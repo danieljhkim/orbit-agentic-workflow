@@ -34,13 +34,26 @@ pub struct DoctorResult {
 impl OrbitRuntime {
     pub fn execute_tool_command(&self, name: &str, input: Value) -> Result<Value, OrbitError> {
         let allowed_tools = read_activity_tools_from_env();
+        let (agent_name, model_name) = read_agent_identity_from_env();
         let tool_context = ToolContext {
             cwd: None,
             allowed_tools,
+            agent_name,
+            model_name,
             ..Default::default()
         };
         self.run_tool_with_context_and_role(name, input, Role::Admin, tool_context)
     }
+}
+
+fn read_agent_identity_from_env() -> (Option<String>, Option<String>) {
+    let agent = std::env::var("ORBIT_AGENT_NAME")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let model = std::env::var("ORBIT_AGENT_MODEL")
+        .ok()
+        .filter(|s| !s.is_empty());
+    (agent, model)
 }
 
 fn read_activity_tools_from_env() -> Vec<String> {

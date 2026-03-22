@@ -6,7 +6,10 @@ use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext, check_exec_result, require_st
 
 pub struct GithubPrCommentTool;
 
-pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
+pub(super) fn build_exec_request(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<ExecRequest, OrbitError> {
     let pr = super::require_pr(input)?;
     let body = require_str(input, "body")?;
 
@@ -15,7 +18,7 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         "comment".to_string(),
         pr,
         "--body".to_string(),
-        body.to_string(),
+        super::append_signature(&body, ctx, "Reviewed"),
     ];
 
     if let Some(repo) = input.get("repo").and_then(Value::as_str) {
@@ -63,8 +66,8 @@ impl Tool for GithubPrCommentTool {
         }
     }
 
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(&input)?;
+    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let req = build_exec_request(ctx, &input)?;
         let result = run_process(&req, &NoSandbox)?;
         check_exec_result(&result, "gh pr comment")?;
         Ok(json!({
