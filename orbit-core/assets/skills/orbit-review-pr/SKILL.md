@@ -73,6 +73,7 @@ Read every changed file. For each issue found:
 
 ```bash
 orbit tool run github.pr.review.comment --input '{
+  "repo": "<owner>/<repo>",
   "pr": <pr-number>,
   "path": "<file-path>",
   "line": <line-number>,

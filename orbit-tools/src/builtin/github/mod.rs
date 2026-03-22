@@ -9,6 +9,7 @@ pub mod pr_create;
 pub mod pr_list;
 pub mod pr_merge;
 pub mod pr_review;
+pub mod pr_review_comment;
 pub mod pr_view;
 pub mod repo;
 
@@ -28,6 +29,7 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(pr_comment_reply::GithubPrCommentReplyTool);
     registry.register(pr_comments::GithubPrCommentsTool);
     registry.register(pr_review::GithubPrReviewTool);
+    registry.register(pr_review_comment::GithubPrReviewCommentTool);
     registry.register(pr_merge::GithubPrMergeTool);
     registry.register(pr_close::GithubPrCloseTool);
     registry.register(pr_checks::GithubPrChecksTool);
@@ -85,6 +87,7 @@ mod tests {
             "github.pr.comment.reply",
             "github.pr.comments",
             "github.pr.review",
+            "github.pr.review.comment",
             "github.pr.merge",
             "github.pr.close",
             "github.pr.checks",
@@ -236,6 +239,46 @@ mod tests {
             body_arg.ends_with("\n\n*Authored by: claude / opus-4.6*"),
             "body missing signature: {body_arg}"
         );
+    }
+
+    #[test]
+    fn pr_review_comment_rejects_missing_repo() {
+        let err = super::pr_review_comment::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "pr": "42", "path": "src/main.rs", "line": 10, "body": "issue here" }),
+        )
+        .expect_err("must fail");
+        assert!(err.to_string().contains("repo"), "{err}");
+    }
+
+    #[test]
+    fn pr_review_comment_rejects_missing_path() {
+        let err = super::pr_review_comment::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "repo": "owner/repo", "pr": "42", "line": 10, "body": "issue here" }),
+        )
+        .expect_err("must fail");
+        assert!(err.to_string().contains("path"), "{err}");
+    }
+
+    #[test]
+    fn pr_review_comment_rejects_missing_body() {
+        let err = super::pr_review_comment::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "repo": "owner/repo", "pr": "42", "path": "src/main.rs", "line": 10 }),
+        )
+        .expect_err("must fail");
+        assert!(err.to_string().contains("body"), "{err}");
+    }
+
+    #[test]
+    fn pr_review_comment_rejects_missing_line() {
+        let err = super::pr_review_comment::build_exec_request(
+            &ToolContext::default(),
+            &json!({ "repo": "owner/repo", "pr": "42", "path": "src/main.rs", "body": "issue" }),
+        )
+        .expect_err("must fail");
+        assert!(err.to_string().contains("line"), "{err}");
     }
 
     #[test]
