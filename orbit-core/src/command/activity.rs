@@ -63,6 +63,18 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         "run_tests",
         include_str!("../../assets/activities/run_tests.yaml"),
     ),
+    (
+        "check_review_decision",
+        include_str!("../../assets/activities/check_review_decision.yaml"),
+    ),
+    (
+        "load_pr_comments",
+        include_str!("../../assets/activities/load_pr_comments.yaml"),
+    ),
+    (
+        "implement_fix",
+        include_str!("../../assets/activities/implement_fix.yaml"),
+    ),
 ];
 
 const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "api", "automation"];
@@ -568,6 +580,9 @@ activity:
                 "perform_maintenance",
                 "review_pr",
                 "run_tests",
+                "check_review_decision",
+                "load_pr_comments",
+                "implement_fix",
             ]
         );
     }

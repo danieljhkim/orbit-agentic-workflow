@@ -1,0 +1,79 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: implement_fix
+  spec_type: agent_invoke
+
+  # ---- content ----
+  description: Address unresolved PR review comments by implementing fixes in the task workspace
+  instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
+    You are fixing issues identified during PR review for an Orbit task.
+
+    Steps:
+    1. Load task context:
+       - Call orbit.task.show with id: input.task_id to fetch the task's title, description,
+         plan, context_files, workspace_path, and repo_root.
+       - The task's workspace_path is the authoritative implementation workspace.
+
+    2. Review the comments:
+       - The input field `comment_summary` contains a summary of unresolved PR review comments.
+       - Read each comment carefully. Understand what the reviewer is asking for.
+       - If a comment is a question or nit that doesn't require code changes, note it for
+         the review response but do not modify code unnecessarily.
+
+    3. Implement fixes:
+       - Address each actionable comment by modifying the relevant files.
+       - All file operations should happen inside the task's workspace_path.
+       - Keep changes minimal and focused on addressing the review feedback.
+       - Do not refactor unrelated code or add unrequested features.
+
+    4. Verify the fixes:
+       - Use proc.spawn to run the project's test and lint commands from the task's workspace_path.
+       - If tests fail, fix the issue before continuing.
+
+    5. Persist execution details:
+       - Call orbit.task.update with id: input.task_id and execution_summary describing
+         what was fixed and why.
+
+    6. Return output:
+       - execution_summary: markdown summary of fixes applied
+
+    If a comment cannot be addressed (ambiguous, out of scope, or would require
+    breaking changes), document the reason in the execution_summary so the reviewer
+    can make a decision.
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+    properties:
+      task_id:
+        type: string
+        description: Orbit task ID. The agent loads task metadata via orbit.task.show.
+      comment_summary:
+        type: string
+        description: Human-readable summary of unresolved PR review comments to address.
+  output_schema_json:
+    type: object
+    properties:
+      execution_summary:
+        type: string
+        description: Markdown summary of fixes applied to address review comments.
+
+  # ---- execution ----
+  skill_refs:
+    - orbit
+  tools:
+    - orbit.task.show
+    - orbit.task.update
+    - fs.write
+    - fs.delete
+    - proc.spawn
+    - proc.which

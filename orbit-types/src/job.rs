@@ -12,6 +12,10 @@ pub const fn default_job_max_active_runs() -> u32 {
     1
 }
 
+pub const fn default_max_iterations() -> u32 {
+    1
+}
+
 pub const fn default_retry_backoff_seconds() -> u64 {
     10
 }
@@ -23,12 +27,15 @@ pub enum JobTargetType {
     #[default]
     #[cfg_attr(feature = "clap", value(name = "activity", alias = "activity"))]
     Activity,
+    #[cfg_attr(feature = "clap", value(name = "job", alias = "job"))]
+    Job,
 }
 
 impl Display for JobTargetType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             JobTargetType::Activity => write!(f, "activity"),
+            JobTargetType::Job => write!(f, "job"),
         }
     }
 }
@@ -39,6 +46,7 @@ impl FromStr for JobTargetType {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "activity" => Ok(JobTargetType::Activity),
+            "job" => Ok(JobTargetType::Job),
             other => Err(format!("unknown job target type: {other}")),
         }
     }
@@ -226,6 +234,12 @@ pub struct Job {
     pub default_input: Option<Value>,
     #[serde(default = "default_job_max_active_runs")]
     pub max_active_runs: u32,
+    /// Maximum number of times the step sequence is executed. Defaults to 1
+    /// (single pass). Values > 1 enable loop semantics: after all steps
+    /// complete successfully, the sequence restarts from step 0 until
+    /// `max_iterations` is reached or a step outputs `loop_exit: true`.
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: u32,
     pub steps: Vec<JobStep>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

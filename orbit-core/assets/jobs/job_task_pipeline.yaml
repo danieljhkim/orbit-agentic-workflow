@@ -16,8 +16,10 @@ job:
   #   run_tests        — verify tests pass inside the task worktree
   #   commit_changes   — safety net: stage and commit if the agent left uncommitted changes (skips if clean)
   #   open_pr          — safety net: open a PR if one doesn't already exist (skips if PR found on task)
-  #   review_pr        — review the opened PR against task acceptance criteria
-  #   merge_pr         — merge approved PRs only after rechecking branch freshness, then advance tasks to done
+  #   review_pr             — review the opened PR against task acceptance criteria
+  #   check_review_decision — gate: succeeds if APPROVED, fails if REQUEST_CHANGES
+  #   job_review_loop       — (on_failure) iterative fix-and-review loop until approved
+  #   merge_pr              — merge approved PRs only after rechecking branch freshness, then advance tasks to done
   max_active_runs: 4
   default_input:
     base: agent-main
@@ -64,6 +66,16 @@ job:
       agent_cli: claude
       condition: on_success
       timeout_seconds: 600
+
+    - target_type: activity
+      target_id: check_review_decision
+      condition: on_success
+      timeout_seconds: 30
+
+    - target_type: job
+      target_id: job_review_loop
+      condition: on_failure
+      timeout_seconds: 7200
 
     - target_type: activity
       target_id: merge_pr

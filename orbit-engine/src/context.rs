@@ -6,6 +6,7 @@ use orbit_types::{
     Activity, Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, Role, Task,
     TaskStatus, redact_sensitive_env_json, redact_sensitive_env_option,
 };
+use std::path::Path;
 use serde_json::Value;
 
 pub const AGENT_PROTOCOL_VIOLATION: &str = "AGENT_PROTOCOL_VIOLATION";
@@ -231,11 +232,13 @@ pub trait EnvironmentHost {
 pub trait RuntimeHost {
     fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError>;
     fn repo_root(&self) -> Result<String, OrbitError>;
+    fn data_root(&self) -> &Path;
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,
         target_id: &str,
     ) -> Result<Activity, OrbitError>;
+    fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError>;
     fn run_tool_with_context_and_role(
         &self,
         name: &str,

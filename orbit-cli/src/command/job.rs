@@ -69,6 +69,7 @@ impl Execute for JobAddArgs {
             job_id: self.job_id,
             default_input: None,
             max_active_runs: Some(self.max_active_runs),
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: self.target_id,
                 agent_cli: self.agent_cli,

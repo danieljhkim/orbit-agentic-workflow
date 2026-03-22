@@ -1,3 +1,5 @@
+mod check_review;
+mod comments;
 mod commit;
 mod freshness;
 mod git;
@@ -21,6 +23,8 @@ const AUTOMATION_COMMIT_TASK_CHANGES: &str = "commit_task_changes";
 const AUTOMATION_MERGE_PR_FROM_TASK: &str = "merge_pr_from_task";
 const AUTOMATION_OPEN_PR_FROM_TASK: &str = "open_pr_from_task";
 const AUTOMATION_FINALIZE_TASK_WORKTREE: &str = "finalize_task_worktree";
+const AUTOMATION_CHECK_REVIEW_DECISION: &str = "check_review_decision";
+const AUTOMATION_LOAD_PR_COMMENTS: &str = "load_pr_comments";
 
 #[derive(Debug, Clone, Deserialize)]
 struct AutomationSpec {
@@ -77,6 +81,8 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + ?Size
         AUTOMATION_MERGE_PR_FROM_TASK => pr::merge_pr_from_task(host, input),
         AUTOMATION_OPEN_PR_FROM_TASK => pr::open_pr_from_task(host, input),
         AUTOMATION_FINALIZE_TASK_WORKTREE => worktree::finalize_task_worktree(input),
+        AUTOMATION_CHECK_REVIEW_DECISION => check_review::check_review_decision(host, input),
+        AUTOMATION_LOAD_PR_COMMENTS => comments::load_pr_comments(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"
         ))),
