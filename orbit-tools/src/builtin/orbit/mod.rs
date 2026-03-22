@@ -67,11 +67,9 @@ pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRe
 }
 
 pub(super) fn run_orbit_json_command(
-    ctx: &ToolContext,
-    args: Vec<String>,
+    req: ExecRequest,
     label: &str,
 ) -> Result<Value, OrbitError> {
-    let req = orbit_exec_request(ctx, args);
     let result = run_process(&req, &NoSandbox)?;
     if !result.success {
         let stderr = result.stderr.trim();

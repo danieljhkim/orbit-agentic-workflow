@@ -28,12 +28,8 @@ impl Tool for OrbitJobRunArchiveTool {
     }
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let id = super::required_string(&input, &["id", "run_id", "runId"], "id")?;
         let req = build_exec_request(ctx, &input)?;
-        let archived_id = req
-            .args
-            .get(2)
-            .cloned()
-            .ok_or_else(|| OrbitError::Execution("missing job run id".to_string()))?;
         let result = run_process(&req, &NoSandbox)?;
         if !result.success {
             let stderr = result.stderr.trim();
@@ -49,7 +45,7 @@ impl Tool for OrbitJobRunArchiveTool {
 
         Ok(json!({
             "archived": true,
-            "id": archived_id,
+            "id": id,
         }))
     }
 }

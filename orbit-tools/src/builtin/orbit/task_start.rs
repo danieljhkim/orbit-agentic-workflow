@@ -55,6 +55,6 @@ impl Tool for OrbitTaskStartTool {
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(ctx, &input)?;
-        super::run_orbit_json_command(ctx, req.args, "orbit task start")
+        super::run_orbit_json_command(req, "orbit task start")
     }
 }

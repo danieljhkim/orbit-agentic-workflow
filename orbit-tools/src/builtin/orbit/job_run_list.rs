@@ -73,7 +73,7 @@ impl Tool for OrbitJobRunListTool {
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let req = build_exec_request(ctx, &input)?;
-        let output = super::run_orbit_json_command(ctx, req.args, "orbit job-run list")?;
+        let output = super::run_orbit_json_command(req, "orbit job-run list")?;
         if !output.is_array() {
             return Err(OrbitError::Execution(
                 "failed to parse orbit job-run list output: expected JSON array".to_string(),

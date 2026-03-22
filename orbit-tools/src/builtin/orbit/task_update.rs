@@ -98,6 +98,6 @@ impl Tool for OrbitTaskUpdateTool {
             )));
         }
 
-        super::run_orbit_json_command(ctx, show_req.args, "orbit task show")
+        super::run_orbit_json_command(show_req, "orbit task show")
     }
 }
