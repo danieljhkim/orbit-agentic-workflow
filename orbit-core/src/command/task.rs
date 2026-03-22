@@ -66,6 +66,15 @@ impl From<TaskUpdateParams> for StoreTaskUpdateParams {
 
 impl OrbitRuntime {
     pub fn add_task(&self, params: TaskAddParams) -> Result<Task, OrbitError> {
+        self.add_task_with_identity(params, None, None)
+    }
+
+    pub fn add_task_with_identity(
+        &self,
+        params: TaskAddParams,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<Task, OrbitError> {
         let actor = self.actor().clone();
         let initial_status =
             if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent() {
@@ -86,8 +95,8 @@ impl OrbitRuntime {
                 workspace_path: params.workspace_path.clone(),
                 repo_root: None,
                 created_by: Some(actor.label.clone()),
-                agent: None,
-                model: None,
+                agent: agent.clone(),
+                model: model.clone(),
                 assigned_to: Some(actor.label.clone()),
                 status: initial_status,
                 priority: params.priority,
@@ -125,7 +134,17 @@ impl OrbitRuntime {
     }
 
     pub fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
-        self.update_task_with_status_note(id, params, None)
+        self.update_task_with_identity(id, params, None, None)
+    }
+
+    pub fn update_task_with_identity(
+        &self,
+        id: &str,
+        params: TaskUpdateParams,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        self.update_task_with_status_note_and_identity(id, params, None, agent, model)
     }
 
     pub fn update_task_from_activity(
@@ -156,6 +175,17 @@ impl OrbitRuntime {
         id: &str,
         params: TaskUpdateParams,
         status_note: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        self.update_task_with_status_note_and_identity(id, params, status_note, None, None)
+    }
+
+    fn update_task_with_status_note_and_identity(
+        &self,
+        id: &str,
+        params: TaskUpdateParams,
+        status_note: Option<String>,
+        agent: Option<String>,
+        model: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let is_field_update = params.title.is_some()
@@ -218,6 +248,8 @@ impl OrbitRuntime {
                     actor: actor.label.clone(),
                     assigned_to,
                     status_note,
+                    agent: agent.clone().map(Some),
+                    model: model.clone().map(Some),
                     append_comments: append_comments.clone(),
                     ..StoreTaskUpdateParams::from(params)
                 },
@@ -234,6 +266,17 @@ impl OrbitRuntime {
         note: Option<String>,
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
+        self.approve_task_with_identity(id, note, comment, None, None)
+    }
+
+    pub fn approve_task_with_identity(
+        &self,
+        id: &str,
+        note: Option<String>,
+        comment: Option<String>,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
         let append_comments = build_task_comments(comment, actor.label.as_str())?;
@@ -249,6 +292,8 @@ impl OrbitRuntime {
                             status_event: Some("proposal_approved".to_string()),
                             status_note: note.clone(),
                             assigned_to: Some(Some(actor.label.clone())),
+                            agent: agent.clone().map(Some),
+                            model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },
@@ -272,6 +317,8 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Done),
                             status_event: Some("review_approved".to_string()),
                             status_note: note.clone(),
+                            agent: agent.clone().map(Some),
+                            model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },
@@ -298,6 +345,17 @@ impl OrbitRuntime {
         note: Option<String>,
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
+        self.start_task_with_identity(id, note, comment, None, None)
+    }
+
+    pub fn start_task_with_identity(
+        &self,
+        id: &str,
+        note: Option<String>,
+        comment: Option<String>,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
         let append_comments = build_task_comments(comment, actor.label.as_str())?;
@@ -313,6 +371,8 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
                             assigned_to: Some(Some(actor.label.clone())),
+                            agent: agent.clone().map(Some),
+                            model: model.clone().map(Some),
                             append_history: vec![TaskHistoryEntry {
                                 at,
                                 by: actor.label.clone(),
@@ -346,6 +406,8 @@ impl OrbitRuntime {
                             status_event: Some("started".to_string()),
                             status_note: note.clone(),
                             assigned_to: Some(Some(actor.label.clone())),
+                            agent: agent.clone().map(Some),
+                            model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },
@@ -376,6 +438,17 @@ impl OrbitRuntime {
         note: String,
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
+        self.reject_task_with_identity(id, note, comment, None, None)
+    }
+
+    pub fn reject_task_with_identity(
+        &self,
+        id: &str,
+        note: String,
+        comment: Option<String>,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
         let reason = note.trim();
@@ -397,6 +470,8 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Rejected),
                             status_event: Some("proposal_rejected".to_string()),
                             status_note: Some(reason.clone()),
+                            agent: agent.clone().map(Some),
+                            model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },
@@ -420,6 +495,8 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::Rejected),
                             status_event: Some("review_rejected".to_string()),
                             status_note: Some(reason.clone()),
+                            agent: agent.clone().map(Some),
+                            model: model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },

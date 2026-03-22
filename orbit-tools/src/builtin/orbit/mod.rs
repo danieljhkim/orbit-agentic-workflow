@@ -19,6 +19,14 @@ use serde_json::Value;
 use crate::{TIMEOUT_DEFAULT_MS, ToolContext, ToolRegistry};
 
 const ORBIT_TASK_ACTOR_KIND: &str = "ORBIT_TASK_ACTOR_KIND";
+const ORBIT_TASK_ACTOR_LABEL: &str = "ORBIT_TASK_ACTOR_LABEL";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct OrbitIdentity {
+    pub agent: Option<String>,
+    pub model: Option<String>,
+    pub actor_label: Option<String>,
+}
 
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(task_add::OrbitTaskAddTool);
@@ -34,6 +42,65 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(activity_show::OrbitActivityShowTool);
 }
 
+fn build_actor_label(agent: Option<&str>, model: Option<&str>) -> Option<String> {
+    match (agent, model) {
+        (Some(agent), Some(model)) => Some(format!("{agent} / {model}")),
+        (Some(agent), None) => Some(agent.to_string()),
+        (None, Some(model)) => Some(model.to_string()),
+        (None, None) => None,
+    }
+}
+
+pub(super) fn resolve_identity(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<OrbitIdentity, OrbitError> {
+    let agent = optional_string_alias(input, &["agent"])?.or_else(|| {
+        ctx.agent_name
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+    });
+    let model = optional_string_alias(input, &["model"])?.or_else(|| {
+        ctx.model_name
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+    });
+    let actor_label = build_actor_label(agent.as_deref(), model.as_deref());
+    Ok(OrbitIdentity {
+        agent,
+        model,
+        actor_label,
+    })
+}
+
+pub(super) fn identity_params() -> Vec<ToolParam> {
+    vec![
+        ToolParam {
+            name: "agent".to_string(),
+            description: "Optional agent name for precise Orbit provenance".to_string(),
+            param_type: "string".to_string(),
+            required: false,
+        },
+        ToolParam {
+            name: "model".to_string(),
+            description: "Optional agent model for precise Orbit provenance".to_string(),
+            param_type: "string".to_string(),
+            required: false,
+        },
+    ]
+}
+
+pub(super) fn append_identity_flags(args: &mut Vec<String>, identity: &OrbitIdentity) {
+    if let Some(agent) = &identity.agent {
+        args.push("--agent".to_string());
+        args.push(agent.clone());
+    }
+    if let Some(model) = &identity.model {
+        args.push("--model".to_string());
+        args.push(model.clone());
+    }
+}
+
 /// Build an [`ExecRequest`] that runs the `orbit` CLI with `args`.
 ///
 /// The environment is deliberately rebuilt from the current process's env vars
@@ -41,9 +108,21 @@ pub fn register(registry: &mut ToolRegistry) {
 /// injected. This lets the orbit CLI distinguish agent-initiated mutations from
 /// human-initiated ones (e.g. for audit attribution and policy checks) without
 /// requiring callers to set the variable themselves.
+#[cfg(test)]
 pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRequest {
+    orbit_exec_request_with_identity(ctx, args, &OrbitIdentity::default())
+}
+
+pub(super) fn orbit_exec_request_with_identity(
+    ctx: &ToolContext,
+    args: Vec<String>,
+    identity: &OrbitIdentity,
+) -> ExecRequest {
     let mut env = std::env::vars().collect::<HashMap<_, _>>();
     env.insert(ORBIT_TASK_ACTOR_KIND.to_string(), "agent".to_string());
+    if let Some(actor_label) = &identity.actor_label {
+        env.insert(ORBIT_TASK_ACTOR_LABEL.to_string(), actor_label.clone());
+    }
 
     // Inject --root so the spawned orbit CLI resolves to the correct data root
     // regardless of the agent's working directory (e.g. inside a git worktree).
@@ -66,10 +145,7 @@ pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRe
     }
 }
 
-pub(super) fn run_orbit_json_command(
-    req: ExecRequest,
-    label: &str,
-) -> Result<Value, OrbitError> {
+pub(super) fn run_orbit_json_command(req: ExecRequest, label: &str) -> Result<Value, OrbitError> {
     let result = run_process(&req, &NoSandbox)?;
     if !result.success {
         let stderr = result.stderr.trim();
@@ -247,6 +323,28 @@ mod tests {
     }
 
     #[test]
+    fn orbit_exec_request_with_identity_sets_actor_label_env() {
+        let req = super::orbit_exec_request_with_identity(
+            &ToolContext::default(),
+            vec!["task".to_string(), "list".to_string()],
+            &super::OrbitIdentity {
+                agent: Some("codex".to_string()),
+                model: Some("gpt-5.4".to_string()),
+                actor_label: Some("codex / gpt-5.4".to_string()),
+            },
+        );
+
+        let orbit_exec::EnvironmentMode::ClearAndSet(env) = req.environment_mode else {
+            panic!("expected clear-and-set env");
+        };
+        let env_map = env.into_iter().collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            env_map.get("ORBIT_TASK_ACTOR_LABEL").map(String::as_str),
+            Some("codex / gpt-5.4")
+        );
+    }
+
+    #[test]
     fn task_show_builds_request_from_id() {
         let req = super::task_show::build_exec_request(
             &ToolContext::default(),
@@ -280,6 +378,8 @@ mod tests {
                 "id": "T20260316-010101",
                 "note": "approved and ready",
                 "comment": "starting implementation",
+                "agent": "codex",
+                "model": "gpt-5.4",
             }),
         )
         .expect("valid start input");
@@ -294,6 +394,10 @@ mod tests {
                 "approved and ready".to_string(),
                 "--comment".to_string(),
                 "starting implementation".to_string(),
+                "--agent".to_string(),
+                "codex".to_string(),
+                "--model".to_string(),
+                "gpt-5.4".to_string(),
                 "--json".to_string(),
             ]
         );
@@ -313,6 +417,8 @@ mod tests {
                 "priority": "high",
                 "complexity": "hard",
                 "type": "feature",
+                "agent": "codex",
+                "model": "gpt-5.4",
             }),
         )
         .expect("valid add input");
@@ -340,6 +446,10 @@ mod tests {
                 "hard".to_string(),
                 "--type".to_string(),
                 "feature".to_string(),
+                "--agent".to_string(),
+                "codex".to_string(),
+                "--model".to_string(),
+                "gpt-5.4".to_string(),
                 "--json".to_string(),
             ]
         );
@@ -353,6 +463,8 @@ mod tests {
                 "id": "T20260315-205817",
                 "note": "lgtm",
                 "comment": "ship it",
+                "agent": "codex",
+                "model": "gpt-5.4",
             }),
         )
         .expect("valid approve input");
@@ -367,6 +479,10 @@ mod tests {
                 "lgtm".to_string(),
                 "--comment".to_string(),
                 "ship it".to_string(),
+                "--agent".to_string(),
+                "codex".to_string(),
+                "--model".to_string(),
+                "gpt-5.4".to_string(),
                 "--json".to_string(),
             ]
         );
@@ -380,6 +496,8 @@ mod tests {
                 "id": "T20260315-205817",
                 "note": "needs work",
                 "comment": "please revise",
+                "agent": "codex",
+                "model": "gpt-5.4",
             }),
         )
         .expect("valid reject input");
@@ -394,6 +512,10 @@ mod tests {
                 "needs work".to_string(),
                 "--comment".to_string(),
                 "please revise".to_string(),
+                "--agent".to_string(),
+                "codex".to_string(),
+                "--model".to_string(),
+                "gpt-5.4".to_string(),
                 "--json".to_string(),
             ]
         );
@@ -427,6 +549,8 @@ mod tests {
                 "id": "T20260315-025432",
                 "status": "review",
                 "comment": "ready for review",
+                "agent": "codex",
+                "model": "gpt-5.4",
             }),
         )
         .expect("valid update input");
@@ -441,6 +565,10 @@ mod tests {
                 "review".to_string(),
                 "--comment".to_string(),
                 "ready for review".to_string(),
+                "--agent".to_string(),
+                "codex".to_string(),
+                "--model".to_string(),
+                "gpt-5.4".to_string(),
             ]
         );
         assert_eq!(

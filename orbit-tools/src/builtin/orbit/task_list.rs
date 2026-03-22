@@ -10,6 +10,7 @@ pub(super) fn build_exec_request(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
+    let identity = super::resolve_identity(ctx, input)?;
     let mut args = vec!["task".to_string(), "list".to_string(), "--json".to_string()];
 
     if let Some(status) = super::optional_string(input, "status")? {
@@ -17,20 +18,24 @@ pub(super) fn build_exec_request(
         args.push(status);
     }
 
-    Ok(super::orbit_exec_request(ctx, args))
+    Ok(super::orbit_exec_request_with_identity(
+        ctx, args, &identity,
+    ))
 }
 
 impl Tool for OrbitTaskListTool {
     fn schema(&self) -> ToolSchema {
+        let mut parameters = vec![ToolParam {
+            name: "status".to_string(),
+            description: "Optional task status filter".to_string(),
+            param_type: "string".to_string(),
+            required: false,
+        }];
+        parameters.extend(super::identity_params());
         ToolSchema {
             name: "orbit.task.list".to_string(),
             description: "List Orbit tasks, optionally filtered by status".to_string(),
-            parameters: vec![ToolParam {
-                name: "status".to_string(),
-                description: "Optional task status filter".to_string(),
-                param_type: "string".to_string(),
-                required: false,
-            }],
+            parameters,
             builtin: true,
         }
     }

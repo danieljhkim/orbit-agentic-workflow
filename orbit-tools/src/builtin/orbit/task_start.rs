@@ -10,6 +10,7 @@ pub(super) fn build_exec_request(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
+    let identity = super::resolve_identity(ctx, input)?;
     let id = super::required_string(input, &["id"], "id")?;
 
     let mut args = vec!["task".to_string(), "start".to_string(), id];
@@ -22,9 +23,12 @@ pub(super) fn build_exec_request(
         args.push("--comment".to_string());
         args.push(comment);
     }
+    super::append_identity_flags(&mut args, &identity);
 
     args.push("--json".to_string());
-    Ok(super::orbit_exec_request(ctx, args))
+    Ok(super::orbit_exec_request_with_identity(
+        ctx, args, &identity,
+    ))
 }
 
 impl Tool for OrbitTaskStartTool {
@@ -44,6 +48,7 @@ impl Tool for OrbitTaskStartTool {
                 required: false,
             },
         ]);
+        parameters.extend(super::identity_params());
 
         ToolSchema {
             name: "orbit.task.start".to_string(),

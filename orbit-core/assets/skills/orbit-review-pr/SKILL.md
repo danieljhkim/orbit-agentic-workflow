@@ -9,6 +9,8 @@ description: Use this skill when reviewing a pull request. Ensures proper attrib
 
 Review a pull request with proper attribution, structured feedback, and scoreable comments.
 
+When this workflow uses Orbit task tools, include your identity on every `orbit tool run orbit.*` call by passing `agent` and `model` in the input JSON. Orbit uses those fields for precise task provenance instead of the generic `agent` label.
+
 ## Signature
 
 Every PR comment you leave must end with your **agent-identity-signature**:
@@ -60,7 +62,7 @@ Every comment thread is an independent score event. More precise comments = more
 ### Step 1: Load context
 
 ```bash
-orbit tool run orbit.task.show --input '{"id": "<task-id>"}'
+orbit tool run orbit.task.show --input '{"id": "<task-id>", "agent": "<agent>", "model": "<model>"}'
 ```
 
 Read the task plan, description, and acceptance criteria. You are reviewing against **these requirements** — not your personal preferences.

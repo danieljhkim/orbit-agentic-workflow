@@ -10,6 +10,7 @@ pub(super) fn build_exec_request(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
+    let identity = super::resolve_identity(ctx, input)?;
     let mut args = vec![
         "job-run".to_string(),
         "list".to_string(),
@@ -33,40 +34,44 @@ pub(super) fn build_exec_request(
         args.push(limit);
     }
 
-    Ok(super::orbit_exec_request(ctx, args))
+    Ok(super::orbit_exec_request_with_identity(
+        ctx, args, &identity,
+    ))
 }
 
 impl Tool for OrbitJobRunListTool {
     fn schema(&self) -> ToolSchema {
+        let mut parameters = vec![
+            ToolParam {
+                name: "job".to_string(),
+                description: "Optional job ID filter".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "status".to_string(),
+                description: "Optional job run status filter".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "since".to_string(),
+                description: "Optional lower timestamp bound".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "limit".to_string(),
+                description: "Optional result limit".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+        ];
+        parameters.extend(super::identity_params());
         ToolSchema {
             name: "orbit.job_run.list".to_string(),
             description: "List Orbit job runs as JSON".to_string(),
-            parameters: vec![
-                ToolParam {
-                    name: "job".to_string(),
-                    description: "Optional job ID filter".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "status".to_string(),
-                    description: "Optional job run status filter".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "since".to_string(),
-                    description: "Optional lower timestamp bound".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "limit".to_string(),
-                    description: "Optional result limit".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-            ],
+            parameters,
             builtin: true,
         }
     }
