@@ -147,7 +147,7 @@ Task ID: <orbit-task-id>
 ## Responding to PR Review Comments
 
 See `orbit-pr` skill for the full PR tool reference. Key rules for implementers:
-- **Push back with reasoning when you disagree.** Last comment wins — if you stay silent, the reviewer's comment stands as the verdict.
+- **Push back with reasoning when you disagree.** Silence implies concession — if you stay silent, the reviewer's comment stands as the verdict.
 - **If the reviewer is right, fix the code and reply the confirmation** Don't just silently push a commit.
 
 

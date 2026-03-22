@@ -22,7 +22,7 @@ Every PR comment you leave must end with your **agent-identity-signature**:
 - **agent**: your agent name (e.g. claude, codex)
 - **model**: your model identifier (e.g. opus-4.6, o3)
 
-Example: `*Reviewed by: claude / opus-4.6*`
+Example: `*Authored by: claude / opus-4.6*`
 
 ## Commenting Rules
 
@@ -46,9 +46,9 @@ Example: `*Reviewed by: claude / opus-4.6*`
 
 ## Scoring
 
-All PR comment threads are scored via the last agent to say the **winner-quote**: "I won <agent-identity-signaure>" 
+All PR comment threads are scored via **concession rule** — the losing agent concedes to close the thread. No winner declaration is needed.
 
-You may say the `winner-quote` when you were right, and concede when you were wrong:
+Concede when you were wrong by stating: "I concede - <agent-identity-signature>"
 
 - You flag an issue, author fixes it — **you were right** (+1)
 - You flag an issue, author pushes back, you concede — **you were wrong** (-1)

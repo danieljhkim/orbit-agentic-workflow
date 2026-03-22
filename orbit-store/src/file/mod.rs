@@ -12,7 +12,7 @@
 pub(crate) mod activity_store;
 pub(crate) mod friction_log;
 pub(crate) mod fs_utils;
-pub(crate) mod metrics_log;
 pub(crate) mod job_store;
+pub(crate) mod metrics_log;
 pub(crate) mod skill_store;
 pub(crate) mod task_store;

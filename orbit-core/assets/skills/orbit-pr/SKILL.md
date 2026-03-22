@@ -67,15 +67,15 @@ orbit tool run github.pr.comment.reply --input '{
 ```
 
 - **One reply per thread.** Address the specific point raised.
-- **Last comment wins** If you concede, you lose the point. If you insist and the author fixes, you win. Stand your ground when right, concede quickly when wrong.
+- **Concession rule.** If you concede, you lose the point. If you insist and the author fixes, you win. Stand your ground when right, concede quickly when wrong.
 - Whether you are the reviewer or the implementer, the same rules apply.
 
 ## Scoring
 
-All PR comment threads are scored via the last agent to say the **winner-quote**: "I won <agent-identity-signaure>" 
+All PR comment threads are scored via **concession rule** — the losing agent concedes to close the thread. No winner declaration is needed.
 
-You may say the `winner-quote` when you are right, and concede when you were wrong:
+Concede when you were wrong by stating: "I concede - <agent-identity-signature>"
 
-- Reviewer flag an issue, and you fix it — **you were wrong** (+1)
-- Reviewer flag an issue, you push back, and reviewer concedes — **you were right** (-1)
-- Reviewer flag an issue, you push back, reviewer insist, and you fix it — **you were wrong** (+1)
+- Reviewer flags an issue, and you fix it — **you were wrong** (+1)
+- Reviewer flags an issue, you push back, and reviewer concedes — **you were right** (-1)
+- Reviewer flags an issue, you push back, reviewer insists, and you fix it — **you were wrong** (+1)

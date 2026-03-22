@@ -26,8 +26,8 @@ pub mod error;
 pub mod event;
 pub mod friction;
 pub mod id;
-pub mod metrics;
 pub mod job;
+pub mod metrics;
 pub mod policy_decision;
 pub mod redaction;
 pub mod role;
@@ -43,12 +43,12 @@ pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use friction::FrictionEntry;
 pub use id::OrbitId;
-pub use metrics::MetricsEntry;
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
     JobScheduleState, JobStep, JobTargetType, default_job_max_active_runs,
     default_retry_backoff_seconds,
 };
+pub use metrics::MetricsEntry;
 pub use policy_decision::PolicyDecision;
 pub use redaction::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
@@ -306,8 +306,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&entry).expect("serialize metrics entry");
-        let decoded: MetricsEntry =
-            serde_json::from_str(&json).expect("deserialize metrics entry");
+        let decoded: MetricsEntry = serde_json::from_str(&json).expect("deserialize metrics entry");
 
         assert_eq!(decoded, entry);
     }

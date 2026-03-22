@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_agent::Agent;
+use orbit_store::JobRunStepParams;
 use orbit_store::friction_log::append_friction_entry;
 use orbit_store::metrics_log::append_metrics_entry;
-use orbit_store::JobRunStepParams;
 use orbit_types::{
     FrictionEntry, Job, JobRun, JobRunState, JobStep, MetricsEntry, OrbitError, OrbitEvent,
 };
@@ -626,7 +626,10 @@ fn command_label(execution: &crate::context::ExecutionContext) -> String {
             .unwrap_or(execution.activity.id.as_str())
             .to_string(),
         "api" => {
-            let method = config.get("method").and_then(Value::as_str).unwrap_or("API");
+            let method = config
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("API");
             let url = config.get("url").and_then(Value::as_str).unwrap_or("");
             format!("{method} {url}").trim().to_string()
         }

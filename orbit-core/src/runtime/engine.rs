@@ -246,7 +246,6 @@ impl RuntimeHost for OrbitRuntime {
         });
         Ok(())
     }
-
 }
 
 impl JobRunHost for OrbitRuntime {

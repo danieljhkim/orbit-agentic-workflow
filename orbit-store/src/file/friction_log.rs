@@ -15,7 +15,8 @@ pub fn append_friction_entry(root: &Path, entry: &FrictionEntry) -> Result<(), O
         .append(true)
         .open(&file_path)
         .map_err(|error| OrbitError::Io(error.to_string()))?;
-    let line = serde_json::to_string(entry).map_err(|error| OrbitError::Store(error.to_string()))?;
+    let line =
+        serde_json::to_string(entry).map_err(|error| OrbitError::Store(error.to_string()))?;
     writeln!(file, "{line}").map_err(|error| OrbitError::Io(error.to_string()))?;
     Ok(())
 }

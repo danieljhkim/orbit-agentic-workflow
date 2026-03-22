@@ -233,7 +233,7 @@ mod tests {
         .expect("valid");
         let body_arg = &req.args[3];
         assert!(
-            body_arg.ends_with("\n\n*Reviewed by: claude / opus-4.6*"),
+            body_arg.ends_with("\n\n*Authored by: claude / opus-4.6*"),
             "body missing signature: {body_arg}"
         );
     }
@@ -437,7 +437,7 @@ mod tests {
         let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
         let body = &req.args[body_pos + 1];
         assert!(
-            body.ends_with("\n\n*Reviewed by: codex / o3*"),
+            body.ends_with("\n\n*Authored by: codex / o3*"),
             "body missing signature: {body}"
         );
     }
@@ -459,7 +459,7 @@ mod tests {
         .expect("valid");
         let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
         let body = &req.args[body_pos + 1];
-        assert_eq!(body, "*Reviewed by: claude / sonnet-4*");
+        assert_eq!(body, "*Authored by: claude / sonnet-4*");
     }
 
     #[test]
@@ -480,7 +480,7 @@ mod tests {
         let body_pos = req.args.iter().position(|a| a == "--body").unwrap();
         let body = &req.args[body_pos + 1];
         assert!(
-            body.ends_with("\n\n*Reviewed by: codex / o3*"),
+            body.ends_with("\n\n*Authored by: codex / o3*"),
             "body missing signature: {body}"
         );
     }
