@@ -5,12 +5,19 @@ use std::path::Path;
 fn orbit_in(dir: &Path) -> Command {
     #[allow(deprecated)]
     let mut cmd = Command::cargo_bin("orbit").expect("binary exists");
+    let orbit_bin = assert_cmd::cargo::cargo_bin!("orbit");
+    let mut paths = vec![orbit_bin.parent().expect("binary parent").to_path_buf()];
+    if let Some(existing_path) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing_path));
+    }
+    let path = std::env::join_paths(paths).expect("joined PATH");
     cmd.current_dir(dir);
     cmd.env("HOME", dir);
     cmd.env("USERPROFILE", dir);
     // Prevent find_git_repo_root() from walking up to the real repo's .git
     // and writing task artifacts into the project's .orbit/ directory.
     cmd.env("ORBIT_ROOT", dir.join(".orbit"));
+    cmd.env("PATH", path);
     cmd
 }
 
@@ -731,6 +738,82 @@ fn task_start_backlog_moves_to_in_progress() {
     );
     assert_eq!(history.last().expect("latest")["from_status"], "backlog");
     assert_eq!(history.last().expect("latest")["to_status"], "in_progress");
+}
+
+#[test]
+fn task_start_with_explicit_identity_updates_provenance_fields() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "precise provenance");
+    let input = format!(
+        "{{\"id\":\"{id}\",\"note\":\"picked up with explicit identity\",\"comment\":\"starting with provenance\",\"agent\":\"codex\",\"model\":\"gpt-5.4\"}}"
+    );
+
+    let output = orbit_in(dir.path())
+        .args(["tool", "run", "orbit.task.start", "--input", &input])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+
+    assert_eq!(task["status"], "in-progress");
+    assert_eq!(task["assigned_to"], "codex / gpt-5.4");
+    assert_eq!(task["agent"], "codex");
+    assert_eq!(task["model"], "gpt-5.4");
+    assert_eq!(task["comments"][0]["by"], "codex / gpt-5.4");
+    assert_eq!(task["comments"][0]["message"], "starting with provenance");
+    assert_eq!(
+        task["history"]
+            .as_array()
+            .expect("history")
+            .last()
+            .expect("latest")["by"],
+        "codex / gpt-5.4"
+    );
+}
+
+#[test]
+fn direct_task_start_with_explicit_identity_updates_provenance_fields() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "direct precise provenance");
+
+    let output = orbit_in(dir.path())
+        .args([
+            "task",
+            "start",
+            &id,
+            "--note",
+            "picked up with explicit identity",
+            "--comment",
+            "starting with provenance",
+            "--agent",
+            "codex",
+            "--model",
+            "gpt-5.4",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let task: serde_json::Value = serde_json::from_slice(&output).expect("task json");
+
+    assert_eq!(task["status"], "in-progress");
+    assert_eq!(task["assigned_to"], "codex / gpt-5.4");
+    assert_eq!(task["agent"], "codex");
+    assert_eq!(task["model"], "gpt-5.4");
+    assert_eq!(task["comments"][0]["by"], "codex / gpt-5.4");
+    assert_eq!(task["comments"][0]["message"], "starting with provenance");
+    assert_eq!(
+        task["history"]
+            .as_array()
+            .expect("history")
+            .last()
+            .expect("latest")["by"],
+        "codex / gpt-5.4"
+    );
 }
 
 #[test]

@@ -13,24 +13,26 @@ Handle a human-requested engineering change or existing Orbit task from intent t
 
 All agent Orbit interactions go through `orbit tool run`. **Never guess command names — use exactly these:**
 
+Include your identity on every `orbit tool run orbit.*` call by passing `agent` and `model` in the input JSON. Orbit uses these fields to write precise task provenance (`history`, `assigned_to`, comments, and task metadata) instead of the generic `agent` label.
+
 ```bash
 # Load a task
-orbit tool run orbit.task.show --input '{"id": "<task-id>"}'
+orbit tool run orbit.task.show --input '{"id": "<task-id>", "agent": "<agent>", "model": "<model>"}'
 
 # Start a task (backlog/proposed -> in-progress)
-orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why>"}'
+orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why>", "agent": "<agent>", "model": "<model>"}'
 
 # Update task status
-orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "agent": "<agent>", "model": "<model>"}'
 
 # Update execution summary
-orbit tool run orbit.task.update --input '{"id": "<task-id>", "execution_summary": "<summary>"}'
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "execution_summary": "<summary>", "agent": "<agent>", "model": "<model>"}'
 
 # Add a comment
-orbit tool run orbit.task.update --input '{"id": "<task-id>", "comment": "<what happened>"}'
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "comment": "<what happened>", "agent": "<agent>", "model": "<model>"}'
 
 # List tasks
-orbit tool run orbit.task.list --input '{"status": "backlog"}'
+orbit tool run orbit.task.list --input '{"status": "backlog", "agent": "<agent>", "model": "<model>"}'
 ```
 
 **Important:** Always use `orbit tool run` — never use `orbit task ...` directly. The tool interface tracks agent provenance. Direct CLI usage is reserved for humans.
@@ -42,7 +44,7 @@ orbit tool run orbit.task.list --input '{"status": "backlog"}'
 If any `orbit tool run` command fails unexpectedly (unknown tool, missing field, unclear error), **do not silently work around it**. Immediately create a friction task:
 
 ```bash
-orbit tool run orbit.task.add --input '{"title": "<short problem statement>", "description": "<what command failed, the error message, and why it caused friction>", "type": "issue", "priority": "medium"}'
+orbit tool run orbit.task.add --input '{"title": "<short problem statement>", "description": "<what command failed, the error message, and why it caused friction>", "type": "issue", "priority": "medium", "agent": "<agent>", "model": "<model>"}'
 ```
 
 Then continue with your work. The friction must be recorded so it gets fixed for the next agent.
@@ -54,7 +56,7 @@ Then continue with your work. The friction must be recorded so it gets fixed for
 **If given an existing task ID**, load it:
 
 ```bash
-orbit tool run orbit.task.show --input '{"id": "<task-id>"}'
+orbit tool run orbit.task.show --input '{"id": "<task-id>", "agent": "<agent>", "model": "<model>"}'
 ```
 
 Read the returned JSON carefully. Extract:
@@ -68,7 +70,7 @@ Read the returned JSON carefully. Extract:
 ### Step 2: Start the task
 
 ```bash
-orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready now>"}'
+orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready now>", "agent": "<agent>", "model": "<model>"}'
 ```
 
 - `task start` moves `backlog -> in-progress`
@@ -82,7 +84,7 @@ Follow the task's `plan` field step by step. Read the `context_files` before tou
 ### Step 4: Move to review
 
 ```bash
-orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "agent": "<agent>", "model": "<model>"}'
 ```
 
 ### Step 5: Persist the execution summary
@@ -103,7 +105,9 @@ Persist the execution summary via the Orbit task update tool — do NOT write to
 ```bash
 orbit tool run orbit.task.update --input '{
   "id": "<task-id>",
-  "execution_summary": "<summary content>"
+  "execution_summary": "<summary content>",
+  "agent": "<agent>",
+  "model": "<model>"
 }'
 ```
 
@@ -151,6 +155,6 @@ See `orbit-pr` skill for the full PR tool reference. Key rules for implementers:
 
 - Requested change implemented
 - Validation completed
-- Task started via `orbit tool run orbit.task.start` before execution
+- Task started via `orbit tool run orbit.task.start` with explicit `agent` and `model` before execution
 - Task advanced through `review`
-- Execution summary persisted via `orbit tool run orbit.task.update --input '{"id": "...", "execution_summary": "..."}'`
+- Execution summary persisted via `orbit tool run orbit.task.update --input '{"id": "...", "execution_summary": "...", "agent": "...", "model": "..."}'`

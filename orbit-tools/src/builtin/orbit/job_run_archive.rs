@@ -10,19 +10,23 @@ pub(super) fn build_exec_request(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
+    let identity = super::resolve_identity(ctx, input)?;
     let id = super::required_string(input, &["id", "run_id", "runId"], "id")?;
-    Ok(super::orbit_exec_request(
+    Ok(super::orbit_exec_request_with_identity(
         ctx,
         vec!["job-run".to_string(), "archive".to_string(), id],
+        &identity,
     ))
 }
 
 impl Tool for OrbitJobRunArchiveTool {
     fn schema(&self) -> ToolSchema {
+        let mut parameters = super::orbit_id_params("job run");
+        parameters.extend(super::identity_params());
         ToolSchema {
             name: "orbit.job_run.archive".to_string(),
             description: "Archive an Orbit job run".to_string(),
-            parameters: super::orbit_id_params("job run"),
+            parameters,
             builtin: true,
         }
     }

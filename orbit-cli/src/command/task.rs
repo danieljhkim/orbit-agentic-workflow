@@ -98,6 +98,12 @@ pub struct TaskAddArgs {
     /// For bug tasks: the originating task whose implementation introduced the defect
     #[arg(long = "source-task")]
     pub source_task: Option<String>,
+    /// Explicit agent name to persist on the task artifact
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Explicit agent model to persist on the task artifact
+    #[arg(long)]
+    pub model: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -141,18 +147,22 @@ impl Execute for TaskAddArgs {
             (self.description, self.plan, self.priority, self.task_type)
         };
 
-        let task = runtime.add_task(TaskAddParams {
-            title: self.title,
-            description,
-            plan,
-            comment: self.comment,
-            context_files: parse_context_csv(&self.context),
-            workspace_path: None,
-            priority,
-            complexity: self.complexity,
-            task_type,
-            source_task_id: self.source_task.clone(),
-        })?;
+        let task = runtime.add_task_with_identity(
+            TaskAddParams {
+                title: self.title,
+                description,
+                plan,
+                comment: self.comment,
+                context_files: parse_context_csv(&self.context),
+                workspace_path: None,
+                priority,
+                complexity: self.complexity,
+                task_type,
+                source_task_id: self.source_task.clone(),
+            },
+            self.agent,
+            self.model,
+        )?;
 
         if self.json {
             crate::output::json::print_pretty(&task_to_json(&task))
@@ -445,6 +455,12 @@ pub struct TaskUpdateArgs {
     /// Pull request number (empty string clears)
     #[arg(long)]
     pub pr_number: Option<String>,
+    /// Explicit agent name to persist on the task artifact
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Explicit agent model to persist on the task artifact
+    #[arg(long)]
+    pub model: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -460,7 +476,7 @@ impl Execute for TaskUpdateArgs {
             }
         });
 
-        let task = runtime.update_task(
+        let task = runtime.update_task_with_identity(
             &self.id,
             TaskUpdateParams {
                 title: self.title,
@@ -471,6 +487,8 @@ impl Execute for TaskUpdateArgs {
                 status: self.status.map(Into::into),
                 pr_number,
             },
+            self.agent,
+            self.model,
         )?;
 
         if self.json {
@@ -522,6 +540,12 @@ pub struct TaskStartArgs {
     /// Append a task comment
     #[arg(long)]
     pub comment: Option<String>,
+    /// Explicit agent name to persist on the task artifact
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Explicit agent model to persist on the task artifact
+    #[arg(long)]
+    pub model: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -529,7 +553,13 @@ pub struct TaskStartArgs {
 
 impl Execute for TaskStartArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let task = runtime.start_task(&self.id, self.note, self.comment)?;
+        let task = runtime.start_task_with_identity(
+            &self.id,
+            self.note,
+            self.comment,
+            self.agent,
+            self.model,
+        )?;
         if self.json {
             crate::output::json::print_pretty(&task_to_json(&task))
         } else {
@@ -558,6 +588,12 @@ pub struct TaskApproveArgs {
     /// Append a task comment
     #[arg(long)]
     pub comment: Option<String>,
+    /// Explicit agent name to persist on the task artifact
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Explicit agent model to persist on the task artifact
+    #[arg(long)]
+    pub model: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -599,7 +635,13 @@ impl Execute for TaskApproveArgs {
         if self.json {
             let mut results = Vec::new();
             for id in &ids {
-                let task = runtime.approve_task(id, self.note.clone(), self.comment.clone())?;
+                let task = runtime.approve_task_with_identity(
+                    id,
+                    self.note.clone(),
+                    self.comment.clone(),
+                    self.agent.clone(),
+                    self.model.clone(),
+                )?;
                 results.push(task_to_json(&task));
             }
             if bulk {
@@ -609,7 +651,13 @@ impl Execute for TaskApproveArgs {
             }
         } else {
             for id in &ids {
-                let task = runtime.approve_task(id, self.note.clone(), self.comment.clone())?;
+                let task = runtime.approve_task_with_identity(
+                    id,
+                    self.note.clone(),
+                    self.comment.clone(),
+                    self.agent.clone(),
+                    self.model.clone(),
+                )?;
                 println!("Approved task '{}'", task.id);
             }
             Ok(())
@@ -636,6 +684,12 @@ pub struct TaskRejectArgs {
     /// Append a task comment
     #[arg(long)]
     pub comment: Option<String>,
+    /// Explicit agent name to persist on the task artifact
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Explicit agent model to persist on the task artifact
+    #[arg(long)]
+    pub model: Option<String>,
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
@@ -677,7 +731,13 @@ impl Execute for TaskRejectArgs {
         if self.json {
             let mut results = Vec::new();
             for id in &ids {
-                let task = runtime.reject_task(id, self.note.clone(), self.comment.clone())?;
+                let task = runtime.reject_task_with_identity(
+                    id,
+                    self.note.clone(),
+                    self.comment.clone(),
+                    self.agent.clone(),
+                    self.model.clone(),
+                )?;
                 results.push(task_to_json(&task));
             }
             if bulk {
@@ -687,7 +747,13 @@ impl Execute for TaskRejectArgs {
             }
         } else {
             for id in &ids {
-                let task = runtime.reject_task(id, self.note.clone(), self.comment.clone())?;
+                let task = runtime.reject_task_with_identity(
+                    id,
+                    self.note.clone(),
+                    self.comment.clone(),
+                    self.agent.clone(),
+                    self.model.clone(),
+                )?;
                 println!("Rejected task '{}'", task.id);
             }
             Ok(())

@@ -10,6 +10,7 @@ pub(super) fn build_exec_requests(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<(ExecRequest, ExecRequest), OrbitError> {
+    let identity = super::resolve_identity(ctx, input)?;
     let id = super::required_string(input, &["id"], "id")?;
     let mut args = vec!["task".to_string(), "update".to_string(), id.clone()];
     let mut changed = false;
@@ -37,8 +38,10 @@ pub(super) fn build_exec_requests(
         ));
     }
 
-    let update = super::orbit_exec_request(ctx, args);
-    let show = super::orbit_exec_request(
+    super::append_identity_flags(&mut args, &identity);
+
+    let update = super::orbit_exec_request_with_identity(ctx, args, &identity);
+    let show = super::orbit_exec_request_with_identity(
         ctx,
         vec![
             "task".to_string(),
@@ -46,6 +49,7 @@ pub(super) fn build_exec_requests(
             id,
             "--json".to_string(),
         ],
+        &identity,
     );
     Ok((update, show))
 }
@@ -73,6 +77,7 @@ impl Tool for OrbitTaskUpdateTool {
                 required: false,
             },
         ]);
+        parameters.extend(super::identity_params());
 
         ToolSchema {
             name: "orbit.task.update".to_string(),

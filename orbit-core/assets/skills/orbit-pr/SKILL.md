@@ -9,6 +9,8 @@ description: Use this skill when creating pull requests and replying to comments
 
 Standardize how agents interact with pull requests — creating, commenting, and replying. 
 
+When this workflow needs Orbit task metadata, include `agent` and `model` on every `orbit tool run orbit.*` call so Orbit records precise provenance instead of the generic `agent` label.
+
 ## Signature
 
 The **agent-identity-signature** (defined in CLAUDE.md / AGENTS.md) must be appended to the end of your PR bodies and PR comment replies: `*authored by: <agent> / <model>*`
