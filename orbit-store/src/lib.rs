@@ -31,14 +31,19 @@ pub mod skill_store {
     pub use crate::file::skill_store::*;
 }
 
+pub mod friction_log {
+    pub use crate::file::friction_log::{append_friction_entry, read_friction_entries_for_month};
+}
+
 use chrono::{DateTime, Utc};
 
 pub use backend::{
     ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AuditEventStoreBackend,
-    JobCreateParams, JobRunQuery, JobRunStepParams, JobStoreBackend, JobUpdateParams,
-    ResolvedScope, ScopeResolution, TaskCreateParams, TaskStoreBackend, TaskUpdateParams,
-    ToolStoreBackend, activity_store_file, activity_store_resolved, audit_event_store_sqlite,
-    job_store_file, job_store_resolved, task_store_file, task_store_resolved, tool_store_sqlite,
+    FrictionLogBackend, JobCreateParams, JobRunQuery, JobRunStepParams, JobStoreBackend,
+    JobUpdateParams, ResolvedScope, ScopeResolution, TaskCreateParams, TaskStoreBackend,
+    TaskUpdateParams, ToolStoreBackend, activity_store_file, activity_store_resolved,
+    audit_event_store_sqlite, job_store_file, job_store_resolved, task_store_file,
+    task_store_resolved, tool_store_sqlite,
 };
 pub use json_schema::{validate_instance_against_schema, validate_schema_document};
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};

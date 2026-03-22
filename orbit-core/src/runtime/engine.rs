@@ -245,6 +245,10 @@ impl RuntimeHost for OrbitRuntime {
         });
         Ok(())
     }
+
+    fn data_root(&self) -> Result<std::path::PathBuf, OrbitError> {
+        Ok(self.data_root())
+    }
 }
 
 impl JobRunHost for OrbitRuntime {
@@ -422,6 +426,8 @@ impl TaskHost for OrbitRuntime {
                     workspace_path: update.workspace_path.clone().map(Some),
                     repo_root: update.repo_root.clone().map(Some),
                     pr_number: update.pr_number.clone().map(Some),
+                    agent: update.agent.clone().map(Some),
+                    model: update.model.clone().map(Some),
                     ..Default::default()
                 },
             )?;

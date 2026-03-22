@@ -511,6 +511,30 @@ fn task_direct_cli_uses_human_for_created_by_and_comment_author() {
 }
 
 #[test]
+fn task_show_json_includes_agent_and_model_when_present() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let id = add_task(dir.path(), "agent metadata");
+    let task_yaml_path = task_dir(dir.path(), &id).join("task.yaml");
+    let task_yaml = std::fs::read_to_string(&task_yaml_path).expect("read yaml");
+    let task_yaml = task_yaml.replace(
+        "agent: null\nmodel: null\n",
+        "agent: codex\nmodel: gpt-5.4\n",
+    );
+    std::fs::write(&task_yaml_path, task_yaml).expect("write yaml");
+
+    let show_output = orbit_in(dir.path())
+        .args(["task", "show", &id, "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let show: serde_json::Value = serde_json::from_slice(&show_output).expect("show json");
+    assert_eq!(show["agent"], "codex");
+    assert_eq!(show["model"], "gpt-5.4");
+}
+
+#[test]
 fn task_update_rejects_blank_comment() {
     let dir = tempfile::tempdir().expect("tempdir");
     let id = add_task(dir.path(), "blank comment");
