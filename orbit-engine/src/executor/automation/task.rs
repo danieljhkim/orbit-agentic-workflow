@@ -20,8 +20,12 @@ pub(super) fn update_task<H: TaskHost + ?Sized>(
         return Ok(json!({}));
     }
 
+    // Safety net: if execution_summary is present in input (e.g. from the
+    // implement_change output), persist it so the summary is not lost even when
+    // the agent's own orbit.task.update call was skipped or failed.
+    let execution_summary = input_string_field(input, "execution_summary");
     let note = input_string_field(input, "note")
         .or_else(|| Some(format!("automation: update_task → {status}")));
-    host.update_task_from_activity(task_id, status, None, None, note)?;
+    host.update_task_from_activity(task_id, status, execution_summary, None, note)?;
     Ok(json!({}))
 }

@@ -6,7 +6,9 @@ use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
 use super::freshness::ensure_branch_fresh_against_base;
 use super::git::git_output;
-use super::input::{canonicalize_existing_dir, json_number_to_string, required_input_string};
+use super::input::{
+    canonicalize_existing_dir, input_string_field, json_number_to_string, required_input_string,
+};
 use super::review::resolve_review_decision;
 
 pub(super) fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
@@ -33,7 +35,7 @@ pub(super) fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
         )
     })?;
     let head = format!("orbit/{task_id}");
-    let base = "agent-main".to_string();
+    let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
     let review_decision = resolve_review_decision(&repo_root, pr_number)?;
     if review_decision != "APPROVED" {
         return Err(OrbitError::Execution(format!(
@@ -101,7 +103,7 @@ pub(super) fn open_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
         "repo_root",
     )?;
     let head = format!("orbit/{task_id}");
-    let base = "agent-main".to_string();
+    let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
 
     // Idempotent: if the task already has a PR number, skip creation and return
     // the existing PR info.  This handles the case where the agent (or a
