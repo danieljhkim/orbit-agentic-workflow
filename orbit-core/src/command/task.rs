@@ -1,6 +1,7 @@
 use chrono::Utc;
 use orbit_store::{
     TaskCreateParams as StoreTaskCreateParams, TaskUpdateParams as StoreTaskUpdateParams,
+    friction_bounty,
 };
 use orbit_types::{
     OrbitError, OrbitEvent, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority,
@@ -9,6 +10,7 @@ use orbit_types::{
 
 use crate::OrbitRuntime;
 use crate::context::ActorKind;
+use crate::paths::find_git_repo_root;
 
 pub struct TaskAddParams {
     pub title: String,
@@ -85,7 +87,7 @@ impl OrbitRuntime {
             };
         let comments = build_task_comments(params.comment.clone(), effective_label.as_str())?;
 
-        self.with_mutation(|| {
+        let task = self.with_mutation(|| {
             let task = self.create_task_record(StoreTaskCreateParams {
                 actor: effective_label.clone(),
                 title: params.title.clone(),
@@ -114,7 +116,18 @@ impl OrbitRuntime {
                     id: task.id.clone(),
                 },
             ))
-        })
+        })?;
+
+        // Friction bounty: record issues-reported on creation when agent+model present
+        if params.task_type.is_friction() {
+            if let (Some(a), Some(m)) = (&agent, &model) {
+                if let Some(repo_root) = find_git_repo_root(self.data_root_path()) {
+                    let _ = friction_bounty::record_friction_reported(&repo_root, a, m);
+                }
+            }
+        }
+
+        Ok(task)
     }
 
     pub fn get_task(&self, id: &str) -> Result<Task, OrbitError> {
@@ -243,7 +256,9 @@ impl OrbitRuntime {
             }
         });
 
-        let task = self.with_mutation(|| {
+        let old_status = task.status;
+        let target_status = params.status;
+        let updated = self.with_mutation(|| {
             let task = self.update_task_record(
                 id,
                 StoreTaskUpdateParams {
@@ -259,7 +274,13 @@ impl OrbitRuntime {
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
         })?;
 
-        Ok(task)
+        if let Some(new_status) = target_status {
+            if new_status != old_status {
+                self.try_record_friction_transition(&task, old_status, new_status);
+            }
+        }
+
+        Ok(updated)
     }
 
     pub fn approve_task(
@@ -284,9 +305,9 @@ impl OrbitRuntime {
         let effective_label = effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
-        match task.status {
+        let result = match task.status {
             TaskStatus::Proposed => {
-                let task = self.with_mutation(|| {
+                self.with_mutation(|| {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
@@ -308,11 +329,10 @@ impl OrbitRuntime {
                             approved_by: effective_label.clone(),
                         },
                     ))
-                })?;
-                Ok(task)
+                })
             }
             TaskStatus::Review => {
-                let task = self.with_mutation(|| {
+                self.with_mutation(|| {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
@@ -333,13 +353,20 @@ impl OrbitRuntime {
                             approved_by: effective_label.clone(),
                         },
                     ))
-                })?;
-                Ok(task)
+                })
             }
             other => Err(OrbitError::InvalidInput(format!(
                 "task '{id}' is in status '{other}'; approve requires 'proposed' or 'review'"
             ))),
-        }
+        }?;
+
+        self.try_record_friction_transition(
+            &task,
+            task.status,
+            if task.status == TaskStatus::Proposed { TaskStatus::Backlog } else { TaskStatus::Done },
+        );
+
+        Ok(result)
     }
 
     pub fn start_task(
@@ -366,7 +393,7 @@ impl OrbitRuntime {
 
         match task.status {
             TaskStatus::Proposed => {
-                let task = self.with_mutation(|| {
+                let result = self.with_mutation(|| {
                     let at = Utc::now();
                     let task = self.update_task_record(
                         id,
@@ -398,7 +425,12 @@ impl OrbitRuntime {
                         },
                     ))
                 })?;
-                Ok(task)
+                self.try_record_friction_transition(
+                    &task,
+                    TaskStatus::Proposed,
+                    TaskStatus::InProgress,
+                );
+                Ok(result)
             }
             TaskStatus::Backlog | TaskStatus::Someday | TaskStatus::Blocked => {
                 let task = self.with_mutation(|| {
@@ -465,9 +497,9 @@ impl OrbitRuntime {
         let reason = reason.to_string();
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
-        match task.status {
+        let result = match task.status {
             TaskStatus::Proposed => {
-                let task = self.with_mutation(|| {
+                self.with_mutation(|| {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
@@ -488,11 +520,10 @@ impl OrbitRuntime {
                             rejected_by: effective_label.clone(),
                         },
                     ))
-                })?;
-                Ok(task)
+                })
             }
             TaskStatus::Review => {
-                let task = self.with_mutation(|| {
+                self.with_mutation(|| {
                     let task = self.update_task_record(
                         id,
                         StoreTaskUpdateParams {
@@ -513,13 +544,16 @@ impl OrbitRuntime {
                             rejected_by: effective_label.clone(),
                         },
                     ))
-                })?;
-                Ok(task)
+                })
             }
             other => Err(OrbitError::InvalidInput(format!(
                 "task '{id}' is in status '{other}'; reject requires 'proposed' or 'review'"
             ))),
-        }
+        }?;
+
+        self.try_record_friction_transition(&task, task.status, TaskStatus::Rejected);
+
+        Ok(result)
     }
 
     pub fn archive_task(&self, id: &str) -> Result<(), OrbitError> {
@@ -579,6 +613,37 @@ impl OrbitRuntime {
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.search_task_records(query)
+    }
+
+    /// Best-effort friction bounty scoreboard update after a status transition.
+    fn try_record_friction_transition(
+        &self,
+        task: &Task,
+        from: TaskStatus,
+        to: TaskStatus,
+    ) {
+        if !task.task_type.is_friction() {
+            return;
+        }
+        let (Some(agent), Some(model)) = (&task.agent, &task.model) else {
+            return;
+        };
+        let Some(repo_root) = find_git_repo_root(self.data_root_path()) else {
+            return;
+        };
+
+        let is_approval = matches!(
+            (from, to),
+            (TaskStatus::Proposed, TaskStatus::Backlog)
+                | (TaskStatus::Proposed, TaskStatus::InProgress)
+                | (TaskStatus::Review, TaskStatus::Done)
+        );
+
+        if is_approval {
+            let _ = friction_bounty::record_friction_accepted(&repo_root, agent, model);
+        } else if to == TaskStatus::Rejected {
+            let _ = friction_bounty::record_friction_rejected(&repo_root, agent, model);
+        }
     }
 
     #[cfg(test)]
