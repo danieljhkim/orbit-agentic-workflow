@@ -195,6 +195,12 @@ pub struct JobStep {
     /// Additional env var names to pass through in hermetic mode, on top of the global allowlist.
     #[serde(default)]
     pub env_extra: Vec<String>,
+    /// Explicit env var key-value pairs injected into the step's environment.
+    /// Unlike `env_extra` (which passes names from the parent env), these set
+    /// fixed values regardless of what the parent env contains.  Entries here
+    /// override same-named vars from `env_extra` or the global allowlist.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub env_set: HashMap<String, String>,
     /// Maximum number of total attempts (including the first). Zero means no retry.
     #[serde(default)]
     pub retry_max_attempts: u32,
@@ -218,6 +224,7 @@ impl Default for JobStep {
             model: None,
             timeout_seconds: 0,
             env_extra: Vec::new(),
+            env_set: HashMap::new(),
             retry_max_attempts: 0,
             retry_backoff_seconds: default_retry_backoff_seconds(),
             condition: StepCondition::Always,

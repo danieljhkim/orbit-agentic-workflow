@@ -41,9 +41,18 @@ impl ActivityExecutor for CliCommandExecutor {
     }
 
     fn execute(&self, host: &dyn EngineHost, execution: &ExecutionContext) -> AttemptOutcome {
+        let mut cli_env = host.cli_command_environment(&execution.env_extra);
+        // Apply explicit env_set overrides on top of the resolved environment.
+        for (key, value) in &execution.env_set {
+            if let Some(existing) = cli_env.iter_mut().find(|(k, _)| k == key) {
+                existing.1 = value.clone();
+            } else {
+                cli_env.push((key.clone(), value.clone()));
+            }
+        }
         let mut template_context = execution_template_context_with_env(
             execution,
-            host.cli_command_environment(&execution.env_extra),
+            cli_env,
         );
         // When a cli_command step has task_id in its input, load the task and
         // inject its fields into the template context so {{workspace_path}}

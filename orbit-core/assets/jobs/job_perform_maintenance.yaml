@@ -10,6 +10,7 @@ job:
   steps:
     - target_type: activity
       target_id: perform_maintenance
-      agent_cli: codex
+      agent_cli: claude
+      model: opus
       timeout_seconds: 1200
       env_extra: []

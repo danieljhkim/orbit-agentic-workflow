@@ -74,6 +74,9 @@ pub struct ExecutionContext {
     pub model: Option<String>,
     pub timeout_seconds: u64,
     pub env_extra: Vec<String>,
+    /// Explicit env var key-value pairs that override same-named vars from
+    /// `env_extra` or the global allowlist.
+    pub env_set: std::collections::HashMap<String, String>,
     pub input: Value,
     /// When `true`, stream agent stderr to the terminal and tee stdout live.
     pub debug: bool,
@@ -328,6 +331,50 @@ pub fn execution_working_directory_with_task<H: TaskHost + ?Sized>(
             .and_then(|task_id| host.get_task(task_id).ok())
             .and_then(|task| task.workspace_path)
     })
+}
+
+/// Resolve `${VAR}` references in a value string from the parent environment.
+/// Leaves the literal intact when the referenced var is not set.
+fn resolve_env_refs(value: &str) -> String {
+    if let Some(inner) = value.strip_prefix("${").and_then(|s| s.strip_suffix('}')) {
+        std::env::var(inner).unwrap_or_else(|_| value.to_string())
+    } else {
+        value.to_string()
+    }
+}
+
+/// Apply explicit key-value env vars (`env_set`) on top of an already-resolved
+/// [`EnvironmentMode`].  Values may contain `${VAR}` references that are
+/// resolved from the parent environment.  Entries in `env_set` override
+/// same-named vars.
+pub fn apply_env_set(
+    mode: EnvironmentMode,
+    env_set: &std::collections::HashMap<String, String>,
+) -> EnvironmentMode {
+    if env_set.is_empty() {
+        return mode;
+    }
+    let apply = |pairs: &mut Vec<(String, String)>| {
+        for (key, raw_value) in env_set {
+            let value = resolve_env_refs(raw_value);
+            if let Some(existing) = pairs.iter_mut().find(|(k, _)| k == key) {
+                existing.1 = value;
+            } else {
+                pairs.push((key.clone(), value));
+            }
+        }
+    };
+    match mode {
+        EnvironmentMode::ClearAndSet(mut pairs) => {
+            apply(&mut pairs);
+            EnvironmentMode::ClearAndSet(pairs)
+        }
+        EnvironmentMode::Inherit => {
+            let mut pairs: Vec<(String, String)> = std::env::vars().collect();
+            apply(&mut pairs);
+            EnvironmentMode::ClearAndSet(pairs)
+        }
+    }
 }
 
 pub fn redact_attempt_outcome(mut outcome: AttemptOutcome) -> AttemptOutcome {

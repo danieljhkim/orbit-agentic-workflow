@@ -24,6 +24,7 @@ pub fn run_activity_direct<H: EngineHost>(
         model: None,
         timeout_seconds,
         env_extra: vec![],
+        env_set: std::collections::HashMap::new(),
         input: json!({}),
         debug,
     };
@@ -53,6 +54,7 @@ pub fn build_execution_context_for_step<H: RuntimeHost>(
         model: step.model.clone(),
         timeout_seconds: step.timeout_seconds,
         env_extra: step.env_extra.clone(),
+        env_set: step.env_set.clone(),
         input,
         debug,
     })

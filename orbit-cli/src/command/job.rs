@@ -388,6 +388,7 @@ fn job_step_to_json(step: &JobStep) -> Value {
         "agent_cli": step.agent_cli,
         "timeout_seconds": step.timeout_seconds,
         "env_extra": step.env_extra,
+        "env_set": step.env_set,
     });
     if let Some(model) = &step.model {
         value["model"] = Value::String(model.clone());

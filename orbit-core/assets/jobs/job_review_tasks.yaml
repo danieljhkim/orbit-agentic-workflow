@@ -10,6 +10,7 @@ job:
   steps:
     - target_type: activity
       target_id: review_tasks
-      agent_cli: claude
+      agent_cli: codex
+      model: gpt-5.4
       timeout_seconds: 1200
       env_extra: []

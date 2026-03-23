@@ -10,7 +10,7 @@ use crate::context::{
     AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED, AGENT_OUTPUT_MISSING, AGENT_PROTOCOL_VIOLATION,
     AGENT_PROVIDER_OVERLOAD, AGENT_RATE_LIMIT, AGENT_TIMEOUT, AGENT_TRANSPORT_FAILURE,
     AgentProtocolHost, AttemptOutcome, EngineHost, EnvironmentHost, ExecutionContext,
-    execution_working_directory, execution_working_directory_with_task,
+    apply_env_set, execution_working_directory, execution_working_directory_with_task,
 };
 
 pub struct AgentExecutor;
@@ -161,13 +161,16 @@ fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         prepare_exec_args(&invocation).map_err(invocation_failed_outcome)?;
 
     let resolved_model = resolve_model_for_env(host, execution);
-    let environment_mode = inject_agent_identity(
-        inject_activity_tools(
-            host.execution_environment_mode(&execution.env_extra),
-            &execution.activity.tools,
+    let environment_mode = apply_env_set(
+        inject_agent_identity(
+            inject_activity_tools(
+                host.execution_environment_mode(&execution.env_extra),
+                &execution.activity.tools,
+            ),
+            execution,
+            resolved_model.as_deref(),
         ),
-        execution,
-        resolved_model.as_deref(),
+        &execution.env_set,
     );
 
     run_process(
