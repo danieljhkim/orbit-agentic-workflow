@@ -1,0 +1,32 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: check_review_decision
+  spec_type: automation
+
+  # ---- content ----
+  description: "Gate step: check that the PR's GitHub review decision is APPROVED. Succeeds if approved, fails otherwise — enabling conditional branching in the pipeline."
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+    properties:
+      task_id:
+        type: string
+        description: The Orbit task ID whose PR review decision should be checked.
+  output_schema_json:
+    type: object
+    properties:
+      review_decision:
+        type: string
+        description: The review decision from GitHub (APPROVED).
+
+  # ---- execution ----
+  action: check_review_decision

@@ -246,6 +246,7 @@ mod tests {
                 job_id: None,
                 default_input: None,
                 max_active_runs: None,
+                max_iterations: None,
                 steps: vec![JobStep {
                     target_id: "spec-core-double-run".to_string(),
                     agent_cli: agent_path.to_string_lossy().to_string(),

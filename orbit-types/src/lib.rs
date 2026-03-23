@@ -46,7 +46,7 @@ pub use id::OrbitId;
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
     JobScheduleState, JobStep, JobTargetType, StepCondition, default_job_max_active_runs,
-    default_retry_backoff_seconds,
+    default_max_iterations, default_retry_backoff_seconds,
 };
 pub use metrics::MetricsEntry;
 pub use policy_decision::PolicyDecision;
@@ -137,6 +137,7 @@ mod tests {
             state: JobScheduleState::Enabled,
             default_input: Some(serde_json::json!({"base": "main"})),
             max_active_runs: 2,
+            max_iterations: 1,
             steps: vec![JobStep {
                 target_id: "exec-1".to_string(),
                 agent_cli: "claude".to_string(),

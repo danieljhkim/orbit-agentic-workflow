@@ -101,6 +101,7 @@ pub struct JobCreateParams {
     pub job_id: Option<String>,
     pub default_input: Option<Value>,
     pub max_active_runs: u32,
+    pub max_iterations: u32,
     pub steps: Vec<JobStep>,
     pub initial_state: JobScheduleState,
 }

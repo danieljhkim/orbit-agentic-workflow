@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use orbit_types::{
     Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError,
-    default_job_max_active_runs,
+    default_job_max_active_runs, default_max_iterations,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,8 @@ struct PersistedJob {
     default_input: Option<serde_json::Value>,
     #[serde(default = "default_job_max_active_runs")]
     max_active_runs: u32,
+    #[serde(default = "default_max_iterations")]
+    max_iterations: u32,
     steps: Vec<JobStep>,
     // Legacy fields: tolerated when reading old artifacts, never written to new ones.
     #[serde(default, skip_serializing)]
@@ -90,6 +92,7 @@ impl JobFileStore {
             state: params.initial_state,
             default_input: params.default_input,
             max_active_runs: params.max_active_runs,
+            max_iterations: params.max_iterations,
             steps: params.steps,
             created_at: now,
             updated_at: now,
@@ -268,6 +271,7 @@ impl JobFileStore {
                 state: job.state,
                 default_input: job.default_input.clone(),
                 max_active_runs: job.max_active_runs,
+                max_iterations: job.max_iterations,
                 steps: job.steps.clone(),
                 created_at: None,
                 updated_at: None,
@@ -515,6 +519,7 @@ impl JobFileStore {
             state: p.state,
             default_input: p.default_input,
             max_active_runs: validate_max_active_runs(p.max_active_runs)?,
+            max_iterations: p.max_iterations,
             steps: p.steps,
             created_at,
             updated_at,
@@ -568,6 +573,7 @@ impl JobFileStore {
                 state: job.state,
                 default_input: job.default_input.clone(),
                 max_active_runs: job.max_active_runs,
+                max_iterations: job.max_iterations,
                 steps: job.steps.clone(),
                 created_at: None,
                 updated_at: None,
@@ -777,6 +783,7 @@ mod tests {
                 job_id: None,
                 default_input: None,
                 max_active_runs: 1,
+                max_iterations: 1,
                 steps: vec![make_step(target_id)],
                 initial_state: JobScheduleState::Enabled,
             })
@@ -937,6 +944,7 @@ mod tests {
                 job_id: Some("job-roundtrip-test".to_string()),
                 default_input: Some(json!({"base": "main"})),
                 max_active_runs: 3,
+                max_iterations: 1,
                 steps: vec![step],
                 initial_state: JobScheduleState::Disabled,
             })
@@ -1003,6 +1011,7 @@ mod tests {
                 job_id: Some("job-roundtrip-model".to_string()),
                 default_input: None,
                 max_active_runs: 1,
+                max_iterations: 1,
                 steps: vec![step],
                 initial_state: JobScheduleState::Enabled,
             })

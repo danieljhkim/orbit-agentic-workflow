@@ -182,6 +182,7 @@ mod tests {
             job_id: Some(id.to_string()),
             default_input: None,
             max_active_runs: 1,
+            max_iterations: 1,
             steps: vec![JobStep {
                 target_type: orbit_types::JobTargetType::Activity,
                 target_id: "test-activity".to_string(),

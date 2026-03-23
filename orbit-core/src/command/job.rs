@@ -26,6 +26,10 @@ const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/jobs/job_perform_maintenance.yaml"),
     ),
     (
+        "job_review_loop",
+        include_str!("../../assets/jobs/job_review_loop.yaml"),
+    ),
+    (
         "job_task_pipeline",
         include_str!("../../assets/jobs/job_task_pipeline.yaml"),
     ),
@@ -44,6 +48,8 @@ struct DefaultJobEntry {
     default_input: Option<Value>,
     #[serde(default = "default_job_max_active_runs")]
     max_active_runs: u32,
+    #[serde(default = "orbit_types::default_max_iterations")]
+    max_iterations: u32,
     steps: Vec<DefaultJobStep>,
 }
 
@@ -73,6 +79,7 @@ pub struct JobAddParams {
     pub job_id: Option<String>,
     pub default_input: Option<Value>,
     pub max_active_runs: Option<u32>,
+    pub max_iterations: Option<u32>,
     pub steps: Vec<JobStep>,
     pub initial_state_override: Option<JobScheduleState>,
 }
@@ -123,15 +130,47 @@ impl OrbitRuntime {
                     "step target_id must not be empty".to_string(),
                 ));
             }
+            if step.target_type == JobTargetType::Job {
+                // Reject self-references.
+                if let Some(ref job_id) = params.job_id {
+                    if step.target_id == *job_id {
+                        return Err(OrbitError::JobValidation(format!(
+                            "job '{}' cannot reference itself as a step",
+                            job_id
+                        )));
+                    }
+                }
+                // Validate that the referenced job exists.
+                let referenced_job = self.get_job_backend(&step.target_id)?.ok_or_else(|| {
+                    OrbitError::JobValidation(format!(
+                        "step references job '{}' which does not exist",
+                        step.target_id
+                    ))
+                })?;
+                // Detect one-level cycles: if the referenced job has a step
+                // pointing back to this job, reject it.
+                if let Some(ref job_id) = params.job_id {
+                    for sub_step in &referenced_job.steps {
+                        if sub_step.target_type == JobTargetType::Job
+                            && sub_step.target_id == *job_id
+                        {
+                            return Err(OrbitError::JobValidation(format!(
+                                "cycle detected: job '{}' references '{}' which references back",
+                                job_id, step.target_id
+                            )));
+                        }
+                    }
+                }
+                continue;
+            }
             let activity =
                 self.validate_activity_target_exists(step.target_type, &step.target_id)?;
-            if activity_requires_agent_cli(&activity.spec_type) && step.agent_cli.trim().is_empty()
+            // When agent_cli is specified, validate it eagerly. When empty,
+            // the runner resolves it from the task's agent field at runtime
+            // (e.g. review loop steps that route back to the original implementer).
+            if activity_requires_agent_cli(&activity.spec_type)
+                && !step.agent_cli.trim().is_empty()
             {
-                return Err(OrbitError::JobValidation(
-                    "step agent_cli must not be empty for agent_invoke activities".to_string(),
-                ));
-            }
-            if activity_requires_agent_cli(&activity.spec_type) {
                 let _ = Agent::new(
                     &AgentConfig::cli(step.agent_cli.clone())?.with_model(step.model.as_deref()),
                 )?;
@@ -152,10 +191,12 @@ impl OrbitRuntime {
             })
             .collect::<Result<Vec<_>, OrbitError>>()?;
 
+        let max_iterations = params.max_iterations.unwrap_or(1);
         let job = self.add_job_record(StoreActivityCreateParams {
             job_id: params.job_id,
             default_input,
             max_active_runs,
+            max_iterations,
             steps,
             initial_state,
         })?;
@@ -311,6 +352,7 @@ pub(crate) fn seed_default_jobs(
             job_id: Some(entry.job_id),
             default_input: entry.default_input,
             max_active_runs: Some(entry.max_active_runs),
+            max_iterations: Some(entry.max_iterations),
             steps,
             initial_state_override: Some(initial_state),
         })?;
@@ -337,6 +379,7 @@ fn default_job_steps(entry: &DefaultJobEntry) -> Result<Vec<JobStep>, OrbitError
         .map(|s| {
             let target_type = match s.target_type.as_str() {
                 "activity" => JobTargetType::Activity,
+                "job" => JobTargetType::Job,
                 other => {
                     return Err(OrbitError::InvalidInput(format!(
                         "unsupported target_type '{}' in default job '{}'",
@@ -391,6 +434,7 @@ mod tests {
                 "job_review_tasks",
                 "job_oversee_orbit_operations",
                 "job_perform_maintenance",
+                "job_review_loop",
                 "job_task_pipeline",
             ]
         );
@@ -415,6 +459,14 @@ mod tests {
             .find(|spec| spec.job_id == "job_review_tasks")
             .expect("review job spec present");
         assert_eq!(review.steps[0].model.as_deref(), None);
+        let review_loop = specs
+            .iter()
+            .find(|spec| spec.job_id == "job_review_loop")
+            .expect("review loop spec present");
+        assert_eq!(review_loop.max_iterations, 5);
+        assert_eq!(review_loop.max_active_runs, 4);
+        assert_eq!(review_loop.steps.len(), 4);
+        assert_eq!(review_loop.steps[0].target_id, "load_pr_comments");
     }
 
     #[test]

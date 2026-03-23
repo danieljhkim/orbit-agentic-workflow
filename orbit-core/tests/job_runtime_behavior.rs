@@ -134,6 +134,7 @@ fn add_scheduled_activity_with_timeout_and_limit(
             job_id: None,
             default_input: None,
             max_active_runs: Some(max_active_runs),
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: target_id.to_string(),
                 agent_cli: agent_cli.to_string(),
@@ -230,6 +231,7 @@ fn cli_command_activity_executes_without_agent_cli_and_captures_output_file() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-cli-command".to_string(),
                 timeout_seconds: 30,
@@ -289,6 +291,7 @@ fn cli_command_failures_redact_sensitive_environment_values_from_error_messages(
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-cli-secret-redaction".to_string(),
                 timeout_seconds: 30,
@@ -401,6 +404,7 @@ fn cli_command_receives_only_baseline_allowlisted_and_orbit_env_vars() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-cli-allowlisted-env".to_string(),
                 timeout_seconds: 30,
@@ -499,6 +503,7 @@ fn cli_command_step_env_extra_is_scoped_per_step() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-cli-env-step1".to_string(),
@@ -801,6 +806,7 @@ fn agent_step_records_task_agent_and_model_when_execution_starts() {
             job_id: None,
             default_input: Some(json!({ "task_id": task.id })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-record-agent-model".to_string(),
                 agent_cli,
@@ -860,6 +866,7 @@ fn failed_steps_append_friction_entries_to_daily_log() {
             job_id: None,
             default_input: Some(json!({ "task_id": task.id })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-friction-failure".to_string(),
                 agent_cli,
@@ -969,6 +976,7 @@ fn run_job_now_uses_job_default_input_when_manual_input_is_absent() {
             job_id: None,
             default_input: Some(json!({ "base": "main" })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-default-input".to_string(),
                 agent_cli,
@@ -1018,6 +1026,7 @@ fn run_job_now_with_input_overrides_job_default_input() {
             job_id: None,
             default_input: Some(json!({ "base": "main", "mode": "auto" })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-default-override".to_string(),
                 agent_cli,
@@ -1086,6 +1095,7 @@ fn run_job_now_finalizes_failed_when_pre_step_setup_errors_after_running() {
             job_id: None,
             default_input: Some(json!({ "base": "main" })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-invalid-default-input".to_string(),
                 agent_cli: "mock-agent".to_string(),
@@ -1336,6 +1346,7 @@ fn codex_job_run_passes_step_model_to_provider_cli() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-codex-model".to_string(),
                 agent_cli,
@@ -1593,6 +1604,7 @@ fn job_conditions_record_skips_and_continue_after_failures() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-condition-success".to_string(),
@@ -2113,6 +2125,7 @@ fn claude_job_run_succeeds_with_mock_binary() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-claude-run".to_string(),
                 agent_cli,
@@ -2170,6 +2183,7 @@ fn claude_job_run_passes_step_model_to_provider_cli() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-claude-model".to_string(),
                 agent_cli,
@@ -2208,6 +2222,7 @@ fn run_job_now_executes_job_successfully() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-manual-run".to_string(),
                 agent_cli,
@@ -2297,6 +2312,7 @@ fn agent_step_result_fields_flow_into_next_step_input() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-agent-output".to_string(),
@@ -2404,6 +2420,7 @@ fn step_output_map_renames_keys_before_flowing_to_next_step() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-agent-map-source".to_string(),
@@ -2512,6 +2529,7 @@ fn step_output_map_silently_skips_missing_source_keys() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-agent-skip-source".to_string(),
@@ -2631,6 +2649,7 @@ fn agent_step_workspace_path_flows_into_cli_working_directory() {
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-agent-workspace-output".to_string(),
@@ -2711,6 +2730,7 @@ fn agent_step_uses_workspace_path_as_process_current_dir() {
                 "workspace_path": workspace_dir.to_string_lossy().to_string()
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-agent-current-dir".to_string(),
                 agent_cli,
@@ -2853,6 +2873,7 @@ fn create_branch_creates_isolated_worktree_without_mutating_main_checkout() {
                 "base": "agent-main"
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-create-task-worktree".to_string(),
@@ -2993,6 +3014,7 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
                 "note": "handing off for review"
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-update-task".to_string(),
                 timeout_seconds: 30,
@@ -3128,6 +3150,7 @@ fn implement_change_result_status_flows_into_update_task_as_task_status() {
             job_id: None,
             default_input: Some(json!({ "task_id": task.id })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-implement-like".to_string(),
@@ -3240,6 +3263,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
                 "base": "agent-main"
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-create-task-worktree-for-commit".to_string(),
                 timeout_seconds: 30,
@@ -3310,6 +3334,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
                 "task_id": task_id
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-commit-task-worktree".to_string(),
                 timeout_seconds: 30,
@@ -3403,6 +3428,7 @@ fn commit_task_changes_uses_summary_from_task() {
             job_id: None,
             default_input: Some(json!({"task_id": task_id, "base": "agent-main"})),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-create-wt-regression".to_string(),
                 timeout_seconds: 30,
@@ -3445,6 +3471,7 @@ fn commit_task_changes_uses_summary_from_task() {
             job_id: None,
             default_input: Some(json!({"task_id": task_id})),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-commit-regression".to_string(),
                 timeout_seconds: 30,
@@ -3493,6 +3520,7 @@ fn commit_task_changes_uses_summary_from_task() {
             job_id: None,
             default_input: Some(json!({"task_id": task_id})),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-commit-regression".to_string(),
                 timeout_seconds: 30,
@@ -3587,6 +3615,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
                 "base": "agent-main"
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-create-wt-task-only".to_string(),
                 timeout_seconds: 30,
@@ -3661,6 +3690,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
             job_id: None,
             default_input: Some(json!({ "task_id": task_id })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-commit-task-only".to_string(),
                 timeout_seconds: 30,
@@ -3855,6 +3885,7 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
                 "task_id": task_id
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-open-pr-from-task".to_string(),
                 timeout_seconds: 30,
@@ -4030,6 +4061,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
                 "base": "agent-main"
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-create-wt-open-pr-task-only".to_string(),
                 timeout_seconds: 30,
@@ -4120,6 +4152,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
             job_id: None,
             default_input: Some(json!({ "task_id": task_id })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-commit-open-pr-task-only".to_string(),
@@ -4306,6 +4339,7 @@ fn open_pr_automation_rejects_stale_task_branches_before_pr_creation() {
                 "changed_files": ["feature.txt"]
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-open-pr-stale".to_string(),
                 timeout_seconds: 30,
@@ -4474,6 +4508,7 @@ fn merge_pr_automation_rejects_stale_task_branches_before_merging() {
                 "base": "agent-main",
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-merge-pr-stale".to_string(),
                 timeout_seconds: 30,
@@ -4639,6 +4674,7 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
                 "task_id": task_id,
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-merge-pr-from-gh".to_string(),
                 timeout_seconds: 30,
@@ -4721,6 +4757,7 @@ pass = ["HOME", "PATH"]
             job_id: None,
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![
                 JobStep {
                     target_id: "spec-multi-env-step1".to_string(),
@@ -4796,6 +4833,7 @@ fn failed_job_run_auto_creates_task_and_deduplicates() {
             job_id: Some("job-always-fails".to_string()),
             default_input: None,
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-always-fails".to_string(),
                 timeout_seconds: 10,
@@ -4937,6 +4975,7 @@ fn create_branch_includes_local_base_commits_not_yet_pushed_to_remote() {
                 "base": "agent-main"
             })),
             max_active_runs: None,
+            max_iterations: None,
             steps: vec![JobStep {
                 target_id: "spec-create-worktree-local-base".to_string(),
                 timeout_seconds: 30,

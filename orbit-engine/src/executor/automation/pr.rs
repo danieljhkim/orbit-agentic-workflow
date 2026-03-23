@@ -325,12 +325,20 @@ mod tests {
             ))
         }
 
+        fn data_root(&self) -> &std::path::Path {
+            std::path::Path::new(".")
+        }
+
         fn validate_activity_target_exists(
             &self,
             _target_type: JobTargetType,
             _target_id: &str,
         ) -> Result<Activity, OrbitError> {
             unimplemented!("validate_activity_target_exists is not used in automation merge tests")
+        }
+
+        fn get_job(&self, _job_id: &str) -> Result<Option<orbit_types::Job>, OrbitError> {
+            Ok(None)
         }
 
         fn run_tool_with_context_and_role(

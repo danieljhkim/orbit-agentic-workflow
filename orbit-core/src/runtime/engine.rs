@@ -182,12 +182,20 @@ impl RuntimeHost for OrbitRuntime {
         current_repo_root(self)
     }
 
+    fn data_root(&self) -> &std::path::Path {
+        self.context.data_root()
+    }
+
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,
         target_id: &str,
     ) -> Result<Activity, OrbitError> {
         OrbitRuntime::validate_activity_target_exists(self, target_type, target_id)
+    }
+
+    fn get_job(&self, job_id: &str) -> Result<Option<orbit_types::Job>, OrbitError> {
+        self.get_job_record(job_id)
     }
 
     fn run_tool_with_context_and_role(

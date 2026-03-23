@@ -4,8 +4,8 @@ use orbit_store::JobRunStepParams;
 use orbit_store::friction_log::append_friction_entry;
 use orbit_store::metrics_log::append_metrics_entry;
 use orbit_types::{
-    FrictionEntry, Job, JobRun, JobRunState, JobStep, MetricsEntry, OrbitError, OrbitEvent,
-    StepCondition,
+    FrictionEntry, Job, JobRun, JobRunState, JobStep, JobTargetType, MetricsEntry, OrbitError,
+    OrbitEvent, StepCondition,
 };
 use serde_json::Value;
 use std::path::Path;
@@ -91,139 +91,214 @@ fn execute_activity_with_retries<H: EngineHost>(
         let mut last_protocol_violation = false;
         let mut current_input = merge_job_input(job.default_input.as_ref(), input)?;
         let mut last_failure: Option<(String, String)> = None;
-        let mut previous_step_state: Option<JobRunState> = None;
+        let num_steps = job.steps.len();
+        let max_iterations = job.max_iterations.max(1);
 
-        for (step_index, step) in job.steps.iter().enumerate() {
-            failure_step = (step_index, step.clone());
+        'outer: for iteration in 0..max_iterations {
+            let mut previous_step_state: Option<JobRunState> = None;
 
-            if !should_run_step(step.condition, previous_step_state) {
-                let skipped_at = Utc::now();
+            // Clear loop_exit flag at the start of each iteration so a
+            // previous iteration's flag doesn't short-circuit immediately.
+            if iteration > 0 {
+                if let Value::Object(ref mut map) = current_input {
+                    map.remove("loop_exit");
+                }
+            }
+
+            for (step_index, step) in job.steps.iter().enumerate() {
+                let global_step_index = iteration as usize * num_steps + step_index;
+                failure_step = (global_step_index, step.clone());
+
+                if !should_run_step(step.condition, previous_step_state) {
+                    let skipped_at = Utc::now();
+                    let changed = host.complete_job_run_step(
+                        &run.run_id,
+                        &JobRunStepParams {
+                            step_index: global_step_index,
+                            target_type: step.target_type,
+                            target_id: step.target_id.clone(),
+                            started_at: skipped_at,
+                            finished_at: skipped_at,
+                            duration_ms: Some(0),
+                            exit_code: None,
+                            agent_response_json: None,
+                            state: JobRunState::Skipped,
+                            error_code: None,
+                            error_message: None,
+                        },
+                    )?;
+                    if !changed {
+                        return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+                    }
+                    // Pass-through: do NOT update previous_step_state when skipped.
+                    // This makes skipped steps transparent so subsequent conditions
+                    // see the last non-skipped step's state, enabling patterns like
+                    // on_failure branch → on_success continuation.
+                    continue;
+                }
+
+                // ---- Job-as-step: delegate to a nested job run ----
+                if step.target_type == JobTargetType::Job {
+                    let step_started = Utc::now();
+                    let sub_result = execute_job_step(
+                        host, data_root, &step.target_id, &current_input, debug,
+                    );
+                    let step_finished = Utc::now();
+                    let (step_state, duration_ms, error_code, error_message) = match &sub_result {
+                        Ok(result) => (result.state, None, None, None),
+                        Err(err) => (
+                            JobRunState::Failed,
+                            None,
+                            Some(ACTIVITY_EXECUTION_FAILED.to_string()),
+                            Some(err.to_string()),
+                        ),
+                    };
+                    previous_step_state = Some(step_state);
+
+                    let changed = host.complete_job_run_step(
+                        &run.run_id,
+                        &JobRunStepParams {
+                            step_index: global_step_index,
+                            target_type: step.target_type,
+                            target_id: step.target_id.clone(),
+                            started_at: step_started,
+                            finished_at: step_finished,
+                            duration_ms,
+                            exit_code: None,
+                            agent_response_json: None,
+                            state: step_state,
+                            error_code: error_code.clone(),
+                            error_message: error_message.clone(),
+                        },
+                    )?;
+                    if !changed {
+                        return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+                    }
+
+                    if step_state_records_failure(step_state) {
+                        last_failure = Some((
+                            error_code.unwrap_or_default(),
+                            error_message.unwrap_or_default(),
+                        ));
+                        final_state = step_state;
+                    }
+                    continue;
+                }
+
+                // ---- Activity step (existing behavior) ----
+                // If the step's agent_cli is empty, try to resolve it from the
+                // task's agent/model fields so the original implementer is used.
+                let resolved_step = resolve_step_agent_from_task(host, step, &current_input);
+                let effective_step = resolved_step.as_ref().unwrap_or(step);
+                let execution =
+                    build_execution_context_for_step(host, &job, effective_step, current_input.clone(), debug)?;
+                // Only record agent context when the step explicitly specifies
+                // agent_cli — skip when resolved from the task to avoid overwriting.
+                if !step.agent_cli.trim().is_empty() {
+                    record_task_agent_context(host, &execution)?;
+                }
+                let step_started = Utc::now();
+                let outcome = execute_with_retry(
+                    host,
+                    &execution,
+                    step.retry_max_attempts,
+                    step.retry_backoff_seconds,
+                );
+                let step_finished = Utc::now();
+
+                if let Some(d) = outcome.duration_ms {
+                    total_duration_ms += d;
+                }
+                let step_state = outcome.state;
+                previous_step_state = Some(step_state);
+
+                // Pipe this step's output fields into the next step's input.
+                if step_state == JobRunState::Success
+                    && let Some(output_map) = step_output_for_following_input(
+                        &execution.activity,
+                        outcome.response_json.as_ref(),
+                    )
+                    && let Value::Object(ref mut input_map) = current_input
+                {
+                    let mut merged: serde_json::Map<String, Value> = output_map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    for (source, target) in &step.output_map {
+                        if let Some(value) = merged.remove(source) {
+                            merged.insert(target.clone(), value);
+                        }
+                    }
+                    for (key, value) in merged {
+                        input_map.insert(key, value);
+                    }
+                }
+
                 let changed = host.complete_job_run_step(
                     &run.run_id,
                     &JobRunStepParams {
-                        step_index,
+                        step_index: global_step_index,
                         target_type: step.target_type,
                         target_id: step.target_id.clone(),
-                        started_at: skipped_at,
-                        finished_at: skipped_at,
-                        duration_ms: Some(0),
-                        exit_code: None,
-                        agent_response_json: None,
-                        state: JobRunState::Skipped,
-                        error_code: None,
-                        error_message: None,
+                        started_at: step_started,
+                        finished_at: step_finished,
+                        duration_ms: outcome.duration_ms,
+                        exit_code: outcome.exit_code,
+                        agent_response_json: outcome.response_json.clone(),
+                        state: step_state,
+                        error_code: outcome.error_code.clone(),
+                        error_message: outcome.error_message.clone(),
                     },
                 )?;
                 if !changed {
                     return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
                 }
-                previous_step_state = Some(JobRunState::Skipped);
-                continue;
-            }
 
-            let execution =
-                build_execution_context_for_step(host, &job, step, current_input.clone(), debug)?;
-            record_task_agent_context(host, &execution)?;
-            let step_started = Utc::now();
-            let outcome = execute_with_retry(
-                host,
-                &execution,
-                step.retry_max_attempts,
-                step.retry_backoff_seconds,
-            );
-            let step_finished = Utc::now();
-
-            if let Some(d) = outcome.duration_ms {
-                total_duration_ms += d;
-            }
-            let step_state = outcome.state;
-            previous_step_state = Some(step_state);
-
-            // Pipe this step's output fields into the next step's input.
-            //
-            // `step_output_for_following_input` extracts the activity's
-            // declared output fields from the agent response JSON. We then
-            // apply `step.output_map` — a rename table of `{source: target}`
-            // pairs — before merging into `current_input`. The remove+insert
-            // dance is needed because we cannot borrow `merged` mutably for
-            // the rename while also iterating it; removing first avoids the
-            // conflict and is safe because any key missing from `output_map`
-            // is left untouched by the loop.
-            if step_state == JobRunState::Success
-                && let Some(output_map) = step_output_for_following_input(
-                    &execution.activity,
-                    outcome.response_json.as_ref(),
-                )
-                && let Value::Object(ref mut input_map) = current_input
-            {
-                let mut merged: serde_json::Map<String, Value> = output_map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-                for (source, target) in &step.output_map {
-                    if let Some(value) = merged.remove(source) {
-                        merged.insert(target.clone(), value);
-                    }
+                if step_state_records_failure(step_state) {
+                    append_failed_step_friction(
+                        data_root,
+                        host,
+                        &run.run_id,
+                        &step.target_id,
+                        &execution,
+                        outcome.exit_code,
+                        outcome.error_message.as_deref().unwrap_or(""),
+                        step_finished,
+                    );
                 }
-                for (key, value) in merged {
-                    input_map.insert(key, value);
-                }
-            }
 
-            let changed = host.complete_job_run_step(
-                &run.run_id,
-                &JobRunStepParams {
-                    step_index,
-                    target_type: step.target_type,
-                    target_id: step.target_id.clone(),
-                    started_at: step_started,
-                    finished_at: step_finished,
-                    duration_ms: outcome.duration_ms,
-                    exit_code: outcome.exit_code,
-                    agent_response_json: outcome.response_json.clone(),
-                    state: step_state,
-                    error_code: outcome.error_code.clone(),
-                    error_message: outcome.error_message.clone(),
-                },
-            )?;
-            if !changed {
-                return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
-            }
-
-            if step_state_records_failure(step_state) {
-                append_failed_step_friction(
+                append_step_metrics(
                     data_root,
                     host,
                     &run.run_id,
                     &step.target_id,
                     &execution,
-                    outcome.exit_code,
-                    outcome.error_message.as_deref().unwrap_or(""),
+                    outcome.duration_ms,
+                    outcome.retry_count,
                     step_finished,
                 );
+
+                if outcome.protocol_violation {
+                    last_protocol_violation = true;
+                }
+
+                if step_state_records_failure(step_state) {
+                    last_failure = Some((
+                        outcome.error_code.clone().unwrap_or_default(),
+                        outcome.error_message.clone().unwrap_or_default(),
+                    ));
+                    final_state = step_state;
+                }
+
+                // Check for loop_exit signal after each successful step.
+                if step_state == JobRunState::Success && check_loop_exit(&current_input) {
+                    break 'outer;
+                }
             }
 
-            append_step_metrics(
-                data_root,
-                host,
-                &run.run_id,
-                &step.target_id,
-                &execution,
-                outcome.duration_ms,
-                outcome.retry_count,
-                step_finished,
-            );
-
-            if outcome.protocol_violation {
-                last_protocol_violation = true;
-            }
-
-            if step_state_records_failure(step_state) {
-                last_failure = Some((
-                    outcome.error_code.clone().unwrap_or_default(),
-                    outcome.error_message.clone().unwrap_or_default(),
-                ));
-                final_state = step_state;
+            // If any step failed in this iteration, stop looping.
+            if final_state != JobRunState::Success {
+                break;
             }
         }
 
@@ -540,6 +615,29 @@ fn merge_job_input(default_input: Option<&Value>, input: Value) -> Result<Value,
     Ok(Value::Object(merged))
 }
 
+/// Execute a nested job step by loading the referenced job and running it.
+fn execute_job_step<H: EngineHost>(
+    host: &H,
+    data_root: &Path,
+    job_id: &str,
+    input: &Value,
+    debug: bool,
+) -> Result<JobRunResult, OrbitError> {
+    let sub_job = host
+        .get_job(job_id)?
+        .ok_or_else(|| OrbitError::JobValidation(format!("nested job '{}' not found", job_id)))?;
+    run_job_with_input(host, data_root, sub_job, input.clone(), debug)
+}
+
+/// Returns `true` if the accumulated input contains `"loop_exit": true`.
+fn check_loop_exit(input: &Value) -> bool {
+    input
+        .as_object()
+        .and_then(|map| map.get("loop_exit"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn should_run_step(condition: StepCondition, previous_step_state: Option<JobRunState>) -> bool {
     match condition {
         StepCondition::Always => true,
@@ -558,6 +656,28 @@ fn step_state_records_failure(state: JobRunState) -> bool {
         state,
         JobRunState::Failed | JobRunState::Timeout | JobRunState::Cancelled
     )
+}
+
+/// When a step's `agent_cli` is empty, try to resolve it from the task's
+/// `agent` and `model` fields so the original implementer handles the step
+/// (e.g. in a review-loop where the fix should go back to the same agent).
+fn resolve_step_agent_from_task<H: EngineHost>(
+    host: &H,
+    step: &JobStep,
+    input: &Value,
+) -> Option<JobStep> {
+    if !step.agent_cli.trim().is_empty() {
+        return None;
+    }
+    let task_id = extract_task_id(input)?;
+    let task = host.get_task(task_id).ok()?;
+    let agent = task.agent.as_deref().filter(|a| !a.trim().is_empty())?;
+    let mut resolved = step.clone();
+    resolved.agent_cli = agent.to_string();
+    if resolved.model.is_none() {
+        resolved.model = task.model.clone();
+    }
+    Some(resolved)
 }
 
 fn record_task_agent_context<H: EngineHost>(
