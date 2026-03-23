@@ -11,4 +11,4 @@ required_for_agent = true
 delegate_approval = true
 
 [scoring]
-enabled = true
+enabled = false
