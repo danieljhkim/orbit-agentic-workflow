@@ -1,4 +1,5 @@
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
+use orbit_store::pr_scoreboard;
 use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
@@ -40,6 +41,14 @@ pub(super) fn load_pr_comments<H: RuntimeHost + TaskHost + ?Sized>(
             "comments": [],
             "comment_summary": "No unresolved comments.",
         }));
+    }
+
+    if let (Some(agent), Some(model)) = (&task.agent, &task.model) {
+        let root = std::path::Path::new(repo_root);
+        let _ = pr_scoreboard::record_pr_revision(root, agent, model);
+        for _ in &unresolved {
+            let _ = pr_scoreboard::record_comment_resolved(root, agent, model);
+        }
     }
 
     let summary = build_comment_summary(&unresolved);
@@ -155,6 +164,20 @@ fn filter_unresolved_comments(
     Ok(unresolved)
 }
 
+/// Read and parse the PR scoreboard file from `repo_root/.orbit/scoreboard/pr.json`.
+#[cfg(test)]
+fn read_pr_scoreboard(
+    repo_root: &std::path::Path,
+) -> Option<std::collections::HashMap<String, std::collections::HashMap<String, std::collections::HashMap<String, u64>>>>
+{
+    let path = repo_root.join(".orbit/scoreboard/pr.json");
+    if !path.exists() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
 fn build_comment_summary(comments: &[Value]) -> String {
     let mut summary = format!("{} unresolved comment(s):\n", comments.len());
     for (i, comment) in comments.iter().enumerate() {
@@ -190,4 +213,314 @@ fn build_comment_summary(comments: &[Value]) -> String {
         ));
     }
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    use chrono::Utc;
+    use orbit_tools::ToolContext;
+    use orbit_types::{
+        Activity, JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus,
+        TaskType,
+    };
+    use serde_json::{Value, json};
+    use tempfile::TempDir;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+    use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
+
+    #[derive(Default)]
+    struct FakeHost {
+        task: RefCell<Option<Task>>,
+    }
+
+    impl FakeHost {
+        fn new(task: Task) -> Self {
+            Self {
+                task: RefCell::new(Some(task)),
+            }
+        }
+    }
+
+    impl TaskHost for FakeHost {
+        fn get_task(&self, task_id: &str) -> Result<Task, OrbitError> {
+            let task = self
+                .task
+                .borrow()
+                .clone()
+                .ok_or_else(|| OrbitError::TaskNotFound(task_id.to_string()))?;
+            if task.id != task_id {
+                return Err(OrbitError::TaskNotFound(task_id.to_string()));
+            }
+            Ok(task)
+        }
+
+        fn start_task(
+            &self,
+            _task_id: &str,
+            _note: Option<String>,
+            _comment: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!()
+        }
+
+        fn update_task_from_activity(
+            &self,
+            _task_id: &str,
+            _status: TaskStatus,
+            _execution_summary: Option<String>,
+            _comment: Option<String>,
+            _note: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!()
+        }
+
+        fn apply_task_automation_update(
+            &self,
+            _task_id: &str,
+            _update: TaskAutomationUpdate,
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+    }
+
+    impl RuntimeHost for FakeHost {
+        fn record_event(&self, _event: OrbitEvent) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn repo_root(&self) -> Result<String, OrbitError> {
+            Err(OrbitError::Execution("not used".to_string()))
+        }
+
+        fn data_root(&self) -> &std::path::Path {
+            std::path::Path::new(".")
+        }
+
+        fn validate_activity_target_exists(
+            &self,
+            _target_type: JobTargetType,
+            _target_id: &str,
+        ) -> Result<Activity, OrbitError> {
+            unimplemented!()
+        }
+
+        fn get_job(&self, _job_id: &str) -> Result<Option<orbit_types::Job>, OrbitError> {
+            Ok(None)
+        }
+
+        fn run_tool_with_context_and_role(
+            &self,
+            _name: &str,
+            _input: Value,
+            _role: Role,
+            _tool_context: ToolContext,
+        ) -> Result<Value, OrbitError> {
+            Ok(json!({}))
+        }
+
+        fn maybe_create_failure_task(
+            &self,
+            _job_id: &str,
+            _run_id: &str,
+            _error_code: &str,
+            _error_message: &str,
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+    }
+
+    struct PathGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        original_path: Option<String>,
+    }
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            match self.original_path.take() {
+                Some(path) => unsafe { std::env::set_var("PATH", path) },
+                None => unsafe { std::env::remove_var("PATH") },
+            }
+        }
+    }
+
+    fn path_lock() -> &'static Mutex<()> {
+        crate::executor::automation::test_utils::path_lock()
+    }
+
+    fn prepend_path(dir: &Path) -> String {
+        let mut entries = vec![dir.to_string_lossy().to_string()];
+        if let Some(existing) = std::env::var_os("PATH") {
+            entries.push(existing.to_string_lossy().to_string());
+        }
+        entries.join(":")
+    }
+
+    /// Install a fake `gh` script that responds to:
+    /// - `gh api repos/{owner}/{repo}/pulls/{pr}/comments --paginate` → `comments_json`
+    /// - `gh pr view {pr} --json reviewThreads` → `threads_json`
+    fn install_fake_gh(bin_dir: &Path, comments_json: &str, threads_json: &str) {
+        let script = format!(
+            concat!(
+                "#!/bin/sh\n",
+                "if [ \"$1\" = \"api\" ]; then\n",
+                "  printf '%s' '{comments}'\n",
+                "  exit 0\n",
+                "fi\n",
+                "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"view\" ] && [ \"$4\" = \"--json\" ] && [ \"$5\" = \"reviewThreads\" ]; then\n",
+                "  printf '%s' '{threads}'\n",
+                "  exit 0\n",
+                "fi\n",
+                "printf '%s\\n' \"unexpected gh args: $*\" >&2\n",
+                "exit 1\n"
+            ),
+            comments = comments_json.replace('\'', "'\\''"),
+            threads = threads_json.replace('\'', "'\\''"),
+        );
+        let gh_path = bin_dir.join("gh");
+        fs::write(&gh_path, script).expect("write fake gh");
+        #[cfg(unix)]
+        fs::set_permissions(&gh_path, fs::Permissions::from_mode(0o755)).expect("chmod gh");
+    }
+
+    fn use_fake_gh(comments_json: &str, threads_json: &str) -> (TempDir, PathGuard) {
+        let bin_dir = tempfile::tempdir().expect("temp gh dir");
+        install_fake_gh(bin_dir.path(), comments_json, threads_json);
+        let lock = path_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original_path = std::env::var("PATH").ok();
+        unsafe { std::env::set_var("PATH", prepend_path(bin_dir.path())) };
+        (
+            bin_dir,
+            PathGuard {
+                _lock: lock,
+                original_path,
+            },
+        )
+    }
+
+    fn test_task(repo_root: &Path) -> Task {
+        Task {
+            id: "T20260320-021158".to_string(),
+            parent_id: None,
+            title: "test task".to_string(),
+            description: "desc".to_string(),
+            plan: "plan".to_string(),
+            execution_summary: String::new(),
+            context_files: vec![],
+            workspace_path: Some(repo_root.to_string_lossy().to_string()),
+            repo_root: Some(repo_root.to_string_lossy().to_string()),
+            assigned_to: None,
+            created_by: Some("test".to_string()),
+            agent: Some("claude".to_string()),
+            model: Some("opus-4.6".to_string()),
+            status: TaskStatus::Review,
+            priority: TaskPriority::High,
+            task_type: TaskType::Issue,
+            pr_number: Some("42".to_string()),
+            proposed_by: None,
+            source_task_id: None,
+            complexity: None,
+            comments: vec![],
+            history: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn load_pr_comments_records_scoreboard_for_unresolved_comments() {
+        let repo_dir = tempfile::tempdir().expect("temp dir");
+        let comments_json = serde_json::to_string(&json!([
+            {"id": 1, "body": "fix this", "path": "src/main.rs", "line": 10, "user": {"login": "reviewer"}},
+            {"id": 2, "body": "and this", "path": "src/lib.rs", "line": 20, "user": {"login": "reviewer"}},
+        ]))
+        .unwrap();
+        let threads_json = serde_json::to_string(&json!({
+            "reviewThreads": [
+                {"isResolved": false, "comments": [{"databaseId": 1}]},
+                {"isResolved": false, "comments": [{"databaseId": 2}]},
+            ]
+        }))
+        .unwrap();
+
+        let (_gh_dir, _path_guard) = use_fake_gh(&comments_json, &threads_json);
+        let host = FakeHost::new(test_task(repo_dir.path()));
+
+        let result = load_pr_comments(&host, &json!({"task_id": "T20260320-021158"}))
+            .expect("load_pr_comments should succeed");
+
+        assert_eq!(result["loop_exit"], json!(false));
+        assert_eq!(result["comments"].as_array().unwrap().len(), 2);
+
+        let sb = read_pr_scoreboard(repo_dir.path()).expect("scoreboard should exist");
+        assert_eq!(sb["revisions"]["claude"]["opus-4.6"], 1);
+        assert_eq!(sb["comments-resolved"]["claude"]["opus-4.6"], 2);
+    }
+
+    #[test]
+    fn load_pr_comments_no_scoreboard_when_all_resolved() {
+        let repo_dir = tempfile::tempdir().expect("temp dir");
+        let comments_json = serde_json::to_string(&json!([
+            {"id": 1, "body": "fix this", "path": "src/main.rs", "line": 10, "user": {"login": "reviewer"}},
+        ]))
+        .unwrap();
+        let threads_json = serde_json::to_string(&json!({
+            "reviewThreads": [
+                {"isResolved": true, "comments": [{"databaseId": 1}]},
+            ]
+        }))
+        .unwrap();
+
+        let (_gh_dir, _path_guard) = use_fake_gh(&comments_json, &threads_json);
+        let host = FakeHost::new(test_task(repo_dir.path()));
+
+        let result = load_pr_comments(&host, &json!({"task_id": "T20260320-021158"}))
+            .expect("load_pr_comments should succeed");
+
+        assert_eq!(result["loop_exit"], json!(true));
+        assert_eq!(result["comments"].as_array().unwrap().len(), 0);
+
+        // No scoreboard should be created when there are no unresolved comments
+        let sb = read_pr_scoreboard(repo_dir.path());
+        assert!(sb.is_none(), "scoreboard should not exist when no unresolved comments");
+    }
+
+    #[test]
+    fn load_pr_comments_skips_scoreboard_when_agent_missing() {
+        let repo_dir = tempfile::tempdir().expect("temp dir");
+        let comments_json = serde_json::to_string(&json!([
+            {"id": 1, "body": "fix this", "path": "src/main.rs", "line": 10, "user": {"login": "reviewer"}},
+        ]))
+        .unwrap();
+        let threads_json = serde_json::to_string(&json!({
+            "reviewThreads": [
+                {"isResolved": false, "comments": [{"databaseId": 1}]},
+            ]
+        }))
+        .unwrap();
+
+        let (_gh_dir, _path_guard) = use_fake_gh(&comments_json, &threads_json);
+        let mut task = test_task(repo_dir.path());
+        task.agent = None;
+        task.model = None;
+        let host = FakeHost::new(task);
+
+        let result = load_pr_comments(&host, &json!({"task_id": "T20260320-021158"}))
+            .expect("load_pr_comments should succeed");
+
+        assert_eq!(result["loop_exit"], json!(false));
+
+        let sb = read_pr_scoreboard(repo_dir.path());
+        assert!(sb.is_none(), "scoreboard should not exist when agent/model missing");
+    }
 }

@@ -64,6 +64,18 @@ impl ActivityExecutor for AutomationExecutor {
     }
 }
 
+/// Shared test utilities for automation sub-modules.
+#[cfg(test)]
+pub(super) mod test_utils {
+    use std::sync::{Mutex, OnceLock};
+
+    /// Global mutex protecting `PATH` modifications across all automation tests.
+    pub fn path_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+}
+
 pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + ?Sized>(
     host: &H,
     activity: &Activity,
