@@ -68,7 +68,9 @@ impl JobFileStore {
     pub(crate) fn ensure_layout(&self) -> Result<(), OrbitError> {
         fs::create_dir_all(self.activities_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         fs::create_dir_all(self.disabled_jobs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
-        fs::create_dir_all(self.runs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
+        // runs_dir is NOT created here: job runs are WorkspaceOnly per scoping rules
+        // and must not be initialized at global scope. write_run creates run dirs
+        // on demand via fs::create_dir_all.
         Ok(())
     }
 

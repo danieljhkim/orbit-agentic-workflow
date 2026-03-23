@@ -51,20 +51,21 @@ impl ResolvedScope {
 }
 
 pub fn task_store_file(root: PathBuf) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
+    // ensure_layout is called lazily before each write operation (create_task, update_task).
+    // Eager layout here would create workspace-only task state directories at global scope.
     let store = TaskFileStore::new(root);
-    store.ensure_layout()?;
     Ok(Arc::new(store))
 }
 
 pub fn activity_store_file(root: PathBuf) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
+    // ensure_layout is called lazily before each write operation (insert, update, disable).
     let store = ActivityFileStore::new(root);
-    store.ensure_layout()?;
     Ok(Arc::new(store))
 }
 
 pub fn job_store_file(root: PathBuf) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
+    // ensure_layout is called lazily before each write operation (add_job, write_activity, etc).
     let store = JobFileStore::new(root);
-    store.ensure_layout()?;
     Ok(Arc::new(store))
 }
 

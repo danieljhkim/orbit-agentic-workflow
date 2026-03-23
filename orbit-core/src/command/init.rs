@@ -19,6 +19,7 @@ pub struct InitResult {
     pub config_path: String,
     pub refreshed_default_activities: usize,
     pub refreshed_default_jobs: usize,
+    pub scoring_enabled: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -28,6 +29,10 @@ pub struct InitOptions {
     /// they already exist.  Explicit `orbit init` sets this; implicit
     /// bootstrap from other commands does not.
     pub refresh_defaults: bool,
+    /// When true, skip workspace-only artifacts (scoreboards) during init.
+    /// Set for global-root bootstrapping to avoid writing workspace-scoped
+    /// files into `~/.orbit/`.
+    pub global_only: bool,
 }
 
 impl OrbitRuntime {
@@ -44,17 +49,27 @@ impl OrbitRuntime {
 }
 
 /// Ensures both global and workspace roots are bootstrapped.
-/// Global root gets full init (config, skills, activities, jobs, db).
-/// Workspace root just needs tasks/ directory.
+/// Global root gets config, skills, activities, jobs, and db (global-scoped artifacts).
+/// Workspace root gets tasks/ directory and scoreboard templates (workspace-scoped artifacts).
 pub(crate) fn ensure_orbit_root_initialized(
     global_root: &Path,
     workspace_root: &Path,
 ) -> Result<(), OrbitError> {
-    // Bootstrap global root with all defaults
-    let _ = init_workspace_at_root(global_root, InitOptions::default())?;
-    // Ensure workspace tasks directory exists
+    // Bootstrap global root — skip workspace-only artifacts (scoreboards, task dirs, job runs)
+    let global_init = init_workspace_at_root(
+        global_root,
+        InitOptions {
+            global_only: true,
+            ..Default::default()
+        },
+    )?;
+    // Ensure workspace tasks directory exists (tasks are WorkspaceOnly)
     let tasks_dir = workspace_root.join("tasks");
     fs::create_dir_all(&tasks_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+    // Seed scoreboard templates at workspace root (scoreboards are workspace-scoped)
+    if global_init.scoring_enabled {
+        seed_scoreboard_templates(workspace_root)?;
+    }
     Ok(())
 }
 
@@ -68,7 +83,13 @@ pub fn init_global(
         Some(root) => root.to_path_buf(),
         None => crate::workspace_registry::global_orbit_dir()?,
     };
-    init_workspace_at_root(&global_root, options)
+    init_workspace_at_root(
+        &global_root,
+        InitOptions {
+            global_only: true,
+            ..options
+        },
+    )
 }
 
 pub fn init_workspace_from_root_override(
@@ -111,7 +132,8 @@ fn init_workspace_at_root(
         seed_default_activities(&init_runtime, &orbit_root, overwrite)?;
     let refreshed_default_jobs = seed_default_jobs(&init_runtime, overwrite)?;
 
-    if init_runtime.scoring_enabled() {
+    let scoring_enabled = init_runtime.scoring_enabled();
+    if scoring_enabled && !options.global_only {
         seed_scoreboard_templates(&orbit_root)?;
     }
 
@@ -123,6 +145,7 @@ fn init_workspace_at_root(
         config_path: config_path.to_string_lossy().to_string(),
         refreshed_default_activities,
         refreshed_default_jobs,
+        scoring_enabled,
     })
 }
 
