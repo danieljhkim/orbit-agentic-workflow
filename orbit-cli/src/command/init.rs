@@ -20,6 +20,7 @@ impl Execute for InitCommand {
             InitOptions {
                 force: self.force,
                 refresh_defaults: true,
+                ..Default::default()
             },
         )?;
         print_init_result(&result);
@@ -34,6 +35,7 @@ impl InitCommand {
             InitOptions {
                 force: self.force,
                 refresh_defaults: true,
+                ..Default::default()
             },
         )?;
         print_init_result(&result);

@@ -10,7 +10,6 @@ use orbit_types::{
 
 use crate::OrbitRuntime;
 use crate::context::ActorKind;
-use crate::paths::find_git_repo_root;
 
 pub struct TaskAddParams {
     pub parent_id: Option<OrbitId>,
@@ -122,13 +121,16 @@ impl OrbitRuntime {
             ))
         })?;
 
-        // Friction bounty: record issues-reported on creation when agent+model present
+        // Friction bounty: record issues-reported on creation when agent+model present.
+        // data_root_path() is the workspace .orbit/ dir; its parent is the repo root
+        // for scoreboard writes. Using parent() instead of find_git_repo_root avoids
+        // worktree mis-resolution where find_git_repo_root follows to the main repo.
         if self.scoring_enabled()
             && params.task_type.is_friction()
             && let (Some(a), Some(m)) = (&agent, &model)
-            && let Some(repo_root) = find_git_repo_root(self.data_root_path())
+            && let Some(repo_root) = self.data_root_path().parent()
         {
-            let _ = friction_bounty::record_friction_reported(&repo_root, a, m);
+            let _ = friction_bounty::record_friction_reported(repo_root, a, m);
         }
 
         Ok(task)
@@ -629,7 +631,7 @@ impl OrbitRuntime {
         let (Some(agent), Some(model)) = (&task.agent, &task.model) else {
             return;
         };
-        let Some(repo_root) = find_git_repo_root(self.data_root_path()) else {
+        let Some(repo_root) = self.data_root_path().parent() else {
             return;
         };
 
