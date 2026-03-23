@@ -459,6 +459,37 @@ mod tests {
     }
 
     #[test]
+    fn task_add_builds_request_with_required_fields_only() {
+        let req = super::task_add::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "Fix bug",
+                "description": "Details here",
+                "plan": "Step 1",
+                "workspace": "/repo",
+            }),
+        )
+        .expect("valid minimal add input");
+
+        assert_eq!(
+            req.args,
+            vec![
+                "task".to_string(),
+                "add".to_string(),
+                "--title".to_string(),
+                "Fix bug".to_string(),
+                "--description".to_string(),
+                "Details here".to_string(),
+                "--plan".to_string(),
+                "Step 1".to_string(),
+                "--workspace".to_string(),
+                "/repo".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn task_approve_builds_request_with_optional_comment() {
         let req = super::task_approve::build_exec_request(
             &ToolContext::default(),

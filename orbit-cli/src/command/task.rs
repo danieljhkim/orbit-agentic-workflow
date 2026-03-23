@@ -89,6 +89,9 @@ pub struct TaskAddArgs {
     /// Comma-separated context file paths
     #[arg(long, default_value = "")]
     pub context: String,
+    /// Workspace path for the task
+    #[arg(long)]
+    pub workspace: Option<String>,
     /// Priority level
     #[arg(long, value_enum, default_value_t = TaskPriority::Medium)]
     pub priority: TaskPriority,
@@ -164,7 +167,7 @@ impl Execute for TaskAddArgs {
                 plan,
                 comment: self.comment,
                 context_files: parse_context_csv(&self.context),
-                workspace_path: None,
+                workspace_path: self.workspace,
                 priority,
                 complexity: self.complexity,
                 task_type,
