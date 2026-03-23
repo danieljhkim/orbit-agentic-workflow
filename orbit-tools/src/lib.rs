@@ -54,7 +54,8 @@ pub struct ToolContext {
     pub allowed_tools: Vec<String>,
     /// When set, fs tools enforce that all paths resolve inside this directory.
     /// Symlink escapes are blocked because paths are canonicalized before the check.
-    /// If `None`, no boundary is enforced (used for tests and legacy callers).
+    /// If `None`, fs tools deny all access (fail-closed). The runtime pipeline
+    /// auto-populates this from the data root's parent directory.
     pub workspace_root: Option<PathBuf>,
     /// The resolved `.orbit` data directory (e.g. `<repo>/.orbit`). Distinct from
     /// `workspace_root` (the repo root used for fs sandboxing) because the data
