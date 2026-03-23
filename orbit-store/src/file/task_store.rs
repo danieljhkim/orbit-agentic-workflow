@@ -568,7 +568,9 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
 
     yaml.push_str(&yaml_section("identity"));
     yaml.push_str(&yaml_field("id", &doc.id)?);
-    yaml.push_str(&yaml_field("parent_id", &doc.parent_id)?);
+    if let Some(ref parent_id) = doc.parent_id {
+        yaml.push_str(&yaml_field("parent_id", parent_id)?);
+    }
     yaml.push_str(&yaml_field("type", &doc.task_type)?);
     yaml.push_str(&yaml_field("priority", &doc.priority)?);
     if let Some(complexity) = doc.complexity {
@@ -724,7 +726,7 @@ mod tests {
 
         let yaml = fs::read_to_string(task_dir.join(TASK_DOC_FILE_NAME)).expect("read yaml");
         assert!(yaml.contains("schema_version: 4"));
-        assert!(yaml.contains("parent_id: null"));
+        assert!(!yaml.contains("parent_id:"));
         assert!(yaml.contains("description: Task description"));
         assert!(yaml.contains("context_files:"));
         assert!(yaml.contains("created_by: Codex"));
