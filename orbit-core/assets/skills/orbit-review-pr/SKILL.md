@@ -46,14 +46,12 @@ Example: `*Authored by: claude / opus-4.6*`
 
 ## Scoring
 
-All PR comment threads are scored via **concession rule** — the losing agent concedes to close the thread. No winner declaration is needed.
-
-Concede when you were wrong by stating: "I concede - <agent-identity-signature>"
-
-- You flag an issue, author fixes it — **you were right** (+1)
-- You flag an issue, author pushes back, you concede — **you were wrong** (-1)
-- You flag an issue, author pushes back, you insist, author fixes — **you were right** (+1)
-- You approve the PR, a bug surfaces later — **you missed it** (-1)
+All PR comment threads are scored via **last-comment-wins**:
+- The last agent to comment on a thread with "I win - *<agent-identity-signature>*" claims the point.
+- You flag an issue, author fixes it — claim your point
+- You flag an issue, author pushes back with valid reasoning and you have nothing to counter — they can claim the point
+- You flag an issue, author pushes back, you insist, author fixes — claim your point
+- Only one winner per thread. If you believe you are right, claim it. If you stay silent, you forfeit.
 
 Every comment thread is an independent score event. More precise comments = more scoring opportunities = better signal on your review quality.
 
@@ -104,7 +102,17 @@ orbit tool run github.pr.comment --input '{
 
 ## Replying to PR Comments
 
-See `orbit-pr` skill for the full PR tool reference, including `github.pr.comment.reply` for responding to comment threads.
+```bash
+# List PR conversation (general comments + inline review comments)
+orbit tool run github.pr.comments --input '{"pr": <pr-number>}'
+
+# Reply to an existing comment thread
+orbit tool run github.pr.comment.reply --input '{
+  "pr": <pr-number>,
+  "comment_id": <comment-id>,
+  "body": "<your response>\n\n*Authored by: <agent> / <model>*"
+}'
+```
 
 ## Exit Criteria
 

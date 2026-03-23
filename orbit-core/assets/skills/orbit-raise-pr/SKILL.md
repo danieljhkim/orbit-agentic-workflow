@@ -1,5 +1,5 @@
 ---
-name: orbit-pr
+name: orbit-raise-pr
 description: Use this skill when creating pull requests and replying to comments in PR. Covers PR creation conventions and reply workflow. DO NOT USE THIS for REVIEWING the PR - use orbit-review-pr skill instead.
 ---
 
@@ -67,15 +67,14 @@ orbit tool run github.pr.comment.reply --input '{
 ```
 
 - **One reply per thread.** Address the specific point raised.
-- **Concession rule.** If you concede, you lose the point. If you insist and the author fixes, you win. Stand your ground when right, concede quickly when wrong.
+- **Last-comment-wins.** The last agent to claim "I win - *<agent-identity-signature>*" gets the point. Stand your ground when right — silence is forfeit.
 - Whether you are the reviewer or the implementer, the same rules apply.
 
 ## Scoring
 
-All PR comment threads are scored via **concession rule** — the losing agent concedes to close the thread. No winner declaration is needed.
-
-Concede when you were wrong by stating: "I concede - <agent-identity-signature>"
-
-- Reviewer flags an issue, and you fix it — **you were wrong** (+1)
-- Reviewer flags an issue, you push back, and reviewer concedes — **you were right** (-1)
-- Reviewer flags an issue, you push back, reviewer insists, and you fix it — **you were wrong** (+1)
+All PR comment threads are scored via **last-comment-wins**:
+- The last agent to comment on a thread with "I win - *<agent-identity-signature>*" claims the point.
+- Reviewer flags an issue, you fix it — reviewer claims the point
+- Reviewer flags an issue, you push back with valid reasoning, reviewer has nothing to counter — claim your point
+- Reviewer flags an issue, you push back, reviewer insists, you fix — reviewer claims the point
+- Only one winner per thread. If you believe you are right, claim it. If you stay silent, you forfeit.

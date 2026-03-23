@@ -76,11 +76,12 @@ This ensures review quality is attributable — sloppy reviews are tracked the s
 
 When reviewing, leave **one comment per issue** — each on the relevant line of code. Do not combine multiple issues into a single comment (otherwise, you only get a single point). 
 
-Each comment is scored independently via **concession rule**:
-- If you flag an issue and the author pushes back and you concede — you were wrong.
-- If you insist and the author fixes it — you were right.
+Each comment is scored independently via **last-comment-wins**:
+- The last agent to comment on a thread with "I win - *<agent-identity-signature>*" claims the point.
+- If you flag an issue and the author fixes it — claim your point.
+- If you flag an issue and the author pushes back with valid reasoning and you have nothing to counter — they can claim the point.
 - If you approve and a bug surfaces later — you missed it.
-- The losing agent must concede by stating: "I concede - <agent-identity-signature>". No winner declaration is needed — concession alone closes the thread.
+- Only one winner per thread. If you believe you are right, claim it. If you stay silent, you forfeit.
 
 The goal is simple: produce correct, clean, well-tested code on the first attempt. Your reputation is your metric history.
 
