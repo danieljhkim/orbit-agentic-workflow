@@ -1,3 +1,4 @@
+use orbit_store::pr_scoreboard;
 use orbit_tools::ToolContext;
 use orbit_types::{OrbitError, Role, TaskStatus};
 use serde_json::{Value, json};
@@ -75,6 +76,12 @@ pub(super) fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
             ..TaskAutomationUpdate::default()
         },
     )?;
+
+    if host.scoring_enabled() {
+        if let (Some(agent), Some(model)) = (&task.agent, &task.model) {
+            let _ = pr_scoreboard::record_pr_merged(&repo_root, agent, model);
+        }
+    }
 
     Ok(json!({
         "merged": true,
@@ -228,7 +235,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::process::Command;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::Mutex;
 
     use chrono::Utc;
     use orbit_tools::ToolContext;
@@ -257,6 +264,7 @@ mod tests {
         task: RefCell<Option<Task>>,
         tool_invocations: RefCell<Vec<ToolInvocation>>,
         automation_updates: RefCell<Vec<TaskAutomationUpdate>>,
+        scoring_enabled: bool,
     }
 
     impl FakeHost {
@@ -265,7 +273,13 @@ mod tests {
                 task: RefCell::new(Some(task)),
                 tool_invocations: RefCell::new(Vec::new()),
                 automation_updates: RefCell::new(Vec::new()),
+                scoring_enabled: false,
             }
+        }
+
+        fn with_scoring(mut self) -> Self {
+            self.scoring_enabled = true;
+            self
         }
     }
 
@@ -364,6 +378,10 @@ mod tests {
         ) -> Result<(), OrbitError> {
             Ok(())
         }
+
+        fn scoring_enabled(&self) -> bool {
+            self.scoring_enabled
+        }
     }
 
     struct PathGuard {
@@ -381,8 +399,7 @@ mod tests {
     }
 
     fn path_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        crate::executor::automation::test_utils::path_lock()
     }
 
     fn prepend_path(dir: &Path) -> String {
@@ -503,6 +520,65 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn merge_pr_from_task_records_pr_scoreboard_when_agent_and_model_present() {
+        let repo_dir = init_repo();
+        let (_gh_dir, _path_guard) = use_fake_gh(&[("18", "APPROVED")]);
+        let mut task = test_task(repo_dir.path());
+        task.agent = Some("claude".to_string());
+        task.model = Some("opus-4.6".to_string());
+        let host = FakeHost::new(task).with_scoring();
+        let canonical_repo_root = repo_dir.path().canonicalize().expect("canonical repo root");
+
+        let result = merge_pr_from_task(
+            &host,
+            &json!({
+                "task_id": "T20260320-021158",
+            }),
+        )
+        .expect("merge should succeed");
+
+        assert_eq!(result["merged"], json!(true));
+
+        let scoreboard_path = canonical_repo_root
+            .join(".orbit")
+            .join("scoreboard")
+            .join("pr.json");
+        assert!(
+            scoreboard_path.exists(),
+            "pr.json scoreboard should be created after merge"
+        );
+        let content = fs::read_to_string(&scoreboard_path).expect("read pr.json");
+        let sb: serde_json::Value = serde_json::from_str(&content).expect("parse pr.json");
+        assert_eq!(sb["prs-merged"]["claude"]["opus-4.6"], json!(1));
+    }
+
+    #[test]
+    fn merge_pr_from_task_skips_scoreboard_when_agent_or_model_missing() {
+        let repo_dir = init_repo();
+        let (_gh_dir, _path_guard) = use_fake_gh(&[("18", "APPROVED")]);
+        // test_task has agent: None, model: None by default
+        let host = FakeHost::new(test_task(repo_dir.path()));
+        let canonical_repo_root = repo_dir.path().canonicalize().expect("canonical repo root");
+
+        merge_pr_from_task(
+            &host,
+            &json!({
+                "task_id": "T20260320-021158",
+            }),
+        )
+        .expect("merge should succeed");
+
+        let scoreboard_path = canonical_repo_root
+            .join(".orbit")
+            .join("scoreboard")
+            .join("pr.json");
+        assert!(
+            !scoreboard_path.exists(),
+            "pr.json should not be created when agent/model are missing"
+        );
     }
 
     #[test]

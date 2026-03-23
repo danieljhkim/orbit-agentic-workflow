@@ -37,6 +37,12 @@ pub mod friction_bounty {
     };
 }
 
+pub mod pr_scoreboard {
+    pub use crate::file::pr_scoreboard::{
+        record_comment_resolved, record_pr_merged, record_pr_revision,
+    };
+}
+
 pub mod friction_log {
     pub use crate::file::friction_log::{append_friction_entry, read_friction_entries_for_month};
 }

@@ -33,15 +33,21 @@ activity:
        - Keep changes minimal and focused on addressing the review feedback.
        - Do not refactor unrelated code or add unrequested features.
 
-    4. Verify the fixes:
+    4. Reply to PR comments:
+       - After implementing fixes, reply to each PR review comment using github.pr.comment.reply.
+       - Use the comment's `id` field from the input as the `comment_id` parameter.
+       - Briefly describe what was fixed in the reply.
+       - If a comment could not be addressed, reply explaining why.
+
+    5. Verify the fixes:
        - Use proc.spawn to run the project's test and lint commands from the task's workspace_path.
        - If tests fail, fix the issue before continuing.
 
-    5. Persist execution details:
+    6. Persist execution details:
        - Call orbit.task.update with id: input.task_id and execution_summary describing
          what was fixed and why.
 
-    6. Return output:
+    7. Return output:
        - execution_summary: markdown summary of fixes applied
 
     If a comment cannot be addressed (ambiguous, out of scope, or would require
@@ -73,7 +79,10 @@ activity:
   tools:
     - orbit.task.show
     - orbit.task.update
+    - fs.read
     - fs.write
     - fs.delete
     - proc.spawn
     - proc.which
+    - github.pr.comments
+    - github.pr.comment.reply
