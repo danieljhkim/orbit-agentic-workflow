@@ -38,7 +38,6 @@ pub use context::{
     DirectActivityRunOutcome, EngineHost, EnvironmentHost, ExecutionContext, JobRunHost,
     JobRunResult, RuntimeHost, STALE_RUN_GRACE_SECONDS, TaskAutomationUpdate, TaskHost,
     execution_working_directory, execution_working_directory_with_task, input_workspace_path,
-    redact_attempt_outcome,
-    step_output_for_following_input,
+    redact_attempt_outcome, step_output_for_following_input,
 };
 pub use job_runner::{recover_stale_active_run_for_job, run_job_with_input};

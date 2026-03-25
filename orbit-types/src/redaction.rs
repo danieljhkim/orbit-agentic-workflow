@@ -92,9 +92,6 @@ pub fn redact_sensitive_env_error(error: OrbitError) -> OrbitError {
         OrbitError::WorkspaceError(message) => {
             OrbitError::WorkspaceError(redact_sensitive_env_text(&message))
         }
-        OrbitError::ScopeViolation(message) => {
-            OrbitError::ScopeViolation(redact_sensitive_env_text(&message))
-        }
     }
 }
 

@@ -394,7 +394,9 @@ fn execute_activity_with_retries<H: EngineHost>(
                         &run.run_id,
                         ACTIVITY_EXECUTION_FAILED,
                         &err.to_string(),
-                        (!agent.is_empty()).then(|| normalize_agent_label(agent)).as_deref(),
+                        (!agent.is_empty())
+                            .then(|| normalize_agent_label(agent))
+                            .as_deref(),
                         failure_step.1.model.as_deref(),
                     );
                 }
@@ -679,7 +681,16 @@ fn execute_job_step<H: EngineHost>(
     host.record_event(OrbitEvent::JobTriggered {
         job_id: sub_job.job_id.clone(),
     })?;
-    execute_activity_with_retries(host, data_root, sub_job, Utc::now(), None, input.clone(), debug, false)
+    execute_activity_with_retries(
+        host,
+        data_root,
+        sub_job,
+        Utc::now(),
+        None,
+        input.clone(),
+        debug,
+        false,
+    )
 }
 
 /// Returns `true` if the accumulated input contains `"loop_exit": true`.

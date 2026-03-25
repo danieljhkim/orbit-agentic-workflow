@@ -10,11 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::backend::{JobCreateParams, JobRunStepParams, JobUpdateParams};
 use crate::file::fs_utils::write_atomic;
-use crate::scope_guard::ScopeGuard;
 
 pub(crate) struct JobFileStore {
     root: PathBuf,
-    guard: ScopeGuard,
 }
 
 /// Persisted YAML shape for a Job — excludes timestamp fields to reduce diff noise.
@@ -63,18 +61,10 @@ struct JobRunStepFileDocument {
 
 impl JobFileStore {
     pub(crate) fn new(root: PathBuf) -> Self {
-        Self {
-            root,
-            guard: ScopeGuard::permissive(),
-        }
-    }
-
-    pub(crate) fn with_guard(root: PathBuf, guard: ScopeGuard) -> Self {
-        Self { root, guard }
+        Self { root }
     }
 
     pub(crate) fn ensure_layout(&self) -> Result<(), OrbitError> {
-        self.guard.check_write(&self.root)?;
         fs::create_dir_all(self.activities_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         fs::create_dir_all(self.disabled_jobs_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         // runs_dir is NOT created here: job runs are WorkspaceOnly per scoping rules

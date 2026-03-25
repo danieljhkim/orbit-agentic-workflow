@@ -220,12 +220,21 @@ mod tests {
         assert_eq!(paths.orbit_dir, PathBuf::from("/repo/.orbit"));
         assert_eq!(paths.global_dir, PathBuf::from("/home/user/.orbit"));
         assert_eq!(paths.tasks_dir, PathBuf::from("/repo/.orbit/tasks"));
-        assert_eq!(paths.activities_dir, PathBuf::from("/repo/.orbit/activities"));
+        assert_eq!(
+            paths.activities_dir,
+            PathBuf::from("/repo/.orbit/activities")
+        );
         assert_eq!(paths.jobs_dir, PathBuf::from("/repo/.orbit/jobs"));
         assert_eq!(paths.runs_dir, PathBuf::from("/repo/.orbit/runs"));
         assert_eq!(paths.skills_dir, PathBuf::from("/repo/.orbit/skills"));
-        assert_eq!(paths.scoreboard_dir, PathBuf::from("/repo/.orbit/scoreboard"));
-        assert_eq!(paths.diagnostics_dir, PathBuf::from("/repo/.orbit/diagnostics"));
+        assert_eq!(
+            paths.scoreboard_dir,
+            PathBuf::from("/repo/.orbit/scoreboard")
+        );
+        assert_eq!(
+            paths.diagnostics_dir,
+            PathBuf::from("/repo/.orbit/diagnostics")
+        );
     }
 
     #[test]

@@ -40,8 +40,6 @@ pub enum OrbitError {
     WorkspaceNotFound(String),
     #[error("workspace error: {0}")]
     WorkspaceError(String),
-    #[error("scope violation: {0}")]
-    ScopeViolation(String),
     #[error("io error: {0}")]
     Io(String),
 }

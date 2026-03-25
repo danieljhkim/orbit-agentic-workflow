@@ -78,7 +78,6 @@ mod tests {
 
     use super::*;
     use crate::backend::activity_store_file;
-    use crate::scope_guard::ScopeGuard;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -123,8 +122,8 @@ mod tests {
         TempDir,
     ) {
         let dir = TempDir::new("layered-activity");
-        let ws = activity_store_file(dir.0.join("ws"), ScopeGuard::permissive()).unwrap();
-        let global = activity_store_file(dir.0.join("global"), ScopeGuard::permissive()).unwrap();
+        let ws = activity_store_file(dir.0.join("ws"));
+        let global = activity_store_file(dir.0.join("global"));
         let layered = LayeredActivityStore::new(ws.clone(), global.clone());
         (ws, global, layered, dir)
     }

@@ -15,11 +15,7 @@ type AgentScores = HashMap<String, HashMap<String, u64>>;
 type Scoreboard = HashMap<String, AgentScores>;
 
 /// Increment the `prs-merged` counter for the given agent/model.
-pub fn record_pr_merged(
-    scoreboard_dir: &Path,
-    agent: &str,
-    model: &str,
-) -> Result<(), OrbitError> {
+pub fn record_pr_merged(scoreboard_dir: &Path, agent: &str, model: &str) -> Result<(), OrbitError> {
     increment(scoreboard_dir, "prs-merged", agent, model)
 }
 
@@ -49,10 +45,9 @@ fn increment(
 ) -> Result<(), OrbitError> {
     let path = scoreboard_dir.join("pr.json");
     let mut scoreboard: Scoreboard = if path.exists() {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| OrbitError::Io(format!("read pr.json: {e}")))?;
-        serde_json::from_str(&content)
-            .map_err(|e| OrbitError::Io(format!("parse pr.json: {e}")))?
+        let content =
+            fs::read_to_string(&path).map_err(|e| OrbitError::Io(format!("read pr.json: {e}")))?;
+        serde_json::from_str(&content).map_err(|e| OrbitError::Io(format!("parse pr.json: {e}")))?
     } else {
         HashMap::new()
     };
@@ -74,8 +69,7 @@ fn increment(
     let tmp = dir.join(".pr.json.tmp");
     fs::write(&tmp, format!("{json}\n"))
         .map_err(|e| OrbitError::Io(format!("write pr.json tmp: {e}")))?;
-    fs::rename(&tmp, &path)
-        .map_err(|e| OrbitError::Io(format!("rename pr.json tmp: {e}")))?;
+    fs::rename(&tmp, &path).map_err(|e| OrbitError::Io(format!("rename pr.json tmp: {e}")))?;
 
     Ok(())
 }

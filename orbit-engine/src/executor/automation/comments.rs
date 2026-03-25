@@ -166,8 +166,12 @@ fn filter_unresolved_comments(
 #[cfg(test)]
 fn read_pr_scoreboard(
     repo_root: &std::path::Path,
-) -> Option<std::collections::HashMap<String, std::collections::HashMap<String, std::collections::HashMap<String, u64>>>>
-{
+) -> Option<
+    std::collections::HashMap<
+        String,
+        std::collections::HashMap<String, std::collections::HashMap<String, u64>>,
+    >,
+> {
     let path = repo_root.join(".orbit/scoreboard/pr.json");
     if !path.exists() {
         return None;
@@ -247,11 +251,7 @@ mod tests {
                 .repo_root
                 .as_deref()
                 .or(task.workspace_path.as_deref())
-                .map(|p| {
-                    std::path::Path::new(p)
-                        .join(".orbit")
-                        .join("scoreboard")
-                })
+                .map(|p| std::path::Path::new(p).join(".orbit").join("scoreboard"))
                 .unwrap_or_default();
             Self {
                 task: RefCell::new(Some(task)),
@@ -517,7 +517,10 @@ mod tests {
 
         // No scoreboard should be created when there are no unresolved comments
         let sb = read_pr_scoreboard(repo_dir.path());
-        assert!(sb.is_none(), "scoreboard should not exist when no unresolved comments");
+        assert!(
+            sb.is_none(),
+            "scoreboard should not exist when no unresolved comments"
+        );
     }
 
     #[test]
@@ -546,6 +549,9 @@ mod tests {
         assert_eq!(result["loop_exit"], json!(false));
 
         let sb = read_pr_scoreboard(repo_dir.path());
-        assert!(sb.is_none(), "scoreboard should not exist when agent/model missing");
+        assert!(
+            sb.is_none(),
+            "scoreboard should not exist when agent/model missing"
+        );
     }
 }

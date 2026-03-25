@@ -353,7 +353,12 @@ impl EnvironmentHost for OrbitRuntime {
             // to the same data root regardless of its working directory. Without this,
             // a Codex or Claude agent running inside a git worktree would either create
             // a spurious .orbit/ in the worktree or resolve to the wrong database.
-            let orbit_root = self.context.paths().orbit_dir.to_string_lossy().into_owned();
+            let orbit_root = self
+                .context
+                .paths()
+                .orbit_dir
+                .to_string_lossy()
+                .into_owned();
             if !env.iter().any(|(k, _)| k == "ORBIT_ROOT") {
                 env.push(("ORBIT_ROOT".to_string(), orbit_root));
             }
@@ -486,7 +491,12 @@ fn activity_envelope_json(activity: &Activity) -> Value {
 }
 
 fn current_repo_root(runtime: &OrbitRuntime) -> Result<String, OrbitError> {
-    Ok(runtime.context.paths().repo_root.to_string_lossy().to_string())
+    Ok(runtime
+        .context
+        .paths()
+        .repo_root
+        .to_string_lossy()
+        .to_string())
 }
 
 #[cfg(test)]
@@ -511,7 +521,11 @@ mod tests {
         } else {
             update.model.clone().map(Some)
         };
-        assert_eq!(mapped_model, Some(None), "model should be cleared when agent is updated without a model");
+        assert_eq!(
+            mapped_model,
+            Some(None),
+            "model should be cleared when agent is updated without a model"
+        );
     }
 
     #[test]
@@ -541,6 +555,9 @@ mod tests {
         } else {
             update.model.clone().map(Some)
         };
-        assert_eq!(mapped_model, None, "model should not be touched when agent is not updated");
+        assert_eq!(
+            mapped_model, None,
+            "model should not be touched when agent is not updated"
+        );
     }
 }

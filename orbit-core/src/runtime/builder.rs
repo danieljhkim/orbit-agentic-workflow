@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use orbit_policy::PolicyEngine;
 use orbit_store::{
-    Store, activity_store_resolved, audit_event_store_sqlite,
-    job_store_resolved, task_store_resolved, tool_store_sqlite,
+    LayeredActivityStore, LayeredJobStore, Store, activity_store_file, audit_event_store_sqlite,
+    job_store_file, task_store_file, tool_store_sqlite,
 };
 
 use orbit_tools::ToolRegistry;
@@ -32,22 +32,28 @@ pub(crate) fn build_context_from_roots(
     let runtime_config = RuntimeConfig::load_layered(global_root, workspace_root)?;
     let persistence = &runtime_config.persistence;
 
-    let db_path = persistence.audit.resolve().into_single();
-    let store = Store::open(&db_path)?;
+    let store = Store::open(&persistence.audit_db)?;
 
-    // In single-root mode (global == workspace), pass empty path so ScopeGuard
-    // is permissive — there is no scope distinction to enforce.
-    // Canonicalize to handle macOS /var vs /private/var symlink differences.
-    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    let same_root = canon(global_root) == canon(workspace_root);
-    let effective_global = if same_root {
-        Path::new("")
+    // Build task store (workspace only).
+    let task_store = task_store_file(persistence.task_dir.clone());
+
+    // Build activity store — layered if workspace differs from global.
+    let activity_store = if persistence.activity_dir != persistence.global_activity_dir {
+        let ws = activity_store_file(persistence.activity_dir.clone());
+        let gl = activity_store_file(persistence.global_activity_dir.clone());
+        Arc::new(LayeredActivityStore::new(ws, gl)) as Arc<dyn orbit_store::ActivityStoreBackend>
     } else {
-        global_root
+        activity_store_file(persistence.activity_dir.clone())
     };
-    let task_store = task_store_resolved(persistence.task.resolve(), effective_global)?;
-    let activity_store = activity_store_resolved(persistence.activity.resolve(), effective_global)?;
-    let job_store = job_store_resolved(persistence.job.resolve(), effective_global)?;
+
+    // Build job store — layered if workspace differs from global.
+    let job_store = if persistence.job_dir != persistence.global_job_dir {
+        let ws = job_store_file(persistence.job_dir.clone());
+        let gl = job_store_file(persistence.global_job_dir.clone());
+        Arc::new(LayeredJobStore::new(ws, gl)) as Arc<dyn orbit_store::JobStoreBackend>
+    } else {
+        job_store_file(persistence.job_dir.clone())
+    };
 
     // workspace_root IS the .orbit dir; repo_root is its parent.
     let repo_root = workspace_root
@@ -63,8 +69,7 @@ pub(crate) fn build_context_from_roots(
     let tool_store = tool_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
 
-    let skill_root = runtime_config.persistence.skill.resolve().into_single();
-    let skill_catalog = SkillCatalog::new(skill_root);
+    let skill_catalog = SkillCatalog::new(persistence.skill_dir.clone());
     skill_catalog.ensure_layout()?;
 
     let mut registry = ToolRegistry::new();

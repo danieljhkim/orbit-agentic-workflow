@@ -11,7 +11,6 @@ use serde_yaml::{Mapping, Value as YamlValue};
 
 use crate::backend::{TaskCreateParams, TaskUpdateParams};
 use crate::file::fs_utils::write_atomic;
-use crate::scope_guard::ScopeGuard;
 
 const TASK_DOC_FILE_NAME: &str = "task.yaml";
 const PLAN_FILE_NAME: &str = "plan.md";
@@ -21,7 +20,6 @@ const TASK_SCHEMA_VERSION: u8 = 4;
 
 pub(crate) struct TaskFileStore {
     root: PathBuf,
-    guard: ScopeGuard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,18 +152,10 @@ fn default_task_type() -> TaskType {
 
 impl TaskFileStore {
     pub(crate) fn new(root: PathBuf) -> Self {
-        Self {
-            root,
-            guard: ScopeGuard::permissive(),
-        }
-    }
-
-    pub(crate) fn with_guard(root: PathBuf, guard: ScopeGuard) -> Self {
-        Self { root, guard }
+        Self { root }
     }
 
     pub(crate) fn ensure_layout(&self) -> Result<(), OrbitError> {
-        self.guard.check_write(&self.root)?;
         for state in TaskStateDir::all() {
             fs::create_dir_all(self.root.join(state.as_dir()))
                 .map_err(|e| OrbitError::Io(e.to_string()))?;
@@ -299,7 +289,6 @@ impl TaskFileStore {
         id: &str,
         fields: &TaskUpdateParams,
     ) -> Result<Task, OrbitError> {
-        self.guard.check_write(&self.root)?;
         if fields.actor.trim().is_empty() {
             return Err(OrbitError::InvalidInput(
                 "task actor must not be empty".to_string(),
@@ -1277,26 +1266,5 @@ mod tests {
         );
         let num: u32 = suffix[1..].parse().expect("suffix is a number");
         assert!(num >= 2, "suffix number must be >= 2, got {num}");
-    }
-
-    #[test]
-    fn workspace_only_guard_rejects_global_path() {
-        use crate::backend::ScopeResolution;
-        use crate::scope_guard::ScopeGuard;
-
-        let global_dir = tempdir().expect("tempdir");
-        let guard = ScopeGuard::new(
-            ScopeResolution::WorkspaceOnly,
-            global_dir.path().to_path_buf(),
-        );
-        let store =
-            TaskFileStore::with_guard(global_dir.path().join("tasks"), guard);
-        let result = store.ensure_layout();
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("WorkspaceOnly"),
-            "expected ScopeViolation, got: {err}"
-        );
     }
 }

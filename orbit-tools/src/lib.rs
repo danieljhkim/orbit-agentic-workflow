@@ -161,11 +161,7 @@ mod tests {
         registry.register_builtins();
 
         let output = registry
-            .execute(
-                "fs.read",
-                &ctx,
-                json!({"path": path.to_string_lossy()}),
-            )
+            .execute("fs.read", &ctx, json!({"path": path.to_string_lossy()}))
             .expect("tool executes");
 
         assert_eq!(output["content"], "hello");
