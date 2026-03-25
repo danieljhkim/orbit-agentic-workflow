@@ -6,12 +6,13 @@ use orbit_types::{Activity, OrbitError};
 
 use crate::backend::{ActivityCreateParams, ActivityUpdateParams};
 use crate::file::fs_utils::write_atomic;
+use crate::scope_guard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-#[derive(Clone)]
 pub(crate) struct ActivityFileStore {
     root: PathBuf,
+    guard: ScopeGuard,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,10 +41,18 @@ struct ActivityFileDocument {
 
 impl ActivityFileStore {
     pub(crate) fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            guard: ScopeGuard::permissive(),
+        }
+    }
+
+    pub(crate) fn with_guard(root: PathBuf, guard: ScopeGuard) -> Self {
+        Self { root, guard }
     }
 
     pub(crate) fn ensure_layout(&self) -> Result<(), OrbitError> {
+        self.guard.check_write(&self.root)?;
         fs::create_dir_all(self.active_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         fs::create_dir_all(self.inactive_dir()).map_err(|e| OrbitError::Io(e.to_string()))?;
         Ok(())

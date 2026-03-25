@@ -60,7 +60,7 @@ pub use task::{
     Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
-pub use workspace::{Workspace, WorkspaceRegistry, WorkspaceStatus};
+pub use workspace::{Workspace, WorkspacePaths, WorkspaceRegistry, WorkspaceStatus};
 
 #[cfg(test)]
 mod tests {

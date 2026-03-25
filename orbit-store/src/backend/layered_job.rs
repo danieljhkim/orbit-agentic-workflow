@@ -152,6 +152,7 @@ mod tests {
 
     use super::*;
     use crate::backend::job_store_file;
+    use crate::scope_guard::ScopeGuard;
     use orbit_types::JobStep;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -199,8 +200,8 @@ mod tests {
         TempDir,
     ) {
         let dir = TempDir::new("layered-job");
-        let ws = job_store_file(dir.0.join("ws")).unwrap();
-        let global = job_store_file(dir.0.join("global")).unwrap();
+        let ws = job_store_file(dir.0.join("ws"), ScopeGuard::permissive()).unwrap();
+        let global = job_store_file(dir.0.join("global"), ScopeGuard::permissive()).unwrap();
         let layered = LayeredJobStore::new(ws.clone(), global.clone());
         (ws, global, layered, dir)
     }

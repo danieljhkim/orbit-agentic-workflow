@@ -43,11 +43,10 @@ pub(super) fn load_pr_comments<H: RuntimeHost + TaskHost + ?Sized>(
         }));
     }
 
-    if host.scoring_enabled() {
-        if let (Some(agent), Some(model)) = (&task.agent, &task.model) {
-            let root = std::path::Path::new(repo_root);
-            let _ = pr_scoreboard::record_pr_revision(root, agent, model);
-        }
+    if host.scoring_enabled()
+        && let (Some(agent), Some(model)) = (&task.agent, &task.model)
+    {
+        let _ = pr_scoreboard::record_pr_revision(host.scoreboard_dir(), agent, model);
     }
 
     let summary = build_comment_summary(&unresolved);
@@ -236,17 +235,28 @@ mod tests {
     use super::*;
     use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
-    #[derive(Default)]
     struct FakeHost {
         task: RefCell<Option<Task>>,
         scoring_enabled: bool,
+        scoreboard_dir: std::path::PathBuf,
     }
 
     impl FakeHost {
         fn new(task: Task) -> Self {
+            let scoreboard_dir = task
+                .repo_root
+                .as_deref()
+                .or(task.workspace_path.as_deref())
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .join(".orbit")
+                        .join("scoreboard")
+                })
+                .unwrap_or_default();
             Self {
                 task: RefCell::new(Some(task)),
                 scoring_enabled: false,
+                scoreboard_dir,
             }
         }
 
@@ -347,6 +357,10 @@ mod tests {
 
         fn scoring_enabled(&self) -> bool {
             self.scoring_enabled
+        }
+
+        fn scoreboard_dir(&self) -> &std::path::Path {
+            &self.scoreboard_dir
         }
     }
 

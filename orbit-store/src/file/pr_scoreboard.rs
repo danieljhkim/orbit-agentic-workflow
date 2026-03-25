@@ -16,36 +16,38 @@ type Scoreboard = HashMap<String, AgentScores>;
 
 /// Increment the `prs-merged` counter for the given agent/model.
 pub fn record_pr_merged(
-    repo_root: &Path,
+    scoreboard_dir: &Path,
     agent: &str,
     model: &str,
 ) -> Result<(), OrbitError> {
-    increment(repo_root, "prs-merged", agent, model)
+    increment(scoreboard_dir, "prs-merged", agent, model)
 }
 
 /// Increment the `revisions` counter for the given agent/model.
 pub fn record_pr_revision(
-    repo_root: &Path,
+    scoreboard_dir: &Path,
     agent: &str,
     model: &str,
 ) -> Result<(), OrbitError> {
-    increment(repo_root, "revisions", agent, model)
+    increment(scoreboard_dir, "revisions", agent, model)
 }
 
 /// Increment the `comments-resolved` counter for the given agent/model.
 pub fn record_comment_resolved(
-    repo_root: &Path,
+    scoreboard_dir: &Path,
     agent: &str,
     model: &str,
 ) -> Result<(), OrbitError> {
-    increment(repo_root, "comments-resolved", agent, model)
+    increment(scoreboard_dir, "comments-resolved", agent, model)
 }
 
-fn increment(repo_root: &Path, metric: &str, agent: &str, model: &str) -> Result<(), OrbitError> {
-    let path = repo_root
-        .join(".orbit")
-        .join("scoreboard")
-        .join("pr.json");
+fn increment(
+    scoreboard_dir: &Path,
+    metric: &str,
+    agent: &str,
+    model: &str,
+) -> Result<(), OrbitError> {
+    let path = scoreboard_dir.join("pr.json");
     let mut scoreboard: Scoreboard = if path.exists() {
         let content = fs::read_to_string(&path)
             .map_err(|e| OrbitError::Io(format!("read pr.json: {e}")))?;
@@ -85,23 +87,23 @@ mod tests {
     #[test]
     fn increment_creates_and_updates_scoreboard() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
+        let scoreboard = dir.path().join("scoreboard");
 
         // First increment creates the file
-        record_pr_merged(root, "claude", "opus-4.6").unwrap();
+        record_pr_merged(&scoreboard, "claude", "opus-4.6").unwrap();
 
-        let path = root.join(".orbit/scoreboard/pr.json");
+        let path = scoreboard.join("pr.json");
         assert!(path.exists());
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["prs-merged"]["claude"]["opus-4.6"], 1);
 
         // Second increment bumps the counter
-        record_pr_merged(root, "claude", "opus-4.6").unwrap();
+        record_pr_merged(&scoreboard, "claude", "opus-4.6").unwrap();
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["prs-merged"]["claude"]["opus-4.6"], 2);
 
         // Different metric
-        record_pr_revision(root, "claude", "opus-4.6").unwrap();
+        record_pr_revision(&scoreboard, "claude", "opus-4.6").unwrap();
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["revisions"]["claude"]["opus-4.6"], 1);
         // Original metric unchanged
@@ -111,12 +113,12 @@ mod tests {
     #[test]
     fn increment_different_agents() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
+        let scoreboard = dir.path().join("scoreboard");
 
-        record_pr_merged(root, "claude", "opus-4.6").unwrap();
-        record_pr_merged(root, "codex", "gpt-5.4").unwrap();
+        record_pr_merged(&scoreboard, "claude", "opus-4.6").unwrap();
+        record_pr_merged(&scoreboard, "codex", "gpt-5.4").unwrap();
 
-        let path = root.join(".orbit/scoreboard/pr.json");
+        let path = scoreboard.join("pr.json");
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["prs-merged"]["claude"]["opus-4.6"], 1);
         assert_eq!(sb["prs-merged"]["codex"]["gpt-5.4"], 1);
@@ -125,12 +127,12 @@ mod tests {
     #[test]
     fn comment_resolved_increments() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
+        let scoreboard = dir.path().join("scoreboard");
 
-        record_comment_resolved(root, "claude", "opus-4.6").unwrap();
-        record_comment_resolved(root, "claude", "opus-4.6").unwrap();
+        record_comment_resolved(&scoreboard, "claude", "opus-4.6").unwrap();
+        record_comment_resolved(&scoreboard, "claude", "opus-4.6").unwrap();
 
-        let path = root.join(".orbit/scoreboard/pr.json");
+        let path = scoreboard.join("pr.json");
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["comments-resolved"]["claude"]["opus-4.6"], 2);
     }

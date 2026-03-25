@@ -15,7 +15,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
-use crate::paths;
 use orbit_store::validate_instance_against_schema;
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,12 +146,7 @@ fn execute_commit_request_if_present(
     let files = commit.files.clone();
     let message = commit.message.clone();
 
-    let repo_root = paths::find_git_repo_root(runtime.data_root_path()).ok_or_else(|| {
-        OrbitError::Execution(format!(
-            "cannot locate git repository root from Orbit data root '{}'",
-            runtime.data_root_path().display()
-        ))
-    })?;
+    let repo_root = &runtime.context.paths().repo_root;
     let repo_root_str = repo_root.to_string_lossy().to_string();
 
     runtime.run_tool(
@@ -265,6 +259,10 @@ impl RuntimeHost for OrbitRuntime {
     fn scoring_enabled(&self) -> bool {
         self.context.scoring_enabled()
     }
+
+    fn scoreboard_dir(&self) -> &std::path::Path {
+        &self.context.paths().scoreboard_dir
+    }
 }
 
 impl JobRunHost for OrbitRuntime {
@@ -355,7 +353,7 @@ impl EnvironmentHost for OrbitRuntime {
             // to the same data root regardless of its working directory. Without this,
             // a Codex or Claude agent running inside a git worktree would either create
             // a spurious .orbit/ in the worktree or resolve to the wrong database.
-            let orbit_root = self.data_root_path().to_string_lossy().into_owned();
+            let orbit_root = self.context.paths().orbit_dir.to_string_lossy().into_owned();
             if !env.iter().any(|(k, _)| k == "ORBIT_ROOT") {
                 env.push(("ORBIT_ROOT".to_string(), orbit_root));
             }
@@ -488,13 +486,7 @@ fn activity_envelope_json(activity: &Activity) -> Value {
 }
 
 fn current_repo_root(runtime: &OrbitRuntime) -> Result<String, OrbitError> {
-    let repo_root = paths::find_git_repo_root(runtime.data_root_path()).ok_or_else(|| {
-        OrbitError::Execution(format!(
-            "cannot locate git repository root from Orbit data root '{}'",
-            runtime.data_root_path().display()
-        ))
-    })?;
-    Ok(repo_root.to_string_lossy().to_string())
+    Ok(runtime.context.paths().repo_root.to_string_lossy().to_string())
 }
 
 #[cfg(test)]

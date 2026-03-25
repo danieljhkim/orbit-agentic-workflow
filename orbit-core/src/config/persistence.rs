@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use orbit_store::{ResolvedScope, ScopeResolution};
+use orbit_types::WorkspacePaths;
 use serde_json::{Value, json};
 
 /// Carries a global path, optional workspace path, and the resolution strategy
@@ -50,53 +51,56 @@ impl PersistenceConfig {
         Self::default_for_roots(data_root, data_root)
     }
 
-    /// Two-root defaults. This is the **single source of truth** for which
-    /// artifact gets which scope resolution strategy.
+    /// Two-root defaults (raw paths). Delegates to [`Self::from_workspace_paths`].
     pub(crate) fn default_for_roots(global_root: &Path, workspace_root: &Path) -> Self {
-        let ws = if global_root == workspace_root {
+        let repo_root = workspace_root
+            .parent()
+            .unwrap_or(workspace_root)
+            .to_path_buf();
+        let paths = WorkspacePaths::new(
+            repo_root,
+            workspace_root.to_path_buf(),
+            global_root.to_path_buf(),
+        );
+        Self::from_workspace_paths(&paths)
+    }
+
+    /// Build persistence config from [`WorkspacePaths`]. This is the **single
+    /// source of truth** for which artifact gets which scope resolution strategy.
+    pub(crate) fn from_workspace_paths(paths: &WorkspacePaths) -> Self {
+        let ws = if paths.global_dir == paths.orbit_dir {
             None
         } else {
-            Some(workspace_root)
+            Some(&paths.orbit_dir)
         };
 
         Self {
             // Tasks are workspace-local: each repo tracks its own task backlog.
-            // Using WorkspaceOnly ensures task IDs never collide across projects
-            // and that agents only see work relevant to their current repo.
             task: ArtifactScope {
-                global_path: global_root.join("tasks"),
-                workspace_path: ws.map(|p| p.join("tasks")),
+                global_path: paths.global_dir.join("tasks"),
+                workspace_path: ws.map(|_| paths.tasks_dir.clone()),
                 resolution: ScopeResolution::WorkspaceOnly,
             },
-            // Activities and jobs use MergeByKey: global definitions provide a
-            // shared library of activities/jobs (e.g. orbit's built-in workflows),
-            // while workspace-local files can add or override individual entries
-            // by key. This lets per-repo config extend the baseline without
-            // losing globally registered activities.
+            // Activities and jobs use MergeByKey.
             activity: ArtifactScope {
-                global_path: global_root.join("activities"),
-                workspace_path: ws.map(|p| p.join("activities")),
+                global_path: paths.global_dir.join("activities"),
+                workspace_path: ws.map(|_| paths.activities_dir.clone()),
                 resolution: ScopeResolution::MergeByKey,
             },
             job: ArtifactScope {
-                global_path: global_root.join("jobs"),
-                workspace_path: ws.map(|p| p.join("jobs")),
+                global_path: paths.global_dir.join("jobs"),
+                workspace_path: ws.map(|_| paths.jobs_dir.clone()),
                 resolution: ScopeResolution::MergeByKey,
             },
-            // Skills use WorkspaceReplaces: if a workspace defines a skill
-            // directory, it completely replaces the global skill set for that
-            // session. This gives workspace owners full control over which
-            // skills agents can invoke, preventing unintended global skill bleed.
+            // Skills use WorkspaceReplaces.
             skill: ArtifactScope {
-                global_path: global_root.join("skills"),
-                workspace_path: ws.map(|p| p.join("skills")),
+                global_path: paths.global_dir.join("skills"),
+                workspace_path: ws.map(|_| paths.skills_dir.clone()),
                 resolution: ScopeResolution::WorkspaceReplaces,
             },
-            // Audit is a single global database; there is no per-workspace audit
-            // log. Using GlobalOnly keeps a single authoritative event trail
-            // regardless of which workspace triggered the operation.
+            // Audit is a single global database.
             audit: ArtifactScope {
-                global_path: global_root.join("orbit.db"),
+                global_path: paths.global_dir.join("orbit.db"),
                 workspace_path: None,
                 resolution: ScopeResolution::GlobalOnly,
             },

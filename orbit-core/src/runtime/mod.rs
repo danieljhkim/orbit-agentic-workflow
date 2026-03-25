@@ -31,7 +31,7 @@ use orbit_store::{
 };
 use orbit_types::{
     Activity, Audit, AuditEvent, Job, JobRun, JobRunState, OrbitError, OrbitEvent, StoredTool,
-    Task, TaskPriority, TaskStatus,
+    Task, TaskPriority, TaskStatus, WorkspacePaths,
 };
 use serde_json::Value;
 
@@ -189,6 +189,10 @@ impl OrbitRuntime {
 
     pub(crate) fn skill_catalog(&self) -> &crate::skill_catalog::SkillCatalog {
         self.context.skill_catalog()
+    }
+
+    pub(crate) fn paths(&self) -> &WorkspacePaths {
+        self.context.paths()
     }
 
     pub(crate) fn data_root_path(&self) -> &Path {

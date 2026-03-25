@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use orbit_types::OrbitError;
@@ -14,6 +14,7 @@ use crate::Store;
 use crate::file::activity_store::ActivityFileStore;
 use crate::file::job_store::JobFileStore;
 use crate::file::task_store::TaskFileStore;
+use crate::scope_guard::ScopeGuard;
 
 /// Describes how an artifact's scope is resolved between global and workspace roots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,22 +51,18 @@ impl ResolvedScope {
     }
 }
 
-pub fn task_store_file(root: PathBuf) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
-    // ensure_layout is called lazily before each write operation (create_task, update_task).
-    // Eager layout here would create workspace-only task state directories at global scope.
-    let store = TaskFileStore::new(root);
+pub fn task_store_file(root: PathBuf, guard: ScopeGuard) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
+    let store = TaskFileStore::with_guard(root, guard);
     Ok(Arc::new(store))
 }
 
-pub fn activity_store_file(root: PathBuf) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
-    // ensure_layout is called lazily before each write operation (insert, update, disable).
-    let store = ActivityFileStore::new(root);
+pub fn activity_store_file(root: PathBuf, guard: ScopeGuard) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
+    let store = ActivityFileStore::with_guard(root, guard);
     Ok(Arc::new(store))
 }
 
-pub fn job_store_file(root: PathBuf) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
-    // ensure_layout is called lazily before each write operation (add_job, write_activity, etc).
-    let store = JobFileStore::new(root);
+pub fn job_store_file(root: PathBuf, guard: ScopeGuard) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
+    let store = JobFileStore::with_guard(root, guard);
     Ok(Arc::new(store))
 }
 
@@ -78,9 +75,15 @@ pub fn audit_event_store_sqlite(store: Store) -> Arc<dyn AuditEventStoreBackend>
 }
 
 /// Creates a task store from a resolved scope. Tasks only support `Single`.
-pub fn task_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
+pub fn task_store_resolved(
+    scope: ResolvedScope,
+    global_root: &Path,
+) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
     match scope {
-        ResolvedScope::Single(path) => task_store_file(path),
+        ResolvedScope::Single(path) => {
+            let guard = ScopeGuard::new(ScopeResolution::WorkspaceOnly, global_root.to_path_buf());
+            task_store_file(path, guard)
+        }
         ResolvedScope::Layered { .. } => Err(OrbitError::InvalidInput(
             "task store does not support layered resolution".to_string(),
         )),
@@ -90,24 +93,34 @@ pub fn task_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn TaskStoreBack
 /// Creates an activity store from a resolved scope. Supports both single and layered.
 pub fn activity_store_resolved(
     scope: ResolvedScope,
+    global_root: &Path,
 ) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
+    let guard_for = |res| ScopeGuard::new(res, global_root.to_path_buf());
     match scope {
-        ResolvedScope::Single(path) => activity_store_file(path),
+        ResolvedScope::Single(path) => {
+            activity_store_file(path, guard_for(ScopeResolution::MergeByKey))
+        }
         ResolvedScope::Layered { global, workspace } => {
-            let g = activity_store_file(global)?;
-            let w = activity_store_file(workspace)?;
+            let g = activity_store_file(global, guard_for(ScopeResolution::MergeByKey))?;
+            let w = activity_store_file(workspace, guard_for(ScopeResolution::MergeByKey))?;
             Ok(Arc::new(LayeredActivityStore::new(w, g)))
         }
     }
 }
 
 /// Creates a job store from a resolved scope. Supports both single and layered.
-pub fn job_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
+pub fn job_store_resolved(
+    scope: ResolvedScope,
+    global_root: &Path,
+) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
+    let guard_for = |res| ScopeGuard::new(res, global_root.to_path_buf());
     match scope {
-        ResolvedScope::Single(path) => job_store_file(path),
+        ResolvedScope::Single(path) => {
+            job_store_file(path, guard_for(ScopeResolution::MergeByKey))
+        }
         ResolvedScope::Layered { global, workspace } => {
-            let g = job_store_file(global)?;
-            let w = job_store_file(workspace)?;
+            let g = job_store_file(global, guard_for(ScopeResolution::MergeByKey))?;
+            let w = job_store_file(workspace, guard_for(ScopeResolution::MergeByKey))?;
             Ok(Arc::new(LayeredJobStore::new(w, g)))
         }
     }

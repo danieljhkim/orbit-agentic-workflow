@@ -263,6 +263,7 @@ pub trait RuntimeHost {
         model: Option<&str>,
     ) -> Result<(), OrbitError>;
     fn scoring_enabled(&self) -> bool;
+    fn scoreboard_dir(&self) -> &Path;
 }
 
 /// Aggregates all five sub-traits required at the top-level engine boundary.
