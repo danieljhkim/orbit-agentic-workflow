@@ -73,11 +73,24 @@ pub struct SkillCatalogDoctorRow {
 #[derive(Debug, Clone)]
 pub struct SkillCatalog {
     root: PathBuf,
+    global_root: Option<PathBuf>,
 }
 
 impl SkillCatalog {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            global_root: None,
+        }
+    }
+
+    /// Create a layered skill catalog. Skills are resolved workspace-first,
+    /// falling back to the global root when not found in the workspace.
+    pub fn layered(workspace_root: PathBuf, global_root: PathBuf) -> Self {
+        Self {
+            root: workspace_root,
+            global_root: Some(global_root),
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -85,7 +98,11 @@ impl SkillCatalog {
     }
 
     pub fn ensure_layout(&self) -> Result<(), OrbitError> {
-        fs::create_dir_all(&self.root).map_err(|e| OrbitError::Io(e.to_string()))
+        fs::create_dir_all(&self.root).map_err(|e| OrbitError::Io(e.to_string()))?;
+        if let Some(ref global) = self.global_root {
+            fs::create_dir_all(global).map_err(|e| OrbitError::Io(e.to_string()))?;
+        }
+        Ok(())
     }
 
     pub fn list(&self) -> Result<Vec<LoadedSkill>, OrbitError> {
@@ -127,75 +144,114 @@ impl SkillCatalog {
                 "skill id must not be empty".to_string(),
             ));
         }
+
+        // Try workspace root first.
         let dir = self.root.join(skill_id);
-        if !dir.exists() {
-            return Err(OrbitError::SkillNotFound(skill_id.to_string()));
-        }
-        if !dir.is_dir() {
-            return Err(OrbitError::SkillValidation(format!(
-                "skill path is not a directory: {}",
-                dir.display()
-            )));
+        if dir.exists() {
+            return load_skill_from_dir(skill_id, &dir);
         }
 
-        let skill_md_path = dir.join("SKILL.md");
-        if !skill_md_path.exists() {
-            return Err(OrbitError::SkillValidation(format!(
-                "missing SKILL.md for skill '{}'",
-                skill_id
-            )));
-        }
-        let content =
-            fs::read_to_string(&skill_md_path).map_err(|e| OrbitError::Io(e.to_string()))?;
-        let sections = parse_skill_markdown(&content)?;
-
-        let content_hash = sha256_hex(content.as_bytes());
-        let meta_path = dir.join("meta.json");
-        let ParsedMetaJson {
-            meta,
-            meta_raw,
-            output_schema,
-        } = if meta_path.exists() {
-            parse_meta_json(&meta_path)?
-        } else {
-            ParsedMetaJson {
-                meta: None,
-                meta_raw: None,
-                output_schema: None,
+        // Fall back to global root if configured.
+        if let Some(ref global) = self.global_root {
+            let global_dir = global.join(skill_id);
+            if global_dir.exists() {
+                return load_skill_from_dir(skill_id, &global_dir);
             }
-        };
+        }
 
-        Ok(LoadedSkill {
-            id: skill_id.to_string(),
-            path: dir,
-            content_hash,
-            content,
-            sections,
-            meta,
-            meta_raw,
-            output_schema,
-        })
+        Err(OrbitError::SkillNotFound(skill_id.to_string()))
     }
 
     fn list_candidate_ids(&self) -> Result<Vec<String>, OrbitError> {
         self.ensure_layout()?;
-        let entries = fs::read_dir(&self.root).map_err(|e| OrbitError::Io(e.to_string()))?;
-        let mut ids = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|e| OrbitError::Io(e.to_string()))?;
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
-                continue;
-            };
-            if path.join("SKILL.md").exists() {
-                ids.push(name.to_string());
+
+        let mut ids = collect_candidate_ids(&self.root)?;
+
+        // Merge global candidates, workspace IDs take precedence.
+        if let Some(ref global) = self.global_root {
+            let global_ids = collect_candidate_ids(global)?;
+            let workspace_set: std::collections::HashSet<String> =
+                ids.iter().cloned().collect();
+            for id in global_ids {
+                if !workspace_set.contains(&id) {
+                    ids.push(id);
+                }
             }
         }
+
         Ok(ids)
     }
+}
+
+/// Load a skill from a specific directory on disk.
+fn load_skill_from_dir(skill_id: &str, dir: &Path) -> Result<LoadedSkill, OrbitError> {
+    if !dir.is_dir() {
+        return Err(OrbitError::SkillValidation(format!(
+            "skill path is not a directory: {}",
+            dir.display()
+        )));
+    }
+
+    let skill_md_path = dir.join("SKILL.md");
+    if !skill_md_path.exists() {
+        return Err(OrbitError::SkillValidation(format!(
+            "missing SKILL.md for skill '{}'",
+            skill_id
+        )));
+    }
+    let content =
+        fs::read_to_string(&skill_md_path).map_err(|e| OrbitError::Io(e.to_string()))?;
+    let sections = parse_skill_markdown(&content)?;
+
+    let content_hash = sha256_hex(content.as_bytes());
+    let meta_path = dir.join("meta.json");
+    let ParsedMetaJson {
+        meta,
+        meta_raw,
+        output_schema,
+    } = if meta_path.exists() {
+        parse_meta_json(&meta_path)?
+    } else {
+        ParsedMetaJson {
+            meta: None,
+            meta_raw: None,
+            output_schema: None,
+        }
+    };
+
+    Ok(LoadedSkill {
+        id: skill_id.to_string(),
+        path: dir.to_path_buf(),
+        content_hash,
+        content,
+        sections,
+        meta,
+        meta_raw,
+        output_schema,
+    })
+}
+
+/// Collect skill candidate IDs from a single directory.
+fn collect_candidate_ids(root: &Path) -> Result<Vec<String>, OrbitError> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = fs::read_dir(root).map_err(|e| OrbitError::Io(e.to_string()))?;
+    let mut ids = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| OrbitError::Io(e.to_string()))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        if path.join("SKILL.md").exists() {
+            ids.push(name.to_string());
+        }
+    }
+    Ok(ids)
 }
 
 fn parse_skill_markdown(raw: &str) -> Result<SkillSections, OrbitError> {
