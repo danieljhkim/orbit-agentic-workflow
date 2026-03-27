@@ -1309,9 +1309,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "jsonschema",
- "orbit-agent",
  "orbit-engine",
- "orbit-exec",
  "orbit-policy",
  "orbit-store",
  "orbit-tools",

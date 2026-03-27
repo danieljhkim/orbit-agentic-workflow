@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_agent::{Agent, AgentConfig};
+use orbit_engine::EnvironmentHost;
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobUpdateParams as StoreJobUpdateParams;
 use orbit_types::{
@@ -172,9 +172,7 @@ impl OrbitRuntime {
             // (e.g. review loop steps that route back to the original implementer).
             if activity_requires_agent_cli(&activity.spec_type) && !step.agent_cli.trim().is_empty()
             {
-                let _ = Agent::new(
-                    &AgentConfig::cli(step.agent_cli.clone())?.with_model(step.model.as_deref()),
-                )?;
+                self.validate_agent_cli(&step.agent_cli, step.model.as_deref())?;
             }
         }
 
