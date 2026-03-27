@@ -69,7 +69,11 @@ pub(crate) fn build_context_from_roots(
     let tool_store = tool_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
 
-    let skill_catalog = SkillCatalog::new(persistence.skill_dir.clone());
+    let skill_catalog = if persistence.skill_dir != persistence.global_skill_dir {
+        SkillCatalog::layered(persistence.skill_dir.clone(), persistence.global_skill_dir.clone())
+    } else {
+        SkillCatalog::new(persistence.skill_dir.clone())
+    };
     skill_catalog.ensure_layout()?;
 
     let mut registry = ToolRegistry::new();
