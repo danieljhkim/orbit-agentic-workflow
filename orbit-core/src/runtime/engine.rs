@@ -1,10 +1,8 @@
 use chrono::{DateTime, Utc};
-use orbit_agent::{AgentConfig, ProviderOptions};
 use orbit_engine::{
     AgentProtocolHost, EnvironmentHost, ExecutionContext, JobRunHost, RuntimeHost,
     TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
 };
-use orbit_exec::EnvironmentMode;
 use orbit_store::{JobRunStepParams, TaskUpdateParams as StoreTaskUpdateParams};
 use orbit_tools::ToolContext;
 use orbit_types::{
@@ -320,50 +318,33 @@ impl JobRunHost for OrbitRuntime {
 }
 
 impl EnvironmentHost for OrbitRuntime {
-    fn agent_config_for(
-        &self,
-        agent_cli: &str,
-        model: Option<&str>,
-    ) -> Result<AgentConfig, OrbitError> {
-        let provider_options = ProviderOptions::for_agent_cli(
-            agent_cli,
-            self.codex_execution_policy().sandbox().to_string(),
-            self.codex_execution_policy()
-                .approval_policy()
-                .map(|s| s.to_string()),
-        )?;
-        Ok(AgentConfig {
-            command: agent_cli.to_string(),
-            model: model.map(|m| m.to_string()),
-            provider_options,
-        })
+    fn codex_sandbox_policy(&self) -> String {
+        self.codex_execution_policy().sandbox().to_string()
     }
 
-    fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode {
-        if self.execution_env_policy().inherit() {
-            // Full inheritance: ORBIT_ROOT resolution relies on find_git_repo_root
-            // handling git worktrees correctly (which it does after the worktree fix).
-            EnvironmentMode::Inherit
-        } else {
-            let mut env = self
-                .execution_env_policy()
-                .hydrated_allowlist_env_with_extras(env_extra);
-            // Explicitly inject ORBIT_ROOT so that any orbit CLI invocation made
-            // by the agent subprocess (e.g., `orbit tool run orbit.task.*`) resolves
-            // to the same data root regardless of its working directory. Without this,
-            // a Codex or Claude agent running inside a git worktree would either create
-            // a spurious .orbit/ in the worktree or resolve to the wrong database.
-            let orbit_root = self
-                .context
+    fn codex_approval_policy(&self) -> Option<String> {
+        self.codex_execution_policy()
+            .approval_policy()
+            .map(|s| s.to_string())
+    }
+
+    fn execution_env_inherit(&self) -> bool {
+        self.execution_env_policy().inherit()
+    }
+
+    fn hydrated_env_allowlist(&self, env_extra: &[String]) -> Vec<(String, String)> {
+        self.execution_env_policy()
+            .hydrated_allowlist_env_with_extras(env_extra)
+    }
+
+    fn orbit_root(&self) -> Option<String> {
+        Some(
+            self.context
                 .paths()
                 .orbit_dir
                 .to_string_lossy()
-                .into_owned();
-            if !env.iter().any(|(k, _)| k == "ORBIT_ROOT") {
-                env.push(("ORBIT_ROOT".to_string(), orbit_root));
-            }
-            EnvironmentMode::ClearAndSet(env)
-        }
+                .into_owned(),
+        )
     }
 
     fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)> {

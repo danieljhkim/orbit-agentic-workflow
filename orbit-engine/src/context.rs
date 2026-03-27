@@ -222,14 +222,55 @@ pub trait AgentProtocolHost {
 }
 
 pub trait EnvironmentHost {
+    // ── Config accessors (implementors provide these) ──────────────────
+    fn codex_sandbox_policy(&self) -> String;
+    fn codex_approval_policy(&self) -> Option<String>;
+    fn execution_env_inherit(&self) -> bool;
+    fn hydrated_env_allowlist(&self, env_extra: &[String]) -> Vec<(String, String)>;
+    fn orbit_root(&self) -> Option<String>;
+    fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)>;
+    fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String>;
+
+    // ── Default implementations (use accessors above) ──────────────────
+
     fn agent_config_for(
         &self,
         agent_cli: &str,
         model: Option<&str>,
-    ) -> Result<AgentConfig, OrbitError>;
-    fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode;
-    fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)>;
-    fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String>;
+    ) -> Result<AgentConfig, OrbitError> {
+        use orbit_agent::ProviderOptions;
+        let provider_options = ProviderOptions::for_agent_cli(
+            agent_cli,
+            self.codex_sandbox_policy(),
+            self.codex_approval_policy(),
+        )?;
+        Ok(AgentConfig {
+            command: agent_cli.to_string(),
+            model: model.map(|m| m.to_string()),
+            provider_options,
+        })
+    }
+
+    fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode {
+        if self.execution_env_inherit() {
+            EnvironmentMode::Inherit
+        } else {
+            let mut env = self.hydrated_env_allowlist(env_extra);
+            if let Some(orbit_root) = self.orbit_root() {
+                if !env.iter().any(|(k, _)| k == "ORBIT_ROOT") {
+                    env.push(("ORBIT_ROOT".to_string(), orbit_root));
+                }
+            }
+            EnvironmentMode::ClearAndSet(env)
+        }
+    }
+
+    fn validate_agent_cli(&self, cli: &str, model: Option<&str>) -> Result<(), OrbitError> {
+        use orbit_agent::Agent;
+        let cfg = AgentConfig::cli(cli)?.with_model(model);
+        let _ = Agent::new(&cfg)?;
+        Ok(())
+    }
 }
 
 pub trait RuntimeHost {
