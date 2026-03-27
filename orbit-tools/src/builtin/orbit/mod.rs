@@ -433,10 +433,10 @@ mod tests {
                 "Add a tool".to_string(),
                 "--description".to_string(),
                 "Details".to_string(),
-                "--plan".to_string(),
-                "Plan".to_string(),
                 "--workspace".to_string(),
                 "/tmp/orbit".to_string(),
+                "--plan".to_string(),
+                "Plan".to_string(),
                 "--comment".to_string(),
                 "seed comment".to_string(),
                 "--context".to_string(),
@@ -480,10 +480,38 @@ mod tests {
                 "Fix bug".to_string(),
                 "--description".to_string(),
                 "Details here".to_string(),
-                "--plan".to_string(),
-                "Step 1".to_string(),
                 "--workspace".to_string(),
                 "/repo".to_string(),
+                "--plan".to_string(),
+                "Step 1".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn task_add_builds_request_without_plan() {
+        let req = super::task_add::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "title": "Friction report",
+                "description": "Something broke",
+                "workspace": ".",
+            }),
+        )
+        .expect("valid add input without plan");
+
+        assert_eq!(
+            req.args,
+            vec![
+                "task".to_string(),
+                "add".to_string(),
+                "--title".to_string(),
+                "Friction report".to_string(),
+                "--description".to_string(),
+                "Something broke".to_string(),
+                "--workspace".to_string(),
+                ".".to_string(),
                 "--json".to_string(),
             ]
         );

@@ -54,12 +54,15 @@ Do **not ignore friction**. Always create a task.
 orbit tool run orbit.task.add --input '{
   "title": "<short, specific problem statement>",
   "description": "<what happened, where, and why it caused friction>",
+  "workspace": ".",
   "type": "friction",
   "priority": "<low|medium|high|critical>",
   "agent": "<agent>",
   "model": "<model>"
 }'
 ```
+
+Required fields: `title`, `description`, and `workspace`. The `plan` field is optional for friction tasks — omit it when the issue is an observation rather than a planned change.
 
 Always include your `agent` and `model` in the input. Keep the description concrete — name the command, file, or workflow that broke.
 

@@ -23,7 +23,7 @@ Create an Orbit task another engineer or agent can execute without guessing. Pla
 - Never edit task files directly.
 - Never invent task IDs.
 - `description` and `plan` must be multi-line markdown.
-- Required fields: `title`, `description`, `plan`, and `workspace`.
+- Required fields: `title`, `description`, and `workspace`. The `plan` field is optional but strongly recommended for actionable tasks.
 - Orbit fills `created_by`, `assigned_to`, and `proposed_by` automatically from execution context.
 
 ## Command

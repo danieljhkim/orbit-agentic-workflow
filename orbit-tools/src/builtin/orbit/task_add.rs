@@ -13,7 +13,6 @@ pub(super) fn build_exec_request(
     let identity = super::resolve_identity(ctx, input)?;
     let title = super::required_string(input, &["title"], "title")?;
     let description = super::required_string(input, &["description"], "description")?;
-    let plan = super::required_string(input, &["plan"], "plan")?;
     let workspace = super::required_string(input, &["workspace"], "workspace")?;
 
     let mut args = vec![
@@ -23,11 +22,14 @@ pub(super) fn build_exec_request(
         title,
         "--description".to_string(),
         description,
-        "--plan".to_string(),
-        plan,
         "--workspace".to_string(),
         workspace,
     ];
+
+    if let Some(plan) = super::optional_string(input, "plan")? {
+        args.push("--plan".to_string());
+        args.push(plan);
+    }
 
     if let Some(comment) = super::optional_string(input, "comment")? {
         args.push("--comment".to_string());
@@ -88,9 +90,9 @@ impl Tool for OrbitTaskAddTool {
             },
             ToolParam {
                 name: "plan".to_string(),
-                description: "Task plan markdown".to_string(),
+                description: "Optional task plan markdown (defaults to empty)".to_string(),
                 param_type: "string".to_string(),
-                required: true,
+                required: false,
             },
             ToolParam {
                 name: "workspace".to_string(),
