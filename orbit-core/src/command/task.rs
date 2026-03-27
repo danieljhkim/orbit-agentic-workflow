@@ -101,10 +101,7 @@ impl OrbitRuntime {
                 workspace_path: params.workspace_path.clone(),
                 repo_root: None,
                 created_by: Some(effective_label.clone()),
-                actor_identity: ActorIdentity::from_legacy(
-                    agent.as_deref(),
-                    model.as_deref(),
-                ),
+                actor_identity: ActorIdentity::from_legacy(agent.as_deref(), model.as_deref()),
                 assigned_to: Some(effective_label.clone()),
                 status: initial_status,
                 priority: params.priority,
@@ -272,10 +269,9 @@ impl OrbitRuntime {
                     actor: effective_label.clone(),
                     assigned_to,
                     status_note,
-                    actor_identity: agent.as_ref().map(|_| ActorIdentity::from_legacy(
-                        agent.as_deref(),
-                        model.as_deref(),
-                    )),
+                    actor_identity: agent
+                        .as_ref()
+                        .map(|_| ActorIdentity::from_legacy(agent.as_deref(), model.as_deref())),
                     append_comments: append_comments.clone(),
                     ..StoreTaskUpdateParams::from(params)
                 },
@@ -325,10 +321,9 @@ impl OrbitRuntime {
                         status_event: Some("proposal_approved".to_string()),
                         status_note: note.clone(),
                         assigned_to: Some(Some(effective_label.clone())),
-                        actor_identity: agent.as_ref().map(|_| ActorIdentity::from_legacy(
-                            agent.as_deref(),
-                            model.as_deref(),
-                        )),
+                        actor_identity: agent.as_ref().map(|_| {
+                            ActorIdentity::from_legacy(agent.as_deref(), model.as_deref())
+                        }),
                         append_comments: append_comments.clone(),
                         ..Default::default()
                     },
@@ -349,10 +344,9 @@ impl OrbitRuntime {
                         status: Some(TaskStatus::Done),
                         status_event: Some("review_approved".to_string()),
                         status_note: note.clone(),
-                        actor_identity: agent.as_ref().map(|_| ActorIdentity::from_legacy(
-                            agent.as_deref(),
-                            model.as_deref(),
-                        )),
+                        actor_identity: agent.as_ref().map(|_| {
+                            ActorIdentity::from_legacy(agent.as_deref(), model.as_deref())
+                        }),
                         append_comments: append_comments.clone(),
                         ..Default::default()
                     },
@@ -624,7 +618,10 @@ impl OrbitRuntime {
         if !self.scoring_enabled() || !task.task_type.is_friction() {
             return;
         }
-        let (Some(agent), Some(model)) = (task.actor_identity.agent_name(), task.actor_identity.agent_model()) else {
+        let (Some(agent), Some(model)) = (
+            task.actor_identity.agent_name(),
+            task.actor_identity.agent_model(),
+        ) else {
             return;
         };
         let scoreboard_dir = &self.paths().scoreboard_dir;

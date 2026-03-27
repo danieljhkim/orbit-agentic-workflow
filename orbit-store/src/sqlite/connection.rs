@@ -28,7 +28,10 @@ impl Store {
         // succeed.  This commonly occurs in worktree contexts where a parent
         // process already has the DB open in WAL mode.
         if let Err(e) = conn.pragma_update(None, "journal_mode", "WAL") {
-            eprintln!("orbit: warning: could not set WAL mode on {}: {e}", path.display());
+            eprintln!(
+                "orbit: warning: could not set WAL mode on {}: {e}",
+                path.display()
+            );
         }
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(|e| OrbitError::Store(format!("failed to enable foreign keys: {e}")))?;

@@ -735,7 +735,10 @@ fn resolve_step_agent_from_task<H: EngineHost>(
     }
     let task_id = extract_task_id(input)?;
     let task = host.get_task(task_id).ok()?;
-    let agent = task.actor_identity.agent_name().filter(|a| !a.trim().is_empty())?;
+    let agent = task
+        .actor_identity
+        .agent_name()
+        .filter(|a| !a.trim().is_empty())?;
     let mut resolved = step.clone();
     resolved.agent_cli = agent.to_string();
     if resolved.model.is_none() {
@@ -836,10 +839,8 @@ fn append_failed_step_friction_without_execution(
     let input = context
         .input
         .unwrap_or_else(|| Value::Object(Default::default()));
-    let actor_identity = ActorIdentity::from_legacy(
-        context.agent.as_deref(),
-        context.model.as_deref(),
-    );
+    let actor_identity =
+        ActorIdentity::from_legacy(context.agent.as_deref(), context.model.as_deref());
     let entry = FrictionEntry {
         ts,
         job_run: run_id.to_string(),

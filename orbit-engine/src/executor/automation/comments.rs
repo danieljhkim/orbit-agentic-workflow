@@ -44,7 +44,10 @@ pub(super) fn load_pr_comments<H: RuntimeHost + TaskHost + ?Sized>(
     }
 
     if host.scoring_enabled()
-        && let (Some(agent), Some(model)) = (task.actor_identity.agent_name(), task.actor_identity.agent_model())
+        && let (Some(agent), Some(model)) = (
+            task.actor_identity.agent_name(),
+            task.actor_identity.agent_model(),
+        )
     {
         let _ = pr_scoreboard::record_pr_revision(host.scoreboard_dir(), agent, model);
     }

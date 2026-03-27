@@ -78,7 +78,10 @@ pub(super) fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
     )?;
 
     if host.scoring_enabled()
-        && let (Some(agent), Some(model)) = (task.actor_identity.agent_name(), task.actor_identity.agent_model())
+        && let (Some(agent), Some(model)) = (
+            task.actor_identity.agent_name(),
+            task.actor_identity.agent_model(),
+        )
     {
         let _ = pr_scoreboard::record_pr_merged(host.scoreboard_dir(), agent, model);
     }
@@ -239,7 +242,9 @@ mod tests {
 
     use chrono::Utc;
     use orbit_tools::ToolContext;
-    use orbit_types::{Activity, ActorIdentity, JobTargetType, OrbitEvent, Role, Task, TaskPriority};
+    use orbit_types::{
+        Activity, ActorIdentity, JobTargetType, OrbitEvent, Role, Task, TaskPriority,
+    };
     use serde_json::json;
     use tempfile::TempDir;
 

@@ -19,8 +19,8 @@
 //! `orbit-types` ← orbit-policy, orbit-exec, orbit-tools, orbit-store,
 //!                  orbit-agent, orbit-engine, orbit-core, orbit-cli
 
-pub mod actor;
 pub mod activity;
+pub mod actor;
 pub mod audit;
 pub mod audit_event;
 pub mod error;
@@ -37,8 +37,8 @@ pub mod task;
 pub mod tool;
 pub mod workspace;
 
-pub use actor::ActorIdentity;
 pub use activity::Activity;
+pub use actor::ActorIdentity;
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use error::OrbitError;
@@ -70,7 +70,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::{
-        ActorIdentity, Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult,
+        Activity, ActorIdentity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult,
         FrictionEntry, Job, JobRun, JobRunState, JobScheduleState, JobStep, MetricsEntry,
         OrbitEvent, Role, Skill, StepCondition, TaskStatus,
     };

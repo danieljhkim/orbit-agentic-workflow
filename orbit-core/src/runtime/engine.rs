@@ -448,7 +448,8 @@ impl TaskHost for OrbitRuntime {
                     actor_identity: Some(ActorIdentity::from_legacy(
                         update.agent.as_deref(),
                         update.model.as_deref(),
-                    )).filter(|id| !id.is_system()),
+                    ))
+                    .filter(|id| !id.is_system()),
                     ..Default::default()
                 },
             )?;
@@ -504,10 +505,7 @@ mod tests {
             model: Some("opus-4.6".to_string()),
             ..Default::default()
         };
-        let identity = ActorIdentity::from_legacy(
-            update.agent.as_deref(),
-            update.model.as_deref(),
-        );
+        let identity = ActorIdentity::from_legacy(update.agent.as_deref(), update.model.as_deref());
         assert_eq!(identity, ActorIdentity::agent("claude", "opus-4.6"));
     }
 
@@ -518,10 +516,7 @@ mod tests {
             model: None,
             ..Default::default()
         };
-        let identity = ActorIdentity::from_legacy(
-            update.agent.as_deref(),
-            update.model.as_deref(),
-        );
+        let identity = ActorIdentity::from_legacy(update.agent.as_deref(), update.model.as_deref());
         assert_eq!(
             identity,
             ActorIdentity::Agent {
@@ -538,10 +533,7 @@ mod tests {
             model: None,
             ..Default::default()
         };
-        let identity = ActorIdentity::from_legacy(
-            update.agent.as_deref(),
-            update.model.as_deref(),
-        );
+        let identity = ActorIdentity::from_legacy(update.agent.as_deref(), update.model.as_deref());
         assert_eq!(identity, ActorIdentity::System);
     }
 }

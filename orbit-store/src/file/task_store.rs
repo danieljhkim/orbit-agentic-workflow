@@ -648,13 +648,8 @@ fn bundle_read_error(path: &Path, label: &str, err: std::io::Error) -> OrbitErro
 fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
     // When loading from YAML, if actor_identity is System (the default) but
     // legacy agent/model fields are present, reconstruct the identity from them.
-    let actor_identity = if bundle.doc.actor_identity.is_system()
-        && bundle.doc.agent.is_some()
-    {
-        ActorIdentity::from_legacy(
-            bundle.doc.agent.as_deref(),
-            bundle.doc.model.as_deref(),
-        )
+    let actor_identity = if bundle.doc.actor_identity.is_system() && bundle.doc.agent.is_some() {
+        ActorIdentity::from_legacy(bundle.doc.agent.as_deref(), bundle.doc.model.as_deref())
     } else {
         bundle.doc.actor_identity
     };
@@ -694,7 +689,9 @@ mod tests {
     use super::{PLAN_FILE_NAME, TASK_DOC_FILE_NAME, TaskFileStore};
     use crate::backend::{TaskCreateParams, TaskUpdateParams};
     use chrono::Utc;
-    use orbit_types::{ActorIdentity, TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType};
+    use orbit_types::{
+        ActorIdentity, TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType,
+    };
     use tempfile::tempdir;
 
     fn sample_insert(status: TaskStatus) -> TaskCreateParams {
@@ -789,7 +786,10 @@ mod tests {
         assert_eq!(updated.description, "Updated description");
         assert_eq!(updated.plan, "Updated plan");
         assert_eq!(updated.execution_summary, "Validated bundle layout");
-        assert_eq!(updated.actor_identity, ActorIdentity::agent("codex", "gpt-5.4"));
+        assert_eq!(
+            updated.actor_identity,
+            ActorIdentity::agent("codex", "gpt-5.4")
+        );
         let yaml = fs::read_to_string(task_dir.join(TASK_DOC_FILE_NAME)).expect("read yaml");
         assert!(yaml.contains("schema_version: 4"));
         assert!(yaml.contains("description: Updated description"));

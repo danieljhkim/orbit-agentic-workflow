@@ -39,7 +39,10 @@ impl ActorIdentity {
     /// - Only agent → `Agent { name, model: "" }` (model unknown)
     /// - Neither → `System`
     pub fn from_legacy(agent: Option<&str>, model: Option<&str>) -> Self {
-        match (agent.filter(|s| !s.trim().is_empty()), model.filter(|s| !s.trim().is_empty())) {
+        match (
+            agent.filter(|s| !s.trim().is_empty()),
+            model.filter(|s| !s.trim().is_empty()),
+        ) {
             (Some(name), Some(model)) => Self::Agent {
                 name: name.trim().to_string(),
                 model: model.trim().to_string(),
@@ -199,7 +202,10 @@ impl<'de> Deserialize<'de> for ActorIdentity {
                 }
             }
 
-            fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<ActorIdentity, M::Error> {
+            fn visit_map<M: de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<ActorIdentity, M::Error> {
                 let key: String = map
                     .next_key()?
                     .ok_or_else(|| de::Error::custom("expected 'agent' or 'human' key"))?;
@@ -238,10 +244,7 @@ mod tests {
     fn agent_serializes_as_object() {
         let actor = ActorIdentity::agent("claude", "opus-4.6");
         let json = serde_json::to_string(&actor).unwrap();
-        assert_eq!(
-            json,
-            r#"{"agent":{"name":"claude","model":"opus-4.6"}}"#
-        );
+        assert_eq!(json, r#"{"agent":{"name":"claude","model":"opus-4.6"}}"#);
     }
 
     #[test]
@@ -277,8 +280,7 @@ mod tests {
 
     #[test]
     fn legacy_string_deserializes_agent_with_model() {
-        let decoded: ActorIdentity =
-            serde_json::from_str(r#""claude / opus-4.6""#).unwrap();
+        let decoded: ActorIdentity = serde_json::from_str(r#""claude / opus-4.6""#).unwrap();
         assert_eq!(
             decoded,
             ActorIdentity::Agent {
