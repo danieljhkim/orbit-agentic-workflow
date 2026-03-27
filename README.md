@@ -127,20 +127,11 @@ job:
 Orbit is structured as a layered set of Rust crates. Lower layers have no knowledge of higher layers.
 
 ```
-                        ┌─────────────────────────────────────────┐
-                        │            orbit-types (leaf)            │
-                        └──┬──────┬──────┬──────┬─────────────────┘
-                           │      │      │      │
-                       policy   exec   store   agent
-                           │      │
-                           └──┬───┘
-                            tools
-                              │
                         ┌─────┴─────┐
                         │  engine   │ → store, agent, exec, tools
                         └─────┬─────┘
                         ┌─────┴─────┐
-                        │   core    │ → engine, store, agent, policy, exec, tools
+                        │   core    │ → engine, store, policy, tools
                         └─────┬─────┘
                         ┌─────┴─────┐
                         │    cli    │
