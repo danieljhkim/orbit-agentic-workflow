@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Instant;
 
-use orbit_types::{ExecutionResult, OrbitError};
+use orbit_types::{ExecutionResult, OrbitError, is_sensitive_env_name};
 
 use crate::sandbox::Sandbox;
 
@@ -13,11 +13,32 @@ pub enum StdinMode {
     Bytes(Vec<u8>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub enum EnvironmentMode {
     #[default]
     Inherit,
     ClearAndSet(Vec<(String, String)>),
+}
+
+impl std::fmt::Debug for EnvironmentMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Inherit => write!(f, "Inherit"),
+            Self::ClearAndSet(pairs) => {
+                let redacted: Vec<(&str, &str)> = pairs
+                    .iter()
+                    .map(|(k, v)| {
+                        if is_sensitive_env_name(k) {
+                            (k.as_str(), "[REDACTED]")
+                        } else {
+                            (k.as_str(), v.as_str())
+                        }
+                    })
+                    .collect();
+                f.debug_tuple("ClearAndSet").field(&redacted).finish()
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

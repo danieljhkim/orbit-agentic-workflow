@@ -334,10 +334,20 @@ pub fn execution_working_directory_with_task<H: TaskHost + ?Sized>(
 }
 
 /// Resolve `${VAR}` references in a value string from the parent environment.
-/// Leaves the literal intact when the referenced var is not set.
+/// Returns an empty string and logs a warning when the referenced var is not set.
+/// Previously the literal `${VAR}` was passed through, which caused tools like `gh`
+/// to receive an invalid token value.
 fn resolve_env_refs(value: &str) -> String {
     if let Some(inner) = value.strip_prefix("${").and_then(|s| s.strip_suffix('}')) {
-        std::env::var(inner).unwrap_or_else(|_| value.to_string())
+        match std::env::var(inner) {
+            Ok(resolved) => resolved,
+            Err(_) => {
+                eprintln!(
+                    "orbit: warning: env_set references ${{{inner}}} but it is not set in the environment"
+                );
+                String::new()
+            }
+        }
     } else {
         value.to_string()
     }
