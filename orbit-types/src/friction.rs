@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::ActorIdentity;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FrictionEntry {
     pub ts: DateTime<Utc>,
@@ -13,8 +15,13 @@ pub struct FrictionEntry {
     #[serde(default)]
     pub exit_code: Option<i32>,
     pub stderr: String,
+    /// Typed identity of the actor that triggered this friction event.
+    #[serde(default)]
+    pub actor_identity: ActorIdentity,
+    /// Legacy agent name field — prefer `actor_identity`.
     #[serde(default)]
     pub agent: Option<String>,
+    /// Legacy model name field — prefer `actor_identity`.
     #[serde(default)]
     pub model: Option<String>,
 }

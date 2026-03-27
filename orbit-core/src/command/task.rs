@@ -4,8 +4,8 @@ use orbit_store::{
     friction_bounty,
 };
 use orbit_types::{
-    OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity, TaskHistoryEntry,
-    TaskPriority, TaskStatus, TaskType,
+    ActorIdentity, OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 
 use crate::OrbitRuntime;
@@ -101,6 +101,10 @@ impl OrbitRuntime {
                 workspace_path: params.workspace_path.clone(),
                 repo_root: None,
                 created_by: Some(effective_label.clone()),
+                actor_identity: ActorIdentity::from_legacy(
+                    agent.as_deref(),
+                    model.as_deref(),
+                ),
                 agent: agent.clone(),
                 model: model.clone(),
                 assigned_to: Some(effective_label.clone()),
@@ -674,6 +678,7 @@ impl OrbitRuntime {
             workspace_path: None,
             repo_root: None,
             created_by: Some(actor.clone()),
+            actor_identity: ActorIdentity::System,
             agent: None,
             model: None,
             assigned_to: Some(actor.clone()),

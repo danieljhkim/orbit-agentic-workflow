@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::ActorIdentity;
+
 /// A single metrics record captured at step completion.
 ///
 /// Follows the same JSONL day-partitioned pattern as [`super::FrictionEntry`].
@@ -11,8 +13,13 @@ pub struct MetricsEntry {
     pub step: String,
     #[serde(default)]
     pub task_id: Option<String>,
+    /// Typed identity of the actor that executed this step.
+    #[serde(default)]
+    pub actor_identity: ActorIdentity,
+    /// Legacy agent name field — prefer `actor_identity`.
     #[serde(default)]
     pub agent: Option<String>,
+    /// Legacy model name field — prefer `actor_identity`.
     #[serde(default)]
     pub model: Option<String>,
     /// Number of tool invocations executed during this step.

@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    OrbitError, OrbitId, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority,
-    TaskStatus, TaskType,
+    ActorIdentity, OrbitError, OrbitId, Task, TaskComment, TaskComplexity, TaskHistoryEntry,
+    TaskPriority, TaskStatus, TaskType,
 };
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as YamlValue};
@@ -120,6 +120,8 @@ struct TaskFileDocument {
     #[serde(default)]
     created_by: Option<String>,
     #[serde(default)]
+    actor_identity: ActorIdentity,
+    #[serde(default)]
     agent: Option<String>,
     #[serde(default)]
     model: Option<String>,
@@ -191,6 +193,7 @@ impl TaskFileStore {
                 repo_root: params.repo_root,
                 assigned_to: params.assigned_to,
                 created_by: params.created_by,
+                actor_identity: params.actor_identity,
                 agent: params.agent,
                 model: params.model,
                 priority: params.priority,
@@ -329,6 +332,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.created_by {
             bundle.doc.created_by = value.clone();
+        }
+        if let Some(ref identity) = fields.actor_identity {
+            bundle.doc.actor_identity = identity.clone();
         }
         if let Some(value) = &fields.agent {
             bundle.doc.agent = value.clone();
@@ -597,6 +603,7 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_field("proposed_by", &doc.proposed_by)?);
 
     yaml.push_str(&yaml_section("implementation"));
+    yaml.push_str(&yaml_field("actor_identity", &doc.actor_identity)?);
     yaml.push_str(&yaml_field("agent", &doc.agent)?);
     yaml.push_str(&yaml_field("model", &doc.model)?);
     yaml.push_str(&yaml_field("pr_number", &doc.pr_number)?);
@@ -655,6 +662,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         repo_root: bundle.doc.repo_root,
         assigned_to: bundle.doc.assigned_to,
         created_by: bundle.doc.created_by,
+        actor_identity: bundle.doc.actor_identity,
         agent: bundle.doc.agent,
         model: bundle.doc.model,
         status: state.to_status(),
@@ -679,7 +687,7 @@ mod tests {
     use super::{PLAN_FILE_NAME, TASK_DOC_FILE_NAME, TaskFileStore};
     use crate::backend::{TaskCreateParams, TaskUpdateParams};
     use chrono::Utc;
-    use orbit_types::{TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType};
+    use orbit_types::{ActorIdentity, TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType};
     use tempfile::tempdir;
 
     fn sample_insert(status: TaskStatus) -> TaskCreateParams {
@@ -695,6 +703,7 @@ mod tests {
             repo_root: Some("/tmp/repo".to_string()),
             assigned_to: Some("Codex".to_string()),
             created_by: Some("Codex".to_string()),
+            actor_identity: ActorIdentity::System,
             agent: None,
             model: None,
             status,
@@ -937,6 +946,7 @@ mod tests {
                 repo_root: None,
                 assigned_to: None,
                 created_by: None,
+                actor_identity: ActorIdentity::System,
                 agent: None,
                 model: None,
                 status: TaskStatus::Done,
@@ -979,6 +989,7 @@ mod tests {
                 repo_root: None,
                 assigned_to: None,
                 created_by: None,
+                actor_identity: ActorIdentity::System,
                 agent: None,
                 model: None,
                 status: TaskStatus::Backlog,

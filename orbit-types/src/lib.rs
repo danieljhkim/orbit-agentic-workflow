@@ -19,6 +19,7 @@
 //! `orbit-types` ← orbit-policy, orbit-exec, orbit-tools, orbit-store,
 //!                  orbit-agent, orbit-engine, orbit-core, orbit-cli
 
+pub mod actor;
 pub mod activity;
 pub mod audit;
 pub mod audit_event;
@@ -36,6 +37,7 @@ pub mod task;
 pub mod tool;
 pub mod workspace;
 
+pub use actor::ActorIdentity;
 pub use activity::Activity;
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
@@ -68,9 +70,9 @@ mod tests {
     use std::str::FromStr;
 
     use crate::{
-        Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult, FrictionEntry, Job,
-        JobRun, JobRunState, JobScheduleState, JobStep, MetricsEntry, OrbitEvent, Role, Skill,
-        StepCondition, TaskStatus,
+        ActorIdentity, Activity, AgentCommitRequest, AgentResponseEnvelope, ExecutionResult,
+        FrictionEntry, Job, JobRun, JobRunState, JobScheduleState, JobStep, MetricsEntry,
+        OrbitEvent, Role, Skill, StepCondition, TaskStatus,
     };
 
     #[test]
@@ -302,6 +304,7 @@ mod tests {
             input: "{\"task_id\":\"T20260322-022125\"}".to_string(),
             exit_code: Some(1),
             stderr: "boom".to_string(),
+            actor_identity: ActorIdentity::agent("codex", "gpt-5.4"),
             agent: Some("codex".to_string()),
             model: Some("gpt-5.4".to_string()),
         };
@@ -320,6 +323,7 @@ mod tests {
             job_run: "JR-456".to_string(),
             step: "execute_task".to_string(),
             task_id: Some("T20260322-024246".to_string()),
+            actor_identity: ActorIdentity::agent("claude", "opus-4.6"),
             agent: Some("claude".to_string()),
             model: Some("opus-4.6".to_string()),
             tool_invocations: 12,

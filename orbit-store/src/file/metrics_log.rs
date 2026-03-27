@@ -91,7 +91,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{append_metrics_entry, read_metrics_entries_for_month};
-    use orbit_types::MetricsEntry;
+    use orbit_types::{ActorIdentity, MetricsEntry};
 
     fn sample_entry(day: u32, invocations: u32) -> MetricsEntry {
         MetricsEntry {
@@ -99,6 +99,7 @@ mod tests {
             job_run: format!("JR-{day}"),
             step: "execute_task".to_string(),
             task_id: Some(format!("T20260322-00000{day}")),
+            actor_identity: ActorIdentity::agent("claude", "opus-4.6"),
             agent: Some("claude".to_string()),
             model: Some("opus-4.6".to_string()),
             tool_invocations: invocations,

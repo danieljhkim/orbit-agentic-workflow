@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Activity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep, OrbitError, OrbitId,
-    StoredTool, Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
-    TaskType,
+    Activity, ActorIdentity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep,
+    OrbitError, OrbitId, StoredTool, Task, TaskComment, TaskComplexity, TaskHistoryEntry,
+    TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
 
@@ -27,6 +27,9 @@ pub struct TaskCreateParams {
     /// sub-directory of a monorepo and git operations must run from the root.
     pub repo_root: Option<String>,
     pub created_by: Option<String>,
+    /// Typed identity for attribution. When set, the legacy `agent`/`model`
+    /// fields are derived from it automatically.
+    pub actor_identity: ActorIdentity,
     pub agent: Option<String>,
     pub model: Option<String>,
     pub assigned_to: Option<String>,
@@ -59,6 +62,9 @@ pub struct TaskUpdateParams {
     pub repo_root: Option<Option<String>>,
     pub assigned_to: Option<Option<String>>,
     pub created_by: Option<Option<String>>,
+    /// Typed identity update. When `Some`, overwrites both `actor_identity`
+    /// and derives `agent`/`model` from it.
+    pub actor_identity: Option<ActorIdentity>,
     pub agent: Option<Option<String>>,
     pub model: Option<Option<String>>,
     pub status: Option<TaskStatus>,

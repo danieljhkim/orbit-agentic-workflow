@@ -239,7 +239,7 @@ mod tests {
 
     use chrono::Utc;
     use orbit_tools::ToolContext;
-    use orbit_types::{Activity, JobTargetType, OrbitEvent, Role, Task, TaskPriority};
+    use orbit_types::{Activity, ActorIdentity, JobTargetType, OrbitEvent, Role, Task, TaskPriority};
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -525,6 +525,7 @@ mod tests {
             repo_root: Some(repo_root.to_string_lossy().to_string()),
             assigned_to: None,
             created_by: Some("test".to_string()),
+            actor_identity: ActorIdentity::System,
             agent: None,
             model: None,
             status: TaskStatus::Review,
