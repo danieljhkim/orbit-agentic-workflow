@@ -1,5 +1,15 @@
 [execution.env]
 inherit = false
+# Baseline env vars passed to agent subprocesses.
+# User-specific vars (GITHUB_TOKEN, ANTHROPIC_API_KEY, etc.) are opt-in — add them as needed.
+pass = [
+    "HOME",
+    "PATH",
+    "CODEX_HOME",
+    "TMPDIR",
+    "USER",
+    "__CF_USER_TEXT_ENCODING",  # macOS: required by CoreFoundation
+]
 
 [execution.codex]
 sandbox = "workspace-write"
