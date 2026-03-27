@@ -111,7 +111,7 @@ fn is_redactable_value(value: &str) -> bool {
     trimmed.len() >= 4
 }
 
-fn is_sensitive_env_name(name: &str) -> bool {
+pub fn is_sensitive_env_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     upper.contains("SECRET")
         || upper.contains("TOKEN")

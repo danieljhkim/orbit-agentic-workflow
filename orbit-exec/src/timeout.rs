@@ -4,6 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use orbit_types::OrbitError;
+use orbit_types::redact_sensitive_env_text;
 use wait_timeout::ChildExt;
 
 /// Output collected from a spawned process.
@@ -36,7 +37,12 @@ pub(crate) fn wait_with_optional_timeout(
                     match out.read(&mut chunk) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
-                            let _ = std::io::stderr().write_all(&chunk[..n]);
+                            // Redact sensitive env values before printing to
+                            // stderr so that tokens/secrets are never shown in
+                            // debug output.
+                            let raw = String::from_utf8_lossy(&chunk[..n]);
+                            let redacted = redact_sensitive_env_text(&raw);
+                            let _ = std::io::stderr().write_all(redacted.as_bytes());
                             buf.extend_from_slice(&chunk[..n]);
                         }
                     }

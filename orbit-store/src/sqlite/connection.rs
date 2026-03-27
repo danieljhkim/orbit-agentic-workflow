@@ -22,8 +22,14 @@ impl Store {
         }
 
         let conn = Connection::open(path).map_err(|e| OrbitError::Store(e.to_string()))?;
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(|e| OrbitError::Store(format!("failed to set WAL mode: {e}")))?;
+        // WAL mode is best-effort: when the database file is read-only (e.g.
+        // another process holds the WAL lock or the filesystem is read-only),
+        // fall back to the default journal mode so that read operations still
+        // succeed.  This commonly occurs in worktree contexts where a parent
+        // process already has the DB open in WAL mode.
+        if let Err(e) = conn.pragma_update(None, "journal_mode", "WAL") {
+            eprintln!("orbit: warning: could not set WAL mode on {}: {e}", path.display());
+        }
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(|e| OrbitError::Store(format!("failed to enable foreign keys: {e}")))?;
 
