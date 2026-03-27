@@ -65,6 +65,40 @@ pub struct WorkspaceRegistry {
     pub path_overrides: HashMap<PathBuf, String>,
 }
 
+/// Derived directory layout for a workspace.
+///
+/// All sub-paths are derived from `orbit_dir` in the constructor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspacePaths {
+    pub repo_root: PathBuf,
+    pub orbit_dir: PathBuf,
+    pub global_dir: PathBuf,
+    pub tasks_dir: PathBuf,
+    pub activities_dir: PathBuf,
+    pub jobs_dir: PathBuf,
+    pub runs_dir: PathBuf,
+    pub skills_dir: PathBuf,
+    pub scoreboard_dir: PathBuf,
+    pub diagnostics_dir: PathBuf,
+}
+
+impl WorkspacePaths {
+    pub fn new(repo_root: PathBuf, orbit_dir: PathBuf, global_dir: PathBuf) -> Self {
+        Self {
+            tasks_dir: orbit_dir.join("tasks"),
+            activities_dir: orbit_dir.join("activities"),
+            jobs_dir: orbit_dir.join("jobs"),
+            runs_dir: orbit_dir.join("runs"),
+            skills_dir: orbit_dir.join("skills"),
+            scoreboard_dir: orbit_dir.join("scoreboard"),
+            diagnostics_dir: orbit_dir.join("diagnostics"),
+            repo_root,
+            orbit_dir,
+            global_dir,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,5 +206,46 @@ mod tests {
         };
         let json = serde_json::to_string(&ws).expect("serialize");
         assert!(!json.contains("git_remote"));
+    }
+
+    #[test]
+    fn workspace_paths_derives_subdirs() {
+        let paths = WorkspacePaths::new(
+            PathBuf::from("/repo"),
+            PathBuf::from("/repo/.orbit"),
+            PathBuf::from("/home/user/.orbit"),
+        );
+
+        assert_eq!(paths.repo_root, PathBuf::from("/repo"));
+        assert_eq!(paths.orbit_dir, PathBuf::from("/repo/.orbit"));
+        assert_eq!(paths.global_dir, PathBuf::from("/home/user/.orbit"));
+        assert_eq!(paths.tasks_dir, PathBuf::from("/repo/.orbit/tasks"));
+        assert_eq!(
+            paths.activities_dir,
+            PathBuf::from("/repo/.orbit/activities")
+        );
+        assert_eq!(paths.jobs_dir, PathBuf::from("/repo/.orbit/jobs"));
+        assert_eq!(paths.runs_dir, PathBuf::from("/repo/.orbit/runs"));
+        assert_eq!(paths.skills_dir, PathBuf::from("/repo/.orbit/skills"));
+        assert_eq!(
+            paths.scoreboard_dir,
+            PathBuf::from("/repo/.orbit/scoreboard")
+        );
+        assert_eq!(
+            paths.diagnostics_dir,
+            PathBuf::from("/repo/.orbit/diagnostics")
+        );
+    }
+
+    #[test]
+    fn workspace_paths_handles_nested_orbit_dir() {
+        let paths = WorkspacePaths::new(
+            PathBuf::from("/a/b/c"),
+            PathBuf::from("/a/b/c/.data/.orbit"),
+            PathBuf::from("/global"),
+        );
+
+        assert_eq!(paths.tasks_dir, PathBuf::from("/a/b/c/.data/.orbit/tasks"));
+        assert_eq!(paths.runs_dir, PathBuf::from("/a/b/c/.data/.orbit/runs"));
     }
 }

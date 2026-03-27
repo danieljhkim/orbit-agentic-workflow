@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use crate::backend::{JobCreateParams, JobRunStepParams, JobUpdateParams};
 use crate::file::fs_utils::write_atomic;
 
-#[derive(Clone)]
 pub(crate) struct JobFileStore {
     root: PathBuf,
 }

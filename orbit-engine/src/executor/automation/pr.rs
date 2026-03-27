@@ -77,10 +77,10 @@ pub(super) fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
         },
     )?;
 
-    if host.scoring_enabled() {
-        if let (Some(agent), Some(model)) = (&task.agent, &task.model) {
-            let _ = pr_scoreboard::record_pr_merged(&repo_root, agent, model);
-        }
+    if host.scoring_enabled()
+        && let (Some(agent), Some(model)) = (&task.agent, &task.model)
+    {
+        let _ = pr_scoreboard::record_pr_merged(host.scoreboard_dir(), agent, model);
     }
 
     Ok(json!({
@@ -239,7 +239,7 @@ mod tests {
 
     use chrono::Utc;
     use orbit_tools::ToolContext;
-    use orbit_types::{Activity, JobTargetType, OrbitEvent, Role, Task, TaskPriority};
+    use orbit_types::{Activity, ActorIdentity, JobTargetType, OrbitEvent, Role, Task, TaskPriority};
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -259,21 +259,34 @@ mod tests {
         tool_context: ToolContext,
     }
 
-    #[derive(Default)]
     struct FakeHost {
         task: RefCell<Option<Task>>,
         tool_invocations: RefCell<Vec<ToolInvocation>>,
         automation_updates: RefCell<Vec<TaskAutomationUpdate>>,
         scoring_enabled: bool,
+        scoreboard_dir: std::path::PathBuf,
     }
 
     impl FakeHost {
         fn new(task: Task) -> Self {
+            let scoreboard_dir = task
+                .repo_root
+                .as_deref()
+                .or(task.workspace_path.as_deref())
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .canonicalize()
+                        .unwrap_or_else(|_| std::path::PathBuf::from(p))
+                        .join(".orbit")
+                        .join("scoreboard")
+                })
+                .unwrap_or_default();
             Self {
                 task: RefCell::new(Some(task)),
                 tool_invocations: RefCell::new(Vec::new()),
                 automation_updates: RefCell::new(Vec::new()),
                 scoring_enabled: false,
+                scoreboard_dir,
             }
         }
 
@@ -383,6 +396,10 @@ mod tests {
 
         fn scoring_enabled(&self) -> bool {
             self.scoring_enabled
+        }
+
+        fn scoreboard_dir(&self) -> &std::path::Path {
+            &self.scoreboard_dir
         }
     }
 
@@ -508,6 +525,7 @@ mod tests {
             repo_root: Some(repo_root.to_string_lossy().to_string()),
             assigned_to: None,
             created_by: Some("test".to_string()),
+            actor_identity: ActorIdentity::System,
             agent: None,
             model: None,
             status: TaskStatus::Review,

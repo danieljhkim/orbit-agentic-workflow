@@ -199,8 +199,8 @@ mod tests {
         TempDir,
     ) {
         let dir = TempDir::new("layered-job");
-        let ws = job_store_file(dir.0.join("ws")).unwrap();
-        let global = job_store_file(dir.0.join("global")).unwrap();
+        let ws = job_store_file(dir.0.join("ws"));
+        let global = job_store_file(dir.0.join("global"));
         let layered = LayeredJobStore::new(ws.clone(), global.clone());
         (ws, global, layered, dir)
     }

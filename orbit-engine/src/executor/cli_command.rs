@@ -50,10 +50,7 @@ impl ActivityExecutor for CliCommandExecutor {
                 cli_env.push((key.clone(), value.clone()));
             }
         }
-        let mut template_context = execution_template_context_with_env(
-            execution,
-            cli_env,
-        );
+        let mut template_context = execution_template_context_with_env(execution, cli_env);
         // When a cli_command step has task_id in its input, load the task and
         // inject its fields into the template context so {{workspace_path}}
         // resolves from the task without explicit pipeline input.

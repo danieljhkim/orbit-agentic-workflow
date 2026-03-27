@@ -35,7 +35,7 @@ pub(super) fn check_workspace_boundary(
         None => {
             return Err(OrbitError::PolicyDenied(
                 "workspace_root is not set; filesystem access denied".to_string(),
-            ))
+            ));
         }
     };
 

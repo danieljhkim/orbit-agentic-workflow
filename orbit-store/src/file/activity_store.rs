@@ -9,7 +9,6 @@ use crate::file::fs_utils::write_atomic;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-#[derive(Clone)]
 pub(crate) struct ActivityFileStore {
     root: PathBuf,
 }

@@ -122,8 +122,8 @@ mod tests {
         TempDir,
     ) {
         let dir = TempDir::new("layered-activity");
-        let ws = activity_store_file(dir.0.join("ws")).unwrap();
-        let global = activity_store_file(dir.0.join("global")).unwrap();
+        let ws = activity_store_file(dir.0.join("ws"));
+        let global = activity_store_file(dir.0.join("global"));
         let layered = LayeredActivityStore::new(ws.clone(), global.clone());
         (ws, global, layered, dir)
     }

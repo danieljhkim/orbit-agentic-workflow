@@ -35,7 +35,7 @@ impl OrbitRuntime {
     pub fn execute_tool_command(&self, name: &str, input: Value) -> Result<Value, OrbitError> {
         let allowed_tools = read_activity_tools_from_env();
         let (agent_name, model_name) = read_agent_identity_from_env();
-        let workspace_root = self.data_root_path().parent().map(|p| p.to_path_buf());
+        let workspace_root = Some(self.paths().repo_root.clone());
         let tool_context = ToolContext {
             cwd: None,
             allowed_tools,

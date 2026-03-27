@@ -1,48 +1,25 @@
 use std::path::{Path, PathBuf};
 
-use orbit_store::{ResolvedScope, ScopeResolution};
+use orbit_types::WorkspacePaths;
 use serde_json::{Value, json};
 
-/// Carries a global path, optional workspace path, and the resolution strategy
-/// for a single artifact type. Call `resolve()` to get the effective store path(s).
-#[derive(Debug, Clone)]
-pub(crate) struct ArtifactScope {
-    pub(crate) global_path: PathBuf,
-    pub(crate) workspace_path: Option<PathBuf>,
-    pub(crate) resolution: ScopeResolution,
-}
-
-impl ArtifactScope {
-    pub(crate) fn resolve(&self) -> ResolvedScope {
-        match self.resolution {
-            ScopeResolution::GlobalOnly => ResolvedScope::Single(self.global_path.clone()),
-            ScopeResolution::WorkspaceOnly => ResolvedScope::Single(
-                self.workspace_path
-                    .clone()
-                    .unwrap_or_else(|| self.global_path.clone()),
-            ),
-            ScopeResolution::WorkspaceReplaces => match &self.workspace_path {
-                Some(ws) if ws.is_dir() => ResolvedScope::Single(ws.clone()),
-                _ => ResolvedScope::Single(self.global_path.clone()),
-            },
-            ScopeResolution::MergeByKey => match &self.workspace_path {
-                Some(ws) => ResolvedScope::Layered {
-                    global: self.global_path.clone(),
-                    workspace: ws.clone(),
-                },
-                None => ResolvedScope::Single(self.global_path.clone()),
-            },
-        }
-    }
-}
-
+/// Holds the resolved paths for all persistent artifact stores.
+///
+/// Each resource has at most a workspace path and a global path.
+/// - Tasks: workspace only
+/// - Activities/Jobs: workspace + global (layered reads merge both)
+/// - Skills: workspace + global (workspace replaces global when present)
+/// - Audit: global only (single SQLite database)
 #[derive(Debug, Clone)]
 pub(crate) struct PersistenceConfig {
-    pub(crate) job: ArtifactScope,
-    pub(crate) activity: ArtifactScope,
-    pub(crate) skill: ArtifactScope,
-    pub(crate) task: ArtifactScope,
-    pub(crate) audit: ArtifactScope,
+    pub(crate) task_dir: PathBuf,
+    pub(crate) activity_dir: PathBuf,
+    pub(crate) job_dir: PathBuf,
+    pub(crate) skill_dir: PathBuf,
+    pub(crate) audit_db: PathBuf,
+    pub(crate) global_activity_dir: PathBuf,
+    pub(crate) global_job_dir: PathBuf,
+    pub(crate) global_skill_dir: PathBuf,
 }
 
 impl PersistenceConfig {
@@ -50,66 +27,62 @@ impl PersistenceConfig {
         Self::default_for_roots(data_root, data_root)
     }
 
-    /// Two-root defaults. This is the **single source of truth** for which
-    /// artifact gets which scope resolution strategy.
+    /// Two-root defaults (raw paths). Delegates to [`Self::from_workspace_paths`].
     pub(crate) fn default_for_roots(global_root: &Path, workspace_root: &Path) -> Self {
-        let ws = if global_root == workspace_root {
-            None
-        } else {
-            Some(workspace_root)
-        };
+        let repo_root = workspace_root
+            .parent()
+            .unwrap_or(workspace_root)
+            .to_path_buf();
+        let paths = WorkspacePaths::new(
+            repo_root,
+            workspace_root.to_path_buf(),
+            global_root.to_path_buf(),
+        );
+        Self::from_workspace_paths(&paths)
+    }
 
-        Self {
-            // Tasks are workspace-local: each repo tracks its own task backlog.
-            // Using WorkspaceOnly ensures task IDs never collide across projects
-            // and that agents only see work relevant to their current repo.
-            task: ArtifactScope {
-                global_path: global_root.join("tasks"),
-                workspace_path: ws.map(|p| p.join("tasks")),
-                resolution: ScopeResolution::WorkspaceOnly,
-            },
-            // Activities and jobs use MergeByKey: global definitions provide a
-            // shared library of activities/jobs (e.g. orbit's built-in workflows),
-            // while workspace-local files can add or override individual entries
-            // by key. This lets per-repo config extend the baseline without
-            // losing globally registered activities.
-            activity: ArtifactScope {
-                global_path: global_root.join("activities"),
-                workspace_path: ws.map(|p| p.join("activities")),
-                resolution: ScopeResolution::MergeByKey,
-            },
-            job: ArtifactScope {
-                global_path: global_root.join("jobs"),
-                workspace_path: ws.map(|p| p.join("jobs")),
-                resolution: ScopeResolution::MergeByKey,
-            },
-            // Skills use WorkspaceReplaces: if a workspace defines a skill
-            // directory, it completely replaces the global skill set for that
-            // session. This gives workspace owners full control over which
-            // skills agents can invoke, preventing unintended global skill bleed.
-            skill: ArtifactScope {
-                global_path: global_root.join("skills"),
-                workspace_path: ws.map(|p| p.join("skills")),
-                resolution: ScopeResolution::WorkspaceReplaces,
-            },
-            // Audit is a single global database; there is no per-workspace audit
-            // log. Using GlobalOnly keeps a single authoritative event trail
-            // regardless of which workspace triggered the operation.
-            audit: ArtifactScope {
-                global_path: global_root.join("orbit.db"),
-                workspace_path: None,
-                resolution: ScopeResolution::GlobalOnly,
-            },
+    /// Build persistence config from [`WorkspacePaths`]. This is the **single
+    /// source of truth** for artifact path resolution.
+    pub(crate) fn from_workspace_paths(paths: &WorkspacePaths) -> Self {
+        let has_workspace = paths.global_dir != paths.orbit_dir;
+
+        let global_activity_dir = paths.global_dir.join("activities");
+        let global_job_dir = paths.global_dir.join("jobs");
+        let global_skill_dir = paths.global_dir.join("skills");
+
+        if has_workspace {
+            Self {
+                task_dir: paths.tasks_dir.clone(),
+                activity_dir: paths.activities_dir.clone(),
+                job_dir: paths.jobs_dir.clone(),
+                skill_dir: paths.skills_dir.clone(),
+                audit_db: paths.global_dir.join("orbit.db"),
+                global_activity_dir,
+                global_job_dir,
+                global_skill_dir,
+            }
+        } else {
+            // Single-root mode: workspace paths equal global paths.
+            Self {
+                task_dir: paths.global_dir.join("tasks"),
+                activity_dir: global_activity_dir.clone(),
+                job_dir: global_job_dir.clone(),
+                skill_dir: global_skill_dir.clone(),
+                audit_db: paths.global_dir.join("orbit.db"),
+                global_activity_dir,
+                global_job_dir,
+                global_skill_dir,
+            }
         }
     }
 
     pub(crate) fn as_json_value(&self) -> Value {
         json!({
-            "task": { "path": self.task.resolve().into_single().to_string_lossy() },
-            "activity": { "path": self.activity.global_path.to_string_lossy(), "resolution": format!("{:?}", self.activity.resolution) },
-            "job": { "path": self.job.global_path.to_string_lossy(), "resolution": format!("{:?}", self.job.resolution) },
-            "skill": { "path": self.skill.resolve().into_single().to_string_lossy() },
-            "audit": { "path": self.audit.global_path.to_string_lossy() },
+            "task": { "path": self.task_dir.to_string_lossy() },
+            "activity": { "path": self.activity_dir.to_string_lossy(), "global_path": self.global_activity_dir.to_string_lossy() },
+            "job": { "path": self.job_dir.to_string_lossy(), "global_path": self.global_job_dir.to_string_lossy() },
+            "skill": { "path": self.skill_dir.to_string_lossy() },
+            "audit": { "path": self.audit_db.to_string_lossy() },
         })
     }
 }

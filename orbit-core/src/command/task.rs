@@ -4,8 +4,8 @@ use orbit_store::{
     friction_bounty,
 };
 use orbit_types::{
-    OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity, TaskHistoryEntry,
-    TaskPriority, TaskStatus, TaskType,
+    ActorIdentity, OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 
 use crate::OrbitRuntime;
@@ -101,6 +101,10 @@ impl OrbitRuntime {
                 workspace_path: params.workspace_path.clone(),
                 repo_root: None,
                 created_by: Some(effective_label.clone()),
+                actor_identity: ActorIdentity::from_legacy(
+                    agent.as_deref(),
+                    model.as_deref(),
+                ),
                 agent: agent.clone(),
                 model: model.clone(),
                 assigned_to: Some(effective_label.clone()),
@@ -122,15 +126,11 @@ impl OrbitRuntime {
         })?;
 
         // Friction bounty: record issues-reported on creation when agent+model present.
-        // data_root_path() is the workspace .orbit/ dir; its parent is the repo root
-        // for scoreboard writes. Using parent() instead of find_git_repo_root avoids
-        // worktree mis-resolution where find_git_repo_root follows to the main repo.
         if self.scoring_enabled()
             && params.task_type.is_friction()
             && let (Some(a), Some(m)) = (&agent, &model)
-            && let Some(repo_root) = self.data_root_path().parent()
         {
-            let _ = friction_bounty::record_friction_reported(repo_root, a, m);
+            let _ = friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, a, m);
         }
 
         Ok(task)
@@ -631,9 +631,7 @@ impl OrbitRuntime {
         let (Some(agent), Some(model)) = (&task.agent, &task.model) else {
             return;
         };
-        let Some(repo_root) = self.data_root_path().parent() else {
-            return;
-        };
+        let scoreboard_dir = &self.paths().scoreboard_dir;
 
         let is_approval = matches!(
             (from, to),
@@ -643,9 +641,9 @@ impl OrbitRuntime {
         );
 
         if is_approval {
-            let _ = friction_bounty::record_friction_accepted(&repo_root, agent, model);
+            let _ = friction_bounty::record_friction_accepted(scoreboard_dir, agent, model);
         } else if to == TaskStatus::Rejected {
-            let _ = friction_bounty::record_friction_rejected(&repo_root, agent, model);
+            let _ = friction_bounty::record_friction_rejected(scoreboard_dir, agent, model);
         }
     }
 
@@ -680,6 +678,7 @@ impl OrbitRuntime {
             workspace_path: None,
             repo_root: None,
             created_by: Some(actor.clone()),
+            actor_identity: ActorIdentity::System,
             agent: None,
             model: None,
             assigned_to: Some(actor.clone()),

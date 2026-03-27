@@ -129,33 +129,35 @@ mod tests {
 
     #[test]
     fn persistence_defaults_resolve_to_correct_paths() {
-        use orbit_store::ScopeResolution;
-
         let config = PersistenceConfig::default_for_data_root(Path::new("/tmp/orbit"));
         assert_eq!(
-            config.job.global_path,
-            std::path::PathBuf::from("/tmp/orbit/jobs")
-        );
-        assert_eq!(config.job.resolution, ScopeResolution::MergeByKey);
-        assert_eq!(
-            config.activity.global_path,
-            std::path::PathBuf::from("/tmp/orbit/activities")
-        );
-        assert_eq!(config.activity.resolution, ScopeResolution::MergeByKey);
-        assert_eq!(
-            config.task.global_path,
+            config.task_dir,
             std::path::PathBuf::from("/tmp/orbit/tasks")
         );
-        assert_eq!(config.task.resolution, ScopeResolution::WorkspaceOnly);
         assert_eq!(
-            config.skill.global_path,
+            config.activity_dir,
+            std::path::PathBuf::from("/tmp/orbit/activities")
+        );
+        assert_eq!(
+            config.global_activity_dir,
+            std::path::PathBuf::from("/tmp/orbit/activities")
+        );
+        assert_eq!(config.job_dir, std::path::PathBuf::from("/tmp/orbit/jobs"));
+        assert_eq!(
+            config.global_job_dir,
+            std::path::PathBuf::from("/tmp/orbit/jobs")
+        );
+        assert_eq!(
+            config.skill_dir,
             std::path::PathBuf::from("/tmp/orbit/skills")
         );
-        assert_eq!(config.skill.resolution, ScopeResolution::WorkspaceReplaces);
         assert_eq!(
-            config.audit.global_path,
+            config.global_skill_dir,
+            std::path::PathBuf::from("/tmp/orbit/skills")
+        );
+        assert_eq!(
+            config.audit_db,
             std::path::PathBuf::from("/tmp/orbit/orbit.db")
         );
-        assert_eq!(config.audit.resolution, ScopeResolution::GlobalOnly);
     }
 }

@@ -17,36 +17,38 @@ type Scoreboard = HashMap<String, AgentScores>;
 
 /// Increment the `issues-reported` counter for the given agent/model.
 pub fn record_friction_reported(
-    repo_root: &Path,
+    scoreboard_dir: &Path,
     agent: &str,
     model: &str,
 ) -> Result<(), OrbitError> {
-    increment(repo_root, "issues-reported", agent, model)
+    increment(scoreboard_dir, "issues-reported", agent, model)
 }
 
 /// Increment the `issues-accepted` counter for the given agent/model.
 pub fn record_friction_accepted(
-    repo_root: &Path,
+    scoreboard_dir: &Path,
     agent: &str,
     model: &str,
 ) -> Result<(), OrbitError> {
-    increment(repo_root, "issues-accepted", agent, model)
+    increment(scoreboard_dir, "issues-accepted", agent, model)
 }
 
 /// Increment the `issues-rejected` counter for the given agent/model.
 pub fn record_friction_rejected(
-    repo_root: &Path,
+    scoreboard_dir: &Path,
     agent: &str,
     model: &str,
 ) -> Result<(), OrbitError> {
-    increment(repo_root, "issues-rejected", agent, model)
+    increment(scoreboard_dir, "issues-rejected", agent, model)
 }
 
-fn increment(repo_root: &Path, metric: &str, agent: &str, model: &str) -> Result<(), OrbitError> {
-    let path = repo_root
-        .join(".orbit")
-        .join("scoreboard")
-        .join("friction_bounty.json");
+fn increment(
+    scoreboard_dir: &Path,
+    metric: &str,
+    agent: &str,
+    model: &str,
+) -> Result<(), OrbitError> {
+    let path = scoreboard_dir.join("friction_bounty.json");
     let mut scoreboard: Scoreboard = if path.exists() {
         let content = fs::read_to_string(&path)
             .map_err(|e| OrbitError::Io(format!("read friction_bounty.json: {e}")))?;
@@ -86,23 +88,23 @@ mod tests {
     #[test]
     fn increment_creates_and_updates_scoreboard() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
+        let scoreboard = dir.path().join("scoreboard");
 
         // First increment creates the file
-        record_friction_reported(root, "claude", "opus-4.6").unwrap();
+        record_friction_reported(&scoreboard, "claude", "opus-4.6").unwrap();
 
-        let path = root.join(".orbit/scoreboard/friction_bounty.json");
+        let path = scoreboard.join("friction_bounty.json");
         assert!(path.exists());
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 1);
 
         // Second increment bumps the counter
-        record_friction_reported(root, "claude", "opus-4.6").unwrap();
+        record_friction_reported(&scoreboard, "claude", "opus-4.6").unwrap();
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 2);
 
         // Different metric
-        record_friction_accepted(root, "claude", "opus-4.6").unwrap();
+        record_friction_accepted(&scoreboard, "claude", "opus-4.6").unwrap();
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-accepted"]["claude"]["opus-4.6"], 1);
         // Original metric unchanged
@@ -112,12 +114,12 @@ mod tests {
     #[test]
     fn increment_different_agents() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
+        let scoreboard = dir.path().join("scoreboard");
 
-        record_friction_reported(root, "claude", "opus-4.6").unwrap();
-        record_friction_reported(root, "codex", "gpt-5.4").unwrap();
+        record_friction_reported(&scoreboard, "claude", "opus-4.6").unwrap();
+        record_friction_reported(&scoreboard, "codex", "gpt-5.4").unwrap();
 
-        let path = root.join(".orbit/scoreboard/friction_bounty.json");
+        let path = scoreboard.join("friction_bounty.json");
         let sb: Scoreboard = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(sb["issues-reported"]["claude"]["opus-4.6"], 1);
         assert_eq!(sb["issues-reported"]["codex"]["gpt-5.4"], 1);

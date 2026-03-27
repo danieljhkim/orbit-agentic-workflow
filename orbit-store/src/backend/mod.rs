@@ -5,7 +5,7 @@
 //! all persistence implementations must satisfy. Also provides factory functions
 //! that construct either a raw file/SQLite backend or a layered (resolved) store
 //! that merges a global root store with a workspace-local store according to a
-//! [`ScopeResolution`] strategy.
+//! [`ResolvedScope`] strategy.
 //!
 //! The layered pattern means callers always work through the same trait interface
 //! regardless of whether scoping is active; the factory picks the right wrapper.
@@ -19,3 +19,5 @@ mod sqlite_backends;
 
 pub use contracts::*;
 pub use factory::*;
+pub use layered_activity::LayeredActivityStore;
+pub use layered_job::LayeredJobStore;

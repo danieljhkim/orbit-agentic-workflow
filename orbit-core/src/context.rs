@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use orbit_policy::PolicyEngine;
@@ -7,6 +7,7 @@ use orbit_store::{
     ToolStoreBackend,
 };
 use orbit_tools::ToolRegistry;
+use orbit_types::WorkspacePaths;
 
 use crate::config::{CodexExecutionPolicy, ExecutionEnvPolicy, PersistenceConfig};
 use crate::skill_catalog::SkillCatalog;
@@ -68,8 +69,7 @@ impl Default for ActorIdentity {
 
 #[derive(Clone)]
 pub struct OrbitContext {
-    global_root: PathBuf,
-    workspace_root: PathBuf,
+    paths: WorkspacePaths,
     task_store: Arc<dyn TaskStoreBackend>,
     activity_store: Arc<dyn ActivityStoreBackend>,
     job_store: Arc<dyn JobStoreBackend>,
@@ -91,8 +91,7 @@ pub struct OrbitContext {
 impl OrbitContext {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        global_root: PathBuf,
-        workspace_root: PathBuf,
+        paths: WorkspacePaths,
         task_store: Arc<dyn TaskStoreBackend>,
         activity_store: Arc<dyn ActivityStoreBackend>,
         job_store: Arc<dyn JobStoreBackend>,
@@ -111,8 +110,7 @@ impl OrbitContext {
         scoring_enabled: bool,
     ) -> Self {
         Self {
-            global_root,
-            workspace_root,
+            paths,
             task_store,
             activity_store,
             job_store,
@@ -132,18 +130,17 @@ impl OrbitContext {
         }
     }
 
-    /// Returns the workspace root (backward-compatible alias).
+    /// Returns the .orbit/ data directory (backward-compatible alias).
     pub(crate) fn data_root(&self) -> &Path {
-        &self.workspace_root
+        &self.paths.orbit_dir
     }
 
     pub(crate) fn global_root(&self) -> &Path {
-        &self.global_root
+        &self.paths.global_dir
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn workspace_root(&self) -> &Path {
-        &self.workspace_root
+    pub(crate) fn paths(&self) -> &WorkspacePaths {
+        &self.paths
     }
 
     pub(crate) fn task_store(&self) -> &Arc<dyn TaskStoreBackend> {

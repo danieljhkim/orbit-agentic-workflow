@@ -15,19 +15,6 @@ use crate::file::activity_store::ActivityFileStore;
 use crate::file::job_store::JobFileStore;
 use crate::file::task_store::TaskFileStore;
 
-/// Describes how an artifact's scope is resolved between global and workspace roots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeResolution {
-    /// Always use the global root (audit sqlite, tools).
-    GlobalOnly,
-    /// Always use the workspace root (tasks).
-    WorkspaceOnly,
-    /// Workspace directory replaces global if present (skills).
-    WorkspaceReplaces,
-    /// Workspace entries merge with global, shadowing by key (activities, jobs).
-    MergeByKey,
-}
-
 /// The resolved store path(s) after applying scope resolution rules.
 #[derive(Debug, Clone)]
 pub enum ResolvedScope {
@@ -50,23 +37,16 @@ impl ResolvedScope {
     }
 }
 
-pub fn task_store_file(root: PathBuf) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
-    // ensure_layout is called lazily before each write operation (create_task, update_task).
-    // Eager layout here would create workspace-only task state directories at global scope.
-    let store = TaskFileStore::new(root);
-    Ok(Arc::new(store))
+pub fn task_store_file(root: PathBuf) -> Arc<dyn TaskStoreBackend> {
+    Arc::new(TaskFileStore::new(root))
 }
 
-pub fn activity_store_file(root: PathBuf) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
-    // ensure_layout is called lazily before each write operation (insert, update, disable).
-    let store = ActivityFileStore::new(root);
-    Ok(Arc::new(store))
+pub fn activity_store_file(root: PathBuf) -> Arc<dyn ActivityStoreBackend> {
+    Arc::new(ActivityFileStore::new(root))
 }
 
-pub fn job_store_file(root: PathBuf) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
-    // ensure_layout is called lazily before each write operation (add_job, write_activity, etc).
-    let store = JobFileStore::new(root);
-    Ok(Arc::new(store))
+pub fn job_store_file(root: PathBuf) -> Arc<dyn JobStoreBackend> {
+    Arc::new(JobFileStore::new(root))
 }
 
 pub fn tool_store_sqlite(store: Store) -> Arc<dyn ToolStoreBackend> {
@@ -80,7 +60,7 @@ pub fn audit_event_store_sqlite(store: Store) -> Arc<dyn AuditEventStoreBackend>
 /// Creates a task store from a resolved scope. Tasks only support `Single`.
 pub fn task_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn TaskStoreBackend>, OrbitError> {
     match scope {
-        ResolvedScope::Single(path) => task_store_file(path),
+        ResolvedScope::Single(path) => Ok(task_store_file(path)),
         ResolvedScope::Layered { .. } => Err(OrbitError::InvalidInput(
             "task store does not support layered resolution".to_string(),
         )),
@@ -92,10 +72,10 @@ pub fn activity_store_resolved(
     scope: ResolvedScope,
 ) -> Result<Arc<dyn ActivityStoreBackend>, OrbitError> {
     match scope {
-        ResolvedScope::Single(path) => activity_store_file(path),
+        ResolvedScope::Single(path) => Ok(activity_store_file(path)),
         ResolvedScope::Layered { global, workspace } => {
-            let g = activity_store_file(global)?;
-            let w = activity_store_file(workspace)?;
+            let g = activity_store_file(global);
+            let w = activity_store_file(workspace);
             Ok(Arc::new(LayeredActivityStore::new(w, g)))
         }
     }
@@ -104,10 +84,10 @@ pub fn activity_store_resolved(
 /// Creates a job store from a resolved scope. Supports both single and layered.
 pub fn job_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
     match scope {
-        ResolvedScope::Single(path) => job_store_file(path),
+        ResolvedScope::Single(path) => Ok(job_store_file(path)),
         ResolvedScope::Layered { global, workspace } => {
-            let g = job_store_file(global)?;
-            let w = job_store_file(workspace)?;
+            let g = job_store_file(global);
+            let w = job_store_file(workspace);
             Ok(Arc::new(LayeredJobStore::new(w, g)))
         }
     }

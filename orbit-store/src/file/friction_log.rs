@@ -91,7 +91,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{append_friction_entry, read_friction_entries_for_month};
-    use orbit_types::FrictionEntry;
+    use orbit_types::{ActorIdentity, FrictionEntry};
 
     fn sample_entry(day: u32, command: &str) -> FrictionEntry {
         FrictionEntry {
@@ -103,6 +103,7 @@ mod tests {
             input: "{\"task_id\":\"T20260322-000001\"}".to_string(),
             exit_code: Some(1),
             stderr: "boom".to_string(),
+            actor_identity: ActorIdentity::agent("codex", "gpt-5.4"),
             agent: Some("codex".to_string()),
             model: Some("gpt-5.4".to_string()),
         }

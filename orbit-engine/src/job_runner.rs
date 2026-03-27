@@ -4,8 +4,8 @@ use orbit_store::JobRunStepParams;
 use orbit_store::friction_log::append_friction_entry;
 use orbit_store::metrics_log::append_metrics_entry;
 use orbit_types::{
-    FrictionEntry, Job, JobRun, JobRunState, JobStep, JobTargetType, MetricsEntry, OrbitError,
-    OrbitEvent, StepCondition,
+    ActorIdentity, FrictionEntry, Job, JobRun, JobRunState, JobStep, JobTargetType, MetricsEntry,
+    OrbitError, OrbitEvent, StepCondition,
 };
 use serde_json::Value;
 use std::path::Path;
@@ -394,7 +394,9 @@ fn execute_activity_with_retries<H: EngineHost>(
                         &run.run_id,
                         ACTIVITY_EXECUTION_FAILED,
                         &err.to_string(),
-                        (!agent.is_empty()).then(|| normalize_agent_label(agent)).as_deref(),
+                        (!agent.is_empty())
+                            .then(|| normalize_agent_label(agent))
+                            .as_deref(),
                         failure_step.1.model.as_deref(),
                     );
                 }
@@ -679,7 +681,16 @@ fn execute_job_step<H: EngineHost>(
     host.record_event(OrbitEvent::JobTriggered {
         job_id: sub_job.job_id.clone(),
     })?;
-    execute_activity_with_retries(host, data_root, sub_job, Utc::now(), None, input.clone(), debug, false)
+    execute_activity_with_retries(
+        host,
+        data_root,
+        sub_job,
+        Utc::now(),
+        None,
+        input.clone(),
+        debug,
+        false,
+    )
 }
 
 /// Returns `true` if the accumulated input contains `"loop_exit": true`.
@@ -825,6 +836,10 @@ fn append_failed_step_friction_without_execution(
     let input = context
         .input
         .unwrap_or_else(|| Value::Object(Default::default()));
+    let actor_identity = ActorIdentity::from_legacy(
+        context.agent.as_deref(),
+        context.model.as_deref(),
+    );
     let entry = FrictionEntry {
         ts,
         job_run: run_id.to_string(),
@@ -834,6 +849,7 @@ fn append_failed_step_friction_without_execution(
         input: serde_json::to_string(&input).unwrap_or_else(|_| "{}".to_string()),
         exit_code,
         stderr: stderr.to_string(),
+        actor_identity,
         agent: context.agent,
         model: context.model,
     };
@@ -900,11 +916,13 @@ fn append_step_metrics<H: EngineHost>(
     let model = resolved_model_name(host, execution);
     let task_id = extract_task_id(&execution.input).map(ToOwned::to_owned);
 
+    let actor_identity = ActorIdentity::from_legacy(agent.as_deref(), model.as_deref());
     let entry = MetricsEntry {
         ts,
         job_run: run_id.to_string(),
         step: step_id.to_string(),
         task_id,
+        actor_identity,
         agent,
         model,
         tool_invocations: 0, // Not yet tracked at the engine level

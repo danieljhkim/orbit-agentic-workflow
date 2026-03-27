@@ -33,7 +33,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::OrbitId;
+use crate::{ActorIdentity, OrbitId};
 
 /// Current lifecycle state of a task.
 ///
@@ -310,8 +310,13 @@ pub struct Task {
     pub assigned_to: Option<String>,
     #[serde(default)]
     pub created_by: Option<String>,
+    /// Typed identity of the agent/human who created or last worked on this task.
+    #[serde(default)]
+    pub actor_identity: ActorIdentity,
+    /// Legacy agent name field — prefer `actor_identity`.
     #[serde(default)]
     pub agent: Option<String>,
+    /// Legacy model name field — prefer `actor_identity`.
     #[serde(default)]
     pub model: Option<String>,
     pub status: TaskStatus,
