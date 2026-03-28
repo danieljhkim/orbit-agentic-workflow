@@ -51,25 +51,36 @@ fn try_recover_from_task(
     let task_id = execution.input.get("task_id")?.as_str()?;
     let task = host.get_task(task_id).ok()?;
 
-    // Build synthetic result from task fields that match common output schema keys.
-    let mut result = serde_json::Map::new();
+    // Build candidate fields from task state.
+    let mut candidates = serde_json::Map::new();
 
     let status_str = task.status.cli_name().to_string();
-    result.insert("status".to_string(), Value::String(status_str));
+    candidates.insert("status".to_string(), Value::String(status_str));
 
     if !task.execution_summary.is_empty() {
-        result.insert(
+        candidates.insert(
             "execution_summary".to_string(),
             Value::String(task.execution_summary.clone()),
         );
     }
 
     if let Some(pr_status) = task.pr_status.as_ref() {
-        result.insert("pr_status".to_string(), Value::String(pr_status.clone()));
+        candidates.insert("pr_status".to_string(), Value::String(pr_status.clone()));
     }
 
     // Require at least execution_summary or pr_status for recovery — bare status
     // alone is not evidence the agent actually persisted meaningful output.
+    if !candidates.contains_key("execution_summary") && !candidates.contains_key("pr_status") {
+        return None;
+    }
+
+    // Filter the synthetic result to only include fields declared in the activity's
+    // output schema. This prevents leaking undeclared fields (e.g. "status") into
+    // downstream step input when the schema uses additionalProperties: false or
+    // simply doesn't declare them.
+    let result = filter_to_output_schema(&execution.activity, candidates);
+
+    // After filtering, re-check that we still have meaningful content.
     if !result.contains_key("execution_summary") && !result.contains_key("pr_status") {
         return None;
     }
@@ -85,6 +96,13 @@ fn try_recover_from_task(
         duration_ms: original.duration_ms.unwrap_or(0),
     };
 
+    // Validate the synthetic envelope against the activity's skill output schema.
+    // If validation fails, fall through to the original AGENT_OUTPUT_MISSING failure
+    // rather than returning an invalid payload.
+    if let Err(_) = host.validate_skill_output_schema(&execution.activity, &envelope) {
+        return None;
+    }
+
     Some(AttemptOutcome {
         state: JobRunState::Success,
         exit_code: original.exit_code,
@@ -95,6 +113,26 @@ fn try_recover_from_task(
         protocol_violation: false,
         retry_count: 0,
     })
+}
+
+/// Filter a candidate result map to only include keys declared in the activity's
+/// `output_schema_json.properties`. If the schema has no `properties` object
+/// (e.g. it is empty or uses a freeform schema), all candidates are kept.
+fn filter_to_output_schema(
+    activity: &orbit_types::Activity,
+    candidates: serde_json::Map<String, Value>,
+) -> serde_json::Map<String, Value> {
+    let Some(props) = activity
+        .output_schema_json
+        .get("properties")
+        .and_then(|v| v.as_object())
+    else {
+        return candidates;
+    };
+    candidates
+        .into_iter()
+        .filter(|(key, _)| props.contains_key(key))
+        .collect()
 }
 
 pub fn execute<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
@@ -973,6 +1011,64 @@ mod tests {
         assert!(
             recovered.is_none(),
             "recovery should return None when input has no task_id"
+        );
+    }
+
+    #[test]
+    fn recover_filters_undeclared_fields_from_synthetic_result() {
+        let task = make_task("Applied fixes to the codebase", Some("approve"));
+        let host = FakeEngineHost::with_task(task);
+        let mut execution = make_execution_context("T20260328-031712");
+        // Output schema only declares execution_summary — status and pr_status
+        // should be stripped from the synthetic result.
+        execution.activity.output_schema_json = json!({
+            "properties": {
+                "execution_summary": { "type": "string" }
+            },
+            "type": "object"
+        });
+        let original = make_failure_outcome();
+
+        let recovered = try_recover_from_task(&host, &execution, &original);
+        assert!(recovered.is_some(), "recovery should succeed");
+
+        let outcome = recovered.unwrap();
+        assert_eq!(outcome.state, JobRunState::Success);
+
+        let envelope: AgentResponseEnvelope =
+            serde_json::from_value(outcome.response_json.unwrap()).unwrap();
+        let result = envelope.result.unwrap();
+        assert_eq!(result["execution_summary"], "Applied fixes to the codebase");
+        // Undeclared fields must not appear in the result
+        assert!(
+            result.get("status").is_none(),
+            "status should be filtered out when not in output schema"
+        );
+        assert!(
+            result.get("pr_status").is_none(),
+            "pr_status should be filtered out when not in output schema"
+        );
+    }
+
+    #[test]
+    fn recover_returns_none_when_all_meaningful_fields_filtered() {
+        // Task has pr_status but the output schema only declares "status" —
+        // after filtering, no meaningful fields remain, so recovery should fail.
+        let task = make_task("", Some("approve"));
+        let host = FakeEngineHost::with_task(task);
+        let mut execution = make_execution_context("T20260328-031712");
+        execution.activity.output_schema_json = json!({
+            "properties": {
+                "status": { "type": "string" }
+            },
+            "type": "object"
+        });
+        let original = make_failure_outcome();
+
+        let recovered = try_recover_from_task(&host, &execution, &original);
+        assert!(
+            recovered.is_none(),
+            "recovery should return None when meaningful fields are filtered out"
         );
     }
 }
