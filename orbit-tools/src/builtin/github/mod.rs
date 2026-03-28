@@ -72,15 +72,26 @@ pub(super) fn require_repo(input: &Value) -> Result<String, OrbitError> {
     Ok(repo)
 }
 
-/// Extract a non-empty `pr` field from the tool input, validated as numeric.
+/// Extract a non-empty `pr` field from the tool input.
+/// Accepts a numeric PR number or a GitHub PR URL (extracts the number from the path).
 pub(super) fn require_pr(input: &Value) -> Result<String, OrbitError> {
     let pr = require_str(input, "pr")?;
-    if !pr.chars().all(|c| c.is_ascii_digit()) || pr.is_empty() {
-        return Err(OrbitError::InvalidInput(format!(
-            "invalid `pr`: \"{pr}\"; must be a numeric PR number"
-        )));
+    // Already numeric — use directly.
+    if !pr.is_empty() && pr.chars().all(|c| c.is_ascii_digit()) {
+        return Ok(pr);
     }
-    Ok(pr)
+    // Try to extract PR number from a GitHub URL like
+    // https://github.com/owner/repo/pull/123
+    if pr.contains("github.com/") && pr.contains("/pull/") {
+        if let Some(num) = pr.rsplit('/').next() {
+            if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
+                return Ok(num.to_string());
+            }
+        }
+    }
+    Err(OrbitError::InvalidInput(format!(
+        "invalid `pr`: \"{pr}\"; must be a numeric PR number or GitHub PR URL"
+    )))
 }
 
 /// Extract a non-empty numeric string field from tool input.
@@ -408,11 +419,17 @@ mod tests {
     }
 
     #[test]
-    fn require_pr_rejects_non_numeric() {
-        assert!(super::require_pr(&json!({ "pr": "42" })).is_ok());
+    fn require_pr_accepts_numeric_and_url() {
+        assert_eq!(super::require_pr(&json!({ "pr": "42" })).unwrap(), "42");
+        assert_eq!(
+            super::require_pr(&json!({ "pr": "https://github.com/owner/repo/pull/123" })).unwrap(),
+            "123"
+        );
         assert!(super::require_pr(&json!({ "pr": "abc" })).is_err());
         assert!(super::require_pr(&json!({ "pr": "42/../../etc" })).is_err());
         assert!(super::require_pr(&json!({ "pr": "12 34" })).is_err());
+        assert!(super::require_pr(&json!({ "pr": "https://github.com/owner/repo/pull/" })).is_err());
+        assert!(super::require_pr(&json!({ "pr": "https://example.com/pull/42" })).is_err());
     }
 
     #[test]
