@@ -30,6 +30,6 @@ pub(super) fn push_task_changes<H: TaskHost + ?Sized>(
         )));
     }
 
-    git_success(&workspace_path, &["push", "origin", &expected_branch])?;
+    git_success(&workspace_path, &["push", "-u", "origin", &expected_branch])?;
     Ok(json!({}))
 }
