@@ -12,6 +12,18 @@ pub(super) fn load_pr_comments<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
+    // If upstream review_pr approved, exit the loop immediately.
+    if let Some(status) = input.get("pr_status").and_then(Value::as_str) {
+        let normalized = super::review::normalize_review_decision(status);
+        if normalized == "APPROVED" {
+            return Ok(json!({
+                "loop_exit": true,
+                "comments": [],
+                "comment_summary": "PR approved — no further fixes needed.",
+            }));
+        }
+    }
+
     let task_id = required_input_string(input, "task_id")?;
     let task = host.get_task(task_id)?;
     let pr_number = task.pr_number.as_deref().ok_or_else(|| {

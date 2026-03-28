@@ -21,6 +21,9 @@ activity:
       task_id:
         type: string
         description: The Orbit task ID whose PR comments should be loaded.
+      pr_status:
+        type: string
+        description: "Review decision from upstream review_pr step. When 'approve', returns loop_exit=true immediately."
   output_schema_json:
     type: object
     properties:
