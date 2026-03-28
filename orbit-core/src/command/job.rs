@@ -465,8 +465,8 @@ mod tests {
             .expect("review loop spec present");
         assert_eq!(review_loop.max_iterations, 5);
         assert_eq!(review_loop.max_active_runs, 4);
-        assert_eq!(review_loop.steps.len(), 4);
-        assert_eq!(review_loop.steps[0].target_id, "load_pr_comments");
+        assert_eq!(review_loop.steps.len(), 3);
+        assert_eq!(review_loop.steps[0].target_id, "implement_fix");
     }
 
     #[test]

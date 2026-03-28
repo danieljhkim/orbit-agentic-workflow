@@ -11,13 +11,12 @@ job:
   # Review loop: iterates until the PR is approved or max_iterations is reached.
   #
   # Step flow per iteration:
-  #   load_pr_comments  — fetch unresolved PR comments; outputs loop_exit=true if none remain
-  #   implement_fix     — agent addresses each comment in the task worktree
+  #   implement_fix     — agent fetches PR comments and addresses them in the task worktree
   #   commit_changes    — safety net: stage and commit if the agent left uncommitted changes
   #   review_pr         — reviewer evaluates the fix against task acceptance criteria
   #
   # The loop exits when:
-  #   - load_pr_comments finds no unresolved comments (loop_exit=true)
+  #   - review_pr outputs loop_exit=true (pr_status=approve)
   #   - max_iterations (5) is reached (safety cap to prevent infinite loops)
   #   - any step fails
   max_active_runs: 4
@@ -26,15 +25,10 @@ job:
     base: agent-main
   steps:
     - target_type: activity
-      target_id: load_pr_comments
-      condition: always
-      timeout_seconds: 60
-
-    - target_type: activity
       target_id: implement_fix
       agent_cli: claude
       model: opus
-      condition: on_success
+      condition: always
       timeout_seconds: 2000
 
     - target_type: activity

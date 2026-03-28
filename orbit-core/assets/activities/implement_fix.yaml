@@ -18,11 +18,11 @@ activity:
     Steps:
     1. Load task context:
        - Call orbit.task.show with id: input.task_id to fetch the task's title, description,
-         plan, context_files, workspace_path, and repo_root.
+         plan, context_files, workspace_path, repo_root, and prNumber.
        - The task's workspace_path is the authoritative implementation workspace.
 
-    2. Review the comments:
-       - The input field `comment_summary` contains a summary of unresolved PR review comments.
+    2. Fetch PR review comments:
+       - Call github.pr.comments with pr: <prNumber> to fetch all PR comments.
        - Read each comment carefully. Understand what the reviewer is asking for.
        - If a comment is a question or nit that doesn't require code changes, note it for
          the review response but do not modify code unnecessarily.
@@ -35,7 +35,7 @@ activity:
 
     4. Reply to PR comments:
        - After implementing fixes, reply to each PR review comment using github.pr.comment.reply.
-       - Use the comment's `id` field from the input as the `comment_id` parameter.
+       - Use the comment's `id` field as the `comment_id` parameter.
        - Briefly describe what was fixed in the reply.
        - If a comment could not be addressed, reply explaining why.
 
@@ -63,9 +63,6 @@ activity:
       task_id:
         type: string
         description: Orbit task ID. The agent loads task metadata via orbit.task.show.
-      comment_summary:
-        type: string
-        description: Human-readable summary of unresolved PR review comments to address.
   output_schema_json:
     type: object
     properties:
