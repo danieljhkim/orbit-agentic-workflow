@@ -26,8 +26,8 @@ job:
   steps:
     - target_type: activity
       target_id: implement_fix
-      agent_cli: claude
-      model: opus
+      agent_cli: codex
+      model: gpt-5.4
       condition: always
       timeout_seconds: 2000
 
