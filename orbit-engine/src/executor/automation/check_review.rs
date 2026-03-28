@@ -10,16 +10,30 @@ pub(super) fn check_review_decision<H: TaskHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
-    let task = host.get_task(task_id)?;
 
-    let pr_status = task.pr_status.as_deref().unwrap_or("none");
-    let normalized = normalize_review_decision(pr_status);
+    // Prefer direct pr_status piped from upstream review_pr output,
+    // fall back to the persisted task field.
+    let pr_status_raw = input
+        .get("pr_status")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty());
+
+    let (pr_status, source) = if let Some(s) = pr_status_raw {
+        (s.to_string(), "input")
+    } else {
+        let task = host.get_task(task_id)?;
+        (
+            task.pr_status.clone().unwrap_or_else(|| "none".to_string()),
+            "task",
+        )
+    };
+
+    let normalized = normalize_review_decision(&pr_status);
     if normalized == "APPROVED" {
         Ok(json!({ "review_decision": normalized }))
     } else {
-        let pr_number = task.pr_number.as_deref().unwrap_or("unknown");
         Err(OrbitError::Execution(format!(
-            "pull request '{pr_number}' is not approved (pr_status={pr_status})"
+            "task '{task_id}' is not approved (pr_status={pr_status}, source={source})"
         )))
     }
 }

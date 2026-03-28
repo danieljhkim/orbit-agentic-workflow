@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: "Gate step: check that the PR's GitHub review decision is APPROVED. Succeeds if approved, fails otherwise — enabling conditional branching in the pipeline."
+  description: "Gate step: check that pr_status is approved. Prefers direct pr_status input from upstream step; falls back to task.pr_status. Succeeds if approved, fails otherwise."
 
   # ---- interface ----
   input_schema_json:
@@ -20,13 +20,16 @@ activity:
     properties:
       task_id:
         type: string
-        description: The Orbit task ID whose PR review decision should be checked.
+        description: The Orbit task ID whose review decision should be checked.
+      pr_status:
+        type: string
+        description: "Direct review decision from upstream step (approve or request-changes). When provided, takes precedence over the persisted task field."
   output_schema_json:
     type: object
     properties:
       review_decision:
         type: string
-        description: The review decision from GitHub (APPROVED).
+        description: The normalized review decision (APPROVED).
 
   # ---- execution ----
   action: check_review_decision
