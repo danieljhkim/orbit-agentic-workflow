@@ -177,7 +177,7 @@ fn init_refreshes_full_bundled_activity_and_job_set() {
         .assert()
         .success()
         .stdout(predicate::str::contains("default_activities_refreshed=17"))
-        .stdout(predicate::str::contains("default_jobs_refreshed=5"));
+        .stdout(predicate::str::contains("default_jobs_refreshed=6"));
 
     let activities_dir = home.path().join(".orbit").join("activities").join("active");
     for activity_id in [
@@ -288,7 +288,7 @@ fn explicit_init_refreshes_builtin_activities_and_jobs_but_implicit_bootstrap_do
         .assert()
         .success()
         .stdout(predicate::str::contains("default_activities_refreshed=17"))
-        .stdout(predicate::str::contains("default_jobs_refreshed=5"));
+        .stdout(predicate::str::contains("default_jobs_refreshed=6"));
 
     let refreshed_activity_raw = std::fs::read_to_string(&activity_path).expect("read activity");
     assert!(!refreshed_activity_raw.contains("TAMPERED ACTIVITY"));

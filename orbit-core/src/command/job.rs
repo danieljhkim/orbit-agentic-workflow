@@ -30,6 +30,10 @@ const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/jobs/job_review_loop.yaml"),
     ),
     (
+        "job_review_cycle",
+        include_str!("../../assets/jobs/job_review_cycle.yaml"),
+    ),
+    (
         "job_task_pipeline",
         include_str!("../../assets/jobs/job_task_pipeline.yaml"),
     ),
@@ -435,6 +439,7 @@ mod tests {
                 "job_oversee_orbit_operations",
                 "job_perform_maintenance",
                 "job_review_loop",
+                "job_review_cycle",
                 "job_task_pipeline",
             ]
         );
@@ -465,8 +470,16 @@ mod tests {
             .expect("review loop spec present");
         assert_eq!(review_loop.max_iterations, 5);
         assert_eq!(review_loop.max_active_runs, 4);
-        assert_eq!(review_loop.steps.len(), 3);
+        assert_eq!(review_loop.steps.len(), 4);
         assert_eq!(review_loop.steps[0].target_id, "implement_fix");
+        let review_cycle = specs
+            .iter()
+            .find(|spec| spec.job_id == "job_review_cycle")
+            .expect("review cycle spec present");
+        assert_eq!(review_cycle.max_active_runs, 4);
+        assert_eq!(review_cycle.steps.len(), 4);
+        assert_eq!(review_cycle.steps[0].target_id, "review_pr");
+        assert_eq!(review_cycle.steps[3].target_id, "merge_pr");
     }
 
     #[test]
