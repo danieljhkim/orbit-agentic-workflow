@@ -53,8 +53,6 @@ The **agent-identity-signature** is the standard attribution format used across 
 
 > *authored by: claude / opus*
 
-Always append this to the end of your message.  
-
 ### Commit Identity
 
 - When making a git commit for work performed by the agent, always use the agent commit identity (for example `claude`) as the commit author/committer for that commit.
