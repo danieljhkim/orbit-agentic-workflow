@@ -75,6 +75,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         "implement_fix",
         include_str!("../../assets/activities/implement_fix.yaml"),
     ),
+    (
+        "push_changes",
+        include_str!("../../assets/activities/push_changes.yaml"),
+    ),
 ];
 
 const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "api", "automation"];

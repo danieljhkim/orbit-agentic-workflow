@@ -13,6 +13,7 @@ job:
   # Step flow per iteration:
   #   implement_fix     — agent fetches PR comments and addresses them in the task worktree
   #   commit_changes    — safety net: stage and commit if the agent left uncommitted changes
+  #   push_changes      — push the task branch so the GitHub PR reflects the latest changes
   #   review_pr         — reviewer evaluates the fix against task acceptance criteria
   #
   # The loop exits when:
@@ -35,6 +36,11 @@ job:
       target_id: commit_changes
       condition: on_success
       timeout_seconds: 60
+
+    - target_type: activity
+      target_id: push_changes
+      condition: on_success
+      timeout_seconds: 120
 
     - target_type: activity
       target_id: review_pr

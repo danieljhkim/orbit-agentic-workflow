@@ -33,13 +33,7 @@ pub(super) fn merge_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
     })?;
     let head = format!("orbit/{task_id}");
     let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
-    // Prefer direct pr_status from upstream input, fall back to task field.
-    let pr_status_raw = input
-        .get("pr_status")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .or(task.pr_status.as_deref())
-        .unwrap_or("none");
+    let pr_status_raw = task.pr_status.as_deref().unwrap_or("none");
     let review_decision = super::review::normalize_review_decision(pr_status_raw);
     if review_decision != "APPROVED" {
         return Err(OrbitError::Execution(format!(
@@ -692,5 +686,28 @@ mod tests {
         );
         assert!(host.tool_invocations.borrow().is_empty());
         assert!(host.automation_updates.borrow().is_empty());
+    }
+
+    #[test]
+    fn merge_pr_from_task_ignores_stale_input_pr_status() {
+        let repo_dir = init_repo();
+        let mut task = test_task(repo_dir.path());
+        task.pr_status = Some("approve".to_string());
+        let host = FakeHost::new(task);
+
+        // Input carries stale "request-changes" but task has "approve".
+        // Merge should succeed because we read from the task.
+        let result = merge_pr_from_task(
+            &host,
+            &json!({
+                "task_id": "T20260320-021158",
+                "pr_status": "request-changes",
+            }),
+        )
+        .expect("merge should succeed because task.pr_status is approve");
+
+        assert_eq!(result["merged"], json!(true));
+        assert_eq!(host.tool_invocations.borrow().len(), 1);
+        assert_eq!(host.tool_invocations.borrow()[0].name, "github.pr.merge");
     }
 }
