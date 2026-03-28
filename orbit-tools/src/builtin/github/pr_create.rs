@@ -46,12 +46,10 @@ pub(super) fn build_exec_request(
         args.push(validated.to_string_lossy().to_string());
     }
 
-    let label = input
-        .get("label")
-        .and_then(Value::as_str)
-        .unwrap_or("orbit");
-    args.push("--label".to_string());
-    args.push(label.to_string());
+    if let Some(label) = input.get("label").and_then(Value::as_str) {
+        args.push("--label".to_string());
+        args.push(label.to_string());
+    }
 
     if let Some(repo) = input.get("repo").and_then(Value::as_str) {
         args.push("--repo".to_string());
@@ -110,7 +108,7 @@ impl Tool for GithubPrCreateTool {
                 },
                 ToolParam {
                     name: "label".to_string(),
-                    description: "Label to apply (defaults to \"orbit\")".to_string(),
+                    description: "Label to apply (optional, omitted if not provided)".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
@@ -154,6 +152,44 @@ mod tests {
             "head": "feature",
             "body_file": body_file,
         })
+    }
+
+    #[test]
+    fn no_label_flag_when_label_omitted() {
+        let workspace = tempdir().expect("workspace dir");
+        let file = workspace.path().join("pr_body.md");
+        fs::write(&file, "PR description").expect("write file");
+
+        let ctx = ToolContext {
+            workspace_root: Some(workspace.path().canonicalize().expect("canonicalize")),
+            ..Default::default()
+        };
+
+        let req = build_exec_request(&ctx, &base_input(&file.to_string_lossy()))
+            .expect("should succeed without label");
+        assert!(
+            !req.args.contains(&"--label".to_string()),
+            "expected no --label flag when label is omitted, got args: {:?}",
+            req.args
+        );
+    }
+
+    #[test]
+    fn label_flag_passed_when_provided() {
+        let workspace = tempdir().expect("workspace dir");
+        let file = workspace.path().join("pr_body.md");
+        fs::write(&file, "PR description").expect("write file");
+
+        let ctx = ToolContext {
+            workspace_root: Some(workspace.path().canonicalize().expect("canonicalize")),
+            ..Default::default()
+        };
+
+        let mut input = base_input(&file.to_string_lossy());
+        input["label"] = json!("orbit");
+        let req = build_exec_request(&ctx, &input).expect("should succeed with label");
+        let label_idx = req.args.iter().position(|a| a == "--label").expect("--label flag present");
+        assert_eq!(req.args[label_idx + 1], "orbit");
     }
 
     #[test]

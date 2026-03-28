@@ -517,8 +517,10 @@ mod tests {
         assert!(req.args.contains(&"main".to_string()));
         assert!(req.args.contains(&"--head".to_string()));
         assert!(req.args.contains(&"feature/foo".to_string()));
-        assert!(req.args.contains(&"--label".to_string()));
-        assert!(req.args.contains(&"orbit".to_string()));
+        assert!(
+            !req.args.contains(&"--label".to_string()),
+            "no --label flag expected when label is not provided"
+        );
     }
 
     #[test]
