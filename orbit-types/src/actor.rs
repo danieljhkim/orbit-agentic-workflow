@@ -126,33 +126,14 @@ impl Display for ActorIdentity {
     }
 }
 
-/// Custom serialization: produces clean YAML/JSON.
+/// Custom serialization: emits the flat display label string.
 ///
 /// - `System` → `"system"`
-/// - `Agent { name, model }` → `{ "agent": { "name": "...", "model": "..." } }`
-/// - `Human { label }` → `{ "human": "..." }`
+/// - `Agent { name, model }` → `"name / model"` (or just `"name"` if model is empty)
+/// - `Human { label }` → `"label"`
 impl Serialize for ActorIdentity {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        match self {
-            Self::System => serializer.serialize_str("system"),
-            Self::Agent { name, model } => {
-                let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry(
-                    "agent",
-                    &AgentFields {
-                        name: name.clone(),
-                        model: model.clone(),
-                    },
-                )?;
-                map.end()
-            }
-            Self::Human { label } => {
-                let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("human", label)?;
-                map.end()
-            }
-        }
+        serializer.serialize_str(&self.label())
     }
 }
 
@@ -241,17 +222,27 @@ mod tests {
     }
 
     #[test]
-    fn agent_serializes_as_object() {
+    fn agent_serializes_as_flat_string() {
         let actor = ActorIdentity::agent("claude", "opus-4.6");
         let json = serde_json::to_string(&actor).unwrap();
-        assert_eq!(json, r#"{"agent":{"name":"claude","model":"opus-4.6"}}"#);
+        assert_eq!(json, r#""claude / opus-4.6""#);
     }
 
     #[test]
-    fn human_serializes_as_object() {
+    fn agent_without_model_serializes_as_name_only() {
+        let actor = ActorIdentity::Agent {
+            name: "claude".to_string(),
+            model: String::new(),
+        };
+        let json = serde_json::to_string(&actor).unwrap();
+        assert_eq!(json, r#""claude""#);
+    }
+
+    #[test]
+    fn human_serializes_as_flat_string() {
         let actor = ActorIdentity::human("daniel");
         let json = serde_json::to_string(&actor).unwrap();
-        assert_eq!(json, r#"{"human":"daniel"}"#);
+        assert_eq!(json, r#""daniel""#);
     }
 
     #[test]
