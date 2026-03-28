@@ -62,6 +62,8 @@ dev: build
 # Quality
 # ------------------------------------------------------------
 check:
+	cargo fmt --all
+	cargo test $(WORKSPACE)
 	cargo check $(WORKSPACE)
 
 test:
