@@ -94,10 +94,13 @@ impl JobStoreBackend for LayeredJobStore {
         job_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
+        input: Option<serde_json::Value>,
+        retry_source_run_id: Option<String>,
     ) -> Result<JobRun, OrbitError> {
         // Runs are always created in the workspace store, regardless of
         // where the job definition lives.
-        self.workspace.insert_job_run(job_id, attempt, scheduled_at)
+        self.workspace
+            .insert_job_run(job_id, attempt, scheduled_at, input, retry_source_run_id)
     }
 
     fn mark_job_run_running(

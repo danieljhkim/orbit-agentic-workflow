@@ -97,6 +97,30 @@ pub enum JobRunState {
     Cancelled,
 }
 
+/// Events that drive job run state transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunEvent {
+    Start,
+    Complete,
+    Fail,
+    Timeout,
+    Cancel,
+    Abandon,
+}
+
+impl Display for RunEvent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RunEvent::Start => write!(f, "start"),
+            RunEvent::Complete => write!(f, "complete"),
+            RunEvent::Fail => write!(f, "fail"),
+            RunEvent::Timeout => write!(f, "timeout"),
+            RunEvent::Cancel => write!(f, "cancel"),
+            RunEvent::Abandon => write!(f, "abandon"),
+        }
+    }
+}
+
 impl JobRunState {
     /// Returns true if this state cannot be overwritten by a later finalization.
     pub fn is_terminal(self) -> bool {
@@ -104,6 +128,42 @@ impl JobRunState {
             self,
             Self::Success | Self::Failed | Self::Timeout | Self::Cancelled
         )
+    }
+
+    /// Validate and compute the next state for a given event.
+    pub fn try_transition(self, event: RunEvent) -> Result<JobRunState, String> {
+        // Terminal states reject all events
+        if self.is_terminal() {
+            return Err(format!(
+                "invalid job run state transition: {} + {:?} (state is terminal)",
+                self, event
+            ));
+        }
+
+        match (self, event) {
+            (Self::Pending, RunEvent::Start) => Ok(Self::Running),
+            (Self::Pending, RunEvent::Cancel) => Ok(Self::Cancelled),
+            (Self::Running, RunEvent::Complete) => Ok(Self::Success),
+            (Self::Running, RunEvent::Fail) => Ok(Self::Failed),
+            (Self::Running, RunEvent::Timeout) => Ok(Self::Timeout),
+            (Self::Running, RunEvent::Cancel) => Ok(Self::Cancelled),
+            (Self::Running, RunEvent::Abandon) => Ok(Self::Failed),
+            _ => Err(format!(
+                "invalid job run state transition: {} + {:?}",
+                self, event
+            )),
+        }
+    }
+
+    /// Validates that a step result state is one of the allowed write-once values.
+    pub fn validate_step_state(self) -> Result<(), String> {
+        match self {
+            Self::Success | Self::Failed | Self::Timeout | Self::Skipped => Ok(()),
+            other => Err(format!(
+                "invalid step result state: {} (must be success, failed, timeout, or skipped)",
+                other
+            )),
+        }
     }
 }
 
@@ -287,6 +347,12 @@ pub struct JobRun {
     /// mistaken for the original run owner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid_start_time: Option<String>,
+    /// The original input passed to this run, persisted so retries can reconstruct state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<Value>,
+    /// When this run is a retry, links back to the source run ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_source_run_id: Option<String>,
     /// Step execution results; populated in-memory from step files, not stored in jrun.yaml.
     #[serde(skip)]
     pub steps: Vec<JobRunStep>,

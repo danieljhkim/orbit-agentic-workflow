@@ -741,6 +741,8 @@ mod tests {
             _: &str,
             _: u32,
             _: chrono::DateTime<Utc>,
+            _: Option<serde_json::Value>,
+            _: Option<String>,
         ) -> Result<JobRun, OrbitError> {
             unimplemented!()
         }

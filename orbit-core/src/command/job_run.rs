@@ -17,12 +17,14 @@ pub struct JobRunListParams {
 impl OrbitRuntime {
     pub fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
         let run = self.show_job_run(run_id)?;
-        if !matches!(run.state, JobRunState::Pending | JobRunState::Running) {
-            return Err(OrbitError::JobValidation(format!(
-                "job run '{}' is not active (state: {}); only pending or running runs can be cancelled",
-                run_id, run.state
-            )));
-        }
+        run.state
+            .try_transition(orbit_types::RunEvent::Cancel)
+            .map_err(|msg| {
+                OrbitError::JobValidation(format!(
+                    "cannot cancel job run '{}': {}",
+                    run_id, msg
+                ))
+            })?;
         let now = chrono::Utc::now();
         let duration_ms = run
             .started_at
@@ -71,6 +73,37 @@ impl OrbitRuntime {
             job_id,
             run_id: run_id.to_string(),
         })
+    }
+
+    pub fn retry_job_run(
+        &self,
+        source_run_id: &str,
+        step_target_id: &str,
+        debug: bool,
+    ) -> Result<orbit_engine::JobRunResult, OrbitError> {
+        let source_run = self.show_job_run(source_run_id)?;
+
+        // Only allow retry from terminal failure states
+        if !matches!(
+            source_run.state,
+            JobRunState::Failed | JobRunState::Timeout | JobRunState::Cancelled
+        ) {
+            return Err(OrbitError::JobValidation(format!(
+                "job run '{}' is in state '{}'; only failed, timeout, or cancelled runs can be retried",
+                source_run_id, source_run.state
+            )));
+        }
+
+        let job = self.show_job(&source_run.job_id)?;
+
+        orbit_engine::retry_job_run_from_step(
+            self,
+            &self.data_root(),
+            job,
+            source_run,
+            step_target_id,
+            debug,
+        )
     }
 
     pub fn job_history(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {

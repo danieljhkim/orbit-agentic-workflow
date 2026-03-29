@@ -132,6 +132,8 @@ pub trait JobRunHost {
         job_id: &str,
         attempt: u32,
         scheduled_at: chrono::DateTime<chrono::Utc>,
+        input: Option<serde_json::Value>,
+        retry_source_run_id: Option<String>,
     ) -> Result<JobRun, OrbitError>;
     fn mark_job_run_running(
         &self,

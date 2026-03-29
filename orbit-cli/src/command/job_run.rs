@@ -26,6 +26,7 @@ pub enum JobRunSubcommand {
     Cancel(JobRunCancelArgs),
     Archive(JobRunArchiveArgs),
     Delete(JobRunDeleteArgs),
+    Retry(JobRunRetryArgs),
 }
 
 impl Execute for JobRunSubcommand {
@@ -36,6 +37,7 @@ impl Execute for JobRunSubcommand {
             JobRunSubcommand::Cancel(args) => args.execute(runtime),
             JobRunSubcommand::Archive(args) => args.execute(runtime),
             JobRunSubcommand::Delete(args) => args.execute(runtime),
+            JobRunSubcommand::Retry(args) => args.execute(runtime),
         }
     }
 }
@@ -207,6 +209,42 @@ impl Execute for JobRunDeleteArgs {
         runtime.delete_job_run(&self.run_id)?;
         println!("Deleted job run '{}'", self.run_id);
         Ok(())
+    }
+}
+
+#[derive(Args)]
+pub struct JobRunRetryArgs {
+    /// The run ID of the failed run to retry from.
+    pub run_id: String,
+    /// The target_id of the step to resume from.
+    #[arg(long)]
+    pub step: String,
+    /// Stream agent stderr to the terminal.
+    #[arg(long)]
+    pub debug: bool,
+    /// Output result as JSON.
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for JobRunRetryArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let result = runtime.retry_job_run(&self.run_id, &self.step, self.debug)?;
+        if self.json {
+            use serde_json::json;
+            crate::output::json::print_pretty(&json!({
+                "run_id": result.run_id,
+                "job_id": result.job_id,
+                "state": result.state.to_string(),
+                "attempt": result.attempt,
+            }))
+        } else {
+            println!(
+                "Retry run '{}' for job '{}' completed with state: {}",
+                result.run_id, result.job_id, result.state
+            );
+            Ok(())
+        }
     }
 }
 

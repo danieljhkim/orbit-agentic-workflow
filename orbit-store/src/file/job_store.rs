@@ -294,6 +294,8 @@ impl JobFileStore {
         job_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
+        input: Option<serde_json::Value>,
+        retry_source_run_id: Option<String>,
     ) -> Result<JobRun, OrbitError> {
         let run = JobRun {
             run_id: self.next_run_id(job_id),
@@ -306,6 +308,8 @@ impl JobFileStore {
             duration_ms: None,
             pid: None,
             pid_start_time: None,
+            input,
+            retry_source_run_id,
             created_at: Utc::now(),
             steps: vec![],
         };
@@ -323,7 +327,10 @@ impl JobFileStore {
             return Ok(false);
         };
         let mut run = self.read_run_at(&run_dir)?;
-        run.state = JobRunState::Running;
+        run.state = run
+            .state
+            .try_transition(orbit_types::RunEvent::Start)
+            .map_err(OrbitError::JobRunStateTransition)?;
         run.started_at = Some(started_at);
         run.pid = Some(pid);
         run.pid_start_time = process_start_time_token(pid);
@@ -336,7 +343,20 @@ impl JobFileStore {
         run_id: &str,
         finished_at: DateTime<Utc>,
     ) -> Result<bool, OrbitError> {
-        self.finalize_job_run(run_id, JobRunState::Failed, finished_at, None)
+        let Some((job_id, run_dir)) = self.find_run_path(run_id)? else {
+            return Ok(false);
+        };
+        let mut run = self.read_run_at(&run_dir)?;
+        if run.state.is_terminal() {
+            return Ok(true);
+        }
+        run.state = run
+            .state
+            .try_transition(orbit_types::RunEvent::Abandon)
+            .map_err(OrbitError::JobRunStateTransition)?;
+        run.finished_at = Some(finished_at);
+        self.write_run(&job_id, &run)?;
+        Ok(true)
     }
 
     pub(crate) fn complete_job_run_step(
@@ -347,6 +367,10 @@ impl JobFileStore {
         let Some((job_id, _run_dir)) = self.find_run_path(run_id)? else {
             return Ok(false);
         };
+        params
+            .state
+            .validate_step_state()
+            .map_err(OrbitError::JobRunStateTransition)?;
         let step = JobRunStep {
             step_index: params.step_index as u32,
             target_type: params.target_type,
@@ -375,11 +399,26 @@ impl JobFileStore {
             return Ok(false);
         };
         let mut run = self.read_run_at(&run_dir)?;
-        // Do not overwrite a terminal state (e.g. Cancelled) with a later outcome.
+        // Preserve existing no-op behavior for terminal states.
         if run.state.is_terminal() {
             return Ok(true);
         }
-        run.state = state;
+        let event = match state {
+            JobRunState::Success => orbit_types::RunEvent::Complete,
+            JobRunState::Failed => orbit_types::RunEvent::Fail,
+            JobRunState::Timeout => orbit_types::RunEvent::Timeout,
+            JobRunState::Cancelled => orbit_types::RunEvent::Cancel,
+            other => {
+                return Err(OrbitError::JobRunStateTransition(format!(
+                    "cannot finalize to non-terminal state: {}",
+                    other
+                )))
+            }
+        };
+        run.state = run
+            .state
+            .try_transition(event)
+            .map_err(OrbitError::JobRunStateTransition)?;
         run.finished_at = Some(finished_at);
         run.duration_ms = duration_ms;
         self.write_run(&job_id, &run)?;

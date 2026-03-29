@@ -264,6 +264,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 JobRunSubcommand::Cancel(args) => ("cancel", Some(args.run_id.as_str())),
                 JobRunSubcommand::Archive(args) => ("archive", Some(args.run_id.as_str())),
                 JobRunSubcommand::Delete(args) => ("delete", Some(args.run_id.as_str())),
+                JobRunSubcommand::Retry(args) => ("retry", Some(args.run_id.as_str())),
             };
             CommandMeta {
                 command: "job-run".to_string(),

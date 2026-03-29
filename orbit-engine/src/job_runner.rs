@@ -42,7 +42,85 @@ pub fn run_job_with_input<H: EngineHost>(
         job_id: job.job_id.clone(),
     })?;
 
-    execute_activity_with_retries(host, data_root, job, Utc::now(), None, input, debug, true)
+    execute_activity_with_retries(
+        host,
+        data_root,
+        job,
+        Utc::now(),
+        None,
+        input.clone(),
+        debug,
+        true,
+        0,
+        &[],
+    )
+}
+
+/// Resume a failed job run from a specific step.
+///
+/// Creates a NEW run (preserving audit trail). Steps before `retry_step_target_id`
+/// are written as Skipped records with replayed outputs from the source run.
+/// Execution resumes from the specified step.
+pub fn retry_job_run_from_step<H: EngineHost>(
+    host: &H,
+    data_root: &Path,
+    job: Job,
+    source_run: JobRun,
+    retry_step_target_id: &str,
+    debug: bool,
+) -> Result<JobRunResult, OrbitError> {
+    // Find the step index to retry from (in the job definition, not the run steps).
+    // Only supports first iteration (iteration 0) for v1.
+    let retry_from_index = job
+        .steps
+        .iter()
+        .position(|s| s.target_id == retry_step_target_id)
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "step '{}' not found in job '{}' definition",
+                retry_step_target_id, job.job_id
+            ))
+        })?;
+
+    // Reconstruct the input from the source run's persisted input, falling back
+    // to an empty object merged with defaults.
+    let base_input = source_run
+        .input
+        .clone()
+        .unwrap_or_else(|| Value::Object(Default::default()));
+
+    // Recover any stale runs before creating a new one
+    let _ = recover_stale_active_run_for_job(host, data_root, &job, Utc::now())?;
+
+    // Check max_active_runs
+    let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
+    if active_runs.len() as u32 >= job.max_active_runs {
+        return Err(OrbitError::JobValidation(format!(
+            "job '{}' already has {} active run(s), reaching max_active_runs={}",
+            job.job_id,
+            active_runs.len(),
+            job.max_active_runs
+        )));
+    }
+
+    host.record_event(OrbitEvent::JobTriggered {
+        job_id: job.job_id.clone(),
+    })?;
+
+    let now = Utc::now();
+
+    execute_activity_with_retries(
+        host,
+        data_root,
+        job,
+        now,
+        None,
+        base_input,
+        debug,
+        true,
+        retry_from_index,
+        &source_run.steps,
+    )
 }
 
 fn execute_activity_with_retries<H: EngineHost>(
@@ -57,13 +135,24 @@ fn execute_activity_with_retries<H: EngineHost>(
     // Nested (sub-job) runs pass `false` so only the outermost pipeline
     // creates a single failure task.
     create_failure_task: bool,
+    // When > 0, steps before this index are written as Skipped records with
+    // replayed data from the source run. Execution starts from this index.
+    skip_to_step: usize,
+    // Source run steps used to replay data when `skip_to_step > 0`.
+    replayed_steps: &[orbit_types::JobRunStep],
 ) -> Result<JobRunResult, OrbitError> {
     let attempt = initial_run.as_ref().map(|r| r.attempt).unwrap_or(1);
 
     let mut run = if let Some(existing) = initial_run {
         existing
     } else {
-        let run = host.insert_job_run(&job.job_id, attempt, scheduled_at)?;
+        let run = host.insert_job_run(
+            &job.job_id,
+            attempt,
+            scheduled_at,
+            Some(input.clone()),
+            None,
+        )?;
         host.record_event(OrbitEvent::JobRunStarted {
             job_id: job.job_id.clone(),
             run_id: String::new(),
@@ -118,6 +207,67 @@ fn execute_activity_with_retries<H: EngineHost>(
                 }
 
                 let global_step_index = iteration as usize * num_steps + step_index;
+
+                // When retrying from a specific step, skip earlier steps by writing
+                // Skipped records with replayed data from the source run.
+                if global_step_index < skip_to_step {
+                    let skipped_at = Utc::now();
+                    let source_step = replayed_steps
+                        .iter()
+                        .find(|s| s.step_index as usize == global_step_index);
+
+                    // Replay successful step outputs into current_input
+                    if let Some(src) = source_step {
+                        if src.state == JobRunState::Success {
+                            let activity = host.validate_activity_target_exists(
+                                step.target_type,
+                                &step.target_id,
+                            )?;
+                            if let Some(output_map) = step_output_for_following_input(
+                                &activity,
+                                src.agent_response_json.as_ref(),
+                            ) {
+                                if let Value::Object(ref mut input_map) = current_input {
+                                    let mut merged: serde_json::Map<String, Value> = output_map
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect();
+                                    for (source_key, target_key) in &step.output_map {
+                                        if let Some(value) = merged.remove(source_key) {
+                                            merged.insert(target_key.clone(), value);
+                                        }
+                                    }
+                                    for (key, value) in merged {
+                                        input_map.insert(key, value);
+                                    }
+                                }
+                            }
+                        }
+                        if src.state != JobRunState::Skipped {
+                            previous_step_state = Some(src.state);
+                        }
+                    }
+
+                    host.complete_job_run_step(
+                        &run.run_id,
+                        &JobRunStepParams {
+                            step_index: global_step_index,
+                            target_type: step.target_type,
+                            target_id: step.target_id.clone(),
+                            started_at: skipped_at,
+                            finished_at: skipped_at,
+                            duration_ms: Some(0),
+                            exit_code: source_step.and_then(|s| s.exit_code),
+                            agent_response_json: source_step
+                                .and_then(|s| s.agent_response_json.clone()),
+                            state: JobRunState::Skipped,
+                            error_code: None,
+                            error_message: Some("replayed from source run".to_string()),
+                        },
+                    )?;
+                    continue;
+                }
+
                 failure_step = (global_step_index, step.clone());
 
                 if !should_run_step(step.condition, previous_step_state) {
@@ -754,6 +904,8 @@ fn execute_job_step<H: EngineHost>(
         input.clone(),
         debug,
         false,
+        0,
+        &[],
     )
 }
 

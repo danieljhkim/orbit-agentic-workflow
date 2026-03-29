@@ -85,6 +85,9 @@ pub fn redact_sensitive_env_error(error: OrbitError) -> OrbitError {
         OrbitError::TaskStatusTransition(message) => {
             OrbitError::TaskStatusTransition(redact_sensitive_env_text(&message))
         }
+        OrbitError::JobRunStateTransition(message) => {
+            OrbitError::JobRunStateTransition(redact_sensitive_env_text(&message))
+        }
         OrbitError::Io(message) => OrbitError::Io(redact_sensitive_env_text(&message)),
         OrbitError::WorkspaceNotFound(message) => {
             OrbitError::WorkspaceNotFound(redact_sensitive_env_text(&message))

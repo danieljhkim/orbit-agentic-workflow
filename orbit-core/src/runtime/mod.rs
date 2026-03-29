@@ -323,10 +323,12 @@ impl OrbitRuntime {
         job_id: &str,
         attempt: u32,
         scheduled_at: chrono::DateTime<chrono::Utc>,
+        input: Option<serde_json::Value>,
+        retry_source_run_id: Option<String>,
     ) -> Result<JobRun, OrbitError> {
         self.context
             .job_store()
-            .insert_job_run(job_id, attempt, scheduled_at)
+            .insert_job_run(job_id, attempt, scheduled_at, input, retry_source_run_id)
     }
 
     pub(crate) fn mark_job_run_running_record(

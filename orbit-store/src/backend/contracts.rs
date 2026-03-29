@@ -172,6 +172,8 @@ pub trait JobStoreBackend: Send + Sync {
         job_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
+        input: Option<serde_json::Value>,
+        retry_source_run_id: Option<String>,
     ) -> Result<JobRun, OrbitError>;
     fn mark_job_run_running(
         &self,

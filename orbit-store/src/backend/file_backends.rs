@@ -119,8 +119,10 @@ impl JobStoreBackend for JobFileStore {
         job_id: &str,
         attempt: u32,
         scheduled_at: DateTime<Utc>,
+        input: Option<serde_json::Value>,
+        retry_source_run_id: Option<String>,
     ) -> Result<JobRun, OrbitError> {
-        self.insert_job_run(job_id, attempt, scheduled_at)
+        self.insert_job_run(job_id, attempt, scheduled_at, input, retry_source_run_id)
     }
 
     fn mark_job_run_running(
