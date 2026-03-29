@@ -19,15 +19,15 @@ job:
     # 1. Pick a conflict-free batch of backlog tasks.
     - target_type: activity
       target_id: dispatch_parallel_task
-      agent_cli: claude
-      model: sonnet
+      agent_cli: codex
+      model: gpt-5.4
       timeout_seconds: 1200
 
     # 2. Plan all tasks in the batch, refine context_files.
     - target_type: activity
       target_id: plan_parallel_batch
-      agent_cli: claude
-      model: opus
+      agent_cli: codex
+      model: gpt-5.4
       condition: on_success
       timeout_seconds: 2400
 
@@ -40,8 +40,8 @@ job:
     # 4. Review the combined diff, fix integration issues, run tests.
     - target_type: activity
       target_id: finalize_tasks
-      agent_cli: claude
-      model: opus
+      agent_cli: codex
+      model: gpt-5.4
       condition: on_success
       timeout_seconds: 3600
 
