@@ -16,13 +16,19 @@ Example flow:
 # install orbit binary
 make install
 
-# Initialize `.orbit/` directory with default configuration.
+# Initialize `~/.orbit` directory with default global configurations.
 orbit init
 
-# Prompt an agent to create a task:
-"Create this orbit task ...."
+# cd into your repo 
+cd <repo>
 
-# once task is created (proposed status), approve the task
+# Initialize orbit workspace - creates `.orbit` dir in the repo_root
+orbit workspace init
+
+# Prompt an agent to create a task:
+"Create an orbit task for ..."
+
+# once task is created, approve the task
 orbit task approve <task_id>
 
 # run job_task_pipeline job
@@ -40,20 +46,20 @@ Orbit operates through a structured filesystem hierarchy under `.orbit/`:
 ```
 .orbit/
 ├── activities/       # Atomic units of work (YAML)
+├── diagnostics/      # Runtime diagnostics and health checks
 ├── jobs/
 │   ├── jobs/         # Job definitions — ordered chains of activities
 │   └── runs/         # Immutable execution audit logs per job run
-├── identities/       # Agent personas with roles and behavioral profiles
+├── scoreboard/       # Agent performance tracking (PR merge rates, friction bounty)
 ├── skills/           # Markdown-based skill instructions loaded by agents
-├── tasks/            # Task artifacts organized by lifecycle state
-└── orbit.db          # SQLite audit store
+└── tasks/            # Task artifacts organized by lifecycle state
 ```
 
 ### Tasks
 
 Tasks are work items for agent/human coordination and project tracking. You can think of them as jira tickets.
 - **Work unit for execution**: Represents a discrete piece of work (feature, bug fix, chore, refactor)
-- **Lifecycle states**: Proposed → Backlog → InProgress → Review → Done (with branching to Blocked, Archived, Rejected)
+- **Lifecycle states**: Proposed → Backlog → InProgress → Review → Done (with branching to Blocked, Archived, Rejected, Someday)
 - **Execution tracking**:
     - execution_summary for recording what was actually done
     - Branch and PR number for code changes
@@ -80,44 +86,45 @@ schemaVersion: 1
 job:
   job_id: job_task_pipeline
   state: enabled
+  max_active_runs: 4
   default_input:
     base: agent-main
   steps:
     - target_type: activity
       target_id: dispatch_task
       agent_cli: claude
+      model: sonnet
       timeout_seconds: 1000
-      env_extra: []
     - target_type: activity
       target_id: create_branch
-      agent_cli: ""
+      condition: on_success
       timeout_seconds: 60
-      env_extra: []
     - target_type: activity
       target_id: implement_change
       agent_cli: codex
-      timeout_seconds: 1800
-      env_extra: []
+      model: gpt-5.4
+      condition: on_success
+      timeout_seconds: 2000
+    - target_type: activity
+      target_id: update_task
+      condition: on_success
+      timeout_seconds: 15
     - target_type: activity
       target_id: run_tests
-      agent_cli: ""
+      condition: on_success
       timeout_seconds: 600
-      env_extra: []
     - target_type: activity
       target_id: commit_changes
-      agent_cli: ""
+      condition: on_success
       timeout_seconds: 60
-      env_extra: []
     - target_type: activity
       target_id: open_pr
-      agent_cli: ""
+      condition: on_success
       timeout_seconds: 300
-      env_extra: []
-    - target_type: activity
-      target_id: review_pr
-      agent_cli: claude
-      timeout_seconds: 600
-      env_extra: []
+    - target_type: job
+      target_id: job_review_cycle
+      condition: on_success
+      timeout_seconds: 7200
 ```
 
 ---
@@ -127,25 +134,31 @@ job:
 Orbit is structured as a layered set of Rust crates. Lower layers have no knowledge of higher layers.
 
 ```
-                        ┌─────┴─────┐
-                        │  engine   │ → store, agent, exec, tools
-                        └─────┬─────┘
-                        ┌─────┴─────┐
-                        │   core    │ → engine, store, policy, tools
-                        └─────┬─────┘
-                        ┌─────┴─────┐
-                        │    cli    │
-                        └───────────┘
+orbit-types          (leaf — shared types, OrbitError, ID generation)
+    ↑
+orbit-policy         (RBAC policy evaluation)
+orbit-exec           (process spawning, sandboxing, timeouts)
+    ↑
+orbit-tools          (builtin tool registry: fs, git, github, orbit, proc, time, net)
+    ↑
+orbit-store          (file-based YAML + SQLite persistence, layered store)
+orbit-agent          (agent provider abstraction: Claude, Codex, mock)
+    ↑
+orbit-engine         (activity/job execution, template rendering, retry logic)
+    ↑
+orbit-core           (runtime bootstrap, config layering, command dispatch, asset seeding)
+    ↑
+orbit-cli            (CLI entry point, clap-based commands, JSON/table output)
 ```
-
 
 ### Model Strategy
 
-Orbit uses a dual-model strategy to balance reasoning depth against throughput:
+Orbit uses a multi-model strategy to balance reasoning depth against throughput:
 
 | Model | Role | Rationale |
 | :--- | :--- | :--- |
-| **Claude** | Planning, dispatch, review | High-order reasoning; architectural and code review quality |
+| **Claude (Opus)** | Planning, dispatch, review | High-order reasoning; architectural and code review quality |
+| **Claude (Sonnet)** | Task dispatch, lightweight review | Fast reasoning for routing and triage |
 | **Codex** | Implementation, code generation | High throughput and rate limits for iterative coding tasks |
 
 ---
@@ -156,9 +169,10 @@ Orbit maintains two `.orbit/` directories: a **global** root (`~/.orbit/`) and a
 
 | Resource | Strategy | Behavior |
 | :--- | :--- | :--- |
-| Tasks, Runs, Scoreboard | **Workspace-only** | Read/write only in the workspace `.orbit/` |
-| Audits, Configs, Workspace registry | **Global-only** | Read/write only in `~/.orbit/` |
-| Activities, Jobs, Skills, Tools | **MergeByKey** | Global defaults + workspace overrides; workspace entries shadow global by key |
+| Tasks, Runs, Scoreboard | **WorkspaceOnly** | Read/write only in the workspace `.orbit/` |
+| Audits, Configs, Workspace registry | **GlobalOnly** | Read/write only in `~/.orbit/` |
+| Activities, Jobs | **MergeByKey** | Global defaults + workspace overrides; workspace entries shadow global by key |
+| Skills | **WorkspaceReplaces** | Workspace has full control over available skills |
 
 When workspace and global roots are the same directory (e.g. `orbit init` in `$HOME`), layering is a no-op — a single store is used.
 
