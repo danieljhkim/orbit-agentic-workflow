@@ -35,6 +35,12 @@ impl ActivityExecutor for AgentExecutor {
             if let Some(recovered) = try_recover_from_task(host, execution, &outcome) {
                 return recovered;
             }
+            // For activities with no required output fields (side-effect-only
+            // activities that persist results via task updates), synthesize an
+            // empty success result so the pipeline continues.
+            if let Some(recovered) = try_recover_empty_result(host, execution, &outcome) {
+                return recovered;
+            }
         }
 
         outcome
@@ -100,6 +106,45 @@ fn try_recover_from_task(
     // If validation fails, fall through to the original AGENT_OUTPUT_MISSING failure
     // rather than returning an invalid payload.
     if let Err(_) = host.validate_skill_output_schema(&execution.activity, &envelope) {
+        return None;
+    }
+
+    Some(AttemptOutcome {
+        state: JobRunState::Success,
+        exit_code: original.exit_code,
+        duration_ms: original.duration_ms,
+        response_json: serde_json::to_value(&envelope).ok(),
+        error_code: None,
+        error_message: None,
+        protocol_violation: false,
+        retry_count: 0,
+    })
+}
+
+/// Attempt to recover by synthesizing an empty `{}` result when the activity's
+/// output schema has no required fields. This covers side-effect-only activities
+/// (e.g. dispatch steps that persist results via `orbit.task.update`) where the
+/// agent's JSON output is not needed by downstream steps.
+fn try_recover_empty_result(
+    host: &dyn EngineHost,
+    execution: &ExecutionContext,
+    original: &AttemptOutcome,
+) -> Option<AttemptOutcome> {
+    let envelope = AgentResponseEnvelope {
+        schema_version: 1,
+        status: "success".to_string(),
+        result: Some(Value::Object(serde_json::Map::new())),
+        error: None,
+        duration_ms: original.duration_ms.unwrap_or(0),
+    };
+
+    // Only recover if the empty result validates against the output schema.
+    // Activities with required output fields will fail validation and fall
+    // through to the original AGENT_OUTPUT_MISSING error.
+    if host
+        .validate_skill_output_schema(&execution.activity, &envelope)
+        .is_err()
+    {
         return None;
     }
 
