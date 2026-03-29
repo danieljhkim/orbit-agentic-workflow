@@ -23,6 +23,10 @@ pub(super) fn build_exec_request(
         args.push("--parent".to_string());
         args.push(parent_id);
     }
+    if let Some(batch_id) = super::optional_string(input, "batch_id")? {
+        args.push("--batch-id".to_string());
+        args.push(batch_id);
+    }
 
     Ok(super::orbit_exec_request_with_identity(
         ctx, args, &identity,
@@ -41,6 +45,12 @@ impl Tool for OrbitTaskListTool {
             ToolParam {
                 name: "parent_id".to_string(),
                 description: "Optional parent task ID to list subtasks for".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "batch_id".to_string(),
+                description: "Filter by batch ID".to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },

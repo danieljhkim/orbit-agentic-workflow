@@ -229,10 +229,11 @@ impl OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
         self.context
             .task_store()
-            .list_tasks_filtered(status, priority, parent_id)
+            .list_tasks_filtered(status, priority, parent_id, batch_id)
     }
 
     pub(crate) fn update_task_record(

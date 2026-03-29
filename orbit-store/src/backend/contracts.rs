@@ -70,6 +70,7 @@ pub struct TaskUpdateParams {
     pub pr_status: Option<Option<String>>,
     pub proposed_by: Option<Option<String>>,
     pub source_task_id: Option<Option<String>>,
+    pub batch_id: Option<Option<String>>,
     pub status_event: Option<String>,
     pub status_note: Option<String>,
     pub append_history: Vec<TaskHistoryEntry>,
@@ -138,6 +139,7 @@ pub trait TaskStoreBackend: Send + Sync {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;
     fn get_task(&self, id: &str) -> Result<Option<Task>, OrbitError>;
     fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError>;

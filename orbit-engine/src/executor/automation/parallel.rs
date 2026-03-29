@@ -288,54 +288,40 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Vec<PendingTask>, OrbitError> {
-    let task_ids = load_task_id_array(input, "task_ids", "parallel_dispatch_tasks")?;
+    let batch_id = input
+        .get("run_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "parallel_dispatch_tasks requires input.run_id".to_string(),
+            )
+        })?;
+
+    let tasks = host.list_tasks_filtered(
+        Some(TaskStatus::Backlog),
+        None,
+        None,
+        Some(batch_id),
+    )?;
+
+    if tasks.is_empty() {
+        return Err(OrbitError::InvalidInput(format!(
+            "no backlog tasks found for batch_id '{batch_id}'"
+        )));
+    }
 
     let mut seen = HashSet::new();
-    let mut selected = Vec::with_capacity(task_ids.len());
-    for task_id in task_ids {
-        if !seen.insert(task_id.to_string()) {
-            return Err(OrbitError::InvalidInput(format!(
-                "parallel task batch contains duplicate task id '{task_id}'"
-            )));
-        }
-        let task = host.get_task(&task_id)?;
-        if task.status != TaskStatus::Backlog {
-            return Err(OrbitError::InvalidInput(format!(
-                "parallel task batch requires backlog tasks; '{task_id}' is '{}'",
-                task.status
-            )));
+    let mut selected = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        if !seen.insert(task.id.clone()) {
+            continue;
         }
         selected.push(PendingTask::from(task));
     }
 
     Ok(selected)
-}
-
-fn load_task_id_array(
-    input: &Value,
-    field_name: &str,
-    activity_id: &str,
-) -> Result<Vec<String>, OrbitError> {
-    let Some(task_ids) = input.get(field_name).and_then(Value::as_array) else {
-        return Err(OrbitError::InvalidInput(format!(
-            "{activity_id} requires input.{field_name}"
-        )));
-    };
-    task_ids
-        .iter()
-        .map(|task_id| {
-            task_id
-                .as_str()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned)
-                .ok_or_else(|| {
-                    OrbitError::InvalidInput(format!(
-                        "{activity_id}.{field_name} must contain non-empty strings"
-                    ))
-                })
-        })
-        .collect()
 }
 
 fn parse_parallelism(input: &Value) -> Result<usize, OrbitError> {

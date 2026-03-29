@@ -7,13 +7,12 @@ activity:
   input_schema_json:
     type: object
     required:
-      - completed_task_ids
+      - run_id
       - workspace_path
     properties:
-      completed_task_ids:
-        type: array
-        items:
-          type: string
+      run_id:
+        type: string
+        description: "Job run ID, used as batch_id to query tasks belonging to this batch."
       workspace_path:
         type: string
       base:

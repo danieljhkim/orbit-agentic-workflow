@@ -48,10 +48,15 @@ pub(super) fn build_exec_requests(
         args.push(pr_number);
         changed = true;
     }
+    if let Some(batch_id) = super::optional_string(input, "batch_id")? {
+        args.push("--batch-id".to_string());
+        args.push(batch_id);
+        changed = true;
+    }
 
     if !changed {
         return Err(OrbitError::InvalidInput(
-            "orbit.task.update requires at least one of `status`, `plan`, `execution_summary`, `comment`, `pr_status`, or `pr_number`"
+            "orbit.task.update requires at least one of `status`, `plan`, `execution_summary`, `comment`, `pr_status`, `pr_number`, or `batch_id`"
                 .to_string(),
         ));
     }
@@ -109,6 +114,12 @@ impl Tool for OrbitTaskUpdateTool {
             ToolParam {
                 name: "pr_number".to_string(),
                 description: "Pull request number (empty string clears)".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "batch_id".to_string(),
+                description: "Batch ID to associate with the task (empty string clears)".to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },

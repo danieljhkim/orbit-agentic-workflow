@@ -17,7 +17,7 @@ activity:
 
     1. Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
        If the list is empty, return this JSON and exit:
-       {"task_ids": [], "comment": "No backlog tasks available for parallel dispatch."}
+       {"comment": "No backlog tasks available for parallel dispatch."}
 
     2. For the strongest candidates, call orbit.task.show with the task id and read:
        description, acceptance_criteria, context_files, priority, parent_id, and task type.
@@ -32,11 +32,11 @@ activity:
 
     4. For every selected task, call orbit.task.update with:
        - id: "<selected task id>"
+       - batch_id: "<the value of input.run_id>"
        - comment: "Parallel batch dispatched: <one sentence rationale>"
 
     5. Return a JSON result with EXACTLY these fields:
        {
-         "task_ids": ["<selected task ids in batch order>"],
          "comment": "<the rationale string you used in orbit.task.update>"
        }
 
@@ -44,6 +44,9 @@ activity:
   input_schema_json:
     type: object
     properties:
+      run_id:
+        type: string
+        description: Job run ID, used as batch_id when tagging selected tasks.
       base:
         type: string
         description: Shared pipeline base branch input, accepted but unused by dispatch_parallel_task.
@@ -54,13 +57,7 @@ activity:
     additional_properties: false
   output_schema_json:
     type: object
-    required:
-      - task_ids
     properties:
-      task_ids:
-        type: array
-        items:
-          type: string
       comment:
         type: string
     additional_properties: false

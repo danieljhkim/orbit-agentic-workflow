@@ -718,6 +718,7 @@ mod tests {
             status: Option<TaskStatus>,
             priority: Option<TaskPriority>,
             parent_id: Option<&str>,
+            _batch_id: Option<&str>,
         ) -> Result<Vec<Task>, OrbitError> {
             let tasks = self
                 .task
@@ -936,6 +937,7 @@ mod tests {
             pr_status: pr_status.map(|s| s.to_string()),
             proposed_by: None,
             source_task_id: None,
+            batch_id: None,
             complexity: None,
             comments: vec![],
             history: vec![],
