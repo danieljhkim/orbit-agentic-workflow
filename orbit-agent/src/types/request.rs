@@ -1,22 +1,33 @@
+use serde_json::Value;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentOperation {
     Activity { activity_id: String },
     Job { job_id: String, activity_id: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AgentRequest {
     pub operation: AgentOperation,
     pub envelope_json: Vec<u8>,
+    /// The activity's `output_schema_json`, used to pass `--json-schema` to
+    /// providers that support structured output (e.g. Claude CLI).
+    /// `None` or an empty object `{}` means freeform output.
+    pub output_schema_json: Option<Value>,
 }
 
 impl AgentRequest {
-    pub fn activity(activity_id: impl Into<String>, envelope_json: Vec<u8>) -> Self {
+    pub fn activity(
+        activity_id: impl Into<String>,
+        envelope_json: Vec<u8>,
+        output_schema_json: Option<Value>,
+    ) -> Self {
         Self {
             operation: AgentOperation::Activity {
                 activity_id: activity_id.into(),
             },
             envelope_json,
+            output_schema_json,
         }
     }
 
@@ -24,6 +35,7 @@ impl AgentRequest {
         job_id: impl Into<String>,
         activity_id: impl Into<String>,
         envelope_json: Vec<u8>,
+        output_schema_json: Option<Value>,
     ) -> Self {
         Self {
             operation: AgentOperation::Job {
@@ -31,6 +43,7 @@ impl AgentRequest {
                 activity_id: activity_id.into(),
             },
             envelope_json,
+            output_schema_json,
         }
     }
 }

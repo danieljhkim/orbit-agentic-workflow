@@ -248,14 +248,21 @@ fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         .build_agent_stdin_envelope_payload(execution)
         .map_err(invocation_failed_outcome)?;
 
+    let output_schema = Some(execution.activity.output_schema_json.clone());
+
     let invocation = agent
         .invoke(match &execution.job {
             Some(job) => AgentRequest::job(
                 job.job_id.clone(),
                 execution.activity.id.clone(),
                 stdin_payload,
+                output_schema,
             ),
-            None => AgentRequest::activity(execution.activity.id.clone(), stdin_payload),
+            None => AgentRequest::activity(
+                execution.activity.id.clone(),
+                stdin_payload,
+                output_schema,
+            ),
         })
         .map_err(invocation_failed_outcome)?;
 
