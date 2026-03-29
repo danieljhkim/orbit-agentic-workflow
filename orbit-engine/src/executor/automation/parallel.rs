@@ -1,16 +1,18 @@
 use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use orbit_types::{JobRunState, OrbitError, Task, TaskStatus};
 use serde_json::{Value, json};
 
+use super::git::{git_command_success, git_output, git_success, resolve_worktree_start_point};
 use crate::context::{RuntimeHost, TaskHost};
 
-const DEFAULT_PARALLEL_BASE: &str = "orbit-parallel-work-branch";
+const DEFAULT_PARALLEL_BASE: &str = "agent-dev";
 const DEFAULT_PARALLELISM: usize = 4;
 const PARALLEL_WORKER_JOB_ID: &str = "job_parallel_task_worker";
-const PARALLEL_FINALIZE_JOB_ID: &str = "job_parallel_task_finalize";
+const SHARED_WORKTREE_NAME: &str = "parallel-batch";
 
 #[derive(Debug, Clone)]
 struct PendingTask {
@@ -38,6 +40,14 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let parallelism = parse_parallelism(input)?;
     let selected_tasks = load_selected_tasks(host, input)?;
     validate_selected_group(&selected_tasks)?;
+
+    // Set up the shared worktree before spawning workers.
+    let repo_root_str = host.repo_root()?;
+    let repo_root = Path::new(&repo_root_str);
+    let shared_worktree = resolve_shared_worktree_path(repo_root)?;
+    ensure_shared_worktree(repo_root, &shared_worktree, &base)?;
+    let shared_worktree_str = shared_worktree.to_string_lossy().to_string();
+
     let mut pending = VecDeque::from(selected_tasks.clone());
 
     let mut launched = 0usize;
@@ -60,7 +70,8 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                     .expect("launchable pending task index must exist");
                 let tx = tx.clone();
                 let task_id = task.task_id.clone();
-                let launch_base = base.clone();
+                let worker_workspace = shared_worktree_str.clone();
+                let worker_repo_root = repo_root_str.clone();
                 active.push(task);
                 launched += 1;
 
@@ -69,7 +80,9 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                         PARALLEL_WORKER_JOB_ID,
                         json!({
                             "task_id": task_id.clone(),
-                            "base": launch_base,
+                            "workspace_path": worker_workspace,
+                            "repo_root": worker_repo_root,
+                            "verification_mode": "deferred",
                         }),
                         false,
                     );
@@ -183,63 +196,83 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     }))
 }
 
-pub(super) fn run_parallel_finalize_tasks<H: RuntimeHost + ?Sized>(
-    host: &H,
-    input: &Value,
-) -> Result<Value, OrbitError> {
-    let base = input
-        .get("base")
-        .and_then(Value::as_str)
-        .map(str::trim)
+
+fn resolve_shared_worktree_path(repo_root: &Path) -> Result<PathBuf, OrbitError> {
+    match std::env::var("ORBIT_WORKTREE_ROOT")
+        .ok()
+        .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_PARALLEL_BASE)
-        .to_string();
-    let completed_task_ids = load_completed_task_ids(input)?;
-
-    let mut launched = 0usize;
-    let mut succeeded = 0usize;
-    let mut failed = 0usize;
-    let mut failures = Vec::new();
-
-    for task_id in completed_task_ids {
-        launched += 1;
-        match host.run_job_now_with_input_debug(
-            PARALLEL_FINALIZE_JOB_ID,
-            json!({
-                "task_id": task_id.clone(),
-                "base": base.clone(),
-            }),
-            false,
-        ) {
-            Ok(result) if result.state == JobRunState::Success => {
-                succeeded += 1;
-            }
-            Ok(result) => {
-                failed += 1;
-                failures.push(json!({
-                    "task_id": task_id,
-                    "error": format!(
-                        "parallel finalization completed in non-success state '{}'",
-                        result.state
-                    ),
-                }));
-            }
-            Err(error) => {
-                failed += 1;
-                failures.push(json!({
-                    "task_id": task_id,
-                    "error": format!("parallel finalization failed: {error}"),
-                }));
-            }
+    {
+        Some(value) => {
+            let repo_name = repo_root
+                .file_name()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    OrbitError::Execution(format!(
+                        "cannot derive repository name from '{}'",
+                        repo_root.display()
+                    ))
+                })?;
+            Ok(PathBuf::from(value).join(repo_name).join(SHARED_WORKTREE_NAME))
         }
+        None => Ok(repo_root
+            .join(".orbit")
+            .join("worktrees")
+            .join(SHARED_WORKTREE_NAME)),
+    }
+}
+
+fn ensure_shared_worktree(
+    repo_root: &Path,
+    worktree_path: &Path,
+    branch: &str,
+) -> Result<(), OrbitError> {
+    if worktree_path.exists() {
+        let current_branch =
+            git_output(worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if current_branch.trim() != branch {
+            return Err(OrbitError::Execution(format!(
+                "shared worktree at '{}' is on branch '{}' but expected '{branch}'",
+                worktree_path.display(),
+                current_branch.trim()
+            )));
+        }
+        return Ok(());
     }
 
-    Ok(json!({
-        "launched": launched,
-        "succeeded": succeeded,
-        "failed": failed,
-        "failures": failures,
-    }))
+    if let Some(parent) = worktree_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            OrbitError::Execution(format!(
+                "failed to create shared worktree directory '{}': {error}",
+                parent.display()
+            ))
+        })?;
+    }
+
+    let start_point = resolve_worktree_start_point(repo_root, "agent-main")?;
+
+    if git_command_success(
+        repo_root,
+        &["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")],
+    )? {
+        git_success(
+            repo_root,
+            &["worktree", "add", &worktree_path.to_string_lossy(), branch],
+        )
+    } else {
+        git_success(
+            repo_root,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                &worktree_path.to_string_lossy(),
+                &start_point,
+            ],
+        )
+    }
 }
 
 impl From<Task> for PendingTask {
@@ -276,10 +309,6 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
     }
 
     Ok(selected)
-}
-
-fn load_completed_task_ids(input: &Value) -> Result<Vec<String>, OrbitError> {
-    load_task_id_array(input, "completed_task_ids", "parallel_finalize_tasks")
 }
 
 fn load_task_id_array(

@@ -7,33 +7,52 @@ job:
   state: enabled
 
   # ---- execution ----
-  # Orchestrates one agent-selected batch by launching dedicated
-  # job_parallel_task_worker runs in parallel against orbit-parallel-work-branch,
-  # then running batch finalization and serial per-task finalization.
+  # Orchestrates one agent-selected batch using a shared worktree on agent-dev.
+  # Workers implement changes directly in the shared directory with file-level locking.
+  # After all workers finish, batch-level finalization reviews the combined diff,
+  # runs tests, commits, and opens a single PR from agent-dev → agent-main.
   max_active_runs: 1
   default_input:
-    base: orbit-parallel-work-branch
+    base: agent-dev
     parallelism: 4
   steps:
+    # 1. Pick a conflict-free batch of backlog tasks.
     - target_type: activity
       target_id: dispatch_parallel_task
       agent_cli: claude
       model: sonnet
       timeout_seconds: 1200
 
+    # 2. Plan all tasks in the batch, refine context_files.
+    - target_type: activity
+      target_id: plan_parallel_batch
+      agent_cli: claude
+      model: opus
+      condition: on_success
+      timeout_seconds: 2400
+
+    # 3. Launch parallel workers in the shared worktree.
     - target_type: activity
       target_id: parallel_dispatch_tasks
       condition: on_success
       timeout_seconds: 7200
 
+    # 4. Review the combined diff, fix integration issues, run tests.
     - target_type: activity
       target_id: finalize_tasks
-      agent_cli: codex
-      model: gpt-5.4
+      agent_cli: claude
+      model: opus
       condition: on_success
       timeout_seconds: 3600
 
+    # 5. Commit all changes on agent-dev.
     - target_type: activity
-      target_id: parallel_finalize_tasks
+      target_id: commit_batch_changes
       condition: on_success
-      timeout_seconds: 7200
+      timeout_seconds: 60
+
+    # 6. Push and open a single PR: agent-dev → agent-main.
+    - target_type: activity
+      target_id: open_batch_pr
+      condition: on_success
+      timeout_seconds: 300

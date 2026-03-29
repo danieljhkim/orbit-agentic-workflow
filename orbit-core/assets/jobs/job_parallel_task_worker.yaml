@@ -7,22 +7,14 @@ job:
   state: enabled
 
   # ---- execution ----
+  # Workers share a single worktree on the agent-dev branch.
+  # File-level locking prevents conflicts between concurrent workers.
+  # No per-task branch creation — all changes land directly in the shared worktree.
   max_active_runs: 16
   default_input:
-    base: orbit-parallel-work-branch
+    base: agent-dev
     verification_mode: deferred
   steps:
-    - target_type: activity
-      target_id: plan_task
-      agent_cli: claude
-      model: opus
-      timeout_seconds: 1000
-
-    - target_type: activity
-      target_id: create_branch
-      condition: on_success
-      timeout_seconds: 60
-
     - target_type: activity
       target_id: implement_change
       agent_cli: codex

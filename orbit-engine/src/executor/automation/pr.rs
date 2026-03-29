@@ -235,3 +235,142 @@ pub(super) fn open_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
 
     Ok(json!({}))
 }
+
+pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
+    host: &H,
+    input: &Value,
+) -> Result<Value, OrbitError> {
+    let workspace_path_str = required_input_string(input, "workspace_path")?;
+    let workspace_path = canonicalize_existing_dir(workspace_path_str, "workspace_path")?;
+
+    let completed_task_ids = input
+        .get("completed_task_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "open_batch_pr requires input.completed_task_ids".to_string(),
+            )
+        })?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput(
+                        "open_batch_pr.completed_task_ids must contain non-empty strings"
+                            .to_string(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<String>, OrbitError>>()?;
+
+    if completed_task_ids.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "open_batch_pr requires at least one completed_task_id".to_string(),
+        ));
+    }
+
+    let head = input_string_field(input, "base").unwrap_or_else(|| "agent-dev".to_string());
+    let base = "agent-main";
+
+    let freshness = ensure_branch_fresh_against_base(&workspace_path, &head, base)?;
+
+    let diff_output = git_output(
+        &workspace_path,
+        &["diff", "--name-only", &format!("{base}...{head}")],
+    )
+    .unwrap_or_default();
+    let changed_files: Vec<&str> = diff_output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    let mut task_lines = Vec::new();
+    let mut id_labels = Vec::new();
+    for task_id in &completed_task_ids {
+        let task = host.get_task(task_id)?;
+        task_lines.push(format!("- {}: {}", task_id, task.title.trim()));
+        id_labels.push(task_id.clone());
+    }
+    let ids_joined = id_labels.join(", ");
+
+    let title = format!("feat: parallel batch [{ids_joined}]");
+    let body = format!(
+        "## Tasks\n{}\n\n## Branch Freshness\n- Base ref: `{}`\n- Head ref: `{}`\n- Behind base: {}\n- Ahead of base: {}\n\n## Files Changed\n{}",
+        task_lines.join("\n"),
+        freshness.base_ref,
+        freshness.head_ref,
+        freshness.commits_behind,
+        freshness.commits_ahead,
+        changed_files
+            .iter()
+            .map(|f| format!("- `{f}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    let tool_context = ToolContext {
+        cwd: Some(workspace_path.to_string_lossy().to_string()),
+        allowed_tools: vec![],
+        ..Default::default()
+    };
+
+    host.run_tool_with_context_and_role(
+        "git.push",
+        json!({
+            "repo_root": workspace_path.to_string_lossy().to_string(),
+            "branch": head,
+        }),
+        Role::Admin,
+        tool_context.clone(),
+    )?;
+
+    let pr_create = host.run_tool_with_context_and_role(
+        "github.pr.create",
+        json!({
+            "title": title,
+            "body": body,
+            "base": base,
+            "head": head,
+            "label": "orbit",
+        }),
+        Role::Admin,
+        tool_context.clone(),
+    )?;
+    let pr_url = pr_create
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            OrbitError::Execution("github.pr.create did not return a PR url".to_string())
+        })?
+        .to_string();
+    let pr_view = host.run_tool_with_context_and_role(
+        "github.pr.view",
+        json!({ "pr": pr_url }),
+        Role::Admin,
+        tool_context,
+    )?;
+    let pr_number = pr_view
+        .get("pull_request")
+        .and_then(|value| value.get("number"))
+        .and_then(json_number_to_string)
+        .ok_or_else(|| {
+            OrbitError::Execution("github.pr.view did not return a PR number".to_string())
+        })?;
+
+    for task_id in &completed_task_ids {
+        host.apply_task_automation_update(
+            task_id,
+            TaskAutomationUpdate {
+                status: Some(TaskStatus::Review),
+                pr_number: Some(pr_number.clone()),
+                ..TaskAutomationUpdate::default()
+            },
+        )?;
+    }
+
+    Ok(json!({}))
+}

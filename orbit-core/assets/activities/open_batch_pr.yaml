@@ -1,0 +1,25 @@
+schema_version: 1
+created_by: system
+activity:
+  id: open_batch_pr
+  spec_type: automation
+  description: "Push the shared parallel branch and open a single PR from agent-dev to agent-main for the entire batch."
+  input_schema_json:
+    type: object
+    required:
+      - completed_task_ids
+      - workspace_path
+    properties:
+      completed_task_ids:
+        type: array
+        items:
+          type: string
+      workspace_path:
+        type: string
+      base:
+        type: string
+        description: "Head branch name. Defaults to agent-dev."
+  output_schema_json:
+    type: object
+    properties: {}
+  action: open_batch_pr

@@ -58,6 +58,85 @@ pub(super) fn commit_task_changes<H: TaskHost + ?Sized>(
     Ok(json!({}))
 }
 
+pub(super) fn commit_batch_changes<H: TaskHost + ?Sized>(
+    host: &H,
+    input: &Value,
+) -> Result<Value, OrbitError> {
+    let workspace_path_str = required_input_string(input, "workspace_path")?;
+    let workspace_path = canonicalize_existing_dir(workspace_path_str, "workspace_path")?;
+
+    let expected_branch = super::input::input_string_field(input, "base")
+        .unwrap_or_else(|| "agent-dev".to_string());
+    let actual_branch = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if actual_branch.trim() != expected_branch {
+        return Err(OrbitError::Execution(format!(
+            "workspace '{}' is on branch '{}' but '{}' was expected",
+            workspace_path.display(),
+            actual_branch.trim(),
+            expected_branch
+        )));
+    }
+
+    let completed_task_ids = input
+        .get("completed_task_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "commit_batch_changes requires input.completed_task_ids".to_string(),
+            )
+        })?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput(
+                        "commit_batch_changes.completed_task_ids must contain non-empty strings"
+                            .to_string(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<String>, OrbitError>>()?;
+
+    if completed_task_ids.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "commit_batch_changes requires at least one completed_task_id".to_string(),
+        ));
+    }
+
+    ensure_no_unmerged_changes(&workspace_path)?;
+    git_success(&workspace_path, &["add", "--all", "--", "."])?;
+
+    let changed_files = git_output_paths(
+        &workspace_path,
+        &["diff", "--cached", "--name-only", "-z", "--relative"],
+    )?;
+
+    if changed_files.is_empty() {
+        git_success(&workspace_path, &["reset", "HEAD"])?;
+        return Ok(json!({}));
+    }
+
+    let mut task_lines = Vec::new();
+    let mut id_labels = Vec::new();
+    for task_id in &completed_task_ids {
+        let task = host.get_task(task_id)?;
+        task_lines.push(format!("- {}: {}", task_id, task.title.trim()));
+        id_labels.push(task_id.clone());
+    }
+    let ids_joined = id_labels.join(", ");
+    let message = format!(
+        "feat: parallel batch [{}]\n\nTasks:\n{}",
+        ids_joined,
+        task_lines.join("\n")
+    );
+
+    git_success(&workspace_path, &["commit", "-m", &message])?;
+    Ok(json!({}))
+}
+
 fn ensure_no_unmerged_changes(workspace_path: &Path) -> Result<(), OrbitError> {
     let status = git_output(workspace_path, &["status", "--porcelain"])?;
     for line in status.lines() {

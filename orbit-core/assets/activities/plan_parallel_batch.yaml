@@ -1,0 +1,91 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: plan_parallel_batch
+  spec_type: agent_invoke
+
+  # ---- content ----
+  description: Author execution plans for all tasks in a parallel batch, refine context_files, and verify no file conflicts remain.
+  instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
+    You are preparing a batch of tasks for parallel execution by writing plans and
+    sharpening the context_files for each task.
+
+    Steps:
+    1. Handle the empty-batch case:
+       - If input.task_ids is missing or empty, return:
+         {"task_ids": [], "comment": "No tasks to plan."}
+
+    2. Load all tasks:
+       - For each id in input.task_ids, call orbit.task.show and read:
+         title, description, acceptance_criteria, current plan, context_files, and priority.
+
+    3. Explore the codebase:
+       - Read the files referenced in each task's context_files and any files named in
+         the descriptions or acceptance criteria.
+       - Build a clear picture of the current code before writing plans.
+
+    4. Author a fresh execution plan for each task:
+       - Write a concise, implementation-ready markdown plan grounded in the current codebase.
+       - The plan must be specific enough for an implementing agent to follow without
+         further exploration. Include concrete file paths, function names, and validation steps.
+       - Replace placeholder plans.
+
+    5. Refine context_files for each task:
+       - Update each task's context_files to list the exact files (not directories) that the
+         implementing agent will need to read or modify.
+       - Be precise: over-broad context_files cause false conflicts; missing files cause
+         agents to work without context.
+       - Verify that no two tasks in the batch share a context_file. If overlap is found,
+         reassign the overlapping file to the task that needs it most and note the decision
+         in that task's plan.
+
+    6. Persist plans and context_files:
+       - For each task, call orbit.task.update with:
+         - id: the task id
+         - plan: the full markdown plan
+         - context_files: the refined file list
+         - comment: "Batch plan authored; context_files refined for parallel execution."
+
+    7. Return a JSON result with EXACTLY these fields:
+       {
+         "task_ids": ["<the same task ids, in batch order>"],
+         "comment": "<brief summary of planning decisions>"
+       }
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_ids
+    properties:
+      task_ids:
+        type: array
+        items:
+          type: string
+    additional_properties: false
+  output_schema_json:
+    type: object
+    required:
+      - task_ids
+    properties:
+      task_ids:
+        type: array
+        items:
+          type: string
+      comment:
+        type: string
+    additional_properties: false
+
+  # ---- execution ----
+  skill_refs:
+    - orbit
+  tools:
+    - orbit.task.show
+    - orbit.task.update
+    - fs.read

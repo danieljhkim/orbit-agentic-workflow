@@ -31,7 +31,8 @@ const AUTOMATION_LOAD_PR_COMMENTS: &str = "load_pr_comments";
 const AUTOMATION_PUSH_TASK_CHANGES: &str = "push_task_changes";
 const AUTOMATION_SYNC_REVIEW_TO_GITHUB: &str = "sync_review_to_github";
 const AUTOMATION_RUN_PARALLEL_TASK_PIPELINE: &str = "run_parallel_task_pipeline";
-const AUTOMATION_RUN_PARALLEL_FINALIZE_TASKS: &str = "run_parallel_finalize_tasks";
+const AUTOMATION_COMMIT_BATCH_CHANGES: &str = "commit_batch_changes";
+const AUTOMATION_OPEN_BATCH_PR: &str = "open_batch_pr";
 
 #[derive(Debug, Clone, Deserialize)]
 struct AutomationSpec {
@@ -94,9 +95,8 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
         AUTOMATION_PUSH_TASK_CHANGES => push::push_task_changes(host, input),
         AUTOMATION_SYNC_REVIEW_TO_GITHUB => sync_review::sync_review_to_github(host, input),
         AUTOMATION_RUN_PARALLEL_TASK_PIPELINE => parallel::run_parallel_task_pipeline(host, input),
-        AUTOMATION_RUN_PARALLEL_FINALIZE_TASKS => {
-            parallel::run_parallel_finalize_tasks(host, input)
-        }
+        AUTOMATION_COMMIT_BATCH_CHANGES => commit::commit_batch_changes(host, input),
+        AUTOMATION_OPEN_BATCH_PR => pr::open_batch_pr(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"
         ))),

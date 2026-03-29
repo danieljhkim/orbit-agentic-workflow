@@ -1,0 +1,25 @@
+schema_version: 1
+created_by: system
+activity:
+  id: commit_batch_changes
+  spec_type: automation
+  description: "Stage and commit all changes in the shared parallel worktree as a single batch commit."
+  input_schema_json:
+    type: object
+    required:
+      - completed_task_ids
+      - workspace_path
+    properties:
+      completed_task_ids:
+        type: array
+        items:
+          type: string
+      workspace_path:
+        type: string
+      base:
+        type: string
+        description: "Branch name the worktree should be on. Defaults to agent-dev."
+  output_schema_json:
+    type: object
+    properties: {}
+  action: commit_batch_changes

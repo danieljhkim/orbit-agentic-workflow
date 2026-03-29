@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: Execute an explicit, conflict-free task batch using the dedicated parallel worker pipeline.
+  description: Execute an explicit, conflict-free task batch using the shared worktree parallel worker pipeline on agent-dev.
 
   # ---- interface ----
   input_schema_json:
@@ -25,7 +25,7 @@ activity:
         description: Ordered task ids selected for this parallel wave.
       base:
         type: string
-        description: Base branch used for dedicated parallel worker worktrees. Defaults to orbit-parallel-work-branch.
+        description: Base branch for the shared parallel worktree. Defaults to agent-dev.
       parallelism:
         type: integer
         minimum: 1

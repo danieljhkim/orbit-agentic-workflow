@@ -15,8 +15,6 @@ use crate::command::activity::activity_requires_agent_cli;
 const JOB_TASK_PIPELINE: &str = "job_task_pipeline";
 const JOB_PARALLEL_TASK_PIPELINE: &str = "job_parallel_task_pipeline";
 const JOB_PARALLEL_TASK_WORKER: &str = "job_parallel_task_worker";
-const JOB_PARALLEL_TASK_FINALIZE: &str = "job_parallel_task_finalize";
-
 const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
     (
         "job_review_tasks",
@@ -49,10 +47,6 @@ const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
     (
         "job_parallel_task_pipeline",
         include_str!("../../assets/jobs/job_parallel_task_pipeline.yaml"),
-    ),
-    (
-        "job_parallel_task_finalize",
-        include_str!("../../assets/jobs/job_parallel_task_finalize.yaml"),
     ),
 ];
 
@@ -136,15 +130,13 @@ impl OrbitRuntime {
             JOB_TASK_PIPELINE => &[
                 JOB_PARALLEL_TASK_PIPELINE,
                 JOB_PARALLEL_TASK_WORKER,
-                JOB_PARALLEL_TASK_FINALIZE,
             ],
             JOB_PARALLEL_TASK_PIPELINE => &[
                 JOB_TASK_PIPELINE,
                 JOB_PARALLEL_TASK_PIPELINE,
                 JOB_PARALLEL_TASK_WORKER,
-                JOB_PARALLEL_TASK_FINALIZE,
             ],
-            JOB_PARALLEL_TASK_WORKER | JOB_PARALLEL_TASK_FINALIZE => &[JOB_TASK_PIPELINE],
+            JOB_PARALLEL_TASK_WORKER => &[JOB_TASK_PIPELINE],
             _ => return Ok(()),
         };
 
