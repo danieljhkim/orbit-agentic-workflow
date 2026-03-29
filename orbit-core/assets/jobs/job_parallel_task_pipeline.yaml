@@ -14,7 +14,7 @@ job:
   max_active_runs: 1
   default_input:
     base: agent-dev
-    parallelism: 4
+    parallelism: 2
   steps:
     # 1. Pick a conflict-free batch of backlog tasks.
     - target_type: activity
