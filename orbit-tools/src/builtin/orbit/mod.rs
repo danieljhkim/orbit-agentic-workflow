@@ -637,6 +637,53 @@ mod tests {
     }
 
     #[test]
+    fn task_update_builds_pr_status_and_pr_number_args() {
+        let (update, _show) = super::task_update::build_exec_requests(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-012647",
+                "pr_status": "approve",
+                "pr_number": "42",
+                "agent": "claude",
+                "model": "opus",
+            }),
+        )
+        .expect("pr_status and pr_number should be accepted");
+
+        assert_eq!(
+            update.args,
+            vec![
+                "task".to_string(),
+                "update".to_string(),
+                "T20260329-012647".to_string(),
+                "--pr-status".to_string(),
+                "approve".to_string(),
+                "--pr-number".to_string(),
+                "42".to_string(),
+                "--agent".to_string(),
+                "claude".to_string(),
+                "--model".to_string(),
+                "opus".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn task_update_accepts_pr_status_alone() {
+        let (update, _show) = super::task_update::build_exec_requests(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-012647",
+                "pr_status": "request-changes",
+            }),
+        )
+        .expect("pr_status alone should satisfy at-least-one-field check");
+
+        assert!(update.args.contains(&"--pr-status".to_string()));
+        assert!(update.args.contains(&"request-changes".to_string()));
+    }
+
+    #[test]
     fn task_update_requires_at_least_one_field() {
         let err = super::task_update::build_exec_requests(
             &ToolContext::default(),

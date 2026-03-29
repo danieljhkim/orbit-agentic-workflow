@@ -30,6 +30,16 @@ pub(super) fn build_exec_requests(
         args.push(comment);
         changed = true;
     }
+    if let Some(pr_status) = super::optional_string(input, "pr_status")? {
+        args.push("--pr-status".to_string());
+        args.push(pr_status);
+        changed = true;
+    }
+    if let Some(pr_number) = super::optional_string(input, "pr_number")? {
+        args.push("--pr-number".to_string());
+        args.push(pr_number);
+        changed = true;
+    }
 
     if !changed {
         return Err(OrbitError::InvalidInput(
@@ -73,6 +83,18 @@ impl Tool for OrbitTaskUpdateTool {
             ToolParam {
                 name: "comment".to_string(),
                 description: "Task comment to append".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "pr_status".to_string(),
+                description: "PR review status (e.g. approve, request-changes)".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "pr_number".to_string(),
+                description: "Pull request number (empty string clears)".to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },
