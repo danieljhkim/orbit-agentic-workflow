@@ -470,16 +470,16 @@ mod tests {
             .expect("review loop spec present");
         assert_eq!(review_loop.max_iterations, 5);
         assert_eq!(review_loop.max_active_runs, 4);
-        assert_eq!(review_loop.steps.len(), 4);
+        assert_eq!(review_loop.steps.len(), 6);
         assert_eq!(review_loop.steps[0].target_id, "implement_fix");
         let review_cycle = specs
             .iter()
             .find(|spec| spec.job_id == "job_review_cycle")
             .expect("review cycle spec present");
         assert_eq!(review_cycle.max_active_runs, 4);
-        assert_eq!(review_cycle.steps.len(), 4);
+        assert_eq!(review_cycle.steps.len(), 5);
         assert_eq!(review_cycle.steps[0].target_id, "review_pr");
-        assert_eq!(review_cycle.steps[3].target_id, "merge_pr");
+        assert_eq!(review_cycle.steps[4].target_id, "merge_pr");
     }
 
     #[test]

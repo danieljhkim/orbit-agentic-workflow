@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
     Activity, ActorIdentity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep,
-    OrbitError, OrbitId, StoredTool, Task, TaskComment, TaskComplexity, TaskHistoryEntry,
-    TaskPriority, TaskStatus, TaskType,
+    OrbitError, OrbitId, ReviewThread, StoredTool, Task, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
 
@@ -73,6 +73,11 @@ pub struct TaskUpdateParams {
     pub status_note: Option<String>,
     pub append_history: Vec<TaskHistoryEntry>,
     pub append_comments: Vec<TaskComment>,
+    /// Review threads to append or merge. Threads whose `thread_id` matches
+    /// an existing thread have their messages appended; new threads are added.
+    pub append_review_threads: Vec<ReviewThread>,
+    /// When set, replaces the entire review_threads collection (used by sync).
+    pub replace_review_threads: Option<Vec<ReviewThread>>,
 }
 
 #[derive(Debug, Clone)]

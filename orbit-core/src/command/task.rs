@@ -53,6 +53,7 @@ pub struct TaskUpdateParams {
     pub status: Option<TaskStatus>,
     pub pr_number: Option<Option<String>>,
     pub pr_status: Option<Option<String>>,
+    pub append_review_threads: Vec<orbit_types::ReviewThread>,
 }
 
 impl From<TaskUpdateParams> for StoreTaskUpdateParams {
@@ -65,6 +66,7 @@ impl From<TaskUpdateParams> for StoreTaskUpdateParams {
             status: p.status,
             pr_number: p.pr_number,
             pr_status: p.pr_status,
+            append_review_threads: p.append_review_threads,
             ..Default::default()
         }
     }
@@ -177,14 +179,10 @@ impl OrbitRuntime {
         self.update_task_with_status_note(
             id,
             TaskUpdateParams {
-                title: None,
-                description: None,
-                plan: None,
                 execution_summary,
                 comment,
                 status: Some(status),
-                pr_number: None,
-                pr_status: None,
+                ..Default::default()
             },
             note,
         )
@@ -622,6 +620,181 @@ impl OrbitRuntime {
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.search_task_records(query)
+    }
+
+    // ---- Review thread operations ----
+
+    pub fn add_review_thread(
+        &self,
+        task_id: &str,
+        body: String,
+        path: Option<String>,
+        line: Option<u64>,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<orbit_types::ReviewThread, OrbitError> {
+        let actor = self.actor().clone();
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+
+        let now = Utc::now();
+        let nanos_suffix = now.timestamp_subsec_nanos() % 10000;
+        let thread_id = format!("rt-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let message_id = format!("rm-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+
+        let thread = orbit_types::ReviewThread {
+            thread_id: thread_id.clone(),
+            path,
+            line,
+            status: orbit_types::ReviewThreadStatus::Open,
+            messages: vec![orbit_types::ReviewMessage {
+                message_id,
+                at: now,
+                by: effective_label.clone(),
+                body,
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        };
+
+        self.update_task_with_identity(
+            task_id,
+            TaskUpdateParams {
+                append_review_threads: vec![thread.clone()],
+                ..Default::default()
+            },
+            agent,
+            model,
+        )?;
+
+        Ok(thread)
+    }
+
+    pub fn list_review_threads(
+        &self,
+        task_id: &str,
+        status_filter: Option<orbit_types::ReviewThreadStatus>,
+    ) -> Result<Vec<orbit_types::ReviewThread>, OrbitError> {
+        let task = self.get_task(task_id)?;
+        let threads = if let Some(status) = status_filter {
+            task.review_threads
+                .into_iter()
+                .filter(|t| t.status == status)
+                .collect()
+        } else {
+            task.review_threads
+        };
+        Ok(threads)
+    }
+
+    pub fn reply_review_thread(
+        &self,
+        task_id: &str,
+        thread_id: &str,
+        body: String,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<orbit_types::ReviewThread, OrbitError> {
+        let task = self.get_task(task_id)?;
+        let existing = task
+            .review_threads
+            .iter()
+            .find(|t| t.thread_id == thread_id)
+            .ok_or_else(|| {
+                OrbitError::InvalidInput(format!(
+                    "review thread '{thread_id}' not found on task '{task_id}'"
+                ))
+            })?;
+
+        let actor = self.actor().clone();
+        let effective_label =
+            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+
+        let now = Utc::now();
+        let nanos_suffix = now.timestamp_subsec_nanos() % 10000;
+        let message_id = format!("rm-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+
+        let reply_thread = orbit_types::ReviewThread {
+            thread_id: thread_id.to_string(),
+            path: None,
+            line: None,
+            status: existing.status,
+            messages: vec![orbit_types::ReviewMessage {
+                message_id,
+                at: now,
+                by: effective_label.clone(),
+                body,
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        };
+
+        self.update_task_with_identity(
+            task_id,
+            TaskUpdateParams {
+                append_review_threads: vec![reply_thread],
+                ..Default::default()
+            },
+            agent,
+            model,
+        )?;
+
+        // Reload to get the merged thread
+        let updated_task = self.get_task(task_id)?;
+        updated_task
+            .review_threads
+            .into_iter()
+            .find(|t| t.thread_id == thread_id)
+            .ok_or_else(|| {
+                OrbitError::Execution("review thread disappeared after reply".to_string())
+            })
+    }
+
+    pub fn resolve_review_thread(
+        &self,
+        task_id: &str,
+        thread_id: &str,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> Result<orbit_types::ReviewThread, OrbitError> {
+        let task = self.get_task(task_id)?;
+        let _existing = task
+            .review_threads
+            .iter()
+            .find(|t| t.thread_id == thread_id)
+            .ok_or_else(|| {
+                OrbitError::InvalidInput(format!(
+                    "review thread '{thread_id}' not found on task '{task_id}'"
+                ))
+            })?;
+
+        let resolve_thread = orbit_types::ReviewThread {
+            thread_id: thread_id.to_string(),
+            path: None,
+            line: None,
+            status: orbit_types::ReviewThreadStatus::Resolved,
+            messages: vec![],
+            github_thread_id: None,
+        };
+
+        self.update_task_with_identity(
+            task_id,
+            TaskUpdateParams {
+                append_review_threads: vec![resolve_thread],
+                ..Default::default()
+            },
+            agent,
+            model,
+        )?;
+
+        let updated_task = self.get_task(task_id)?;
+        updated_task
+            .review_threads
+            .into_iter()
+            .find(|t| t.thread_id == thread_id)
+            .ok_or_else(|| {
+                OrbitError::Execution("review thread disappeared after resolve".to_string())
+            })
     }
 
     /// Best-effort friction bounty scoreboard update after a status transition.

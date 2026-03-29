@@ -3,8 +3,8 @@ use orbit_exec::EnvironmentMode;
 use orbit_store::JobRunStepParams;
 use orbit_tools::ToolContext;
 use orbit_types::{
-    Activity, Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, Role, Task,
-    TaskStatus, redact_sensitive_env_json, redact_sensitive_env_option,
+    Activity, Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, ReviewThread, Role,
+    Task, TaskStatus, redact_sensitive_env_json, redact_sensitive_env_option,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -150,6 +150,7 @@ pub struct TaskAutomationUpdate {
     pub execution_summary: Option<String>,
     pub agent: Option<String>,
     pub model: Option<String>,
+    pub review_threads: Option<Vec<ReviewThread>>,
 }
 
 pub trait JobRunHost {

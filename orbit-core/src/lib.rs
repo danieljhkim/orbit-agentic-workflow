@@ -39,8 +39,8 @@ pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;
 pub use orbit_types::{
     Activity, AuditEvent, AuditEventStatus, AuditStats, Job, JobRun, JobRunState, JobRunStep,
-    JobScheduleState, JobStep, JobTargetType, Role, Skill, Task, TaskComment, TaskComplexity,
-    TaskPriority, TaskStatus, TaskType,
+    JobScheduleState, JobStep, JobTargetType, ReviewMessage, ReviewThread, ReviewThreadStatus,
+    Role, Skill, Task, TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType,
 };
 pub use orbit_types::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
@@ -484,6 +484,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("review");
@@ -626,6 +627,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("update");
@@ -659,6 +661,7 @@ mod tests {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         );
 
@@ -688,6 +691,7 @@ mod tests {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         );
 
@@ -718,6 +722,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("update in-progress task");
@@ -766,6 +771,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("update");
@@ -807,6 +813,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("update");
@@ -942,6 +949,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("in progress");
@@ -959,6 +967,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("review");
@@ -991,6 +1000,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("in progress");
@@ -1008,6 +1018,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("review");
@@ -1079,6 +1090,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("in progress");
@@ -1096,6 +1108,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("review");
@@ -1161,6 +1174,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("in progress");
@@ -1178,6 +1192,7 @@ mod tests {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         );
         assert!(matches!(
@@ -1199,6 +1214,7 @@ mod tests {
                     pr_number: None,
 
                     pr_status: None,
+                    ..Default::default()
                 },
             )
             .expect("review with summary");

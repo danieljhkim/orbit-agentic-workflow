@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    ActorIdentity, OrbitError, OrbitId, Task, TaskComment, TaskComplexity, TaskHistoryEntry,
-    TaskPriority, TaskStatus, TaskType,
+    ActorIdentity, OrbitError, OrbitId, ReviewThread, Task, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as YamlValue};
@@ -145,6 +145,8 @@ struct TaskFileDocument {
     history: Vec<TaskHistoryEntry>,
     #[serde(default)]
     comments: Vec<TaskComment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    review_threads: Vec<ReviewThread>,
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +223,7 @@ impl TaskFileStore {
                     to_status: Some(params.status),
                 }],
                 comments: params.comments,
+                review_threads: Vec::new(),
             },
             plan: params.plan,
             execution_summary: params.execution_summary,
@@ -369,6 +372,14 @@ impl TaskFileStore {
         }
         if !fields.append_comments.is_empty() {
             bundle.doc.comments.extend(fields.append_comments.clone());
+        }
+        if let Some(ref threads) = fields.replace_review_threads {
+            bundle.doc.review_threads = threads.clone();
+        } else if !fields.append_review_threads.is_empty() {
+            merge_review_threads(
+                &mut bundle.doc.review_threads,
+                fields.append_review_threads.clone(),
+            );
         }
 
         let target_state = fields
@@ -624,6 +635,11 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_field("history", &doc.history)?);
     yaml.push_str(&yaml_field("comments", &doc.comments)?);
 
+    if !doc.review_threads.is_empty() {
+        yaml.push_str(&yaml_section("review"));
+        yaml.push_str(&yaml_field("review_threads", &doc.review_threads)?);
+    }
+
     Ok(yaml)
 }
 
@@ -649,6 +665,25 @@ fn bundle_read_error(path: &Path, label: &str, err: std::io::Error) -> OrbitErro
         OrbitError::Store(format!("missing {label} at {}", path.display()))
     } else {
         OrbitError::Io(err.to_string())
+    }
+}
+
+/// Merge incoming review threads into existing threads.
+///
+/// If an incoming thread's `thread_id` matches an existing one, its messages
+/// are appended and its status is updated. Otherwise the whole thread is added.
+fn merge_review_threads(existing: &mut Vec<ReviewThread>, incoming: Vec<ReviewThread>) {
+    for thread in incoming {
+        if let Some(existing_thread) = existing.iter_mut().find(|t| t.thread_id == thread.thread_id)
+        {
+            existing_thread.messages.extend(thread.messages);
+            existing_thread.status = thread.status;
+            if thread.github_thread_id.is_some() {
+                existing_thread.github_thread_id = thread.github_thread_id;
+            }
+        } else {
+            existing.push(thread);
+        }
     }
 }
 
@@ -684,6 +719,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         source_task_id: bundle.doc.source_task_id,
         comments: bundle.doc.comments,
         history: bundle.doc.history,
+        review_threads: bundle.doc.review_threads,
         created_at: bundle.doc.created_at,
         updated_at: bundle.doc.updated_at,
     }
@@ -1282,5 +1318,122 @@ mod tests {
         );
         let num: u32 = suffix[1..].parse().expect("suffix is a number");
         assert!(num >= 2, "suffix number must be >= 2, got {num}");
+    }
+
+    #[test]
+    fn merge_review_threads_appends_new_thread() {
+        use orbit_types::{ReviewMessage, ReviewThread, ReviewThreadStatus};
+
+        let mut existing = vec![];
+        let incoming = vec![ReviewThread {
+            thread_id: "rt-001".to_string(),
+            path: Some("src/main.rs".to_string()),
+            line: Some(10),
+            status: ReviewThreadStatus::Open,
+            messages: vec![ReviewMessage {
+                message_id: "rm-001".to_string(),
+                at: Utc::now(),
+                by: "reviewer".to_string(),
+                body: "issue here".to_string(),
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        }];
+
+        super::merge_review_threads(&mut existing, incoming);
+        assert_eq!(existing.len(), 1);
+        assert_eq!(existing[0].thread_id, "rt-001");
+        assert_eq!(existing[0].messages.len(), 1);
+    }
+
+    #[test]
+    fn merge_review_threads_appends_messages_to_existing() {
+        use orbit_types::{ReviewMessage, ReviewThread, ReviewThreadStatus};
+
+        let mut existing = vec![ReviewThread {
+            thread_id: "rt-001".to_string(),
+            path: None,
+            line: None,
+            status: ReviewThreadStatus::Open,
+            messages: vec![ReviewMessage {
+                message_id: "rm-001".to_string(),
+                at: Utc::now(),
+                by: "reviewer".to_string(),
+                body: "original comment".to_string(),
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        }];
+
+        let incoming = vec![ReviewThread {
+            thread_id: "rt-001".to_string(),
+            path: None,
+            line: None,
+            status: ReviewThreadStatus::Resolved,
+            messages: vec![ReviewMessage {
+                message_id: "rm-002".to_string(),
+                at: Utc::now(),
+                by: "fixer".to_string(),
+                body: "fixed it".to_string(),
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        }];
+
+        super::merge_review_threads(&mut existing, incoming);
+        assert_eq!(existing.len(), 1);
+        assert_eq!(existing[0].messages.len(), 2);
+        assert_eq!(existing[0].status, ReviewThreadStatus::Resolved);
+        assert_eq!(existing[0].messages[1].body, "fixed it");
+    }
+
+    #[test]
+    fn review_threads_round_trip_through_yaml() {
+        use orbit_types::{ReviewMessage, ReviewThread, ReviewThreadStatus};
+
+        let dir = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(dir.path().to_path_buf());
+
+        let task = store
+            .create_task(sample_insert(TaskStatus::InProgress))
+            .expect("create task");
+
+        // Add a review thread via update
+        let updated = store
+            .update_task(
+                &task.id,
+                &TaskUpdateParams {
+                    actor: "Codex".to_string(),
+                    append_review_threads: vec![ReviewThread {
+                        thread_id: "rt-test-001".to_string(),
+                        path: Some("lib.rs".to_string()),
+                        line: Some(42),
+                        status: ReviewThreadStatus::Open,
+                        messages: vec![ReviewMessage {
+                            message_id: "rm-test-001".to_string(),
+                            at: Utc::now(),
+                            by: "claude / opus".to_string(),
+                            body: "Needs bounds check".to_string(),
+                            github_comment_id: None,
+                        }],
+                        github_thread_id: None,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .expect("update task with review thread");
+
+        assert_eq!(updated.review_threads.len(), 1);
+        assert_eq!(updated.review_threads[0].thread_id, "rt-test-001");
+
+        // Read it back
+        let loaded = store
+            .get_task(&task.id)
+            .expect("get task")
+            .expect("task exists");
+        assert_eq!(loaded.review_threads.len(), 1);
+        assert_eq!(loaded.review_threads[0].messages[0].body, "Needs bounds check");
+        assert_eq!(loaded.review_threads[0].path.as_deref(), Some("lib.rs"));
+        assert_eq!(loaded.review_threads[0].line, Some(42));
     }
 }

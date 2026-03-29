@@ -7,6 +7,7 @@ mod input;
 mod pr;
 mod push;
 pub(crate) mod review;
+mod sync_review;
 mod task;
 mod worktree;
 
@@ -27,6 +28,7 @@ const AUTOMATION_FINALIZE_TASK_WORKTREE: &str = "finalize_task_worktree";
 const AUTOMATION_CHECK_REVIEW_DECISION: &str = "check_review_decision";
 const AUTOMATION_LOAD_PR_COMMENTS: &str = "load_pr_comments";
 const AUTOMATION_PUSH_TASK_CHANGES: &str = "push_task_changes";
+const AUTOMATION_SYNC_REVIEW_TO_GITHUB: &str = "sync_review_to_github";
 
 #[derive(Debug, Clone, Deserialize)]
 struct AutomationSpec {
@@ -98,6 +100,7 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + ?Size
         AUTOMATION_CHECK_REVIEW_DECISION => check_review::check_review_decision(host, input),
         AUTOMATION_LOAD_PR_COMMENTS => comments::load_pr_comments(host, input),
         AUTOMATION_PUSH_TASK_CHANGES => push::push_task_changes(host, input),
+        AUTOMATION_SYNC_REVIEW_TO_GITHUB => sync_review::sync_review_to_github(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"
         ))),

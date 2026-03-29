@@ -2,6 +2,10 @@ pub mod activity_show;
 pub mod job_run_archive;
 pub mod job_run_list;
 pub mod job_run_show;
+pub mod review_thread_add;
+pub mod review_thread_list;
+pub mod review_thread_reply;
+pub mod review_thread_resolve;
 pub mod task_add;
 pub mod task_approve;
 pub mod task_list;
@@ -40,6 +44,10 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(job_run_show::OrbitJobRunShowTool);
     registry.register(job_run_archive::OrbitJobRunArchiveTool);
     registry.register(activity_show::OrbitActivityShowTool);
+    registry.register(review_thread_add::OrbitReviewThreadAddTool);
+    registry.register(review_thread_list::OrbitReviewThreadListTool);
+    registry.register(review_thread_reply::OrbitReviewThreadReplyTool);
+    registry.register(review_thread_resolve::OrbitReviewThreadResolveTool);
 }
 
 fn build_actor_label(agent: Option<&str>, model: Option<&str>) -> Option<String> {
@@ -267,6 +275,10 @@ mod tests {
             "orbit.job_run.show",
             "orbit.job_run.archive",
             "orbit.activity.show",
+            "orbit.task.review_thread.add",
+            "orbit.task.review_thread.list",
+            "orbit.task.review_thread.reply",
+            "orbit.task.review_thread.resolve",
         ] {
             assert!(
                 names.contains(&expected.to_string()),
@@ -775,6 +787,156 @@ mod tests {
                 "activity".to_string(),
                 "show".to_string(),
                 "open_pr".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn review_thread_add_builds_request_with_all_fields() {
+        let (add, _show) = super::review_thread_add::build_exec_requests(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-013425",
+                "body": "This function needs error handling",
+                "path": "src/main.rs",
+                "line": "42",
+                "agent": "claude",
+                "model": "opus",
+            }),
+        )
+        .expect("valid input");
+
+        assert_eq!(
+            add.args,
+            vec![
+                "task".to_string(),
+                "review-thread".to_string(),
+                "add".to_string(),
+                "T20260329-013425".to_string(),
+                "--body".to_string(),
+                "This function needs error handling".to_string(),
+                "--path".to_string(),
+                "src/main.rs".to_string(),
+                "--line".to_string(),
+                "42".to_string(),
+                "--agent".to_string(),
+                "claude".to_string(),
+                "--model".to_string(),
+                "opus".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn review_thread_add_builds_request_without_optional_fields() {
+        let (add, _show) = super::review_thread_add::build_exec_requests(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-013425",
+                "body": "General comment",
+            }),
+        )
+        .expect("valid input");
+
+        assert_eq!(
+            add.args,
+            vec![
+                "task".to_string(),
+                "review-thread".to_string(),
+                "add".to_string(),
+                "T20260329-013425".to_string(),
+                "--body".to_string(),
+                "General comment".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn review_thread_list_builds_request_with_status_filter() {
+        let req = super::review_thread_list::build_exec_request(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-013425",
+                "status": "open",
+            }),
+        )
+        .expect("valid input");
+
+        assert_eq!(
+            req.args,
+            vec![
+                "task".to_string(),
+                "review-thread".to_string(),
+                "list".to_string(),
+                "T20260329-013425".to_string(),
+                "--status".to_string(),
+                "open".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn review_thread_reply_builds_request() {
+        let (reply, _show) = super::review_thread_reply::build_exec_requests(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-013425",
+                "thread_id": "rt-20260329-013425-1234",
+                "body": "Fixed in latest commit",
+                "agent": "claude",
+                "model": "opus",
+            }),
+        )
+        .expect("valid input");
+
+        assert_eq!(
+            reply.args,
+            vec![
+                "task".to_string(),
+                "review-thread".to_string(),
+                "reply".to_string(),
+                "T20260329-013425".to_string(),
+                "rt-20260329-013425-1234".to_string(),
+                "--body".to_string(),
+                "Fixed in latest commit".to_string(),
+                "--agent".to_string(),
+                "claude".to_string(),
+                "--model".to_string(),
+                "opus".to_string(),
+                "--json".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn review_thread_resolve_builds_request() {
+        let (resolve, _show) = super::review_thread_resolve::build_exec_requests(
+            &ToolContext::default(),
+            &json!({
+                "id": "T20260329-013425",
+                "thread_id": "rt-20260329-013425-1234",
+                "agent": "claude",
+                "model": "opus",
+            }),
+        )
+        .expect("valid input");
+
+        assert_eq!(
+            resolve.args,
+            vec![
+                "task".to_string(),
+                "review-thread".to_string(),
+                "resolve".to_string(),
+                "T20260329-013425".to_string(),
+                "rt-20260329-013425-1234".to_string(),
+                "--agent".to_string(),
+                "claude".to_string(),
+                "--model".to_string(),
+                "opus".to_string(),
                 "--json".to_string(),
             ]
         );

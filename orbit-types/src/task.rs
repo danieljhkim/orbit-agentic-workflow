@@ -270,6 +270,67 @@ impl TaskType {
     }
 }
 
+/// Status of a review thread (open or resolved).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewThreadStatus {
+    Open,
+    Resolved,
+}
+
+impl Display for ReviewThreadStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReviewThreadStatus::Open => write!(f, "open"),
+            ReviewThreadStatus::Resolved => write!(f, "resolved"),
+        }
+    }
+}
+
+impl FromStr for ReviewThreadStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "open" => Ok(ReviewThreadStatus::Open),
+            "resolved" => Ok(ReviewThreadStatus::Resolved),
+            other => Err(format!("unknown review thread status: {other}")),
+        }
+    }
+}
+
+/// A single message within a [`ReviewThread`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewMessage {
+    pub message_id: String,
+    pub at: DateTime<Utc>,
+    pub by: String,
+    pub body: String,
+    /// GitHub comment ID, set after sync. `None` means pending sync.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_comment_id: Option<u64>,
+}
+
+/// A review thread on a task, replacing direct GitHub review comments.
+///
+/// Threads with `path` and `line` are inline (file-specific) comments.
+/// Threads without are general comments (e.g. review summaries).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewThread {
+    pub thread_id: String,
+    /// File path relative to repo root. `None` for general comments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Line number in the file. `None` for general comments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    pub status: ReviewThreadStatus,
+    pub messages: Vec<ReviewMessage>,
+    /// GitHub review thread/comment ID, set after first sync.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_thread_id: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskComment {
     pub at: DateTime<Utc>,
@@ -331,6 +392,8 @@ pub struct Task {
     pub comments: Vec<TaskComment>,
     #[serde(default)]
     pub history: Vec<TaskHistoryEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_threads: Vec<ReviewThread>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -508,5 +571,68 @@ mod tests {
         .expect("deserialize task");
 
         assert_eq!(task.source_task_id, None);
+    }
+
+    #[test]
+    fn review_thread_status_round_trips() {
+        for (raw, expected) in [
+            ("open", ReviewThreadStatus::Open),
+            ("resolved", ReviewThreadStatus::Resolved),
+        ] {
+            assert_eq!(
+                ReviewThreadStatus::from_str(raw).expect("parse"),
+                expected
+            );
+            assert_eq!(expected.to_string(), raw);
+            assert_eq!(
+                serde_json::from_str::<ReviewThreadStatus>(&format!("\"{raw}\""))
+                    .expect("deserialize"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn review_thread_serde_round_trip() {
+        let thread = ReviewThread {
+            thread_id: "rt-001".to_string(),
+            path: Some("src/main.rs".to_string()),
+            line: Some(42),
+            status: ReviewThreadStatus::Open,
+            messages: vec![ReviewMessage {
+                message_id: "rm-001".to_string(),
+                at: Utc::now(),
+                by: "claude / opus".to_string(),
+                body: "This needs a bounds check".to_string(),
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        };
+
+        let json = serde_json::to_string(&thread).expect("serialize");
+        let deserialized: ReviewThread = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(thread, deserialized);
+    }
+
+    #[test]
+    fn task_missing_review_threads_deserializes_to_empty() {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "id": "T20260329-000001",
+            "title": "No review threads",
+            "description": "desc",
+            "plan": "",
+            "execution_summary": "",
+            "context_files": [],
+            "status": "backlog",
+            "priority": "medium",
+            "task_type": "task",
+            "comments": [],
+            "history": [],
+            "created_at": "2026-03-29T00:00:00Z",
+            "updated_at": "2026-03-29T00:00:00Z"
+        }))
+        .expect("deserialize task");
+
+        assert!(task.review_threads.is_empty());
     }
 }

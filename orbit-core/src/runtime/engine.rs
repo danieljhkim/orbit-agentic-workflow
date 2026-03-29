@@ -438,6 +438,7 @@ impl TaskHost for OrbitRuntime {
                         update.model.as_deref(),
                     ))
                     .filter(|id| !id.is_system()),
+                    replace_review_threads: update.review_threads.clone(),
                     ..Default::default()
                 },
             )?;

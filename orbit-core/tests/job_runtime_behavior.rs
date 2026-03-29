@@ -3050,6 +3050,7 @@ fn update_task_automation_moves_task_to_review_with_summary_comment_and_note() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("pre-set execution_summary");
@@ -3193,6 +3194,7 @@ fn implement_change_result_status_flows_into_update_task_as_task_status() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("pre-set execution_summary");
@@ -3402,6 +3404,7 @@ fn commit_changes_automation_commits_dirty_task_worktree() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("set execution_summary");
@@ -3593,6 +3596,7 @@ fn commit_task_changes_uses_summary_from_task() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("set execution_summary");
@@ -3744,6 +3748,7 @@ fn commit_task_changes_supports_task_id_only_inputs() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("set execution summary");
@@ -3938,6 +3943,7 @@ fn open_pr_automation_uses_task_title_and_commit_output() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("prepare task");
@@ -4191,6 +4197,7 @@ fn open_pr_automation_supports_task_id_only_inputs() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("prepare task");
@@ -4386,6 +4393,7 @@ fn open_pr_automation_rejects_stale_task_branches_before_pr_creation() {
                 pr_number: None,
 
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("prepare task");
@@ -4565,6 +4573,7 @@ fn merge_pr_automation_rejects_stale_task_branches_before_merging() {
                 status: Some(TaskStatus::Review),
                 pr_number: Some(Some("42".to_string())),
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("prepare task");
@@ -4736,6 +4745,7 @@ fn merge_pr_automation_fetches_review_decision_from_gh_when_not_provided() {
 
                 pr_number: Some(Some("24".to_string())),
                 pr_status: None,
+                ..Default::default()
             },
         )
         .expect("prepare task");

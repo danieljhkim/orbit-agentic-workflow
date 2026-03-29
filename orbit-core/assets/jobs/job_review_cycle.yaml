@@ -30,6 +30,11 @@ job:
       timeout_seconds: 600
 
     - target_type: activity
+      target_id: sync_review_to_github
+      condition: on_success
+      timeout_seconds: 60
+
+    - target_type: activity
       target_id: check_review_decision
       condition: on_success
       timeout_seconds: 30

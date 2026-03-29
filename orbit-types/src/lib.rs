@@ -59,7 +59,8 @@ pub use redaction::{
 pub use role::Role;
 pub use skill::Skill;
 pub use task::{
-    Task, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    ReviewMessage, ReviewThread, ReviewThreadStatus, Task, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
 pub use workspace::{Workspace, WorkspacePaths, WorkspaceRegistry, WorkspaceStatus};

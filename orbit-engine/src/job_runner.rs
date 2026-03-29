@@ -1128,6 +1128,7 @@ mod tests {
             complexity: None,
             comments: vec![],
             history: vec![],
+            review_threads: vec![],
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

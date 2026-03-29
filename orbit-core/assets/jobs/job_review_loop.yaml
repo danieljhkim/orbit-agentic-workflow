@@ -33,6 +33,11 @@ job:
       timeout_seconds: 2000
 
     - target_type: activity
+      target_id: sync_review_to_github
+      condition: on_success
+      timeout_seconds: 60
+
+    - target_type: activity
       target_id: commit_changes
       condition: on_success
       timeout_seconds: 60
@@ -48,3 +53,8 @@ job:
       model: gpt-5.4
       condition: on_success
       timeout_seconds: 600
+
+    - target_type: activity
+      target_id: sync_review_to_github
+      condition: on_success
+      timeout_seconds: 60

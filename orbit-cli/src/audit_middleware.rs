@@ -224,6 +224,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 TaskSubcommand::Delete(args) => ("delete", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Search(_) => ("search", None, None),
                 TaskSubcommand::Templates(_) => ("templates", None, None),
+                TaskSubcommand::ReviewThread(_) => ("review-thread", Some("task"), None),
             };
             CommandMeta {
                 command: "task".to_string(),

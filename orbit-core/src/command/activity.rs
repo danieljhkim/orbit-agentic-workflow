@@ -79,6 +79,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         "push_changes",
         include_str!("../../assets/activities/push_changes.yaml"),
     ),
+    (
+        "sync_review_to_github",
+        include_str!("../../assets/activities/sync_review_to_github.yaml"),
+    ),
 ];
 
 const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "api", "automation"];
@@ -587,6 +591,8 @@ activity:
                 "check_review_decision",
                 "load_pr_comments",
                 "implement_fix",
+                "push_changes",
+                "sync_review_to_github",
             ]
         );
     }
