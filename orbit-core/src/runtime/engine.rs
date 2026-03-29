@@ -8,6 +8,7 @@ use orbit_tools::ToolContext;
 use orbit_types::{
     Activity, ActorIdentity, AgentCommitRequest, AgentResponseEnvelope, JobRun, JobRunState,
     JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus, TaskType,
+    WorkspacePaths,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -330,7 +331,7 @@ impl EnvironmentHost for OrbitRuntime {
         if policy.sandbox() == "workspace-write" {
             config.insert(
                 "writable_dirs_json".to_string(),
-                serde_json::to_string(&vec![self.context.paths().global_dir.to_string_lossy()])
+                serde_json::to_string(&codex_workspace_write_writable_dirs(self.context.paths()))
                     .unwrap_or_else(|_| "[]".to_string()),
             );
         }
@@ -487,4 +488,55 @@ fn current_repo_root(runtime: &OrbitRuntime) -> Result<String, OrbitError> {
         .repo_root
         .to_string_lossy()
         .to_string())
+}
+
+fn codex_workspace_write_writable_dirs(paths: &WorkspacePaths) -> Vec<String> {
+    let mut dirs = Vec::new();
+    for dir in [&paths.orbit_dir, &paths.global_dir] {
+        let dir = dir.to_string_lossy().into_owned();
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use orbit_types::WorkspacePaths;
+
+    use super::codex_workspace_write_writable_dirs;
+
+    #[test]
+    fn workspace_write_includes_workspace_and_global_orbit_dirs() {
+        let paths = WorkspacePaths::new(
+            PathBuf::from("/repo"),
+            PathBuf::from("/repo/.orbit"),
+            PathBuf::from("/Users/test/.orbit"),
+        );
+
+        assert_eq!(
+            codex_workspace_write_writable_dirs(&paths),
+            vec![
+                "/repo/.orbit".to_string(),
+                "/Users/test/.orbit".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn workspace_write_deduplicates_identical_orbit_dirs() {
+        let paths = WorkspacePaths::new(
+            PathBuf::from("/repo"),
+            PathBuf::from("/repo/.orbit"),
+            PathBuf::from("/repo/.orbit"),
+        );
+
+        assert_eq!(
+            codex_workspace_write_writable_dirs(&paths),
+            vec!["/repo/.orbit".to_string()]
+        );
+    }
 }
