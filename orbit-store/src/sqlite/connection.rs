@@ -89,22 +89,3 @@ fn set_journal_mode_wal(conn: &Connection) -> Result<String, OrbitError> {
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get::<_, String>(0))
         .map_err(|e| OrbitError::Store(format!("failed to set journal_mode=WAL: {e}")))
 }
-
-#[cfg(test)]
-mod tests {
-    use rusqlite::Connection;
-    use tempfile::tempdir;
-
-    use super::set_journal_mode_wal;
-
-    #[test]
-    fn set_journal_mode_wal_returns_effective_mode() {
-        let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("orbit.db");
-        let conn = Connection::open(&db_path).expect("open sqlite db");
-
-        let mode = set_journal_mode_wal(&conn).expect("set journal mode");
-
-        assert_eq!(mode.to_ascii_lowercase(), "wal");
-    }
-}

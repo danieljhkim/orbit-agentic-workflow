@@ -27,7 +27,9 @@ pub(super) fn build_exec_request(
 
     args.push("--json".to_string());
 
-    Ok(super::orbit_exec_request_with_identity(ctx, args, &identity))
+    Ok(super::orbit_exec_request_with_identity(
+        ctx, args, &identity,
+    ))
 }
 
 impl Tool for OrbitReviewThreadListTool {

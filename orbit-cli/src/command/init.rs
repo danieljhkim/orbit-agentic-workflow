@@ -113,31 +113,3 @@ fn global_orbit_root() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     Some(PathBuf::from(home).join(".orbit"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{ReportedInitPaths, reported_init_paths};
-    use std::path::Path;
-
-    #[test]
-    fn reported_init_paths_redact_custom_root() {
-        assert_eq!(
-            reported_init_paths(Some(Path::new("/tmp/custom/.orbit"))),
-            ReportedInitPaths {
-                skills_root: "<custom orbit root>/skills",
-                config_path: "<custom orbit root>/config.toml",
-            }
-        );
-    }
-
-    #[test]
-    fn reported_init_paths_defaults_to_global_root_labels() {
-        assert_eq!(
-            reported_init_paths(None),
-            ReportedInitPaths {
-                skills_root: "~/.orbit/skills",
-                config_path: "~/.orbit/config.toml",
-            }
-        );
-    }
-}

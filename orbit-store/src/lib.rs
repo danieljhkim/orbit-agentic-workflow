@@ -74,6 +74,3 @@ pub(crate) fn parse_timestamp(raw: &str) -> rusqlite::Result<DateTime<Utc>> {
 pub(crate) fn now_string() -> String {
     Utc::now().to_rfc3339()
 }
-
-#[cfg(test)]
-mod tests {}

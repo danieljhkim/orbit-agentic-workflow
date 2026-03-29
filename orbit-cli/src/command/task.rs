@@ -968,12 +968,7 @@ pub struct ReviewThreadAddArgs {
 impl Execute for ReviewThreadAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let thread = runtime.add_review_thread(
-            &self.id,
-            self.body,
-            self.path,
-            self.line,
-            self.agent,
-            self.model,
+            &self.id, self.body, self.path, self.line, self.agent, self.model,
         )?;
         if self.json {
             crate::output::json::print_pretty(&serde_json::to_value(&thread).unwrap_or_default())
@@ -1007,9 +1002,7 @@ impl Execute for ReviewThreadListArgs {
             .transpose()?;
         let threads = runtime.list_review_threads(&self.id, status_filter)?;
         if self.json {
-            crate::output::json::print_pretty(
-                &serde_json::to_value(&threads).unwrap_or_default(),
-            )
+            crate::output::json::print_pretty(&serde_json::to_value(&threads).unwrap_or_default())
         } else {
             for t in &threads {
                 println!(
@@ -1085,12 +1078,8 @@ pub struct ReviewThreadResolveArgs {
 
 impl Execute for ReviewThreadResolveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let thread = runtime.resolve_review_thread(
-            &self.id,
-            &self.thread_id,
-            self.agent,
-            self.model,
-        )?;
+        let thread =
+            runtime.resolve_review_thread(&self.id, &self.thread_id, self.agent, self.model)?;
         if self.json {
             crate::output::json::print_pretty(&serde_json::to_value(&thread).unwrap_or_default())
         } else {

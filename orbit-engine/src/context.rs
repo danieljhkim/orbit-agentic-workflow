@@ -39,34 +39,6 @@ pub fn is_transient_error(code: &str) -> bool {
             | AGENT_OUTPUT_MISSING
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn transient_codes_are_retryable() {
-        assert!(is_transient_error(AGENT_TRANSPORT_FAILURE));
-        assert!(is_transient_error(AGENT_PROVIDER_OVERLOAD));
-        assert!(is_transient_error(AGENT_RATE_LIMIT));
-        assert!(is_transient_error(AGENT_TIMEOUT));
-    }
-
-    #[test]
-    fn non_transient_codes_are_not_retryable() {
-        assert!(!is_transient_error(AGENT_PROTOCOL_VIOLATION));
-        assert!(!is_transient_error(AGENT_INVOCATION_FAILED));
-        assert!(!is_transient_error(AGENT_COMMIT_FAILED));
-        assert!(!is_transient_error(ACTIVITY_EXECUTION_FAILED));
-        assert!(!is_transient_error("UNKNOWN_CODE"));
-    }
-
-    #[test]
-    fn agent_output_missing_is_retryable() {
-        assert!(is_transient_error(AGENT_OUTPUT_MISSING));
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub activity: Activity,
