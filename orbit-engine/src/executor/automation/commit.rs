@@ -77,33 +77,27 @@ pub(super) fn commit_batch_changes<H: TaskHost + ?Sized>(
         )));
     }
 
-    let completed_task_ids = input
-        .get("completed_task_ids")
-        .and_then(Value::as_array)
+    let batch_id = input
+        .get("run_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
         .ok_or_else(|| {
             OrbitError::InvalidInput(
-                "commit_batch_changes requires input.completed_task_ids".to_string(),
+                "commit_batch_changes requires input.run_id".to_string(),
             )
-        })?
+        })?;
+
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    let completed_task_ids: Vec<String> = batch_tasks
         .iter()
-        .map(|v| {
-            v.as_str()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(ToOwned::to_owned)
-                .ok_or_else(|| {
-                    OrbitError::InvalidInput(
-                        "commit_batch_changes.completed_task_ids must contain non-empty strings"
-                            .to_string(),
-                    )
-                })
-        })
-        .collect::<Result<Vec<String>, OrbitError>>()?;
+        .map(|t| t.id.clone())
+        .collect();
 
     if completed_task_ids.is_empty() {
-        return Err(OrbitError::InvalidInput(
-            "commit_batch_changes requires at least one completed_task_id".to_string(),
-        ));
+        return Err(OrbitError::InvalidInput(format!(
+            "commit_batch_changes: no tasks found for batch_id '{batch_id}'"
+        )));
     }
 
     ensure_no_unmerged_changes(&workspace_path)?;

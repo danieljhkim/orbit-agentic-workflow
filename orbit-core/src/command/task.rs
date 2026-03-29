@@ -55,6 +55,7 @@ pub struct TaskUpdateParams {
     pub status: Option<TaskStatus>,
     pub pr_number: Option<Option<String>>,
     pub pr_status: Option<Option<String>>,
+    pub batch_id: Option<Option<String>>,
     pub append_review_threads: Vec<orbit_types::ReviewThread>,
 }
 
@@ -68,6 +69,7 @@ impl From<TaskUpdateParams> for StoreTaskUpdateParams {
             status: p.status,
             pr_number: p.pr_number,
             pr_status: p.pr_status,
+            batch_id: p.batch_id,
             append_review_threads: p.append_review_threads,
             ..Default::default()
         }
@@ -153,8 +155,9 @@ impl OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.list_task_records_filtered(status, priority, parent_id)
+        self.list_task_records_filtered(status, priority, parent_id, batch_id)
     }
 
     pub fn update_task(&self, id: &str, params: TaskUpdateParams) -> Result<Task, OrbitError> {
@@ -215,7 +218,8 @@ impl OrbitRuntime {
             || params.execution_summary.is_some()
             || params.comment.is_some()
             || params.pr_number.is_some()
-            || params.pr_status.is_some();
+            || params.pr_status.is_some()
+            || params.batch_id.is_some();
 
         if is_field_update && matches!(task.status, TaskStatus::Done | TaskStatus::Archived) {
             return Err(OrbitError::InvalidInput(format!(

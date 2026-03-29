@@ -139,6 +139,8 @@ struct TaskFileDocument {
     pr_status: Option<String>,
     #[serde(default)]
     source_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    batch_id: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(default)]
@@ -212,6 +214,7 @@ impl TaskFileStore {
                 pr_status: None,
                 proposed_by: params.proposed_by,
                 source_task_id: params.source_task_id,
+                batch_id: None,
                 created_at: now,
                 updated_at: now,
                 history: vec![TaskHistoryEntry {
@@ -267,6 +270,7 @@ impl TaskFileStore {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
         let tasks = self.list_tasks()?;
         Ok(tasks
@@ -274,6 +278,7 @@ impl TaskFileStore {
             .filter(|task| status.is_none_or(|value| task.status == value))
             .filter(|task| priority.is_none_or(|value| task.priority == value))
             .filter(|task| parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value)))
+            .filter(|task| batch_id.is_none_or(|value| task.batch_id.as_deref() == Some(value)))
             .collect())
     }
 
@@ -366,6 +371,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.source_task_id {
             bundle.doc.source_task_id = value.clone();
+        }
+        if let Some(value) = &fields.batch_id {
+            bundle.doc.batch_id = value.clone();
         }
         if !fields.append_history.is_empty() {
             bundle.doc.history.extend(fields.append_history.clone());
@@ -622,9 +630,12 @@ fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError>
     yaml.push_str(&yaml_field("pr_number", &doc.pr_number)?);
     yaml.push_str(&yaml_field("pr_status", &doc.pr_status)?);
 
-    if doc.source_task_id.is_some() {
+    if doc.source_task_id.is_some() || doc.batch_id.is_some() {
         yaml.push_str(&yaml_section("attribution"));
         yaml.push_str(&yaml_field("source_task_id", &doc.source_task_id)?);
+        if doc.batch_id.is_some() {
+            yaml.push_str(&yaml_field("batch_id", &doc.batch_id)?);
+        }
     }
 
     yaml.push_str(&yaml_section("timestamps"));
@@ -720,6 +731,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         pr_status: bundle.doc.pr_status,
         proposed_by: bundle.doc.proposed_by,
         source_task_id: bundle.doc.source_task_id,
+        batch_id: bundle.doc.batch_id,
         comments: bundle.doc.comments,
         history: bundle.doc.history,
         review_threads: bundle.doc.review_threads,

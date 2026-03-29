@@ -123,6 +123,7 @@ pub struct TaskAutomationUpdate {
     pub agent: Option<String>,
     pub model: Option<String>,
     pub review_threads: Option<Vec<ReviewThread>>,
+    pub batch_id: Option<String>,
 }
 
 pub trait JobRunHost {
@@ -168,6 +169,7 @@ pub trait TaskHost {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;
     fn start_task(
         &self,

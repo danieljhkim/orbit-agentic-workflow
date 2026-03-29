@@ -390,6 +390,9 @@ pub struct Task {
     /// For `Bug` tasks: the originating task whose implementation introduced the defect.
     #[serde(default)]
     pub source_task_id: Option<String>,
+    /// Groups tasks that were created together as part of a parallel batch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
     #[serde(default)]
     pub comments: Vec<TaskComment>,
     #[serde(default)]

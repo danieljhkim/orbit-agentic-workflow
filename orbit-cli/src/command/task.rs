@@ -294,6 +294,9 @@ pub struct TaskListArgs {
     /// Filter to subtasks belonging to a parent task
     #[arg(long = "parent")]
     pub parent_id: Option<String>,
+    /// Filter by batch ID
+    #[arg(long)]
+    pub batch_id: Option<String>,
     /// Output full task objects as JSON
     #[arg(long)]
     pub json: bool,
@@ -308,6 +311,7 @@ impl Execute for TaskListArgs {
         let status = self.status;
         let priority = self.priority;
         let parent_id = self.parent_id;
+        let batch_id = self.batch_id;
 
         let all_tasks = runtime.list_tasks()?;
         let active_statuses = [TaskStatus::Backlog, TaskStatus::InProgress];
@@ -327,6 +331,11 @@ impl Execute for TaskListArgs {
                 parent_id
                     .as_deref()
                     .is_none_or(|p| t.parent_id.as_deref() == Some(p))
+            })
+            .filter(|t| {
+                batch_id
+                    .as_deref()
+                    .is_none_or(|b| t.batch_id.as_deref() == Some(b))
             })
             .collect();
 
@@ -500,6 +509,9 @@ pub struct TaskUpdateArgs {
     /// PR review status (approve, request-changes)
     #[arg(long)]
     pub pr_status: Option<String>,
+    /// Batch ID to associate with the task (empty string clears)
+    #[arg(long)]
+    pub batch_id: Option<String>,
     /// Explicit agent name to persist on the task artifact
     #[arg(long)]
     pub agent: Option<String>,
@@ -527,6 +539,13 @@ impl Execute for TaskUpdateArgs {
                 Some(value)
             }
         });
+        let batch_id = self.batch_id.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
 
         let task = runtime.update_task_with_identity(
             &self.id,
@@ -539,6 +558,7 @@ impl Execute for TaskUpdateArgs {
                 status: self.status.map(Into::into),
                 pr_number,
                 pr_status,
+                batch_id,
                 ..Default::default()
             },
             self.agent,
@@ -656,7 +676,7 @@ pub struct TaskApproveArgs {
 impl Execute for TaskApproveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let ids = if self.all_proposed {
-            let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None)?;
+            let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
             if proposed.is_empty() {
                 println!("No proposed tasks found.");
                 return Ok(());
@@ -752,7 +772,7 @@ pub struct TaskRejectArgs {
 impl Execute for TaskRejectArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let ids = if self.all_proposed {
-            let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None)?;
+            let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
             if proposed.is_empty() {
                 println!("No proposed tasks found.");
                 return Ok(());

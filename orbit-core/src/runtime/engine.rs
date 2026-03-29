@@ -441,8 +441,9 @@ impl TaskHost for OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        OrbitRuntime::list_tasks_filtered(self, status, priority, parent_id)
+        OrbitRuntime::list_tasks_filtered(self, status, priority, parent_id, batch_id)
     }
 
     fn start_task(
@@ -491,6 +492,7 @@ impl TaskHost for OrbitRuntime {
                     workspace_path: update.workspace_path.clone().map(Some),
                     repo_root: update.repo_root.clone().map(Some),
                     pr_number: update.pr_number.clone().map(Some),
+                    batch_id: update.batch_id.clone().map(Some),
                     actor_identity: Some(ActorIdentity::from_legacy(
                         update.agent.as_deref(),
                         update.model.as_deref(),
