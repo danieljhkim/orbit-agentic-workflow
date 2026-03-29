@@ -6,38 +6,31 @@ created_by: system
 # ---- activity ----
 activity:
   # ---- registration ----
-  id: parallel_dispatch_tasks
+  id: parallel_finalize_tasks
   spec_type: automation
 
   # ---- content ----
-  description: Execute an explicit, conflict-free task batch using the dedicated parallel worker pipeline.
+  description: Run serial per-task finalization for a completed parallel batch.
 
   # ---- interface ----
   input_schema_json:
     type: object
     required:
-      - task_ids
+      - completed_task_ids
     properties:
-      task_ids:
+      completed_task_ids:
         type: array
         items:
           type: string
-        description: Ordered task ids selected for this parallel wave.
       base:
         type: string
         description: Base branch used for dedicated parallel worker worktrees. Defaults to orbit-parallel-work-branch.
-      parallelism:
-        type: integer
-        minimum: 1
-        description: Maximum number of worker pipelines to run concurrently.
   output_schema_json:
     type: object
     required:
       - launched
       - succeeded
       - failed
-      - skipped
-      - completed_task_ids
     properties:
       launched:
         type: integer
@@ -45,12 +38,6 @@ activity:
         type: integer
       failed:
         type: integer
-      skipped:
-        type: integer
-      completed_task_ids:
-        type: array
-        items:
-          type: string
       failures:
         type: array
         items:
@@ -65,4 +52,4 @@ activity:
             - error
 
   # ---- execution ----
-  action: run_parallel_task_pipeline
+  action: run_parallel_finalize_tasks

@@ -10,7 +10,7 @@ activity:
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Implement an Orbit task from plan to tested code, then return the next task status and execution summary
+  description: Implement an Orbit task from plan to code, then return the next task status and execution summary
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to tested code.
@@ -45,11 +45,16 @@ activity:
          status: "blocked" and document the conflict in execution_summary so a human can
          decide whether to widen the task scope or file a separate task.
 
-    5. Verify the implementation:
-       - Use proc.spawn to run the project's test and lint commands from the task's workspace_path.
-         Common commands: `cargo test --workspace`, `make check`, `npm test`.
-       - If tests fail, fix the issue before continuing. Do not move to review with
-         failing tests.
+    5. Verify the implementation appropriately for this execution mode:
+       - If input.verification_mode is the string "deferred", do NOT run build, test,
+         lint, or similar validation commands in this activity.
+       - In deferred mode, focus on the code changes only and rely on the later
+         batch finalization phase to run verification commands.
+       - Otherwise, use proc.spawn to run the project's test and lint commands from
+         the task's workspace_path. Common commands: `cargo test --workspace`,
+         `make check`, `npm test`.
+       - If verification is not deferred and tests fail, fix the issue before
+         continuing. Do not move to review with failing tests.
 
     6. Prepare output for task persistence:
        - Construct an execution summary markdown with this structure:
@@ -107,6 +112,9 @@ activity:
       task_id:
         type: string
         description: Orbit task ID. The agent loads task metadata (workspace_path, repo_root, branch) via orbit.task.show.
+      verification_mode:
+        type: string
+        description: Optional verification policy. Use `deferred` when this implementation is part of a parallel batch and verification must wait for `finalize_tasks`.
   output_schema_json:
     type: object
     properties:

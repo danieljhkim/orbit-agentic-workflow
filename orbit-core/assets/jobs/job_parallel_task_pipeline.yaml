@@ -7,8 +7,9 @@ job:
   state: enabled
 
   # ---- execution ----
-  # Orchestrates a backlog snapshot by launching multiple dedicated
-  # job_parallel_task_worker runs in parallel against orbit-parallel-work-branch.
+  # Orchestrates one agent-selected batch by launching dedicated
+  # job_parallel_task_worker runs in parallel against orbit-parallel-work-branch,
+  # then running batch finalization and serial per-task finalization.
   max_active_runs: 1
   default_input:
     base: orbit-parallel-work-branch
@@ -22,5 +23,17 @@ job:
 
     - target_type: activity
       target_id: parallel_dispatch_tasks
+      condition: on_success
+      timeout_seconds: 7200
+
+    - target_type: activity
+      target_id: finalize_tasks
+      agent_cli: codex
+      model: gpt-5.4
+      condition: on_success
+      timeout_seconds: 3600
+
+    - target_type: activity
+      target_id: parallel_finalize_tasks
       condition: on_success
       timeout_seconds: 7200

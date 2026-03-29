@@ -44,7 +44,7 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let mut failed = 0usize;
     let skipped = 0usize;
     let mut failures = Vec::new();
-    let mut ready_for_finalize = HashSet::new();
+    let mut completed_task_ids = HashSet::new();
 
     std::thread::scope(|scope| -> Result<(), OrbitError> {
         let (tx, rx) = mpsc::channel::<WorkerOutcome>();
@@ -97,7 +97,8 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                 Ok(result) if result.state == JobRunState::Success => {
                     match host.release_file_locks(&outcome.task_id) {
                         Ok(_) => {
-                            ready_for_finalize.insert(outcome.task_id);
+                            completed_task_ids.insert(outcome.task_id);
+                            succeeded += 1;
                         }
                         Err(error) => {
                             failed += 1;
@@ -135,11 +136,45 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         Ok(())
     })?;
 
-    for task in selected_tasks {
-        if !ready_for_finalize.contains(&task.task_id) {
-            continue;
-        }
-        let task_id = task.task_id;
+    let completed_task_ids = selected_tasks
+        .into_iter()
+        .filter_map(|task| {
+            completed_task_ids
+                .contains(&task.task_id)
+                .then_some(task.task_id)
+        })
+        .collect::<Vec<_>>();
+
+    Ok(json!({
+        "launched": launched,
+        "succeeded": succeeded,
+        "failed": failed,
+        "skipped": skipped,
+        "completed_task_ids": completed_task_ids,
+        "failures": failures,
+    }))
+}
+
+pub(super) fn run_parallel_finalize_tasks<H: RuntimeHost + ?Sized>(
+    host: &H,
+    input: &Value,
+) -> Result<Value, OrbitError> {
+    let base = input
+        .get("base")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_PARALLEL_BASE)
+        .to_string();
+    let completed_task_ids = load_completed_task_ids(input)?;
+
+    let mut launched = 0usize;
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+    let mut failures = Vec::new();
+
+    for task_id in completed_task_ids {
+        launched += 1;
         match host.run_job_now_with_input_debug(
             PARALLEL_FINALIZE_JOB_ID,
             json!({
@@ -175,7 +210,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         "launched": launched,
         "succeeded": succeeded,
         "failed": failed,
-        "skipped": skipped,
         "failures": failures,
     }))
 }
@@ -193,30 +227,17 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Vec<PendingTask>, OrbitError> {
-    let Some(task_ids) = input.get("task_ids").and_then(Value::as_array) else {
-        return Err(OrbitError::InvalidInput(
-            "parallel_dispatch_tasks requires input.task_ids".to_string(),
-        ));
-    };
+    let task_ids = load_task_id_array(input, "task_ids", "parallel_dispatch_tasks")?;
 
     let mut seen = HashSet::new();
     let mut selected = Vec::with_capacity(task_ids.len());
     for task_id in task_ids {
-        let task_id = task_id
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                OrbitError::InvalidInput(
-                    "parallel_dispatch_tasks.task_ids must contain non-empty strings".to_string(),
-                )
-            })?;
         if !seen.insert(task_id.to_string()) {
             return Err(OrbitError::InvalidInput(format!(
                 "parallel task batch contains duplicate task id '{task_id}'"
             )));
         }
-        let task = host.get_task(task_id)?;
+        let task = host.get_task(&task_id)?;
         if task.status != TaskStatus::Backlog {
             return Err(OrbitError::InvalidInput(format!(
                 "parallel task batch requires backlog tasks; '{task_id}' is '{}'",
@@ -227,6 +248,37 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
     }
 
     Ok(selected)
+}
+
+fn load_completed_task_ids(input: &Value) -> Result<Vec<String>, OrbitError> {
+    load_task_id_array(input, "completed_task_ids", "parallel_finalize_tasks")
+}
+
+fn load_task_id_array(
+    input: &Value,
+    field_name: &str,
+    activity_id: &str,
+) -> Result<Vec<String>, OrbitError> {
+    let Some(task_ids) = input.get(field_name).and_then(Value::as_array) else {
+        return Err(OrbitError::InvalidInput(format!(
+            "{activity_id} requires input.{field_name}"
+        )));
+    };
+    task_ids
+        .iter()
+        .map(|task_id| {
+            task_id
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput(format!(
+                        "{activity_id}.{field_name} must contain non-empty strings"
+                    ))
+                })
+        })
+        .collect()
 }
 
 fn parse_parallelism(input: &Value) -> Result<usize, OrbitError> {

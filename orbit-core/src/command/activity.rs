@@ -36,8 +36,16 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/dispatch_parallel_task.yaml"),
     ),
     (
+        "finalize_tasks",
+        include_str!("../../assets/activities/finalize_tasks.yaml"),
+    ),
+    (
         "parallel_dispatch_tasks",
         include_str!("../../assets/activities/parallel_dispatch_tasks.yaml"),
+    ),
+    (
+        "parallel_finalize_tasks",
+        include_str!("../../assets/activities/parallel_finalize_tasks.yaml"),
     ),
     (
         "plan_task",
