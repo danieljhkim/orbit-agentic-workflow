@@ -100,15 +100,26 @@ pub(super) fn finalize_task_worktree(input: &Value) -> Result<Value, OrbitError>
 }
 
 fn resolve_task_worktree_path(repo_root: &Path, task_id: &str) -> Result<PathBuf, OrbitError> {
-    let base_root = match std::env::var("ORBIT_WORKTREE_ROOT")
+    match std::env::var("ORBIT_WORKTREE_ROOT")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        Some(value) => PathBuf::from(value),
-        None => repo_root.join(".orbit").join("worktrees"),
-    };
-    Ok(base_root.join(task_id))
+        Some(value) => {
+            let repo_name = repo_root
+                .file_name()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    OrbitError::Execution(format!(
+                        "cannot derive repository name from '{}'",
+                        repo_root.display()
+                    ))
+                })?;
+            Ok(PathBuf::from(value).join(repo_name).join(task_id))
+        }
+        None => Ok(repo_root.join(".orbit").join("worktrees").join(task_id)),
+    }
 }
 
 fn ensure_existing_task_worktree(
