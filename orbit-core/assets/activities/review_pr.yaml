@@ -43,14 +43,14 @@ activity:
                               • missing tests for changed behaviour
        - "approve"          — all criteria met AND no blocking issues found.
     6. Post review feedback:
-       - For each issue tied to a specific file and diff line, call github.pr.review.comment.
-       - Leave exactly one issue per comment. Never bundle multiple findings into one comment.
-       - If an issue is not tied to a specific diff line, use a separate github.pr.comment
-         for that issue instead of folding it into the summary.
-       - After all issue-specific comments are posted:
-         - If action is "request-changes": call github.pr.comment with a short overall
-           summary of the decision and the main blocking themes.
-         - If action is "approve": call github.pr.comment with a brief approval summary.
+       - For each issue tied to a specific file and diff line, call orbit.task.review_thread.add
+         with path and line set.
+       - Leave exactly one issue per thread. Never bundle multiple findings into one thread.
+       - If an issue is not tied to a specific diff line, call orbit.task.review_thread.add
+         without path/line (a general comment thread).
+       - After all issue-specific threads are posted:
+         - Call orbit.task.review_thread.add with a short overall summary of the decision
+           and the main blocking themes (for request-changes) or a brief approval summary.
     7. Update the task with the review decision:
        - Call orbit.task.update with input: {"id": "<task_id>", "pr_status": "<pr_status>", "agent": "<agent>", "model": "<model>"}
     8. Return a JSON result with EXACTLY these fields (no prose, no explanation):
@@ -100,6 +100,5 @@ activity:
   tools:
     - orbit.task.show
     - orbit.task.update
+    - orbit.task.review_thread.add
     - github.pr.view
-    - github.pr.review.comment
-    - github.pr.comment

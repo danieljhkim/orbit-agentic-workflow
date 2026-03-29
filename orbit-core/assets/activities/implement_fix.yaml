@@ -21,10 +21,11 @@ activity:
          plan, context_files, workspace_path, repo_root, and prNumber.
        - The task's workspace_path is the authoritative implementation workspace.
 
-    2. Fetch PR review comments:
-       - Call github.pr.comments with pr: <prNumber> to fetch all PR comments.
-       - Read each comment carefully. Understand what the reviewer is asking for.
-       - If a comment is a question or nit that doesn't require code changes, note it for
+    2. Fetch review threads:
+       - Call orbit.task.review_thread.list with id: input.task_id and status: "open"
+         to fetch all unresolved review threads.
+       - Read each thread's messages carefully. Understand what the reviewer is asking for.
+       - If a thread is a question or nit that doesn't require code changes, note it for
          the review response but do not modify code unnecessarily.
 
     3. Implement fixes:
@@ -33,11 +34,11 @@ activity:
        - Keep changes minimal and focused on addressing the review feedback.
        - Do not refactor unrelated code or add unrequested features.
 
-    4. Reply to PR comments:
-       - After implementing fixes, reply to each PR review comment using github.pr.comment.reply.
-       - Use the comment's `id` field as the `comment_id` parameter.
-       - Briefly describe what was fixed in the reply.
-       - If a comment could not be addressed, reply explaining why.
+    4. Reply to review threads and resolve:
+       - After implementing fixes, reply to each review thread using orbit.task.review_thread.reply
+         with the thread's `thread_id`. Briefly describe what was fixed.
+       - Then resolve the thread using orbit.task.review_thread.resolve with the same `thread_id`.
+       - If a thread could not be addressed, reply explaining why but do NOT resolve it.
 
     5. Verify the fixes:
        - Use proc.spawn to run the project's test and lint commands from the task's workspace_path.
@@ -79,13 +80,14 @@ activity:
   tools:
     - orbit.task.show
     - orbit.task.update
+    - orbit.task.review_thread.list
+    - orbit.task.review_thread.reply
+    - orbit.task.review_thread.resolve
     - fs.read
     - fs.write
     - fs.delete
     - proc.spawn
     - proc.which
-    - github.pr.comments
-    - github.pr.comment.reply
   proc_allowed_programs:
     - cargo
     - make
