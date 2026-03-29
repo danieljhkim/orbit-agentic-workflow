@@ -23,6 +23,8 @@ impl Store {
 
         let conn = Connection::open(path).map_err(|e| OrbitError::Store(e.to_string()))?;
         enable_best_effort_wal_mode(&conn);
+        conn.pragma_update(None, "busy_timeout", "5000")
+            .map_err(|e| OrbitError::Store(format!("failed to set busy_timeout: {e}")))?;
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(|e| OrbitError::Store(format!("failed to enable foreign keys: {e}")))?;
 

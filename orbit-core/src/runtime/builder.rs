@@ -165,6 +165,10 @@ fn open_file_lock_store(orbit_dir: &Path) -> Result<FileLockStore, OrbitError> {
             db_path.display()
         ))
     })?;
+    conn.pragma_update(None, "busy_timeout", "5000")
+        .map_err(|error| {
+            OrbitError::Store(format!("failed to set busy_timeout on file lock database: {error}"))
+        })?;
     apply_lock_schema(&conn)?;
     Ok(FileLockStore::new(Arc::new(Mutex::new(conn))))
 }

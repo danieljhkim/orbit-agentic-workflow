@@ -73,7 +73,7 @@ impl FileLockStore {
 
         for path in dedupe_paths(paths) {
             tx.execute(
-                "INSERT OR IGNORE INTO file_locks (file_path, task_id, repo_root, acquired_at)
+                "INSERT OR REPLACE INTO file_locks (file_path, task_id, repo_root, acquired_at)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![path, task_id, repo_root, Utc::now().to_rfc3339()],
             )
@@ -144,18 +144,26 @@ impl FileLockStore {
         repo_root: &str,
         file_path: &str,
     ) -> Result<(), OrbitError> {
-        let conflicts = self.check_conflicts(repo_root, &[file_path], Some(task_id))?;
+        let mut conn = self.lock_connection()?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| OrbitError::Store(error.to_string()))?;
+
+        let conflicts =
+            Self::check_conflicts_in_conn(&tx, repo_root, &[file_path], Some(task_id))?;
         if !conflicts.is_empty() {
             return Err(conflict_error(task_id, &conflicts));
         }
 
-        let conn = self.lock_connection()?;
-        conn.execute(
-            "INSERT OR IGNORE INTO file_locks (file_path, task_id, repo_root, acquired_at)
+        tx.execute(
+            "INSERT OR REPLACE INTO file_locks (file_path, task_id, repo_root, acquired_at)
              VALUES (?1, ?2, ?3, ?4)",
             params![file_path, task_id, repo_root, Utc::now().to_rfc3339()],
         )
         .map_err(|error| OrbitError::Store(error.to_string()))?;
+
+        tx.commit()
+            .map_err(|error| OrbitError::Store(error.to_string()))?;
         Ok(())
     }
 
@@ -248,9 +256,10 @@ impl FileLockChecker for FileLockStore {
 }
 
 fn dedupe_paths<'a>(paths: &'a [&'a str]) -> Vec<&'a str> {
+    let mut seen = std::collections::HashSet::new();
     let mut deduped = Vec::new();
     for path in paths {
-        if !deduped.iter().any(|existing| existing == path) {
+        if seen.insert(*path) {
             deduped.push(*path);
         }
     }

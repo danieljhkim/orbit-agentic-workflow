@@ -1,5 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::mpsc;
+use std::time::Duration;
 
 use orbit_types::{JobRunState, OrbitError, Task, TaskStatus};
 use serde_json::{Value, json};
@@ -42,7 +43,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let mut launched = 0usize;
     let mut succeeded = 0usize;
     let mut failed = 0usize;
-    let skipped = 0usize;
     let mut failures = Vec::new();
     let mut completed_task_ids = HashSet::new();
 
@@ -81,11 +81,28 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                 continue;
             }
 
-            let outcome = rx.recv().map_err(|error| {
-                OrbitError::Execution(format!(
-                    "parallel task pipeline lost worker coordination channel: {error}"
-                ))
-            })?;
+            let outcome = match rx.recv_timeout(Duration::from_secs(7200)) {
+                Ok(outcome) => outcome,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    eprintln!(
+                        "orbit: parallel task pipeline timed out waiting for worker after 7200s; \
+                         breaking out of receive loop"
+                    );
+                    for task in active.drain(..) {
+                        failed += 1;
+                        failures.push(json!({
+                            "task_id": task.task_id,
+                            "error": "worker timed out after 7200s",
+                        }));
+                    }
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(OrbitError::Execution(
+                        "parallel task pipeline lost worker coordination channel".to_string(),
+                    ));
+                }
+            };
             if let Some(index) = active
                 .iter()
                 .position(|task| task.task_id == outcome.task_id)
@@ -120,7 +137,13 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                             result.state
                         ),
                     }));
-                    let _ = host.release_file_locks(&outcome.task_id);
+                    if let Err(lock_err) = host.release_file_locks(&outcome.task_id) {
+                        eprintln!(
+                            "orbit: failed to release file locks for task '{}' \
+                             after non-success worker: {lock_err}",
+                            outcome.task_id
+                        );
+                    }
                 }
                 Err(error) => {
                     failed += 1;
@@ -128,7 +151,13 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                         "task_id": outcome.task_id,
                         "error": error.to_string(),
                     }));
-                    let _ = host.release_file_locks(&outcome.task_id);
+                    if let Err(lock_err) = host.release_file_locks(&outcome.task_id) {
+                        eprintln!(
+                            "orbit: failed to release file locks for task '{}' \
+                             after worker error: {lock_err}",
+                            outcome.task_id
+                        );
+                    }
                 }
             }
         }
@@ -149,7 +178,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         "launched": launched,
         "succeeded": succeeded,
         "failed": failed,
-        "skipped": skipped,
         "completed_task_ids": completed_task_ids,
         "failures": failures,
     }))
