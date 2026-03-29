@@ -13,8 +13,16 @@ pub(super) fn build_exec_request(
     let identity = super::resolve_identity(ctx, input)?;
     let title = super::required_string(input, &["title"], "title")?;
     let description = super::required_string(input, &["description"], "description")?;
-    let plan = super::required_string(input, &["plan"], "plan")?;
     let workspace = super::required_string(input, &["workspace"], "workspace")?;
+    let plan = match input.get("plan") {
+        Some(Value::String(value)) => Some(value.clone()),
+        Some(Value::Null) | None => None,
+        Some(_) => {
+            return Err(OrbitError::InvalidInput(
+                "`plan` must be a string".to_string(),
+            ));
+        }
+    };
 
     let mut args = vec![
         "task".to_string(),
@@ -23,11 +31,26 @@ pub(super) fn build_exec_request(
         title,
         "--description".to_string(),
         description,
-        "--plan".to_string(),
-        plan,
         "--workspace".to_string(),
         workspace,
     ];
+    if let Some(plan) = plan {
+        args.push("--plan".to_string());
+        args.push(plan);
+    }
+    if let Some(criteria) = super::optional_string_list_alias(
+        input,
+        &[
+            "acceptance_criteria",
+            "acceptanceCriteria",
+            "acceptance-criteria",
+        ],
+    )? {
+        for criterion in criteria {
+            args.push("--acceptance-criteria".to_string());
+            args.push(criterion);
+        }
+    }
 
     if let Some(comment) = super::optional_string(input, "comment")? {
         args.push("--comment".to_string());
@@ -87,10 +110,19 @@ impl Tool for OrbitTaskAddTool {
                 required: true,
             },
             ToolParam {
+                name: "acceptance_criteria".to_string(),
+                description: "Optional acceptance criteria as a string or array of strings"
+                    .to_string(),
+                param_type: "array".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "plan".to_string(),
-                description: "Task plan markdown".to_string(),
+                description:
+                    "Optional task plan markdown. Leave blank for the executing agent to author."
+                        .to_string(),
                 param_type: "string".to_string(),
-                required: true,
+                required: false,
             },
             ToolParam {
                 name: "workspace".to_string(),

@@ -81,7 +81,10 @@ pub struct TaskAddArgs {
     /// Task description (overrides template if --template is also given)
     #[arg(long, default_value = "")]
     pub description: String,
-    /// Task plan payload (agent planning input; overrides template if --template is also given)
+    /// Acceptance criteria. Repeat the flag for multiple criteria.
+    #[arg(long = "acceptance-criteria")]
+    pub acceptance_criteria: Vec<String>,
+    /// Optional task plan payload. Leave blank for the executing agent or planning activity to author later.
     #[arg(long, alias = "instructions", default_value = "")]
     pub plan: String,
     /// Pre-populate description, plan, and instructions from a named template
@@ -168,6 +171,7 @@ impl Execute for TaskAddArgs {
                 parent_id: self.parent_id,
                 title: self.title,
                 description,
+                acceptance_criteria: self.acceptance_criteria,
                 plan,
                 comment: self.comment,
                 context_files: parse_context_csv(&self.context),
@@ -379,6 +383,12 @@ impl Execute for TaskShowArgs {
             println!("{} {}", bold("Type:"), task.task_type);
             if !task.description.is_empty() {
                 println!("{} {}", bold("Description:"), task.description);
+            }
+            if !task.acceptance_criteria.is_empty() {
+                println!("{}", bold("Acceptance Criteria:"));
+                for criterion in &task.acceptance_criteria {
+                    println!("  - {}", criterion);
+                }
             }
             if !task.plan.is_empty() {
                 println!("{} {}", bold("Plan:"), task.plan);
@@ -1124,9 +1134,12 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
         "parent_id": task.parent_id,
         "title": task.title,
         "description": task.description,
+        "acceptance_criteria": task.acceptance_criteria,
         "plan": task.plan,
         "execution_summary": task.execution_summary,
         "context_files": task.context_files,
+        "workspace_path": task.workspace_path,
+        "repo_root": task.repo_root,
         "assigned_to": task.assigned_to,
         "created_by": task.created_by,
         "agent": task.actor_identity.agent_name(),

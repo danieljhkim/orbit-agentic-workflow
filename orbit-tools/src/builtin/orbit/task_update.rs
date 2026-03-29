@@ -20,6 +20,14 @@ pub(super) fn build_exec_requests(
         args.push(status);
         changed = true;
     }
+    if let Some(plan) = input.get("plan") {
+        let raw = plan
+            .as_str()
+            .ok_or_else(|| OrbitError::InvalidInput("`plan` must be a string".to_string()))?;
+        args.push("--plan".to_string());
+        args.push(raw.to_string());
+        changed = true;
+    }
     if let Some(summary) = super::optional_string(input, "execution_summary")? {
         args.push("--execution-summary".to_string());
         args.push(summary);
@@ -43,7 +51,7 @@ pub(super) fn build_exec_requests(
 
     if !changed {
         return Err(OrbitError::InvalidInput(
-            "orbit.task.update requires at least one of `status`, `execution_summary`, or `comment`"
+            "orbit.task.update requires at least one of `status`, `plan`, `execution_summary`, `comment`, `pr_status`, or `pr_number`"
                 .to_string(),
         ));
     }
@@ -68,6 +76,12 @@ impl Tool for OrbitTaskUpdateTool {
     fn schema(&self) -> ToolSchema {
         let mut parameters = super::orbit_id_params("task");
         parameters.extend([
+            ToolParam {
+                name: "plan".to_string(),
+                description: "Replacement task plan text (empty string clears)".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
             ToolParam {
                 name: "status".to_string(),
                 description: "New task status".to_string(),

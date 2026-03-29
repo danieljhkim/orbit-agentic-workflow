@@ -229,17 +229,17 @@ impl RuntimeHost for OrbitRuntime {
                 error_message
             }
         );
-        let plan = format!(
-            "1. Investigate the root cause for job `{job_id}` failure (error code: `{error_code}`)\n\
-             2. Fix the underlying issue\n\
-             3. Re-run the job to verify it completes successfully"
-        );
         let _ = self.add_task_with_identity(
             crate::command::task::TaskAddParams {
                 parent_id: None,
                 title,
                 description,
-                plan,
+                acceptance_criteria: vec![
+                    format!("Root cause for job `{job_id}` is identified"),
+                    "A fix is implemented for the underlying issue".to_string(),
+                    "The job completes successfully after verification".to_string(),
+                ],
+                plan: String::new(),
                 comment: None,
                 context_files: vec![],
                 workspace_path: None,
@@ -425,6 +425,10 @@ impl TaskHost for OrbitRuntime {
         task_id: &str,
         update: TaskAutomationUpdate,
     ) -> Result<(), OrbitError> {
+        if update.status == Some(TaskStatus::InProgress) {
+            let task = self.get_task(task_id)?;
+            crate::command::task::ensure_task_has_execution_plan(task_id, task.plan.as_str())?;
+        }
         let _ = self.with_mutation(|| {
             let task = self.update_task_record(
                 task_id,

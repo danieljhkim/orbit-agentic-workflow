@@ -74,14 +74,26 @@ orbit tool run orbit.task.show --input '{"id": "<task-id>", "agent": "<agent>", 
 ```
 
 Read the returned JSON carefully. Extract:
-- `plan` — this is your implementation guide. Follow its steps.
+- `description` and `acceptance_criteria` — these define the required outcome.
+- `plan` — if blank or placeholder text, author a fresh execution plan before starting work.
 - `context_files` — read each file listed before making changes.
-- `description` — the problem statement and success criteria.
 - `status` — confirms the task is ready to start.
 
 **If this is a new change request** (no task ID), clarify intent and success criteria with the human, then create a task using `orbit-create-task`.
 
-### Step 2: Start the task
+### Step 2: Plan the task
+
+If the task does not already have a real, current plan, write one first:
+
+```bash
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "plan": "<markdown plan>", "agent": "<agent>", "model": "<model>"}'
+```
+
+- Use the task description and acceptance criteria as the source of truth.
+- Replace placeholder plans like `To be authored by executing agent at start time.`
+- Keep the plan concrete: likely files, validation commands, and major risks.
+
+### Step 3: Start the task
 
 ```bash
 orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready now>", "agent": "<agent>", "model": "<model>"}'
@@ -89,19 +101,20 @@ orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this 
 
 - `task start` moves `backlog -> in-progress`
 - `task start` also handles `proposed -> in-progress` and records `proposal_approved` before `started`
+- `task start` will fail if the task still lacks a real plan
 - Keep using explicit `approve` plus later status updates when approval and execution should stay separate
 
-### Step 3: Implement and validate
+### Step 4: Implement and validate
 
 Follow the task's `plan` field step by step. Read the `context_files` before touching code. If the plan has verification commands, run them.
 
-### Step 4: Move to review
+### Step 5: Move to review
 
 ```bash
 orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "agent": "<agent>", "model": "<model>"}'
 ```
 
-### Step 5: Persist the execution summary
+### Step 6: Persist the execution summary
 
 See Output section below.
 

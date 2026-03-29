@@ -14,11 +14,12 @@ This skill orients agents working with Orbit. Orbit operations should go through
 ### Loading and executing a task
 
 1. Load the task: `orbit tool run orbit.task.show --input '{"id": "<task-id>"}'`
-2. Read the `plan` field — this is your implementation guide.
-3. Read each file listed in `context_files` before making changes.
-4. Start the task: `orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "..."}'`
-5. Implement following the plan. Validate using the plan's verification steps.
-6. Move to review: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'`
+2. Read the `description` and `acceptance_criteria` first — they define the required outcome.
+3. If the `plan` field is blank or placeholder text, author a fresh plan with `orbit.task.update`.
+4. Read each file listed in `context_files` before making changes.
+5. Start the task: `orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "..."}'`
+6. Implement following the plan. Validate using the plan's verification steps.
+7. Move to review: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review"}'`
 
 ### Reporting progress or problems
 
@@ -38,7 +39,8 @@ Invoke Orbit through `orbit tool run`:
 # Task commands
 orbit tool run orbit.task.show --input '{"id": "<id>"}'              # Load task details
 orbit tool run orbit.task.list --input '{"status": "backlog"}'       # List by status
-orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "plan": "...", "workspace": "."}'
+orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": "."}'
+orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "..."}'
 orbit tool run orbit.task.start --input '{"id": "<id>", "note": "..."}' # backlog -> in-progress
 orbit tool run orbit.task.update --input '{"id": "<id>", "status": "review"}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "comment": "..."}'
@@ -85,7 +87,7 @@ Task commands infer actor provenance automatically:
 
 ## Skill Selection
 
-- `orbit-create-task`: Create a new task with plan, context, and verification steps.
+- `orbit-create-task`: Create a new task with description, acceptance criteria, and context.
 - `orbit-approve-task`: Record human approval or rejection at lifecycle gates.
 - `orbit-execute-change-request`: Carry a change through implementation, validation, and review.
 - `orbit-raise-pr`: Creating PRs, leaving comments, replying to comment threads, and PR tool reference.

@@ -358,6 +358,8 @@ pub struct Task {
     pub parent_id: Option<OrbitId>,
     pub title: String,
     pub description: String,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
     #[serde(default, alias = "instructions")]
     pub plan: String,
     #[serde(default)]

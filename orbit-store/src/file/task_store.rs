@@ -196,6 +196,7 @@ impl TaskFileStore {
                 parent_id: params.parent_id,
                 title: params.title,
                 description: params.description,
+                acceptance_criteria: params.acceptance_criteria,
                 context_files: params.context_files,
                 workspace_path: params.workspace_path,
                 repo_root: params.repo_root,
@@ -213,7 +214,6 @@ impl TaskFileStore {
                 source_task_id: params.source_task_id,
                 created_at: now,
                 updated_at: now,
-                acceptance_criteria: Vec::new(),
                 history: vec![TaskHistoryEntry {
                     at: now,
                     by: params.actor,
@@ -703,6 +703,7 @@ fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         parent_id: bundle.doc.parent_id,
         title: bundle.doc.title,
         description: bundle.doc.description,
+        acceptance_criteria: bundle.doc.acceptance_criteria,
         plan: bundle.plan,
         execution_summary: bundle.execution_summary,
         context_files: bundle.doc.context_files,

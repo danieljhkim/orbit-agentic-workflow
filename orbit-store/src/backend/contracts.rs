@@ -14,6 +14,7 @@ pub struct TaskCreateParams {
     pub parent_id: Option<OrbitId>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Vec<String>,
     pub plan: String,
     pub execution_summary: String,
     pub context_files: Vec<String>,

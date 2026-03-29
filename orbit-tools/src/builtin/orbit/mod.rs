@@ -243,6 +243,49 @@ pub(super) fn optional_string_alias(
     Ok(None)
 }
 
+pub(super) fn optional_string_list_alias(
+    input: &Value,
+    keys: &[&str],
+) -> Result<Option<Vec<String>>, OrbitError> {
+    for key in keys {
+        if let Some(value) = input.get(*key) {
+            return match value {
+                Value::String(raw) => {
+                    let trimmed = raw.trim();
+                    if trimmed.is_empty() {
+                        Err(OrbitError::InvalidInput(format!(
+                            "`{key}` must not be empty"
+                        )))
+                    } else {
+                        Ok(Some(vec![trimmed.to_string()]))
+                    }
+                }
+                Value::Array(items) => {
+                    let mut values = Vec::with_capacity(items.len());
+                    for item in items {
+                        let raw = item.as_str().ok_or_else(|| {
+                            OrbitError::InvalidInput(format!("`{key}` entries must be strings"))
+                        })?;
+                        let trimmed = raw.trim();
+                        if trimmed.is_empty() {
+                            return Err(OrbitError::InvalidInput(format!(
+                                "`{key}` entries must not be empty"
+                            )));
+                        }
+                        values.push(trimmed.to_string());
+                    }
+                    Ok(Some(values))
+                }
+                _ => Err(OrbitError::InvalidInput(format!(
+                    "`{key}` must be a string or array of strings"
+                ))),
+            };
+        }
+    }
+
+    Ok(None)
+}
+
 pub(super) fn orbit_id_params(kind: &str) -> Vec<ToolParam> {
     vec![ToolParam {
         name: "id".to_string(),

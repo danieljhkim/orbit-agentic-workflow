@@ -868,6 +868,7 @@ mod tests {
             parent_id: None,
             title: "test task".to_string(),
             description: "desc".to_string(),
+            acceptance_criteria: vec![],
             plan: String::new(),
             execution_summary: execution_summary.to_string(),
             context_files: vec![],
