@@ -64,6 +64,15 @@ activity:
     required:
       - task_ids
     properties:
+      base:
+        type: string
+        description: Shared pipeline base branch input, passed through from prior steps.
+      parallelism:
+        type: integer
+        description: Batch size from pipeline input, passed through from prior steps.
+      comment:
+        type: string
+        description: Dispatch comment from prior step, passed through.
       task_ids:
         type: array
         items:
