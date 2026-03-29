@@ -61,7 +61,8 @@ activity:
          "loop_exit": true
        }
        - Set loop_exit to true if pr_status is "approve", false otherwise.
-       This JSON result is REQUIRED. The run will be marked as failed if it is missing.
+       This JSON result is strongly recommended. If the agent crashes before returning it,
+       the engine falls back to the task's pr_status field to decide whether to exit the review loop.
 
     If the task is not found, or the PR cannot be located, return a clear error.
 
