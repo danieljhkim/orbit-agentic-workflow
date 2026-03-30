@@ -248,7 +248,10 @@ fn ensure_shared_worktree(
     if worktree_path.exists() {
         // Worktree already exists — reset it to the base branch tip so it's fresh.
         let target = git_output(repo_root, &["rev-parse", base_branch])?;
-        git_success(worktree_path, &["checkout", "-B", worktree_branch, target.trim()])?;
+        git_success(
+            worktree_path,
+            &["checkout", "-B", worktree_branch, target.trim()],
+        )?;
         git_success(worktree_path, &["clean", "-fd"])?;
         return Ok(());
     }
