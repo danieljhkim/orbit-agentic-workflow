@@ -49,7 +49,7 @@ impl ActivityExecutor for AutomationExecutor {
     }
 
     fn execute(&self, host: &dyn EngineHost, execution: &ExecutionContext) -> AttemptOutcome {
-        match execute(host, &execution.activity, &execution.input) {
+        match execute(host, &execution.activity, &execution.input, execution.debug) {
             Ok(result) => {
                 if let Err(err) = validate_activity_output_schema(&execution.activity, &result) {
                     return AttemptOutcome {
@@ -79,6 +79,7 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
     host: &H,
     activity: &Activity,
     input: &Value,
+    debug: bool,
 ) -> Result<Value, OrbitError> {
     let spec: AutomationSpec =
         serde_json::from_value(activity.spec_config.clone()).map_err(|error| {
@@ -96,7 +97,9 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
         AUTOMATION_LOAD_PR_COMMENTS => comments::load_pr_comments(host, input),
         AUTOMATION_PUSH_TASK_CHANGES => push::push_task_changes(host, input),
         AUTOMATION_SYNC_REVIEW_TO_GITHUB => sync_review::sync_review_to_github(host, input),
-        AUTOMATION_RUN_PARALLEL_TASK_PIPELINE => parallel::run_parallel_task_pipeline(host, input),
+        AUTOMATION_RUN_PARALLEL_TASK_PIPELINE => {
+            parallel::run_parallel_task_pipeline(host, input, debug)
+        }
         AUTOMATION_COMMIT_BATCH_CHANGES => commit::commit_batch_changes(host, input),
         AUTOMATION_OPEN_BATCH_PR => pr::open_batch_pr(host, input),
         AUTOMATION_SNAPSHOT_BATCH_STATE => snapshot::snapshot_batch_state(host, input),

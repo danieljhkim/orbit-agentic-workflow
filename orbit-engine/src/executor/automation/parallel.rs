@@ -7,7 +7,7 @@ use orbit_types::{JobRunState, OrbitError, Task, TaskStatus};
 use serde_json::{Value, json};
 
 use super::git::{git_command_success, git_output, git_success, resolve_worktree_start_point};
-use crate::context::{RuntimeHost, TaskHost};
+use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
 const DEFAULT_PARALLEL_BASE: &str = "agent-main";
 const DEFAULT_PARALLELISM: usize = 4;
@@ -29,6 +29,7 @@ struct WorkerOutcome {
 pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Sized>(
     host: &H,
     input: &Value,
+    debug: bool,
 ) -> Result<Value, OrbitError> {
     let base = input
         .get("base")
@@ -40,6 +41,17 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let parallelism = parse_parallelism(input)?;
     let selected_tasks = load_selected_tasks(host, input)?;
     validate_selected_group(&selected_tasks)?;
+
+    // Move all selected tasks to in-progress before spawning workers.
+    for task in &selected_tasks {
+        host.apply_task_automation_update(
+            &task.task_id,
+            TaskAutomationUpdate {
+                status: Some(TaskStatus::InProgress),
+                ..TaskAutomationUpdate::default()
+            },
+        )?;
+    }
 
     // Set up the shared worktree before spawning workers.
     let repo_root_str = host.repo_root()?;
@@ -84,7 +96,7 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                             "repo_root": worker_repo_root,
                             "verification_mode": "deferred",
                         }),
-                        false,
+                        debug,
                     );
                     let _ = tx.send(WorkerOutcome { task_id, result });
                 });
