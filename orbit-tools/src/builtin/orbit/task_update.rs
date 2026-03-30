@@ -54,7 +54,7 @@ pub(super) fn build_exec_requests(
         changed = true;
     }
     if let Some(context_files) = super::optional_string(input, "context_files")? {
-        args.push("--context-files".to_string());
+        args.push("--context".to_string());
         args.push(context_files);
         changed = true;
     }
@@ -163,5 +163,72 @@ impl Tool for OrbitTaskUpdateTool {
         }
 
         super::run_orbit_json_command(show_req, "orbit task show")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use serde_json::json;
+
+    use crate::ToolContext;
+
+    use super::build_exec_requests;
+
+    fn test_context() -> ToolContext {
+        ToolContext {
+            cwd: PathBuf::from("/tmp/orbit"),
+            orbit_root: Some(PathBuf::from("/tmp/orbit-root")),
+            agent_name: Some("codex".to_string()),
+            model_name: Some("gpt-5.4".to_string()),
+        }
+    }
+
+    #[test]
+    fn build_exec_requests_uses_context_flag_for_context_files() {
+        let (update, show) = build_exec_requests(
+            &test_context(),
+            &json!({
+                "id": "T20260330-002312",
+                "context_files": "orbit-cli/src/command/task.rs,orbit-tools/src/builtin/orbit/task_update.rs"
+            }),
+        )
+        .expect("request should build");
+
+        assert_eq!(update.program, "orbit");
+        assert!(
+            update.args.contains(&"--context".to_string()),
+            "expected `--context` in {:?}",
+            update.args
+        );
+        assert!(
+            !update.args.contains(&"--context-files".to_string()),
+            "legacy flag should not be emitted: {:?}",
+            update.args
+        );
+        assert_eq!(
+            show.args,
+            vec![
+                "--root",
+                "/tmp/orbit-root",
+                "task",
+                "show",
+                "T20260330-002312",
+                "--json",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn build_exec_requests_error_mentions_context_files() {
+        let err = build_exec_requests(&test_context(), &json!({ "id": "T20260330-002312" }))
+            .expect_err("missing fields should fail");
+        let message = err.to_string();
+
+        assert!(message.contains("context_files"));
     }
 }

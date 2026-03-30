@@ -513,7 +513,7 @@ pub struct TaskUpdateArgs {
     #[arg(long)]
     pub batch_id: Option<String>,
     /// Comma-separated context file paths (empty string clears)
-    #[arg(long)]
+    #[arg(long = "context", alias = "context-files")]
     pub context_files: Option<String>,
     /// Explicit agent name to persist on the task artifact
     #[arg(long)]
@@ -1188,4 +1188,74 @@ fn task_to_json(task: &orbit_core::Task) -> Value {
 
 fn parse_context_csv(raw: &str) -> Vec<String> {
     crate::parse::csv_to_vec(raw)
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use crate::command::{Cli, Commands};
+
+    use super::{TaskSubcommand, parse_context_csv};
+
+    #[test]
+    fn task_update_accepts_context_flag() {
+        let cli = Cli::try_parse_from([
+            "orbit",
+            "task",
+            "update",
+            "T20260330-002312",
+            "--context",
+            "orbit-cli/src/command/task.rs,orbit-tools/src/builtin/orbit/task_update.rs",
+        ])
+        .expect("`--context` should parse");
+
+        let Commands::Task(task_command) = cli.command else {
+            panic!("expected task command");
+        };
+        let TaskSubcommand::Update(args) = task_command.command else {
+            panic!("expected task update command");
+        };
+        assert_eq!(
+            args.context_files.as_deref(),
+            Some("orbit-cli/src/command/task.rs,orbit-tools/src/builtin/orbit/task_update.rs")
+        );
+    }
+
+    #[test]
+    fn task_update_accepts_context_files_alias() {
+        let cli = Cli::try_parse_from([
+            "orbit",
+            "task",
+            "update",
+            "T20260330-002312",
+            "--context-files",
+            "orbit-cli/src/command/task.rs",
+        ])
+        .expect("`--context-files` should remain supported");
+
+        let Commands::Task(task_command) = cli.command else {
+            panic!("expected task command");
+        };
+        let TaskSubcommand::Update(args) = task_command.command else {
+            panic!("expected task update command");
+        };
+        assert_eq!(
+            args.context_files.as_deref(),
+            Some("orbit-cli/src/command/task.rs")
+        );
+    }
+
+    #[test]
+    fn parse_context_csv_trims_update_context_values() {
+        assert_eq!(
+            parse_context_csv(
+                " orbit-cli/src/command/task.rs, orbit-tools/src/builtin/orbit/task_update.rs "
+            ),
+            vec![
+                "orbit-cli/src/command/task.rs".to_string(),
+                "orbit-tools/src/builtin/orbit/task_update.rs".to_string(),
+            ]
+        );
+    }
 }

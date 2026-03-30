@@ -33,7 +33,11 @@ fn ensure_workspace_path<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    if input.get("workspace_path").and_then(Value::as_str).is_some() {
+    if input
+        .get("workspace_path")
+        .and_then(Value::as_str)
+        .is_some()
+    {
         return Ok(input.clone());
     }
 
