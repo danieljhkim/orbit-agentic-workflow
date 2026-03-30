@@ -18,12 +18,11 @@ activity:
 
     Steps:
     1. Handle the empty-batch case:
-       - If input.run_id is missing or empty, return:
-         {"comment": "No run_id provided."}
+       - If input.run_id is missing or empty, exit immediately.
 
     2. Load all tasks:
        - Call orbit.task.list with batch_id set to input.run_id and status: backlog.
-         If the list is empty, return: {"comment": "No tasks to plan."}
+         If the list is empty, exit immediately.
        - For each task returned, call orbit.task.show and read:
          title, description, acceptance_criteria, current plan, context_files, and priority.
 
@@ -54,11 +53,6 @@ activity:
          - context_files: the refined file list
          - comment: "Batch plan authored; context_files refined for parallel execution."
 
-    7. Return a JSON result with EXACTLY these fields:
-       {
-         "comment": "<brief summary of planning decisions>"
-       }
-
   # ---- interface ----
   input_schema_json:
     type: object
@@ -74,13 +68,9 @@ activity:
       parallelism:
         type: integer
         description: Batch size from pipeline input, passed through from prior steps.
-    additional_properties: false
   output_schema_json:
     type: object
-    properties:
-      comment:
-        type: string
-    additional_properties: false
+    properties: {}
 
   # ---- execution ----
   skill_refs:

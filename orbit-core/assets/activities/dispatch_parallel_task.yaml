@@ -16,8 +16,7 @@ activity:
     Pick a group of backlog tasks that make sense to execute together in one parallel batch.
 
     1. Call orbit.task.list with status: "backlog" to retrieve all backlog tasks.
-       If the list is empty, return this JSON and exit:
-       {"comment": "No backlog tasks available for parallel dispatch."}
+       If the list is empty, exit immediately.
 
     2. For the strongest candidates, call orbit.task.show with the task id and read:
        description, acceptance_criteria, context_files, priority, parent_id, and task type.
@@ -35,11 +34,6 @@ activity:
        - batch_id: "<the value of input.run_id>"
        - comment: "Parallel batch dispatched: <one sentence rationale>"
 
-    5. Return a JSON result with EXACTLY these fields:
-       {
-         "comment": "<the rationale string you used in orbit.task.update>"
-       }
-
   # ---- interface ----
   input_schema_json:
     type: object
@@ -54,13 +48,9 @@ activity:
         type: integer
         minimum: 1
         description: Maximum number of tasks to include in the batch.
-    additional_properties: false
   output_schema_json:
     type: object
-    properties:
-      comment:
-        type: string
-    additional_properties: false
+    properties: {}
 
   # ---- execution ----
   skill_refs:

@@ -17,8 +17,8 @@ activity:
 
     Steps:
     1. Handle the empty-batch case:
-       - Call orbit.task.list with batch_id set to input.run_id. If the list is empty, return:
-         {"summary": "No completed tasks were available for batch finalization."}
+       - Call orbit.task.list with batch_id set to input.run_id. If the list is empty,
+         exit immediately.
 
     2. Load task context:
        - For each task returned from the batch query, call orbit.task.show and read:
@@ -38,11 +38,6 @@ activity:
     5. Keep task records current:
        - If you materially change a task during this finalization pass, update that task execution_summary with orbit.task.update so the task record reflects the final state before commit and PR creation.
 
-    6. Return a JSON result with EXACTLY these fields:
-       {
-         "summary": "<brief markdown or plain-text note about the batch finalization pass>"
-       }
-
   # ---- interface ----
   input_schema_json:
     type: object
@@ -55,13 +50,9 @@ activity:
       parallelism:
         type: integer
         minimum: 1
-    additional_properties: false
   output_schema_json:
     type: object
-    properties:
-      summary:
-        type: string
-    additional_properties: false
+    properties: {}
 
   # ---- execution ----
   skill_refs:
