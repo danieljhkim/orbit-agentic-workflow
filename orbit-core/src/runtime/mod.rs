@@ -168,10 +168,6 @@ impl OrbitRuntime {
         self.context.scoring_enabled()
     }
 
-    pub fn user_name(&self) -> &str {
-        self.context.user_name()
-    }
-
     pub(crate) fn actor(&self) -> &ActorIdentity {
         self.context.actor()
     }

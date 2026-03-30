@@ -83,7 +83,6 @@ pub struct OrbitContext {
     execution_env_policy: ExecutionEnvPolicy,
     codex_execution_policy: CodexExecutionPolicy,
     persistence: PersistenceConfig,
-    user_name: String,
     actor: ActorIdentity,
     task_approval_required_for_agent: bool,
     task_delegate_approval: bool,
@@ -106,7 +105,6 @@ impl OrbitContext {
         execution_env_policy: ExecutionEnvPolicy,
         codex_execution_policy: CodexExecutionPolicy,
         persistence: PersistenceConfig,
-        user_name: String,
         actor: ActorIdentity,
         task_approval_required_for_agent: bool,
         task_delegate_approval: bool,
@@ -126,7 +124,6 @@ impl OrbitContext {
             execution_env_policy,
             codex_execution_policy,
             persistence,
-            user_name,
             actor,
             task_approval_required_for_agent,
             task_delegate_approval,
@@ -197,10 +194,6 @@ impl OrbitContext {
 
     pub(crate) fn persistence(&self) -> &PersistenceConfig {
         &self.persistence
-    }
-
-    pub(crate) fn user_name(&self) -> &str {
-        &self.user_name
     }
 
     pub(crate) fn actor(&self) -> &ActorIdentity {
