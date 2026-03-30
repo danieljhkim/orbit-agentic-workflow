@@ -63,15 +63,17 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     let pr_number = task.pr_number.as_deref().ok_or_else(|| {
         OrbitError::InvalidInput("sync_review_to_github: task missing pr_number".to_string())
     })?;
-    let repo_root = task
+    let Some(repo_root) = task
         .repo_root
         .as_deref()
         .or(task.workspace_path.as_deref())
-        .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "sync_review_to_github requires task.repo_root or task.workspace_path".to_string(),
-            )
-        })?;
+    else {
+        eprintln!(
+            "orbit: skipping review sync for task {task_id}: \
+             missing repo_root and workspace_path"
+        );
+        return Ok(0);
+    };
 
     let owner_repo = get_owner_repo(repo_root)?;
     let head_sha = get_pr_head_sha(repo_root, pr_number)?;
