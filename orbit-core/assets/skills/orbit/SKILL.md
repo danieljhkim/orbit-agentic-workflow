@@ -92,7 +92,6 @@ Task commands infer actor provenance automatically:
 - `orbit-execute-change-request`: Carry a change through implementation, validation, and review.
 - `orbit-raise-pr`: Creating PRs, leaving comments, replying to comment threads, and PR tool reference.
 - `orbit-review-pr`: Review a pull request with per-issue comments and scoring compliance.
-- `orbit-maintain-system`: Routine maintenance and operational job-run audits.
 - `orbit-track-issues`: Capture discovered bugs, risks, or friction as tracked tasks.
 
 ## Voice Your Opinion

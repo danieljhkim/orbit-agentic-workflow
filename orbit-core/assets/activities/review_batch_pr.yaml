@@ -76,23 +76,13 @@ activity:
       run_id:
         type: string
         description: Batch run ID (batch_id). The agent loads all batch tasks via orbit.task.list and their shared PR via orbit.task.show.
-  output_schema_json:
-    type: object
-    properties:
-      run_id:
-        type: string
-        description: The batch run ID that was reviewed
-      pr_status:
-        type: string
-        description: "Review decision: approve or request-changes"
-      body:
-        type: string
-        description: Review summary text
+  output_schema_json: {}
 
   # ---- execution ----
   skill_refs:
     - orbit
     - orbit-review-pr
+    - orbit-track-issues
   tools:
     - orbit.task.show
     - orbit.task.list

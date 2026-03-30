@@ -20,8 +20,6 @@ pub const AGENT_TRANSPORT_FAILURE: &str = "AGENT_TRANSPORT_FAILURE";
 pub const AGENT_PROVIDER_OVERLOAD: &str = "AGENT_PROVIDER_OVERLOAD";
 /// HTTP 429 rate-limit from provider — safe to retry with backoff.
 pub const AGENT_RATE_LIMIT: &str = "AGENT_RATE_LIMIT";
-/// Agent exited 0 but produced no parseable JSON envelope — safe to retry.
-pub const AGENT_OUTPUT_MISSING: &str = "AGENT_OUTPUT_MISSING";
 pub const ACTIVITY_EXECUTION_FAILED: &str = "ACTIVITY_EXECUTION_FAILED";
 pub const RUN_ABANDONED: &str = "RUN_ABANDONED";
 pub const STALE_RUN_GRACE_SECONDS: u64 = 30;
@@ -36,7 +34,6 @@ pub fn is_transient_error(code: &str) -> bool {
             | AGENT_PROVIDER_OVERLOAD
             | AGENT_RATE_LIMIT
             | AGENT_TIMEOUT
-            | AGENT_OUTPUT_MISSING
     )
 }
 #[derive(Debug, Clone)]
@@ -197,11 +194,6 @@ pub trait AgentProtocolHost {
         &self,
         execution: &ExecutionContext,
     ) -> Result<Vec<u8>, OrbitError>;
-    fn validate_skill_output_schema(
-        &self,
-        activity: &Activity,
-        envelope: &orbit_types::AgentResponseEnvelope,
-    ) -> Result<(), OrbitError>;
     fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError>;
 }
 
@@ -332,9 +324,9 @@ pub fn step_output_for_following_input<'a>(
     response_json: Option<&'a Value>,
 ) -> Option<&'a serde_json::Map<String, Value>> {
     match activity.spec_type.as_str() {
-        "agent_invoke" => response_json
-            .and_then(|value| value.get("result"))
-            .and_then(Value::as_object),
+        // Agent output is not piped between steps — agents persist state via
+        // task artifacts (orbit.task.update).
+        "agent_invoke" => None,
         _ => response_json.and_then(Value::as_object),
     }
 }

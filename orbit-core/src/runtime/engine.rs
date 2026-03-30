@@ -6,7 +6,7 @@ use orbit_engine::{
 use orbit_store::{JobRunStepParams, TaskUpdateParams as StoreTaskUpdateParams};
 use orbit_tools::ToolContext;
 use orbit_types::{
-    Activity, ActorIdentity, AgentCommitRequest, AgentResponseEnvelope, JobRun, JobRunState,
+    Activity, ActorIdentity, AgentCommitRequest, JobRun, JobRunState,
     JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus, TaskType,
     WorkspacePaths,
 };
@@ -14,7 +14,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
-use orbit_store::validate_instance_against_schema;
 
 #[derive(Debug, Clone, Serialize)]
 struct ExecutionEnvelope {
@@ -75,46 +74,6 @@ fn build_agent_stdin_envelope_payload(
 
     serde_json::to_vec(&envelope)
         .map_err(|e| OrbitError::Execution(format!("failed to serialize stdin envelope: {e}")))
-}
-
-fn validate_skill_output_schema(
-    runtime: &OrbitRuntime,
-    activity: &Activity,
-    envelope: &AgentResponseEnvelope,
-) -> Result<(), OrbitError> {
-    let skill_refs = activity_skill_refs_from_spec_config(&activity.spec_config)?;
-    if skill_refs.is_empty() {
-        // No skill_refs means no structured output contract; nothing to enforce.
-        return Ok(());
-    }
-    let skills = runtime.resolve_activity_skill_refs(&skill_refs)?;
-    // If no referenced skill defines an output schema, the skill_refs are context-only;
-    // there is no structured output contract to enforce here.
-    if skills.iter().all(|s| s.output_schema.is_none()) {
-        return Ok(());
-    }
-    let Some(result) = envelope.result.as_ref() else {
-        return Err(OrbitError::AgentProtocolViolation(
-            "success response must include result payload".to_string(),
-        ));
-    };
-
-    for skill in skills {
-        let Some(schema) = skill.output_schema.as_ref() else {
-            continue;
-        };
-        let context = format!("result does not match skill '{}' output schema", skill.id);
-        if let Err(err) = validate_instance_against_schema(schema, result, &context) {
-            return match err {
-                OrbitError::SkillValidation(message) => {
-                    Err(OrbitError::AgentProtocolViolation(message))
-                }
-                other => Err(other),
-            };
-        }
-    }
-
-    Ok(())
 }
 
 fn execute_commit_request_if_present(
@@ -418,14 +377,6 @@ impl AgentProtocolHost for OrbitRuntime {
         build_agent_stdin_envelope_payload(self, execution)
     }
 
-    fn validate_skill_output_schema(
-        &self,
-        activity: &Activity,
-        envelope: &AgentResponseEnvelope,
-    ) -> Result<(), OrbitError> {
-        validate_skill_output_schema(self, activity, envelope)
-    }
-
     fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError> {
         execute_commit_request_if_present(self, result)
     }
@@ -519,7 +470,6 @@ fn activity_envelope_json(activity: &Activity) -> Value {
         "type": activity.spec_type,
         "description": activity.description,
         "input_schema_json": activity.input_schema_json,
-        "output_schema_json": activity.output_schema_json,
         "created_by": activity.created_by,
     });
 

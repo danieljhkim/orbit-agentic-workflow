@@ -11,6 +11,7 @@ pub struct Activity {
     pub description: String,
     #[serde(default)]
     pub input_schema_json: Value,
+    #[serde(default)]
     pub output_schema_json: Value,
     #[serde(default)]
     pub spec_config: Value,

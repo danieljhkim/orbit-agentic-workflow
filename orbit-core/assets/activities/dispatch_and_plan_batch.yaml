@@ -86,6 +86,7 @@ activity:
   # ---- execution ----
   skill_refs:
     - orbit
+    - orbit-track-issues
   tools:
     - orbit.task.list
     - orbit.task.show

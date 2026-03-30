@@ -8,7 +8,7 @@ use crate::OrbitRuntime;
 use crate::fs_utils::write_text_with_parent;
 use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};
 
-const DEFAULT_SKILL_FILES: [(&str, &str); 8] = [
+const DEFAULT_SKILL_FILES: [(&str, &str); 7] = [
     ("orbit", include_str!("../../assets/skills/orbit/SKILL.md")),
     (
         "orbit-create-task",
@@ -31,10 +31,6 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 8] = [
         include_str!("../../assets/skills/orbit-review-pr/SKILL.md"),
     ),
     (
-        "orbit-maintain-system",
-        include_str!("../../assets/skills/orbit-maintain-system/SKILL.md"),
-    ),
-    (
         "orbit-track-issues",
         include_str!("../../assets/skills/orbit-track-issues/SKILL.md"),
     ),
@@ -55,7 +51,7 @@ pub struct SkillDoctorResult {
     pub message: String,
 }
 
-pub(crate) fn default_skill_ids() -> [&'static str; 8] {
+pub(crate) fn default_skill_ids() -> [&'static str; 7] {
     DEFAULT_SKILL_FILES.map(|(id, _)| id)
 }
 

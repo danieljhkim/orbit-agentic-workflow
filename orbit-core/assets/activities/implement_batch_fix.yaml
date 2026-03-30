@@ -50,14 +50,14 @@ activity:
        - Use proc.spawn to run the project's test and lint commands from the shared worktree.
        - If tests fail, fix the issue before continuing.
 
-    6. Return a JSON result with EXACTLY these fields (no prose, no explanation):
-       {
-         "execution_summary": "<markdown summary of fixes applied>"
-       }
-       This JSON result is REQUIRED. The run will be marked as failed if it is missing.
+    6. Update task records:
+       - For each task that was modified, call orbit.task.update with execution_summary
+         documenting the fixes applied.
+       - Example: orbit.task.update with input:
+         {"id": "<task_id>", "execution_summary": "Fixed null check in validate() per review feedback."}
 
     If a comment cannot be addressed (ambiguous, out of scope, or would require
-    breaking changes), document the reason in the execution_summary so the reviewer
+    breaking changes), document the reason in the task's execution_summary so the reviewer
     can make a decision.
 
   # ---- interface ----
@@ -69,16 +69,13 @@ activity:
       run_id:
         type: string
         description: Batch run ID (batch_id). The agent loads all batch tasks via orbit.task.list.
-  output_schema_json:
-    type: object
-    properties:
-      execution_summary:
-        type: string
-        description: Markdown summary of fixes applied to address review comments across all batch tasks.
+  output_schema_json: {}
 
   # ---- execution ----
   skill_refs:
     - orbit
+    - orbit-execute-change-request
+    - orbit-track-issues
   tools:
     - orbit.task.show
     - orbit.task.list

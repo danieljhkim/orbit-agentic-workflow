@@ -32,8 +32,7 @@ orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>"}'
    - If valid but execution should remain queued: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'`.
    - If not valid: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<reason>"}'`.
 3. For `review` tasks, confirm all requirements were fulfilled as outlined in the task.
-   - If complete and code changes are acceptable: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'` and include `result.commit` in the approval response so Orbit creates the commit.
-   - A `review approved` result that accepts code changes must include `result.commit`; do not approve changed code without commit intent.
+   - If complete and code changes are acceptable: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'`.
    - If incomplete: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<what still needs resolving>"}'`.
 
 ## Verification
@@ -46,17 +45,18 @@ After each decision, run `orbit tool run orbit.task.show --input '{"id": "<id>"}
 - After review approval: status is `done`
 - After review rejection: status is `rejected`
 
-## Output Requirements
+## Persisting Results
 
-Report:
+After each decision, persist a brief summary via the task's comment field:
 
-- action taken (`proposal approved`, `proposal rejected`, `review approved`, or `review rejected`)
-- task ID
-- decision actor recorded by Orbit
-- decision note
-- verification result
+```bash
+orbit tool run orbit.task.update --input '{
+  "id": "<id>",
+  "comment": "<action taken> — <decision note> — <verification result>"
+}'
+```
 
-Keep output concise, operational, and auditable.
+Include: action taken (`proposal approved`, `proposal rejected`, `review approved`, or `review rejected`), task ID, and decision rationale. Keep comments concise, operational, and auditable.
 
 ## Safety Rules
 

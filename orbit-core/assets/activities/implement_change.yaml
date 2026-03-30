@@ -88,20 +88,13 @@ activity:
     7. Persist execution details to the task:
        - Call orbit.task.update with id: input.task_id and:
          - execution_summary: the full markdown summary
+       - Example: orbit.task.update with input:
+         {"id": "<task_id>", "execution_summary": "## Status\nsuccess\n\n## 1. Summary of Changes\nAdded retry logic to API client..."}
        - This writes the execution summary directly to the task so downstream steps can load it.
 
-    8. Return a JSON result with EXACTLY these fields (no prose, no explanation):
-       {
-         "status": "review",
-         "execution_summary": "<the full markdown execution summary>"
-       }
-       - status: "review" when implementation is ready for persistence and verification
-       - status: "blocked" when implementation could not be completed safely
-       This JSON result is REQUIRED. The run will be marked as failed if it is missing.
-
     If any step fails unrecoverably (tests cannot be fixed, plan is ambiguous, required
-    files are missing), return status: "blocked" with the execution_summary documenting
-    the failure reason (will be passed to update_task for persistence).
+    files are missing), call orbit.task.update with execution_summary documenting
+    the failure reason so the pipeline can handle it.
 
   # ---- interface ----
   input_schema_json:
@@ -115,19 +108,12 @@ activity:
       verification_mode:
         type: string
         description: Optional verification policy. Use `deferred` when this implementation is part of a parallel batch and verification must wait for `finalize_tasks`.
-  output_schema_json:
-    type: object
-    properties:
-      status:
-        type: string
-        description: Target Orbit task status for the follow-up update_task step, typically review or blocked.
-      execution_summary:
-        type: string
-        description: Full markdown execution summary (agent also persists this to the task via orbit.task.update)
+  output_schema_json: {}
 
   # ---- execution ----
   skill_refs:
     - orbit
+    - orbit-track-issues
   tools:
     - orbit.task.show
     - orbit.task.update

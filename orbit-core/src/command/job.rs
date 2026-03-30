@@ -20,14 +20,6 @@ const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/jobs/job_review_tasks.yaml"),
     ),
     (
-        "job_oversee_orbit_operations",
-        include_str!("../../assets/jobs/job_oversee_orbit_operations.yaml"),
-    ),
-    (
-        "job_perform_maintenance",
-        include_str!("../../assets/jobs/job_perform_maintenance.yaml"),
-    ),
-    (
         "job_parallel_task_worker",
         include_str!("../../assets/jobs/job_parallel_task_worker.yaml"),
     ),

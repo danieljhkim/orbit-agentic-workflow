@@ -23,12 +23,13 @@ activity:
     2. Load task context:
        - For each task returned from the batch query, call orbit.task.show and read:
          title, description, acceptance_criteria, execution_summary, context_files, workspace_path, and repo_root.
-       - All tasks share the same workspace_path (the shared worktree on agent-main).
+       - All tasks share the same workspace_path (the shared worktree on parallel-batch).
 
     3. Review the batch as a whole:
-       - Inspect the combined diff in the shared worktree (on the agent-main branch).
+       - Review that the tasks are completed.
+       - Inspect the combined diff in the shared worktree (on the parallel-batch branch).
        - Look for integration issues, stale assumptions, duplicated fixes, or places where one task now needs a small follow-up because of another task in the same batch.
-       - You may revise code directly in the shared worktree with fs.write or fs.delete when needed.
+       - You may revise code directly in the shared worktree needed to meet the acceptance criteria of the tasks.
 
     4. Run verification:
        - In this activity you ARE allowed to run build, test, lint, or validation commands with proc.spawn.
@@ -36,7 +37,11 @@ activity:
        - If verification reveals a fixable issue, fix it before continuing.
 
     5. Keep task records current:
-       - If you materially change a task during this finalization pass, update that task execution_summary with orbit.task.update so the task record reflects the final state before commit and PR creation.
+       - If you materially change a task during this finalization pass, update that task
+         execution_summary with orbit.task.update so the task record reflects the final
+         state before commit and PR creation.
+       - Example: orbit.task.update with input:
+         {"id": "<task_id>", "execution_summary": "Fixed integration issue between batch tasks during finalization."}
 
   # ---- interface ----
   input_schema_json:
@@ -57,6 +62,7 @@ activity:
   # ---- execution ----
   skill_refs:
     - orbit
+    - orbit-track-issues
   tools:
     - orbit.task.list
     - orbit.task.show

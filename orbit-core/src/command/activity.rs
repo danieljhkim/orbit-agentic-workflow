@@ -40,14 +40,6 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/review_tasks.yaml"),
     ),
     (
-        "oversee_orbit_operations",
-        include_str!("../../assets/activities/oversee_orbit_operations.yaml"),
-    ),
-    (
-        "perform_maintenance",
-        include_str!("../../assets/activities/perform_maintenance.yaml"),
-    ),
-    (
         "run_tests",
         include_str!("../../assets/activities/run_tests.yaml"),
     ),
