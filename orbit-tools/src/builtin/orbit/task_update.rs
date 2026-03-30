@@ -53,9 +53,9 @@ pub(super) fn build_exec_requests(
         args.push(batch_id);
         changed = true;
     }
-    if let Some(context_files) = super::optional_string(input, "context_files")? {
+    if let Some(context_files) = super::optional_string_list_alias(input, &["context_files"])? {
         args.push("--context".to_string());
-        args.push(context_files);
+        args.push(context_files.join(","));
         changed = true;
     }
 
@@ -131,8 +131,10 @@ impl Tool for OrbitTaskUpdateTool {
             },
             ToolParam {
                 name: "context_files".to_string(),
-                description: "Comma-separated context file paths (empty string clears)".to_string(),
-                param_type: "string".to_string(),
+                description:
+                    "Context file paths as a comma-separated string or array of strings"
+                        .to_string(),
+                param_type: "array".to_string(),
                 required: false,
             },
         ]);
@@ -224,11 +226,50 @@ mod tests {
     }
 
     #[test]
+    fn build_exec_requests_accepts_context_files_array() {
+        let (update, _) = build_exec_requests(
+            &test_context(),
+            &json!({
+                "id": "T20260330-002312",
+                "context_files": [
+                    "orbit-cli/src/command/task.rs",
+                    "orbit-tools/src/builtin/orbit/task_update.rs"
+                ]
+            }),
+        )
+        .expect("request should build");
+
+        let context_index = update
+            .args
+            .iter()
+            .position(|arg| arg == "--context")
+            .expect("expected `--context` in request");
+        assert_eq!(
+            update.args.get(context_index + 1).map(String::as_str),
+            Some("orbit-cli/src/command/task.rs,orbit-tools/src/builtin/orbit/task_update.rs")
+        );
+    }
+
+    #[test]
     fn build_exec_requests_error_mentions_context_files() {
         let err = build_exec_requests(&test_context(), &json!({ "id": "T20260330-002312" }))
             .expect_err("missing fields should fail");
         let message = err.to_string();
 
         assert!(message.contains("context_files"));
+    }
+
+    #[test]
+    fn build_exec_requests_rejects_non_string_context_files_entries() {
+        let err = build_exec_requests(
+            &test_context(),
+            &json!({
+                "id": "T20260330-002312",
+                "context_files": ["orbit-cli/src/command/task.rs", 7]
+            }),
+        )
+        .expect_err("non-string entries should fail");
+
+        assert!(err.to_string().contains("entries must be strings"));
     }
 }
