@@ -23,7 +23,13 @@ job:
       model: gpt-5.4
       timeout_seconds: 1200
 
-    # 2. Plan all tasks in the batch, refine context_files.
+    # 2. Snapshot batch state after dispatch.
+    - target_type: activity
+      target_id: snapshot_batch_state
+      condition: on_success
+      timeout_seconds: 15
+
+    # 3. Plan all tasks in the batch, refine context_files.
     - target_type: activity
       target_id: plan_parallel_batch
       agent_cli: codex
@@ -31,13 +37,19 @@ job:
       condition: on_success
       timeout_seconds: 2400
 
-    # 3. Launch parallel workers in the shared worktree.
+    # 4. Snapshot batch state after planning.
+    - target_type: activity
+      target_id: snapshot_batch_state
+      condition: on_success
+      timeout_seconds: 15
+
+    # 5. Launch parallel workers in the shared worktree.
     - target_type: activity
       target_id: parallel_dispatch_tasks
       condition: on_success
       timeout_seconds: 7200
 
-    # 4. Review the combined diff, fix integration issues, run tests.
+    # 6. Review the combined diff, fix integration issues, run tests.
     - target_type: activity
       target_id: finalize_tasks
       agent_cli: codex
@@ -45,13 +57,13 @@ job:
       condition: on_success
       timeout_seconds: 3600
 
-    # 5. Commit all changes on agent-main.
+    # 7. Commit all changes on agent-main.
     - target_type: activity
       target_id: commit_batch_changes
       condition: on_success
       timeout_seconds: 60
 
-    # 6. Push and open a single PR from agent-main.
+    # 8. Push and open a single PR from agent-main.
     - target_type: activity
       target_id: open_batch_pr
       condition: on_success

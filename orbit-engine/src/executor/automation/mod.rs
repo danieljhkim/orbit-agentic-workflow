@@ -8,6 +8,7 @@ mod parallel;
 mod pr;
 mod push;
 pub(crate) mod review;
+mod snapshot;
 mod sync_review;
 mod task;
 mod worktree;
@@ -33,6 +34,7 @@ const AUTOMATION_SYNC_REVIEW_TO_GITHUB: &str = "sync_review_to_github";
 const AUTOMATION_RUN_PARALLEL_TASK_PIPELINE: &str = "run_parallel_task_pipeline";
 const AUTOMATION_COMMIT_BATCH_CHANGES: &str = "commit_batch_changes";
 const AUTOMATION_OPEN_BATCH_PR: &str = "open_batch_pr";
+const AUTOMATION_SNAPSHOT_BATCH_STATE: &str = "snapshot_batch_state";
 
 #[derive(Debug, Clone, Deserialize)]
 struct AutomationSpec {
@@ -97,6 +99,7 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
         AUTOMATION_RUN_PARALLEL_TASK_PIPELINE => parallel::run_parallel_task_pipeline(host, input),
         AUTOMATION_COMMIT_BATCH_CHANGES => commit::commit_batch_changes(host, input),
         AUTOMATION_OPEN_BATCH_PR => pr::open_batch_pr(host, input),
+        AUTOMATION_SNAPSHOT_BATCH_STATE => snapshot::snapshot_batch_state(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"
         ))),
