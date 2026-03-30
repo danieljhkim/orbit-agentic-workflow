@@ -9,62 +9,49 @@ job:
   # ---- execution ----
   # Orchestrates one agent-selected batch using a shared worktree on agent-main.
   # Workers implement changes directly in the shared directory with file-level locking.
-  # After all workers finish, batch-level finalization reviews the combined diff,
-  # runs tests, commits, and opens a single PR from agent-main.
+  # After all workers finish, automated verification gates the batch. If verification
+  # fails, an agent-based finalize step attempts fixes. On success, a single commit
+  # and PR are created from agent-main.
   max_active_runs: 1
   default_input:
     base: agent-main
     parallelism: 2
   steps:
-    # 1. Pick a conflict-free batch of backlog tasks.
+    # 1. Select a conflict-free batch, author plans, refine context_files.
     - target_type: activity
-      target_id: dispatch_parallel_task
+      target_id: dispatch_and_plan_batch
       agent_cli: codex
       model: gpt-5.4
-      timeout_seconds: 1200
-
-    # 2. Snapshot batch state after dispatch.
-    - target_type: activity
-      target_id: snapshot_batch_state
-      condition: on_success
-      timeout_seconds: 15
-
-    # 3. Plan all tasks in the batch, refine context_files.
-    - target_type: activity
-      target_id: plan_parallel_batch
-      agent_cli: codex
-      model: gpt-5.4
-      condition: on_success
       timeout_seconds: 2400
 
-    # 4. Snapshot batch state after planning.
+    # 2. Snapshot batch state for audit trail.
     - target_type: activity
       target_id: snapshot_batch_state
       condition: on_success
       timeout_seconds: 15
 
-    # 5. Launch parallel workers in the shared worktree.
+    # 3. Launch parallel workers in the shared worktree.
     - target_type: activity
       target_id: parallel_dispatch_tasks
       condition: on_success
       timeout_seconds: 7200
 
-    # 6. Review the combined diff, fix integration issues, run tests.
+    # 4. Verify build and tests pass.
+    - target_type: activity
+      target_id: verify_batch
+      condition: on_success
+      timeout_seconds: 600
+
+    # 4b. Fallback: if verification fails, invoke agent to diagnose and fix.
     - target_type: activity
       target_id: finalize_tasks
       agent_cli: codex
       model: gpt-5.4
-      condition: on_success
+      condition: on_failure
       timeout_seconds: 3600
 
-    # 7. Commit all changes on agent-main.
+    # 5. Commit all changes and open a single PR from agent-main.
     - target_type: activity
-      target_id: commit_batch_changes
-      condition: on_success
-      timeout_seconds: 60
-
-    # 8. Push and open a single PR from agent-main.
-    - target_type: activity
-      target_id: open_batch_pr
+      target_id: commit_and_open_batch_pr
       condition: on_success
       timeout_seconds: 300

@@ -32,8 +32,8 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/dispatch_task.yaml"),
     ),
     (
-        "dispatch_parallel_task",
-        include_str!("../../assets/activities/dispatch_parallel_task.yaml"),
+        "dispatch_and_plan_batch",
+        include_str!("../../assets/activities/dispatch_and_plan_batch.yaml"),
     ),
     (
         "finalize_tasks",
@@ -44,20 +44,12 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/parallel_dispatch_tasks.yaml"),
     ),
     (
-        "commit_batch_changes",
-        include_str!("../../assets/activities/commit_batch_changes.yaml"),
-    ),
-    (
-        "open_batch_pr",
-        include_str!("../../assets/activities/open_batch_pr.yaml"),
+        "commit_and_open_batch_pr",
+        include_str!("../../assets/activities/commit_and_open_batch_pr.yaml"),
     ),
     (
         "plan_task",
         include_str!("../../assets/activities/plan_task.yaml"),
-    ),
-    (
-        "plan_parallel_batch",
-        include_str!("../../assets/activities/plan_parallel_batch.yaml"),
     ),
     (
         "implement_change",
@@ -114,6 +106,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
     (
         "snapshot_batch_state",
         include_str!("../../assets/activities/snapshot_batch_state.yaml"),
+    ),
+    (
+        "verify_batch",
+        include_str!("../../assets/activities/verify_batch.yaml"),
     ),
 ];
 
