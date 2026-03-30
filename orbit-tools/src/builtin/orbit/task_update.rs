@@ -131,9 +131,8 @@ impl Tool for OrbitTaskUpdateTool {
             },
             ToolParam {
                 name: "context_files".to_string(),
-                description:
-                    "Context file paths as a comma-separated string or array of strings"
-                        .to_string(),
+                description: "Context file paths as a comma-separated string or array of strings"
+                    .to_string(),
                 param_type: "array".to_string(),
                 required: false,
             },

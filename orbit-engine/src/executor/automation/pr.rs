@@ -90,6 +90,10 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         json!({
             "pr": pr_number,
             "strategy": "squash",
+            // Parallel batch branches stay attached to the shared worktree
+            // until cleanup, so deleting the local branch here can fail even
+            // after the PR merge itself succeeded.
+            "delete_branch": false,
         }),
         Role::Admin,
         tool_context,
@@ -122,6 +126,291 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     }
 
     Ok(json!({ "merged": true }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::sync::Mutex;
+
+    use chrono::Utc;
+    use orbit_tools::ToolContext;
+    use orbit_types::{
+        Activity, ActorIdentity, Job, JobTargetType, OrbitError, OrbitEvent, Role, Task,
+        TaskPriority, TaskStatus, TaskType,
+    };
+    use serde_json::{Value, json};
+
+    use super::merge_batch_pr;
+    use crate::context::{JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
+
+    struct TestHost {
+        tasks: Vec<Task>,
+        merge_inputs: Mutex<Vec<Value>>,
+        updated_statuses: Mutex<Vec<(String, Option<TaskStatus>)>>,
+        scoreboard_dir: PathBuf,
+    }
+
+    impl TestHost {
+        fn new(tasks: Vec<Task>) -> Self {
+            Self {
+                tasks,
+                merge_inputs: Mutex::new(Vec::new()),
+                updated_statuses: Mutex::new(Vec::new()),
+                scoreboard_dir: PathBuf::from("."),
+            }
+        }
+    }
+
+    impl TaskHost for TestHost {
+        fn get_task(&self, task_id: &str) -> Result<Task, OrbitError> {
+            self.tasks
+                .iter()
+                .find(|task| task.id == task_id)
+                .cloned()
+                .ok_or_else(|| OrbitError::TaskNotFound(task_id.to_string()))
+        }
+
+        fn list_tasks_filtered(
+            &self,
+            _status: Option<TaskStatus>,
+            _priority: Option<TaskPriority>,
+            _parent_id: Option<&str>,
+            batch_id: Option<&str>,
+        ) -> Result<Vec<Task>, OrbitError> {
+            Ok(self
+                .tasks
+                .iter()
+                .filter(|task| {
+                    batch_id.is_none_or(|expected| task.batch_id.as_deref() == Some(expected))
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn start_task(
+            &self,
+            _task_id: &str,
+            _note: Option<String>,
+            _comment: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not used in merge_batch_pr tests")
+        }
+
+        fn update_task_from_activity(
+            &self,
+            _task_id: &str,
+            _status: TaskStatus,
+            _execution_summary: Option<String>,
+            _comment: Option<String>,
+            _note: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not used in merge_batch_pr tests")
+        }
+
+        fn apply_task_automation_update(
+            &self,
+            task_id: &str,
+            update: TaskAutomationUpdate,
+        ) -> Result<(), OrbitError> {
+            self.updated_statuses
+                .lock()
+                .expect("updated statuses lock")
+                .push((task_id.to_string(), update.status));
+            Ok(())
+        }
+    }
+
+    impl RuntimeHost for TestHost {
+        fn record_event(&self, _event: OrbitEvent) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn repo_root(&self) -> Result<String, OrbitError> {
+            Ok("/tmp".to_string())
+        }
+
+        fn data_root(&self) -> &Path {
+            Path::new(".")
+        }
+
+        fn acquire_file_locks(
+            &self,
+            _task_id: &str,
+            _repo_root: &str,
+            _paths: &[&str],
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn release_file_locks(&self, _task_id: &str) -> Result<usize, OrbitError> {
+            Ok(0)
+        }
+
+        fn cleanup_stale_file_locks(&self) -> Result<usize, OrbitError> {
+            Ok(0)
+        }
+
+        fn run_job_now_with_input_debug(
+            &self,
+            _job_id: &str,
+            _input: Value,
+            _debug: bool,
+        ) -> Result<JobRunResult, OrbitError> {
+            unimplemented!("not used in merge_batch_pr tests")
+        }
+
+        fn validate_activity_target_exists(
+            &self,
+            _target_type: JobTargetType,
+            _target_id: &str,
+        ) -> Result<Activity, OrbitError> {
+            unimplemented!("not used in merge_batch_pr tests")
+        }
+
+        fn get_job(&self, _job_id: &str) -> Result<Option<Job>, OrbitError> {
+            Ok(None)
+        }
+
+        fn run_tool_with_context_and_role(
+            &self,
+            name: &str,
+            input: Value,
+            role: Role,
+            _tool_context: ToolContext,
+        ) -> Result<Value, OrbitError> {
+            assert_eq!(role, Role::Admin);
+            assert_eq!(name, "github.pr.merge");
+            self.merge_inputs
+                .lock()
+                .expect("merge input lock")
+                .push(input);
+            Ok(json!({ "merged": true }))
+        }
+
+        fn maybe_create_failure_task(
+            &self,
+            _job_id: &str,
+            _run_id: &str,
+            _error_code: &str,
+            _error_message: &str,
+            _agent: Option<&str>,
+            _model: Option<&str>,
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn scoring_enabled(&self) -> bool {
+            false
+        }
+
+        fn scoreboard_dir(&self) -> &Path {
+            &self.scoreboard_dir
+        }
+    }
+
+    fn sample_task(id: &str, batch_id: &str, workspace_path: &str, pr_number: &str) -> Task {
+        let now = Utc::now();
+        Task {
+            id: id.to_string(),
+            parent_id: None,
+            title: format!("Task {id}"),
+            description: "test".to_string(),
+            acceptance_criteria: vec![],
+            plan: "plan".to_string(),
+            execution_summary: String::new(),
+            context_files: vec![],
+            workspace_path: Some(workspace_path.to_string()),
+            repo_root: Some(workspace_path.to_string()),
+            assigned_to: None,
+            created_by: None,
+            actor_identity: ActorIdentity::default(),
+            status: TaskStatus::Review,
+            priority: TaskPriority::High,
+            complexity: None,
+            task_type: TaskType::Bug,
+            pr_number: Some(pr_number.to_string()),
+            pr_status: Some("APPROVED".to_string()),
+            proposed_by: None,
+            source_task_id: None,
+            batch_id: Some(batch_id.to_string()),
+            comments: vec![],
+            history: vec![],
+            review_threads: vec![],
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn init_batch_merge_repo() -> tempfile::TempDir {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let repo_root = tempdir.path();
+
+        run_git(
+            repo_root,
+            &["init", "--initial-branch=orbit/parallel-batch"],
+        );
+        run_git(repo_root, &["config", "user.name", "Orbit Tests"]);
+        run_git(
+            repo_root,
+            &["config", "user.email", "orbit-tests@example.com"],
+        );
+        std::fs::write(repo_root.join("README.md"), "batch\n").expect("write readme");
+        run_git(repo_root, &["add", "README.md"]);
+        run_git(repo_root, &["commit", "-m", "initial"]);
+        run_git(repo_root, &["branch", "agent-main"]);
+
+        tempdir
+    }
+
+    fn run_git(repo_root: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_root)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {:?} failed", args);
+    }
+
+    #[test]
+    fn merge_batch_pr_disables_branch_deletion_for_shared_worktree_merges() {
+        let repo = init_batch_merge_repo();
+        let repo_root = repo.path().to_string_lossy().to_string();
+        let host = TestHost::new(vec![sample_task(
+            "T20260330-063823",
+            "batch-1",
+            &repo_root,
+            "76",
+        )]);
+
+        let result = merge_batch_pr(
+            &host,
+            &json!({
+                "run_id": "batch-1",
+                "base": "agent-main",
+            }),
+        )
+        .expect("merge_batch_pr succeeds");
+
+        assert_eq!(result, json!({ "merged": true }));
+        let merge_inputs = host.merge_inputs.lock().expect("merge inputs");
+        assert_eq!(merge_inputs.len(), 1);
+        assert_eq!(
+            merge_inputs[0],
+            json!({
+                "pr": "76",
+                "strategy": "squash",
+                "delete_branch": false,
+            })
+        );
+
+        let updated = host.updated_statuses.lock().expect("updated statuses");
+        assert_eq!(
+            updated.as_slice(),
+            &[("T20260330-063823".to_string(), Some(TaskStatus::Done))]
+        );
+    }
 }
 
 pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
