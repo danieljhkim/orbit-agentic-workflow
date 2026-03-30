@@ -35,8 +35,8 @@ impl ClaudeCliTransport {
 
         if use_structured {
             let envelope_schema = build_envelope_schema(output_schema_json.unwrap());
-            let schema_str = serde_json::to_string(&envelope_schema)
-                .expect("envelope schema must serialize");
+            let schema_str =
+                serde_json::to_string(&envelope_schema).expect("envelope schema must serialize");
             args.push("--json-schema".to_string());
             args.push(schema_str);
         }

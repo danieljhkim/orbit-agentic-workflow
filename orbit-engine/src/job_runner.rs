@@ -190,7 +190,8 @@ fn execute_activity_with_retries<H: EngineHost>(
         // Inject run_id so all steps can reference it (e.g. as batch_id for
         // parallel task pipelines).
         if let Value::Object(ref mut map) = current_input {
-            map.entry("run_id").or_insert_with(|| Value::String(run.run_id.clone()));
+            map.entry("run_id")
+                .or_insert_with(|| Value::String(run.run_id.clone()));
         }
         let mut last_failure: Option<FailureInfo> = None;
         let num_steps = job.steps.len();

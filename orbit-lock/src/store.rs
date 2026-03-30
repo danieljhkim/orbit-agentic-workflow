@@ -149,8 +149,7 @@ impl FileLockStore {
             .transaction()
             .map_err(|error| OrbitError::Store(error.to_string()))?;
 
-        let conflicts =
-            Self::check_conflicts_in_conn(&tx, repo_root, &[file_path], Some(task_id))?;
+        let conflicts = Self::check_conflicts_in_conn(&tx, repo_root, &[file_path], Some(task_id))?;
         if !conflicts.is_empty() {
             return Err(conflict_error(task_id, &conflicts));
         }

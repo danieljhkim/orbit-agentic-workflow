@@ -209,7 +209,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     }))
 }
 
-
 fn resolve_shared_worktree_path(repo_root: &Path) -> Result<PathBuf, OrbitError> {
     match std::env::var("ORBIT_WORKTREE_ROOT")
         .ok()
@@ -227,7 +226,9 @@ fn resolve_shared_worktree_path(repo_root: &Path) -> Result<PathBuf, OrbitError>
                         repo_root.display()
                     ))
                 })?;
-            Ok(PathBuf::from(value).join(repo_name).join(SHARED_WORKTREE_NAME))
+            Ok(PathBuf::from(value)
+                .join(repo_name)
+                .join(SHARED_WORKTREE_NAME))
         }
         None => Ok(repo_root
             .join(".orbit")
@@ -242,16 +243,29 @@ fn ensure_shared_worktree(
     branch: &str,
 ) -> Result<(), OrbitError> {
     if worktree_path.exists() {
-        let current_branch =
-            git_output(worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-        if current_branch.trim() != branch {
-            return Err(OrbitError::Execution(format!(
-                "shared worktree at '{}' is on branch '{}' but expected '{branch}'",
-                worktree_path.display(),
-                current_branch.trim()
-            )));
+        let current_branch = git_output(worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if current_branch.trim() == branch {
+            return Ok(());
         }
-        return Ok(());
+
+        git_success(
+            repo_root,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &worktree_path.to_string_lossy(),
+            ],
+        )?;
+
+        if worktree_path.exists() {
+            std::fs::remove_dir_all(worktree_path).map_err(|error| {
+                OrbitError::Execution(format!(
+                    "failed to clean stale shared worktree directory '{}': {error}",
+                    worktree_path.display()
+                ))
+            })?;
+        }
     }
 
     if let Some(parent) = worktree_path.parent() {
@@ -263,11 +277,16 @@ fn ensure_shared_worktree(
         })?;
     }
 
-    let start_point = resolve_worktree_start_point(repo_root, "agent-main")?;
+    let start_point = resolve_worktree_start_point(repo_root, branch)?;
 
     if git_command_success(
         repo_root,
-        &["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")],
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
     )? {
         git_success(
             repo_root,
@@ -307,17 +326,10 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "parallel_dispatch_tasks requires input.run_id".to_string(),
-            )
+            OrbitError::InvalidInput("parallel_dispatch_tasks requires input.run_id".to_string())
         })?;
 
-    let tasks = host.list_tasks_filtered(
-        Some(TaskStatus::Backlog),
-        None,
-        None,
-        Some(batch_id),
-    )?;
+    let tasks = host.list_tasks_filtered(Some(TaskStatus::Backlog), None, None, Some(batch_id))?;
 
     if tasks.is_empty() {
         return Err(OrbitError::InvalidInput(format!(
@@ -400,8 +412,51 @@ fn normalize_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PendingTask, find_launchable_index, paths_conflict, validate_selected_group};
+    use super::{
+        PendingTask, ensure_shared_worktree, find_launchable_index, git_output, git_success,
+        paths_conflict, validate_selected_group,
+    };
     use std::collections::VecDeque;
+    use std::path::{Path, PathBuf};
+
+    use tempfile::TempDir;
+
+    fn init_test_repo() -> TempDir {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let repo_root = tempdir.path();
+
+        git_success(repo_root, &["init", "--initial-branch=controller"]).expect("init repo");
+        git_success(repo_root, &["config", "user.name", "Orbit Tests"])
+            .expect("configure user name");
+        git_success(
+            repo_root,
+            &["config", "user.email", "orbit-tests@example.com"],
+        )
+        .expect("configure user email");
+
+        std::fs::write(repo_root.join("README.md"), "controller\n").expect("write initial file");
+        git_success(repo_root, &["add", "README.md"]).expect("stage initial file");
+        git_success(repo_root, &["commit", "-m", "initial"]).expect("commit initial file");
+        git_success(repo_root, &["branch", "agent-main"]).expect("create agent-main");
+
+        tempdir
+    }
+
+    fn create_branch_commit(repo_root: &Path, branch: &str, contents: &str) {
+        git_success(repo_root, &["checkout", "-b", branch]).expect("create branch");
+        std::fs::write(repo_root.join("README.md"), contents).expect("write branch contents");
+        git_success(repo_root, &["add", "README.md"]).expect("stage branch contents");
+        git_success(repo_root, &["commit", "-m", &format!("update {branch}")])
+            .expect("commit branch contents");
+        git_success(repo_root, &["checkout", "controller"]).expect("checkout controller");
+    }
+
+    fn shared_worktree_path(repo_root: &Path) -> PathBuf {
+        repo_root
+            .join(".orbit")
+            .join("worktrees")
+            .join("parallel-batch")
+    }
 
     #[test]
     fn detects_prefix_path_conflicts() {
@@ -445,5 +500,69 @@ mod tests {
         ];
 
         assert!(validate_selected_group(&selected).is_err());
+    }
+
+    #[test]
+    fn repairs_shared_worktree_when_branch_is_stale() {
+        let tempdir = init_test_repo();
+        let repo_root = tempdir.path();
+        let worktree_path = shared_worktree_path(repo_root);
+
+        create_branch_commit(repo_root, "agent-dev", "agent-dev\n");
+        std::fs::create_dir_all(worktree_path.parent().expect("worktree parent"))
+            .expect("create worktree parent");
+        git_success(
+            repo_root,
+            &[
+                "worktree",
+                "add",
+                &worktree_path.to_string_lossy(),
+                "agent-dev",
+            ],
+        )
+        .expect("create stale worktree");
+
+        ensure_shared_worktree(repo_root, &worktree_path, "agent-main")
+            .expect("repair shared worktree");
+
+        assert_eq!(
+            git_output(&worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"])
+                .expect("read worktree branch"),
+            "agent-main"
+        );
+        assert_eq!(
+            git_output(&worktree_path, &["rev-parse", "HEAD"]).expect("read repaired head"),
+            git_output(repo_root, &["rev-parse", "agent-main"]).expect("read agent-main head"),
+        );
+    }
+
+    #[test]
+    fn creates_shared_worktree_from_requested_remote_base_branch() {
+        let tempdir = init_test_repo();
+        let repo_root = tempdir.path();
+        let worktree_path = shared_worktree_path(repo_root);
+        let origin_path = repo_root.join("origin.git");
+        let origin = origin_path.to_string_lossy().to_string();
+
+        create_branch_commit(repo_root, "agent-dev", "agent-dev\n");
+        git_success(repo_root, &["init", "--bare", &origin]).expect("init bare origin");
+        git_success(repo_root, &["remote", "add", "origin", &origin]).expect("add origin");
+        git_success(repo_root, &["push", "origin", "agent-main"]).expect("push agent-main");
+        git_success(repo_root, &["push", "origin", "agent-dev"]).expect("push agent-dev");
+        git_success(repo_root, &["branch", "-D", "agent-dev"]).expect("delete local agent-dev");
+
+        ensure_shared_worktree(repo_root, &worktree_path, "agent-dev")
+            .expect("create worktree from remote branch");
+
+        assert_eq!(
+            git_output(&worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"])
+                .expect("read worktree branch"),
+            "agent-dev"
+        );
+        assert_eq!(
+            git_output(&worktree_path, &["rev-parse", "HEAD"]).expect("read worktree head"),
+            git_output(repo_root, &["rev-parse", "origin/agent-dev"])
+                .expect("read remote agent-dev head"),
+        );
     }
 }

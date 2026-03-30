@@ -249,16 +249,11 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "open_batch_pr requires input.run_id".to_string(),
-            )
+            OrbitError::InvalidInput("open_batch_pr requires input.run_id".to_string())
         })?;
 
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
-    let completed_task_ids: Vec<String> = batch_tasks
-        .iter()
-        .map(|t| t.id.clone())
-        .collect();
+    let completed_task_ids: Vec<String> = batch_tasks.iter().map(|t| t.id.clone()).collect();
 
     if completed_task_ids.is_empty() {
         return Err(OrbitError::InvalidInput(format!(

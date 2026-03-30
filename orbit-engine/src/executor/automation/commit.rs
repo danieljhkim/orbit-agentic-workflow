@@ -65,8 +65,8 @@ pub(super) fn commit_batch_changes<H: TaskHost + ?Sized>(
     let workspace_path_str = required_input_string(input, "workspace_path")?;
     let workspace_path = canonicalize_existing_dir(workspace_path_str, "workspace_path")?;
 
-    let expected_branch = super::input::input_string_field(input, "base")
-        .unwrap_or_else(|| "agent-main".to_string());
+    let expected_branch =
+        super::input::input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
     let actual_branch = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if actual_branch.trim() != expected_branch {
         return Err(OrbitError::Execution(format!(
@@ -83,16 +83,11 @@ pub(super) fn commit_batch_changes<H: TaskHost + ?Sized>(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "commit_batch_changes requires input.run_id".to_string(),
-            )
+            OrbitError::InvalidInput("commit_batch_changes requires input.run_id".to_string())
         })?;
 
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
-    let completed_task_ids: Vec<String> = batch_tasks
-        .iter()
-        .map(|t| t.id.clone())
-        .collect();
+    let completed_task_ids: Vec<String> = batch_tasks.iter().map(|t| t.id.clone()).collect();
 
     if completed_task_ids.is_empty() {
         return Err(OrbitError::InvalidInput(format!(

@@ -680,7 +680,8 @@ pub struct TaskApproveArgs {
 impl Execute for TaskApproveArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let ids = if self.all_proposed {
-            let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
+            let proposed =
+                runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
             if proposed.is_empty() {
                 println!("No proposed tasks found.");
                 return Ok(());
@@ -776,7 +777,8 @@ pub struct TaskRejectArgs {
 impl Execute for TaskRejectArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let ids = if self.all_proposed {
-            let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
+            let proposed =
+                runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
             if proposed.is_empty() {
                 println!("No proposed tasks found.");
                 return Ok(());

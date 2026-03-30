@@ -127,10 +127,7 @@ impl OrbitRuntime {
 
     fn ensure_pipeline_mode_is_exclusive(&self, job_id: &str) -> Result<(), OrbitError> {
         let conflicting_job_ids: &[&str] = match job_id {
-            JOB_TASK_PIPELINE => &[
-                JOB_PARALLEL_TASK_PIPELINE,
-                JOB_PARALLEL_TASK_WORKER,
-            ],
+            JOB_TASK_PIPELINE => &[JOB_PARALLEL_TASK_PIPELINE, JOB_PARALLEL_TASK_WORKER],
             JOB_PARALLEL_TASK_PIPELINE => &[
                 JOB_TASK_PIPELINE,
                 JOB_PARALLEL_TASK_PIPELINE,

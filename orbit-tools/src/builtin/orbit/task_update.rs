@@ -124,7 +124,8 @@ impl Tool for OrbitTaskUpdateTool {
             },
             ToolParam {
                 name: "batch_id".to_string(),
-                description: "Batch ID to associate with the task (empty string clears)".to_string(),
+                description: "Batch ID to associate with the task (empty string clears)"
+                    .to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },

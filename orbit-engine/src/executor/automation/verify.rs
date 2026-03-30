@@ -18,9 +18,7 @@ pub(super) fn verify_batch<H: RuntimeHost + ?Sized>(
                 .map(|p| p.to_string_lossy().into_owned())
         })
         .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "verify_batch: unable to determine workspace_path".to_string(),
-            )
+            OrbitError::InvalidInput("verify_batch: unable to determine workspace_path".to_string())
         })?;
 
     let workspace = super::input::canonicalize_existing_dir(&workspace_path, "workspace_path")?;
