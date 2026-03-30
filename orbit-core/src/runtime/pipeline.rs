@@ -5,7 +5,7 @@ use orbit_lock::FileLockChecker;
 use orbit_policy::PolicyContext;
 use orbit_tools::ToolContext;
 use orbit_types::{
-    OrbitEvent, PolicyDecision, Role, Task, redact_sensitive_env_error, redact_sensitive_env_json,
+    OrbitEvent, PolicyDecision, Role, redact_sensitive_env_error, redact_sensitive_env_json,
 };
 use serde_json::Value;
 
@@ -177,12 +177,20 @@ fn resolve_task_id_from_context(
         Ok(path) => path,
         Err(_) => PathBuf::from(cwd),
     };
+    let canonical_repo_root = canonical_repo_root(runtime);
 
     let tasks = runtime.list_task_records()?;
     Ok(tasks
         .into_iter()
-        .find(|task| task_workspace_matches(task, &canonical_cwd))
-        .map(|task| task.id))
+        .filter_map(|task| {
+            let workspace = validated_task_workspace(
+                &canonical_repo_root,
+                task.workspace_path.as_deref()?,
+            )?;
+            task_workspace_matches(&workspace, &canonical_cwd).then_some((task.id, workspace))
+        })
+        .max_by_key(|(_, workspace)| workspace.to_string_lossy().len())
+        .map(|(task_id, _)| task_id))
 }
 
 fn resolve_workspace_root_from_context(
@@ -190,23 +198,46 @@ fn resolve_workspace_root_from_context(
     tool_context: &ToolContext,
 ) -> Result<Option<PathBuf>, OrbitError> {
     if let Some(task_id) = tool_context.task_id.as_deref()
-        && let Ok(task) = runtime.get_task(task_id)
-        && let Some(workspace_path) = task.workspace_path
+        && let Some(workspace_root) = resolve_task_workspace_root(runtime, task_id)
     {
-        return Ok(Some(PathBuf::from(workspace_path)));
+        return Ok(Some(workspace_root));
     }
-    Ok(Some(runtime.context.paths().repo_root.clone()))
+    Ok(Some(canonical_repo_root(runtime)))
 }
 
-fn task_workspace_matches(task: &Task, canonical_cwd: &Path) -> bool {
-    let Some(workspace_path) = task.workspace_path.as_deref() else {
-        return false;
-    };
-    let workspace_path = Path::new(workspace_path);
-    let canonical_workspace = workspace_path
+fn canonical_repo_root(runtime: &OrbitRuntime) -> PathBuf {
+    runtime
+        .context
+        .paths()
+        .repo_root
         .canonicalize()
-        .unwrap_or_else(|_| workspace_path.to_path_buf());
-    canonical_cwd.starts_with(&canonical_workspace)
+        .unwrap_or_else(|_| runtime.context.paths().repo_root.clone())
+}
+
+fn validated_task_workspace(repo_root: &Path, workspace_path: &str) -> Option<PathBuf> {
+    let candidate = if Path::new(workspace_path).is_absolute() {
+        PathBuf::from(workspace_path)
+    } else {
+        repo_root.join(workspace_path)
+    };
+    let canonical_workspace = candidate.canonicalize().ok()?;
+    if !canonical_workspace.is_dir() {
+        return None;
+    }
+    canonical_workspace
+        .starts_with(repo_root)
+        .then_some(canonical_workspace)
+}
+
+fn resolve_task_workspace_root(runtime: &OrbitRuntime, task_id: &str) -> Option<PathBuf> {
+    let repo_root = canonical_repo_root(runtime);
+    let task = runtime.get_task(task_id).ok()?;
+    let workspace_path = task.workspace_path.as_deref()?;
+    validated_task_workspace(&repo_root, workspace_path)
+}
+
+fn task_workspace_matches(canonical_workspace: &Path, canonical_cwd: &Path) -> bool {
+    canonical_cwd.starts_with(canonical_workspace)
 }
 
 #[derive(Debug, Clone)]
@@ -214,4 +245,100 @@ pub struct DryRunResult {
     pub tool_name: String,
     pub policy_allowed: bool,
     pub missing_params: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        canonical_repo_root, resolve_task_id_from_context, resolve_workspace_root_from_context,
+    };
+    use crate::OrbitRuntime;
+    use orbit_store::TaskCreateParams as StoreTaskCreateParams;
+    use orbit_tools::ToolContext;
+    use orbit_types::{ActorIdentity, TaskPriority, TaskStatus, TaskType};
+    use std::fs;
+
+    fn seed_task(runtime: &OrbitRuntime, title: &str, workspace_path: Option<String>) -> String {
+        runtime
+            .create_task_record(StoreTaskCreateParams {
+                actor: "tester".to_string(),
+                parent_id: None,
+                title: title.to_string(),
+                description: String::new(),
+                acceptance_criteria: Vec::new(),
+                plan: "## Plan\n- test".to_string(),
+                execution_summary: String::new(),
+                context_files: Vec::new(),
+                workspace_path,
+                repo_root: None,
+                created_by: Some("tester".to_string()),
+                actor_identity: ActorIdentity::System,
+                assigned_to: Some("tester".to_string()),
+                status: TaskStatus::InProgress,
+                priority: TaskPriority::Medium,
+                complexity: None,
+                task_type: TaskType::Task,
+                pr_number: None,
+                proposed_by: None,
+                source_task_id: None,
+                comments: Vec::new(),
+            })
+            .expect("task")
+            .id
+    }
+
+    #[test]
+    fn invalid_workspace_root_falls_back_to_repo_root() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let outside = tempfile::tempdir().expect("tempdir");
+        let task_id = seed_task(
+            &runtime,
+            "escaped workspace",
+            Some(outside.path().to_string_lossy().into_owned()),
+        );
+
+        let resolved = resolve_workspace_root_from_context(
+            &runtime,
+            &ToolContext {
+                task_id: Some(task_id),
+                ..Default::default()
+            },
+        )
+        .expect("workspace root")
+        .expect("workspace path");
+
+        assert_eq!(resolved, canonical_repo_root(&runtime));
+    }
+
+    #[test]
+    fn task_resolution_prefers_most_specific_matching_workspace() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = canonical_repo_root(&runtime);
+        let nested = repo_root.join("nested");
+        let deeper = nested.join("deeper");
+        fs::create_dir_all(&deeper).expect("workspace dirs");
+
+        let broad_id = seed_task(
+            &runtime,
+            "broad",
+            Some(nested.to_string_lossy().into_owned()),
+        );
+        let specific_id = seed_task(
+            &runtime,
+            "specific",
+            Some(deeper.to_string_lossy().into_owned()),
+        );
+
+        let resolved = resolve_task_id_from_context(
+            &runtime,
+            &ToolContext {
+                cwd: Some(deeper.to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("task id");
+
+        assert_eq!(resolved, Some(specific_id));
+        assert_ne!(resolved, Some(broad_id));
+    }
 }

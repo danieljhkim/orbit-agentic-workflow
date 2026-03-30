@@ -169,7 +169,6 @@ impl Tool for OrbitTaskUpdateTool {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
     use serde_json::json;
 
     use crate::ToolContext;
@@ -178,10 +177,11 @@ mod tests {
 
     fn test_context() -> ToolContext {
         ToolContext {
-            cwd: PathBuf::from("/tmp/orbit"),
+            cwd: Some("/tmp/orbit".to_string()),
             orbit_root: Some(PathBuf::from("/tmp/orbit-root")),
             agent_name: Some("codex".to_string()),
             model_name: Some("gpt-5.4".to_string()),
+            ..Default::default()
         }
     }
 

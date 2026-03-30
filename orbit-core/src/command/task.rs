@@ -7,6 +7,7 @@ use orbit_types::{
     ActorIdentity, OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity,
     TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
+use std::path::{Path, PathBuf};
 
 use crate::OrbitRuntime;
 use crate::context::ActorKind;
@@ -99,6 +100,8 @@ impl OrbitRuntime {
                 TaskStatus::Backlog
             };
         let comments = build_task_comments(params.comment.clone(), effective_label.as_str())?;
+        let workspace_path =
+            normalize_workspace_path(&self.paths().repo_root, params.workspace_path.as_deref())?;
 
         let task = self.with_mutation(|| {
             let task = self.create_task_record(StoreTaskCreateParams {
@@ -110,7 +113,7 @@ impl OrbitRuntime {
                 plan: params.plan.clone(),
                 execution_summary: String::new(),
                 context_files: params.context_files.clone(),
-                workspace_path: params.workspace_path.clone(),
+                workspace_path: workspace_path.clone(),
                 repo_root: None,
                 created_by: Some(effective_label.clone()),
                 actor_identity: ActorIdentity::from_legacy(agent.as_deref(), model.as_deref()),
@@ -922,6 +925,49 @@ fn build_task_comments(message: Option<String>, by: &str) -> Result<Vec<TaskComm
     }])
 }
 
+fn normalize_workspace_path(
+    repo_root: &Path,
+    workspace: Option<&str>,
+) -> Result<Option<String>, OrbitError> {
+    let Some(workspace) = workspace.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let canonical_repo_root = repo_root.canonicalize().map_err(|error| {
+        OrbitError::InvalidInput(format!(
+            "failed to resolve repository root '{}': {error}",
+            repo_root.display()
+        ))
+    })?;
+    let candidate = if Path::new(workspace).is_absolute() {
+        PathBuf::from(workspace)
+    } else {
+        canonical_repo_root.join(workspace)
+    };
+    let canonical_workspace = candidate.canonicalize().map_err(|error| {
+        OrbitError::InvalidInput(format!(
+            "workspace_path '{}' must reference an existing directory inside the repository: {error}",
+            candidate.display()
+        ))
+    })?;
+    if !canonical_workspace.is_dir() {
+        return Err(OrbitError::InvalidInput(format!(
+            "workspace_path '{}' must reference a directory inside the repository",
+            canonical_workspace.display()
+        )));
+    }
+
+    if !canonical_workspace.starts_with(&canonical_repo_root) {
+        return Err(OrbitError::InvalidInput(format!(
+            "workspace_path '{}' must stay within repository '{}'",
+            canonical_workspace.display(),
+            canonical_repo_root.display()
+        )));
+    }
+
+    Ok(Some(canonical_workspace.to_string_lossy().into_owned()))
+}
+
 const UNAUTHORED_TASK_PLAN_PLACEHOLDER: &str = "To be authored by executing agent at start time.";
 
 pub(crate) fn ensure_task_has_execution_plan(id: &str, plan: &str) -> Result<(), OrbitError> {
@@ -956,6 +1002,15 @@ mod tests {
     };
     use crate::{OrbitError, OrbitRuntime, TaskStatus};
     use orbit_engine::{TaskAutomationUpdate, TaskHost};
+    use std::fs;
+    use std::path::Path;
+
+    fn canonical_string(path: &Path) -> String {
+        path.canonicalize()
+            .expect("canonical path")
+            .to_string_lossy()
+            .into_owned()
+    }
 
     #[test]
     fn blank_or_placeholder_plan_is_rejected() {
@@ -1047,5 +1102,62 @@ mod tests {
 
         let loaded = runtime.get_task(&task.id).expect("load");
         assert_eq!(loaded.acceptance_criteria, task.acceptance_criteria);
+    }
+
+    #[test]
+    fn add_task_rejects_absolute_ancestor_workspace_path() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        let filesystem_root = repo_root
+            .ancestors()
+            .last()
+            .expect("filesystem root")
+            .to_path_buf();
+
+        let err = runtime
+            .add_task(TaskAddParams {
+                title: "bad workspace".to_string(),
+                description: "desc".to_string(),
+                workspace_path: Some(filesystem_root.to_string_lossy().into_owned()),
+                ..Default::default()
+            })
+            .expect_err("workspace should be rejected");
+
+        assert!(matches!(err, OrbitError::InvalidInput(_)));
+        assert!(err.to_string().contains("must stay within repository"));
+    }
+
+    #[test]
+    fn add_task_normalizes_workspace_path_to_canonical_repo_child() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        let nested = repo_root.join("nested");
+        fs::create_dir_all(&nested).expect("nested dir");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "normalized workspace".to_string(),
+                description: "desc".to_string(),
+                workspace_path: Some("nested/.".to_string()),
+                ..Default::default()
+            })
+            .expect("task");
+
+        assert_eq!(task.workspace_path, Some(canonical_string(&nested)));
+    }
+
+    #[test]
+    fn add_task_allows_missing_workspace_path() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "no workspace".to_string(),
+                description: "desc".to_string(),
+                ..Default::default()
+            })
+            .expect("task");
+
+        assert_eq!(task.workspace_path, None);
     }
 }
