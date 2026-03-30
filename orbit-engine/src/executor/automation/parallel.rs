@@ -389,51 +389,8 @@ fn normalize_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        PendingTask, ensure_shared_worktree, find_launchable_index, git_output, git_success,
-        paths_conflict, validate_selected_group,
-    };
+    use super::{PendingTask, find_launchable_index, paths_conflict, validate_selected_group};
     use std::collections::VecDeque;
-    use std::path::{Path, PathBuf};
-
-    use tempfile::TempDir;
-
-    fn init_test_repo() -> TempDir {
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        let repo_root = tempdir.path();
-
-        git_success(repo_root, &["init", "--initial-branch=controller"]).expect("init repo");
-        git_success(repo_root, &["config", "user.name", "Orbit Tests"])
-            .expect("configure user name");
-        git_success(
-            repo_root,
-            &["config", "user.email", "orbit-tests@example.com"],
-        )
-        .expect("configure user email");
-
-        std::fs::write(repo_root.join("README.md"), "controller\n").expect("write initial file");
-        git_success(repo_root, &["add", "README.md"]).expect("stage initial file");
-        git_success(repo_root, &["commit", "-m", "initial"]).expect("commit initial file");
-        git_success(repo_root, &["branch", "agent-main"]).expect("create agent-main");
-
-        tempdir
-    }
-
-    fn create_branch_commit(repo_root: &Path, branch: &str, contents: &str) {
-        git_success(repo_root, &["checkout", "-b", branch]).expect("create branch");
-        std::fs::write(repo_root.join("README.md"), contents).expect("write branch contents");
-        git_success(repo_root, &["add", "README.md"]).expect("stage branch contents");
-        git_success(repo_root, &["commit", "-m", &format!("update {branch}")])
-            .expect("commit branch contents");
-        git_success(repo_root, &["checkout", "controller"]).expect("checkout controller");
-    }
-
-    fn shared_worktree_path(repo_root: &Path) -> PathBuf {
-        repo_root
-            .join(".orbit")
-            .join("worktrees")
-            .join("parallel-batch")
-    }
 
     #[test]
     fn detects_prefix_path_conflicts() {

@@ -1,40 +1,30 @@
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_exec::ExecRequest;
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext};
-
-pub struct GithubAuthStatusTool;
+use crate::TIMEOUT_DEFAULT_MS;
 
 pub(super) fn build_exec_request(_input: &Value) -> Result<ExecRequest, OrbitError> {
-    Ok(ExecRequest {
-        program: "gh".to_string(),
-        args: vec!["auth".to_string(), "status".to_string()],
-        current_dir: None,
-        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    })
+    Ok(super::gh_exec_request(
+        vec!["auth".to_string(), "status".to_string()],
+        None,
+        TIMEOUT_DEFAULT_MS,
+    ))
 }
 
-impl Tool for GithubAuthStatusTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.auth.status".to_string(),
-            description: "Verify GitHub CLI authentication status".to_string(),
-            parameters: vec![],
-            builtin: true,
-        }
+super::gh_tool! {
+    pub struct GithubAuthStatusTool;
+    name: "github.auth.status";
+    description: "Verify GitHub CLI authentication status";
+    parameters: [];
+    request: |_ctx, input| {
+        build_exec_request(input)
     }
-
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(&input)?;
-        let result = run_process(&req, &NoSandbox)?;
+    response: |_ctx, _input, result| {
         Ok(json!({
             "authenticated": result.success,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "stdout": result.stdout.as_str(),
+            "stderr": result.stderr.as_str(),
         }))
     }
 }

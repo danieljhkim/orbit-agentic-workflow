@@ -1,13 +1,11 @@
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_exec::{ExecRequest, NoSandbox, run_process};
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext, check_exec_result};
-
-pub struct GithubPrCommentsTool;
+use crate::{TIMEOUT_DEFAULT_MS, check_exec_result};
 
 pub(super) fn build_exec_requests(
-    ctx: &ToolContext,
+    ctx: &crate::ToolContext,
     input: &Value,
 ) -> Result<(ExecRequest, ExecRequest), OrbitError> {
     let pr = super::require_pr(input)?;
@@ -23,21 +21,17 @@ pub(super) fn build_exec_requests(
     Ok((review_req, issue_req))
 }
 
-fn gh_api_request(ctx: &ToolContext, endpoint: String) -> ExecRequest {
-    ExecRequest {
-        program: "gh".to_string(),
-        args: vec![
+fn gh_api_request(ctx: &crate::ToolContext, endpoint: String) -> ExecRequest {
+    super::gh_exec_request(
+        vec![
             "api".to_string(),
             endpoint,
             "--paginate".to_string(),
             "--slurp".to_string(),
         ],
-        current_dir: ctx.cwd.clone(),
-        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    }
+        ctx.cwd.clone(),
+        TIMEOUT_DEFAULT_MS,
+    )
 }
 
 fn parse_comment_pages(stdout: &str, label: &str) -> Result<Vec<Value>, OrbitError> {
@@ -135,31 +129,15 @@ fn json_type_name(value: &Value) -> &'static str {
     }
 }
 
-impl Tool for GithubPrCommentsTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.pr.comments".to_string(),
-            description: "List both general pull request comments and inline review comments"
-                .to_string(),
-            parameters: vec![
-                ToolParam {
-                    name: "pr".to_string(),
-                    description: "PR number".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "repo".to_string(),
-                    description: "Repository in owner/name format".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-            ],
-            builtin: true,
-        }
-    }
-
-    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+super::gh_tool! {
+    pub struct GithubPrCommentsTool;
+    name: "github.pr.comments";
+    description: "List both general pull request comments and inline review comments";
+    parameters: [
+        super::tool_param("pr", "PR number", "string", true),
+        super::tool_param("repo", "Repository in owner/name format", "string", false),
+    ];
+    execute: |ctx, input| {
         let (review_req, issue_req) = build_exec_requests(ctx, &input)?;
 
         let review_result = run_process(&review_req, &NoSandbox)?;

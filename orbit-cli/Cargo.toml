@@ -17,6 +17,7 @@ csv = "1"
 orbit-core = { path = "../orbit-core", features = ["clap"] }
 orbit-types = { path = "../orbit-types" }
 serde_json.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2"

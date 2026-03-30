@@ -11,6 +11,7 @@ use serde_json::Value;
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
+use tracing::{error, info, info_span, warn};
 
 use crate::activity_runner::{build_execution_context_for_step, execute_with_retry};
 use crate::context::{
@@ -25,6 +26,9 @@ pub fn run_job_with_input<H: EngineHost>(
     input: Value,
     debug: bool,
 ) -> Result<JobRunResult, OrbitError> {
+    let job_span = info_span!("job_dispatch", job_id = %job.job_id);
+    let _job_span = job_span.enter();
+    info!(max_active_runs = job.max_active_runs, "job run requested");
     let _ = host.cleanup_stale_file_locks()?;
     let _ = recover_stale_active_run_for_job(host, data_root, &job, Utc::now())?;
     let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
@@ -35,6 +39,13 @@ pub fn run_job_with_input<H: EngineHost>(
                 job.job_id, job.max_active_runs
             ))
         })?;
+        warn!(
+            active_run_count = active_runs.len(),
+            latest_active_run_id = %latest_active_run.run_id,
+            latest_active_run_state = %latest_active_run.state,
+            max_active_runs = job.max_active_runs,
+            "job run rejected because max_active_runs was reached"
+        );
         return Err(OrbitError::JobValidation(format!(
             "job '{}' already has {} active run(s), reaching max_active_runs={} (latest active run '{}' in state '{}')",
             job.job_id,
@@ -77,6 +88,14 @@ pub fn retry_job_run_from_step<H: EngineHost>(
     retry_step_target_id: &str,
     debug: bool,
 ) -> Result<JobRunResult, OrbitError> {
+    let job_span = info_span!(
+        "job_retry",
+        job_id = %job.job_id,
+        source_run_id = %source_run.run_id,
+        retry_step_target_id
+    );
+    let _job_span = job_span.enter();
+    info!("job run retry requested");
     let _ = host.cleanup_stale_file_locks()?;
     // Find the step index to retry from (in the job definition, not the run steps).
     // Only supports first iteration (iteration 0) for v1.
@@ -104,6 +123,11 @@ pub fn retry_job_run_from_step<H: EngineHost>(
     // Check max_active_runs
     let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
     if active_runs.len() as u32 >= job.max_active_runs {
+        warn!(
+            active_run_count = active_runs.len(),
+            max_active_runs = job.max_active_runs,
+            "job retry rejected because max_active_runs was reached"
+        );
         return Err(OrbitError::JobValidation(format!(
             "job '{}' already has {} active run(s), reaching max_active_runs={}",
             job.job_id,
@@ -182,8 +206,22 @@ fn execute_activity_with_retries<H: EngineHost>(
             run_id: String::new(),
             attempt,
         })?;
+        info!(
+            run_id = %run.run_id,
+            attempt,
+            scheduled_at = %scheduled_at,
+            "job run created"
+        );
         run
     };
+
+    let run_span = info_span!(
+        "job_run",
+        job_id = %job.job_id,
+        run_id = %run.run_id,
+        attempt = run.attempt
+    );
+    let _run_span = run_span.enter();
 
     let started_at = Utc::now();
     let changed = host.mark_job_run_running(&run.run_id, started_at, std::process::id())?;
@@ -327,6 +365,14 @@ fn execute_activity_with_retries<H: EngineHost>(
                     continue;
                 }
 
+                info!(
+                    step_index = global_step_index,
+                    iteration,
+                    target_id = %step.target_id,
+                    target_type = %step.target_type,
+                    "step started"
+                );
+
                 // ---- Job-as-step: delegate to a nested job run ----
                 if step.target_type == JobTargetType::Job {
                     let step_started = Utc::now();
@@ -370,6 +416,16 @@ fn execute_activity_with_retries<H: EngineHost>(
                     if !changed {
                         return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
                     }
+
+                    log_step_completion(
+                        global_step_index,
+                        iteration,
+                        step,
+                        step_state,
+                        duration_ms,
+                        error_code.as_deref(),
+                        error_message.as_deref(),
+                    );
 
                     if step_state_records_incident(step_state) {
                         // Preserve the first failure — subsequent handler failures
@@ -468,6 +524,16 @@ fn execute_activity_with_retries<H: EngineHost>(
                     return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
                 }
 
+                log_step_completion(
+                    global_step_index,
+                    iteration,
+                    step,
+                    step_state,
+                    outcome.duration_ms,
+                    outcome.error_code.as_deref(),
+                    outcome.error_message.as_deref(),
+                );
+
                 if step_state_records_incident(step_state) {
                     append_failed_step_friction(
                         data_root,
@@ -542,6 +608,7 @@ fn execute_activity_with_retries<H: EngineHost>(
         if !changed {
             return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
         }
+        info!(state = %final_state, duration_ms = ?duration_ms, "job run completed");
         if final_state != JobRunState::Success {
             release_task_locks_for_job_input(host, &input)?;
         }
@@ -584,6 +651,7 @@ fn execute_activity_with_retries<H: EngineHost>(
     match execution_result {
         Ok(result) => Ok(result),
         Err(err) => {
+            error!(error = %err, "job run failed before completion");
             if let Some(active_run) = host.get_job_run(&run.run_id)?
                 && matches!(
                     active_run.state,
@@ -892,6 +960,40 @@ fn is_stale_active_run(job: &Job, run: &JobRun, now: DateTime<Utc>) -> bool {
     let elapsed_seconds = now.signed_duration_since(reference_time).num_seconds();
     let stale_after_seconds = total_timeout.saturating_add(STALE_RUN_GRACE_SECONDS) as i64;
     elapsed_seconds >= stale_after_seconds
+}
+
+fn log_step_completion(
+    step_index: usize,
+    iteration: u32,
+    step: &JobStep,
+    state: JobRunState,
+    duration_ms: Option<u64>,
+    error_code: Option<&str>,
+    error_message: Option<&str>,
+) {
+    if step_state_records_incident(state) {
+        info!(
+            step_index,
+            iteration,
+            target_id = %step.target_id,
+            target_type = %step.target_type,
+            state = %state,
+            duration_ms = ?duration_ms,
+            error_code = error_code.unwrap_or(""),
+            error_message = error_message.unwrap_or(""),
+            "step failed"
+        );
+    } else {
+        info!(
+            step_index,
+            iteration,
+            target_id = %step.target_id,
+            target_type = %step.target_type,
+            state = %state,
+            duration_ms = ?duration_ms,
+            "step completed"
+        );
+    }
 }
 
 fn merge_job_input(default_input: Option<&Value>, input: Value) -> Result<Value, OrbitError> {

@@ -1,13 +1,11 @@
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_exec::{ExecRequest, NoSandbox, run_process};
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext, check_exec_result, require_str};
-
-pub struct GithubPrReviewCommentTool;
+use crate::{TIMEOUT_DEFAULT_MS, check_exec_result, require_str};
 
 pub(super) fn build_exec_request(
-    ctx: &ToolContext,
+    ctx: &crate::ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
     let repo = super::require_repo(input)?;
@@ -50,21 +48,12 @@ pub(super) fn build_exec_request(
         "side=RIGHT".to_string(),
     ];
 
-    Ok(ExecRequest {
-        program: "gh".to_string(),
-        args,
-        current_dir: None,
-        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    })
+    Ok(super::gh_exec_request(args, None, TIMEOUT_DEFAULT_MS))
 }
 
 fn resolve_pr_head_sha(repo: &str, pr: &str) -> Result<String, OrbitError> {
-    let req = ExecRequest {
-        program: "gh".to_string(),
-        args: vec![
+    let req = super::gh_exec_request(
+        vec![
             "pr".to_string(),
             "view".to_string(),
             pr.to_string(),
@@ -75,12 +64,9 @@ fn resolve_pr_head_sha(repo: &str, pr: &str) -> Result<String, OrbitError> {
             "--jq".to_string(),
             ".headRefOid".to_string(),
         ],
-        current_dir: None,
-        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    };
+        None,
+        TIMEOUT_DEFAULT_MS,
+    );
     let result = run_process(&req, &NoSandbox)?;
     let sha = result.stdout.trim().to_string();
     if sha.is_empty() {
@@ -91,60 +77,38 @@ fn resolve_pr_head_sha(repo: &str, pr: &str) -> Result<String, OrbitError> {
     Ok(sha)
 }
 
-impl Tool for GithubPrReviewCommentTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.pr.review.comment".to_string(),
-            description:
-                "Post an inline review comment on a specific file and line of a pull request"
-                    .to_string(),
-            parameters: vec![
-                ToolParam {
-                    name: "repo".to_string(),
-                    description: "Repository in owner/name format".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "pr".to_string(),
-                    description: "PR number".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "path".to_string(),
-                    description: "File path relative to the repository root".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "line".to_string(),
-                    description: "Line number in the diff to attach the comment to".to_string(),
-                    param_type: "number".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "body".to_string(),
-                    description: "Comment text".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "commit_id".to_string(),
-                    description: "Optional commit SHA to anchor the comment (defaults to PR head)"
-                        .to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-            ],
-            builtin: true,
-        }
+super::gh_tool! {
+    pub struct GithubPrReviewCommentTool;
+    name: "github.pr.review.comment";
+    description: "Post an inline review comment on a specific file and line of a pull request";
+    parameters: [
+        super::tool_param("repo", "Repository in owner/name format", "string", true),
+        super::tool_param("pr", "PR number", "string", true),
+        super::tool_param(
+            "path",
+            "File path relative to the repository root",
+            "string",
+            true,
+        ),
+        super::tool_param(
+            "line",
+            "Line number in the diff to attach the comment to",
+            "number",
+            true,
+        ),
+        super::tool_param("body", "Comment text", "string", true),
+        super::tool_param(
+            "commit_id",
+            "Optional commit SHA to anchor the comment (defaults to PR head)",
+            "string",
+            false,
+        ),
+    ];
+    request: |ctx, input| {
+        build_exec_request(ctx, input)
     }
-
-    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(ctx, &input)?;
-        let result = run_process(&req, &NoSandbox)?;
-        check_exec_result(&result, "gh api (pr review comment)")?;
+    response: |_ctx, _input, result| {
+        check_exec_result(result, "gh api (pr review comment)")?;
         let response: Value = serde_json::from_str(result.stdout.trim()).unwrap_or(json!({}));
         let id = response.get("id").and_then(Value::as_u64).unwrap_or(0);
         Ok(json!({

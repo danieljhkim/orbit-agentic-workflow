@@ -1,10 +1,8 @@
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_exec::ExecRequest;
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::{TIMEOUT_SLOW_MS, Tool, ToolContext, check_exec_result};
-
-pub struct GithubPrMergeTool;
+use crate::{TIMEOUT_SLOW_MS, check_exec_result};
 
 pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
     let pr = super::require_pr(input)?;
@@ -46,59 +44,37 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
         args.push(repo.to_string());
     }
 
-    Ok(ExecRequest {
-        program: "gh".to_string(),
-        args,
-        current_dir: None,
-        timeout_ms: Some(TIMEOUT_SLOW_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    })
+    Ok(super::gh_exec_request(args, None, TIMEOUT_SLOW_MS))
 }
 
-impl Tool for GithubPrMergeTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.pr.merge".to_string(),
-            description: "Merge a pull request".to_string(),
-            parameters: vec![
-                ToolParam {
-                    name: "pr".to_string(),
-                    description: "PR number, URL, or branch name".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "strategy".to_string(),
-                    description: "Merge strategy: squash (default), merge, or rebase".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "delete_branch".to_string(),
-                    description: "Delete the head branch after merge (default: true)".to_string(),
-                    param_type: "bool".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "repo".to_string(),
-                    description: "Repository in owner/name format".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-            ],
-            builtin: true,
-        }
+super::gh_tool! {
+    pub struct GithubPrMergeTool;
+    name: "github.pr.merge";
+    description: "Merge a pull request";
+    parameters: [
+        super::tool_param("pr", "PR number, URL, or branch name", "string", true),
+        super::tool_param(
+            "strategy",
+            "Merge strategy: squash (default), merge, or rebase",
+            "string",
+            false,
+        ),
+        super::tool_param(
+            "delete_branch",
+            "Delete the head branch after merge (default: true)",
+            "bool",
+            false,
+        ),
+        super::tool_param("repo", "Repository in owner/name format", "string", false),
+    ];
+    request: |_ctx, input| {
+        build_exec_request(input)
     }
-
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(&input)?;
-        let result = run_process(&req, &NoSandbox)?;
+    response: |_ctx, _input, result| {
         check_exec_result(&result, "gh pr merge")?;
         Ok(json!({
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "stdout": result.stdout.as_str(),
+            "stderr": result.stderr.as_str(),
         }))
     }
 }

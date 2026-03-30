@@ -1,16 +1,14 @@
 use std::path::Path;
 
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_exec::ExecRequest;
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
 use crate::builtin::fs::check_workspace_boundary;
-use crate::{TIMEOUT_SLOW_MS, Tool, ToolContext, check_exec_result, require_str};
-
-pub struct GithubPrCreateTool;
+use crate::{TIMEOUT_SLOW_MS, check_exec_result, require_str};
 
 pub(super) fn build_exec_request(
-    ctx: &ToolContext,
+    ctx: &crate::ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
     let title = require_str(input, "title")?;
@@ -56,81 +54,50 @@ pub(super) fn build_exec_request(
         args.push(repo.to_string());
     }
 
-    Ok(ExecRequest {
-        program: "gh".to_string(),
+    Ok(super::gh_exec_request(
         args,
-        current_dir: ctx.cwd.clone(),
-        timeout_ms: Some(TIMEOUT_SLOW_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    })
+        ctx.cwd.clone(),
+        TIMEOUT_SLOW_MS,
+    ))
 }
 
-impl Tool for GithubPrCreateTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.pr.create".to_string(),
-            description: "Create a pull request".to_string(),
-            parameters: vec![
-                ToolParam {
-                    name: "title".to_string(),
-                    description: "Pull request title".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "base".to_string(),
-                    description: "Base branch to merge into".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "head".to_string(),
-                    description: "Head branch containing the changes".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "body".to_string(),
-                    description: "Pull request body text (required if body_file is absent)"
-                        .to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "body_file".to_string(),
-                    description:
-                        "Path to a file containing the PR body (required if body is absent)"
-                            .to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "label".to_string(),
-                    description: "Label to apply (optional, omitted if not provided)".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-                ToolParam {
-                    name: "repo".to_string(),
-                    description: "Repository in owner/name format".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-            ],
-            builtin: true,
-        }
+super::gh_tool! {
+    pub struct GithubPrCreateTool;
+    name: "github.pr.create";
+    description: "Create a pull request";
+    parameters: [
+        super::tool_param("title", "Pull request title", "string", true),
+        super::tool_param("base", "Base branch to merge into", "string", true),
+        super::tool_param("head", "Head branch containing the changes", "string", true),
+        super::tool_param(
+            "body",
+            "Pull request body text (required if body_file is absent)",
+            "string",
+            false,
+        ),
+        super::tool_param(
+            "body_file",
+            "Path to a file containing the PR body (required if body is absent)",
+            "string",
+            false,
+        ),
+        super::tool_param(
+            "label",
+            "Label to apply (optional, omitted if not provided)",
+            "string",
+            false,
+        ),
+        super::tool_param("repo", "Repository in owner/name format", "string", false),
+    ];
+    request: |ctx, input| {
+        build_exec_request(ctx, input)
     }
-
-    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(ctx, &input)?;
-        let result = run_process(&req, &NoSandbox)?;
+    response: |_ctx, _input, result| {
         check_exec_result(&result, "gh pr create")?;
         Ok(json!({
             "url": result.stdout.trim(),
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "stdout": result.stdout.as_str(),
+            "stderr": result.stderr.as_str(),
         }))
     }
 }
