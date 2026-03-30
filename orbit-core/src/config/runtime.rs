@@ -10,13 +10,11 @@ use crate::paths;
 use super::persistence::PersistenceConfig;
 use super::raw::{
     RawCodexExecutionConfig, RawExecutionEnvConfig, RawRuntimeConfig, RawTaskSection,
-    RawUserSection,
 };
 
 const DEFAULT_ENV_INHERIT: bool = false;
 const DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT: bool = false;
 const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
-const DEFAULT_USER_NAME: &str = "human";
 const DEFAULT_SCORING_ENABLED: bool = false;
 
 #[derive(Debug, Clone)]
@@ -25,7 +23,6 @@ pub(crate) struct RuntimeConfig {
     pub(crate) codex_execution: CodexExecutionPolicy,
     pub(crate) persistence: PersistenceConfig,
     pub(crate) task_approval: TaskApprovalConfig,
-    pub(crate) user_name: String,
     pub(crate) scoring_enabled: bool,
 }
 
@@ -42,7 +39,6 @@ impl RuntimeConfig {
             codex_execution: CodexExecutionPolicy::default(),
             persistence: PersistenceConfig::default_for_data_root(data_root),
             task_approval: TaskApprovalConfig::default(),
-            user_name: DEFAULT_USER_NAME.to_string(),
             scoring_enabled: DEFAULT_SCORING_ENABLED,
         }
     }
@@ -120,26 +116,9 @@ impl RuntimeConfig {
             )?,
             persistence,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
-            user_name: parse_user_name(parsed.user.as_ref())?,
             scoring_enabled,
         })
     }
-}
-
-fn parse_user_name(raw: Option<&RawUserSection>) -> Result<String, OrbitError> {
-    let Some(raw) = raw else {
-        return Ok(DEFAULT_USER_NAME.to_string());
-    };
-    let Some(name) = raw.name.as_deref() else {
-        return Ok(DEFAULT_USER_NAME.to_string());
-    };
-    let name = name.trim();
-    if name.is_empty() {
-        return Err(OrbitError::InvalidInput(
-            "user.name must not be empty when configured".to_string(),
-        ));
-    }
-    Ok(name.to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

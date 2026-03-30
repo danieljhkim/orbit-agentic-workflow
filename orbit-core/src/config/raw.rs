@@ -3,7 +3,6 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawRuntimeConfig {
     pub(super) execution: Option<RawExecutionConfig>,
-    pub(super) user: Option<RawUserSection>,
     #[allow(dead_code)]
     pub(super) identity: Option<toml::Value>,
     pub(super) task: Option<RawTaskSection>,
@@ -20,11 +19,6 @@ pub(super) struct RawScoringConfig {
 pub(super) struct RawExecutionConfig {
     pub(super) env: Option<RawExecutionEnvConfig>,
     pub(super) codex: Option<RawCodexExecutionConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub(super) struct RawUserSection {
-    pub(super) name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

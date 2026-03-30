@@ -1,8 +1,9 @@
 //! RBAC policy evaluation engine for Orbit tool and command authorization.
 //!
 //! Evaluates whether a given actor (identified by [`orbit_types::Role`]) is
-//! permitted to invoke a specific tool or CLI entrypoint, based on a set of
-//! configured allow/deny rules.
+//! permitted to invoke a specific tool or CLI entrypoint. Admin callers bypass
+//! explicit tool deny rules, while agent callers are subject to them; both
+//! roles still respect the engine's default allow or default deny mode.
 //!
 //! # Role
 //! Sits directly above `orbit-types` in the dependency graph. Consumed by
