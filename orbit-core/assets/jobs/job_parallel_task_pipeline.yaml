@@ -20,8 +20,8 @@ job:
     # 1. Select a conflict-free batch, author plans, refine context_files.
     - target_type: activity
       target_id: dispatch_and_plan_batch
-      agent_cli: codex
-      model: gpt-5.4
+      agent_cli: claude
+      model: opus
       timeout_seconds: 2400
 
     # 2. Snapshot batch state for audit trail.
@@ -45,8 +45,8 @@ job:
     # 4b. Fallback: if verification fails, invoke agent to diagnose and fix.
     - target_type: activity
       target_id: finalize_tasks
-      agent_cli: codex
-      model: gpt-5.4
+      agent_cli: claude
+      model: opus
       condition: on_failure
       timeout_seconds: 3600
 
