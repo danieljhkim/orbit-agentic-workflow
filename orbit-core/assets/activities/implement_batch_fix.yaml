@@ -83,7 +83,10 @@ activity:
     - orbit.task.review_thread.list
     - orbit.task.review_thread.reply
     - orbit.task.review_thread.resolve
-    - fs.read
+    - fs.copy
+    - fs.move
+    - fs.mkdir
+    - fs.patch
     - fs.write
     - fs.delete
     - proc.spawn

@@ -29,7 +29,12 @@ pub fn run_job_with_input<H: EngineHost>(
     let _ = recover_stale_active_run_for_job(host, data_root, &job, Utc::now())?;
     let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
     if active_runs.len() as u32 >= job.max_active_runs {
-        let latest_active_run = active_runs.first().expect("active run exists");
+        let latest_active_run = active_runs.first().ok_or_else(|| {
+            OrbitError::JobValidation(format!(
+                "job '{}' has no active runs despite reaching max_active_runs={}",
+                job.job_id, job.max_active_runs
+            ))
+        })?;
         return Err(OrbitError::JobValidation(format!(
             "job '{}' already has {} active run(s), reaching max_active_runs={} (latest active run '{}' in state '{}')",
             job.job_id,
@@ -934,7 +939,12 @@ fn execute_job_step<H: EngineHost>(
     let _ = recover_stale_active_run_for_job(host, data_root, &sub_job, Utc::now())?;
     let active_runs = host.list_pending_or_running_job_runs(&sub_job.job_id)?;
     if active_runs.len() as u32 >= sub_job.max_active_runs {
-        let latest_active_run = active_runs.first().expect("active run exists");
+        let latest_active_run = active_runs.first().ok_or_else(|| {
+            OrbitError::JobValidation(format!(
+                "job '{}' has no active runs despite reaching max_active_runs={}",
+                sub_job.job_id, sub_job.max_active_runs
+            ))
+        })?;
         return Err(OrbitError::JobValidation(format!(
             "job '{}' already has {} active run(s), reaching max_active_runs={} (latest active run '{}' in state '{}')",
             sub_job.job_id,

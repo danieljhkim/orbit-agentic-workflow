@@ -78,9 +78,11 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                 let Some(index) = find_launchable_index(&pending, &active) else {
                     break;
                 };
-                let task = pending
-                    .remove(index)
-                    .expect("launchable pending task index must exist");
+                let task = pending.remove(index).ok_or_else(|| {
+                    OrbitError::Execution(
+                        "parallel dispatch: pending task index out of bounds".to_string(),
+                    )
+                })?;
                 let tx = tx.clone();
                 let task_id = task.task_id.clone();
                 let worker_workspace = shared_worktree_str.clone();

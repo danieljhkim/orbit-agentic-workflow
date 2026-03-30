@@ -60,7 +60,9 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
         return Ok(0);
     }
 
-    let pr_number = task.pr_number.as_deref().unwrap();
+    let pr_number = task.pr_number.as_deref().ok_or_else(|| {
+        OrbitError::InvalidInput("sync_review_to_github: task missing pr_number".to_string())
+    })?;
     let repo_root = task
         .repo_root
         .as_deref()

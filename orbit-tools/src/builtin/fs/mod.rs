@@ -1,6 +1,8 @@
+pub mod copy;
 pub mod delete;
-pub mod list;
-pub mod read;
+pub mod mkdir;
+pub mod move_file;
+pub mod patch;
 pub mod write;
 
 use std::path::{Path, PathBuf};
@@ -10,10 +12,12 @@ use orbit_types::OrbitError;
 use crate::{ToolContext, ToolRegistry};
 
 pub fn register(registry: &mut ToolRegistry) {
-    registry.register(read::FsReadTool);
+    registry.register(copy::FsCopyTool);
     registry.register(write::FsWriteTool);
     registry.register(delete::FsDeleteTool);
-    registry.register(list::FsListTool);
+    registry.register(move_file::FsMoveTool);
+    registry.register(mkdir::FsMkdirTool);
+    registry.register(patch::FsPatchTool);
 }
 
 /// Checks that `path` resolves inside the context workspace root.
@@ -39,23 +43,7 @@ pub(crate) fn check_workspace_boundary(
         }
     };
 
-    let canonical = if path.exists() {
-        path.canonicalize()
-            .map_err(|e| OrbitError::Io(format!("failed to canonicalize path: {e}")))?
-    } else {
-        // Path does not exist yet (e.g. write target). Canonicalize the parent
-        // so we can still enforce the boundary.
-        let parent = path
-            .parent()
-            .ok_or_else(|| OrbitError::InvalidInput("path has no parent directory".to_string()))?;
-        let canonical_parent = parent
-            .canonicalize()
-            .map_err(|e| OrbitError::Io(format!("failed to canonicalize parent directory: {e}")))?;
-        let file_name = path
-            .file_name()
-            .ok_or_else(|| OrbitError::InvalidInput("path has no file name".to_string()))?;
-        canonical_parent.join(file_name)
-    };
+    let canonical = canonicalize_with_missing_tail(path)?;
 
     // Canonicalize the workspace root so symlinks (e.g. /var -> /private/var on
     // macOS) don't cause false negatives when comparing against the canonical path.
@@ -70,6 +58,34 @@ pub(crate) fn check_workspace_boundary(
         )));
     }
 
+    Ok(canonical)
+}
+
+fn canonicalize_with_missing_tail(path: &Path) -> Result<PathBuf, OrbitError> {
+    if path.exists() {
+        return path
+            .canonicalize()
+            .map_err(|e| OrbitError::Io(format!("failed to canonicalize path: {e}")));
+    }
+
+    let mut missing_components = Vec::new();
+    let mut existing_ancestor = path;
+    while !existing_ancestor.exists() {
+        let name = existing_ancestor
+            .file_name()
+            .ok_or_else(|| OrbitError::InvalidInput("path has no file name".to_string()))?;
+        missing_components.push(name.to_os_string());
+        existing_ancestor = existing_ancestor.parent().ok_or_else(|| {
+            OrbitError::InvalidInput("path has no existing parent directory".to_string())
+        })?;
+    }
+
+    let mut canonical = existing_ancestor
+        .canonicalize()
+        .map_err(|e| OrbitError::Io(format!("failed to canonicalize parent directory: {e}")))?;
+    for component in missing_components.iter().rev() {
+        canonical.push(component);
+    }
     Ok(canonical)
 }
 
@@ -173,5 +189,27 @@ mod tests {
         )
         .expect_err("other task should be denied");
         assert!(matches!(err, OrbitError::PolicyDenied(_)));
+    }
+
+    #[test]
+    fn boundary_check_supports_nested_nonexistent_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("nested/path/file.txt");
+
+        let canonical = check_workspace_boundary(
+            &ToolContext {
+                workspace_root: Some(dir.path().to_path_buf()),
+                ..Default::default()
+            },
+            &path,
+        )
+        .expect("boundary");
+
+        let expected = dir
+            .path()
+            .canonicalize()
+            .expect("canonical root")
+            .join("nested/path/file.txt");
+        assert_eq!(canonical, expected);
     }
 }
