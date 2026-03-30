@@ -222,9 +222,25 @@ fn validated_task_workspace(repo_root: &Path, workspace_path: &str) -> Option<Pa
     if !canonical_workspace.is_dir() {
         return None;
     }
+    if canonical_workspace.starts_with(repo_root) {
+        return Some(canonical_workspace);
+    }
+
+    let worktree_root = configured_worktree_root()?;
     canonical_workspace
-        .starts_with(repo_root)
+        .starts_with(worktree_root)
         .then_some(canonical_workspace)
+}
+
+fn configured_worktree_root() -> Option<PathBuf> {
+    let value = std::env::var("ORBIT_WORKTREE_ROOT").ok()?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let path = PathBuf::from(trimmed);
+    Some(path.canonicalize().unwrap_or(path))
 }
 
 fn resolve_task_workspace_root(runtime: &OrbitRuntime, task_id: &str) -> Option<PathBuf> {
@@ -254,7 +270,41 @@ mod tests {
     use orbit_store::TaskCreateParams as StoreTaskCreateParams;
     use orbit_tools::ToolContext;
     use orbit_types::{ActorIdentity, TaskPriority, TaskStatus, TaskType};
+    use std::ffi::OsString;
     use std::fs;
+    use std::sync::{Mutex, MutexGuard};
+
+    static WORKTREE_ROOT_ENV_LOCK: Mutex<()> = Mutex::new(());
+    const WORKTREE_ROOT_ENV: &str = "ORBIT_WORKTREE_ROOT";
+
+    struct WorktreeRootEnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        original: Option<OsString>,
+    }
+
+    impl Drop for WorktreeRootEnvGuard {
+        fn drop(&mut self) {
+            match self.original.take() {
+                Some(value) => unsafe { std::env::set_var(WORKTREE_ROOT_ENV, value) },
+                None => unsafe { std::env::remove_var(WORKTREE_ROOT_ENV) },
+            }
+        }
+    }
+
+    fn set_worktree_root_env(path: Option<&std::path::Path>) -> WorktreeRootEnvGuard {
+        let lock = WORKTREE_ROOT_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original = std::env::var_os(WORKTREE_ROOT_ENV);
+        match path {
+            Some(path) => unsafe { std::env::set_var(WORKTREE_ROOT_ENV, path) },
+            None => unsafe { std::env::remove_var(WORKTREE_ROOT_ENV) },
+        }
+        WorktreeRootEnvGuard {
+            _lock: lock,
+            original,
+        }
+    }
 
     fn seed_task(runtime: &OrbitRuntime, title: &str, workspace_path: Option<String>) -> String {
         runtime
@@ -338,5 +388,80 @@ mod tests {
 
         assert_eq!(resolved, Some(specific_id));
         assert_ne!(resolved, Some(broad_id));
+    }
+
+    #[test]
+    fn external_worktree_root_is_used_for_task_resolution_and_workspace_root() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = canonical_repo_root(&runtime);
+        let external_root = tempfile::tempdir().expect("tempdir");
+        let external_workspace = external_root
+            .path()
+            .join(
+                repo_root
+                    .file_name()
+                    .expect("repo name")
+                    .to_string_lossy()
+                    .as_ref(),
+            )
+            .join("parallel-batch");
+        let nested_cwd = external_workspace.join("orbit-core");
+        fs::create_dir_all(&nested_cwd).expect("external workspace");
+
+        let _env = set_worktree_root_env(Some(external_root.path()));
+        let task_id = seed_task(
+            &runtime,
+            "external worktree",
+            Some(external_workspace.to_string_lossy().into_owned()),
+        );
+
+        let resolved_task = resolve_task_id_from_context(
+            &runtime,
+            &ToolContext {
+                cwd: Some(nested_cwd.to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("task id");
+        let resolved_workspace = resolve_workspace_root_from_context(
+            &runtime,
+            &ToolContext {
+                task_id: Some(task_id.clone()),
+                ..Default::default()
+            },
+        )
+        .expect("workspace root")
+        .expect("workspace path");
+
+        let canonical_external_workspace = external_workspace.canonicalize().expect("canonicalize");
+        assert_eq!(resolved_task, Some(task_id));
+        assert_eq!(resolved_workspace, canonical_external_workspace);
+    }
+
+    #[test]
+    fn repo_worktree_paths_still_resolve_without_external_root_env() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = canonical_repo_root(&runtime);
+        let in_repo_workspace = repo_root.join(".orbit").join("worktrees").join("task-123");
+        let nested_cwd = in_repo_workspace.join("orbit-core");
+        fs::create_dir_all(&nested_cwd).expect("workspace dirs");
+
+        let _env = set_worktree_root_env(None);
+        let task_id = seed_task(
+            &runtime,
+            "repo worktree",
+            Some(in_repo_workspace.to_string_lossy().into_owned()),
+        );
+
+        let resolved_task = resolve_task_id_from_context(
+            &runtime,
+            &ToolContext {
+                cwd: Some(nested_cwd.to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("task id");
+
+        assert_eq!(resolved_task, Some(task_id));
     }
 }

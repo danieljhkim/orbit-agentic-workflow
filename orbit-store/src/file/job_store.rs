@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{DateTime, Utc};
 use orbit_types::{
@@ -59,6 +60,12 @@ struct JobRunFileDocument {
 struct JobRunStepFileDocument {
     schema_version: u8,
     step: JobRunStep,
+}
+
+#[derive(Default)]
+struct IdGenerationState {
+    last_base: String,
+    next_suffix: u32,
 }
 
 impl JobFileStore {
@@ -662,33 +669,15 @@ impl JobFileStore {
     }
 
     fn next_job_id(&self) -> String {
-        let now = Utc::now();
-        let base = format!("job-{}", now.format("%Y%m%d-%H%M%S"));
-        if !self.job_path(&base).exists() && !self.disabled_job_path(&base).exists() {
-            return base;
-        }
-        for suffix in 2..1024_u32 {
-            let candidate = format!("{base}-{suffix}");
-            if !self.job_path(&candidate).exists() && !self.disabled_job_path(&candidate).exists() {
-                return candidate;
-            }
-        }
-        base
+        self.next_timestamped_id("job", |candidate| {
+            self.job_path(candidate).exists() || self.disabled_job_path(candidate).exists()
+        })
     }
 
     fn next_run_id(&self, job_id: &str) -> String {
-        let now = Utc::now();
-        let base = format!("jrun-{}", now.format("%Y%m%d-%H%M%S"));
-        if !self.run_id_exists_globally(job_id, &base) {
-            return base;
-        }
-        for suffix in 2..1024_u32 {
-            let candidate = format!("{base}-{suffix}");
-            if !self.run_id_exists_globally(job_id, &candidate) {
-                return candidate;
-            }
-        }
-        base
+        self.next_timestamped_id("jrun", |candidate| {
+            self.run_id_exists_globally(job_id, candidate)
+        })
     }
 
     fn run_id_exists_globally(&self, job_id: &str, run_id: &str) -> bool {
@@ -696,6 +685,37 @@ impl JobFileStore {
             || self.archived_run_bundle_dir(job_id, run_id).exists()
             || self.find_run_path(run_id).ok().flatten().is_some()
             || self.find_archived_run_path(run_id).ok().flatten().is_some()
+    }
+
+    fn next_timestamped_id<F>(&self, prefix: &str, exists: F) -> String
+    where
+        F: Fn(&str) -> bool,
+    {
+        let base = format_timestamped_id(prefix, Utc::now());
+        let state = id_generation_state();
+        let mut state = state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let start_suffix = if state.last_base == base {
+            state.next_suffix
+        } else {
+            1
+        };
+
+        for suffix in start_suffix..1024_u32 {
+            let candidate = if suffix == 1 {
+                base.clone()
+            } else {
+                format!("{base}-{suffix}")
+            };
+            if !exists(&candidate) {
+                state.last_base = base.clone();
+                state.next_suffix = suffix + 1;
+                return candidate;
+            }
+        }
+
+        base
     }
 
     fn activities_dir(&self) -> PathBuf {
@@ -793,7 +813,20 @@ fn validate_max_active_runs(max_active_runs: u32) -> Result<u32, OrbitError> {
     Ok(max_active_runs)
 }
 
-/// Derive a UTC timestamp from a job ID of the form `job-YYYYMMDD-HHMMSS[-N]`.
+fn format_timestamped_id(prefix: &str, now: DateTime<Utc>) -> String {
+    format!(
+        "{prefix}-{}-{:03}",
+        now.format("%Y%m%d-%H%M%S"),
+        now.timestamp_subsec_millis()
+    )
+}
+
+fn id_generation_state() -> &'static Mutex<IdGenerationState> {
+    static ID_GENERATION_STATE: OnceLock<Mutex<IdGenerationState>> = OnceLock::new();
+    ID_GENERATION_STATE.get_or_init(|| Mutex::new(IdGenerationState::default()))
+}
+
+/// Derive a UTC timestamp from a job ID of the form `job-YYYYMMDD-HHMMSS[-mmm][-N]`.
 /// Falls back to `Utc::now()` for IDs that don't embed a parseable timestamp.
 fn parse_timestamp_from_job_id(job_id: &str) -> DateTime<Utc> {
     let rest = job_id.strip_prefix("job-").unwrap_or(job_id);
@@ -813,4 +846,114 @@ fn is_yaml(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn add_job_generates_distinct_ids_for_parallel_threads() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let store = Arc::new(JobFileStore::new(temp_dir.path().to_path_buf()));
+        let barrier = Arc::new(Barrier::new(3));
+
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let store = Arc::clone(&store);
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                store
+                    .add_job(JobCreateParams {
+                        job_id: None,
+                        default_input: None,
+                        max_active_runs: 1,
+                        max_iterations: default_max_iterations(),
+                        steps: vec![],
+                        initial_state: JobScheduleState::Enabled,
+                    })
+                    .expect("create job")
+                    .job_id
+            }));
+        }
+
+        barrier.wait();
+        let job_ids: Vec<String> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("join thread"))
+            .collect();
+        assert_eq!(job_ids.len(), 2);
+        assert_ne!(job_ids[0], job_ids[1]);
+        assert!(job_ids.iter().all(|id| id.starts_with("job-")));
+        assert!(
+            job_ids
+                .iter()
+                .all(|id| id.split('-').nth(3).is_some_and(|millis| millis.len() == 3))
+        );
+    }
+
+    #[test]
+    fn insert_job_run_generates_distinct_ids_for_parallel_threads() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let store = Arc::new(JobFileStore::new(temp_dir.path().to_path_buf()));
+        let job_id = "job-20260330-060536-000".to_string();
+
+        store
+            .add_job(JobCreateParams {
+                job_id: Some(job_id.clone()),
+                default_input: None,
+                max_active_runs: 1,
+                max_iterations: default_max_iterations(),
+                steps: vec![],
+                initial_state: JobScheduleState::Enabled,
+            })
+            .expect("create job");
+
+        let barrier = Arc::new(Barrier::new(3));
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let store = Arc::clone(&store);
+            let barrier = Arc::clone(&barrier);
+            let job_id = job_id.clone();
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                store
+                    .insert_job_run(&job_id, 1, Utc::now(), None, None)
+                    .expect("create run")
+                    .run_id
+            }));
+        }
+
+        barrier.wait();
+        let run_ids: Vec<String> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("join thread"))
+            .collect();
+        assert_eq!(run_ids.len(), 2);
+        assert_ne!(run_ids[0], run_ids[1]);
+
+        let runs = store.list_job_runs(&job_id).expect("list runs");
+        assert_eq!(runs.len(), 2);
+        for run_id in &run_ids {
+            assert!(
+                store
+                    .run_bundle_dir(&job_id, run_id)
+                    .join("jrun.yaml")
+                    .exists()
+            );
+            assert!(run_id.starts_with("jrun-"));
+            assert!(
+                run_id
+                    .split('-')
+                    .nth(3)
+                    .is_some_and(|millis| millis.len() == 3)
+            );
+        }
+    }
 }
