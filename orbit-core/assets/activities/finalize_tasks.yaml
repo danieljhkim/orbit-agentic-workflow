@@ -63,6 +63,7 @@ activity:
   skill_refs:
     - orbit
     - orbit-track-issues
+    - orbit-execute-change-request
   tools:
     - orbit.task.list
     - orbit.task.show
