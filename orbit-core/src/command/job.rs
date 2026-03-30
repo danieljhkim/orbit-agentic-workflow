@@ -32,16 +32,16 @@ const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/jobs/job_parallel_task_worker.yaml"),
     ),
     (
-        "job_parallel_task_pipeline",
-        include_str!("../../assets/jobs/job_parallel_task_pipeline.yaml"),
+        "job_batch_review_loop",
+        include_str!("../../assets/jobs/job_batch_review_loop.yaml"),
     ),
     (
         "job_batch_review_cycle",
         include_str!("../../assets/jobs/job_batch_review_cycle.yaml"),
     ),
     (
-        "job_batch_review_loop",
-        include_str!("../../assets/jobs/job_batch_review_loop.yaml"),
+        "job_parallel_task_pipeline",
+        include_str!("../../assets/jobs/job_parallel_task_pipeline.yaml"),
     ),
 ];
 
