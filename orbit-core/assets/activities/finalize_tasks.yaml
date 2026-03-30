@@ -23,10 +23,10 @@ activity:
     2. Load task context:
        - For each task returned from the batch query, call orbit.task.show and read:
          title, description, acceptance_criteria, execution_summary, context_files, workspace_path, and repo_root.
-       - All tasks share the same workspace_path (the shared worktree on agent-dev).
+       - All tasks share the same workspace_path (the shared worktree on agent-main).
 
     3. Review the batch as a whole:
-       - Inspect the combined diff in the shared worktree (on the agent-dev branch).
+       - Inspect the combined diff in the shared worktree (on the agent-main branch).
        - Look for integration issues, stale assumptions, duplicated fixes, or places where one task now needs a small follow-up because of another task in the same batch.
        - You may revise code directly in the shared worktree with fs.write or fs.delete when needed.
 

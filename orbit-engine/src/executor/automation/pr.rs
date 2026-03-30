@@ -266,7 +266,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         )));
     }
 
-    let head = input_string_field(input, "base").unwrap_or_else(|| "agent-dev".to_string());
+    let head = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
     let base = "agent-main";
 
     let freshness = ensure_branch_fresh_against_base(&workspace_path, &head, base)?;

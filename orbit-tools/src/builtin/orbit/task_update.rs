@@ -53,10 +53,15 @@ pub(super) fn build_exec_requests(
         args.push(batch_id);
         changed = true;
     }
+    if let Some(context_files) = super::optional_string(input, "context_files")? {
+        args.push("--context-files".to_string());
+        args.push(context_files);
+        changed = true;
+    }
 
     if !changed {
         return Err(OrbitError::InvalidInput(
-            "orbit.task.update requires at least one of `status`, `plan`, `execution_summary`, `comment`, `pr_status`, `pr_number`, or `batch_id`"
+            "orbit.task.update requires at least one of `status`, `plan`, `execution_summary`, `comment`, `pr_status`, `pr_number`, `batch_id`, or `context_files`"
                 .to_string(),
         ));
     }
@@ -120,6 +125,12 @@ impl Tool for OrbitTaskUpdateTool {
             ToolParam {
                 name: "batch_id".to_string(),
                 description: "Batch ID to associate with the task (empty string clears)".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "context_files".to_string(),
+                description: "Comma-separated context file paths (empty string clears)".to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },

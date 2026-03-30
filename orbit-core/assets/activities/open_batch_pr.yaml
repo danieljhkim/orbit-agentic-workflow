@@ -3,7 +3,7 @@ created_by: system
 activity:
   id: open_batch_pr
   spec_type: automation
-  description: "Push the shared parallel branch and open a single PR from agent-dev to agent-main for the entire batch."
+  description: "Push the shared parallel branch and open a single PR from agent-main for the entire batch."
   input_schema_json:
     type: object
     required:
@@ -17,7 +17,7 @@ activity:
         type: string
       base:
         type: string
-        description: "Head branch name. Defaults to agent-dev."
+        description: "Head branch name. Defaults to agent-main."
   output_schema_json:
     type: object
     properties: {}

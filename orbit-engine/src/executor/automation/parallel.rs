@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::git::{git_command_success, git_output, git_success, resolve_worktree_start_point};
 use crate::context::{RuntimeHost, TaskHost};
 
-const DEFAULT_PARALLEL_BASE: &str = "agent-dev";
+const DEFAULT_PARALLEL_BASE: &str = "agent-main";
 const DEFAULT_PARALLELISM: usize = 4;
 const PARALLEL_WORKER_JOB_ID: &str = "job_parallel_task_worker";
 const SHARED_WORKTREE_NAME: &str = "parallel-batch";
@@ -191,6 +191,7 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         "launched": launched,
         "succeeded": succeeded,
         "failed": failed,
+        "skipped": 0,
         "completed_task_ids": completed_task_ids,
         "failures": failures,
     }))

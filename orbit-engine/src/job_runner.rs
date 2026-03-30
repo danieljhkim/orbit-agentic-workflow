@@ -320,6 +320,13 @@ fn execute_activity_with_retries<H: EngineHost>(
                             Some(err.to_string()),
                         ),
                     };
+                    // Cancelled is not a valid step result state; map it to Failed
+                    // so validate_step_state() accepts it when persisting.
+                    let step_state = if step_state == JobRunState::Cancelled {
+                        JobRunState::Failed
+                    } else {
+                        step_state
+                    };
                     previous_step_state = Some(step_state);
 
                     let changed = host.complete_job_run_step(
@@ -388,7 +395,13 @@ fn execute_activity_with_retries<H: EngineHost>(
                 if let Some(d) = outcome.duration_ms {
                     total_duration_ms += d;
                 }
-                let step_state = outcome.state;
+                // Cancelled is not a valid step result state; map it to Failed
+                // so validate_step_state() accepts it when persisting.
+                let step_state = if outcome.state == JobRunState::Cancelled {
+                    JobRunState::Failed
+                } else {
+                    outcome.state
+                };
                 previous_step_state = Some(step_state);
 
                 // Pipe this step's output fields into the next step's input.

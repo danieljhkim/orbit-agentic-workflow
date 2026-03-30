@@ -7,13 +7,13 @@ job:
   state: enabled
 
   # ---- execution ----
-  # Orchestrates one agent-selected batch using a shared worktree on agent-dev.
+  # Orchestrates one agent-selected batch using a shared worktree on agent-main.
   # Workers implement changes directly in the shared directory with file-level locking.
   # After all workers finish, batch-level finalization reviews the combined diff,
-  # runs tests, commits, and opens a single PR from agent-dev → agent-main.
+  # runs tests, commits, and opens a single PR from agent-main.
   max_active_runs: 1
   default_input:
-    base: agent-dev
+    base: agent-main
     parallelism: 2
   steps:
     # 1. Pick a conflict-free batch of backlog tasks.
@@ -45,13 +45,13 @@ job:
       condition: on_success
       timeout_seconds: 3600
 
-    # 5. Commit all changes on agent-dev.
+    # 5. Commit all changes on agent-main.
     - target_type: activity
       target_id: commit_batch_changes
       condition: on_success
       timeout_seconds: 60
 
-    # 6. Push and open a single PR: agent-dev → agent-main.
+    # 6. Push and open a single PR from agent-main.
     - target_type: activity
       target_id: open_batch_pr
       condition: on_success

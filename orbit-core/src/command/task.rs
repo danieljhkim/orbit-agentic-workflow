@@ -56,6 +56,7 @@ pub struct TaskUpdateParams {
     pub pr_number: Option<Option<String>>,
     pub pr_status: Option<Option<String>>,
     pub batch_id: Option<Option<String>>,
+    pub context_files: Option<Vec<String>>,
     pub append_review_threads: Vec<orbit_types::ReviewThread>,
 }
 
@@ -70,6 +71,7 @@ impl From<TaskUpdateParams> for StoreTaskUpdateParams {
             pr_number: p.pr_number,
             pr_status: p.pr_status,
             batch_id: p.batch_id,
+            context_files: p.context_files,
             append_review_threads: p.append_review_threads,
             ..Default::default()
         }

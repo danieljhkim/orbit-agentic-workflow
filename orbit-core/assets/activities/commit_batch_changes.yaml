@@ -17,7 +17,7 @@ activity:
         type: string
       base:
         type: string
-        description: "Branch name the worktree should be on. Defaults to agent-dev."
+        description: "Branch name the worktree should be on. Defaults to agent-main."
   output_schema_json:
     type: object
     properties: {}

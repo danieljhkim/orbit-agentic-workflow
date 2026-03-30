@@ -512,6 +512,9 @@ pub struct TaskUpdateArgs {
     /// Batch ID to associate with the task (empty string clears)
     #[arg(long)]
     pub batch_id: Option<String>,
+    /// Comma-separated context file paths (empty string clears)
+    #[arg(long)]
+    pub context_files: Option<String>,
     /// Explicit agent name to persist on the task artifact
     #[arg(long)]
     pub agent: Option<String>,
@@ -559,6 +562,7 @@ impl Execute for TaskUpdateArgs {
                 pr_number,
                 pr_status,
                 batch_id,
+                context_files: self.context_files.map(|c| parse_context_csv(&c)),
                 ..Default::default()
             },
             self.agent,

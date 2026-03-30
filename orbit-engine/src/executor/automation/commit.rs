@@ -66,7 +66,7 @@ pub(super) fn commit_batch_changes<H: TaskHost + ?Sized>(
     let workspace_path = canonicalize_existing_dir(workspace_path_str, "workspace_path")?;
 
     let expected_branch = super::input::input_string_field(input, "base")
-        .unwrap_or_else(|| "agent-dev".to_string());
+        .unwrap_or_else(|| "agent-main".to_string());
     let actual_branch = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if actual_branch.trim() != expected_branch {
         return Err(OrbitError::Execution(format!(

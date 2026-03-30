@@ -7,12 +7,12 @@ job:
   state: enabled
 
   # ---- execution ----
-  # Workers share a single worktree on the agent-dev branch.
+  # Workers share a single worktree on the agent-main branch.
   # File-level locking prevents conflicts between concurrent workers.
   # No per-task branch creation — all changes land directly in the shared worktree.
   max_active_runs: 16
   default_input:
-    base: agent-dev
+    base: agent-main
     verification_mode: deferred
   steps:
     - target_type: activity
