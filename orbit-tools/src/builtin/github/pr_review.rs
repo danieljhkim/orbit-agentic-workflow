@@ -1,13 +1,11 @@
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_exec::ExecRequest;
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext, check_exec_result, require_str};
-
-pub struct GithubPrReviewTool;
+use crate::{TIMEOUT_DEFAULT_MS, check_exec_result, require_str};
 
 pub(super) fn build_exec_request(
-    ctx: &ToolContext,
+    ctx: &crate::ToolContext,
     input: &Value,
 ) -> Result<ExecRequest, OrbitError> {
     let repo = require_str(input, "repo")?;
@@ -53,56 +51,34 @@ pub(super) fn build_exec_request(
         args.push(format!("body={review_body}"));
     }
 
-    Ok(ExecRequest {
-        program: "gh".to_string(),
-        args,
-        current_dir: None,
-        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    })
+    Ok(super::gh_exec_request(args, None, TIMEOUT_DEFAULT_MS))
 }
 
-impl Tool for GithubPrReviewTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.pr.review".to_string(),
-            description: "Approve or request changes on a pull request review".to_string(),
-            parameters: vec![
-                ToolParam {
-                    name: "repo".to_string(),
-                    description: "Repository in owner/name format".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "pr".to_string(),
-                    description: "PR number".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "action".to_string(),
-                    description: "Review action: approve or request-changes".to_string(),
-                    param_type: "string".to_string(),
-                    required: true,
-                },
-                ToolParam {
-                    name: "body".to_string(),
-                    description: "Review body (required for request-changes action)".to_string(),
-                    param_type: "string".to_string(),
-                    required: false,
-                },
-            ],
-            builtin: true,
-        }
+super::gh_tool! {
+    pub struct GithubPrReviewTool;
+    name: "github.pr.review";
+    description: "Approve or request changes on a pull request review";
+    parameters: [
+        super::tool_param("repo", "Repository in owner/name format", "string", true),
+        super::tool_param("pr", "PR number", "string", true),
+        super::tool_param(
+            "action",
+            "Review action: approve or request-changes",
+            "string",
+            true,
+        ),
+        super::tool_param(
+            "body",
+            "Review body (required for request-changes action)",
+            "string",
+            false,
+        ),
+    ];
+    request: |ctx, input| {
+        build_exec_request(ctx, input)
     }
-
-    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(ctx, &input)?;
-        let result = run_process(&req, &NoSandbox)?;
-        check_exec_result(&result, "gh api (pr review)")?;
+    response: |_ctx, _input, result| {
+        check_exec_result(result, "gh api (pr review)")?;
         let response: Value = serde_json::from_str(result.stdout.trim()).unwrap_or(json!({}));
         let id = response.get("id").and_then(Value::as_u64).unwrap_or(0);
         Ok(json!({

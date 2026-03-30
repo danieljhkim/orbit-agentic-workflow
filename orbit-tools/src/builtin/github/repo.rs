@@ -1,10 +1,8 @@
-use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_exec::ExecRequest;
+use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext, check_exec_result};
-
-pub struct GithubRepoViewTool;
+use crate::{TIMEOUT_DEFAULT_MS, check_exec_result};
 
 pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitError> {
     let mut args = vec!["repo".to_string(), "view".to_string()];
@@ -17,38 +15,26 @@ pub(super) fn build_exec_request(input: &Value) -> Result<ExecRequest, OrbitErro
     args.push("--json".to_string());
     args.push("name,defaultBranchRef".to_string());
 
-    Ok(ExecRequest {
-        program: "gh".to_string(),
-        args,
-        current_dir: None,
-        timeout_ms: Some(TIMEOUT_DEFAULT_MS),
-        stdin_mode: StdinMode::Null,
-        environment_mode: EnvironmentMode::Inherit,
-        debug: false,
-    })
+    Ok(super::gh_exec_request(args, None, TIMEOUT_DEFAULT_MS))
 }
 
-impl Tool for GithubRepoViewTool {
-    fn schema(&self) -> ToolSchema {
-        ToolSchema {
-            name: "github.repo.view".to_string(),
-            description: "Retrieve repository metadata including name and default branch"
-                .to_string(),
-            parameters: vec![ToolParam {
-                name: "repo".to_string(),
-                description: "Repository in owner/name format (uses current directory if omitted)"
-                    .to_string(),
-                param_type: "string".to_string(),
-                required: false,
-            }],
-            builtin: true,
-        }
+super::gh_tool! {
+    pub struct GithubRepoViewTool;
+    name: "github.repo.view";
+    description: "Retrieve repository metadata including name and default branch";
+    parameters: [
+        super::tool_param(
+            "repo",
+            "Repository in owner/name format (uses current directory if omitted)",
+            "string",
+            false,
+        ),
+    ];
+    request: |_ctx, input| {
+        build_exec_request(input)
     }
-
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let req = build_exec_request(&input)?;
-        let result = run_process(&req, &NoSandbox)?;
-        check_exec_result(&result, "gh repo view")?;
+    response: |_ctx, _input, result| {
+        check_exec_result(result, "gh repo view")?;
 
         let parsed: Value = serde_json::from_str(&result.stdout).map_err(|e| {
             OrbitError::Execution(format!("failed to parse gh repo view output: {e}"))

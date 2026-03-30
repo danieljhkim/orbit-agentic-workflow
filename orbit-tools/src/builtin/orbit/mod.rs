@@ -116,11 +116,6 @@ pub(super) fn append_identity_flags(args: &mut Vec<String>, identity: &OrbitIden
 /// injected. This lets the orbit CLI distinguish agent-initiated mutations from
 /// human-initiated ones (e.g. for audit attribution and policy checks) without
 /// requiring callers to set the variable themselves.
-#[cfg(test)]
-pub(super) fn orbit_exec_request(ctx: &ToolContext, args: Vec<String>) -> ExecRequest {
-    orbit_exec_request_with_identity(ctx, args, &OrbitIdentity::default())
-}
-
 pub(super) fn orbit_exec_request_with_identity(
     ctx: &ToolContext,
     args: Vec<String>,

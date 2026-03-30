@@ -31,4 +31,6 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 thiserror = "2"
 toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 wait-timeout = "0.2"

@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 orbit-types = { path = "../orbit-types" }
 serde_json.workspace = true
+tracing.workspace = true

@@ -1,5 +1,6 @@
 use orbit_types::{Activity, Job, JobStep, OrbitError};
 use serde_json::{Value, json};
+use tracing::{debug, info, trace};
 
 use crate::context::{
     ACTIVITY_EXECUTION_FAILED, AttemptOutcome, DirectActivityRunOutcome, EngineHost,
@@ -17,6 +18,12 @@ pub fn run_activity_direct<H: EngineHost>(
     timeout_seconds: u64,
     debug: bool,
 ) -> Result<DirectActivityRunOutcome, OrbitError> {
+    info!(
+        activity_id = %activity.id,
+        spec_type = %activity.spec_type,
+        timeout_seconds,
+        "direct activity invoked"
+    );
     let execution = ExecutionContext {
         activity: activity.clone(),
         job: None,
@@ -113,10 +120,13 @@ where
         // The bit-shift `.min(30)` caps the exponent so the shift never
         // overflows a u64 (2^31 would exceed u64 range when multiplied).
         let delay_seconds = backoff_seconds.saturating_mul(1_u64 << (attempt - 1).min(30));
-        eprintln!(
-            "[orbit] step '{step_id}' transient error {} (attempt {}/{effective_max}), retrying in {delay_seconds}s",
-            outcome.error_code.as_deref().unwrap_or("unknown"),
+        debug!(
+            step_id,
             attempt,
+            effective_max,
+            delay_seconds,
+            error_code = outcome.error_code.as_deref().unwrap_or("unknown"),
+            "retrying transient activity failure"
         );
         std::thread::sleep(std::time::Duration::from_secs(delay_seconds));
     }
@@ -129,11 +139,60 @@ pub fn execute_single_attempt<H: EngineHost>(
     let registry = builtin_activity_executor_registry();
     let spec_type = execution.activity.spec_type.as_str();
     let supported_spec_types = registry.supported_spec_types().join(", ");
+    debug!(
+        activity_id = %execution.activity.id,
+        spec_type,
+        "activity attempt started"
+    );
+    if spec_type == "agent_invoke" {
+        debug!(
+            activity_id = %execution.activity.id,
+            spec_type,
+            agent_cli = %execution.agent_cli,
+            model = ?execution.model,
+            timeout_seconds = execution.timeout_seconds,
+            request = ?execution.input,
+            "agent request prepared"
+        );
+    } else {
+        trace!(
+            activity_id = %execution.activity.id,
+            spec_type,
+            request = ?execution.input,
+            "activity request prepared"
+        );
+    }
     let outcome = registry
         .get(spec_type)
         .map(|executor| executor.execute(host, execution))
         .unwrap_or_else(|| unsupported_spec_type_outcome(spec_type, &supported_spec_types));
-    redact_attempt_outcome(outcome)
+    let outcome = redact_attempt_outcome(outcome);
+    debug!(
+        activity_id = %execution.activity.id,
+        spec_type,
+        state = %outcome.state,
+        duration_ms = ?outcome.duration_ms,
+        error_code = ?outcome.error_code,
+        "activity attempt completed"
+    );
+    if spec_type == "agent_invoke" {
+        debug!(
+            activity_id = %execution.activity.id,
+            spec_type,
+            state = %outcome.state,
+            response = ?outcome.response_json,
+            "agent response received"
+        );
+    } else {
+        trace!(
+            activity_id = %execution.activity.id,
+            spec_type,
+            state = %outcome.state,
+            response = ?outcome.response_json,
+            "activity response received"
+        );
+    }
+    outcome
 }
 
 fn unsupported_spec_type_outcome(spec_type: &str, supported_spec_types: &str) -> AttemptOutcome {

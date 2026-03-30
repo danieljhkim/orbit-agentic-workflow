@@ -1,4 +1,10 @@
+use tracing::debug;
+
 pub(crate) fn render_prompt_with_embedded_envelope(envelope_json: &[u8]) -> Vec<u8> {
+    debug!(
+        envelope_bytes = envelope_json.len(),
+        "constructed embedded Orbit execution prompt"
+    );
     let prompt = "You are Orbit's agent executor.\n\
 Read the execution envelope JSON and perform the requested work.\n\
 Return exactly one JSON object and nothing else.\n\
