@@ -91,4 +91,3 @@ activity:
     - orbit.task.list
     - orbit.task.show
     - orbit.task.update
-    - fs.read
