@@ -12,14 +12,53 @@ pub(super) fn sync_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
+    let synced_count = sync_task_review_to_github(host, task_id)?;
+    Ok(json!({ "synced_count": synced_count }))
+}
+
+pub(super) fn sync_batch_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
+    host: &H,
+    input: &Value,
+) -> Result<Value, OrbitError> {
+    let batch_id = input
+        .get("run_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "sync_batch_review_to_github requires input.run_id".to_string(),
+            )
+        })?;
+
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    let mut total: u64 = 0;
+
+    for task in &batch_tasks {
+        if task.pr_number.is_none() {
+            continue;
+        }
+        if task.review_threads.is_empty() {
+            continue;
+        }
+        total += sync_task_review_to_github(host, &task.id)?;
+    }
+
+    Ok(json!({ "synced_count": total }))
+}
+
+fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
+    host: &H,
+    task_id: &str,
+) -> Result<u64, OrbitError> {
     let task = host.get_task(task_id)?;
 
     if task.pr_number.is_none() {
-        return Ok(json!({ "synced_count": 0 }));
+        return Ok(0);
     }
 
     if task.review_threads.is_empty() {
-        return Ok(json!({ "synced_count": 0 }));
+        return Ok(0);
     }
 
     let pr_number = task.pr_number.as_deref().unwrap();
@@ -54,7 +93,7 @@ pub(super) fn sync_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
         )?;
     }
 
-    Ok(json!({ "synced_count": synced_count }))
+    Ok(synced_count)
 }
 
 fn sync_thread(

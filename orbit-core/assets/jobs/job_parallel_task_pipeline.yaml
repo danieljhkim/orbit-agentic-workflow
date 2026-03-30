@@ -46,7 +46,7 @@ job:
     - target_type: activity
       target_id: finalize_tasks
       agent_cli: claude
-      model: opus
+      model: sonnet
       condition: on_failure
       timeout_seconds: 3600
 
@@ -55,3 +55,9 @@ job:
       target_id: commit_and_open_batch_pr
       condition: on_success
       timeout_seconds: 300
+
+    # 6. Review cycle: review, gate, fix loop, merge.
+    - target_type: job
+      target_id: job_batch_review_cycle
+      condition: on_success
+      timeout_seconds: 7200

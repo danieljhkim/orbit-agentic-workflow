@@ -236,6 +236,121 @@ pub(super) fn open_pr_from_task<H: RuntimeHost + TaskHost + ?Sized>(
     Ok(json!({}))
 }
 
+pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
+    host: &H,
+    input: &Value,
+) -> Result<Value, OrbitError> {
+    let batch_id = input
+        .get("run_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            OrbitError::InvalidInput("merge_batch_pr requires input.run_id".to_string())
+        })?;
+
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    if batch_tasks.is_empty() {
+        return Err(OrbitError::InvalidInput(format!(
+            "merge_batch_pr: no tasks found for batch_id '{batch_id}'"
+        )));
+    }
+
+    // Find pr_number from the first task that has one
+    let pr_number = batch_tasks
+        .iter()
+        .find_map(|t| t.pr_number.as_deref())
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "merge_batch_pr: no task in batch has a pr_number".to_string(),
+            )
+        })?
+        .to_string();
+
+    // Find repo_root/workspace_path from the first task that has one
+    let repo_root = batch_tasks
+        .iter()
+        .find_map(|t| t.repo_root.as_deref().or(t.workspace_path.as_deref()))
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "merge_batch_pr: no task in batch has repo_root or workspace_path".to_string(),
+            )
+        })?;
+    let repo_root = canonicalize_existing_dir(repo_root, "repo_root")?;
+
+    // Get the current branch from the workspace
+    let head = git_output(&repo_root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let head = head.trim().to_string();
+    let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
+
+    // Check that ALL tasks have APPROVED pr_status
+    for task in &batch_tasks {
+        let pr_status_raw = task.pr_status.as_deref().unwrap_or("none");
+        let review_decision = super::review::normalize_review_decision(pr_status_raw);
+        if review_decision != "APPROVED" {
+            return Err(OrbitError::Execution(format!(
+                "task '{}' is not approved (pr_status={pr_status_raw})",
+                task.id
+            )));
+        }
+    }
+
+    // Check that ALL tasks are in Review or Done status
+    for task in &batch_tasks {
+        if !matches!(task.status, TaskStatus::Review | TaskStatus::Done) {
+            return Err(OrbitError::Execution(format!(
+                "task '{}' must be in Review or Done before merge_batch_pr; current status is {}",
+                task.id, task.status
+            )));
+        }
+    }
+
+    ensure_branch_fresh_against_base(&repo_root, &head, &base)?;
+
+    let tool_context = ToolContext {
+        cwd: Some(repo_root.to_string_lossy().to_string()),
+        allowed_tools: vec![],
+        ..Default::default()
+    };
+    host.run_tool_with_context_and_role(
+        "github.pr.merge",
+        json!({
+            "pr": pr_number,
+            "strategy": "squash",
+        }),
+        Role::Admin,
+        tool_context,
+    )?;
+
+    // Advance ALL batch tasks to Done status
+    for task in &batch_tasks {
+        host.apply_task_automation_update(
+            &task.id,
+            TaskAutomationUpdate {
+                status: if task.status == TaskStatus::Review {
+                    Some(TaskStatus::Done)
+                } else {
+                    None
+                },
+                pr_number: Some(pr_number.clone()),
+                ..TaskAutomationUpdate::default()
+            },
+        )?;
+
+        // Record PR merge to scoreboard for each task's actor identity
+        if host.scoring_enabled()
+            && let (Some(agent), Some(model)) = (
+                task.actor_identity.agent_name(),
+                task.actor_identity.agent_model(),
+            )
+        {
+            let _ = pr_scoreboard::record_pr_merged(host.scoreboard_dir(), agent, model);
+        }
+    }
+
+    Ok(json!({ "merged": true }))
+}
+
 pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
