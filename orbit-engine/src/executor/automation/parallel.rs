@@ -42,7 +42,7 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let selected_tasks = load_selected_tasks(host, input)?;
     validate_selected_group(&selected_tasks)?;
 
-    // Move all selected tasks to in-progress before spawning workers.
+    // Move all selected tasks to in-progress before spawning workers. FIXME: decouple this
     for task in &selected_tasks {
         host.apply_task_automation_update(
             &task.task_id,
