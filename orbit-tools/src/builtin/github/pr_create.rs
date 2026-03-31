@@ -93,7 +93,7 @@ super::gh_tool! {
         build_exec_request(ctx, input)
     }
     response: |_ctx, _input, result| {
-        check_exec_result(&result, "gh pr create")?;
+        check_exec_result(result, "gh pr create")?;
         Ok(json!({
             "url": result.stdout.trim(),
             "stdout": result.stdout.as_str(),
