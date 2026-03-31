@@ -43,11 +43,6 @@ impl RuntimeConfig {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn load_from_data_root(data_root: &Path) -> Result<Self, OrbitError> {
-        Self::load_layered(data_root, data_root)
-    }
-
     /// Load config with workspace-replaces-global semantics for execution/approval/user.
     ///
     /// Persistence paths are always derived from the two roots (not configurable).

@@ -20,6 +20,10 @@ activity:
        - Call orbit.task.show with id: input.task_id to fetch the task's title, description,
          acceptance_criteria, plan, context_files, workspace_path, and repo_root.
        - The task's workspace_path is the authoritative implementation workspace.
+       - However, if input.workspace_path is provided (as in parallel batch execution),
+         it takes precedence over the task's workspace_path. This ensures agents work
+         in the correct worktree when running inside a batch pipeline.
+       - Similarly, if input.repo_root is provided, use it over the task's repo_root.
        - The task's plan should already have been authored by the planning phase before
          execution began.
 
@@ -31,7 +35,8 @@ activity:
 
     3. Explore the workspace:
        - Read the files listed in the task's context_files. Understand the existing code before writing.
-       - All relative file and process work should happen inside the task's workspace_path.
+       - All relative file and process work should happen inside the effective workspace_path
+         (input.workspace_path if provided, otherwise the task's workspace_path).
        - If the plan is missing or still placeholder text, stop and return status: "blocked"
          with an execution_summary explaining that the planning phase must be completed first.
 
@@ -108,6 +113,12 @@ activity:
       verification_mode:
         type: string
         description: Optional verification policy. Use `deferred` when this implementation is part of a parallel batch and verification must wait for `finalize_tasks`.
+      workspace_path:
+        type: string
+        description: Override workspace path. When provided (e.g., in parallel batch execution), use this instead of the task's workspace_path.
+      repo_root:
+        type: string
+        description: Override repo root path. When provided, use this instead of the task's repo_root.
   output_schema_json: {}
 
   # ---- execution ----

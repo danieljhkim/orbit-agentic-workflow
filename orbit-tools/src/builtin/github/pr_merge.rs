@@ -71,7 +71,7 @@ super::gh_tool! {
         build_exec_request(input)
     }
     response: |_ctx, _input, result| {
-        check_exec_result(&result, "gh pr merge")?;
+        check_exec_result(result, "gh pr merge")?;
         Ok(json!({
             "stdout": result.stdout.as_str(),
             "stderr": result.stderr.as_str(),

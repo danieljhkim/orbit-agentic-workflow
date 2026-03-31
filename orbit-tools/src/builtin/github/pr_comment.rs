@@ -40,7 +40,7 @@ super::gh_tool! {
         build_exec_request(ctx, input)
     }
     response: |_ctx, _input, result| {
-        check_exec_result(&result, "gh pr comment")?;
+        check_exec_result(result, "gh pr comment")?;
         Ok(json!({
             "stdout": result.stdout.as_str(),
             "stderr": result.stderr.as_str(),
