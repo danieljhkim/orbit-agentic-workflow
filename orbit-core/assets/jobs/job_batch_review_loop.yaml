@@ -30,8 +30,8 @@ job:
   steps:
     - target_type: activity
       target_id: implement_batch_fix
-      agent_cli: codex
-      model: gpt-5.4
+      agent_cli: claude
+      model: opus
       condition: always
       timeout_seconds: 2000
 
@@ -52,8 +52,8 @@ job:
 
     - target_type: activity
       target_id: review_batch_pr
-      agent_cli: codex
-      model: gpt-5.4
+      agent_cli: claude
+      model: sonnet
       condition: on_success
       timeout_seconds: 600
 

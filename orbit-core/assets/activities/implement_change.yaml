@@ -117,6 +117,7 @@ activity:
   tools:
     - orbit.task.show
     - orbit.task.update
+    - orbit.task.add
     - fs.write
     - fs.delete
     - proc.spawn

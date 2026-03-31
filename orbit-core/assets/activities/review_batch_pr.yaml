@@ -87,5 +87,6 @@ activity:
     - orbit.task.show
     - orbit.task.list
     - orbit.task.update
+    - orbit.task.add
     - orbit.task.review_thread.add
     - github.pr.view

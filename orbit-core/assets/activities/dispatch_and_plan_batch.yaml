@@ -91,3 +91,4 @@ activity:
     - orbit.task.list
     - orbit.task.show
     - orbit.task.update
+    - orbit.task.add
