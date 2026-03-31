@@ -3,17 +3,23 @@ use std::path::Path;
 use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
-use crate::context::TaskHost;
+use crate::context::{RuntimeHost, TaskHost};
 
 use super::git::{git_output, git_output_paths, git_success};
-use super::input::{canonicalize_existing_dir, required_input_string};
+use super::input::{canonicalize_existing_dir, input_string_field};
 
-pub(super) fn commit_batch_changes<H: TaskHost + ?Sized>(
+pub(super) fn commit_batch_changes<H: TaskHost + RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let workspace_path_str = required_input_string(input, "workspace_path")?;
-    let workspace_path = canonicalize_existing_dir(workspace_path_str, "workspace_path")?;
+    let workspace_path = match input_string_field(input, "workspace_path") {
+        Some(ws) => canonicalize_existing_dir(&ws, "workspace_path")?,
+        None => {
+            let repo_root_str = host.repo_root()?;
+            let repo_root = Path::new(&repo_root_str);
+            super::parallel::resolve_shared_worktree_path(repo_root)?
+        }
+    };
 
     let actual_branch = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let actual_branch = actual_branch.trim();
