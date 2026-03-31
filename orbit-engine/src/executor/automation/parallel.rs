@@ -444,10 +444,7 @@ mod tests {
 
     impl WorkspaceUpdateHost {
         fn recorded_updates(&self) -> Vec<(String, Option<Option<String>>)> {
-            self.updates
-                .lock()
-                .expect("workspace updates lock")
-                .clone()
+            self.updates.lock().expect("workspace updates lock").clone()
         }
     }
 

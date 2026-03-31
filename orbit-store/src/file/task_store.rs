@@ -591,7 +591,9 @@ impl TaskFileStore {
     }
 
     fn task_dir(&self, state: TaskStateDir, id: &str) -> PathBuf {
-        if state.is_partitioned() && let Some(partition) = partition_key(id) {
+        if state.is_partitioned()
+            && let Some(partition) = partition_key(id)
+        {
             return self.state_dir_path(state).join(partition).join(id);
         }
         self.state_dir_path(state).join(id)
