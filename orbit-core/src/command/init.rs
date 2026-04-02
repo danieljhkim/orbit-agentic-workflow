@@ -403,8 +403,14 @@ mod tests {
         // Verify symlinks exist
         let agents_skills = repo_root.join(".agents/skills");
         let claude_skills = repo_root.join(".claude/skills");
-        assert!(agents_skills.is_dir(), ".agents/skills should exist after init");
-        assert!(claude_skills.is_dir(), ".claude/skills should exist after init");
+        assert!(
+            agents_skills.is_dir(),
+            ".agents/skills should exist after init"
+        );
+        assert!(
+            claude_skills.is_dir(),
+            ".claude/skills should exist after init"
+        );
 
         // Place a regular file in .agents/skills/ (should NOT be removed)
         fs::write(agents_skills.join("user_file.txt"), "keep me").expect("write user file");
@@ -458,7 +464,10 @@ mod tests {
 
         // Re-link
         let link_result = link_skills(&orbit_root).expect("link");
-        assert!(link_result.linked_count > 0, "should have re-created symlinks");
+        assert!(
+            link_result.linked_count > 0,
+            "should have re-created symlinks"
+        );
 
         // Verify symlinks are back
         let restored_count = fs::read_dir(repo_root.join(".claude/skills"))
