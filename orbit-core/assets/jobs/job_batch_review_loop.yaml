@@ -53,9 +53,9 @@ job:
     - target_type: activity
       target_id: review_batch_pr
       agent_cli: claude
-      model: sonnet
+      model: opus
       condition: on_success
-      timeout_seconds: 600
+      timeout_seconds: 1000
 
     - target_type: activity
       target_id: sync_batch_review_to_github

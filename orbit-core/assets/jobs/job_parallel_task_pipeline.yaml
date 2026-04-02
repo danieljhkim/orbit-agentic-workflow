@@ -46,7 +46,7 @@ job:
     - target_type: activity
       target_id: finalize_tasks
       agent_cli: claude
-      model: sonnet
+      model: opus
       condition: on_failure
       timeout_seconds: 3600
 
