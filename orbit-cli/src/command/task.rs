@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Create, update, and manage tasks")]
 pub struct TaskCommand {
     #[command(subcommand)]
     pub command: TaskSubcommand,

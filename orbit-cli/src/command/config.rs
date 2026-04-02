@@ -5,6 +5,7 @@ use serde_json::json;
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Show or update Orbit configuration")]
 pub struct ConfigCommand {
     #[command(subcommand)]
     pub command: ConfigSubcommand,
@@ -18,6 +19,7 @@ impl Execute for ConfigCommand {
 
 #[derive(Subcommand)]
 pub enum ConfigSubcommand {
+    /// Display current configuration values
     Show(ConfigShowArgs),
 }
 

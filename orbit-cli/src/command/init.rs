@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Initialize the global Orbit root (~/.orbit)")]
 pub struct InitCommand {
     /// Reset the global Orbit root (~/.orbit/) to defaults before initialization
     #[arg(long)]

@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Manage agent skill definitions")]
 pub struct SkillCommand {
     #[command(subcommand)]
     pub command: SkillSubcommand,
@@ -21,8 +22,11 @@ impl Execute for SkillCommand {
 
 #[derive(Subcommand)]
 pub enum SkillSubcommand {
+    /// List all available skills
     List(SkillListArgs),
+    /// Show detailed information about a skill
     Show(SkillShowArgs),
+    /// Validate skill health and configuration
     Doctor(SkillDoctorArgs),
     /// Re-create skill symlinks in .agents/skills/ and .claude/skills/
     Link(SkillLinkArgs),

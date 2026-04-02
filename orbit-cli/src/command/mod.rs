@@ -21,7 +21,34 @@ pub trait Execute {
 
 #[derive(Parser)]
 #[command(name = "orbit")]
-#[command(about = "Orbit v2.1 CLI")]
+#[command(about = "Orbit CLI", version)]
+#[command(
+    disable_help_subcommand = true,
+    help_template = "\
+{name} {version}
+
+{usage-heading} {usage}
+
+Run workflows:
+  run        Run a first-class workflow
+  job        Define and run automation jobs
+  job-run    Inspect and manage job run history
+
+Manage work:
+  task       Create, update, and manage tasks
+  activity   Manage activity definitions
+  skill      Manage agent skill definitions
+  tool       Manage and run Orbit tools
+
+Configure and inspect:
+  config     Show or update Orbit configuration
+  init       Initialize the global Orbit root (~/.orbit)
+  workspace  Initialize and manage workspaces
+  audit      Query the audit event log
+
+Options:
+{options}"
+)]
 pub struct Cli {
     /// Override the Orbit root directory (highest precedence)
     #[arg(long, global = true)]
@@ -33,17 +60,22 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Config(config::ConfigCommand),
-    Init(init::InitCommand),
-    Tool(tool::ToolCommand),
-    Task(task::TaskCommand),
-    Audit(audit::AuditCommand),
-    Activity(activity::ActivityCommand),
-    Skill(skill::SkillCommand),
+    // ── run workflows ──
+    Run(run::RunCommand),
     Job(job::JobCommand),
     JobRun(job_run::JobRunCommand),
-    Run(run::RunCommand),
+
+    // ── manage work ──
+    Task(task::TaskCommand),
+    Activity(activity::ActivityCommand),
+    Skill(skill::SkillCommand),
+    Tool(tool::ToolCommand),
+
+    // ── configure and inspect ──
+    Config(config::ConfigCommand),
+    Init(init::InitCommand),
     Workspace(workspace::WorkspaceCommand),
+    Audit(audit::AuditCommand),
 }
 
 impl Execute for Commands {

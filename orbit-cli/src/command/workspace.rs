@@ -8,6 +8,7 @@ use orbit_types::{Workspace, WorkspaceStatus};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Initialize and manage workspaces")]
 pub struct WorkspaceCommand {
     #[command(subcommand)]
     pub command: WorkspaceSubcommand,

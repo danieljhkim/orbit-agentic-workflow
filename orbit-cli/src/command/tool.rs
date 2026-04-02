@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Manage and run Orbit tools")]
 pub struct ToolCommand {
     #[command(subcommand)]
     pub command: ToolSubcommand,

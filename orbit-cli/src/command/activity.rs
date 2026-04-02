@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Manage activity definitions")]
 pub struct ActivityCommand {
     #[command(subcommand)]
     pub command: ActivitySubcommand,
@@ -19,11 +20,17 @@ impl Execute for ActivityCommand {
 
 #[derive(Subcommand)]
 pub enum ActivitySubcommand {
+    /// Register a new activity definition
     Add(Box<ActivityAddArgs>),
+    /// List all registered activities
     List(ActivityListArgs),
+    /// Show details of a specific activity
     Show(ActivityShowArgs),
+    /// Update an existing activity
     Update(ActivityUpdateArgs),
+    /// Execute an activity immediately
     Run(ActivityRunArgs),
+    /// Delete an activity definition
     Delete(ActivityDeleteArgs),
 }
 

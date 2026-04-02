@@ -8,6 +8,7 @@ use crate::command::Execute;
 use crate::parse::parse_since;
 
 #[derive(Args)]
+#[command(about = "Query the audit event log")]
 pub struct AuditCommand {
     #[command(subcommand)]
     pub command: AuditSubcommand,

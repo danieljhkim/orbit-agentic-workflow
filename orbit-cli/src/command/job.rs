@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
+#[command(about = "Define and run automation jobs")]
 pub struct JobCommand {
     #[command(subcommand)]
     pub command: JobSubcommand,
@@ -19,11 +20,17 @@ impl Execute for JobCommand {
 
 #[derive(Subcommand)]
 pub enum JobSubcommand {
+    /// Register a new job definition
     Add(JobAddArgs),
+    /// List all registered jobs
     List(JobListArgs),
+    /// Show details of a specific job
     Show(JobShowArgs),
+    /// Execute a job immediately
     Run(JobRunArgs),
+    /// Show run history for a job
     History(JobHistoryArgs),
+    /// Delete a job definition
     Delete(JobDeleteArgs),
 }
 

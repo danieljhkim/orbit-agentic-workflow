@@ -8,6 +8,7 @@ use crate::command::Execute;
 use crate::command::job::{job_run_to_json, summarize_error_message};
 
 #[derive(Args)]
+#[command(about = "Inspect and manage job run history")]
 pub struct JobRunCommand {
     #[command(subcommand)]
     pub command: JobRunSubcommand,
@@ -21,11 +22,17 @@ impl Execute for JobRunCommand {
 
 #[derive(Subcommand)]
 pub enum JobRunSubcommand {
+    /// List job runs with optional filters
     List(JobRunListArgs),
+    /// Show details of a specific run
     Show(JobRunShowArgs),
+    /// Cancel a running or scheduled run
     Cancel(JobRunCancelArgs),
+    /// Archive a completed run
     Archive(JobRunArchiveArgs),
+    /// Delete a run record
     Delete(JobRunDeleteArgs),
+    /// Retry a failed run from a specific step
     Retry(JobRunRetryArgs),
 }
 
