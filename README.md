@@ -10,8 +10,15 @@ Orbit runs on top of agent CLIs such as Codex and Claude Code. No provider API k
 
 **Prerequisites**: Rust, Codex CLI, and Claude Code
 
+For the PR-based workflow (`orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship-local` instead.
+
 ```bash
-# install orbit binary
+# install via Homebrew (macOS)
+brew install danieljhkim/tap/orbit
+
+# or build from source
+git clone https://github.com/danieljhkim/orbit.git
+cd orbit
 make install
 
 # initialize global Orbit state (~/.orbit)
@@ -29,7 +36,7 @@ orbit task list
 orbit task show <task_id>
 orbit task approve <task_id> --note "LGTM"
 
-# run the default PR-based workflow
+# run the default PR-based workflow (this requires gh)
 orbit run ship
 
 # or run a local-only workflow with no PR/review loop
@@ -72,6 +79,8 @@ For most repositories, the intended path is:
 
 Most users should start with the first-class workflows below. Reach for `orbit job run ...` only when you need lower-level control or custom automation behavior.
 
+Note: `orbit run ship` depends on GitHub-backed PR operations and therefore requires `gh` to be installed and logged in. `orbit run ship-local` does not.
+
 ---
 
 ## Who Uses Which Surface?
@@ -92,7 +101,7 @@ These surfaces are intentionally distinct because Orbit records provenance and e
 
 | Workflow | Command | Description |
 | :--- | :--- | :--- |
-| **ship** | `orbit run ship` | Select tasks, dispatch agents, verify results, open a PR, review, and merge |
+| **ship** | `orbit run ship` | Select tasks, dispatch agents, verify results, open a PR, review, and merge; requires `gh` auth |
 | **ship-local** | `orbit run ship-local` | Select tasks, dispatch agents, and commit locally without a PR |
 | **review** | `orbit run review` | Review tasks in `proposed` or `review` state |
 

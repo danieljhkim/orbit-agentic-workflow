@@ -1,0 +1,139 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-release:
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha256: ${{ steps.sha.outputs.sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+
+      - name: Compute version
+        id: meta
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "asset=orbit_${VERSION}_darwin_arm64.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary (darwin/arm64)
+        shell: bash
+        run: |
+          cargo build -p orbit-cli --release
+          ./target/release/orbit --version
+
+      - name: Package tarball
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          ASSET="orbit_${VERSION}_darwin_arm64.tar.gz"
+          tar -czf "$ASSET" -C target/release orbit
+          ls -lh "$ASSET"
+
+      - name: Compute sha256
+        id: sha
+        shell: bash
+        run: |
+          ASSET="${{ steps.meta.outputs.asset }}"
+          SHA="$(shasum -a 256 "$ASSET" | awk '{print $1}')"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "SHA256=$SHA"
+
+      - name: Create GitHub Release + upload asset
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.meta.outputs.version }}
+          files: ${{ steps.meta.outputs.asset }}
+          generate_release_notes: true
+
+  bump-homebrew-tap:
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: danieljhkim/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: tap
+
+      - name: Update formula
+        shell: bash
+        run: |
+          VERSION="${{ needs.build-release.outputs.version }}"
+          SHA="${{ needs.build-release.outputs.sha256 }}"
+          URL="https://github.com/danieljhkim/orbit/releases/download/v${VERSION}/orbit_${VERSION}_darwin_arm64.tar.gz"
+
+          FORMULA="tap/Formula/orbit.rb"
+
+          if [ -f "$FORMULA" ]; then
+            perl -0777 -i -pe "s|^\s*url\s+\".*?\"|  url \"${URL}\"|m" "$FORMULA"
+            perl -0777 -i -pe "s|^\s*sha256\s+\".*?\"|  sha256 \"${SHA}\"|m" "$FORMULA"
+            perl -0777 -i -pe "s|^\s*version\s+\".*?\"|  version \"${VERSION}\"|m" "$FORMULA"
+          else
+            mkdir -p tap/Formula
+            cat > "$FORMULA" << 'RUBY'
+          class Orbit < Formula
+            desc "Local-first agentic workflow engine for agent-driven software delivery"
+            homepage "https://github.com/danieljhkim/orbit"
+          RUBY
+            cat >> "$FORMULA" << RUBY
+            url "${URL}"
+            sha256 "${SHA}"
+            version "${VERSION}"
+          RUBY
+            cat >> "$FORMULA" << 'RUBY'
+            license "MIT"
+
+            def install
+              bin.install "orbit"
+            end
+
+            test do
+              assert_match "orbit", shell_output("#{bin}/orbit --version")
+            end
+          end
+          RUBY
+          fi
+
+          echo "Updated formula:"
+          cat "$FORMULA"
+
+      - name: Commit and push tap update
+        shell: bash
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Formula/orbit.rb
+          git commit -m "orbit v${{ needs.build-release.outputs.version }}"
+          git push
