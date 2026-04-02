@@ -386,3 +386,94 @@ fn dir_is_empty(path: &Path) -> Result<bool, OrbitError> {
     let mut entries = fs::read_dir(path).map_err(|e| OrbitError::Io(e.to_string()))?;
     Ok(entries.next().is_none())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unlink_removes_only_symlinks() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(repo_root.join(".git")).expect("create .git");
+
+        let orbit_root = repo_root.join(".orbit");
+        init_workspace_at_root(&orbit_root, InitOptions::default()).expect("init");
+
+        // Verify symlinks exist
+        let agents_skills = repo_root.join(".agents/skills");
+        let claude_skills = repo_root.join(".claude/skills");
+        assert!(agents_skills.is_dir(), ".agents/skills should exist after init");
+        assert!(claude_skills.is_dir(), ".claude/skills should exist after init");
+
+        // Place a regular file in .agents/skills/ (should NOT be removed)
+        fs::write(agents_skills.join("user_file.txt"), "keep me").expect("write user file");
+
+        let result = unlink_skills(&orbit_root).expect("unlink");
+        assert!(result.removed_count > 0, "should have removed symlinks");
+
+        // Regular file should still exist
+        assert!(
+            agents_skills.join("user_file.txt").exists(),
+            "non-symlink file should be preserved"
+        );
+        // .agents/skills/ should still exist (has a regular file)
+        assert!(
+            agents_skills.is_dir(),
+            ".agents/skills should remain (has non-symlink content)"
+        );
+        // .claude/skills/ was only symlinks so it should be cleaned up
+        assert!(
+            !claude_skills.exists(),
+            ".claude/skills should be removed (was empty after unlink)"
+        );
+    }
+
+    #[test]
+    fn link_restores_symlinks_after_unlink() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        fs::create_dir_all(repo_root.join(".git")).expect("create .git");
+
+        let orbit_root = repo_root.join(".orbit");
+        init_workspace_at_root(&orbit_root, InitOptions::default()).expect("init");
+
+        // Count initial symlinks
+        let claude_skills = repo_root.join(".claude/skills");
+        let initial_count = fs::read_dir(&claude_skills)
+            .expect("read")
+            .filter(|e| {
+                e.as_ref()
+                    .ok()
+                    .and_then(|e| fs::symlink_metadata(e.path()).ok())
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false)
+            })
+            .count();
+        assert!(initial_count > 0, "should have symlinks after init");
+
+        // Unlink
+        let unlink_result = unlink_skills(&orbit_root).expect("unlink");
+        assert!(unlink_result.removed_count > 0);
+
+        // Re-link
+        let link_result = link_skills(&orbit_root).expect("link");
+        assert!(link_result.linked_count > 0, "should have re-created symlinks");
+
+        // Verify symlinks are back
+        let restored_count = fs::read_dir(repo_root.join(".claude/skills"))
+            .expect("read")
+            .filter(|e| {
+                e.as_ref()
+                    .ok()
+                    .and_then(|e| fs::symlink_metadata(e.path()).ok())
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(
+            restored_count, initial_count,
+            "link should restore the same number of symlinks"
+        );
+    }
+}

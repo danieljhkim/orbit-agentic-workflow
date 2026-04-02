@@ -399,6 +399,73 @@ mod tests {
     }
 
     #[test]
+    fn teardown_requires_confirm_flag() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(repo_root.join(".git")).expect("create .git dir");
+        let registry_path = temp.path().join("home/.orbit/workspaces.json");
+
+        let init_args = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+        };
+        init_args
+            .execute_at_path(&repo_root, &registry_path)
+            .expect("init");
+
+        let orbit_dir = repo_root.join(".orbit");
+        assert!(orbit_dir.is_dir());
+
+        // Without --confirm, teardown should fail
+        let runtime = OrbitRuntime::from_data_root(&orbit_dir).expect("runtime");
+        let args = WorkspaceTeardownArgs { confirm: false };
+        let err = args.execute(&runtime);
+        assert!(err.is_err(), "teardown without --confirm should fail");
+        assert!(orbit_dir.is_dir(), ".orbit should still exist");
+    }
+
+    #[test]
+    fn teardown_removes_orbit_dir_and_symlinks() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        std::fs::create_dir_all(repo_root.join(".git")).expect("create .git dir");
+        let registry_path = temp.path().join("home/.orbit/workspaces.json");
+
+        let init_args = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+        };
+        init_args
+            .execute_at_path(&repo_root, &registry_path)
+            .expect("init");
+
+        let orbit_dir = repo_root.join(".orbit");
+        assert!(orbit_dir.is_dir());
+
+        // Verify symlinks were created
+        assert!(repo_root.join(".agents/skills").is_dir());
+        assert!(repo_root.join(".claude/skills").is_dir());
+
+        // Execute teardown with --confirm
+        let runtime = OrbitRuntime::from_data_root(&orbit_dir).expect("runtime");
+        let args = WorkspaceTeardownArgs { confirm: true };
+        args.execute(&runtime).expect("teardown should succeed");
+
+        // .orbit/ should be gone
+        assert!(!orbit_dir.exists(), ".orbit should be deleted");
+
+        // Symlink dirs should be cleaned up
+        assert!(
+            !repo_root.join(".agents/skills").exists(),
+            ".agents/skills should be gone"
+        );
+        assert!(
+            !repo_root.join(".claude/skills").exists(),
+            ".claude/skills should be gone"
+        );
+    }
+
+    #[test]
     fn workspace_init_seeds_default_artifacts_and_registers_workspace() {
         let temp = tempfile::tempdir().expect("tempdir");
         let repo_root = temp.path().join("repo");
