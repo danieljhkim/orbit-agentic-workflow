@@ -35,21 +35,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Auto-format PR branch
-        if: github.event_name == 'pull_request'
-        run: |
-          cargo fmt --all
-
-          if [[ -z "$(git status --porcelain)" ]]; then
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add --all
-          git commit -m "style: auto-format rust sources"
-          git push origin HEAD:${{ github.head_ref }}
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -58,3 +43,16 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+      - name: Create orbit task on CI failure
+        if: failure() && github.event_name == 'pull_request'
+        run: |
+          cargo run -- tool run orbit.task.add --input '{
+            "title": "CI failure: ${{ github.workflow }} on PR #${{ github.event.pull_request.number }}",
+            "description": "## Problem\nCI failed on PR #${{ github.event.pull_request.number }} (`${{ github.head_ref }}`).\n\nCommit: `${{ github.sha }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "acceptance_criteria": ["CI passes on branch ${{ github.head_ref }}"],
+            "context": ".github/workflows/ci.yml",
+            "workspace": ".",
+            "priority": "high",
+            "type": "issue"
+          }'

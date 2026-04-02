@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+
+# Auto-format staged Rust files before commit
+if command -v cargo >/dev/null 2>&1; then
+    cargo fmt --all
+    git add -u
+fi
