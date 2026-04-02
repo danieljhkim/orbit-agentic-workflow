@@ -94,7 +94,7 @@ You can chain one or more **activities** and run them as a single job.
 
 ### Default Jobs
 
-Orbit ships with five default jobs that cover the full task lifecycle — from batch dispatch through implementation, review, and merge.
+Orbit ships with six default jobs that cover the full task lifecycle — from batch dispatch through implementation, review, and merge.
 
 #### `job_parallel_task_pipeline`
 
@@ -150,6 +150,59 @@ job:
       target_id: job_batch_review_cycle
       condition: on_success
       timeout_seconds: 7200
+```
+</details>
+
+#### `job_local_task_pipeline`
+
+A lightweight local-only pipeline. Plans, implements, and commits without requiring `gh` or GitHub access. Changes are committed directly to the base branch — no PR, review cycle, or merge step. Review diffs locally and push when ready.
+
+```bash
+orbit job run job_local_task_pipeline
+# with custom input:
+orbit job run job_local_task_pipeline --input '{"base": "agent-main", "parallelism": 3}'
+```
+
+<details>
+<summary>Job YAML</summary>
+
+```yaml
+schemaVersion: 1
+job:
+  job_id: job_local_task_pipeline
+  state: enabled
+  max_active_runs: 1
+  default_input:
+    base: agent-main
+    parallelism: 4
+  steps:
+    - target_type: activity
+      target_id: dispatch_and_plan_batch
+      agent_cli: claude
+      model: opus
+      timeout_seconds: 2400
+
+    - target_type: activity
+      target_id: snapshot_batch_state
+      condition: on_success
+      timeout_seconds: 15
+
+    - target_type: activity
+      target_id: parallel_dispatch_tasks
+      condition: on_success
+      timeout_seconds: 7200
+
+    - target_type: activity
+      target_id: finalize_tasks
+      agent_cli: claude
+      model: sonnet
+      condition: always
+      timeout_seconds: 3600
+
+    - target_type: activity
+      target_id: commit_batch_changes
+      condition: on_success
+      timeout_seconds: 300
 ```
 </details>
 
