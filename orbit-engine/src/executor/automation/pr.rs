@@ -1,6 +1,6 @@
 use orbit_store::pr_scoreboard;
 use orbit_tools::ToolContext;
-use orbit_types::{OrbitError, Role, Task, TaskStatus};
+use orbit_types::{OrbitError, ReviewThreadStatus, Role, Task, TaskStatus};
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
@@ -99,6 +99,14 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         tool_context,
     )?;
 
+    let batch_requires_revision = batch_tasks.iter().any(task_required_revision);
+    let batch_author = batch_tasks.iter().find_map(|task| {
+        Some((
+            task.actor_identity.agent_name()?.to_string(),
+            task.actor_identity.agent_model()?.to_string(),
+        ))
+    });
+
     // Advance ALL batch tasks to Done status
     for task in &batch_tasks {
         host.apply_task_automation_update(
@@ -113,16 +121,16 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
                 ..TaskAutomationUpdate::default()
             },
         )?;
+    }
 
-        // Record PR merge to scoreboard for each task's actor identity
-        if host.scoring_enabled()
-            && let (Some(agent), Some(model)) = (
-                task.actor_identity.agent_name(),
-                task.actor_identity.agent_model(),
-            )
-        {
-            let _ = pr_scoreboard::record_pr_merged(host.scoreboard_dir(), agent, model);
-        }
+    if host.scoring_enabled()
+        && let Some((agent, model)) = batch_author
+    {
+        let _ = if batch_requires_revision {
+            pr_scoreboard::record_pr_count_with_revision(host.scoreboard_dir(), &agent, &model)
+        } else {
+            pr_scoreboard::record_pr_count_without_revision(host.scoreboard_dir(), &agent, &model)
+        };
     }
 
     Ok(json!({ "merged": true }))
@@ -300,6 +308,20 @@ fn batch_pr_signature(tasks: &[Task]) -> Option<String> {
     })
 }
 
+fn task_required_revision(task: &Task) -> bool {
+    task.history.iter().any(|entry| {
+        entry.event == "status_changed"
+            && entry.from_status == Some(TaskStatus::Review)
+            && matches!(
+                entry.to_status,
+                Some(TaskStatus::Backlog | TaskStatus::InProgress | TaskStatus::Rejected)
+            )
+    }) || task
+        .review_threads
+        .iter()
+        .any(|thread| thread.status == ReviewThreadStatus::Resolved)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -309,12 +331,13 @@ mod tests {
     use chrono::Utc;
     use orbit_tools::ToolContext;
     use orbit_types::{
-        Activity, ActorIdentity, Job, JobTargetType, OrbitError, OrbitEvent, Role, Task,
-        TaskPriority, TaskStatus, TaskType,
+        Activity, ActorIdentity, Job, JobTargetType, OrbitError, OrbitEvent, ReviewMessage,
+        ReviewThread, ReviewThreadStatus, Role, Task, TaskHistoryEntry, TaskPriority, TaskStatus,
+        TaskType,
     };
     use serde_json::{Value, json};
 
-    use super::{build_batch_pr_body, merge_batch_pr};
+    use super::{build_batch_pr_body, merge_batch_pr, task_required_revision};
     use crate::context::{JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
     use crate::executor::automation::freshness::BranchFreshness;
 
@@ -323,6 +346,7 @@ mod tests {
         merge_inputs: Mutex<Vec<Value>>,
         updated_statuses: Mutex<Vec<(String, Option<TaskStatus>)>>,
         scoreboard_dir: PathBuf,
+        scoring_enabled: bool,
     }
 
     impl TestHost {
@@ -332,6 +356,17 @@ mod tests {
                 merge_inputs: Mutex::new(Vec::new()),
                 updated_statuses: Mutex::new(Vec::new()),
                 scoreboard_dir: PathBuf::from("."),
+                scoring_enabled: false,
+            }
+        }
+
+        fn with_scoreboard(tasks: Vec<Task>, scoreboard_dir: PathBuf) -> Self {
+            Self {
+                tasks,
+                merge_inputs: Mutex::new(Vec::new()),
+                updated_statuses: Mutex::new(Vec::new()),
+                scoreboard_dir,
+                scoring_enabled: true,
             }
         }
     }
@@ -475,7 +510,7 @@ mod tests {
         }
 
         fn scoring_enabled(&self) -> bool {
-            false
+            self.scoring_enabled
         }
 
         fn scoreboard_dir(&self) -> &Path {
@@ -514,6 +549,11 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn scoreboard_value(path: &Path) -> Value {
+        serde_json::from_str(&std::fs::read_to_string(path.join("pr.json")).expect("pr.json"))
+            .expect("valid scoreboard json")
     }
 
     fn init_batch_merge_repo() -> tempfile::TempDir {
@@ -613,5 +653,90 @@ mod tests {
         );
         assert!(body.contains("### T20260330-065846: Task T20260330-065846"));
         assert!(body.ends_with("*authored by: codex / gpt-5.4*"));
+    }
+
+    #[test]
+    fn merge_batch_pr_records_one_without_revision_metric_per_batch_author() {
+        let repo = init_batch_merge_repo();
+        let repo_root = repo.path().to_string_lossy().to_string();
+        let scoreboard_dir = tempfile::tempdir().expect("scoreboard dir");
+
+        let mut first = sample_task("T20260330-063823", "batch-1", &repo_root, "76");
+        first.actor_identity = ActorIdentity::agent("codex", "gpt-5.4");
+        let mut second = sample_task("T20260330-065846", "batch-1", &repo_root, "76");
+        second.actor_identity = ActorIdentity::agent("codex", "gpt-5.4");
+
+        let host =
+            TestHost::with_scoreboard(vec![first, second], scoreboard_dir.path().to_path_buf());
+
+        merge_batch_pr(
+            &host,
+            &json!({
+                "run_id": "batch-1",
+                "base": "agent-main",
+            }),
+        )
+        .expect("merge_batch_pr succeeds");
+
+        let scoreboard = scoreboard_value(scoreboard_dir.path());
+        assert_eq!(
+            scoreboard["pr-count-without-revision"]["codex"]["gpt-5.4"],
+            1
+        );
+        assert!(scoreboard.get("pr-count-with-revision").is_none());
+    }
+
+    #[test]
+    fn merge_batch_pr_records_revision_metric_when_review_threads_were_resolved() {
+        let repo = init_batch_merge_repo();
+        let repo_root = repo.path().to_string_lossy().to_string();
+        let scoreboard_dir = tempfile::tempdir().expect("scoreboard dir");
+
+        let mut task = sample_task("T20260330-063823", "batch-1", &repo_root, "76");
+        task.actor_identity = ActorIdentity::agent("codex", "gpt-5.4");
+        task.review_threads = vec![ReviewThread {
+            thread_id: "rt-1".to_string(),
+            path: Some("orbit-engine/src/executor/automation/pr.rs".to_string()),
+            line: Some(42),
+            status: ReviewThreadStatus::Resolved,
+            messages: vec![ReviewMessage {
+                message_id: "rm-1".to_string(),
+                at: Utc::now(),
+                by: "claude / sonnet".to_string(),
+                body: "Please fix this.".to_string(),
+                github_comment_id: Some(10),
+            }],
+            github_thread_id: Some(10),
+        }];
+
+        let host = TestHost::with_scoreboard(vec![task], scoreboard_dir.path().to_path_buf());
+
+        merge_batch_pr(
+            &host,
+            &json!({
+                "run_id": "batch-1",
+                "base": "agent-main",
+            }),
+        )
+        .expect("merge_batch_pr succeeds");
+
+        let scoreboard = scoreboard_value(scoreboard_dir.path());
+        assert_eq!(scoreboard["pr-count-with-revision"]["codex"]["gpt-5.4"], 1);
+        assert!(scoreboard.get("pr-count-without-revision").is_none());
+    }
+
+    #[test]
+    fn task_required_revision_detects_review_rejection_history() {
+        let mut task = sample_task("T20260330-063823", "batch-1", "/tmp", "76");
+        task.history.push(TaskHistoryEntry {
+            at: Utc::now(),
+            by: "human".to_string(),
+            event: "status_changed".to_string(),
+            note: Some("needs changes".to_string()),
+            from_status: Some(TaskStatus::Review),
+            to_status: Some(TaskStatus::Rejected),
+        });
+
+        assert!(task_required_revision(&task));
     }
 }

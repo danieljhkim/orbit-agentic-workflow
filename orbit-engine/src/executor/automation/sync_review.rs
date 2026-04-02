@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
+use orbit_store::pr_scoreboard;
 use orbit_types::{OrbitError, ReviewThread};
 use serde_json::{Value, json};
 
@@ -82,6 +83,7 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     let mut synced_count: u64 = 0;
 
     for thread in threads.iter_mut() {
+        let pending_labels = pending_sync_message_labels(thread);
         let thread_synced = sync_thread(
             repo_root,
             &owner_repo,
@@ -91,6 +93,18 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
             thread,
         )?;
         synced_count += thread_synced;
+
+        if host.scoring_enabled() {
+            for label in pending_labels {
+                if let Some((agent, model)) = parse_agent_model_label(&label) {
+                    let _ = pr_scoreboard::record_pr_review_comment(
+                        host.scoreboard_dir(),
+                        agent,
+                        model,
+                    );
+                }
+            }
+        }
     }
 
     if synced_count > 0 {
@@ -197,6 +211,37 @@ fn sync_mode_for_thread(
         }
         _ => ThreadSyncMode::General,
     }
+}
+
+fn pending_sync_message_labels(thread: &ReviewThread) -> Vec<String> {
+    let mut labels = Vec::new();
+
+    if thread.github_thread_id.is_none()
+        && let Some(first) = thread.messages.first()
+    {
+        labels.push(first.by.clone());
+    }
+
+    labels.extend(
+        thread
+            .messages
+            .iter()
+            .skip(1)
+            .filter(|message| message.github_comment_id.is_none())
+            .map(|message| message.by.clone()),
+    );
+
+    labels
+}
+
+fn parse_agent_model_label(label: &str) -> Option<(&str, &str)> {
+    let (agent, model) = label.split_once(" / ")?;
+    let agent = agent.trim();
+    let model = model.trim();
+    if agent.is_empty() || model.is_empty() {
+        return None;
+    }
+    Some((agent, model))
 }
 
 fn render_general_comment_body(path: Option<&str>, line: Option<u64>, body: &str) -> String {
@@ -558,13 +603,299 @@ fn json_type_name(value: &Value) -> &'static str {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::env;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
 
-    use serde_json::json;
+    use chrono::Utc;
+    use orbit_tools::ToolContext;
+    use orbit_types::{
+        Activity, ActorIdentity, Job, JobTargetType, OrbitError, OrbitEvent, ReviewMessage,
+        ReviewThread, ReviewThreadStatus, Role, Task, TaskPriority, TaskStatus, TaskType,
+    };
+    use serde_json::{Value, json};
+    use tempfile::tempdir;
 
     use super::{
-        ThreadSyncMode, parse_pr_file_patches, patch_supports_right_side_line,
-        render_general_comment_body, sync_mode_for_thread,
+        ThreadSyncMode, parse_agent_model_label, parse_pr_file_patches,
+        patch_supports_right_side_line, pending_sync_message_labels, render_general_comment_body,
+        sync_mode_for_thread, sync_task_review_to_github,
     };
+    use crate::context::{JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
+
+    static SYNC_REVIEW_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    struct TestHost {
+        task: Task,
+        scoreboard_dir: PathBuf,
+        scoring_enabled: bool,
+        applied_updates: Mutex<Vec<TaskAutomationUpdate>>,
+    }
+
+    impl TestHost {
+        fn with_scoreboard(task: Task, scoreboard_dir: PathBuf) -> Self {
+            Self {
+                task,
+                scoreboard_dir,
+                scoring_enabled: true,
+                applied_updates: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl TaskHost for TestHost {
+        fn get_task(&self, task_id: &str) -> Result<Task, OrbitError> {
+            if self.task.id == task_id {
+                Ok(self.task.clone())
+            } else {
+                Err(OrbitError::TaskNotFound(task_id.to_string()))
+            }
+        }
+
+        fn list_tasks_filtered(
+            &self,
+            _status: Option<TaskStatus>,
+            _priority: Option<TaskPriority>,
+            _parent_id: Option<&str>,
+            _batch_id: Option<&str>,
+        ) -> Result<Vec<Task>, OrbitError> {
+            unimplemented!("not used in sync_review tests")
+        }
+
+        fn start_task(
+            &self,
+            _task_id: &str,
+            _note: Option<String>,
+            _comment: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not used in sync_review tests")
+        }
+
+        fn update_task_from_activity(
+            &self,
+            _task_id: &str,
+            _status: TaskStatus,
+            _execution_summary: Option<String>,
+            _comment: Option<String>,
+            _note: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not used in sync_review tests")
+        }
+
+        fn apply_task_automation_update(
+            &self,
+            _task_id: &str,
+            update: TaskAutomationUpdate,
+        ) -> Result<(), OrbitError> {
+            self.applied_updates
+                .lock()
+                .expect("applied updates lock")
+                .push(update);
+            Ok(())
+        }
+    }
+
+    impl RuntimeHost for TestHost {
+        fn record_event(&self, _event: OrbitEvent) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn repo_root(&self) -> Result<String, OrbitError> {
+            Ok(self.task.repo_root.clone().unwrap_or_default())
+        }
+
+        fn data_root(&self) -> &Path {
+            Path::new(".")
+        }
+
+        fn acquire_file_locks(
+            &self,
+            _task_id: &str,
+            _repo_root: &str,
+            _paths: &[&str],
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn release_file_locks(&self, _task_id: &str) -> Result<usize, OrbitError> {
+            Ok(0)
+        }
+
+        fn cleanup_stale_file_locks(&self) -> Result<usize, OrbitError> {
+            Ok(0)
+        }
+
+        fn run_job_now_with_input_debug(
+            &self,
+            _job_id: &str,
+            _input: Value,
+            _debug: bool,
+        ) -> Result<JobRunResult, OrbitError> {
+            unimplemented!("not used in sync_review tests")
+        }
+
+        fn validate_activity_target_exists(
+            &self,
+            _target_type: JobTargetType,
+            _target_id: &str,
+        ) -> Result<Activity, OrbitError> {
+            unimplemented!("not used in sync_review tests")
+        }
+
+        fn get_job(&self, _job_id: &str) -> Result<Option<Job>, OrbitError> {
+            Ok(None)
+        }
+
+        fn run_tool_with_context_and_role(
+            &self,
+            _name: &str,
+            _input: Value,
+            _role: Role,
+            _tool_context: ToolContext,
+        ) -> Result<Value, OrbitError> {
+            unimplemented!("not used in sync_review tests")
+        }
+
+        fn maybe_create_failure_task(
+            &self,
+            _job_id: &str,
+            _run_id: &str,
+            _error_code: &str,
+            _error_message: &str,
+            _agent: Option<&str>,
+            _model: Option<&str>,
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn scoring_enabled(&self) -> bool {
+            self.scoring_enabled
+        }
+
+        fn scoreboard_dir(&self) -> &Path {
+            &self.scoreboard_dir
+        }
+    }
+
+    struct PathGuard {
+        original_path: Option<String>,
+    }
+
+    impl PathGuard {
+        fn prepend(dir: &Path) -> Self {
+            let original_path = env::var("PATH").ok();
+            let mut new_path = dir.display().to_string();
+            if let Some(existing) = &original_path
+                && !existing.is_empty()
+            {
+                new_path.push(':');
+                new_path.push_str(existing);
+            }
+
+            // SAFETY: tests serialize PATH mutation via SYNC_REVIEW_ENV_LOCK.
+            unsafe {
+                env::set_var("PATH", new_path);
+            }
+
+            Self { original_path }
+        }
+    }
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            match &self.original_path {
+                Some(path) => {
+                    // SAFETY: tests serialize PATH mutation via SYNC_REVIEW_ENV_LOCK.
+                    unsafe {
+                        env::set_var("PATH", path);
+                    }
+                }
+                None => {
+                    // SAFETY: tests serialize PATH mutation via SYNC_REVIEW_ENV_LOCK.
+                    unsafe {
+                        env::remove_var("PATH");
+                    }
+                }
+            }
+        }
+    }
+
+    fn sample_task(task_id: &str, repo_root: &Path) -> Task {
+        let now = Utc::now();
+        Task {
+            id: task_id.to_string(),
+            parent_id: None,
+            title: format!("Task {task_id}"),
+            description: "test".to_string(),
+            acceptance_criteria: vec![],
+            plan: "plan".to_string(),
+            execution_summary: String::new(),
+            context_files: vec![],
+            workspace_path: Some(repo_root.display().to_string()),
+            repo_root: Some(repo_root.display().to_string()),
+            assigned_to: None,
+            created_by: None,
+            actor_identity: ActorIdentity::default(),
+            status: TaskStatus::Review,
+            priority: TaskPriority::Medium,
+            complexity: None,
+            task_type: TaskType::Feature,
+            pr_number: Some("91".to_string()),
+            pr_status: Some("REQUEST_CHANGES".to_string()),
+            proposed_by: None,
+            source_task_id: None,
+            batch_id: Some("batch-1".to_string()),
+            comments: vec![],
+            history: vec![],
+            review_threads: vec![],
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn scoreboard_value(scoreboard_dir: &Path) -> Value {
+        serde_json::from_str(
+            &fs::read_to_string(scoreboard_dir.join("pr.json")).expect("read scoreboard"),
+        )
+        .expect("valid scoreboard json")
+    }
+
+    fn install_fake_gh(bin_dir: &Path) {
+        let script = r#"#!/bin/sh
+set -eu
+
+if [ "$#" -ge 2 ] && [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+  printf 'orbit/orbit\n'
+  exit 0
+fi
+
+if [ "$#" -ge 3 ] && [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  printf 'deadbeef\n'
+  exit 0
+fi
+
+if [ "$#" -ge 2 ] && [ "$1" = "api" ] && [ "$2" = "repos/orbit/orbit/pulls/91/files" ]; then
+  printf '[[]]\n'
+  exit 0
+fi
+
+if [ "$#" -ge 2 ] && [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
+  printf 'https://github.com/orbit/orbit/pull/91#issuecomment-123\n'
+  exit 0
+fi
+
+printf 'unexpected gh invocation: %s\n' "$*" >&2
+exit 1
+"#;
+
+        let gh_path = bin_dir.join("gh");
+        fs::write(&gh_path, script).expect("write fake gh");
+        let mut perms = fs::metadata(&gh_path).expect("gh metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&gh_path, perms).expect("chmod fake gh");
+    }
 
     #[test]
     fn patch_supports_right_side_line_matches_context_and_added_lines() {
@@ -660,5 +991,100 @@ mod tests {
             Some("@@ -1 +1 @@\n-old\n+new")
         );
         assert!(parsed.get("README.md").is_some_and(|value| value.is_none()));
+    }
+
+    #[test]
+    fn pending_sync_message_labels_collects_only_unsynced_messages() {
+        let thread = ReviewThread {
+            thread_id: "rt-1".to_string(),
+            path: Some("src/lib.rs".to_string()),
+            line: Some(42),
+            status: ReviewThreadStatus::Open,
+            messages: vec![
+                ReviewMessage {
+                    message_id: "rm-1".to_string(),
+                    at: Utc::now(),
+                    by: "claude / sonnet".to_string(),
+                    body: "Needs a test.".to_string(),
+                    github_comment_id: None,
+                },
+                ReviewMessage {
+                    message_id: "rm-2".to_string(),
+                    at: Utc::now(),
+                    by: "codex / gpt-5.4".to_string(),
+                    body: "Added coverage.".to_string(),
+                    github_comment_id: None,
+                },
+                ReviewMessage {
+                    message_id: "rm-3".to_string(),
+                    at: Utc::now(),
+                    by: "claude / sonnet".to_string(),
+                    body: "Looks good.".to_string(),
+                    github_comment_id: Some(33),
+                },
+            ],
+            github_thread_id: None,
+        };
+
+        assert_eq!(
+            pending_sync_message_labels(&thread),
+            vec!["claude / sonnet".to_string(), "codex / gpt-5.4".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_agent_model_label_requires_agent_and_model() {
+        assert_eq!(
+            parse_agent_model_label("claude / sonnet"),
+            Some(("claude", "sonnet"))
+        );
+        assert_eq!(parse_agent_model_label("human reviewer"), None);
+        assert_eq!(parse_agent_model_label("claude / "), None);
+    }
+
+    #[test]
+    fn sync_task_review_to_github_records_pr_review_comments_in_scoreboard() {
+        let _env_lock = SYNC_REVIEW_ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock");
+        let repo_dir = tempdir().expect("repo dir");
+        let bin_dir = tempdir().expect("bin dir");
+        let scoreboard_dir = tempdir().expect("scoreboard dir");
+        install_fake_gh(bin_dir.path());
+        let _path_guard = PathGuard::prepend(bin_dir.path());
+
+        let mut task = sample_task("T20260402-0425", repo_dir.path());
+        task.review_threads = vec![ReviewThread {
+            thread_id: "rt-1".to_string(),
+            path: None,
+            line: None,
+            status: ReviewThreadStatus::Open,
+            messages: vec![ReviewMessage {
+                message_id: "rm-1".to_string(),
+                at: Utc::now(),
+                by: "claude / sonnet".to_string(),
+                body: "Please add a behavior-level sync test.".to_string(),
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        }];
+
+        let host = TestHost::with_scoreboard(task, scoreboard_dir.path().to_path_buf());
+
+        let synced = sync_task_review_to_github(&host, "T20260402-0425").expect("sync succeeds");
+
+        assert_eq!(synced, 1);
+        let scoreboard = scoreboard_value(scoreboard_dir.path());
+        assert_eq!(scoreboard["pr-review-comments"]["claude"]["sonnet"], 1);
+
+        let updates = host.applied_updates.lock().expect("applied updates");
+        assert_eq!(updates.len(), 1);
+        let threads = updates[0]
+            .review_threads
+            .as_ref()
+            .expect("review threads updated");
+        assert_eq!(threads[0].github_thread_id, Some(123));
+        assert_eq!(threads[0].messages[0].github_comment_id, Some(123));
     }
 }
