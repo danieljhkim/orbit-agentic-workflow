@@ -221,8 +221,7 @@ impl Execute for WorkspaceTeardownArgs {
         }
 
         let orbit_dir = runtime.data_root();
-        let global_dir =
-            workspace_registry::global_orbit_dir()?;
+        let global_dir = workspace_registry::global_orbit_dir()?;
 
         // Safety: never delete the global ~/.orbit/ directory
         let orbit_canonical =
@@ -261,7 +260,10 @@ impl Execute for WorkspaceTeardownArgs {
             if let Some(ws_id) = ws.map(|w| w.id.clone()) {
                 let ws = workspace_registry::remove_workspace(&mut registry, &ws_id)?;
                 workspace_registry::save_registry_to(&registry, &registry_path)?;
-                removed.push(format!("deregistered workspace '{}' from registry", ws.name));
+                removed.push(format!(
+                    "deregistered workspace '{}' from registry",
+                    ws.name
+                ));
             }
         }
 
@@ -274,14 +276,12 @@ impl Execute for WorkspaceTeardownArgs {
 
                 // Remove skills dir if empty
                 if is_dir_empty(&skills_dir) {
-                    std::fs::remove_dir(&skills_dir)
-                        .map_err(|e| OrbitError::Io(e.to_string()))?;
+                    std::fs::remove_dir(&skills_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
                 }
                 // Remove parent dir if empty
                 let parent = repo_root.join(dir_name);
                 if parent.is_dir() && is_dir_empty(&parent) {
-                    std::fs::remove_dir(&parent)
-                        .map_err(|e| OrbitError::Io(e.to_string()))?;
+                    std::fs::remove_dir(&parent).map_err(|e| OrbitError::Io(e.to_string()))?;
                     removed.push(format!("removed empty {}/", dir_name));
                 }
             }

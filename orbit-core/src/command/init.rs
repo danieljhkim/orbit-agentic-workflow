@@ -350,8 +350,7 @@ pub fn unlink_skills(orbit_root: &Path) -> Result<UnlinkResult, OrbitError> {
             continue;
         }
 
-        let entries =
-            fs::read_dir(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+        let entries = fs::read_dir(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
 
         for entry in entries {
             let entry = entry.map_err(|e| OrbitError::Io(e.to_string()))?;
