@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 
 use orbit_types::OrbitError;
 use serde_json::{Value, json};
@@ -49,6 +50,21 @@ pub(super) fn commit_batch_changes<H: TaskHost + RuntimeHost + ?Sized>(
     }
 
     ensure_no_unmerged_changes(&workspace_path)?;
+    let fmt_output = Command::new("cargo")
+        .args(["fmt", "--all"])
+        .current_dir(&workspace_path)
+        .output()
+        .map_err(|e| OrbitError::Execution(format!("failed to spawn cargo fmt: {e}")))?;
+
+    if !fmt_output.status.success() {
+        let stdout = String::from_utf8_lossy(&fmt_output.stdout);
+        let stderr = String::from_utf8_lossy(&fmt_output.stderr);
+        let exit_code = fmt_output.status.code().unwrap_or(1);
+        return Err(OrbitError::Execution(format!(
+            "cargo fmt failed before commit (exit_code={exit_code})\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        )));
+    }
+
     git_success(&workspace_path, &["add", "--all", "--", "."])?;
 
     let changed_files = git_output_paths(
