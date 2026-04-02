@@ -577,8 +577,48 @@ impl OrbitRuntime {
                     },
                 ))
             }),
+            TaskStatus::Backlog => self.with_mutation(|| {
+                let task = self.update_task_record(
+                    id,
+                    StoreTaskUpdateParams {
+                        actor: effective_label.clone(),
+                        status: Some(TaskStatus::Rejected),
+                        status_event: Some("backlog_rejected".to_string()),
+                        status_note: Some(reason.clone()),
+                        append_comments: append_comments.clone(),
+                        ..Default::default()
+                    },
+                )?;
+                Ok((
+                    task.clone(),
+                    OrbitEvent::TaskProposalRejected {
+                        id: id.to_string(),
+                        rejected_by: effective_label.clone(),
+                    },
+                ))
+            }),
+            TaskStatus::InProgress => self.with_mutation(|| {
+                let task = self.update_task_record(
+                    id,
+                    StoreTaskUpdateParams {
+                        actor: effective_label.clone(),
+                        status: Some(TaskStatus::Rejected),
+                        status_event: Some("in_progress_rejected".to_string()),
+                        status_note: Some(reason.clone()),
+                        append_comments: append_comments.clone(),
+                        ..Default::default()
+                    },
+                )?;
+                Ok((
+                    task.clone(),
+                    OrbitEvent::TaskProposalRejected {
+                        id: id.to_string(),
+                        rejected_by: effective_label.clone(),
+                    },
+                ))
+            }),
             other => Err(OrbitError::InvalidInput(format!(
-                "task '{id}' is in status '{other}'; reject requires 'proposed' or 'review'"
+                "task '{id}' is in status '{other}'; reject requires 'proposed', 'review', 'backlog', or 'in-progress'"
             ))),
         }?;
 
