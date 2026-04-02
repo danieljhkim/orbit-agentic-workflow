@@ -1307,7 +1307,9 @@ mod tests {
             .add_task_with_status("to delete", TaskStatus::Proposed)
             .expect("task");
 
-        runtime.delete_task(&task.id).expect("delete should succeed");
+        runtime
+            .delete_task(&task.id)
+            .expect("delete should succeed");
 
         let err = runtime.get_task(&task.id).expect_err("task should be gone");
         assert!(matches!(err, OrbitError::TaskNotFound(_)));

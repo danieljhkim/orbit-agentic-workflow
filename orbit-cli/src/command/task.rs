@@ -929,9 +929,7 @@ pub struct TaskDeleteArgs {
 impl Execute for TaskDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let task = runtime.get_task(&self.id)?;
-        if !self.force
-            && !matches!(task.status, TaskStatus::Proposed | TaskStatus::Rejected)
-        {
+        if !self.force && !matches!(task.status, TaskStatus::Proposed | TaskStatus::Rejected) {
             return Err(OrbitError::InvalidInput(format!(
                 "task '{}' is in status '{}'; use --force to delete tasks not in proposed or rejected status",
                 self.id, task.status
