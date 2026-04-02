@@ -367,11 +367,12 @@ pub fn unlink_skills(orbit_root: &Path) -> Result<UnlinkResult, OrbitError> {
             fs::remove_dir(skills_links_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
             cleaned_dirs.push(skills_links_dir.clone());
 
-            if let Some(parent) = skills_links_dir.parent() {
-                if parent.exists() && dir_is_empty(parent)? {
-                    fs::remove_dir(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
-                    cleaned_dirs.push(parent.to_path_buf());
-                }
+            if let Some(parent) = skills_links_dir.parent()
+                && parent.exists()
+                && dir_is_empty(parent)?
+            {
+                fs::remove_dir(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
+                cleaned_dirs.push(parent.to_path_buf());
             }
         }
     }

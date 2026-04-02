@@ -39,7 +39,7 @@ pub mod friction_bounty {
 
 pub mod pr_scoreboard {
     pub use crate::file::pr_scoreboard::{
-        record_comment_resolved, record_pr_merged, record_pr_revision,
+        record_pr_count_with_revision, record_pr_count_without_revision, record_pr_review_comment,
     };
 }
 

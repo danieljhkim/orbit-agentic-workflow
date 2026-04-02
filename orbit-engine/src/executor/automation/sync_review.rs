@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
+use orbit_store::pr_scoreboard;
 use orbit_types::{OrbitError, ReviewThread};
 use serde_json::{Value, json};
 
@@ -82,6 +83,7 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     let mut synced_count: u64 = 0;
 
     for thread in threads.iter_mut() {
+        let pending_labels = pending_sync_message_labels(thread);
         let thread_synced = sync_thread(
             repo_root,
             &owner_repo,
@@ -91,6 +93,18 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
             thread,
         )?;
         synced_count += thread_synced;
+
+        if host.scoring_enabled() {
+            for label in pending_labels {
+                if let Some((agent, model)) = parse_agent_model_label(&label) {
+                    let _ = pr_scoreboard::record_pr_review_comment(
+                        host.scoreboard_dir(),
+                        agent,
+                        model,
+                    );
+                }
+            }
+        }
     }
 
     if synced_count > 0 {
@@ -197,6 +211,37 @@ fn sync_mode_for_thread(
         }
         _ => ThreadSyncMode::General,
     }
+}
+
+fn pending_sync_message_labels(thread: &ReviewThread) -> Vec<String> {
+    let mut labels = Vec::new();
+
+    if thread.github_thread_id.is_none()
+        && let Some(first) = thread.messages.first()
+    {
+        labels.push(first.by.clone());
+    }
+
+    labels.extend(
+        thread
+            .messages
+            .iter()
+            .skip(1)
+            .filter(|message| message.github_comment_id.is_none())
+            .map(|message| message.by.clone()),
+    );
+
+    labels
+}
+
+fn parse_agent_model_label(label: &str) -> Option<(&str, &str)> {
+    let (agent, model) = label.split_once(" / ")?;
+    let agent = agent.trim();
+    let model = model.trim();
+    if agent.is_empty() || model.is_empty() {
+        return None;
+    }
+    Some((agent, model))
 }
 
 fn render_general_comment_body(path: Option<&str>, line: Option<u64>, body: &str) -> String {
@@ -559,11 +604,14 @@ fn json_type_name(value: &Value) -> &'static str {
 mod tests {
     use std::collections::HashMap;
 
+    use chrono::Utc;
+    use orbit_types::{ReviewMessage, ReviewThread, ReviewThreadStatus};
     use serde_json::json;
 
     use super::{
-        ThreadSyncMode, parse_pr_file_patches, patch_supports_right_side_line,
-        render_general_comment_body, sync_mode_for_thread,
+        ThreadSyncMode, parse_agent_model_label, parse_pr_file_patches,
+        patch_supports_right_side_line, pending_sync_message_labels, render_general_comment_body,
+        sync_mode_for_thread,
     };
 
     #[test]
@@ -660,5 +708,54 @@ mod tests {
             Some("@@ -1 +1 @@\n-old\n+new")
         );
         assert!(parsed.get("README.md").is_some_and(|value| value.is_none()));
+    }
+
+    #[test]
+    fn pending_sync_message_labels_collects_only_unsynced_messages() {
+        let thread = ReviewThread {
+            thread_id: "rt-1".to_string(),
+            path: Some("src/lib.rs".to_string()),
+            line: Some(42),
+            status: ReviewThreadStatus::Open,
+            messages: vec![
+                ReviewMessage {
+                    message_id: "rm-1".to_string(),
+                    at: Utc::now(),
+                    by: "claude / sonnet".to_string(),
+                    body: "Needs a test.".to_string(),
+                    github_comment_id: None,
+                },
+                ReviewMessage {
+                    message_id: "rm-2".to_string(),
+                    at: Utc::now(),
+                    by: "codex / gpt-5.4".to_string(),
+                    body: "Added coverage.".to_string(),
+                    github_comment_id: None,
+                },
+                ReviewMessage {
+                    message_id: "rm-3".to_string(),
+                    at: Utc::now(),
+                    by: "claude / sonnet".to_string(),
+                    body: "Looks good.".to_string(),
+                    github_comment_id: Some(33),
+                },
+            ],
+            github_thread_id: None,
+        };
+
+        assert_eq!(
+            pending_sync_message_labels(&thread),
+            vec!["claude / sonnet".to_string(), "codex / gpt-5.4".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_agent_model_label_requires_agent_and_model() {
+        assert_eq!(
+            parse_agent_model_label("claude / sonnet"),
+            Some(("claude", "sonnet"))
+        );
+        assert_eq!(parse_agent_model_label("human reviewer"), None);
+        assert_eq!(parse_agent_model_label("claude / "), None);
     }
 }
