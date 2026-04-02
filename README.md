@@ -8,7 +8,7 @@ Orbit runs directly on agent CLIs - no API keys required.
 
 ## Quick Start
 
-**Prerequisites**: Rust + Codex CLI / Claude Code (subscriptions required)
+**Prerequisites**: Rust + Codex CLI + Claude Code (subscriptions required)
 
 Example flow:
 
@@ -16,22 +16,26 @@ Example flow:
 # install orbit binary
 make install
 
-# Initialize `~/.orbit` directory with default global configurations.
+# Initialize `~/.orbit` directory with default global configurations, such as skills, activities, jobs, and config.toml.
 orbit init
 
 # cd into your repo 
 cd <repo>
 
-# Initialize orbit workspace - creates `.orbit` dir in the repo_root
+# Initialize orbit workspace - creates `.orbit` dir in the repo_root, and tasks, diagnostics, and scoreboard directories.
 orbit workspace init
 
-# Prompt an agent to create a task:
-"Create an orbit task for ..."
+# Prompt an agent to create tasks (they will know what to do via orbit skills):
+"Create an orbit task for <task_description>"
+"Create another orbit task for <another_task_description>"
 
-# once task is created, approve the task
-orbit task approve <task_id>
+# once tasks are created, review the tasks
+orbit task show <task_id> # or directly check <repo_root>/.orbit/tasks/proposed directory
 
-# run the parallel task pipeline
+# approve the tasks if they are valid
+orbit task approve <task_id> --note "LGTM"
+
+# run the parallel task pipeline (this will dispatch tasks to the parallel task worker, review the tasks, and merge the PR)
 orbit job run job_parallel_task_pipeline
 ```
 
@@ -41,23 +45,30 @@ orbit job run job_parallel_task_pipeline
 
 ### Orbit Artifacts
 
+Orbit artifacts are scoped to the workspace and global roots.
+- **global scoped** (`orbit init`): Global artifacts are scoped to the global root directory (e.g. ~/.orbit/)
+- **workspace scoped** (`orbit workspace init`): Workspace artifacts override global scopes, and is located in a workspace (e.g. <repo_root>/.orbit/)
+
 Orbit operates through a structured filesystem hierarchy under `.orbit/`:
 
 ```
 .orbit/
 ├── activities/       # Atomic units of work (YAML)
-├── diagnostics/      # Runtime diagnostics and health checks
+├── diagnostics/      # Runtime diagnostics and health checks (workspace scoped only)
 ├── jobs/
 │   ├── jobs/         # Job definitions — ordered chains of activities
-│   └── runs/         # Immutable execution audit logs per job run
-├── scoreboard/       # Agent performance tracking (PR merge rates, friction bounty)
+│   └── runs/         # Immutable execution audit logs per job run (workspace scoped only)
+├── scoreboard/       # Agent performance tracking (PR merge rates, friction bounty) (workspace scoped only)
 ├── skills/           # Markdown-based skill instructions loaded by agents
-└── tasks/            # Task artifacts organized by lifecycle state
+└── tasks/            # Task artifacts organized by lifecycle state (workspace scoped only)
 ```
 
 ### Tasks
 
-Tasks are work items for agent/human coordination and project tracking. You can think of them as jira tickets.
+Tasks are work items for agent/human coordination and project tracking - you can think of them as jira tickets. 
+
+Orbit jobs are tightly coupled with orbit tasks. If you are working with other issue tracking tools like Linear or Jira, simply have agents create complementary orbit tasks.
+
 - **Work unit for execution**: Represents a discrete piece of work (feature, bug fix, chore, refactor)
 - **Lifecycle states**: Proposed → Backlog → InProgress → Review → Done (with branching to Blocked, Archived, Rejected, Someday)
 - **Execution tracking**:
@@ -149,26 +160,10 @@ Orbit uses a multi-model strategy to balance reasoning depth against throughput:
 
 | Model | Role | Rationale |
 | :--- | :--- | :--- |
-| **Claude (Opus)** | Planning, dispatch, review | High-order reasoning; architectural and code review quality |
-| **Claude (Sonnet)** | Task dispatch, lightweight review | Fast reasoning for routing and triage |
-| **Codex** | Implementation, code generation | High throughput and rate limits for iterative coding tasks |
+| **Claude (Opus)** | Planning, dispatch | High-order reasoning; architectural |
+| **Codex (gpt-5.4)** | Implementation, code generation, code review | Good execution quality; better code review quality |
 
----
-
-## Store & Scoping Model
-
-Orbit maintains two `.orbit/` directories: a **global** root (`~/.orbit/`) and a **workspace** root (`.orbit/` inside a repo). Each resource type has a fixed merge strategy:
-
-| Resource | Strategy | Behavior |
-| :--- | :--- | :--- |
-| Tasks, Runs, Scoreboard | **WorkspaceOnly** | Read/write only in the workspace `.orbit/` |
-| Audits, Configs, Workspace registry | **GlobalOnly** | Read/write only in `~/.orbit/` |
-| Activities, Jobs | **MergeByKey** | Global defaults + workspace overrides; workspace entries shadow global by key |
-| Skills | **WorkspaceReplaces** | Workspace has full control over available skills |
-
-When workspace and global roots are the same directory (e.g. `orbit init` in `$HOME`), layering is a no-op — a single store is used.
-
-These strategies are hardcoded per resource type; there is no runtime configuration.
+You can configure your own preferred models in the `.orbit/jobs/jobs/<job_id>.yaml` file.
 
 ---
 
