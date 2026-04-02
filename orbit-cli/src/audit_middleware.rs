@@ -315,6 +315,18 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Run(cmd) => {
+            let target_id = cmd.workflow.as_deref();
+            CommandMeta {
+                command: "run".to_string(),
+                subcommand: target_id.map(String::from),
+                tool_name: None,
+                target_type: Some("workflow".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;

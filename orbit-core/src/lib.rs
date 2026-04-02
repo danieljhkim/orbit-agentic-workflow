@@ -34,6 +34,10 @@ pub use orbit_engine::JobRunResult;
 pub use orbit_store::skill_store as skill_catalog;
 
 pub use command::task_template::TaskTemplate;
+pub use command::workflow::{
+    WORKFLOWS, Workflow, WorkflowInput, build_workflow_input, find_workflow,
+    validate_workflow_flags,
+};
 pub use context::{ActorIdentity, ActorKind, OrbitContext};
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_types::OrbitError;

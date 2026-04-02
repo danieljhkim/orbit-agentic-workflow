@@ -171,7 +171,9 @@ mod tests {
         run_git(&ci_path, &["push"]);
 
         // Now the work_dir is 1 commit behind. Pull should sync it.
-        let host = StubHost { repo_root: work_path.to_string_lossy().to_string() };
+        let host = StubHost {
+            repo_root: work_path.to_string_lossy().to_string(),
+        };
         let input = json!({ "workspace_path": work_path.to_string_lossy() });
         let result = pull_batch_changes(&host, &input).expect("pull should succeed");
         assert_eq!(result, json!({}));
@@ -209,7 +211,9 @@ mod tests {
         run_git(&work_path, &["push", "-u", "origin", "HEAD"]);
 
         // Already up-to-date — should succeed as a no-op
-        let host = StubHost { repo_root: work_path.to_string_lossy().to_string() };
+        let host = StubHost {
+            repo_root: work_path.to_string_lossy().to_string(),
+        };
         let input = json!({ "workspace_path": work_path.to_string_lossy() });
         let result = pull_batch_changes(&host, &input).expect("pull noop should succeed");
         assert_eq!(result, json!({}));

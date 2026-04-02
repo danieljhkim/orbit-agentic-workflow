@@ -4,6 +4,7 @@ pub mod config;
 pub mod init;
 pub mod job;
 pub mod job_run;
+pub mod run;
 pub mod skill;
 pub mod task;
 pub mod tool;
@@ -41,6 +42,7 @@ pub enum Commands {
     Skill(skill::SkillCommand),
     Job(job::JobCommand),
     JobRun(job_run::JobRunCommand),
+    Run(run::RunCommand),
     Workspace(workspace::WorkspaceCommand),
 }
 
@@ -56,6 +58,7 @@ impl Execute for Commands {
             Commands::Skill(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::JobRun(cmd) => cmd.execute(runtime),
+            Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
         }
     }

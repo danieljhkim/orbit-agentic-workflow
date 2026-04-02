@@ -83,9 +83,7 @@ fn increment(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        record_friction_accepted, record_friction_rejected, record_friction_reported,
-    };
+    use super::{record_friction_accepted, record_friction_rejected, record_friction_reported};
     use std::fs;
 
     use serde_json::Value;
