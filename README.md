@@ -45,9 +45,9 @@ orbit job run job_parallel_task_pipeline
 
 ### Orbit Artifacts
 
-Orbit artifacts are scoped to the workspace and global roots.
-- **global scoped** (`orbit init`): Global artifacts are scoped to the global root directory (e.g. ~/.orbit/)
-- **workspace scoped** (`orbit workspace init`): Workspace artifacts override global scopes, and is located in a workspace (e.g. <repo_root>/.orbit/)
+Orbit artifacts have 2 scopes:
+- **global scope**: Initialized via `orbit init`. Global artifacts are scoped to the global root directory (e.g. ~/.orbit/)
+- **workspace scope**: Initialized via `orbit workspace init`. Workspace artifacts override global scopes, and is located in a workspace (e.g. <workspace_root>/.orbit/)
 
 Orbit operates through a structured filesystem hierarchy under `.orbit/`:
 
@@ -92,6 +92,23 @@ You can chain one or more **activities** and run them as a single job.
 - Jobs are workflows/pipelines that orchestrate activities. 
 - Designed for automation/repeatability
 
+### Default Jobs
+
+Orbit ships with five default jobs that cover the full task lifecycle — from batch dispatch through implementation, review, and merge.
+
+#### `job_parallel_task_pipeline`
+
+The main entry point. Selects a conflict-free batch of backlog tasks, dispatches parallel workers to implement them in a shared worktree, verifies the result, commits, opens a PR, and hands off to the review cycle.
+
+```bash
+orbit job run job_parallel_task_pipeline
+# with custom input:
+orbit job run job_parallel_task_pipeline --input '{"base": "agent-main", "parallelism": 3}'
+```
+
+<details>
+<summary>Job YAML</summary>
+
 ```yaml
 schemaVersion: 1
 job:
@@ -100,7 +117,7 @@ job:
   max_active_runs: 1
   default_input:
     base: agent-main
-    parallelism: 2
+    parallelism: 3
   steps:
     - target_type: activity
       target_id: dispatch_and_plan_batch
@@ -108,27 +125,145 @@ job:
       model: opus
       condition: always
       timeout_seconds: 2000
+
     - target_type: activity
       target_id: snapshot_batch_state
       condition: on_success
       timeout_seconds: 30
+
     - target_type: activity
       target_id: parallel_dispatch_tasks
       condition: on_success
       timeout_seconds: 7200
+
     - target_type: activity
       target_id: verify_batch
       condition: on_success
       timeout_seconds: 600
+
     - target_type: activity
       target_id: commit_and_open_batch_pr
       condition: on_success
       timeout_seconds: 300
+
     - target_type: job
       target_id: job_batch_review_cycle
       condition: on_success
       timeout_seconds: 7200
 ```
+</details>
+
+#### `job_parallel_task_worker`
+
+Implements a single task in the shared worktree. Spawned automatically by `job_parallel_task_pipeline` — one worker per task, up to 16 concurrent.
+
+```bash
+# typically invoked by the pipeline, but can be run directly:
+orbit job run job_parallel_task_worker --input '{"task_id": "T20260401-0001", "base": "agent-main"}'
+```
+
+<details>
+<summary>Job YAML</summary>
+
+```yaml
+schemaVersion: 1
+job:
+  job_id: job_parallel_task_worker
+  state: enabled
+  max_active_runs: 16
+  default_input:
+    base: agent-main
+    verification_mode: deferred
+  steps:
+    - target_type: activity
+      target_id: implement_change
+      agent_cli: codex
+      model: gpt-5.4
+      condition: on_success
+      timeout_seconds: 4000
+
+    - target_type: activity
+      target_id: update_task
+      condition: on_success
+      timeout_seconds: 15
+```
+</details>
+
+#### `job_batch_review_cycle`
+
+Reviews a batch PR against all tasks' acceptance criteria, syncs review threads to GitHub, and either merges on approval or enters the fix loop.
+
+```bash
+orbit job run job_batch_review_cycle --input '{"base": "agent-main", "pr_number": "42"}'
+```
+
+<details>
+<summary>Job YAML</summary>
+
+```yaml
+schemaVersion: 1
+job:
+  job_id: job_batch_review_cycle
+  state: enabled
+  max_active_runs: 1
+  default_input:
+    base: agent-main
+  steps:
+    - target_type: activity
+      target_id: review_batch_pr
+      agent_cli: codex
+      model: gpt-5.4
+      condition: on_success
+      timeout_seconds: 600
+
+    - target_type: activity
+      target_id: sync_batch_review_to_github
+      condition: on_success
+      timeout_seconds: 120
+
+    - target_type: activity
+      target_id: check_batch_review_decision
+      condition: on_success
+      timeout_seconds: 30
+
+    - target_type: job
+      target_id: job_batch_review_loop
+      condition: on_failure
+      timeout_seconds: 7200
+
+    - target_type: activity
+      target_id: merge_batch_pr
+      condition: on_success
+      timeout_seconds: 60
+```
+</details>
+
+
+#### `job_review_tasks`
+
+Standalone task review — evaluates proposed or in-progress tasks for quality, completeness, and acceptance criteria.
+
+```bash
+orbit job run job_review_tasks
+```
+
+<details>
+<summary>Job YAML</summary>
+
+```yaml
+schemaVersion: 1
+job:
+  job_id: job_review_tasks
+  state: enabled
+  steps:
+    - target_type: activity
+      target_id: review_tasks
+      agent_cli: codex
+      model: gpt-5.4
+      timeout_seconds: 1200
+      env_extra: []
+```
+</details>
 
 ---
 
