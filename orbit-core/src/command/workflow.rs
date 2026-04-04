@@ -99,7 +99,7 @@ pub fn build_workflow_input(input: &WorkflowInput) -> Result<Value, OrbitError> 
         }
         map.insert(
             "parallelism".to_string(),
-            Value::String(parallelism.to_string()),
+            Value::Number(parallelism.into()),
         );
     }
 
@@ -190,7 +190,7 @@ mod tests {
         };
         let result = build_workflow_input(&input).unwrap();
         assert_eq!(result["task_ids"], json!(["T123", "T456"]));
-        assert_eq!(result["parallelism"], json!("3"));
+        assert_eq!(result["parallelism"], json!(3));
         assert_eq!(result["base"], json!("main"));
     }
 
