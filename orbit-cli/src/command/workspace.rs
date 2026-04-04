@@ -36,8 +36,8 @@ pub struct WorkspaceInitArgs {
     /// Base branch for this workspace (default: main)
     #[arg(long, default_value = "main")]
     pub base_branch: String,
-    /// Refresh default skills, activities, and jobs without wiping the workspace
-    #[arg(long)]
+    /// No-op (kept for backwards compatibility — defaults are always refreshed on init)
+    #[arg(long, hide = true)]
     pub refresh_defaults: bool,
 }
 
@@ -97,7 +97,7 @@ impl WorkspaceInitArgs {
         init_workspace_at_root(
             &orbit_dir,
             InitOptions {
-                refresh_defaults: self.refresh_defaults,
+                refresh_defaults: true,
                 ..Default::default()
             },
         )?;
@@ -564,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_init_refresh_defaults_only_overwrites_default_artifacts_when_requested() {
+    fn workspace_init_always_refreshes_default_artifacts_but_preserves_custom() {
         let temp = tempfile::tempdir().expect("tempdir");
         let repo_root = temp.path().join("repo");
         std::fs::create_dir_all(repo_root.join(".git")).expect("create .git dir");
@@ -598,54 +598,35 @@ mod tests {
             .expect("create custom skill dir");
         std::fs::write(&custom_skill_path, "custom skill\n").expect("write custom skill");
 
+        // Plain init (no explicit flag) should refresh stale defaults
         WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
             refresh_defaults: false,
         }
         .execute_at_path(&repo_root, &registry_path)
-        .expect("workspace init without refresh should succeed");
+        .expect("workspace init should succeed");
 
         assert_eq!(
-            std::fs::read_to_string(&skill_path).expect("read stale skill"),
-            "stale skill\n"
+            std::fs::read_to_string(&skill_path).expect("read skill after init"),
+            original_skill,
+            "default skill should be refreshed by plain init"
         );
         assert_eq!(
-            std::fs::read_to_string(&activity_path).expect("read stale activity"),
-            stale_activity
+            std::fs::read_to_string(&activity_path).expect("read activity after init"),
+            original_activity,
+            "default activity should be refreshed by plain init"
         );
         assert_eq!(
-            std::fs::read_to_string(&job_path).expect("read stale job"),
-            stale_job
+            std::fs::read_to_string(&job_path).expect("read job after init"),
+            original_job,
+            "default job should be refreshed by plain init"
         );
+        // Custom (non-default) artifact must not be touched
         assert_eq!(
             std::fs::read_to_string(&custom_skill_path).expect("read custom skill"),
-            "custom skill\n"
-        );
-
-        WorkspaceInitArgs {
-            name: None,
-            base_branch: "main".to_string(),
-            refresh_defaults: true,
-        }
-        .execute_at_path(&repo_root, &registry_path)
-        .expect("workspace init with refresh should succeed");
-
-        assert_eq!(
-            std::fs::read_to_string(&skill_path).expect("read refreshed skill"),
-            original_skill
-        );
-        assert_eq!(
-            std::fs::read_to_string(&activity_path).expect("read refreshed activity"),
-            original_activity
-        );
-        assert_eq!(
-            std::fs::read_to_string(&job_path).expect("read refreshed job"),
-            original_job
-        );
-        assert_eq!(
-            std::fs::read_to_string(&custom_skill_path).expect("read preserved custom skill"),
-            "custom skill\n"
+            "custom skill\n",
+            "custom skill should be preserved"
         );
     }
 }
