@@ -90,14 +90,21 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         json!({
             "pr": pr_number,
             "strategy": "squash",
-            // Parallel batch branches stay attached to the shared worktree
-            // until cleanup, so deleting the local branch here can fail even
-            // after the PR merge itself succeeded.
+            // Do not pass --delete-branch to `gh pr merge` because the local
+            // branch is still attached to the shared worktree and `gh` would
+            // fail trying to delete it.  We delete the remote branch separately
+            // below, tolerating errors (the repo may auto-delete branches after
+            // merge).
             "delete_branch": false,
         }),
         Role::Admin,
         tool_context,
     )?;
+
+    // Best-effort remote branch cleanup.  Some repos have GitHub's
+    // "Automatically delete head branches" enabled, so the remote ref may
+    // already be gone — ignore errors.
+    let _ = super::git::git_command_success(&repo_root, &["push", "origin", "--delete", &head]);
 
     let batch_requires_revision = batch_tasks.iter().any(task_required_revision);
     let batch_author = batch_tasks.iter().find_map(|task| {
