@@ -17,7 +17,7 @@ activity:
         description: "Path to the shared worktree. Resolved automatically if omitted."
       base:
         type: string
-        description: "Branch name the worktree should be on. Defaults to agent-main."
+        description: "Branch name the worktree should be on. Defaults to main."
   output_schema_json:
     type: object
     properties: {}

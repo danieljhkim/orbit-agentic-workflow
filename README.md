@@ -130,7 +130,7 @@ orbit run review
 For advanced cases, the lower-level job interface remains available:
 
 ```bash
-orbit job run <job_id> --input '{"base":"agent-main"}'
+orbit job run <job_id> --input '{"base":"main"}'
 ```
 
 ---
@@ -251,7 +251,7 @@ Source: [`orbit-core/assets/jobs/job_local_task_pipeline.yaml`](orbit-core/asset
 Reviews a batch PR against task acceptance criteria, syncs review threads to GitHub, and either merges on approval or enters the fix loop.
 
 ```bash
-orbit job run job_batch_review_cycle --input '{"base":"agent-main","pr_number":"42"}'
+orbit job run job_batch_review_cycle --input '{"base":"main","pr_number":"42"}'
 ```
 
 ### `job_review_tasks`

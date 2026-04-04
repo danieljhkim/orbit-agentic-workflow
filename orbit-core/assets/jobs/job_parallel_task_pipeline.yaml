@@ -7,13 +7,13 @@ job:
   state: enabled
 
   # ---- execution ----
-  # Orchestrates one agent-selected batch using a shared worktree on agent-main.
+  # Orchestrates one agent-selected batch using a shared worktree on main.
   # Workers implement changes directly in the shared directory with file-level locking.
   # After all workers finish, an agent-based finalize step verifies, diagnoses, and
-  # fixes any issues. On success, a single commit and PR are created from agent-main.
+  # fixes any issues. On success, a single commit and PR are created from main.
   max_active_runs: 1
   default_input:
-    base: agent-main
+    base: main
     parallelism: 4
   steps:
     # 1. Select a conflict-free batch, author plans, refine context_files.
@@ -43,7 +43,7 @@ job:
       condition: always
       timeout_seconds: 3600
 
-    # 5. Commit all changes and open a single PR from agent-main.
+    # 5. Commit all changes and open a single PR from main.
     - target_type: activity
       target_id: commit_and_open_batch_pr
       condition: on_success

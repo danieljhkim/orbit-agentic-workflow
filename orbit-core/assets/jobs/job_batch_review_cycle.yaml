@@ -19,7 +19,7 @@ job:
   #
   max_active_runs: 1
   default_input:
-    base: agent-main
+    base: main
   steps:
     - target_type: activity
       target_id: review_batch_pr

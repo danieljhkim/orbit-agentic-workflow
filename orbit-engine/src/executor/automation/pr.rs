@@ -54,7 +54,7 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     // Get the current branch from the workspace
     let head = git_output(&repo_root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let head = head.trim().to_string();
-    let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
+    let base = input_string_field(input, "base").unwrap_or_else(|| "main".to_string());
 
     // Check that ALL tasks have APPROVED pr_status
     for task in &batch_tasks {
@@ -170,7 +170,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
 
     let head = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let head = head.trim().to_string();
-    let base = input_string_field(input, "base").unwrap_or_else(|| "agent-main".to_string());
+    let base = input_string_field(input, "base").unwrap_or_else(|| "main".to_string());
 
     let freshness = ensure_branch_fresh_against_base(&workspace_path, &head, &base)?;
 
@@ -578,7 +578,7 @@ mod tests {
         std::fs::write(repo_root.join("README.md"), "batch\n").expect("write readme");
         run_git(repo_root, &["add", "README.md"]);
         run_git(repo_root, &["commit", "-m", "initial"]);
-        run_git(repo_root, &["branch", "agent-main"]);
+        run_git(repo_root, &["branch", "main"]);
 
         tempdir
     }
@@ -607,7 +607,7 @@ mod tests {
             &host,
             &json!({
                 "run_id": "batch-1",
-                "base": "agent-main",
+                "base": "main",
             }),
         )
         .expect("merge_batch_pr succeeds");
@@ -639,7 +639,7 @@ mod tests {
 
         let second = sample_task("T20260330-065846", "batch-1", "/tmp", "76");
         let freshness = BranchFreshness {
-            base_ref: "origin/agent-main".to_string(),
+            base_ref: "origin/main".to_string(),
             head_ref: "orbit/parallel-batch".to_string(),
             commits_behind: 0,
             commits_ahead: 3,
@@ -679,7 +679,7 @@ mod tests {
             &host,
             &json!({
                 "run_id": "batch-1",
-                "base": "agent-main",
+                "base": "main",
             }),
         )
         .expect("merge_batch_pr succeeds");
@@ -721,7 +721,7 @@ mod tests {
             &host,
             &json!({
                 "run_id": "batch-1",
-                "base": "agent-main",
+                "base": "main",
             }),
         )
         .expect("merge_batch_pr succeeds");

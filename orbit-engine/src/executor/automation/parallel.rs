@@ -11,7 +11,7 @@ use super::git::{
 };
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
-const DEFAULT_PARALLEL_BASE: &str = "agent-main";
+const DEFAULT_PARALLEL_BASE: &str = "main";
 const DEFAULT_PARALLELISM: usize = 4;
 const PARALLEL_WORKER_JOB_ID: &str = "job_parallel_task_worker";
 const SHARED_WORKTREE_NAME: &str = "parallel-batch";

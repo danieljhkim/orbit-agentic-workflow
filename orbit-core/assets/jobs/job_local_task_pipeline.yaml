@@ -12,7 +12,7 @@ job:
   # push when ready.
   max_active_runs: 1
   default_input:
-    base: agent-main
+    base: main
     parallelism: 4
   steps:
     # 1. Select a conflict-free batch, author plans, refine context_files.
@@ -42,7 +42,7 @@ job:
       condition: always
       timeout_seconds: 3600
 
-    # 5. Commit all changes on agent-main (no PR).
+    # 5. Commit all changes on main (no PR).
     - target_type: activity
       target_id: commit_batch_changes
       condition: on_success

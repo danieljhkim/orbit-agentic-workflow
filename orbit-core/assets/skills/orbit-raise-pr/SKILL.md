@@ -52,7 +52,7 @@ When opening a pull request:
    - Link to the Orbit task ID if applicable
    - Test plan or verification steps
 3. **Branch** — use `orbit/<task-id>` naming when tied to a task.
-4. **Base** — target the repo's main branch (typically `agent-main`).
+4. **Base** — target the repo's main branch (typically `main`).
 
 ## Replying to PR Comments
 

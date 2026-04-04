@@ -26,7 +26,7 @@ job:
   max_active_runs: 1
   max_iterations: 5
   default_input:
-    base: agent-main
+    base: main
   steps:
     - target_type: activity
       target_id: pull_batch_changes

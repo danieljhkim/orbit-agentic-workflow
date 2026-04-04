@@ -23,7 +23,7 @@ activity:
         description: Batch run ID (batch_id). All batch tasks and their shared PR are resolved from this ID.
       base:
         type: string
-        description: Base branch to check freshness against. Defaults to agent-main.
+        description: Base branch to check freshness against. Defaults to main.
   output_schema_json:
     type: object
     required:
