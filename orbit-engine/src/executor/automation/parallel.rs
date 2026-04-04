@@ -197,9 +197,10 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
 
         Ok(())
     });
-    let restore_result = restore_task_workspace_paths(host, &selected_tasks);
+    // NOTE: Do not restore workspace paths here. Downstream pipeline steps
+    // (finalize_tasks, commit_and_open_batch_pr, implement_batch_fix) expect
+    // workspace_path to still point to the shared worktree.
     worker_result?;
-    restore_result?;
 
     let completed_task_ids = selected_tasks
         .into_iter()
