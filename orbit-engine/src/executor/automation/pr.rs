@@ -221,7 +221,6 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
             "body": body,
             "base": base,
             "head": head,
-            "label": "orbit",
         }),
         Role::Admin,
         tool_context.clone(),
