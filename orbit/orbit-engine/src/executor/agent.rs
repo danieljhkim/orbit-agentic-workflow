@@ -117,7 +117,7 @@ fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         .agent_config_for(&execution.agent_cli, execution.model.as_deref())
         .map_err(invocation_failed_outcome)?;
     let agent = Agent::new(&config).map_err(invocation_failed_outcome)?;
-    let stdin_payload = host
+    let stdin_payload: Vec<u8> = host
         .build_agent_stdin_envelope_payload(execution)
         .map_err(invocation_failed_outcome)?;
 

@@ -933,7 +933,7 @@ exit 1
     fn sync_mode_falls_back_to_general_for_non_diff_line() {
         let mut patches = HashMap::new();
         patches.insert(
-            "orbit-engine/src/executor/automation/parallel.rs".to_string(),
+            "orbit/orbit-engine/src/executor/automation/parallel.rs".to_string(),
             Some(
                 "\
 @@ -6,4 +6,4 @@ use std::time::Duration;
@@ -948,7 +948,7 @@ exit 1
 
         assert_eq!(
             sync_mode_for_thread(
-                Some("orbit-engine/src/executor/automation/parallel.rs"),
+                Some("orbit/orbit-engine/src/executor/automation/parallel.rs"),
                 Some(391),
                 &patches,
             ),

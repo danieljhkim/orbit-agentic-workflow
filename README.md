@@ -233,7 +233,7 @@ The main PR-based workflow. It selects a conflict-free batch of tasks, dispatche
 orbit run ship
 ```
 
-Source: [`orbit-core/assets/jobs/job_parallel_task_pipeline.yaml`](orbit-core/assets/jobs/job_parallel_task_pipeline.yaml)
+Source: [`orbit/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml`](orbit/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml)
 
 ### `job_local_task_pipeline`
 
@@ -243,7 +243,7 @@ A local-only workflow. It plans, implements, and commits directly without openin
 orbit run ship-local
 ```
 
-Source: [`orbit-core/assets/jobs/job_local_task_pipeline.yaml`](orbit-core/assets/jobs/job_local_task_pipeline.yaml)
+Source: [`orbit/orbit-core/assets/jobs/job_local_task_pipeline.yaml`](orbit/orbit-core/assets/jobs/job_local_task_pipeline.yaml)
 
 
 ### `job_batch_review_cycle`

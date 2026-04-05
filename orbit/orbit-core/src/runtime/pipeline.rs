@@ -405,7 +405,7 @@ mod tests {
                     .as_ref(),
             )
             .join("parallel-batch");
-        let nested_cwd = external_workspace.join("orbit-core");
+        let nested_cwd = external_workspace.join("orbit").join("orbit-core");
         fs::create_dir_all(&nested_cwd).expect("external workspace");
 
         let _env = set_worktree_root_env(Some(external_root.path()));
@@ -443,7 +443,7 @@ mod tests {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let repo_root = canonical_repo_root(&runtime);
         let in_repo_workspace = repo_root.join(".orbit").join("worktrees").join("task-123");
-        let nested_cwd = in_repo_workspace.join("orbit-core");
+        let nested_cwd = in_repo_workspace.join("orbit").join("orbit-core");
         fs::create_dir_all(&nested_cwd).expect("workspace dirs");
 
         let _env = set_worktree_root_env(None);
