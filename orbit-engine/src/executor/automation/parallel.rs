@@ -21,6 +21,7 @@ const SHARED_WORKTREE_BRANCH: &str = "orbit/parallel-batch";
 struct PendingTask {
     task_id: String,
     context_files: Vec<String>,
+    #[cfg_attr(not(test), allow(dead_code))]
     original_workspace_path: Option<String>,
 }
 
@@ -320,6 +321,7 @@ fn set_worker_workspace_path<H: TaskHost + ?Sized>(
     Ok(())
 }
 
+#[cfg(test)]
 fn restore_task_workspace_paths<H: TaskHost + ?Sized>(
     host: &H,
     tasks: &[PendingTask],
