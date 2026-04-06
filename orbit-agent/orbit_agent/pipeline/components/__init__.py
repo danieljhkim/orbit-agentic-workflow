@@ -20,9 +20,6 @@ BUILTIN_COMPONENTS = [
     BuildGraphFilesComponent,
     BuildGraphLeavesComponent,
     PersistGraphComponent,
-    SelectChangedPathsComponent,
-    SummarizeFilesComponent,
-    GenerateArchitectureComponent,
     ManifestComponent,
     SaveHashCacheComponent,
 ]

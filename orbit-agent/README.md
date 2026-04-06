@@ -2,7 +2,9 @@
 
 `orbit-agent` is Orbit's default knowledge builder.
 
-It scans a repository, summarizes source files with a configurable LLM backend, and writes deterministic knowledge artifacts under `.orbit/knowledge/`. Those artifacts let Orbit work from a persistent, versioned understanding of the codebase instead of re-exploring the repo on every task.
+It scans a repository, builds structural knowledge artifacts, and writes deterministic outputs under `.orbit/knowledge/`. Those artifacts let Orbit work from a persistent, versioned understanding of the codebase instead of re-exploring the repo on every task.
+
+“Transactional Code Execution System (TCES)”
 
 ## What It Produces
 
@@ -11,7 +13,7 @@ It scans a repository, summarizes source files with a configurable LLM backend, 
 ```text
 .orbit/knowledge/
   manifest.json
-  architecture.json
+  graph.json
   files/
     <sha256>.json
 ```
@@ -76,8 +78,7 @@ That makes repo understanding a build artifact rather than an ephemeral side eff
 
 - scanning the repository
 - hashing files for incremental rebuilds
-- summarizing changed files
-- producing an architecture summary
+- building a structural code graph
 - writing schema-shaped knowledge artifacts
 
 `orbit-agent` is not responsible for:
@@ -122,12 +123,12 @@ Select an ordered component pipeline by name:
 
 ```bash
 orbit-agent build \
-  --components scan_repo,compute_hashes,select_changed_paths,summarize_files,generate_architecture,manifest,save_hash_cache
+  --components scan_repo,compute_hashes,build_graph_dirs,build_graph_files,build_graph_leaves,persist_graph,manifest,save_hash_cache
 ```
 
 ## LLM Provider Selection
 
-`orbit-agent` resolves its LLM implementation from environment variables.
+Some optional components use an LLM backend. `orbit-agent` resolves its LLM implementation from environment variables when those components are included in the pipeline.
 
 - `ORBIT_AGENT_PROVIDER`: `openai` (default), `anthropic`, or `ollama`
 - `ORBIT_AGENT_MODEL`: override the provider's default model
@@ -143,20 +144,28 @@ Built-in component names:
 
 - `scan_repo`
 - `compute_hashes`
+- `build_graph_dirs`
+- `build_graph_files`
+- `build_graph_leaves`
+- `persist_graph`
+- `manifest`
+- `save_hash_cache`
+
+Optional LLM-backed components that are available but not part of the default pipeline:
+
 - `select_changed_paths`
 - `summarize_files`
 - `generate_architecture`
-- `manifest`
-- `save_hash_cache`
 
 The default pipeline is:
 
 ```text
 scan_repo
   -> compute_hashes
-  -> select_changed_paths
-  -> summarize_files
-  -> generate_architecture
+  -> build_graph_dirs
+  -> build_graph_files
+  -> build_graph_leaves
+  -> persist_graph
   -> manifest
   -> save_hash_cache
 ```
@@ -189,9 +198,10 @@ config = PipelineConfig.from_component_names(
     [
         "scan_repo",
         "compute_hashes",
-        "select_changed_paths",
-        "summarize_files",
-        "generate_architecture",
+        "build_graph_dirs",
+        "build_graph_files",
+        "build_graph_leaves",
+        "persist_graph",
         "manifest",
         "save_hash_cache",
     ]
@@ -222,8 +232,8 @@ Then reference the custom component by its `name` field inside `PipelineConfig`.
 Important artifact types include:
 
 - `manifest.json`: build metadata and artifact pointers
-- `architecture.json`: system-level summary, components, and flows
-- `files/*.json`: file summaries, symbols, imports, exports, and metadata
+- `graph.json`: directory/file/leaf graph of the repository
+- `files/*.json`: optional file summaries when summary components are enabled
 
 Orbit is expected to validate and consume these artifacts separately.
 
