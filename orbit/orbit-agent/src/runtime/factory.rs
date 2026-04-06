@@ -1,7 +1,7 @@
 use orbit_types::OrbitError;
 
 use crate::agent::{AgentConfig, ProviderOptions};
-use crate::providers::{ClaudeRuntime, CodexRuntime, MockAgentRuntime};
+use crate::providers::{ClaudeRuntime, CodexRuntime, GeminiRuntime, MockAgentRuntime};
 use crate::runtime::RuntimeBackend;
 
 pub(crate) fn resolve_runtime(cfg: &AgentConfig) -> Result<RuntimeBackend, OrbitError> {
@@ -18,6 +18,10 @@ pub(crate) fn resolve_runtime(cfg: &AgentConfig) -> Result<RuntimeBackend, Orbit
             writable_dirs.clone(),
         ))),
         ProviderOptions::Claude => Ok(RuntimeBackend::ClaudeCli(ClaudeRuntime::new(
+            cfg.command.clone(),
+            cfg.model.clone(),
+        ))),
+        ProviderOptions::Gemini => Ok(RuntimeBackend::GeminiCli(GeminiRuntime::new(
             cfg.command.clone(),
             cfg.model.clone(),
         ))),

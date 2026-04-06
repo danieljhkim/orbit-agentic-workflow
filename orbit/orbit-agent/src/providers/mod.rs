@@ -12,6 +12,7 @@
 mod claude;
 mod codex;
 mod common;
+mod gemini;
 mod mock_agent;
 
 use std::path::Path;
@@ -20,6 +21,7 @@ use orbit_types::OrbitError;
 
 pub(crate) use claude::ClaudeRuntime;
 pub(crate) use codex::CodexRuntime;
+pub(crate) use gemini::GeminiRuntime;
 pub(crate) use mock_agent::MockAgentRuntime;
 
 use crate::types::AgentResponse;
@@ -47,6 +49,7 @@ pub(crate) enum AgentProvider {
     MockAgent,
     Codex,
     Claude,
+    Gemini,
 }
 
 impl AgentProvider {
@@ -55,6 +58,7 @@ impl AgentProvider {
             AgentProvider::MockAgent => "mock-agent",
             AgentProvider::Codex => "codex",
             AgentProvider::Claude => "claude",
+            AgentProvider::Gemini => "gemini",
         }
     }
 
@@ -63,6 +67,7 @@ impl AgentProvider {
             AgentProvider::MockAgent => &[],
             AgentProvider::Codex => &["HOME", "PATH"],
             AgentProvider::Claude => &["HOME", "PATH"],
+            AgentProvider::Gemini => &["HOME", "PATH"],
         }
     }
 
@@ -71,6 +76,7 @@ impl AgentProvider {
             "mock-agent" => Ok(AgentProvider::MockAgent),
             "codex" => Ok(AgentProvider::Codex),
             "claude" => Ok(AgentProvider::Claude),
+            "gemini" => Ok(AgentProvider::Gemini),
             other => Err(OrbitError::UnsupportedAgentProvider(other.to_string())),
         }
     }

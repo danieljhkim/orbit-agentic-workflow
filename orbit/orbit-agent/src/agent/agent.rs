@@ -14,6 +14,7 @@ pub enum ProviderOptions {
         approval_policy: Option<String>,
         writable_dirs: Vec<String>,
     },
+    Gemini,
     Mock,
 }
 
@@ -55,6 +56,7 @@ impl ProviderOptions {
                 })
             }
             AgentProvider::Claude => Ok(Self::Claude),
+            AgentProvider::Gemini => Ok(Self::Gemini),
             AgentProvider::MockAgent => Ok(Self::Mock),
         }
     }
