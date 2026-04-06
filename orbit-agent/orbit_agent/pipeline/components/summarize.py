@@ -113,7 +113,9 @@ def _parse_analysis(raw: str, file_path: str) -> FileSummaryAnalysisV1:
         return FileSummaryAnalysisV1()
 
     if not isinstance(payload, dict):
-        logger.warning("Summary payload for %s was not an object, using fallback", file_path)
+        logger.warning(
+            "Summary payload for %s was not an object, using fallback", file_path
+        )
         return FileSummaryAnalysisV1()
 
     symbols: list[FileSymbolV1] = []
@@ -130,14 +132,20 @@ def _parse_analysis(raw: str, file_path: str) -> FileSummaryAnalysisV1:
             FileSymbolV1(
                 name=name.strip(),
                 kind=kind,
-                signature=item.get("signature", "") if isinstance(item.get("signature"), str) else "",
-                description=item.get("description", "") if isinstance(item.get("description"), str) else "",
+                signature=item.get("signature", "")
+                if isinstance(item.get("signature"), str)
+                else "",
+                description=item.get("description", "")
+                if isinstance(item.get("description"), str)
+                else "",
             )
         )
 
     summary = payload.get("summary")
     return FileSummaryAnalysisV1(
-        summary=summary if isinstance(summary, str) and summary.strip() else "Failed to summarize",
+        summary=summary
+        if isinstance(summary, str) and summary.strip()
+        else "Failed to summarize",
         symbols=symbols,
         imports=_coerce_string_list(payload.get("imports")),
         exports=_coerce_string_list(payload.get("exports")),
@@ -159,7 +167,9 @@ class SummarizeFilesComponent(BaseComponent):
             abs_path = repo_path / fp
             relative_path = str(Path(fp))
 
-            logger.info("Reading file %d of %d for summarization: %s", i, total, relative_path)
+            logger.info(
+                "Reading file %d of %d for summarization: %s", i, total, relative_path
+            )
 
             try:
                 content_bytes = abs_path.read_bytes()
@@ -175,7 +185,9 @@ class SummarizeFilesComponent(BaseComponent):
                     content=content_bytes.decode("utf-8", errors="replace"),
                     metadata={
                         "size_bytes": len(content_bytes),
-                        "last_modified": datetime.fromtimestamp(abs_path.stat().st_mtime, tz=timezone.utc),
+                        "last_modified": datetime.fromtimestamp(
+                            abs_path.stat().st_mtime, tz=timezone.utc
+                        ),
                     },
                 )
             )
@@ -195,7 +207,9 @@ class SummarizeFilesComponent(BaseComponent):
                 raw = agent.chat(SUMMARIZE_SYSTEM_PROMPT, user_message)
                 analysis = _parse_analysis(raw, source_file.path)
             except Exception:
-                logger.warning("LLM response parse failed for %s, using fallback", source_file.path)
+                logger.warning(
+                    "LLM response parse failed for %s, using fallback", source_file.path
+                )
                 analysis = FileSummaryAnalysisV1()
 
             results.append(
@@ -221,7 +235,9 @@ class SummarizeFilesComponent(BaseComponent):
 
         for summary in response.files:
             summary_path = output_dir / f"{summary.hash}.json"
-            summary_path.write_text(json.dumps(summary.model_dump(mode="json"), indent=2) + "\n")
+            summary_path.write_text(
+                json.dumps(summary.model_dump(mode="json"), indent=2) + "\n"
+            )
 
     def execute(self, context: PipelineContext) -> PipelineContext:
         if self.agent is None:

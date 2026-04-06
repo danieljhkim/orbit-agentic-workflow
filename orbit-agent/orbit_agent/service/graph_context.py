@@ -26,7 +26,9 @@ class GraphContextService:
         path = Path(graph_path)
         if not path.exists():
             raise FileNotFoundError(f"Graph artifact not found: {path}")
-        graph = CodebaseGraphV1.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        graph = CodebaseGraphV1.model_validate(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
         return cls(graph)
 
     @classmethod
@@ -48,8 +50,12 @@ class GraphContextService:
     def get_siblings(self, node_id: str) -> list[NodeContextRef]:
         return self.navigator.to_refs(self.navigator.get_siblings(node_id))
 
-    def get_lineage(self, node_id: str, include_self: bool = False) -> list[NodeContextRef]:
-        return self.navigator.to_refs(self.navigator.get_lineage(node_id, include_self=include_self))
+    def get_lineage(
+        self, node_id: str, include_self: bool = False
+    ) -> list[NodeContextRef]:
+        return self.navigator.to_refs(
+            self.navigator.get_lineage(node_id, include_self=include_self)
+        )
 
     def get_dir_context(self, dir_id: str) -> DirContext:
         return self.navigator.get_dir_context(dir_id)

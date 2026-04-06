@@ -25,7 +25,9 @@ class ComponentRegistry:
             component_cls = self._components[spec.name]
         except KeyError as exc:
             available = ", ".join(self.names())
-            raise ValueError(f"Unknown component '{spec.name}'. Available components: {available}") from exc
+            raise ValueError(
+                f"Unknown component '{spec.name}'. Available components: {available}"
+            ) from exc
         return component_cls(**spec.options)
 
     def create_many(self, config: PipelineConfig) -> list[BaseComponent]:

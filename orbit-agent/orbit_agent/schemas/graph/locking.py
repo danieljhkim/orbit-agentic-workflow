@@ -65,13 +65,17 @@ def recompute_lineage_locks(graph: CodebaseGraphV1) -> CodebaseGraphV1:
         visited: set[str] = set()
         while current_parent_id is not None:
             if current_parent_id in visited:
-                raise ValueError(f"Cycle detected in graph lineage at node id: {current_parent_id}")
+                raise ValueError(
+                    f"Cycle detected in graph lineage at node id: {current_parent_id}"
+                )
             visited.add(current_parent_id)
 
             try:
                 parent = index[current_parent_id]
             except KeyError as exc:
-                raise ValueError(f"Missing parent node id: {current_parent_id}") from exc
+                raise ValueError(
+                    f"Missing parent node id: {current_parent_id}"
+                ) from exc
 
             if not parent.is_locked:
                 parent.lineage_locked = True

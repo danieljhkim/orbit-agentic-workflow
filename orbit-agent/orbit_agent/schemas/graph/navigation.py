@@ -9,7 +9,14 @@ from orbit_agent.schemas.graph.contexts import (
     NodeType,
 )
 from orbit_agent.schemas.graph.locking import build_node_index
-from orbit_agent.schemas.graph.nodes import BaseNode, CodebaseGraphV1, DirNode, FileNode, LeafKind, LeafNode
+from orbit_agent.schemas.graph.nodes import (
+    BaseNode,
+    CodebaseGraphV1,
+    DirNode,
+    FileNode,
+    LeafKind,
+    LeafNode,
+)
 
 GraphNode = DirNode | FileNode | LeafNode
 
@@ -68,7 +75,9 @@ class GraphNavigator:
         parent = self.get_parent(node_id)
         if parent is None:
             return []
-        return [sibling for sibling in self.get_children(parent.id) if sibling.id != node.id]
+        return [
+            sibling for sibling in self.get_children(parent.id) if sibling.id != node.id
+        ]
 
     def get_lineage(self, node_id: str, include_self: bool = False) -> list[GraphNode]:
         current = self.get_node(node_id) if include_self else self.get_parent(node_id)
@@ -77,7 +86,9 @@ class GraphNavigator:
 
         while current is not None:
             if current.id in visited:
-                raise ValueError(f"Cycle detected in graph lineage at node id: {current.id}")
+                raise ValueError(
+                    f"Cycle detected in graph lineage at node id: {current.id}"
+                )
             visited.add(current.id)
             lineage.append(current)
             current = self.get_parent(current.id)
@@ -91,7 +102,9 @@ class GraphNavigator:
 
         while current.parent_id is not None:
             if current.id in visited:
-                raise ValueError(f"Cycle detected in graph lineage at node id: {current.id}")
+                raise ValueError(
+                    f"Cycle detected in graph lineage at node id: {current.id}"
+                )
             visited.add(current.id)
             parent = self.get_parent(current.id)
             if parent is None:
@@ -120,7 +133,10 @@ class GraphNavigator:
             if node_types is not None and graph_node.node_type not in node_types:
                 continue
             if leaf_kinds is not None:
-                if not isinstance(graph_node, LeafNode) or graph_node.kind not in leaf_kinds:
+                if (
+                    not isinstance(graph_node, LeafNode)
+                    or graph_node.kind not in leaf_kinds
+                ):
                     continue
             if prefix is not None and not graph_node.location.startswith(prefix):
                 continue
@@ -152,7 +168,9 @@ class GraphNavigator:
         node = self.get_dir(dir_id)
         parent = self.get_parent(node.id)
         if parent is not None and not isinstance(parent, DirNode):
-            raise ValueError(f"Dir node {node.id} must have a dir parent, got {parent.node_type}")
+            raise ValueError(
+                f"Dir node {node.id} must have a dir parent, got {parent.node_type}"
+            )
 
         return DirContext(
             node=node,
@@ -168,7 +186,9 @@ class GraphNavigator:
         node = self.get_file(file_id)
         parent = self.get_parent(node.id)
         if parent is not None and not isinstance(parent, DirNode):
-            raise ValueError(f"File node {node.id} must have a dir parent, got {parent.node_type}")
+            raise ValueError(
+                f"File node {node.id} must have a dir parent, got {parent.node_type}"
+            )
 
         return FileContext(
             node=node,
@@ -188,7 +208,9 @@ class GraphNavigator:
         return LeafContext(
             node=node,
             lock=self.to_lock(node),
-            parent_file=self.to_ref(containing_file) if containing_file is not None else None,
+            parent_file=self.to_ref(containing_file)
+            if containing_file is not None
+            else None,
             lineage=self.to_refs(self.get_lineage(node.id)),
             child_leaves=self.to_refs(self._nodes_from_ids(node.children)),
             siblings=self.to_refs(self.get_siblings(node.id)),
@@ -229,7 +251,9 @@ class GraphNavigator:
             lock_reason=node.lock_reason,
         )
 
-    def _search_score(self, node: GraphNode, normalized_query: str) -> tuple[int, int, str]:
+    def _search_score(
+        self, node: GraphNode, normalized_query: str
+    ) -> tuple[int, int, str]:
         if not normalized_query:
             return (2, len(node.location), node.location)
 
@@ -268,7 +292,9 @@ def get_siblings(graph: CodebaseGraphV1, node_id: str) -> list[GraphNode]:
     return GraphNavigator(graph).get_siblings(node_id)
 
 
-def get_lineage(graph: CodebaseGraphV1, node_id: str, include_self: bool = False) -> list[GraphNode]:
+def get_lineage(
+    graph: CodebaseGraphV1, node_id: str, include_self: bool = False
+) -> list[GraphNode]:
     return GraphNavigator(graph).get_lineage(node_id, include_self=include_self)
 
 

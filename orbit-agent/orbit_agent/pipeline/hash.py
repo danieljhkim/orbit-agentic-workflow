@@ -40,9 +40,7 @@ def detect_changes(new_hashes: dict[str, str], output_dir: Path) -> list[str]:
         return sorted(new_hashes.keys())
 
     changed = [
-        path
-        for path, digest in new_hashes.items()
-        if old_hashes.get(path) != digest
+        path for path, digest in new_hashes.items() if old_hashes.get(path) != digest
     ]
     logger.debug("Detected %d changed path(s)", len(changed))
     return sorted(changed)

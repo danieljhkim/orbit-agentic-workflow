@@ -22,7 +22,8 @@ class ManifestComponent(BaseComponent):
     ) -> ManifestInputV1:
         return ManifestInputV1(
             repo_root=str(repo_path),
-            artifacts=artifacts or ArtifactsRef(
+            artifacts=artifacts
+            or ArtifactsRef(
                 architecture="architecture.json",
                 files_dir="files/",
                 graph="graph.json",
@@ -39,7 +40,9 @@ class ManifestComponent(BaseComponent):
     def _write(self, response: ManifestV1, output_dir: Path) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
-        manifest_path.write_text(response.model_dump_json(indent=2, by_alias=True) + "\n")
+        manifest_path.write_text(
+            response.model_dump_json(indent=2, by_alias=True) + "\n"
+        )
 
     def execute(self, context: PipelineContext) -> PipelineContext:
         logger.info("Writing manifest artifact")

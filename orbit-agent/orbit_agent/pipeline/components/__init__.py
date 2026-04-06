@@ -8,7 +8,11 @@ from .graph import (
     BuildGraphLeavesComponent,
     PersistGraphComponent,
 )
-from .hashes import ComputeHashesComponent, SaveHashCacheComponent, SelectChangedPathsComponent
+from .hashes import (
+    ComputeHashesComponent,
+    SaveHashCacheComponent,
+    SelectChangedPathsComponent,
+)
 from .manifest import ManifestComponent
 from .scan import ScanRepoComponent
 from .summarize import SummarizeFilesComponent

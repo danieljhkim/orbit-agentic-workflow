@@ -15,7 +15,9 @@ class OllamaAgent(BaseAgent):
         timeout_seconds: float = 120.0,
     ) -> None:
         super().__init__(model=model)
-        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
+        self.base_url = (
+            base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ).rstrip("/")
         self.timeout_seconds = timeout_seconds
 
     def chat(self, system_prompt: str, user_message: str) -> str:

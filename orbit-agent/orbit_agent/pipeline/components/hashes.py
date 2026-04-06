@@ -26,7 +26,9 @@ class SelectChangedPathsComponent(BaseComponent):
     def execute(self, context: PipelineContext) -> PipelineContext:
         if context.incremental:
             logger.info("Selecting changed paths using incremental mode")
-            context.changed_paths = detect_changes(context.new_hashes, context.output_dir)
+            context.changed_paths = detect_changes(
+                context.new_hashes, context.output_dir
+            )
         else:
             logger.info("Selecting all paths for full rebuild")
             context.changed_paths = sorted(context.new_hashes.keys())

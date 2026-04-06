@@ -4,7 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from orbit_agent.schemas.graph.nodes import DirNode, FileNode, LeafHistoryEntry, LeafKind, LeafNode
+from orbit_agent.schemas.graph.nodes import (
+    DirNode,
+    FileNode,
+    LeafHistoryEntry,
+    LeafKind,
+    LeafNode,
+)
 
 NodeType = Literal["dir", "file", "leaf"]
 

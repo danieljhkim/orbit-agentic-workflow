@@ -7,7 +7,6 @@ from typing import get_args
 
 import click
 
-from orbit_agent.graph_context import GraphContextService
 from orbit_agent.logging_utils import configure_logging
 from orbit_agent.pipeline import run_build
 from orbit_agent.pipeline.components import DEFAULT_COMPONENT_NAMES
@@ -16,6 +15,7 @@ from orbit_agent.pipeline.registry import build_default_registry
 from orbit_agent.schemas import NodeContextRef
 from orbit_agent.schemas.graph.contexts import NodeType
 from orbit_agent.schemas.graph.nodes import LeafKind
+from orbit_agent.service import GraphContextService
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,12 @@ def build(repo: str, output: str, components: str) -> None:
     """Scan and build full knowledge base."""
     repo_path, output_dir = _resolve_paths(repo, output)
     logger.info("Starting full knowledge build for %s", repo_path)
-    run_build(repo_path, output_dir, incremental=False, config=_parse_pipeline_config(components))
+    run_build(
+        repo_path,
+        output_dir,
+        incremental=False,
+        config=_parse_pipeline_config(components),
+    )
     click.echo(f"Knowledge artifacts written to {output_dir}")
 
 
@@ -61,7 +66,12 @@ def update(repo: str, output: str, components: str) -> None:
     """Incrementally update knowledge base."""
     repo_path, output_dir = _resolve_paths(repo, output)
     logger.info("Starting incremental knowledge update for %s", repo_path)
-    run_build(repo_path, output_dir, incremental=True, config=_parse_pipeline_config(components))
+    run_build(
+        repo_path,
+        output_dir,
+        incremental=True,
+        config=_parse_pipeline_config(components),
+    )
     click.echo(f"Knowledge artifacts updated at {output_dir}")
 
 
@@ -82,7 +92,9 @@ def graph() -> None:
 @graph.command("context")
 @click.argument("node_id")
 @click.option("--repo", default=".", help="Repository root path.")
-@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+@click.option(
+    "--output", default=".orbit/knowledge", help="Knowledge output directory."
+)
 def graph_context(node_id: str, repo: str, output: str) -> None:
     """Print an agent-facing context for a graph node."""
     service = _load_graph_context_service(repo, output)
@@ -92,8 +104,12 @@ def graph_context(node_id: str, repo: str, output: str) -> None:
 @graph.command("lineage")
 @click.argument("node_id")
 @click.option("--repo", default=".", help="Repository root path.")
-@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
-@click.option("--include-self", is_flag=True, help="Include the requested node in the lineage.")
+@click.option(
+    "--output", default=".orbit/knowledge", help="Knowledge output directory."
+)
+@click.option(
+    "--include-self", is_flag=True, help="Include the requested node in the lineage."
+)
 def graph_lineage(node_id: str, repo: str, output: str, include_self: bool) -> None:
     """Print the lineage for a graph node."""
     service = _load_graph_context_service(repo, output)
@@ -103,7 +119,9 @@ def graph_lineage(node_id: str, repo: str, output: str, include_self: bool) -> N
 @graph.command("children")
 @click.argument("node_id")
 @click.option("--repo", default=".", help="Repository root path.")
-@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+@click.option(
+    "--output", default=".orbit/knowledge", help="Knowledge output directory."
+)
 def graph_children(node_id: str, repo: str, output: str) -> None:
     """Print immediate child nodes for a graph node."""
     service = _load_graph_context_service(repo, output)
@@ -113,7 +131,9 @@ def graph_children(node_id: str, repo: str, output: str) -> None:
 @graph.command("search")
 @click.argument("query", required=False, default="")
 @click.option("--repo", default=".", help="Repository root path.")
-@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+@click.option(
+    "--output", default=".orbit/knowledge", help="Knowledge output directory."
+)
 @click.option(
     "--node-type",
     "node_types",
@@ -128,8 +148,12 @@ def graph_children(node_id: str, repo: str, output: str) -> None:
     type=click.Choice(LEAF_KIND_CHOICES),
     help="Filter leaf nodes by kind. May be used multiple times.",
 )
-@click.option("--location-prefix", default=None, help="Filter by graph node location prefix.")
-@click.option("--limit", default=20, show_default=True, help="Maximum number of search results.")
+@click.option(
+    "--location-prefix", default=None, help="Filter by graph node location prefix."
+)
+@click.option(
+    "--limit", default=20, show_default=True, help="Maximum number of search results."
+)
 def graph_search(
     query: str,
     repo: str,

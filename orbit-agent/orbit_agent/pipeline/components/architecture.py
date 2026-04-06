@@ -46,11 +46,15 @@ class GenerateArchitectureComponent(BaseComponent):
     def _read(self, file_summaries: list[FileSummaryV1]) -> GenerateArchitectureInputV1:
         return GenerateArchitectureInputV1(file_summaries=file_summaries)
 
-    def _transform(self, data: GenerateArchitectureInputV1) -> GenerateArchitectureResponseV1:
+    def _transform(
+        self, data: GenerateArchitectureInputV1
+    ) -> GenerateArchitectureResponseV1:
         agent = self.agent or get_agent()
         user_message = _format_summaries(data.file_summaries)
 
-        logger.info("Generating architecture summary for %d files", len(data.file_summaries))
+        logger.info(
+            "Generating architecture summary for %d files", len(data.file_summaries)
+        )
 
         try:
             raw = agent.chat(ARCHITECTURE_SYSTEM_PROMPT, user_message)
@@ -61,17 +65,25 @@ class GenerateArchitectureComponent(BaseComponent):
 
         return GenerateArchitectureResponseV1(architecture=architecture)
 
-    def _write(self, response: GenerateArchitectureResponseV1, output_dir: Path) -> None:
+    def _write(
+        self, response: GenerateArchitectureResponseV1, output_dir: Path
+    ) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         arch_path = output_dir / "architecture.json"
-        arch_path.write_text(json.dumps(response.architecture.model_dump(mode="json"), indent=2) + "\n")
+        arch_path.write_text(
+            json.dumps(response.architecture.model_dump(mode="json"), indent=2) + "\n"
+        )
 
     def execute(self, context: PipelineContext) -> PipelineContext:
         if context.summarize_response is None:
-            raise ValueError("GenerateArchitectureComponent requires summarize_response in the pipeline context")
+            raise ValueError(
+                "GenerateArchitectureComponent requires summarize_response in the pipeline context"
+            )
         if self.agent is None:
             self.agent = context.agent or get_agent()
-        file_summaries = context.summarize_response.files if context.summarize_response else []
+        file_summaries = (
+            context.summarize_response.files if context.summarize_response else []
+        )
         data = self._read(file_summaries)
         response = self._transform(data)
         self._write(response, context.output_dir)

@@ -32,7 +32,8 @@ These artifacts are intended to conform to Orbit's knowledge schema and support:
 ```text
 orbit_agent/
   main.py
-  graph_context.py
+  service/
+    graph_context.py
   agent/
     base.py
     factory.py
@@ -247,7 +248,7 @@ Then reference the custom component by its `name` field inside `PipelineConfig`.
 Agents should not need to read `graph.json` directly. The runtime-facing graph context service loads the persisted graph and exposes navigable agent views:
 
 ```python
-from orbit_agent.graph_context import GraphContextService
+from orbit_agent.service import GraphContextService
 
 service = GraphContextService.from_knowledge_dir(".orbit/knowledge")
 

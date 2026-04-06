@@ -4,7 +4,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from orbit_agent.agent import BaseAgent
-from orbit_agent.schemas import CodebaseGraphV1, GenerateArchitectureResponseV1, ManifestV1, SummarizeFilesResponseV1
+from orbit_agent.schemas import (
+    CodebaseGraphV1,
+    GenerateArchitectureResponseV1,
+    ManifestV1,
+    SummarizeFilesResponseV1,
+)
 
 
 @dataclass

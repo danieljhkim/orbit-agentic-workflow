@@ -13,8 +13,14 @@ DEFAULT_MODELS = {
 
 
 def get_agent(provider: str | None = None, model: str | None = None) -> BaseAgent:
-    provider_name = (provider or os.getenv("ORBIT_AGENT_PROVIDER", DEFAULT_PROVIDER)).strip().lower()
-    model_name = model or os.getenv("ORBIT_AGENT_MODEL") or DEFAULT_MODELS.get(provider_name)
+    provider_name = (
+        (provider or os.getenv("ORBIT_AGENT_PROVIDER", DEFAULT_PROVIDER))
+        .strip()
+        .lower()
+    )
+    model_name = (
+        model or os.getenv("ORBIT_AGENT_MODEL") or DEFAULT_MODELS.get(provider_name)
+    )
 
     if not model_name:
         raise ValueError(f"No default model configured for provider '{provider_name}'")
@@ -33,4 +39,6 @@ def get_agent(provider: str | None = None, model: str | None = None) -> BaseAgen
         return OllamaAgent(model=model_name)
 
     supported = ", ".join(sorted(DEFAULT_MODELS))
-    raise ValueError(f"Unsupported provider '{provider_name}'. Expected one of: {supported}")
+    raise ValueError(
+        f"Unsupported provider '{provider_name}'. Expected one of: {supported}"
+    )

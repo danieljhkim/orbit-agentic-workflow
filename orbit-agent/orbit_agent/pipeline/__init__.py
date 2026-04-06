@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 def _build_default_components(registry: ComponentRegistry) -> list[BaseComponent]:
     logger.debug("Building default component list: %s", DEFAULT_COMPONENT_NAMES)
-    return registry.create_many(PipelineConfig.from_component_names(DEFAULT_COMPONENT_NAMES))
+    return registry.create_many(
+        PipelineConfig.from_component_names(DEFAULT_COMPONENT_NAMES)
+    )
 
 
 def run_build(
@@ -32,8 +34,14 @@ def run_build(
         incremental=incremental,
     )
 
-    resolved_components = list(components) if components is not None else (
-        component_registry.create_many(config) if config is not None else _build_default_components(component_registry)
+    resolved_components = (
+        list(components)
+        if components is not None
+        else (
+            component_registry.create_many(config)
+            if config is not None
+            else _build_default_components(component_registry)
+        )
     )
 
     logger.info(

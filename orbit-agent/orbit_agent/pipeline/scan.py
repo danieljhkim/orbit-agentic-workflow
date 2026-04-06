@@ -10,7 +10,7 @@ SKIP_DIRS: set[str] = {
     "build",
     ".venv",
     "venv",
-    ".egg-info"
+    ".egg-info",
 }
 
 SKIP_EXTENSIONS: set[str] = {

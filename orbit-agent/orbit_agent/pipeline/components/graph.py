@@ -72,7 +72,9 @@ def _annotation_to_str(node: ast.AST | None, source: str) -> str | None:
         return None
 
 
-def _function_inputs(node: ast.FunctionDef | ast.AsyncFunctionDef, source: str) -> list[SignatureField]:
+def _function_inputs(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: str
+) -> list[SignatureField]:
     items: list[SignatureField] = []
 
     def add_arg(arg: ast.arg, prefix: str = "") -> None:
@@ -96,7 +98,9 @@ def _function_inputs(node: ast.FunctionDef | ast.AsyncFunctionDef, source: str) 
     return items
 
 
-def _function_outputs(node: ast.FunctionDef | ast.AsyncFunctionDef, source: str) -> list[SignatureField]:
+def _function_outputs(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source: str
+) -> list[SignatureField]:
     annotation = _annotation_to_str(node.returns, source)
     if annotation is None:
         return []
@@ -107,7 +111,9 @@ def _extract_python_imports(path: str, source: str) -> list[str]:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        logger.warning("Failed to parse Python file for import extraction %s: %s", path, exc)
+        logger.warning(
+            "Failed to parse Python file for import extraction %s: %s", path, exc
+        )
         return []
 
     imports: list[str] = []
@@ -121,7 +127,12 @@ def _extract_python_imports(path: str, source: str) -> list[str]:
             imports.append("import " + ", ".join(alias.name for alias in node.names))
         else:
             module = "." * node.level + (node.module or "")
-            imports.append("from " + module + " import " + ", ".join(alias.name for alias in node.names))
+            imports.append(
+                "from "
+                + module
+                + " import "
+                + ", ".join(alias.name for alias in node.names)
+            )
     return imports
 
 
@@ -134,12 +145,19 @@ def _extract_python_leaves(
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        logger.warning("Failed to parse Python file for graph extraction %s: %s", path, exc)
+        logger.warning(
+            "Failed to parse Python file for graph extraction %s: %s", path, exc
+        )
         return []
 
     leaves: list[LeafNode] = []
 
-    def visit(body: list[ast.stmt], parent_id: str, prefix: str = "", inside_class: bool = False) -> list[str]:
+    def visit(
+        body: list[ast.stmt],
+        parent_id: str,
+        prefix: str = "",
+        inside_class: bool = False,
+    ) -> list[str]:
         child_ids: list[str] = []
 
         for node in body:
@@ -170,7 +188,9 @@ def _extract_python_leaves(
                     start_line=getattr(node, "lineno", None),
                     end_line=getattr(node, "end_lineno", None),
                 )
-                leaf.children = visit(node.body, leaf.id, qualified_name, inside_class=True)
+                leaf.children = visit(
+                    node.body, leaf.id, qualified_name, inside_class=True
+                )
                 leaves.append(leaf)
                 child_ids.append(leaf.id)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -203,7 +223,9 @@ def _extract_python_leaves(
                     start_line=getattr(node, "lineno", None),
                     end_line=getattr(node, "end_lineno", None),
                 )
-                leaf.children = visit(node.body, leaf.id, qualified_name, inside_class=False)
+                leaf.children = visit(
+                    node.body, leaf.id, qualified_name, inside_class=False
+                )
                 leaves.append(leaf)
                 child_ids.append(leaf.id)
 
@@ -251,8 +273,12 @@ class BuildGraphDirsComponent(BaseComponent):
                 parent_location = "."
             dirs[parent_location].dir_children.append(node.id)
 
-        context.codebase_graph = CodebaseGraphV1(root_dir_id=root_id, dirs=list(dirs.values()))
-        logger.info("Built %d graph directory node(s)", len(context.codebase_graph.dirs))
+        context.codebase_graph = CodebaseGraphV1(
+            root_dir_id=root_id, dirs=list(dirs.values())
+        )
+        logger.info(
+            "Built %d graph directory node(s)", len(context.codebase_graph.dirs)
+        )
         return context
 
 
@@ -261,7 +287,9 @@ class BuildGraphFilesComponent(BaseComponent):
 
     def execute(self, context: PipelineContext) -> PipelineContext:
         if context.codebase_graph is None:
-            raise ValueError("BuildGraphFilesComponent requires codebase_graph in the pipeline context")
+            raise ValueError(
+                "BuildGraphFilesComponent requires codebase_graph in the pipeline context"
+            )
 
         logger.info("Building graph file nodes")
         dir_index = {node.location: node for node in context.codebase_graph.dirs}
@@ -293,7 +321,9 @@ class BuildGraphLeavesComponent(BaseComponent):
 
     def execute(self, context: PipelineContext) -> PipelineContext:
         if context.codebase_graph is None:
-            raise ValueError("BuildGraphLeavesComponent requires codebase_graph in the pipeline context")
+            raise ValueError(
+                "BuildGraphLeavesComponent requires codebase_graph in the pipeline context"
+            )
 
         logger.info("Building graph leaf nodes")
         file_index = {node.location: node for node in context.codebase_graph.files}
@@ -308,15 +338,23 @@ class BuildGraphLeavesComponent(BaseComponent):
             try:
                 source = abs_path.read_text(encoding="utf-8", errors="replace")
             except OSError as exc:
-                logger.warning("Could not read %s for graph leaf extraction: %s", abs_path, exc)
+                logger.warning(
+                    "Could not read %s for graph leaf extraction: %s", abs_path, exc
+                )
                 continue
 
             file_node = file_index[location]
             file_hash = context.new_hashes.get(location)
             file_node.imports = _extract_python_imports(location, source)
-            extracted = _extract_python_leaves(location, source, file_node.id, file_hash)
-            file_node.leaf_children.extend([leaf.id for leaf in extracted if leaf.parent_id == file_node.id])
-            file_node.exports = [leaf.name for leaf in extracted if leaf.parent_id == file_node.id]
+            extracted = _extract_python_leaves(
+                location, source, file_node.id, file_hash
+            )
+            file_node.leaf_children.extend(
+                [leaf.id for leaf in extracted if leaf.parent_id == file_node.id]
+            )
+            file_node.exports = [
+                leaf.name for leaf in extracted if leaf.parent_id == file_node.id
+            ]
             leaves.extend(extracted)
 
         context.codebase_graph.leaves = leaves
@@ -329,7 +367,9 @@ class PersistGraphComponent(BaseComponent):
 
     def execute(self, context: PipelineContext) -> PipelineContext:
         if context.codebase_graph is None:
-            raise ValueError("PersistGraphComponent requires codebase_graph in the pipeline context")
+            raise ValueError(
+                "PersistGraphComponent requires codebase_graph in the pipeline context"
+            )
 
         logger.info("Persisting codebase graph to %s", context.graph_path)
         context.output_dir.mkdir(parents=True, exist_ok=True)
