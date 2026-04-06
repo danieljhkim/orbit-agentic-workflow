@@ -55,6 +55,8 @@ class DirNode(BaseNode):
 class FileNode(BaseNode):
     node_type: Literal["file"] = "file"
     extension: str | None = None
+    imports: list[str] = Field(default_factory=list)
+    exports: list[str] = Field(default_factory=list)
     leaf_children: list[str] = Field(default_factory=list)
 
 

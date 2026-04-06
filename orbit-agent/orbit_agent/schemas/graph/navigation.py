@@ -143,7 +143,7 @@ class GraphNavigator:
             matches.append((score, graph_node))
 
         matches.sort(key=lambda item: item[0])
-        refs = [self._to_ref(node) for _, node in matches]
+        refs = [self.to_ref(node) for _, node in matches]
         if limit is not None:
             return refs[:limit]
         return refs
@@ -156,11 +156,11 @@ class GraphNavigator:
 
         return DirContext(
             node=node,
-            lock=self._to_lock(node),
-            parent=self._to_ref(parent) if parent is not None else None,
-            lineage=self._to_refs(self.get_lineage(node.id)),
-            child_dirs=self._to_refs(self._nodes_from_ids(node.dir_children)),
-            child_files=self._to_refs(self._nodes_from_ids(node.file_children)),
+            lock=self.to_lock(node),
+            parent=self.to_ref(parent) if parent is not None else None,
+            lineage=self.to_refs(self.get_lineage(node.id)),
+            child_dirs=self.to_refs(self._nodes_from_ids(node.dir_children)),
+            child_files=self.to_refs(self._nodes_from_ids(node.file_children)),
             summary=node.description,
         )
 
@@ -172,12 +172,12 @@ class GraphNavigator:
 
         return FileContext(
             node=node,
-            lock=self._to_lock(node),
-            parent_dir=self._to_ref(parent) if parent is not None else None,
-            lineage=self._to_refs(self.get_lineage(node.id)),
-            imports=[],
-            exports=[],
-            top_level_leaves=self._to_refs(self._nodes_from_ids(node.leaf_children)),
+            lock=self.to_lock(node),
+            parent_dir=self.to_ref(parent) if parent is not None else None,
+            lineage=self.to_refs(self.get_lineage(node.id)),
+            imports=list(node.imports),
+            exports=list(node.exports),
+            top_level_leaves=self.to_refs(self._nodes_from_ids(node.leaf_children)),
             summary=node.description,
         )
 
@@ -187,11 +187,11 @@ class GraphNavigator:
 
         return LeafContext(
             node=node,
-            lock=self._to_lock(node),
-            parent_file=self._to_ref(containing_file) if containing_file is not None else None,
-            lineage=self._to_refs(self.get_lineage(node.id)),
-            child_leaves=self._to_refs(self._nodes_from_ids(node.children)),
-            siblings=self._to_refs(self.get_siblings(node.id)),
+            lock=self.to_lock(node),
+            parent_file=self.to_ref(containing_file) if containing_file is not None else None,
+            lineage=self.to_refs(self.get_lineage(node.id)),
+            child_leaves=self.to_refs(self._nodes_from_ids(node.children)),
+            siblings=self.to_refs(self.get_siblings(node.id)),
             history=list(node.history),
         )
 
@@ -206,7 +206,7 @@ class GraphNavigator:
     def _nodes_from_ids(self, node_ids: list[str]) -> list[GraphNode]:
         return [self.get_node(node_id) for node_id in node_ids]
 
-    def _to_ref(self, node: GraphNode) -> NodeContextRef:
+    def to_ref(self, node: GraphNode) -> NodeContextRef:
         return NodeContextRef(
             id=node.id,
             name=node.name,
@@ -218,10 +218,10 @@ class GraphNavigator:
             kind=node.kind if isinstance(node, LeafNode) else None,
         )
 
-    def _to_refs(self, nodes: list[GraphNode]) -> list[NodeContextRef]:
-        return [self._to_ref(node) for node in nodes]
+    def to_refs(self, nodes: list[GraphNode]) -> list[NodeContextRef]:
+        return [self.to_ref(node) for node in nodes]
 
-    def _to_lock(self, node: GraphNode) -> NodeLockState:
+    def to_lock(self, node: GraphNode) -> NodeLockState:
         return NodeLockState(
             is_locked=node.is_locked,
             lineage_locked=node.lineage_locked,

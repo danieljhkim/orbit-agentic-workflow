@@ -103,6 +103,28 @@ def _function_outputs(node: ast.FunctionDef | ast.AsyncFunctionDef, source: str)
     return [SignatureField(name="return", annotation=annotation)]
 
 
+def _extract_python_imports(path: str, source: str) -> list[str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        logger.warning("Failed to parse Python file for import extraction %s: %s", path, exc)
+        return []
+
+    imports: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        import_source = ast.get_source_segment(source, node)
+        if import_source:
+            imports.append(import_source)
+        elif isinstance(node, ast.Import):
+            imports.append("import " + ", ".join(alias.name for alias in node.names))
+        else:
+            module = "." * node.level + (node.module or "")
+            imports.append("from " + module + " import " + ", ".join(alias.name for alias in node.names))
+    return imports
+
+
 def _extract_python_leaves(
     path: str,
     source: str,
@@ -291,8 +313,10 @@ class BuildGraphLeavesComponent(BaseComponent):
 
             file_node = file_index[location]
             file_hash = context.new_hashes.get(location)
+            file_node.imports = _extract_python_imports(location, source)
             extracted = _extract_python_leaves(location, source, file_node.id, file_hash)
             file_node.leaf_children.extend([leaf.id for leaf in extracted if leaf.parent_id == file_node.id])
+            file_node.exports = [leaf.name for leaf in extracted if leaf.parent_id == file_node.id]
             leaves.extend(extracted)
 
         context.codebase_graph.leaves = leaves

@@ -32,6 +32,7 @@ These artifacts are intended to conform to Orbit's knowledge schema and support:
 ```text
 orbit_agent/
   main.py
+  graph_context.py
   agent/
     base.py
     factory.py
@@ -54,6 +55,11 @@ orbit_agent/
       manifest.py
   schemas/
     knowledge.py
+    graph/
+      nodes.py
+      contexts.py
+      navigation.py
+      locking.py
 ```
 
 ## Core Model
@@ -117,6 +123,15 @@ List registered pipeline components:
 
 ```bash
 orbit-agent list-components
+```
+
+Inspect the persisted graph:
+
+```bash
+orbit-agent graph search PipelineContext --limit 5
+orbit-agent graph context file:orbit-agent/orbit_agent/pipeline/context.py
+orbit-agent graph lineage file:orbit-agent/orbit_agent/pipeline/context.py --include-self
+orbit-agent graph children dir:orbit-agent/orbit_agent/pipeline
 ```
 
 Select an ordered component pipeline by name:
@@ -226,6 +241,26 @@ registry.register(MyCustomSummarizeComponent)
 ```
 
 Then reference the custom component by its `name` field inside `PipelineConfig`.
+
+## Graph Context Service
+
+Agents should not need to read `graph.json` directly. The runtime-facing graph context service loads the persisted graph and exposes navigable agent views:
+
+```python
+from orbit_agent.graph_context import GraphContextService
+
+service = GraphContextService.from_knowledge_dir(".orbit/knowledge")
+
+matches = service.search_nodes("PipelineContext", limit=5)
+context = service.get_context(matches[0].id)
+lineage = service.get_lineage(matches[0].id, include_self=True)
+```
+
+The service is backed by `GraphNavigator`, which can build:
+
+- `DirContext`: subsystem-level directory context
+- `FileContext`: file-level context with imports, exports, and top-level leaves when available
+- `LeafContext`: editable symbol-level context with source, signatures, children, siblings, and history
 
 ## Schema Notes
 

@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from typing import get_args
 
 import click
 
+from orbit_agent.graph_context import GraphContextService
 from orbit_agent.logging_utils import configure_logging
 from orbit_agent.pipeline import run_build
 from orbit_agent.pipeline.components import DEFAULT_COMPONENT_NAMES
 from orbit_agent.pipeline.config import PipelineConfig
 from orbit_agent.pipeline.registry import build_default_registry
+from orbit_agent.schemas import NodeContextRef
+from orbit_agent.schemas.graph.contexts import NodeType
+from orbit_agent.schemas.graph.nodes import LeafKind
 
 logger = logging.getLogger(__name__)
+
+NODE_TYPE_CHOICES = ("dir", "file", "leaf")
+LEAF_KIND_CHOICES = tuple(str(value) for value in get_args(LeafKind))
 
 
 @click.group()
@@ -65,6 +74,84 @@ def list_components() -> None:
         click.echo(name)
 
 
+@cli.group("graph")
+def graph() -> None:
+    """Inspect the persisted code graph."""
+
+
+@graph.command("context")
+@click.argument("node_id")
+@click.option("--repo", default=".", help="Repository root path.")
+@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+def graph_context(node_id: str, repo: str, output: str) -> None:
+    """Print an agent-facing context for a graph node."""
+    service = _load_graph_context_service(repo, output)
+    click.echo(service.get_context(node_id).model_dump_json(indent=2))
+
+
+@graph.command("lineage")
+@click.argument("node_id")
+@click.option("--repo", default=".", help="Repository root path.")
+@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+@click.option("--include-self", is_flag=True, help="Include the requested node in the lineage.")
+def graph_lineage(node_id: str, repo: str, output: str, include_self: bool) -> None:
+    """Print the lineage for a graph node."""
+    service = _load_graph_context_service(repo, output)
+    _echo_refs(service.get_lineage(node_id, include_self=include_self))
+
+
+@graph.command("children")
+@click.argument("node_id")
+@click.option("--repo", default=".", help="Repository root path.")
+@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+def graph_children(node_id: str, repo: str, output: str) -> None:
+    """Print immediate child nodes for a graph node."""
+    service = _load_graph_context_service(repo, output)
+    _echo_refs(service.get_children(node_id))
+
+
+@graph.command("search")
+@click.argument("query", required=False, default="")
+@click.option("--repo", default=".", help="Repository root path.")
+@click.option("--output", default=".orbit/knowledge", help="Knowledge output directory.")
+@click.option(
+    "--node-type",
+    "node_types",
+    multiple=True,
+    type=click.Choice(NODE_TYPE_CHOICES),
+    help="Filter by node type. May be used multiple times.",
+)
+@click.option(
+    "--leaf-kind",
+    "leaf_kinds",
+    multiple=True,
+    type=click.Choice(LEAF_KIND_CHOICES),
+    help="Filter leaf nodes by kind. May be used multiple times.",
+)
+@click.option("--location-prefix", default=None, help="Filter by graph node location prefix.")
+@click.option("--limit", default=20, show_default=True, help="Maximum number of search results.")
+def graph_search(
+    query: str,
+    repo: str,
+    output: str,
+    node_types: tuple[NodeType, ...],
+    leaf_kinds: tuple[LeafKind, ...],
+    location_prefix: str | None,
+    limit: int,
+) -> None:
+    """Search graph nodes and print lightweight references."""
+    service = _load_graph_context_service(repo, output)
+    _echo_refs(
+        service.search_nodes(
+            query=query,
+            node_types=node_types or None,
+            leaf_kinds=leaf_kinds or None,
+            location_prefix=location_prefix,
+            limit=limit,
+        )
+    )
+
+
 def _resolve_paths(repo: str, output: str) -> tuple[Path, Path]:
     repo_path = Path(repo).resolve()
     output_dir = Path(output) if Path(output).is_absolute() else repo_path / output
@@ -76,6 +163,16 @@ def _parse_pipeline_config(components: str) -> PipelineConfig:
     component_names = [name.strip() for name in components.split(",") if name.strip()]
     logger.debug("Parsed component names: %s", component_names)
     return PipelineConfig.from_component_names(component_names)
+
+
+def _load_graph_context_service(repo: str, output: str) -> GraphContextService:
+    _, output_dir = _resolve_paths(repo, output)
+    logger.debug("Loading graph context service from %s", output_dir)
+    return GraphContextService.from_knowledge_dir(output_dir)
+
+
+def _echo_refs(refs: list[NodeContextRef]) -> None:
+    click.echo(json.dumps([ref.model_dump(mode="json") for ref in refs], indent=2))
 
 
 if __name__ == "__main__":
