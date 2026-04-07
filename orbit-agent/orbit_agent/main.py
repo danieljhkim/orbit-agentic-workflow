@@ -13,6 +13,7 @@ from orbit_agent.pipeline.engine import run_build
 from orbit_agent.schemas import NodeContextRef
 from orbit_agent.schemas.graph.contexts import NodeType
 from orbit_agent.schemas.graph.nodes import LeafKind
+from orbit_agent.service.bootstrap import render_knowledge_bootstrap
 from orbit_agent.service import GraphContextService
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 NODE_TYPE_CHOICES = ("dir", "file", "leaf")
 LEAF_KIND_CHOICES = tuple(str(value) for value in get_args(LeafKind))
 BUILD_TARGET_CHOICES = ("graph", "knowledge")
+BOOTSTRAP_FORMAT_CHOICES = ("markdown", "json")
 GRAPH_COMPONENT_NAMES = [
     "scan_repo",
     "compute_hashes",
@@ -93,6 +95,64 @@ def update(target: str, repo: str, output: str) -> None:
         config=PipelineConfig.from_component_names(component_names),
     )
     click.echo(f"{target_label.title()} artifacts updated at {output_dir}")
+
+
+@cli.group("knowledge")
+def knowledge() -> None:
+    """Render knowledge-oriented views from persisted artifacts."""
+
+
+@knowledge.command("bootstrap")
+@click.option("--repo", default=".", help="Repository root path.")
+@click.option(
+    "--output", default=".orbit/knowledge", help="Knowledge output directory."
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(BOOTSTRAP_FORMAT_CHOICES),
+    default="markdown",
+    show_default=True,
+)
+@click.option(
+    "--budget",
+    type=int,
+    default=12000,
+    show_default=True,
+    help="Approximate markdown character budget for the rendered bootstrap.",
+)
+@click.option(
+    "--include-source",
+    is_flag=True,
+    help="Include source excerpts for leaf nodes when available.",
+)
+@click.option(
+    "--source-budget",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Maximum characters of leaf source excerpts to include.",
+)
+def knowledge_bootstrap(
+    repo: str,
+    output: str,
+    output_format: str,
+    budget: int,
+    include_source: bool,
+    source_budget: int,
+) -> None:
+    """Render a deterministic whole-codebase bootstrap."""
+    _, output_dir = _resolve_paths(repo, output)
+    logger.info("Rendering knowledge bootstrap from %s", output_dir)
+    click.echo(
+        render_knowledge_bootstrap(
+            output_dir,
+            format=output_format,
+            budget=budget,
+            include_source=include_source,
+            source_budget=source_budget,
+        )
+    )
 
 
 @cli.group("graph")

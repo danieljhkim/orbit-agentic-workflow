@@ -38,6 +38,7 @@ orbit_agent/
   main.py
   service/
     graph_context.py
+    bootstrap.py
   agent/
     base.py
     factory.py
@@ -130,6 +131,14 @@ Enable verbose logging:
 
 ```bash
 orbit-agent --debug build graph
+```
+
+Render an agent-friendly knowledge bootstrap from existing graph and summary artifacts:
+
+```bash
+orbit-agent knowledge bootstrap --output .orbit/knowledge
+orbit-agent knowledge bootstrap --output .orbit/knowledge --budget 8000
+orbit-agent knowledge bootstrap --output .orbit/knowledge --format json
 ```
 
 Inspect the persisted graph:
@@ -306,6 +315,19 @@ The service is backed by `GraphNavigator`, which can build:
 - `DirContext`: subsystem-level directory context
 - `FileContext`: file-level context with imports, exports, and top-level leaves when available
 - `LeafContext`: editable symbol-level context with source, signatures, children, siblings, and history
+
+## Knowledge Bootstrap
+
+`orbit-agent knowledge bootstrap` renders a deterministic whole-codebase briefing from the persisted graph and file summary artifacts. It does not invoke an LLM or any agent runtime.
+
+The default markdown output is intentionally compact:
+
+- repo stats
+- directory/file lineage
+- file summaries
+- leaf names and signatures
+
+Source excerpts are opt-in and bounded by a separate budget.
 
 ## Schema Notes
 
