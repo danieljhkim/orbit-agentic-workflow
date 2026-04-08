@@ -129,7 +129,7 @@ def _build_leaf_report(
     options: BootstrapRenderOptions,
 ) -> dict[str, Any]:
     node = service.navigator.node_index.get(ref.id)
-    if isinstance(node, LeafNode):
+    if node is not None and node.node_type == "leaf":
         signature = _leaf_signature(node)
         description = node.description
         source = node.source

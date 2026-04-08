@@ -76,7 +76,7 @@ def _build_verbose_report(
         requested_nodes.append((selector, node))
 
         focus_nodes = _bounded_lineage(service, node, options.depth)
-        if isinstance(node, LeafNode):
+        if node.node_type == "leaf":
             containing_file = service.navigator.get_containing_file(node.id)
             if containing_file is not None and containing_file.id not in {
                 item.id for item in focus_nodes
@@ -116,6 +116,7 @@ def _build_verbose_report(
                 and node.source_blob_hash in service.file_summaries_by_hash
             ),
         },
+        "overview": _generate_overview(service, requested_nodes),
         "options": {
             "depth": options.depth,
             "siblings": options.siblings,
@@ -129,6 +130,90 @@ def _build_verbose_report(
     }
 
 
+def _generate_overview(
+    service: GraphContextService, requested_nodes: list[tuple[str, Any]]
+) -> str:
+    if not requested_nodes:
+        return ""
+
+    if len(requested_nodes) == 1:
+        selector, node = requested_nodes[0]
+        if node.node_type == "file":
+            context = service.get_file_context(node.id)
+            summary = context.summary or "No summary available."
+            parts = [f"File: `{selector}`. {summary}"]
+            exports = list(context.exports)
+            if exports:
+                parts.append(f"Key exports: {', '.join(exports)}.")
+            return " ".join(parts)
+
+        if node.node_type == "dir":
+            desc = node.description or "No description available."
+            child_files = len(node.file_children)
+            child_dirs = len(node.dir_children)
+            return (
+                f"Directory: `{selector}`. {desc} "
+                f"Contains {child_files} files and {child_dirs} subdirectories."
+            )
+
+        if node.node_type == "leaf":
+            sig = _leaf_signature(node)
+            desc = node.description or "No description available."
+            return f"Symbol: `{selector}`. Signature: `{sig}`. {desc}"
+
+    # Multiple nodes selected
+    shared_ancestor = _find_shared_ancestor(service, requested_nodes)
+    ancestor_label = f"`{service.selector_for_node(shared_ancestor)}`" if shared_ancestor else "root"
+
+    selections_desc = []
+    for selector, node in requested_nodes[:5]:
+        snippet = _node_overview_snippet(service, node)
+        selections_desc.append(f"- `{selector}` ({node.node_type}): {snippet}")
+
+    if len(requested_nodes) > 5:
+        selections_desc.append(f"- ... and {len(requested_nodes) - 5} more.")
+
+    header = f"Selection includes {len(requested_nodes)} nodes under {ancestor_label}:"
+    return f"{header}\n" + "\n".join(selections_desc)
+
+
+def _node_overview_snippet(service: GraphContextService, node: Any) -> str:
+    if node.node_type == "file":
+        summary = service.get_file_context(node.id).summary
+        return _single_line(summary) if summary else "No summary available."
+    if node.node_type == "dir":
+        return _single_line(node.description) if node.description else "No description available."
+    if node.node_type == "leaf":
+        sig = _leaf_signature(node)
+        desc = _single_line(node.description) if node.description else ""
+        return f"`{sig}`. {desc}".strip()
+    return ""
+
+
+def _find_shared_ancestor(
+    service: GraphContextService, requested_nodes: list[tuple[str, Any]]
+) -> Any | None:
+    if not requested_nodes:
+        return None
+
+    # Get lineages for all nodes
+    lineages = [
+        service.navigator.get_lineage(node.id, include_self=True)
+        for _, node in requested_nodes
+    ]
+
+    # Find the deepest common node
+    shared = None
+    for i in range(min(len(lineage) for lineage in lineages)):
+        current_nodes = [lineage[i] for lineage in lineages]
+        if all(node.id == current_nodes[0].id for node in current_nodes):
+            shared = current_nodes[0]
+        else:
+            break
+
+    return shared
+
+
 def _selection_entry(
     service: GraphContextService,
     requested_selector: str,
@@ -136,7 +221,7 @@ def _selection_entry(
     options: LineagePackRenderOptions,
 ) -> dict[str, Any]:
     lineage = [service.selector_for_node(item) for item in _bounded_lineage(service, node, options.depth)]
-    if isinstance(node, LeafNode):
+    if node.node_type == "leaf":
         containing_file = service.navigator.get_containing_file(node.id)
         if containing_file is not None:
             containing_selector = service.selector_for_node(containing_file)
@@ -184,7 +269,7 @@ def _context_node_entry(
     if siblings:
         entry["siblings"] = [service.selector_for_node(item) for item in siblings]
 
-    if isinstance(node, DirNode):
+    if node.node_type == "dir":
         child_dirs, child_files = _dir_children(service, node, options.children)
         entry["children"] = [
             service.selector_for_node(item) for item in [*child_dirs, *child_files]
@@ -199,7 +284,7 @@ def _context_node_entry(
         }
         return entry
 
-    if isinstance(node, FileNode):
+    if node.node_type == "file":
         file_context = service.get_file_context(node.id)
         leaf_previews = [
             _leaf_preview_from_ref(service, node, ref)
@@ -213,7 +298,7 @@ def _context_node_entry(
         }
         return entry
 
-    if isinstance(node, LeafNode):
+    if node.node_type == "leaf":
         child_leaves = _leaf_children(service, node, options.children)
         entry["children"] = [service.selector_for_node(item) for item in child_leaves]
         details: dict[str, Any] = {
@@ -257,17 +342,17 @@ def _limited_children(
     if children <= 0:
         return []
 
-    if isinstance(node, DirNode):
+    if node.node_type == "dir":
         child_dirs, child_files = _dir_children(service, node, children)
         return [*child_dirs, *child_files]
-    if isinstance(node, FileNode):
+    if node.node_type == "file":
         file_context = service.get_file_context(node.id)
         return [
             service.navigator.get_node(item.id)
             for item in file_context.top_level_leaves[:children]
             if item.id in service.navigator.node_index
         ]
-    if isinstance(node, LeafNode):
+    if node.node_type == "leaf":
         return _leaf_children(service, node, children)
     return []
 
@@ -406,6 +491,7 @@ def _compact_report(verbose_report: dict[str, Any]) -> dict[str, Any]:
             "leaf_count": verbose_report["repo"]["leaf_count"],
             "file_summary_count": verbose_report["repo"]["file_summary_count"],
         },
+        "overview": verbose_report.get("overview", ""),
         "options": {
             "depth": verbose_report["options"]["depth"],
             "siblings": verbose_report["options"]["siblings"],
@@ -500,6 +586,14 @@ def _render_compact_markdown(report: dict[str, Any], budget: int) -> str:
     writer.line(f"- files: {repo['file_count']}")
     writer.line(f"- leaves: {repo['leaf_count']}")
     writer.line()
+
+    if report.get("overview"):
+        writer.line("## Overview")
+        for overview_line in report["overview"].splitlines():
+            if not writer.line(overview_line):
+                break
+        writer.line()
+
     writer.line("## Selections")
     for selection in selections:
         if not writer.line(f"- `{selection['selector']}`"):
@@ -595,6 +689,14 @@ def _render_verbose_markdown(report: dict[str, Any], budget: int) -> str:
         f"- traversal bounds: depth={options['depth']}, siblings={options['siblings']}, children={options['children']}"
     )
     writer.line()
+
+    if report.get("overview"):
+        writer.line("## Overview")
+        for overview_line in report["overview"].splitlines():
+            if not writer.line(overview_line):
+                break
+        writer.line()
+
     writer.line("## Selections")
     for selection in selections:
         header = f"### `{selection['selector']}`"
