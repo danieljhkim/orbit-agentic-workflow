@@ -29,23 +29,29 @@ This Python `orbit-map` handles **knowledge building**. Its optional LLM-backed 
 ## Pipeline
 
 ```
-scan repo → hash files → build graph → write manifest
+scan repo → hash files → build graph → [optional: summarize files] → write manifest
 ```
 
-Planned module layout:
+Current module layout:
 
 ```
 orbit-map/
-  main.py
+  main.py           # thin CLI entrypoint (delegates to orbit_map/cli/)
+  cli/              # click command groups (build, update, graph, knowledge)
   pipeline/
-    scan.py       # file walking
-    hash.py       # content hashing (sha256)
-    summarize.py  # optional file-level LLM summaries
-    architecture.py  # optional system-level LLM summaries
+    components/
+      scan_repo     # file walking
+      compute_hashes # content hashing (sha256)
+      build_graph_*  # dir/file/leaf graph construction
+      persist_graph  # write content-addressed graph objects
+      summarize_files # optional LLM-backed file summaries
+      manifest       # write manifest.json
+      # generate_architecture — optional, NOT in default pipeline
   runtime/
-    agent/        # temporary provider runtime boundary
-  schemas/
-    knowledge.py  # pydantic models for schema validation
+    agent/           # temporary provider runtime boundary
+  graph/
+    extraction/      # language-specific leaf extractors (Python, Rust)
+  schemas/           # pydantic models for all artifact types
 ```
 
 Key libraries: `pathlib`, `hashlib`, `pydantic`, `tiktoken`, LLM client (OpenAI / local).
@@ -67,10 +73,13 @@ All output is written to `.orbit/knowledge/` with this structure:
 ### Schema (v1) — defined in `schema.md`
 
 **manifest.json**: `schemaVersion`, `generated_at`, `repo_root`, `artifacts` pointers.
+Primary artifact pointer is `graph/refs/current.json` (not `architecture.json`).
 
-**graph/refs/current.json**: current graph root object and schema metadata.
+**graph/refs/current.json**: current graph root object and schema metadata. Primary entry point for graph navigation.
 
-**files/\<hash\>.json**: `path`, `hash`, `language`, `summary`, `symbols` (name/kind/signature/description), `imports`, `exports`, `metadata` (size_bytes, last_modified).
+**files/\<hash\>.json**: `path`, `hash`, `language`, `summary`, `symbols` (name/kind/signature/description), `imports`, `exports`, `metadata` (size_bytes, last_modified). Optional per-file summaries.
+
+**architecture.json**: optional, not produced by the default pipeline. Only present when the `generate_architecture` component is explicitly included.
 
 Optional: `.orbit/cache/hashes.json` for incremental rebuild support.
 
