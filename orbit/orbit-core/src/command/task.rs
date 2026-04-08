@@ -5,7 +5,7 @@ use orbit_store::{
 };
 use orbit_types::{
     ActorIdentity, OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity,
-    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, prune_missing_context_files,
 };
 use std::path::{Path, PathBuf};
 
@@ -119,6 +119,10 @@ impl OrbitRuntime {
         let workspace_path =
             normalize_workspace_path(&self.paths().repo_root, params.workspace_path.as_deref())?;
 
+        let prune_root = context_workspace_root(&self.paths().repo_root, workspace_path.as_deref());
+        let (kept_context_files, dropped_context_files) =
+            prune_missing_context_files(&prune_root, params.context_files.clone());
+
         let task = self.with_mutation(|| {
             let task = self.create_task_record(StoreTaskCreateParams {
                 actor: create_actor.clone(),
@@ -128,7 +132,7 @@ impl OrbitRuntime {
                 acceptance_criteria: params.acceptance_criteria.clone(),
                 plan: params.plan.clone(),
                 execution_summary: String::new(),
-                context_files: params.context_files.clone(),
+                context_files: kept_context_files.clone(),
                 workspace_path: workspace_path.clone(),
                 repo_root: None,
                 created_by: Some(create_label.clone()),
@@ -159,6 +163,24 @@ impl OrbitRuntime {
             let _ = friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, a, m);
         }
 
+        // If any context_files were pruned, append a history entry on the freshly-created
+        // task so the audit trail records what was dropped and why.
+        let task = if dropped_context_files.is_empty() {
+            task
+        } else {
+            self.update_task_record(
+                &task.id,
+                StoreTaskUpdateParams {
+                    actor: create_actor.clone(),
+                    append_history: vec![context_files_pruned_history_entry(
+                        &create_actor,
+                        &dropped_context_files,
+                    )],
+                    ..Default::default()
+                },
+            )?
+        };
+
         Ok(task)
     }
 
@@ -169,6 +191,22 @@ impl OrbitRuntime {
 
     pub fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
         self.list_task_records()
+    }
+
+    /// Dry-run helper: returns the `context_files` entries that *would* be dropped
+    /// from the given task if it were re-saved through the normal write path.
+    /// Does not mutate the task on disk.
+    ///
+    /// Resolution rules match the write-path pruner: relative paths are resolved
+    /// against the task's recorded `workspace_path` (falling back to the runtime
+    /// repo root); empty/whitespace entries are silently discarded and not
+    /// reported as dropped.
+    pub fn dry_run_prune_context_files(&self, task: &Task) -> Vec<String> {
+        let prune_root =
+            context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
+        let (_kept, dropped) =
+            prune_missing_context_files(&prune_root, task.context_files.clone());
+        dropped
     }
 
     pub fn list_tasks_filtered(
@@ -227,12 +265,27 @@ impl OrbitRuntime {
     fn update_task_with_status_note_and_identity(
         &self,
         id: &str,
-        params: TaskUpdateParams,
+        mut params: TaskUpdateParams,
         status_note: Option<String>,
         agent: Option<String>,
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
         let task = self.get_task(id)?;
+
+        // Prune non-existent context_files entries before forwarding to the store.
+        // Resolve relative paths against the task's recorded workspace (falling back
+        // to the runtime repo root).
+        let dropped_context_files: Vec<String> = if let Some(candidates) =
+            params.context_files.take()
+        {
+            let prune_root =
+                context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
+            let (kept, dropped) = prune_missing_context_files(&prune_root, candidates);
+            params.context_files = Some(kept);
+            dropped
+        } else {
+            Vec::new()
+        };
         let locked_field_update = params.plan.is_some()
             || params.execution_summary.is_some()
             || params.comment.is_some()
@@ -295,6 +348,14 @@ impl OrbitRuntime {
 
         let old_status = task.status;
         let target_status = params.status;
+        let append_history: Vec<TaskHistoryEntry> = if dropped_context_files.is_empty() {
+            Vec::new()
+        } else {
+            vec![context_files_pruned_history_entry(
+                effective_label.as_str(),
+                &dropped_context_files,
+            )]
+        };
         let updated = self.with_mutation(|| {
             let task = self.update_task_record(
                 id,
@@ -306,6 +367,7 @@ impl OrbitRuntime {
                         .as_ref()
                         .map(|_| ActorIdentity::from_legacy(agent.as_deref(), model.as_deref())),
                     append_comments: append_comments.clone(),
+                    append_history: append_history.clone(),
                     ..StoreTaskUpdateParams::from(params)
                 },
             )?;
@@ -979,6 +1041,35 @@ fn build_task_comments(message: Option<String>, by: &str) -> Result<Vec<TaskComm
     }])
 }
 
+/// Filesystem root used to resolve relative `context_files` entries when pruning.
+///
+/// Prefers the task's recorded `workspace_path` (already absolute post-normalization)
+/// and falls back to the runtime repo root. Returned as an owned `PathBuf` so the
+/// caller can use it without tying the lifetime to `self.paths()`.
+fn context_workspace_root(repo_root: &Path, workspace_path: Option<&str>) -> PathBuf {
+    workspace_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root.to_path_buf())
+}
+
+/// History entry recording that one or more `context_files` paths were dropped
+/// because they did not exist on disk at write-time.
+fn context_files_pruned_history_entry(actor: &str, dropped: &[String]) -> TaskHistoryEntry {
+    TaskHistoryEntry {
+        at: Utc::now(),
+        by: actor.to_string(),
+        event: "context_files_pruned".to_string(),
+        note: Some(format!(
+            "dropped: {} (not found in workspace)",
+            dropped.join(", ")
+        )),
+        from_status: None,
+        to_status: None,
+    }
+}
+
 fn normalize_workspace_path(
     repo_root: &Path,
     workspace: Option<&str>,
@@ -1189,6 +1280,137 @@ mod tests {
 
         let loaded = runtime.get_task(&task.id).expect("load");
         assert_eq!(loaded.acceptance_criteria, task.acceptance_criteria);
+    }
+
+    #[test]
+    fn create_prunes_missing_context_files_and_records_history() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        fs::write(repo_root.join("real.md"), "hi").expect("write real.md");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "ctx".to_string(),
+                description: "desc".to_string(),
+                context_files: vec!["real.md".to_string(), "ghost.md".to_string()],
+                ..Default::default()
+            })
+            .expect("task created");
+
+        assert_eq!(task.context_files, vec!["real.md".to_string()]);
+
+        let loaded = runtime.get_task(&task.id).expect("load");
+        assert_eq!(loaded.context_files, vec!["real.md".to_string()]);
+        let prune_event = loaded
+            .history
+            .iter()
+            .find(|h| h.event == "context_files_pruned")
+            .expect("history entry for pruned context_files");
+        let note = prune_event.note.as_deref().unwrap_or("");
+        assert!(
+            note.contains("ghost.md"),
+            "note should name the dropped path: {note}"
+        );
+        assert!(
+            !note.contains("real.md"),
+            "note should not name kept paths: {note}"
+        );
+    }
+
+    #[test]
+    fn create_with_all_existing_context_files_records_no_prune_event() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        fs::write(repo_root.join("a.md"), "").expect("write a.md");
+        fs::write(repo_root.join("b.md"), "").expect("write b.md");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "ctx".to_string(),
+                description: "desc".to_string(),
+                context_files: vec!["a.md".to_string(), "b.md".to_string()],
+                ..Default::default()
+            })
+            .expect("task");
+
+        assert_eq!(task.context_files, vec!["a.md".to_string(), "b.md".to_string()]);
+        assert!(
+            task.history
+                .iter()
+                .all(|h| h.event != "context_files_pruned"),
+            "no prune event expected when nothing is dropped"
+        );
+    }
+
+    #[test]
+    fn create_with_empty_and_whitespace_entries_drops_them_silently() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        fs::write(repo_root.join("real.md"), "").expect("write real.md");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "ctx".to_string(),
+                description: "desc".to_string(),
+                context_files: vec![
+                    "".to_string(),
+                    "   ".to_string(),
+                    "real.md".to_string(),
+                ],
+                ..Default::default()
+            })
+            .expect("task");
+
+        assert_eq!(task.context_files, vec!["real.md".to_string()]);
+        // Empty strings must not be reported as dropped.
+        assert!(
+            task.history
+                .iter()
+                .all(|h| h.event != "context_files_pruned"),
+            "empty/whitespace entries must not trigger a prune event"
+        );
+    }
+
+    #[test]
+    fn update_prunes_missing_context_files_and_records_history() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        fs::write(repo_root.join("first.md"), "").expect("write first.md");
+        fs::write(repo_root.join("second.md"), "").expect("write second.md");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "ctx".to_string(),
+                description: "desc".to_string(),
+                ..Default::default()
+            })
+            .expect("task");
+
+        let updated = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    context_files: Some(vec![
+                        "first.md".to_string(),
+                        "missing.md".to_string(),
+                        "second.md".to_string(),
+                    ]),
+                    ..Default::default()
+                },
+            )
+            .expect("update succeeds");
+
+        assert_eq!(
+            updated.context_files,
+            vec!["first.md".to_string(), "second.md".to_string()]
+        );
+        let prune_event = updated
+            .history
+            .iter()
+            .find(|h| h.event == "context_files_pruned")
+            .expect("history entry for pruned context_files");
+        let note = prune_event.note.as_deref().unwrap_or("");
+        assert!(note.contains("missing.md"), "note should name dropped: {note}");
     }
 
     #[test]

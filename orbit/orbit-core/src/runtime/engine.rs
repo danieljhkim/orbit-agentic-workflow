@@ -12,10 +12,11 @@ use orbit_tools::ToolContext;
 use orbit_types::{
     Activity, ActorIdentity, AgentCommitRequest, InvocationTrace, JobRun, JobRunState,
     JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus, TaskType,
-    WorkspacePaths,
+    WorkspacePaths, prune_missing_context_files,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 
 use crate::OrbitRuntime;
 
@@ -48,7 +49,11 @@ fn build_agent_stdin_envelope_payload(
 ) -> Result<Vec<u8>, OrbitError> {
     let skill_refs = activity_skill_refs_from_spec_config(&execution.activity.spec_config)?;
     let skills = runtime.resolve_activity_skill_refs(&skill_refs)?;
-    let task = task_detail_for_input(runtime, &execution.input)?;
+    let task = task_detail_for_input(
+        runtime,
+        &execution.input,
+        &runtime.context.paths().repo_root,
+    )?;
     let envelope = ExecutionEnvelope {
         schema_version: 1,
         activity: activity_envelope_json(&execution.activity),
@@ -87,16 +92,21 @@ fn build_agent_stdin_envelope_payload(
 fn task_detail_for_input<H: TaskHost + ?Sized>(
     host: &H,
     input: &Value,
+    fallback_repo_root: &Path,
 ) -> Result<Option<Value>, OrbitError> {
     let Some(task_id) = input.get("task_id").and_then(Value::as_str) else {
         return Ok(None);
     };
 
     let task = host.get_task(task_id)?;
-    Ok(Some(task_detail_envelope_json(&task, input)))
+    Ok(Some(task_detail_envelope_json(
+        &task,
+        input,
+        fallback_repo_root,
+    )))
 }
 
-fn task_detail_envelope_json(task: &Task, input: &Value) -> Value {
+fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Path) -> Value {
     let workspace_path = input
         .get("workspace_path")
         .and_then(Value::as_str)
@@ -108,13 +118,27 @@ fn task_detail_envelope_json(task: &Task, input: &Value) -> Value {
         .map(ToOwned::to_owned)
         .or_else(|| task.repo_root.clone());
 
+    // Read-time safety net: drop any `context_files` entries whose resolved
+    // paths no longer exist on disk. The authoritative fix lives at write-time
+    // in orbit-core, but files can be deleted *after* a task is written, and
+    // existing tasks on disk may still reference stale paths. Keep the on-disk
+    // task untouched — this only filters what reaches the agent envelope.
+    let prune_root: PathBuf = workspace_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| fallback_repo_root.to_path_buf());
+    let (kept_context_files, _dropped) =
+        prune_missing_context_files(&prune_root, task.context_files.clone());
+
     json!({
         "id": task.id.clone(),
         "title": task.title.clone(),
         "description": task.description.clone(),
         "acceptance_criteria": task.acceptance_criteria.clone(),
         "plan": task.plan.clone(),
-        "context_files": task.context_files.clone(),
+        "context_files": kept_context_files,
         "workspace_path": workspace_path,
         "repo_root": repo_root,
     })
@@ -801,6 +825,7 @@ mod tests {
                 "workspace_path": "/override/worktree",
                 "repo_root": "/override/repo",
             }),
+            std::path::Path::new("/"),
         );
 
         assert_eq!(
@@ -812,11 +837,38 @@ mod tests {
 
     #[test]
     fn task_detail_envelope_falls_back_to_task_paths() {
-        let detail = task_detail_envelope_json(&sample_task(), &json!({}));
+        let detail =
+            task_detail_envelope_json(&sample_task(), &json!({}), std::path::Path::new("/"));
 
         assert_eq!(detail.get("id"), Some(&json!("T20260408-0133")));
         assert_eq!(detail.get("workspace_path"), Some(&json!("/task/worktree")));
         assert_eq!(detail.get("repo_root"), Some(&json!("/task/repo")));
+    }
+
+    #[test]
+    fn task_detail_envelope_prunes_missing_context_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("real.md"), "hi").expect("write real.md");
+
+        let mut task = sample_task();
+        task.workspace_path = Some(tmp.path().to_string_lossy().into_owned());
+        task.context_files = vec![
+            "real.md".to_string(),
+            "ghost.md".to_string(),
+            "another/missing.md".to_string(),
+        ];
+
+        let detail = task_detail_envelope_json(&task, &json!({}), std::path::Path::new("/"));
+
+        let kept = detail
+            .get("context_files")
+            .and_then(serde_json::Value::as_array)
+            .expect("context_files array");
+        let kept_strings: Vec<&str> = kept
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert_eq!(kept_strings, vec!["real.md"]);
     }
 
     #[test]
@@ -825,7 +877,8 @@ mod tests {
             task: sample_task(),
         };
 
-        let detail = task_detail_for_input(&host, &json!({})).expect("task detail");
+        let detail =
+            task_detail_for_input(&host, &json!({}), std::path::Path::new("/")).expect("task detail");
 
         assert!(detail.is_none());
     }
@@ -839,7 +892,8 @@ mod tests {
             "task_id": "T20260408-0133",
             "workspace_path": "/override/worktree",
         });
-        let task = task_detail_for_input(&host, &input).expect("task detail");
+        let task = task_detail_for_input(&host, &input, std::path::Path::new("/"))
+            .expect("task detail");
 
         let envelope = ExecutionEnvelope {
             schema_version: 1,

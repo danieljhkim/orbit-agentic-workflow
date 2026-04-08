@@ -412,3 +412,106 @@ impl Display for Task {
         )
     }
 }
+
+/// Partition candidate `context_files` into `(kept, dropped)` based on filesystem existence.
+///
+/// - Empty / whitespace-only entries are silently discarded (not reported as dropped).
+/// - Each remaining entry is trimmed of leading/trailing whitespace before use.
+/// - Relative paths are resolved against `workspace_root`.
+/// - Absolute paths are checked as-is.
+///
+/// Entries whose resolved path does not exist on disk end up in `dropped` (as the
+/// trimmed, but otherwise unmodified, original string). Entries that do exist end
+/// up in `kept` (also trimmed).
+pub fn prune_missing_context_files(
+    workspace_root: &std::path::Path,
+    candidates: Vec<String>,
+) -> (Vec<String>, Vec<String>) {
+    let mut kept = Vec::with_capacity(candidates.len());
+    let mut dropped = Vec::new();
+    for entry in candidates {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let path = std::path::Path::new(trimmed);
+        let resolved = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            workspace_root.join(path)
+        };
+        if resolved.exists() {
+            kept.push(trimmed.to_string());
+        } else {
+            dropped.push(trimmed.to_string());
+        }
+    }
+    (kept, dropped)
+}
+
+#[cfg(test)]
+mod prune_context_files_tests {
+    use super::prune_missing_context_files;
+    use std::fs;
+
+    #[test]
+    fn mixed_present_and_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join("real.md"), "hi").expect("write");
+        let (kept, dropped) = prune_missing_context_files(
+            tmp.path(),
+            vec!["real.md".into(), "ghost.md".into(), "real.md".into()],
+        );
+        assert_eq!(kept, vec!["real.md".to_string(), "real.md".to_string()]);
+        assert_eq!(dropped, vec!["ghost.md".to_string()]);
+    }
+
+    #[test]
+    fn all_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (kept, dropped) = prune_missing_context_files(
+            tmp.path(),
+            vec!["a.md".into(), "b.md".into()],
+        );
+        assert!(kept.is_empty());
+        assert_eq!(dropped, vec!["a.md".to_string(), "b.md".to_string()]);
+    }
+
+    #[test]
+    fn absolute_path_that_exists() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let other = tempfile::tempdir().expect("other tempdir");
+        let abs = other.path().join("doc.md");
+        fs::write(&abs, "hi").expect("write");
+        let (kept, dropped) = prune_missing_context_files(
+            tmp.path(),
+            vec![abs.to_string_lossy().into_owned()],
+        );
+        assert_eq!(kept, vec![abs.to_string_lossy().into_owned()]);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn empty_and_whitespace_entries_are_silently_discarded() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join("real.md"), "hi").expect("write");
+        let (kept, dropped) = prune_missing_context_files(
+            tmp.path(),
+            vec!["".into(), "   ".into(), "\t\n".into(), "real.md".into()],
+        );
+        assert_eq!(kept, vec!["real.md".to_string()]);
+        assert!(dropped.is_empty(), "empty entries must not be reported as dropped");
+    }
+
+    #[test]
+    fn leading_and_trailing_whitespace_is_trimmed_before_storing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join("real.md"), "hi").expect("write");
+        let (kept, dropped) = prune_missing_context_files(
+            tmp.path(),
+            vec!["  real.md  ".into(), "\tghost.md\n".into()],
+        );
+        assert_eq!(kept, vec!["real.md".to_string()]);
+        assert_eq!(dropped, vec!["ghost.md".to_string()]);
+    }
+}

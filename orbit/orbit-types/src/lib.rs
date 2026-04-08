@@ -62,7 +62,7 @@ pub use role::Role;
 pub use skill::Skill;
 pub use task::{
     ReviewMessage, ReviewThread, ReviewThreadStatus, Task, TaskComment, TaskComplexity,
-    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, prune_missing_context_files,
 };
 pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
 pub use workspace::{Workspace, WorkspacePaths, WorkspaceRegistry, WorkspaceStatus};
