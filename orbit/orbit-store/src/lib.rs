@@ -24,8 +24,12 @@
 
 pub mod backend;
 mod file;
+#[path = "sqlite/invocation_store.rs"]
+mod invocation_store_impl;
 pub mod json_schema;
 pub mod sqlite;
+#[path = "file/token_scoreboard.rs"]
+mod token_scoreboard_impl;
 
 pub mod skill_store {
     pub use crate::file::skill_store::*;
@@ -51,6 +55,10 @@ pub mod metrics_log {
     pub use crate::file::metrics_log::{append_metrics_entry, read_metrics_entries_for_month};
 }
 
+pub mod token_scoreboard {
+    pub use crate::token_scoreboard_impl::write_token_scoreboard;
+}
+
 use chrono::{DateTime, Utc};
 
 pub use backend::{
@@ -60,6 +68,9 @@ pub use backend::{
     TaskUpdateParams, ToolStoreBackend, activity_store_file, activity_store_resolved,
     audit_event_store_sqlite, job_store_file, job_store_resolved, task_store_file,
     task_store_resolved, tool_store_sqlite,
+};
+pub use invocation_store_impl::{
+    ActivityInvocationMetrics, InvocationInsertParams, TaskInvocationMetrics, ToolInvocationMetrics,
 };
 pub use json_schema::{validate_instance_against_schema, validate_schema_document};
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};

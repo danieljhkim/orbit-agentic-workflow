@@ -13,7 +13,7 @@ mod snapshot;
 mod sync_review;
 mod task;
 
-use orbit_types::{Activity, JobRunState, OrbitError};
+use orbit_types::{Activity, InvocationTrace, JobRunState, OrbitError};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -61,6 +61,7 @@ impl ActivityExecutor for AutomationExecutor {
                     state: JobRunState::Success,
                     exit_code: Some(0),
                     duration_ms: None,
+                    invocation_trace: InvocationTrace::default(),
                     response_json: Some(result),
                     error_code: None,
                     error_message: None,

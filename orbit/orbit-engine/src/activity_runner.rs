@@ -244,6 +244,10 @@ mod retry_tests {
             state: JobRunState::Success,
             exit_code: Some(0),
             duration_ms: Some(100),
+            invocation_trace: orbit_types::InvocationTrace {
+                duration_ms: 100,
+                ..orbit_types::InvocationTrace::default()
+            },
             response_json: None,
             error_code: None,
             error_message: None,

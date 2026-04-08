@@ -406,27 +406,27 @@ impl Execute for TaskShowArgs {
                 }
                 "plan" => {
                     if self.json {
-                        return crate::output::json::print_pretty(
-                            &serde_json::Value::String(task.plan.clone()),
-                        );
+                        return crate::output::json::print_pretty(&serde_json::Value::String(
+                            task.plan.clone(),
+                        ));
                     }
                     print!("{}", task.plan);
                     return Ok(());
                 }
                 "execution_summary" => {
                     if self.json {
-                        return crate::output::json::print_pretty(
-                            &serde_json::Value::String(task.execution_summary.clone()),
-                        );
+                        return crate::output::json::print_pretty(&serde_json::Value::String(
+                            task.execution_summary.clone(),
+                        ));
                     }
                     print!("{}", task.execution_summary);
                     return Ok(());
                 }
                 "description" => {
                     if self.json {
-                        return crate::output::json::print_pretty(
-                            &serde_json::Value::String(task.description.clone()),
-                        );
+                        return crate::output::json::print_pretty(&serde_json::Value::String(
+                            task.description.clone(),
+                        ));
                     }
                     print!("{}", task.description);
                     return Ok(());

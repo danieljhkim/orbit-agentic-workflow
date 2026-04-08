@@ -17,9 +17,7 @@ impl ClaudeCliTransport {
             "--permission-mode".to_string(),
             "bypassPermissions".to_string(),
             "--output-format".to_string(),
-            // Always use "text" — "json" wraps the response in a CLI envelope
-            // that breaks Orbit's own envelope parsing.
-            "text".to_string(),
+            "json".to_string(),
             "--no-session-persistence".to_string(),
         ];
 

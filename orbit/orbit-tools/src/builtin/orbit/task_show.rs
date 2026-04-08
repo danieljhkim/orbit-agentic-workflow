@@ -22,7 +22,9 @@ pub(super) fn build_exec_request(
         args.push("--field".to_string());
         args.push(field.to_string());
     }
-    Ok(super::orbit_exec_request_with_identity(ctx, args, &identity))
+    Ok(super::orbit_exec_request_with_identity(
+        ctx, args, &identity,
+    ))
 }
 
 impl Tool for OrbitTaskShowTool {
@@ -31,9 +33,11 @@ impl Tool for OrbitTaskShowTool {
         parameters.extend(super::identity_params());
         parameters.push(ToolParam {
             name: "field".to_string(),
-            description: "Optional field selector. When set, returns only the specified field as JSON. \
+            description:
+                "Optional field selector. When set, returns only the specified field as JSON. \
                 Valid values: comments, plan, execution_summary, description, acceptance_criteria, \
-                history, context_files.".to_string(),
+                history, context_files."
+                    .to_string(),
             param_type: "string".to_string(),
             required: false,
         });

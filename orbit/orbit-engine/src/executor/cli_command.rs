@@ -15,6 +15,7 @@ use crate::activity_runner::{
 };
 use crate::context::{ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, ExecutionContext};
 use crate::template::{TemplateContext, render};
+use orbit_types::InvocationTrace;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CliCommandSpec {
@@ -78,6 +79,10 @@ impl ActivityExecutor for CliCommandExecutor {
                     state: JobRunState::Success,
                     exit_code,
                     duration_ms: Some(duration_ms),
+                    invocation_trace: InvocationTrace {
+                        duration_ms,
+                        ..InvocationTrace::default()
+                    },
                     response_json: Some(result),
                     error_code: None,
                     error_message: None,

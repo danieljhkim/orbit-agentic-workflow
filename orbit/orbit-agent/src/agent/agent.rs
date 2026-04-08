@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::OrbitError;
+use orbit_types::{InvocationTrace, OrbitError};
 
 use crate::providers::AgentProvider;
 use crate::runtime::{AgentRuntime, RuntimeBackend, resolve_runtime};
@@ -101,7 +101,10 @@ impl Agent {
         })
     }
 
-    pub fn invoke(&self, req: AgentRequest) -> Result<AgentResponse, OrbitError> {
+    pub fn invoke(
+        &self,
+        req: AgentRequest,
+    ) -> Result<(AgentResponse, InvocationTrace), OrbitError> {
         self.runtime.invoke(req)
     }
 

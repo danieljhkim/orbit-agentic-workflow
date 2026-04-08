@@ -15,7 +15,7 @@
 //! - [`Agent`] / [`AgentConfig`] — high-level agent configuration
 //! - [`AgentRequest`] / [`AgentResponse`] — request and CLI-command response types
 //! - [`AgentOperation`] / [`AgentResponseStatus`] — operation kinds and status variants
-//! - [`parse_and_validate_response`] — parses the agent's JSON envelope and validates schema
+//! - [`parse_and_validate_response`] — parses the agent's JSON envelope, usage, and tool traces
 //!
 //! # Dependency direction
 //! `orbit-types` → `orbit-agent` → orbit-engine
@@ -26,6 +26,7 @@ mod runtime;
 mod types;
 
 pub use agent::{Agent, AgentConfig, ProviderOptions};
+pub use orbit_types::{InvocationTrace, TokenUsage, ToolCallTrace};
 pub use runtime::AgentRuntime;
 pub use types::{AgentOperation, AgentRequest, AgentResponse, AgentResponseStatus};
 pub use types::{is_timeout, parse_and_validate_response};

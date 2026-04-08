@@ -53,6 +53,37 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 pid INTEGER NOT NULL,
                 session_id TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS invocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                job_run_id TEXT NOT NULL,
+                activity_id TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                model TEXT,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                tool_call_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS invocation_tasks (
+                invocation_id INTEGER NOT NULL,
+                task_id TEXT NOT NULL,
+                PRIMARY KEY(invocation_id, task_id),
+                FOREIGN KEY(invocation_id) REFERENCES invocations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS tool_calls (
+                invocation_id INTEGER NOT NULL,
+                seq INTEGER NOT NULL,
+                tool_name TEXT NOT NULL,
+                result_bytes INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(invocation_id, seq),
+                FOREIGN KEY(invocation_id) REFERENCES invocations(id) ON DELETE CASCADE
+            );
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -60,6 +91,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     ensure_agent_sessions_schema(conn)?;
     ensure_tools_schema(conn)?;
     ensure_audit_events_schema(conn)?;
+    ensure_invocation_schema(conn)?;
 
     Ok(())
 }
@@ -235,6 +267,25 @@ fn ensure_audit_events_schema(conn: &Connection) -> Result<(), OrbitError> {
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_events_execution_id
             ON audit_events(execution_id);
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))
+}
+
+fn ensure_invocation_schema(conn: &Connection) -> Result<(), OrbitError> {
+    conn.execute_batch(
+        r#"
+            CREATE INDEX IF NOT EXISTS idx_invocations_job_run_id
+            ON invocations(job_run_id);
+
+            CREATE INDEX IF NOT EXISTS idx_invocations_activity_id
+            ON invocations(activity_id);
+
+            CREATE INDEX IF NOT EXISTS idx_invocation_tasks_task_id
+            ON invocation_tasks(task_id);
+
+            CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name
+            ON tool_calls(tool_name);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))

@@ -3,11 +3,16 @@ use orbit_engine::{
     AgentProtocolHost, EnvironmentHost, ExecutionContext, JobRunHost, RuntimeHost,
     TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
 };
-use orbit_store::{JobRunStepParams, TaskUpdateParams as StoreTaskUpdateParams};
+use orbit_store::{
+    ActivityInvocationMetrics, InvocationInsertParams, JobRunStepParams, Store,
+    TaskInvocationMetrics, TaskUpdateParams as StoreTaskUpdateParams, ToolInvocationMetrics,
+    token_scoreboard,
+};
 use orbit_tools::ToolContext;
 use orbit_types::{
-    Activity, ActorIdentity, AgentCommitRequest, JobRun, JobRunState, JobTargetType, OrbitError,
-    OrbitEvent, Role, Task, TaskPriority, TaskStatus, TaskType, WorkspacePaths,
+    Activity, ActorIdentity, AgentCommitRequest, InvocationTrace, JobRun, JobRunState,
+    JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus, TaskType,
+    WorkspacePaths,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -164,6 +169,74 @@ fn execute_commit_request_if_present(
     Ok(())
 }
 
+fn open_invocation_store(runtime: &OrbitRuntime) -> Result<Store, OrbitError> {
+    Store::open(&runtime.context.persistence().audit_db)
+}
+
+fn normalize_agent_name(agent_cli: &str) -> String {
+    std::path::Path::new(agent_cli)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(agent_cli)
+        .to_ascii_lowercase()
+}
+
+fn associated_task_ids(input: &Value) -> Vec<String> {
+    let mut task_ids = Vec::new();
+    if let Some(task_id) = input.get("task_id").and_then(Value::as_str) {
+        push_unique_task_id(&mut task_ids, task_id);
+    }
+    if let Some(items) = input.get("task_ids").and_then(Value::as_array) {
+        for item in items {
+            if let Some(task_id) = item.as_str() {
+                push_unique_task_id(&mut task_ids, task_id);
+            }
+        }
+    }
+    if let Some(items) = input.get("tasks").and_then(Value::as_array) {
+        for item in items {
+            if let Some(task_id) = item.as_str() {
+                push_unique_task_id(&mut task_ids, task_id);
+                continue;
+            }
+            if let Some(task_id) = item
+                .get("id")
+                .and_then(Value::as_str)
+                .or_else(|| item.get("task_id").and_then(Value::as_str))
+            {
+                push_unique_task_id(&mut task_ids, task_id);
+            }
+        }
+    }
+    task_ids
+}
+
+fn push_unique_task_id(task_ids: &mut Vec<String>, task_id: &str) {
+    let task_id = task_id.trim();
+    if !task_id.is_empty() && !task_ids.iter().any(|existing| existing == task_id) {
+        task_ids.push(task_id.to_string());
+    }
+}
+
+impl OrbitRuntime {
+    pub fn activity_invocation_metrics(
+        &self,
+    ) -> Result<Vec<ActivityInvocationMetrics>, OrbitError> {
+        open_invocation_store(self)?.list_activity_invocation_metrics()
+    }
+
+    pub fn task_invocation_metrics(
+        &self,
+        task_id: &str,
+    ) -> Result<TaskInvocationMetrics, OrbitError> {
+        open_invocation_store(self)?.get_task_invocation_metrics(task_id)
+    }
+
+    pub fn tool_invocation_metrics(&self) -> Result<Vec<ToolInvocationMetrics>, OrbitError> {
+        open_invocation_store(self)?.list_tool_invocation_metrics()
+    }
+}
+
 impl RuntimeHost for OrbitRuntime {
     fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError> {
         OrbitRuntime::record_event(self, event)
@@ -301,6 +374,31 @@ impl RuntimeHost for OrbitRuntime {
 
     fn scoreboard_dir(&self) -> &std::path::Path {
         &self.context.paths().scoreboard_dir
+    }
+
+    fn persist_invocation_trace(
+        &self,
+        job_run_id: &str,
+        execution: &ExecutionContext,
+        trace: &InvocationTrace,
+    ) -> Result<(), OrbitError> {
+        let store = open_invocation_store(self)?;
+        store.insert_invocation_trace_record(&InvocationInsertParams {
+            job_run_id: job_run_id.to_string(),
+            activity_id: execution.activity.id.clone(),
+            agent: normalize_agent_name(&execution.agent_cli),
+            model: execution.model.clone(),
+            task_ids: associated_task_ids(&execution.input),
+            trace: trace.clone(),
+        })?;
+
+        if let Err(error) =
+            token_scoreboard::write_token_scoreboard(&self.paths().scoreboard_dir, &store)
+        {
+            eprintln!("orbit: failed to refresh tokens scoreboard: {error}");
+        }
+
+        Ok(())
     }
 }
 
@@ -624,8 +722,7 @@ mod tests {
             execution_summary: String::new(),
             context_files: vec![
                 "orbit/orbit-core/src/runtime/engine.rs".to_string(),
-                "orbit/orbit-core/assets/activities/agent_invoke/implement_change.yaml"
-                    .to_string(),
+                "orbit/orbit-core/assets/activities/agent_invoke/implement_change.yaml".to_string(),
             ],
             workspace_path: Some("/task/worktree".to_string()),
             repo_root: Some("/task/repo".to_string()),
@@ -706,7 +803,10 @@ mod tests {
             }),
         );
 
-        assert_eq!(detail.get("workspace_path"), Some(&json!("/override/worktree")));
+        assert_eq!(
+            detail.get("workspace_path"),
+            Some(&json!("/override/worktree"))
+        );
         assert_eq!(detail.get("repo_root"), Some(&json!("/override/repo")));
     }
 

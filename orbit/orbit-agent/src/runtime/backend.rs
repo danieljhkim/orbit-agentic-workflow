@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_types::{InvocationTrace, OrbitError};
 
 use crate::providers::{ClaudeRuntime, CodexRuntime, GeminiRuntime, MockAgentRuntime};
 use crate::runtime::AgentRuntime;
@@ -13,7 +13,7 @@ pub(crate) enum RuntimeBackend {
 }
 
 impl AgentRuntime for RuntimeBackend {
-    fn invoke(&self, req: AgentRequest) -> Result<AgentResponse, OrbitError> {
+    fn invoke(&self, req: AgentRequest) -> Result<(AgentResponse, InvocationTrace), OrbitError> {
         match self {
             RuntimeBackend::CodexCli(runtime) => runtime.invoke(req),
             RuntimeBackend::ClaudeCli(runtime) => runtime.invoke(req),

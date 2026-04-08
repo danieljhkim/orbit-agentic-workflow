@@ -523,6 +523,14 @@ fn execute_activity_with_retries<H: EngineHost>(
                     return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
                 }
 
+                if execution.activity.spec_type == "agent_invoke" {
+                    host.persist_invocation_trace(
+                        &run.run_id,
+                        &execution,
+                        &outcome.invocation_trace,
+                    )?;
+                }
+
                 log_step_completion(
                     global_step_index,
                     iteration,
@@ -553,6 +561,8 @@ fn execute_activity_with_retries<H: EngineHost>(
                     &step.target_id,
                     &execution,
                     outcome.duration_ms,
+                    outcome.invocation_trace.tool_calls.len() as u32,
+                    Some(outcome.invocation_trace.usage.prompt_response_total()),
                     outcome.retry_count,
                     step_finished,
                 );

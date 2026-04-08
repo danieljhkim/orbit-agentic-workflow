@@ -26,7 +26,7 @@ def compute_hashes(file_paths: list[Path], repo_path: Path) -> dict[str, str]:
 
 def detect_changes(new_hashes: dict[str, str], output_dir: Path) -> list[str]:
     """Return list of relative paths that are new or changed vs. the cached hashes."""
-    cache_path = output_dir.parent / "cache" / "hashes.json"
+    cache_path = output_dir / "hashes.json"
     logger.debug("Detecting changes with cache file %s", cache_path)
 
     if not cache_path.exists():
@@ -47,8 +47,8 @@ def detect_changes(new_hashes: dict[str, str], output_dir: Path) -> list[str]:
 
 
 def save_hash_cache(hashes: dict[str, str], output_dir: Path) -> None:
-    """Persist hashes to .orbit/cache/hashes.json."""
-    cache_path = output_dir.parent / "cache" / "hashes.json"
+    """Persist hashes to .orbit/knowledge/hashes.json."""
+    cache_path = output_dir / "hashes.json"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     logger.debug("Writing hash cache to %s", cache_path)
     cache_path.write_text(json.dumps(hashes, indent=2, sort_keys=True) + "\n")

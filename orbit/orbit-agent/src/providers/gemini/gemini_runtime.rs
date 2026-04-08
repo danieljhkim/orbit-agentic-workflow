@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_types::{InvocationTrace, OrbitError};
 
 use crate::providers::gemini::gemini_cli::GeminiCliTransport;
 use crate::providers::{AgentProvider, build_agent_response};
@@ -20,12 +20,15 @@ impl GeminiRuntime {
 }
 
 impl AgentRuntime for GeminiRuntime {
-    fn invoke(&self, req: AgentRequest) -> Result<AgentResponse, OrbitError> {
-        Ok(build_agent_response(
-            AgentProvider::Gemini,
-            self.command.clone(),
-            self.cli.args(req.verbose),
-            self.cli.stdin(&req.envelope_json),
+    fn invoke(&self, req: AgentRequest) -> Result<(AgentResponse, InvocationTrace), OrbitError> {
+        Ok((
+            build_agent_response(
+                AgentProvider::Gemini,
+                self.command.clone(),
+                self.cli.args(req.verbose),
+                self.cli.stdin(&req.envelope_json),
+            ),
+            InvocationTrace::default(),
         ))
     }
 

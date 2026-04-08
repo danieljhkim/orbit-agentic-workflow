@@ -145,7 +145,7 @@ def knowledge_pack(
     """Render a deterministic lineage-specific knowledge pack."""
     if not selectors:
         raise click.UsageError("At least one context selector is required.")
-    _, output_dir = resolve_paths(repo, output)
+    repo_path, output_dir = resolve_paths(repo, output)
     logger.info("Rendering lineage pack from %s", output_dir)
     click.echo(
         render_lineage_pack(
@@ -159,6 +159,7 @@ def knowledge_pack(
             detail=detail,
             include_source=include_source,
             source_budget=source_budget,
+            repo_path=repo_path,
         )
     )
 

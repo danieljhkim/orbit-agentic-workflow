@@ -28,6 +28,35 @@ Create an Orbit task another engineer or agent can execute without guessing. Foc
 - Blank or missing task companion files (`plan.md`, `execution-summary.md`) are treated as blank task fields. Repair them through `orbit.task.update` (`plan` or `execution_summary`), not manual file edits.
 - Orbit fills `created_by`, `assigned_to`, and `proposed_by` automatically from execution context.
 
+## Task Quality Standards
+
+### Environment Independence checklist
+
+- Tests must not assume the presence of `.orbit/knowledge/`, local config files, or filesystem artifacts that are neither committed nor created by the test itself.
+- File I/O tests must use temp directories or in-memory fakes.
+- Acceptance criteria must state filesystem independence explicitly when behavior touches persisted state.
+
+### Explicit Definitions checklist
+
+- Terms such as `purpose`, `summary`, and `description` in acceptance criteria must include an observable format or output requirement.
+- If acceptance criteria mention a `signature`, specify the exact form it must take.
+- Prohibit vague pass/fail language such as `works correctly` or `handles edge cases`; replace it with concrete observable behavior.
+
+### Mock-Based, Deterministic Testing
+
+- Tasks that modify behavior involving external services, filesystem I/O, or time-dependent state must require mock or fake coverage in acceptance criteria.
+- Prefer `node_type` attribute dispatch over `isinstance` checks when task code must remain compatible with mocks or fakes.
+- Acceptance criteria must specify expected return types or output shapes when functions change.
+
+### Per-Node Purpose checklist
+
+- For graph or knowledge tasks, define each node `purpose` as: role in one sentence, crate or module, and whether the node is leaf or internal.
+
+### AC Format Rule
+
+- Each acceptance criterion must be independently verifiable and name a command, test, or observable output.
+- Include at least one acceptance criterion that specifies the validation command.
+
 ## Command
 
 ```bash

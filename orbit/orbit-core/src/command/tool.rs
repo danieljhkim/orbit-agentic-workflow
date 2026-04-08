@@ -443,10 +443,7 @@ mod tests {
                         Some("cli-agent".to_string()),
                         Some("cli-model".to_string())
                     ),
-                    (
-                        Some("cli-agent".to_string()),
-                        Some("cli-model".to_string())
-                    )
+                    (Some("cli-agent".to_string()), Some("cli-model".to_string()))
                 );
             },
         );
@@ -462,10 +459,7 @@ mod tests {
             || {
                 assert_eq!(
                     resolve_agent_identity(None, None),
-                    (
-                        Some("env-agent".to_string()),
-                        Some("env-model".to_string())
-                    )
+                    (Some("env-agent".to_string()), Some("env-model".to_string()))
                 );
             },
         );

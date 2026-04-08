@@ -32,7 +32,9 @@ fn sanitize_run_id_token(run_id: &str) -> Result<String, OrbitError> {
             }
         })
         .collect();
-    let trimmed = sanitized.trim_matches(|c: char| c == '-' || c == '.').to_string();
+    let trimmed = sanitized
+        .trim_matches(|c: char| c == '-' || c == '.')
+        .to_string();
     if trimmed.is_empty() {
         return Err(OrbitError::InvalidInput(format!(
             "cannot derive shared worktree token from run_id '{run_id}'"
@@ -62,18 +64,13 @@ fn shared_worktree_branch_name(run_id: &str) -> Result<String, OrbitError> {
 /// Extract the `run_id` from an activity input value, returning a trimmed
 /// non-empty string. Used by downstream batch activities that need to resolve
 /// the same shared worktree as the dispatch step.
-pub(super) fn require_run_id<'a>(
-    input: &'a Value,
-    activity: &str,
-) -> Result<&'a str, OrbitError> {
+pub(super) fn require_run_id<'a>(input: &'a Value, activity: &str) -> Result<&'a str, OrbitError> {
     input
         .get("run_id")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            OrbitError::InvalidInput(format!("{activity} requires input.run_id"))
-        })
+        .ok_or_else(|| OrbitError::InvalidInput(format!("{activity} requires input.run_id")))
 }
 
 #[derive(Debug, Clone)]
@@ -694,8 +691,7 @@ mod tests {
         run_git(repo_root, &["branch", "orbit/parallel-batch-jrun-old"]);
 
         let run_id = "jrun-20260408-0219-2";
-        let worktree_path =
-            resolve_shared_worktree_path(repo_root, run_id).expect("resolve path");
+        let worktree_path = resolve_shared_worktree_path(repo_root, run_id).expect("resolve path");
         ensure_shared_worktree(repo_root, &worktree_path, "main", run_id)
             .expect("create dynamic shared worktree despite stale static branch");
 

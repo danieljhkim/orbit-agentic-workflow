@@ -81,7 +81,7 @@ Primary artifact pointer is `graph/refs/current.json` (not `architecture.json`).
 
 **architecture.json**: optional, not produced by the default pipeline. Only present when the `generate_architecture` component is explicitly included.
 
-Optional: `.orbit/cache/hashes.json` for incremental rebuild support.
+Optional: `.orbit/knowledge/hashes.json` for incremental rebuild support.
 
 ---
 
