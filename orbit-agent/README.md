@@ -141,13 +141,21 @@ orbit-agent knowledge bootstrap --output .orbit/knowledge --budget 8000
 orbit-agent knowledge bootstrap --output .orbit/knowledge --format json
 ```
 
+Render a focused lineage pack from selected context nodes:
+
+```bash
+orbit-agent knowledge pack file:src/a.py file:src/b.py
+orbit-agent knowledge pack leaf:src/a.py#a:function --depth 1 --siblings 2 --children 4
+orbit-agent knowledge pack file:src/a.py file:src/b.py --format json
+```
+
 Inspect the persisted graph:
 
 ```bash
 orbit-agent graph search PipelineContext --limit 5
-orbit-agent graph context file:<stable-id-hash>
-orbit-agent graph lineage file:<stable-id-hash> --include-self
-orbit-agent graph children dir:<stable-id-hash>
+orbit-agent graph context file:src/a.py
+orbit-agent graph lineage file:src/a.py --include-self
+orbit-agent graph children dir:src
 ```
 
 Build knowledge after the graph exists:
@@ -327,7 +335,22 @@ The default markdown output is intentionally compact:
 - file summaries
 - leaf names and signatures
 
+Use `--detail` for the richer debug-oriented schema.
+
 Source excerpts are opt-in and bounded by a separate budget.
+
+## Lineage Packs
+
+`orbit-agent knowledge pack` renders a deterministic, context-specific graph summary for one or more selected nodes or selectors.
+
+The pack accepts readable selectors such as:
+
+- `dir:<path>`
+- `file:<path>`
+- `leaf:<path>#<symbol>:<kind>`
+
+The output deduplicates shared ancestors, sibling context, and containing files so repeated context only appears once.
+Use `--detail` if you want the richer debug-oriented schema instead of the compact default.
 
 ## Schema Notes
 

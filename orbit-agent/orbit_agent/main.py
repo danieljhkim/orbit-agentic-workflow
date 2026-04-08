@@ -14,6 +14,7 @@ from orbit_agent.schemas import NodeContextRef
 from orbit_agent.schemas.graph.contexts import NodeType
 from orbit_agent.schemas.graph.nodes import LeafKind
 from orbit_agent.service.bootstrap import render_knowledge_bootstrap
+from orbit_agent.service.lineage_pack import render_lineage_pack
 from orbit_agent.service import GraphContextService
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ NODE_TYPE_CHOICES = ("dir", "file", "leaf")
 LEAF_KIND_CHOICES = tuple(str(value) for value in get_args(LeafKind))
 BUILD_TARGET_CHOICES = ("graph", "knowledge")
 BOOTSTRAP_FORMAT_CHOICES = ("markdown", "json")
+PACK_FORMAT_CHOICES = ("markdown", "json")
 GRAPH_COMPONENT_NAMES = [
     "scan_repo",
     "compute_hashes",
@@ -149,6 +151,98 @@ def knowledge_bootstrap(
             output_dir,
             format=output_format,
             budget=budget,
+            include_source=include_source,
+            source_budget=source_budget,
+        )
+    )
+
+
+@knowledge.command("pack")
+@click.argument("selectors", nargs=-1)
+@click.option("--repo", default=".", help="Repository root path.")
+@click.option(
+    "--output", default=".orbit/knowledge", help="Knowledge output directory."
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(PACK_FORMAT_CHOICES),
+    default="markdown",
+    show_default=True,
+)
+@click.option(
+    "--depth",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Maximum ancestor lineage depth to include for each selected node.",
+)
+@click.option(
+    "--siblings",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Maximum sibling nodes to include around each focus node.",
+)
+@click.option(
+    "--children",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Maximum direct child nodes to include around each focus node.",
+)
+@click.option(
+    "--budget",
+    type=int,
+    default=12000,
+    show_default=True,
+    help="Approximate markdown character budget for the rendered pack.",
+)
+@click.option(
+    "--detail",
+    is_flag=True,
+    help="Render the richer lineage-pack schema instead of the compact default.",
+)
+@click.option(
+    "--include-source",
+    is_flag=True,
+    help="Include source excerpts for leaf nodes when available.",
+)
+@click.option(
+    "--source-budget",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Maximum characters of leaf source excerpts to include.",
+)
+def knowledge_pack(
+    selectors: tuple[str, ...],
+    repo: str,
+    output: str,
+    output_format: str,
+    depth: int,
+    siblings: int,
+    children: int,
+    budget: int,
+    detail: bool,
+    include_source: bool,
+    source_budget: int,
+) -> None:
+    """Render a deterministic lineage-specific knowledge pack."""
+    if not selectors:
+        raise click.UsageError("At least one context selector is required.")
+    _, output_dir = _resolve_paths(repo, output)
+    logger.info("Rendering lineage pack from %s", output_dir)
+    click.echo(
+        render_lineage_pack(
+            output_dir,
+            selectors,
+            format=output_format,
+            budget=budget,
+            depth=depth,
+            siblings=siblings,
+            children=children,
+            detail=detail,
             include_source=include_source,
             source_budget=source_budget,
         )

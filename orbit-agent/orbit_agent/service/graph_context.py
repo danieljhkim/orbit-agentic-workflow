@@ -46,6 +46,38 @@ class GraphContextService:
     def get_node(self, node_id: str) -> GraphNode:
         return self.navigator.get_node(node_id)
 
+    def resolve_selector(self, selector: str) -> GraphNode:
+        normalized = selector.strip()
+        if not normalized:
+            raise ValueError("Empty node selector")
+
+        if normalized in self.navigator.node_index:
+            return self.get_node(normalized)
+
+        node_type, location, kind = _parse_selector(normalized)
+        if node_type == "dir":
+            for node in self.graph.dirs:
+                if node.location == location:
+                    return node
+            raise ValueError(f"Unknown dir selector: {selector}")
+        if node_type == "file":
+            for node in self.graph.files:
+                if node.location == location:
+                    return node
+            raise ValueError(f"Unknown file selector: {selector}")
+
+        for node in self.graph.leaves:
+            if node.location == location and node.kind == kind:
+                return node
+        raise ValueError(f"Unknown leaf selector: {selector}")
+
+    def selector_for_node(self, node: GraphNode) -> str:
+        if node.node_type == "dir":
+            return f"dir:{node.location}"
+        if node.node_type == "file":
+            return f"file:{node.location}"
+        return f"leaf:{node.location}:{node.kind}"
+
     def get_parent(self, node_id: str) -> NodeContextRef | None:
         parent = self.navigator.get_parent(node_id)
         if parent is None:
@@ -159,4 +191,22 @@ def _symbol_to_ref(
         description=symbol.description,
         parent_id=file_node.id,
         kind=symbol.kind,
+    )
+
+
+def _parse_selector(selector: str) -> tuple[str, str, str | None]:
+    if selector.startswith("dir:"):
+        return "dir", selector[4:], None
+    if selector.startswith("file:"):
+        return "file", selector[5:], None
+    if selector.startswith("leaf:"):
+        remainder = selector[5:]
+        location, sep, kind = remainder.rpartition(":")
+        if not sep or not location or not kind:
+            raise ValueError(
+                f"Invalid leaf selector, expected leaf:<path>#<symbol>:<kind>: {selector}"
+            )
+        return "leaf", location, kind
+    raise ValueError(
+        f"Unsupported selector format, expected dir:, file:, leaf:, or a node id: {selector}"
     )
