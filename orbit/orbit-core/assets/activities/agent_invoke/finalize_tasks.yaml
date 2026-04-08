@@ -31,12 +31,19 @@ activity:
        - Look for integration issues, stale assumptions, duplicated fixes, or places where one task now needs a small follow-up because of another task in the same batch.
        - You may revise code directly in the shared worktree needed to meet the acceptance criteria of the tasks.
 
-    4. Run verification:
+    4. Pre-review (Arendt Mode):
+       - Perform a rigorous semantic audit of each task's changes. Adopt a "rejection-first" mindset: actively look for reasons why the task should NOT be considered complete.
+       - Check for "agent-isms": stale file paths (e.g., from renames), temporary debug code, commented-out logic, or leaking mock configurations.
+       - Audit the `execution_summary` for every task: it must be a high-signal, concise technical rationale (no conversational filler).
+       - Ensure the changes strictly align with the task's intent and architectural direction.
+       - If a task fails this pre-review, fix the underlying issues in the codebase and update the task's execution_summary accordingly.
+
+    5. Run verification:
        - In this activity you ARE allowed to run build, test, lint, or validation commands with proc.spawn.
        - Choose the smallest commands that give real confidence for the batch.
        - If verification reveals a fixable issue, fix it before continuing.
 
-    5. Keep task records current:
+    6. Keep task records current:
        - If you materially change a task during this finalization pass, update that task
          execution_summary with orbit.task.update so the task record reflects the final
          state before commit and PR creation.
