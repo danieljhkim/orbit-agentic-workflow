@@ -37,7 +37,10 @@ Invoke Orbit through `orbit tool run`:
 
 ```bash
 # Task commands
-orbit tool run orbit.task.show --input '{"id": "<id>"}'              # Load task details
+orbit tool run orbit.task.show --input '{"id": "<id>"}'                          # Load full task
+orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments"}'     # Load only comments
+orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan"}'         # Load only plan
+# Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files
 orbit tool run orbit.task.list --input '{"status": "backlog"}'       # List by status
 orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": "."}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "..."}'

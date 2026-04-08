@@ -374,11 +374,121 @@ pub struct TaskShowArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
+    /// Print only the specified field. Valid values: comments, plan, execution_summary,
+    /// description, acceptance_criteria, history, context_files.
+    /// Combined with --json, outputs the field as JSON.
+    #[arg(long)]
+    pub field: Option<String>,
 }
 
 impl Execute for TaskShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let task = runtime.get_task(&self.id)?;
+
+        if let Some(ref field) = self.field {
+            match field.as_str() {
+                "comments" => {
+                    if self.json {
+                        let value = serde_json::to_value(&task.comments)
+                            .map_err(|e| OrbitError::Io(e.to_string()))?;
+                        return crate::output::json::print_pretty(&value);
+                    }
+                    use crate::output::color::dimmed;
+                    for comment in &task.comments {
+                        println!(
+                            "{} {}: {}",
+                            dimmed(&format!("[{}]", comment.at.to_rfc3339())),
+                            comment.by,
+                            comment.message
+                        );
+                    }
+                    return Ok(());
+                }
+                "plan" => {
+                    if self.json {
+                        return crate::output::json::print_pretty(
+                            &serde_json::Value::String(task.plan.clone()),
+                        );
+                    }
+                    print!("{}", task.plan);
+                    return Ok(());
+                }
+                "execution_summary" => {
+                    if self.json {
+                        return crate::output::json::print_pretty(
+                            &serde_json::Value::String(task.execution_summary.clone()),
+                        );
+                    }
+                    print!("{}", task.execution_summary);
+                    return Ok(());
+                }
+                "description" => {
+                    if self.json {
+                        return crate::output::json::print_pretty(
+                            &serde_json::Value::String(task.description.clone()),
+                        );
+                    }
+                    print!("{}", task.description);
+                    return Ok(());
+                }
+                "acceptance_criteria" => {
+                    if self.json {
+                        let value = serde_json::to_value(&task.acceptance_criteria)
+                            .map_err(|e| OrbitError::Io(e.to_string()))?;
+                        return crate::output::json::print_pretty(&value);
+                    }
+                    for criterion in &task.acceptance_criteria {
+                        println!("- {}", criterion);
+                    }
+                    return Ok(());
+                }
+                "history" => {
+                    if self.json {
+                        let value = serde_json::to_value(&task.history)
+                            .map_err(|e| OrbitError::Io(e.to_string()))?;
+                        return crate::output::json::print_pretty(&value);
+                    }
+                    use crate::output::color::dimmed;
+                    for entry in &task.history {
+                        if let Some(note) = &entry.note {
+                            println!(
+                                "{} {}: {} ({})",
+                                dimmed(&format!("[{}]", entry.at.to_rfc3339())),
+                                entry.by,
+                                entry.event,
+                                note
+                            );
+                        } else {
+                            println!(
+                                "{} {}: {}",
+                                dimmed(&format!("[{}]", entry.at.to_rfc3339())),
+                                entry.by,
+                                entry.event
+                            );
+                        }
+                    }
+                    return Ok(());
+                }
+                "context_files" => {
+                    if self.json {
+                        let value = serde_json::to_value(&task.context_files)
+                            .map_err(|e| OrbitError::Io(e.to_string()))?;
+                        return crate::output::json::print_pretty(&value);
+                    }
+                    for f in &task.context_files {
+                        println!("{}", f);
+                    }
+                    return Ok(());
+                }
+                other => {
+                    return Err(OrbitError::InvalidInput(format!(
+                        "unknown field selector `{other}`. Valid values: \
+                        comments, plan, execution_summary, description, \
+                        acceptance_criteria, history, context_files"
+                    )));
+                }
+            }
+        }
 
         if self.json {
             crate::output::json::print_pretty(&task_to_json(&task))

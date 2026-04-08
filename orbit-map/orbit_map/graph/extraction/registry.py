@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from orbit_map.graph.extraction.base import GraphExtractor
 from orbit_map.graph.extraction.python import PythonGraphExtractor
+from orbit_map.graph.extraction.rust import RustGraphExtractor
 
 
 class GraphExtractorRegistry:
@@ -21,4 +22,5 @@ class GraphExtractorRegistry:
 def build_default_extractor_registry() -> GraphExtractorRegistry:
     registry = GraphExtractorRegistry()
     registry.register(PythonGraphExtractor())
+    registry.register(RustGraphExtractor())
     return registry
