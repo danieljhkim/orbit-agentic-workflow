@@ -37,6 +37,11 @@ orbit-types → orbit-policy, orbit-exec → orbit-tools → orbit-store, orbit-
 | Skills | WorkspaceReplaces | Workspace has full control over available skills |
 | Audit | GlobalOnly | Single authoritative event trail |
 
+## Task Authoring Quality
+
+Task creation must follow the `## Task Quality Standards` section in `orbit/orbit-core/assets/skills/orbit-create-task/SKILL.md`.
+Use those standards to require deterministic, mock-based testing, explicit definitions for summary fields such as `purpose`, and implementation patterns that preserve testability.
+
 ---
 
 ## Performance Tracking

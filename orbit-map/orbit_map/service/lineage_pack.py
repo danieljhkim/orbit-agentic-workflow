@@ -13,6 +13,7 @@ from orbit_map.schemas import (
     WorkerHandoffPacket,
 )
 from orbit_map.schemas.graph.nodes import DirNode, FileNode
+from orbit_map.service.freshness import compute_freshness_report
 from orbit_map.service.graph_context import GraphContextService
 
 LineagePackFormat = Literal["markdown", "json"]
@@ -28,6 +29,7 @@ class LineagePackRenderOptions:
     detail: bool = False
     include_source: bool = False
     source_budget: int = 0
+    repo_path: Path | None = None
 
 
 def render_lineage_pack(
@@ -42,6 +44,7 @@ def render_lineage_pack(
     detail: bool = False,
     include_source: bool = False,
     source_budget: int = 0,
+    repo_path: Path | str | None = None,
 ) -> str:
     service = GraphContextService.from_knowledge_dir(knowledge_dir)
     options = LineagePackRenderOptions(
@@ -53,6 +56,7 @@ def render_lineage_pack(
         detail=detail,
         include_source=include_source,
         source_budget=max(0, source_budget),
+        repo_path=Path(repo_path) if repo_path is not None else None,
     )
     report = _build_verbose_report(service, selectors, options)
     if not detail:
@@ -123,6 +127,7 @@ def _build_verbose_report(
         )
     ]
     graph = service.graph
+    freshness = compute_freshness_report(graph.files, options.repo_path)
 
     return {
         "repo": {
@@ -140,6 +145,7 @@ def _build_verbose_report(
                 and node.source_blob_hash in service.file_summaries_by_hash
             ),
         },
+        "freshness": freshness,
         "overview": _generate_overview(service, requested_nodes),
         "options": {
             "depth": options.depth,
@@ -515,6 +521,7 @@ def _compact_report(verbose_report: dict[str, Any]) -> dict[str, Any]:
             "leaf_count": verbose_report["repo"]["leaf_count"],
             "file_summary_count": verbose_report["repo"]["file_summary_count"],
         },
+        "freshness": verbose_report["freshness"],
         "overview": verbose_report.get("overview", ""),
         "options": {
             "depth": verbose_report["options"]["depth"],
@@ -598,6 +605,7 @@ def _compact_leaf_preview(preview: dict[str, Any]) -> dict[str, Any]:
 def _render_compact_markdown(report: dict[str, Any], budget: int) -> str:
     writer = _MarkdownWriter(budget=budget)
     repo = report["repo"]
+    freshness = report["freshness"]
     selections = report["selections"]
     nodes = report["nodes"]
 
@@ -610,6 +618,7 @@ def _render_compact_markdown(report: dict[str, Any], budget: int) -> str:
     writer.line(f"- files: {repo['file_count']}")
     writer.line(f"- leaves: {repo['leaf_count']}")
     writer.line()
+    _write_freshness_section(writer, freshness)
 
     if report.get("overview"):
         writer.line("## Overview")
@@ -694,6 +703,7 @@ def _render_compact_markdown(report: dict[str, Any], budget: int) -> str:
 def _render_verbose_markdown(report: dict[str, Any], budget: int) -> str:
     writer = _MarkdownWriter(budget=budget)
     repo = report["repo"]
+    freshness = report["freshness"]
     options = report["options"]
     selections = report["selections"]
     nodes = report["nodes"]
@@ -713,6 +723,7 @@ def _render_verbose_markdown(report: dict[str, Any], budget: int) -> str:
         f"- traversal bounds: depth={options['depth']}, siblings={options['siblings']}, children={options['children']}"
     )
     writer.line()
+    _write_freshness_section(writer, freshness)
 
     if report.get("overview"):
         writer.line("## Overview")
@@ -802,6 +813,26 @@ def _render_verbose_markdown(report: dict[str, Any], budget: int) -> str:
         writer.line("_output truncated to respect the requested budget._")
 
     return writer.text()
+
+
+def _write_freshness_section(
+    writer: "_MarkdownWriter", freshness: dict[str, Any]
+) -> None:
+    writer.line("## Freshness")
+    writer.line(f"- status: `{freshness['status']}`")
+    writer.line(
+        "- fresh: "
+        f"{freshness['fresh_count']}, "
+        f"stale: {freshness['stale_count']}, "
+        f"unknown: {freshness['unknown_count']}"
+    )
+    for path in freshness.get("stale_files", []):
+        if not writer.line(f"  - stale: `{path}`"):
+            return
+    for path in freshness.get("unknown_files", []):
+        if not writer.line(f"  - unknown: `{path}`"):
+            return
+    writer.line()
 
 
 def _single_line(text: str | None) -> str:

@@ -4,6 +4,7 @@ pub mod config;
 pub mod init;
 pub mod job;
 pub mod job_run;
+pub mod metrics;
 pub mod run;
 pub mod skill;
 pub mod task;
@@ -45,6 +46,7 @@ Configure and inspect:
   init       Initialize the global Orbit root (~/.orbit)
   workspace  Initialize and manage workspaces
   audit      Query the audit event log
+  metrics    Inspect invocation token and tool-call metrics
 
 Options:
 {options}"
@@ -76,6 +78,7 @@ pub enum Commands {
     Init(init::InitCommand),
     Workspace(workspace::WorkspaceCommand),
     Audit(audit::AuditCommand),
+    Metrics(metrics::MetricsCommand),
 }
 
 impl Execute for Commands {
@@ -92,6 +95,7 @@ impl Execute for Commands {
             Commands::JobRun(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
+            Commands::Metrics(cmd) => cmd.execute(runtime),
         }
     }
 }

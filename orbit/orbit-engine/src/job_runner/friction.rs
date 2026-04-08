@@ -101,6 +101,8 @@ pub(super) fn append_step_metrics<H: EngineHost>(
     step_id: &str,
     execution: &crate::context::ExecutionContext,
     duration_ms: Option<u64>,
+    tool_invocations: u32,
+    token_usage: Option<u64>,
     retry_count: u32,
     ts: DateTime<Utc>,
 ) {
@@ -116,8 +118,8 @@ pub(super) fn append_step_metrics<H: EngineHost>(
         step: step_id.to_string(),
         task_id,
         actor_identity,
-        tool_invocations: 0, // Not yet tracked at the engine level
-        token_usage: None,   // Not yet tracked at the engine level
+        tool_invocations,
+        token_usage,
         step_duration_ms: duration_ms,
         retry_count,
     };

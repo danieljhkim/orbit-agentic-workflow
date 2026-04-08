@@ -13,6 +13,7 @@ It scans a repository, builds structural knowledge artifacts, and writes determi
 ```text
 .orbit/knowledge/
   manifest.json
+  hashes.json
   graph/
     refs/current.json
     index/by-id.json
@@ -28,6 +29,9 @@ These artifacts are intended to conform to Orbit's knowledge schema and support:
 - reproducible context
 - faster task execution
 - auditable, diff-friendly outputs
+
+`hashes.json` sits in the knowledge root and stores the file-hash cache used for
+incremental graph and knowledge updates.
 
 `orbit-map` implements the schema, but does not own it.
 

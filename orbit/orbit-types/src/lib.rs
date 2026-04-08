@@ -27,6 +27,7 @@ pub mod error;
 pub mod event;
 pub mod friction;
 pub mod id;
+pub mod invocation;
 pub mod job;
 pub mod metrics;
 pub mod policy_decision;
@@ -45,6 +46,7 @@ pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use friction::FrictionEntry;
 pub use id::OrbitId;
+pub use invocation::{InvocationTrace, TokenUsage, ToolCallTrace};
 pub use job::{
     AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
     JobScheduleState, JobStep, JobTargetType, RunEvent, StepCondition, default_job_max_active_runs,

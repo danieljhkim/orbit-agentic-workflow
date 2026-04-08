@@ -689,7 +689,12 @@ mod tests {
 
     #[test]
     fn bootstrap_batch_review_is_noop_when_batch_already_exists() {
-        let host = TestHost::new(vec![sample_task("T20260330-063823", "batch-9", "/tmp", "76")]);
+        let host = TestHost::new(vec![sample_task(
+            "T20260330-063823",
+            "batch-9",
+            "/tmp",
+            "76",
+        )]);
 
         let result = bootstrap_batch_review(
             &host,

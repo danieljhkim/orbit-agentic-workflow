@@ -2,7 +2,7 @@ use std::io::Write;
 
 use orbit_agent::{Agent, AgentRequest, AgentResponseStatus, parse_and_validate_response};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{AgentResponseEnvelope, JobRunState, OrbitError};
+use orbit_types::{AgentResponseEnvelope, InvocationTrace, JobRunState, OrbitError};
 use serde_json::Value;
 use tempfile::NamedTempFile;
 
@@ -48,6 +48,10 @@ fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             state: JobRunState::Cancelled,
             exit_code: exec_result.exit_code,
             duration_ms: Some(exec_result.duration_ms),
+            invocation_trace: InvocationTrace {
+                duration_ms: exec_result.duration_ms,
+                ..InvocationTrace::default()
+            },
             response_json: None,
             error_code: None,
             error_message: Some(exec_result.stderr.trim().to_string()),
@@ -61,6 +65,10 @@ fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             state: JobRunState::Timeout,
             exit_code: exec_result.exit_code,
             duration_ms: Some(exec_result.duration_ms),
+            invocation_trace: InvocationTrace {
+                duration_ms: exec_result.duration_ms,
+                ..InvocationTrace::default()
+            },
             response_json: None,
             error_code: Some(AGENT_TIMEOUT.to_string()),
             error_message: Some(format_timeout_error_message(&exec_result)),
@@ -70,7 +78,7 @@ fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     }
 
     match parse_and_validate_response(&exec_result) {
-        Ok((envelope, state)) => {
+        Ok((envelope, state, trace)) => {
             // Agent exited 0 but produced no parseable JSON envelope. Since agents
             // persist state via task artifacts (side-effect model), this is a success.
             if state == AgentResponseStatus::Success
@@ -78,14 +86,20 @@ fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
                 && exec_result.exit_code == Some(0)
                 && !orbit_agent::is_timeout(&exec_result)
             {
-                return AttemptOutcome::success(0, exec_result.duration_ms, Value::Null);
+                let mut outcome = AttemptOutcome::success(0, exec_result.duration_ms, Value::Null);
+                outcome.invocation_trace = trace;
+                return outcome;
             }
-            process_agent_response(host, execution, &exec_result, envelope, state)
+            process_agent_response(host, execution, &exec_result, envelope, state, trace)
         }
         Err(OrbitError::AgentProtocolViolation(message)) => AttemptOutcome {
             state: JobRunState::Failed,
             exit_code: exec_result.exit_code,
             duration_ms: Some(exec_result.duration_ms),
+            invocation_trace: InvocationTrace {
+                duration_ms: exec_result.duration_ms,
+                ..InvocationTrace::default()
+            },
             response_json: None,
             error_code: Some(AGENT_PROTOCOL_VIOLATION.to_string()),
             error_message: Some(message),
@@ -96,6 +110,10 @@ fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             state: JobRunState::Failed,
             exit_code: exec_result.exit_code,
             duration_ms: Some(exec_result.duration_ms),
+            invocation_trace: InvocationTrace {
+                duration_ms: exec_result.duration_ms,
+                ..InvocationTrace::default()
+            },
             response_json: None,
             error_code: Some(AGENT_INVOCATION_FAILED.to_string()),
             error_message: Some(err.to_string()),
@@ -121,7 +139,7 @@ fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         .build_agent_stdin_envelope_payload(execution)
         .map_err(invocation_failed_outcome)?;
 
-    let invocation = agent
+    let (invocation, _) = agent
         .invoke(
             match &execution.job {
                 Some(job) => AgentRequest::job(
@@ -318,6 +336,7 @@ fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     exec_result: &orbit_types::ExecutionResult,
     envelope: AgentResponseEnvelope,
     state: AgentResponseStatus,
+    invocation_trace: InvocationTrace,
 ) -> AttemptOutcome {
     let run_state = match state {
         AgentResponseStatus::Success => JobRunState::Success,
@@ -327,9 +346,14 @@ fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     let error_code = envelope.error.as_ref().map(|error| error.code.clone());
     let error_message = envelope.error.as_ref().map(|error| error.message.clone());
 
-    if let Some(outcome) =
-        validate_agent_success(host, execution, exec_result, &envelope, run_state)
-    {
+    if let Some(outcome) = validate_agent_success(
+        host,
+        execution,
+        exec_result,
+        &envelope,
+        run_state,
+        invocation_trace.clone(),
+    ) {
         return outcome;
     }
 
@@ -337,6 +361,7 @@ fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         state: run_state,
         exit_code: exec_result.exit_code,
         duration_ms: Some(exec_result.duration_ms),
+        invocation_trace,
         response_json: serde_json::to_value(envelope).ok(),
         error_code,
         error_message,
@@ -351,6 +376,7 @@ fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     exec_result: &orbit_types::ExecutionResult,
     envelope: &AgentResponseEnvelope,
     run_state: JobRunState,
+    invocation_trace: InvocationTrace,
 ) -> Option<AttemptOutcome> {
     if run_state == JobRunState::Success
         && let Some(result) = envelope.result.as_ref()
@@ -364,6 +390,7 @@ fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             state: JobRunState::Failed,
             exit_code: exec_result.exit_code,
             duration_ms: Some(exec_result.duration_ms),
+            invocation_trace,
             response_json: serde_json::to_value(envelope).ok(),
             error_code: Some(error_code),
             error_message: Some(err.to_string()),

@@ -32,6 +32,7 @@ pub mod workspace_registry;
 
 pub use orbit_engine::JobRunResult;
 pub use orbit_store::skill_store as skill_catalog;
+pub use orbit_store::{ActivityInvocationMetrics, TaskInvocationMetrics, ToolInvocationMetrics};
 
 pub use command::task_template::TaskTemplate;
 pub use command::workflow::{

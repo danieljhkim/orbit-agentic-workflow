@@ -327,6 +327,23 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Metrics(cmd) => {
+            use crate::command::metrics::MetricsSubcommand;
+            let (sub, target_id) = match &cmd.command {
+                MetricsSubcommand::Activity(_) => ("activity", None),
+                MetricsSubcommand::Task(args) => ("task", Some(args.id.as_str())),
+                MetricsSubcommand::Tools(_) => ("tools", None),
+            };
+            CommandMeta {
+                command: "metrics".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("metrics".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;

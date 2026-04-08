@@ -3,8 +3,9 @@ use orbit_exec::EnvironmentMode;
 use orbit_store::JobRunStepParams;
 use orbit_tools::ToolContext;
 use orbit_types::{
-    Activity, Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, ReviewThread, Role,
-    Task, TaskPriority, TaskStatus, redact_sensitive_env_json, redact_sensitive_env_option,
+    Activity, InvocationTrace, Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent,
+    ReviewThread, Role, Task, TaskPriority, TaskStatus, redact_sensitive_env_json,
+    redact_sensitive_env_option,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -54,6 +55,7 @@ pub struct AttemptOutcome {
     pub state: JobRunState,
     pub exit_code: Option<i32>,
     pub duration_ms: Option<u64>,
+    pub invocation_trace: InvocationTrace,
     pub response_json: Option<Value>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
@@ -68,6 +70,7 @@ impl AttemptOutcome {
             state: JobRunState::Failed,
             exit_code: Some(1),
             duration_ms: None,
+            invocation_trace: InvocationTrace::default(),
             response_json: None,
             error_code: Some(error_code.to_string()),
             error_message: Some(message),
@@ -81,6 +84,10 @@ impl AttemptOutcome {
             state: JobRunState::Success,
             exit_code: Some(exit_code),
             duration_ms: Some(duration_ms),
+            invocation_trace: InvocationTrace {
+                duration_ms,
+                ..InvocationTrace::default()
+            },
             response_json: Some(response_json),
             error_code: None,
             error_message: None,
@@ -292,6 +299,14 @@ pub trait RuntimeHost {
     ) -> Result<(), OrbitError>;
     fn scoring_enabled(&self) -> bool;
     fn scoreboard_dir(&self) -> &Path;
+    fn persist_invocation_trace(
+        &self,
+        _job_run_id: &str,
+        _execution: &ExecutionContext,
+        _trace: &InvocationTrace,
+    ) -> Result<(), OrbitError> {
+        Ok(())
+    }
 }
 
 /// Aggregates all five sub-traits required at the top-level engine boundary.
