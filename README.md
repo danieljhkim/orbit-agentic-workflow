@@ -6,7 +6,7 @@ Orbit runs on top of agent CLIs such as Codex and Claude Code. No provider API k
 
 ## Philosophy
 
-> Minimize tokens. Minimize irrelevant decisions. Maximize determinism.
+> Minimize irrelevant decisions. Maximize determinism. Make every token count.
 
 Orbit should make agents spend judgment on what matters: intent, correctness, tradeoffs, design, and risk. Agent opinions and decisions should directly support these values; if a choice does not reduce token usage, remove irrelevant discretion, or make the system more deterministic, Orbit should make that choice instead.
 
@@ -14,7 +14,9 @@ Orbit should make agents spend judgment on what matters: intent, correctness, tr
 
 ## Quick Start
 
-**Prerequisites**: Rust, Codex CLI, and Claude Code
+**Prerequisites**: Rust, Codex CLI, Gemini CLI, and Claude Code
+
+Suggestion: Get cheapest tier subscriptions for above 3, and milk every dollar out of it.
 
 For the PR-based workflow (`orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship-local` instead.
 
