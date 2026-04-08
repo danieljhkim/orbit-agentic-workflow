@@ -12,12 +12,14 @@ pub(super) fn commit_batch_changes<H: TaskHost + RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
+    let batch_id = super::parallel::require_run_id(input, "commit_batch_changes")?;
+
     let workspace_path = match input_string_field(input, "workspace_path") {
         Some(ws) => canonicalize_existing_dir(&ws, "workspace_path")?,
         None => {
             let repo_root_str = host.repo_root()?;
             let repo_root = Path::new(&repo_root_str);
-            super::parallel::resolve_shared_worktree_path(repo_root)?
+            super::parallel::resolve_shared_worktree_path(repo_root, batch_id)?
         }
     };
 
@@ -29,15 +31,6 @@ pub(super) fn commit_batch_changes<H: TaskHost + RuntimeHost + ?Sized>(
             workspace_path.display(),
         )));
     }
-
-    let batch_id = input
-        .get("run_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            OrbitError::InvalidInput("commit_batch_changes requires input.run_id".to_string())
-        })?;
 
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
     let completed_task_ids: Vec<String> = batch_tasks.iter().map(|t| t.id.clone()).collect();

@@ -12,12 +12,13 @@ pub(super) fn push_batch_changes<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
+    let run_id = super::parallel::require_run_id(input, "push_batch_changes")?;
     let workspace_path = match input_string_field(input, "workspace_path") {
         Some(ws) => canonicalize_existing_dir(&ws, "workspace_path")?,
         None => {
             let repo_root_str = host.repo_root()?;
             let repo_root = Path::new(&repo_root_str);
-            super::parallel::resolve_shared_worktree_path(repo_root)?
+            super::parallel::resolve_shared_worktree_path(repo_root, run_id)?
         }
     };
 

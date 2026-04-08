@@ -13,7 +13,8 @@ pub(super) fn commit_and_open_batch_pr<H: RuntimeHost + TaskHost + Sync + ?Sized
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let input = ensure_workspace_path(host, input)?;
+    let run_id = super::parallel::require_run_id(input, "commit_and_open_batch_pr")?.to_string();
+    let input = ensure_workspace_path(host, input, &run_id)?;
 
     let mut commit_result = super::commit::commit_batch_changes(host, &input)?;
     let pr_result = super::pr::open_batch_pr(host, &input)?;
@@ -32,6 +33,7 @@ pub(super) fn commit_and_open_batch_pr<H: RuntimeHost + TaskHost + Sync + ?Sized
 fn ensure_workspace_path<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
+    run_id: &str,
 ) -> Result<Value, OrbitError> {
     if input
         .get("workspace_path")
@@ -43,7 +45,7 @@ fn ensure_workspace_path<H: RuntimeHost + ?Sized>(
 
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
-    let worktree = super::parallel::resolve_shared_worktree_path(repo_root)?;
+    let worktree = super::parallel::resolve_shared_worktree_path(repo_root, run_id)?;
 
     let mut patched = input.clone();
     if let Some(obj) = patched.as_object_mut() {

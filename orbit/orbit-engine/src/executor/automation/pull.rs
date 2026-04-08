@@ -12,12 +12,13 @@ pub(super) fn pull_batch_changes<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
+    let run_id = super::parallel::require_run_id(input, "pull_batch_changes")?;
     let workspace_path = match input_string_field(input, "workspace_path") {
         Some(ws) => canonicalize_existing_dir(&ws, "workspace_path")?,
         None => {
             let repo_root_str = host.repo_root()?;
             let repo_root = Path::new(&repo_root_str);
-            super::parallel::resolve_shared_worktree_path(repo_root)?
+            super::parallel::resolve_shared_worktree_path(repo_root, run_id)?
         }
     };
 
@@ -174,7 +175,10 @@ mod tests {
         let host = StubHost {
             repo_root: work_path.to_string_lossy().to_string(),
         };
-        let input = json!({ "workspace_path": work_path.to_string_lossy() });
+        let input = json!({
+            "run_id": "test-run",
+            "workspace_path": work_path.to_string_lossy(),
+        });
         let result = pull_batch_changes(&host, &input).expect("pull should succeed");
         assert_eq!(result, json!({}));
 
@@ -214,7 +218,10 @@ mod tests {
         let host = StubHost {
             repo_root: work_path.to_string_lossy().to_string(),
         };
-        let input = json!({ "workspace_path": work_path.to_string_lossy() });
+        let input = json!({
+            "run_id": "test-run",
+            "workspace_path": work_path.to_string_lossy(),
+        });
         let result = pull_batch_changes(&host, &input).expect("pull noop should succeed");
         assert_eq!(result, json!({}));
     }

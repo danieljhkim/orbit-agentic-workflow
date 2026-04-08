@@ -14,8 +14,67 @@ use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 const DEFAULT_PARALLEL_BASE: &str = "main";
 const DEFAULT_PARALLELISM: usize = 4;
 const PARALLEL_WORKER_JOB_ID: &str = "job_parallel_task_worker";
-const SHARED_WORKTREE_NAME: &str = "parallel-batch";
-const SHARED_WORKTREE_BRANCH: &str = "orbit/parallel-batch";
+const SHARED_WORKTREE_NAME_PREFIX: &str = "parallel-batch";
+const SHARED_WORKTREE_BRANCH_PREFIX: &str = "orbit/parallel-batch";
+
+/// Sanitize a run_id into a token safe to use as a git branch component and
+/// filesystem directory segment. Keeps `[A-Za-z0-9._-]`, replaces everything
+/// else with `-`, and trims leading/trailing separators.
+fn sanitize_run_id_token(run_id: &str) -> Result<String, OrbitError> {
+    let sanitized: String = run_id
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches(|c: char| c == '-' || c == '.').to_string();
+    if trimmed.is_empty() {
+        return Err(OrbitError::InvalidInput(format!(
+            "cannot derive shared worktree token from run_id '{run_id}'"
+        )));
+    }
+    Ok(trimmed)
+}
+
+fn shared_worktree_dir_name(run_id: &str) -> Result<String, OrbitError> {
+    Ok(format!(
+        "{SHARED_WORKTREE_NAME_PREFIX}-{}",
+        sanitize_run_id_token(run_id)?
+    ))
+}
+
+fn shared_worktree_branch_name(run_id: &str) -> Result<String, OrbitError> {
+    // Use a dash separator (not a slash) so the branch does not nest under the
+    // legacy `orbit/parallel-batch` ref name. Git refuses to create a child
+    // ref like `orbit/parallel-batch/jrun-1` if a leaf ref `orbit/parallel-batch`
+    // already exists, which is exactly the collision this task is fixing.
+    Ok(format!(
+        "{SHARED_WORKTREE_BRANCH_PREFIX}-{}",
+        sanitize_run_id_token(run_id)?
+    ))
+}
+
+/// Extract the `run_id` from an activity input value, returning a trimmed
+/// non-empty string. Used by downstream batch activities that need to resolve
+/// the same shared worktree as the dispatch step.
+pub(super) fn require_run_id<'a>(
+    input: &'a Value,
+    activity: &str,
+) -> Result<&'a str, OrbitError> {
+    input
+        .get("run_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(format!("{activity} requires input.run_id"))
+        })
+}
 
 #[derive(Debug, Clone)]
 struct PendingTask {
@@ -44,7 +103,8 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         .unwrap_or(DEFAULT_PARALLEL_BASE)
         .to_string();
     let parallelism = parse_parallelism(input)?;
-    let selected_tasks = load_selected_tasks(host, input)?;
+    let run_id = require_run_id(input, "parallel_dispatch_tasks")?.to_string();
+    let selected_tasks = load_selected_tasks(host, &run_id)?;
     validate_selected_group(&selected_tasks)?;
 
     // Move all selected tasks to in-progress before spawning workers. FIXME: decouple this
@@ -62,8 +122,8 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
     refresh_local_base_branch(repo_root, &base);
-    let shared_worktree = resolve_shared_worktree_path(repo_root)?;
-    ensure_shared_worktree(repo_root, &shared_worktree, &base)?;
+    let shared_worktree = resolve_shared_worktree_path(repo_root, &run_id)?;
+    ensure_shared_worktree(repo_root, &shared_worktree, &base, &run_id)?;
     let shared_worktree_str = shared_worktree.to_string_lossy().to_string();
     set_worker_workspace_path(host, &selected_tasks, &shared_worktree_str)?;
 
@@ -222,7 +282,11 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     }))
 }
 
-pub(super) fn resolve_shared_worktree_path(repo_root: &Path) -> Result<PathBuf, OrbitError> {
+pub(super) fn resolve_shared_worktree_path(
+    repo_root: &Path,
+    run_id: &str,
+) -> Result<PathBuf, OrbitError> {
+    let dir_name = shared_worktree_dir_name(run_id)?;
     match std::env::var("ORBIT_WORKTREE_ROOT")
         .ok()
         .map(|value| value.trim().to_string())
@@ -239,14 +303,9 @@ pub(super) fn resolve_shared_worktree_path(repo_root: &Path) -> Result<PathBuf, 
                         repo_root.display()
                     ))
                 })?;
-            Ok(PathBuf::from(value)
-                .join(repo_name)
-                .join(SHARED_WORKTREE_NAME))
+            Ok(PathBuf::from(value).join(repo_name).join(dir_name))
         }
-        None => Ok(repo_root
-            .join(".orbit")
-            .join("worktrees")
-            .join(SHARED_WORKTREE_NAME)),
+        None => Ok(repo_root.join(".orbit").join("worktrees").join(dir_name)),
     }
 }
 
@@ -254,8 +313,10 @@ fn ensure_shared_worktree(
     repo_root: &Path,
     worktree_path: &Path,
     base_branch: &str,
+    run_id: &str,
 ) -> Result<(), OrbitError> {
-    let worktree_branch = SHARED_WORKTREE_BRANCH;
+    let worktree_branch = shared_worktree_branch_name(run_id)?;
+    let worktree_branch = worktree_branch.as_str();
 
     if worktree_path.exists() {
         // Worktree already exists — reset it to the base branch tip so it's fresh.
@@ -340,17 +401,8 @@ fn restore_task_workspace_paths<H: TaskHost + ?Sized>(
 
 fn load_selected_tasks<H: TaskHost + ?Sized>(
     host: &H,
-    input: &Value,
+    batch_id: &str,
 ) -> Result<Vec<PendingTask>, OrbitError> {
-    let batch_id = input
-        .get("run_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            OrbitError::InvalidInput("parallel_dispatch_tasks requires input.run_id".to_string())
-        })?;
-
     let tasks = host.list_tasks_filtered(Some(TaskStatus::Backlog), None, None, Some(batch_id))?;
 
     if tasks.is_empty() {
@@ -435,8 +487,10 @@ fn normalize_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PendingTask, find_launchable_index, paths_conflict, restore_task_workspace_paths,
-        set_worker_workspace_path, validate_selected_group,
+        PendingTask, ensure_shared_worktree, find_launchable_index, paths_conflict,
+        resolve_shared_worktree_path, restore_task_workspace_paths, sanitize_run_id_token,
+        set_worker_workspace_path, shared_worktree_branch_name, shared_worktree_dir_name,
+        validate_selected_group,
     };
     use crate::context::{TaskAutomationUpdate, TaskHost};
     use orbit_types::{OrbitError, Task, TaskPriority, TaskStatus};
@@ -560,16 +614,102 @@ mod tests {
             original_workspace_path: Some("/repo".to_string()),
         }];
 
-        set_worker_workspace_path(&host, &tasks, "/repo/.orbit/worktrees/parallel-batch")
-            .expect("workspace path update succeeds");
+        set_worker_workspace_path(
+            &host,
+            &tasks,
+            "/repo/.orbit/worktrees/parallel-batch-jrun-1",
+        )
+        .expect("workspace path update succeeds");
 
         assert_eq!(
             host.recorded_updates(),
             vec![(
                 "T-a".to_string(),
-                Some(Some("/repo/.orbit/worktrees/parallel-batch".to_string())),
+                Some(Some(
+                    "/repo/.orbit/worktrees/parallel-batch-jrun-1".to_string()
+                )),
             )]
         );
+    }
+
+    #[test]
+    fn sanitize_run_id_token_keeps_safe_characters_and_replaces_others() {
+        assert_eq!(
+            sanitize_run_id_token("jrun-20260408-0219-2").expect("safe id"),
+            "jrun-20260408-0219-2"
+        );
+        assert_eq!(
+            sanitize_run_id_token("jrun/2026 04 08").expect("sanitized id"),
+            "jrun-2026-04-08"
+        );
+        assert!(sanitize_run_id_token("///").is_err());
+    }
+
+    #[test]
+    fn distinct_run_ids_produce_distinct_worktree_paths_and_branches() {
+        let repo_root = std::path::PathBuf::from("/repo");
+        let path_a = resolve_shared_worktree_path(&repo_root, "jrun-1").expect("path a");
+        let path_b = resolve_shared_worktree_path(&repo_root, "jrun-2").expect("path b");
+        assert_ne!(path_a, path_b);
+        assert!(
+            path_a
+                .to_string_lossy()
+                .ends_with(".orbit/worktrees/parallel-batch-jrun-1")
+        );
+        assert!(
+            path_b
+                .to_string_lossy()
+                .ends_with(".orbit/worktrees/parallel-batch-jrun-2")
+        );
+
+        let branch_a = shared_worktree_branch_name("jrun-1").expect("branch a");
+        let branch_b = shared_worktree_branch_name("jrun-2").expect("branch b");
+        assert_eq!(branch_a, "orbit/parallel-batch-jrun-1");
+        assert_eq!(branch_b, "orbit/parallel-batch-jrun-2");
+        assert_eq!(
+            shared_worktree_dir_name("jrun-1").expect("dir name"),
+            "parallel-batch-jrun-1"
+        );
+    }
+
+    #[test]
+    fn ensure_shared_worktree_succeeds_when_a_previous_static_branch_already_exists() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let repo_root = tempdir.path();
+
+        run_git(repo_root, &["init", "--initial-branch=main"]);
+        run_git(repo_root, &["config", "user.name", "Orbit Tests"]);
+        run_git(
+            repo_root,
+            &["config", "user.email", "orbit-tests@example.com"],
+        );
+        std::fs::write(repo_root.join("README.md"), "hello\n").expect("write readme");
+        run_git(repo_root, &["add", "README.md"]);
+        run_git(repo_root, &["commit", "-m", "initial"]);
+
+        // Simulate the legacy collision: a previous static branch is left behind.
+        run_git(repo_root, &["branch", "orbit/parallel-batch"]);
+        // Also simulate a stale branch that uses the new naming scheme for a
+        // *different* run, to make sure we don't trip over unrelated state.
+        run_git(repo_root, &["branch", "orbit/parallel-batch-jrun-old"]);
+
+        let run_id = "jrun-20260408-0219-2";
+        let worktree_path =
+            resolve_shared_worktree_path(repo_root, run_id).expect("resolve path");
+        ensure_shared_worktree(repo_root, &worktree_path, "main", run_id)
+            .expect("create dynamic shared worktree despite stale static branch");
+
+        assert!(worktree_path.exists());
+        assert!(worktree_path.join(".git").exists());
+    }
+
+    fn run_git(dir: &std::path::Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {:?} failed", args);
     }
 
     #[test]
