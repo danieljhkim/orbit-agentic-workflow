@@ -530,8 +530,8 @@ impl TaskFileStore {
         })?;
         let bundle = TaskBundle {
             doc,
-            plan: read_required_text(&self.plan_path(task_dir), "task plan")?,
-            execution_summary: read_required_text(
+            plan: read_companion_text(&self.plan_path(task_dir), "task plan")?,
+            execution_summary: read_companion_text(
                 &self.execution_summary_path(task_dir),
                 "task execution summary",
             )?,
@@ -797,8 +797,12 @@ fn yaml_field(key: &str, value: &impl Serialize) -> Result<String, OrbitError> {
     serde_yaml::to_string(&mapping).map_err(|e| OrbitError::Store(e.to_string()))
 }
 
-fn read_required_text(path: &Path, label: &str) -> Result<String, OrbitError> {
-    fs::read_to_string(path).map_err(|e| bundle_read_error(path, label, e))
+fn read_companion_text(path: &Path, label: &str) -> Result<String, OrbitError> {
+    match fs::read_to_string(path) {
+        Ok(value) => Ok(value),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(err) => Err(bundle_read_error(path, label, err)),
+    }
 }
 
 fn bundle_read_error(path: &Path, label: &str, err: std::io::Error) -> OrbitError {
@@ -953,6 +957,69 @@ mod tests {
         assert_eq!(
             store.task_dir(TaskStateDir::Review, task_id),
             temp_dir.path().join("review").join(task_id)
+        );
+    }
+
+    #[test]
+    fn list_tasks_treats_missing_companion_files_as_blank() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let store = TaskFileStore::new(temp_dir.path().to_path_buf());
+        store.ensure_layout().expect("create task layout");
+
+        let task_id = "T20260406-0454";
+        let task_dir = store.task_dir(TaskStateDir::Proposed, task_id);
+        store
+            .write_bundle_at(&task_dir, &sample_bundle(task_id, 6))
+            .expect("write task bundle");
+        fs::remove_file(store.plan_path(&task_dir)).expect("remove plan companion");
+        fs::remove_file(store.execution_summary_path(&task_dir))
+            .expect("remove execution summary companion");
+
+        let tasks = store.list_tasks().expect("list tasks");
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, task_id);
+        assert_eq!(tasks[0].plan, "");
+        assert_eq!(tasks[0].execution_summary, "");
+    }
+
+    #[test]
+    fn update_task_recreates_missing_companion_files() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let store = TaskFileStore::new(temp_dir.path().to_path_buf());
+        store.ensure_layout().expect("create task layout");
+
+        let task_id = "T20260406-0454";
+        let task_dir = store.task_dir(TaskStateDir::Proposed, task_id);
+        store
+            .write_bundle_at(&task_dir, &sample_bundle(task_id, 6))
+            .expect("write task bundle");
+        fs::remove_file(store.plan_path(&task_dir)).expect("remove plan companion");
+        fs::remove_file(store.execution_summary_path(&task_dir))
+            .expect("remove execution summary companion");
+
+        let task = store
+            .update_task(
+                task_id,
+                &TaskUpdateParams {
+                    actor: "codex / gpt-5.4".to_string(),
+                    plan: Some("repaired plan".to_string()),
+                    execution_summary: Some("repaired summary".to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect("update should recreate companion files");
+
+        assert_eq!(task.plan, "repaired plan");
+        assert_eq!(task.execution_summary, "repaired summary");
+        assert_eq!(
+            fs::read_to_string(store.plan_path(&task_dir)).expect("read plan companion"),
+            "repaired plan"
+        );
+        assert_eq!(
+            fs::read_to_string(store.execution_summary_path(&task_dir))
+                .expect("read execution summary companion"),
+            "repaired summary"
         );
     }
 
