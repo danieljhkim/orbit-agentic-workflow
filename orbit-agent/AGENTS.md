@@ -22,7 +22,7 @@ orbit-types → orbit-policy, orbit-exec → orbit-tools → orbit-store, orbit-
 
 The Rust `orbit-agent` crate (`orbit/orbit-agent/`) currently handles the **agent runtime** — provider abstraction (Claude, Codex, mock) via the `AgentRuntime` trait.
 
-This Python `orbit-agent` handles **knowledge building**. The two will eventually merge: the Python knowledge pipeline will be incorporated into the Rust `orbit-agent` crate, unifying agent runtime and knowledge building under one crate.
+This Python `orbit-agent` handles **knowledge building**. Its optional LLM-backed summarization stages use a temporary provider boundary under `orbit_agent.runtime.agent`, but deterministic graph/bootstrap/context code should not import or initialize provider implementations. Long term, provider adapters should move behind a reusable Orbit SDK/runtime that both knowledge generation and Orbit-owned execution flows can consume.
 
 ---
 
@@ -42,6 +42,8 @@ orbit-agent/
     hash.py       # content hashing (sha256)
     summarize.py  # file-level LLM summaries
     architecture.py  # system-level LLM summaries
+  runtime/
+    agent/        # temporary provider runtime boundary
   schemas/
     knowledge.py  # pydantic models for schema validation
 ```

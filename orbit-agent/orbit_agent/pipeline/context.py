@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from orbit_agent.agent import BaseAgent
+from orbit_agent.runtime.agent.base import BaseAgent
 from orbit_agent.schemas import (
     CodebaseGraphV1,
     GenerateArchitectureResponseV1,

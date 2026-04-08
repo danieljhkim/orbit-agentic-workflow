@@ -39,12 +39,13 @@ orbit_agent/
   service/
     graph_context.py
     bootstrap.py
-  agent/
-    base.py
-    factory.py
-    openai.py
-    anthropic.py
-    ollama.py
+  runtime/
+    agent/
+      base.py
+      factory.py
+      openai.py
+      anthropic.py
+      ollama.py
   graph/
     languages.py
     extraction/
@@ -104,6 +105,7 @@ That makes repo understanding a build artifact rather than an ephemeral side eff
 
 - executing Orbit tasks
 - making runtime workflow decisions
+- owning the long-term Orbit agent runtime
 - replacing language servers or full AST tooling
 
 ## CLI
@@ -170,13 +172,30 @@ Today, selective knowledge updates are file-hash based from the graph snapshot. 
 
 ## LLM Provider Selection
 
-Some optional components use an LLM backend. `orbit-agent` resolves its LLM implementation from environment variables when those components are included in the pipeline.
+Some optional components use an LLM backend. Provider invocation lives behind
+`orbit_agent.runtime.agent`, which is a temporary Python runtime boundary shared
+by knowledge-generation components and future Orbit-owned agent execution work.
+Deterministic graph, bootstrap, context, and pack renderers should not import or
+initialize provider implementations.
+
+When optional LLM-backed components are included in the pipeline, the runtime
+factory resolves its implementation from environment variables.
 
 - `ORBIT_AGENT_PROVIDER`: `openai` (default), `anthropic`, or `ollama`
 - `ORBIT_AGENT_MODEL`: override the provider's default model
 - `OPENAI_API_KEY` / `OPENAI_BASE_URL`: used by `OpenAIAgent`
 - `ANTHROPIC_API_KEY`: used by `AnthropicAgent`
 - `OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
+
+### Runtime Boundary Plan
+
+`orbit_agent.runtime.agent` currently contains the provider interface and the
+OpenAI, Anthropic, and Ollama adapters. The intended migration path is:
+
+- keep deterministic graph/bootstrap/context commands provider-free
+- keep summarization and architecture generation as explicit LLM-backed pipeline stages
+- move provider configuration and adapters behind a reusable SDK/runtime package once Orbit's owned agent execution flow is ready
+- make the future map builder consume that SDK/runtime instead of owning provider implementations
 
 ## Pipeline
 

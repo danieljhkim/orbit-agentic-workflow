@@ -9,9 +9,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from orbit_agent.agent import BaseAgent, get_agent
 from orbit_agent.graph.store import GraphObjectStore
 from orbit_agent.pipeline.context import PipelineContext
+from orbit_agent.runtime.agent import BaseAgent, get_agent
 from orbit_agent.schemas import (
     FileSummaryAnalysisV1,
     FileSymbolV1,
