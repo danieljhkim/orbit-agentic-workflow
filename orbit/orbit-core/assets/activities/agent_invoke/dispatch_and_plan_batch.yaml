@@ -10,11 +10,12 @@ activity:
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Select a conflict-free batch of backlog tasks, author execution plans, and refine context_files for parallel execution.
+  description: Select a conflict-free batch of backlog tasks, fan out plan authorship to parallel subagents, and refine context_files for parallel execution.
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
-    Select a batch of backlog tasks for parallel execution, then write implementation
-    plans and sharpen context_files for each selected task.
+    Select a batch of backlog tasks for parallel execution, then fan out plan
+    authorship to parallel subagents via the Task tool and persist the refined
+    plans and context_files for each selected task.
 
     Phase 1 — Dispatch
 
@@ -37,33 +38,48 @@ activity:
        - batch_id: "<the value of input.run_id>"
        - comment: "Parallel batch dispatched: <one sentence rationale>"
 
-    Phase 2 — Plan
+    Phase 2 — Plan (parallel fan-out)
 
-    5. Read the files referenced in each task's context_files and any files named in
-       the descriptions or acceptance criteria. Build a clear picture of the current
-       code before writing plans.
+    Because Phase 1 produced a conflict-free batch (disjoint context_files by
+    path-prefix), each task's plan can be authored independently. Fan out planning
+    to parallel subagents via the Task tool, then collate the results and persist.
 
-    6. Author a fresh execution plan for each task:
-       - Write a concise, implementation-ready markdown plan grounded in the current codebase.
-       - The plan must be specific enough for an implementing agent to follow without
-         further exploration. Include concrete file paths, function names, and validation steps.
-       - Replace placeholder plans.
+    5. Fan out planners. In a SINGLE message, emit multiple Task tool calls in
+       parallel — one subagent per task in the batch. For each call use:
+       - subagent_type: "general-purpose"
+       - model: "sonnet" (save Opus budget; sonnet is sufficient for plan
+         authorship — but override to opus if you judge the task unusually complex)
+       - A self-contained prompt that includes:
+         - The task id, title, description, and acceptance_criteria
+         - The current context_files list
+         - Working directory context: "you are in the Orbit repo at the current cwd"
+         - Instructions to read the referenced files with Read/Grep/Glob, understand
+           the current code, and produce a structured markdown report
+         - The exact output contract from step 6 below
+         - A note that sibling subagents are planning disjoint tasks in parallel, so
+           no cross-coordination is required
+         - An explicit prohibition: do NOT modify any files — research and report only
 
-    7. Refine context_files for each task:
-       - Update each task's context_files to list the exact files (not directories) that the
-         implementing agent will need to read or modify.
-       - Be precise: over-broad context_files cause false conflicts; missing files cause
-         agents to work without context.
-       - Verify that no two tasks in the batch share a context_file. If overlap is found,
-         reassign the overlapping file to the task that needs it most and note the decision
-         in that task's plan.
+    6. Subagent output contract. Each subagent MUST return markdown with exactly
+       these sections:
+       - ## Plan — detailed, implementation-ready plan grounded in the current
+         codebase, with concrete file paths, function names, and validation steps.
+       - ## Context Files — refined list of exact file paths (not directories),
+         one per line, that the implementing agent will need to read or modify.
+       - ## Risks — short list of risks, unknowns, or assumptions.
 
-    8. Persist plans and context_files:
-       - For each task, call orbit.task.update with:
-         - id: the task id
-         - plan: the full markdown plan
-         - context_files: the refined file list
-         - comment: "Batch plan authored; context_files refined for parallel execution."
+    7. Collate and persist. After all subagents return, parse each report and,
+       for each task, call orbit.task.update with:
+       - id: the task id
+       - plan: the full ## Plan section markdown
+       - context_files: the parsed ## Context Files list
+       - comment: "Batch plan authored by parallel subagent; context_files refined for parallel execution."
+
+    8. Conflict re-check. After collating (and BEFORE persisting if possible),
+       verify the refined context_files across the batch are still disjoint under
+       the path-prefix rule from Phase 1. If a subagent widened context_files and
+       introduced overlap, resolve by reassigning the overlapping file to the task
+       that needs it most and note the decision in that task's plan before persisting.
 
   # ---- interface ----
   input_schema_json:
