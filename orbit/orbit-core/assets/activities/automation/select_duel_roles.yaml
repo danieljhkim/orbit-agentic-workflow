@@ -1,0 +1,62 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: select_duel_roles
+  spec_type: automation
+
+  # ---- content ----
+  description: "Select a random permutation of agent families across the three duel roles (implementer, reviewer, arbiter) and stamp the implementer onto the task's actor identity."
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+    properties:
+      task_id:
+        type: string
+        description: Orbit task ID whose actor_identity will be stamped with the selected implementer.
+  output_schema_json:
+    type: object
+    required:
+      - implementer_agent_cli
+      - implementer_model
+      - reviewer_agent_cli
+      - reviewer_model
+      - arbiter_agent_cli
+      - arbiter_model
+      - duel_started_at
+      - duel_roles
+    properties:
+      implementer_agent_cli:
+        type: string
+        description: Agent CLI family assigned to the implementer role.
+      implementer_model:
+        type: string
+        description: Model assigned to the implementer role.
+      reviewer_agent_cli:
+        type: string
+        description: Agent CLI family assigned to the reviewer role.
+      reviewer_model:
+        type: string
+        description: Model assigned to the reviewer role.
+      arbiter_agent_cli:
+        type: string
+        description: Agent CLI family assigned to the arbiter role.
+      arbiter_model:
+        type: string
+        description: Model assigned to the arbiter role.
+      duel_started_at:
+        type: string
+        description: RFC3339 wall-clock timestamp used later by record_duel_scores to compute cost.wall_clock_seconds.
+      duel_roles:
+        type: object
+        description: Structured view of the three role assignments, mirroring the flat *_agent_cli / *_model fields.
+
+  # ---- execution ----
+  action: select_duel_roles

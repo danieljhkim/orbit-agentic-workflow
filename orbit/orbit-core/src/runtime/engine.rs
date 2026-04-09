@@ -260,6 +260,15 @@ impl OrbitRuntime {
     pub fn tool_invocation_metrics(&self) -> Result<Vec<ToolInvocationMetrics>, OrbitError> {
         open_invocation_store(self)?.list_tool_invocation_metrics()
     }
+
+    /// Read the append-only duel scoreboard log. The CLI's
+    /// `orbit duel scoreboard` command aggregates the returned runs in
+    /// memory via `orbit_store::duel_scoreboard::aggregate`. Returns an
+    /// empty vector when the file does not yet exist — an unrun
+    /// scoreboard is not an error condition.
+    pub fn load_duel_runs(&self) -> Result<Vec<orbit_types::DuelRun>, OrbitError> {
+        orbit_store::duel_scoreboard::load_runs(&self.paths().scoreboard_dir)
+    }
 }
 
 impl RuntimeHost for OrbitRuntime {

@@ -113,6 +113,9 @@ These surfaces are intentionally distinct because Orbit records provenance and e
 | **ship-local** | `orbit run ship-local` | Select tasks, dispatch agents, and commit locally without a PR |
 | **review** | `orbit run review` | Review tasks in `proposed` or `review` state |
 | **review-pr** | `orbit run review-pr --pr-number 42` | Review, gate, fix-loop, and merge an existing batch PR by PR number |
+| **duel** | `orbit run duel --tasks T123` | Single-task cross-agent evaluation: a random permutation of implementer/reviewer/arbiter across agent families, scored into `.orbit/scoreboard/duel.json` |
+
+Each duel run appends an entry to `.orbit/scoreboard/duel.json`. Inspect aggregates with `orbit duel scoreboard` (add `--by scope` or `--by ambiguity` to segment, `--role implementer` to filter, `--json` for raw output). The numbers feed back into agent selection for `ship`.
 
 Optional flags:
 

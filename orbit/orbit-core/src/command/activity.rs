@@ -83,6 +83,34 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         "check_batch_review_decision",
         include_str!("../../assets/activities/automation/check_batch_review_decision.yaml"),
     ),
+    (
+        "select_duel_roles",
+        include_str!("../../assets/activities/automation/select_duel_roles.yaml"),
+    ),
+    (
+        "check_duel_review_decision",
+        include_str!("../../assets/activities/automation/check_duel_review_decision.yaml"),
+    ),
+    (
+        "record_duel_scores",
+        include_str!("../../assets/activities/automation/record_duel_scores.yaml"),
+    ),
+    (
+        "plan_task_duel",
+        include_str!("../../assets/activities/agent_invoke/plan_task_duel.yaml"),
+    ),
+    (
+        "implement_and_publish_duel",
+        include_str!("../../assets/activities/agent_invoke/implement_and_publish_duel.yaml"),
+    ),
+    (
+        "review_duel_pr",
+        include_str!("../../assets/activities/agent_invoke/review_duel_pr.yaml"),
+    ),
+    (
+        "arbitrate_review",
+        include_str!("../../assets/activities/agent_invoke/arbitrate_review.yaml"),
+    ),
 ];
 
 const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "automation"];

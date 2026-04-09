@@ -1,3 +1,4 @@
+mod check_duel_review_decision;
 mod check_review;
 mod commit;
 mod commit_and_pr;
@@ -8,7 +9,9 @@ mod parallel;
 mod pr;
 mod pull;
 mod push;
+mod record_duel_scores;
 pub(crate) mod review;
+mod select_duel_roles;
 mod snapshot;
 mod sync_review;
 mod task;
@@ -31,6 +34,9 @@ const AUTOMATION_BOOTSTRAP_BATCH_REVIEW: &str = "bootstrap_batch_review";
 
 const AUTOMATION_MERGE_BATCH_PR: &str = "merge_batch_pr";
 const AUTOMATION_CHECK_BATCH_REVIEW_DECISION: &str = "check_batch_review_decision";
+const AUTOMATION_SELECT_DUEL_ROLES: &str = "select_duel_roles";
+const AUTOMATION_CHECK_DUEL_REVIEW_DECISION: &str = "check_duel_review_decision";
+const AUTOMATION_RECORD_DUEL_SCORES: &str = "record_duel_scores";
 const AUTOMATION_SYNC_BATCH_REVIEW_TO_GITHUB: &str = "sync_batch_review_to_github";
 const AUTOMATION_PULL_BATCH_CHANGES: &str = "pull_batch_changes";
 const AUTOMATION_PUSH_BATCH_CHANGES: &str = "push_batch_changes";
@@ -106,6 +112,11 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
         }
         AUTOMATION_PULL_BATCH_CHANGES => pull::pull_batch_changes(host, input),
         AUTOMATION_PUSH_BATCH_CHANGES => push::push_batch_changes(host, input),
+        AUTOMATION_SELECT_DUEL_ROLES => select_duel_roles::select_duel_roles(host, input),
+        AUTOMATION_CHECK_DUEL_REVIEW_DECISION => {
+            check_duel_review_decision::check_duel_review_decision(input)
+        }
+        AUTOMATION_RECORD_DUEL_SCORES => record_duel_scores::record_duel_scores(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"
         ))),

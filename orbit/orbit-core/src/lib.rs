@@ -31,13 +31,14 @@ pub mod runtime;
 pub mod workspace_registry;
 
 pub use orbit_engine::JobRunResult;
+pub use orbit_store::duel_scoreboard;
 pub use orbit_store::skill_store as skill_catalog;
 pub use orbit_store::{ActivityInvocationMetrics, TaskInvocationMetrics, ToolInvocationMetrics};
 
 pub use command::task_template::TaskTemplate;
 pub use command::workflow::{
-    WORKFLOWS, Workflow, WorkflowInput, build_workflow_input, find_workflow,
-    validate_workflow_flags,
+    WORKFLOWS, Workflow, WorkflowInput, build_workflow_input, build_workflow_input_for,
+    find_workflow, validate_workflow_flags,
 };
 pub use context::{ActorIdentity, ActorKind, OrbitContext};
 pub use orbit_store::AuditEventInsertParams;

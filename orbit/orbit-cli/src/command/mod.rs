@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod audit;
 pub mod config;
+pub mod duel;
 pub mod init;
 pub mod job;
 pub mod job_run;
@@ -34,6 +35,7 @@ Run workflows:
   run        Run a first-class workflow
   job        Define and run automation jobs
   job-run    Inspect and manage job run history
+  duel       Inspect duel workflow results
 
 Manage work:
   task       Create, update, and manage tasks
@@ -66,6 +68,7 @@ pub enum Commands {
     Run(run::RunCommand),
     Job(job::JobCommand),
     JobRun(job_run::JobRunCommand),
+    Duel(duel::DuelCommand),
 
     // ── manage work ──
     Task(task::TaskCommand),
@@ -94,6 +97,7 @@ impl Execute for Commands {
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::JobRun(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
+            Commands::Duel(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
         }

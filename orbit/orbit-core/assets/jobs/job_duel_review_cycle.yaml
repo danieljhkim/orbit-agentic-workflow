@@ -1,0 +1,65 @@
+schemaVersion: 1
+
+# ---- job ----
+job:
+  # ---- registration ----
+  job_id: job_duel_review_cycle
+  state: enabled
+
+  # ---- execution ----
+  #
+  # Duel review cycle: review a single-task PR, arbitrate the reviewer's
+  # verdict, fix if needed, record scores, and merge on success.
+  #
+  # Step flow:
+  #   review_duel_pr                — reviewer posts threads and emits per-thread JSON
+  #   sync_batch_review_to_github   — publish threads to GitHub
+  #   arbitrate_review              — arbiter classifies every comment and emits the authoritative decision
+  #   check_duel_review_decision    — gate on the arbiter's decision (loop_exit = arbiter APPROVED)
+  #   job_duel_review_loop          — (on_failure) iterative fix-and-re-review loop
+  #   record_duel_scores            — append one DuelRun entry to .orbit/scoreboard/duel.json
+  #   merge_batch_pr                — merge the approved PR
+  #
+  max_active_runs: 1
+  max_iterations: 1
+  default_input:
+    base: main
+  steps:
+    - target_type: activity
+      target_id: review_duel_pr
+      agent_cli_from_input: reviewer_agent_cli
+      model_from_input: reviewer_model
+      condition: on_success
+      timeout_seconds: 1000
+
+    - target_type: activity
+      target_id: sync_batch_review_to_github
+      condition: on_success
+      timeout_seconds: 120
+
+    - target_type: activity
+      target_id: arbitrate_review
+      agent_cli_from_input: arbiter_agent_cli
+      model_from_input: arbiter_model
+      condition: on_success
+      timeout_seconds: 900
+
+    - target_type: activity
+      target_id: check_duel_review_decision
+      condition: on_success
+      timeout_seconds: 30
+
+    - target_type: job
+      target_id: job_duel_review_loop
+      condition: on_failure
+      timeout_seconds: 7200
+
+    - target_type: activity
+      target_id: record_duel_scores
+      condition: on_success
+      timeout_seconds: 60
+
+    - target_type: activity
+      target_id: merge_batch_pr
+      condition: on_success
+      timeout_seconds: 60

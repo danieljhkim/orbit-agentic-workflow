@@ -33,6 +33,18 @@ const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/jobs/job_batch_review_cycle.yaml"),
     ),
     (
+        "job_duel_review_loop",
+        include_str!("../../assets/jobs/job_duel_review_loop.yaml"),
+    ),
+    (
+        "job_duel_review_cycle",
+        include_str!("../../assets/jobs/job_duel_review_cycle.yaml"),
+    ),
+    (
+        "job_duel_pipeline",
+        include_str!("../../assets/jobs/job_duel_pipeline.yaml"),
+    ),
+    (
         "job_parallel_task_pipeline",
         include_str!("../../assets/jobs/job_parallel_task_pipeline.yaml"),
     ),
@@ -68,6 +80,10 @@ struct DefaultJobStep {
     agent_cli: String,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    agent_cli_from_input: Option<String>,
+    #[serde(default)]
+    model_from_input: Option<String>,
     timeout_seconds: u64,
     #[serde(default)]
     env_extra: Vec<String>,
@@ -429,6 +445,8 @@ fn default_job_steps(entry: &DefaultJobEntry) -> Result<Vec<JobStep>, OrbitError
                 target_id: s.target_id.clone(),
                 agent_cli: s.agent_cli.clone(),
                 model: s.model.clone(),
+                agent_cli_from_input: s.agent_cli_from_input.clone(),
+                model_from_input: s.model_from_input.clone(),
                 timeout_seconds: s.timeout_seconds,
                 env_extra: s.env_extra.clone(),
                 env_set: s.env_set.clone(),

@@ -252,6 +252,20 @@ pub struct JobStep {
     pub agent_cli: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// When set and `agent_cli` is empty, the engine reads this key from the
+    /// current job input and uses its string value as the step's `agent_cli`.
+    /// Resolution precedence: explicit `agent_cli` > `agent_cli_from_input` >
+    /// task actor identity fallback.
+    ///
+    /// Enables workflows (e.g. `duel`) that randomize or otherwise compute
+    /// the agent family per run without patching the step at load time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_cli_from_input: Option<String>,
+    /// Companion to [`JobStep::agent_cli_from_input`]: reads the step's
+    /// `model` from the named key in the current job input. Applied only
+    /// when `model` is `None` on the step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_from_input: Option<String>,
     pub timeout_seconds: u64,
     /// Additional env var names to pass through in hermetic mode, on top of the global allowlist.
     #[serde(default)]
@@ -283,6 +297,8 @@ impl Default for JobStep {
             target_id: OrbitId::default(),
             agent_cli: String::new(),
             model: None,
+            agent_cli_from_input: None,
+            model_from_input: None,
             timeout_seconds: 0,
             env_extra: Vec::new(),
             env_set: HashMap::new(),
@@ -357,4 +373,54 @@ pub struct JobRun {
     /// Step execution results; populated in-memory from step files, not stored in jrun.yaml.
     #[serde(skip)]
     pub steps: Vec<JobRunStep>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn job_step_default_has_no_input_driven_agent_fields() {
+        let step = JobStep::default();
+        assert!(step.agent_cli_from_input.is_none());
+        assert!(step.model_from_input.is_none());
+    }
+
+    #[test]
+    fn job_step_serde_round_trip_preserves_input_driven_agent_fields() {
+        let step = JobStep {
+            target_type: JobTargetType::Activity,
+            target_id: OrbitId::from("review_duel_pr"),
+            agent_cli: String::new(),
+            model: None,
+            agent_cli_from_input: Some("reviewer_agent_cli".to_string()),
+            model_from_input: Some("reviewer_model".to_string()),
+            timeout_seconds: 600,
+            ..JobStep::default()
+        };
+
+        let json = serde_json::to_string(&step).expect("serialize");
+        assert!(json.contains("\"agent_cli_from_input\":\"reviewer_agent_cli\""));
+        assert!(json.contains("\"model_from_input\":\"reviewer_model\""));
+
+        let parsed: JobStep = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            parsed.agent_cli_from_input.as_deref(),
+            Some("reviewer_agent_cli")
+        );
+        assert_eq!(parsed.model_from_input.as_deref(), Some("reviewer_model"));
+    }
+
+    #[test]
+    fn job_step_json_without_input_driven_fields_deserializes_as_none() {
+        let json = r#"{
+            "target_type": "activity",
+            "target_id": "implement_change",
+            "agent_cli": "claude",
+            "timeout_seconds": 2400
+        }"#;
+        let step: JobStep = serde_json::from_str(json).expect("deserialize minimal step");
+        assert!(step.agent_cli_from_input.is_none());
+        assert!(step.model_from_input.is_none());
+    }
 }

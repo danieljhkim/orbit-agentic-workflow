@@ -47,6 +47,13 @@ pub mod pr_scoreboard {
     };
 }
 
+pub mod duel_scoreboard {
+    pub use crate::file::duel_scoreboard::{
+        AggregateFilter, AggregateRow, Aggregates, ReviewerTally, RoleAxis, SegmentBy, aggregate,
+        append_run, derive_task_scope, known_agent_families, load_runs, tally_reviewer_stats,
+    };
+}
+
 pub mod friction_log {
     pub use crate::file::friction_log::{append_friction_entry, read_friction_entries_for_month};
 }

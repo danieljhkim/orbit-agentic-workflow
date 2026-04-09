@@ -1,6 +1,6 @@
 use clap::Args;
 use orbit_core::{
-    OrbitError, OrbitRuntime, WORKFLOWS, WorkflowInput, build_workflow_input, find_workflow,
+    OrbitError, OrbitRuntime, WORKFLOWS, WorkflowInput, build_workflow_input_for, find_workflow,
     validate_workflow_flags,
 };
 use serde_json::json;
@@ -68,7 +68,7 @@ impl Execute for RunCommand {
             pr_number: self.pr_number.clone(),
         };
         validate_workflow_flags(workflow, &wf_input)?;
-        let input = build_workflow_input(&wf_input)?;
+        let input = build_workflow_input_for(Some(workflow), &wf_input)?;
 
         let run = runtime.run_job_now_with_input_debug(workflow.job_id, input, self.debug)?;
         let run_details = runtime

@@ -1,0 +1,53 @@
+schemaVersion: 1
+
+# ---- job ----
+job:
+  # ---- registration ----
+  job_id: job_duel_pipeline
+  state: enabled
+
+  # ---- execution ----
+  #
+  # Duel evaluation pipeline: runs a single Orbit task end-to-end with three
+  # distinct agent families assigned to the implementer, reviewer, and arbiter
+  # roles, then records structured scores into .orbit/scoreboard/duel.json.
+  #
+  # Step flow:
+  #   select_duel_roles            — assign families to roles, stamp implementer onto task.actor_identity
+  #   plan_task_duel               — implementer authors the inline plan
+  #   implement_and_publish_duel   — implementer codes, commits under its own identity, pushes, opens PR
+  #   job_duel_review_cycle        — review, arbitrate, fix-loop, record scores, merge
+  #
+  # This pipeline intentionally does NOT use commit_and_open_batch_pr or any
+  # other batch commit automation. Single-task duel runs publish directly from
+  # the implementer agent so commit attribution matches the real agent family
+  # and model. There is no create_branch activity either — branch creation
+  # happens inside implement_and_publish_duel.
+  max_active_runs: 1
+  max_iterations: 1
+  default_input:
+    base: main
+  steps:
+    - target_type: activity
+      target_id: select_duel_roles
+      condition: on_success
+      timeout_seconds: 30
+
+    - target_type: activity
+      target_id: plan_task_duel
+      agent_cli_from_input: implementer_agent_cli
+      model_from_input: implementer_model
+      condition: on_success
+      timeout_seconds: 1200
+
+    - target_type: activity
+      target_id: implement_and_publish_duel
+      agent_cli_from_input: implementer_agent_cli
+      model_from_input: implementer_model
+      condition: on_success
+      timeout_seconds: 5400
+
+    - target_type: job
+      target_id: job_duel_review_cycle
+      condition: on_success
+      timeout_seconds: 7200

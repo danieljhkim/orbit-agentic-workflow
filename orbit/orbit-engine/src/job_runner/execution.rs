@@ -13,7 +13,7 @@ use crate::context::{
 use super::friction::{append_failed_step_friction, append_step_metrics};
 use super::helpers::{
     check_loop_exit, log_step_completion, merge_job_input, normalize_agent_label,
-    record_task_agent_context, release_task_locks_for_job_input, resolve_step_agent_from_task,
+    record_task_agent_context, release_task_locks_for_job_input, resolve_step_agent,
     resolved_model_name, run_was_cancelled, should_run_step, step_state_records_incident,
 };
 use super::stale_recovery::{finalize_failed_started_run, recover_stale_active_run_for_job};
@@ -444,9 +444,10 @@ fn execute_activity_with_retries<H: EngineHost>(
                 }
 
                 // ---- Activity step (existing behavior) ----
-                // If the step's agent_cli is empty, try to resolve it from the
-                // task's agent/model fields so the original implementer is used.
-                let resolved_step = resolve_step_agent_from_task(host, step, &current_input);
+                // If the step's agent_cli is empty, resolve it via the
+                // precedence chain: agent_cli_from_input (job input) first,
+                // then task actor identity. See `resolve_step_agent` docs.
+                let resolved_step = resolve_step_agent(host, step, &current_input);
                 let effective_step = resolved_step.as_ref().unwrap_or(step);
                 let execution = build_execution_context_for_step(
                     host,

@@ -11,6 +11,11 @@ pub struct Workflow {
     pub supports_base: bool,
     pub supports_pr_number: bool,
     pub requires_pr_number: bool,
+    /// Upper bound on `--tasks` cardinality. `None` means unbounded (the
+    /// historical default). Set to `Some(1)` for single-task workflows like
+    /// `duel` that must reject multi-task input with a loud, workflow-
+    /// specific error rather than silently taking the first entry.
+    pub max_tasks: Option<u32>,
 }
 
 pub const WORKFLOWS: &[Workflow] = &[
@@ -23,6 +28,7 @@ pub const WORKFLOWS: &[Workflow] = &[
         supports_base: true,
         supports_pr_number: false,
         requires_pr_number: false,
+        max_tasks: None,
     },
     Workflow {
         alias: "ship-local",
@@ -33,6 +39,7 @@ pub const WORKFLOWS: &[Workflow] = &[
         supports_base: true,
         supports_pr_number: false,
         requires_pr_number: false,
+        max_tasks: None,
     },
     Workflow {
         alias: "review",
@@ -43,6 +50,7 @@ pub const WORKFLOWS: &[Workflow] = &[
         supports_base: false,
         supports_pr_number: false,
         requires_pr_number: false,
+        max_tasks: None,
     },
     Workflow {
         alias: "review-pr",
@@ -53,6 +61,18 @@ pub const WORKFLOWS: &[Workflow] = &[
         supports_base: true,
         supports_pr_number: true,
         requires_pr_number: true,
+        max_tasks: None,
+    },
+    Workflow {
+        alias: "duel",
+        job_id: "job_duel_pipeline",
+        description: "Single-task cross-agent duel: random implementer/reviewer/arbiter, scored",
+        supports_tasks: true,
+        supports_parallelism: false,
+        supports_base: true,
+        supports_pr_number: false,
+        requires_pr_number: false,
+        max_tasks: Some(1),
     },
 ];
 
@@ -105,6 +125,17 @@ pub fn validate_workflow_flags(
 }
 
 pub fn build_workflow_input(input: &WorkflowInput) -> Result<Value, OrbitError> {
+    build_workflow_input_for(None, input)
+}
+
+/// Variant of [`build_workflow_input`] that also enforces any workflow-
+/// specific cardinality constraints such as `Workflow::max_tasks`. Callers
+/// that already know the resolved workflow should use this; the legacy
+/// `build_workflow_input` is retained for call sites that do not.
+pub fn build_workflow_input_for(
+    workflow: Option<&Workflow>,
+    input: &WorkflowInput,
+) -> Result<Value, OrbitError> {
     let mut map = serde_json::Map::new();
 
     if let Some(tasks) = &input.tasks {
@@ -118,6 +149,24 @@ pub fn build_workflow_input(input: &WorkflowInput) -> Result<Value, OrbitError> 
             return Err(OrbitError::InvalidInput(
                 "--tasks value must not be empty".to_string(),
             ));
+        }
+        if let Some(workflow) = workflow
+            && let Some(max) = workflow.max_tasks
+            && task_ids.len() as u32 > max
+        {
+            if max == 1 {
+                return Err(OrbitError::InvalidInput(format!(
+                    "workflow '{}' accepts exactly one task id — got {}",
+                    workflow.alias,
+                    task_ids.len()
+                )));
+            }
+            return Err(OrbitError::InvalidInput(format!(
+                "workflow '{}' accepts at most {} task ids — got {}",
+                workflow.alias,
+                max,
+                task_ids.len()
+            )));
         }
         map.insert("task_ids".to_string(), Value::Array(task_ids));
     }
@@ -177,6 +226,71 @@ mod tests {
     #[test]
     fn find_workflow_returns_none_for_unknown() {
         assert!(find_workflow("nonexistent").is_none());
+    }
+
+    #[test]
+    fn duel_workflow_is_registered_with_single_task_cap() {
+        let duel = find_workflow("duel").expect("duel workflow");
+        assert_eq!(duel.job_id, "job_duel_pipeline");
+        assert!(duel.supports_tasks);
+        assert!(!duel.supports_parallelism);
+        assert!(duel.supports_base);
+        assert!(!duel.supports_pr_number);
+        assert_eq!(duel.max_tasks, Some(1));
+        assert!(
+            duel.description.to_lowercase().contains("duel")
+                || duel.description.to_lowercase().contains("cross-agent"),
+            "description should mention cross-agent evaluation"
+        );
+    }
+
+    #[test]
+    fn duel_rejects_multi_task_input_with_workflow_specific_message() {
+        let duel = find_workflow("duel").expect("duel workflow");
+        let input = WorkflowInput {
+            tasks: Some("T20260409-0310,T20260409-0311".to_string()),
+            parallelism: None,
+            base: None,
+            pr_number: None,
+        };
+        let err = build_workflow_input_for(Some(duel), &input).unwrap_err();
+        match err {
+            OrbitError::InvalidInput(msg) => {
+                assert!(
+                    msg.contains("duel") && msg.contains("exactly one task id"),
+                    "error must name the workflow and its constraint, got: {msg}"
+                );
+            }
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn duel_accepts_a_single_task_id() {
+        let duel = find_workflow("duel").expect("duel workflow");
+        let input = WorkflowInput {
+            tasks: Some("T20260409-0310".to_string()),
+            parallelism: None,
+            base: Some("main".to_string()),
+            pr_number: None,
+        };
+        let built = build_workflow_input_for(Some(duel), &input).unwrap();
+        assert_eq!(built["task_ids"], json!(["T20260409-0310"]));
+        assert_eq!(built["base"], json!("main"));
+    }
+
+    #[test]
+    fn non_duel_workflows_are_unbounded_by_max_tasks() {
+        let ship = find_workflow("ship").expect("ship workflow");
+        assert_eq!(ship.max_tasks, None);
+        let input = WorkflowInput {
+            tasks: Some("T1,T2,T3,T4,T5".to_string()),
+            parallelism: None,
+            base: None,
+            pr_number: None,
+        };
+        let built = build_workflow_input_for(Some(ship), &input).unwrap();
+        assert_eq!(built["task_ids"].as_array().unwrap().len(), 5);
     }
 
     #[test]

@@ -24,6 +24,7 @@ pub mod actor;
 pub mod agent_pair;
 pub mod audit;
 pub mod audit_event;
+pub mod duel;
 pub mod error;
 pub mod event;
 pub mod friction;
@@ -41,7 +42,14 @@ pub mod workspace;
 
 pub use activity::Activity;
 pub use actor::ActorIdentity;
-pub use agent_pair::{AgentModelPair, agent_family_from_cli, resolve_agent_model_pair};
+pub use agent_pair::{
+    AgentModelPair, agent_family_from_cli, all_agent_families, resolve_agent_model_pair,
+};
+pub use duel::{
+    Ambiguity, ArbiterVerdict, Cost, Decision, DuelRun, ImplementerStats, Outcome,
+    PerCommentVerdict, ReviewerStats, RoleAssignment, Roles, Scores, Severity, TaskClass,
+    TaskScope, ValidIssuesBySeverity, Verdict,
+};
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use error::OrbitError;

@@ -328,6 +328,21 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Duel(cmd) => {
+            use crate::command::duel::DuelSubcommand;
+            let sub = match &cmd.command {
+                DuelSubcommand::Scoreboard(_) => "scoreboard",
+            };
+            CommandMeta {
+                command: "duel".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("duel".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Metrics(cmd) => {
             use crate::command::metrics::MetricsSubcommand;
             let (sub, target_id) = match &cmd.command {

@@ -33,6 +33,21 @@ impl AgentModelPair {
     }
 }
 
+/// The full set of agent CLI families Orbit knows how to orchestrate.
+///
+/// This is the single source of truth for the candidate set used by
+/// cross-agent workflows (e.g. the `duel` evaluation harness), so adding
+/// a new family here automatically includes it in future permutations
+/// without touching any other module.
+///
+/// The return type is a fixed-size array rather than a `Vec` so the
+/// cardinality is enforced at compile time: adding a family requires
+/// changing the array size, which in turn surfaces any call site that
+/// made assumptions about exactly three families.
+pub const fn all_agent_families() -> [&'static str; 3] {
+    ["codex", "claude", "gemini"]
+}
+
 /// Normalize an `agent_cli` value into a stable, lowercased family identifier
 /// (e.g. `/usr/local/bin/Codex` -> `codex`).
 pub fn agent_family_from_cli(agent_cli: &str) -> String {
@@ -102,5 +117,20 @@ mod tests {
     fn unknown_agent_returns_none() {
         assert!(resolve_agent_model_pair("mock-agent").is_none());
         assert!(resolve_agent_model_pair("").is_none());
+    }
+
+    #[test]
+    fn all_agent_families_lists_codex_claude_gemini_in_order() {
+        assert_eq!(all_agent_families(), ["codex", "claude", "gemini"]);
+    }
+
+    #[test]
+    fn all_agent_families_members_resolve_to_real_pairs() {
+        for family in all_agent_families() {
+            assert!(
+                resolve_agent_model_pair(family).is_some(),
+                "family {family:?} has no registered model pair"
+            );
+        }
     }
 }
