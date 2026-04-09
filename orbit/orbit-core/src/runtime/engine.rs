@@ -10,9 +10,10 @@ use orbit_store::{
 };
 use orbit_tools::ToolContext;
 use orbit_types::{
-    Activity, ActorIdentity, AgentCommitRequest, InvocationTrace, JobRun, JobRunState,
-    JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus, TaskType,
-    WorkspacePaths, prune_missing_context_files,
+    Activity, ActorIdentity, AgentCommitRequest, AgentModelPair, InvocationTrace, JobRun,
+    JobRunState, JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus,
+    TaskType, WorkspacePaths, agent_family_from_cli, prune_missing_context_files,
+    resolve_agent_model_pair,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -56,7 +57,7 @@ fn build_agent_stdin_envelope_payload(
     )?;
     let envelope = ExecutionEnvelope {
         schema_version: 1,
-        activity: activity_envelope_json(&execution.activity),
+        activity: activity_envelope_json_for_execution(&execution.activity, &execution.agent_cli),
         job: execution.job.as_ref().map(|job| {
             json!({
                 "id": job.job_id,
@@ -625,7 +626,16 @@ impl TaskHost for OrbitRuntime {
     }
 }
 
+#[cfg(test)]
 fn activity_envelope_json(activity: &Activity) -> Value {
+    activity_envelope_json_for_execution(activity, "")
+}
+
+/// Build the activity envelope JSON, embedding the orchestrator/helper model
+/// pair resolved from `agent_cli` and substituting `{{orchestrator_model}}`,
+/// `{{helper_model}}`, and `{{agent_family}}` placeholders inside the
+/// activity's `instruction` text.
+fn activity_envelope_json_for_execution(activity: &Activity, agent_cli: &str) -> Value {
     let mut envelope = json!({
         "id": activity.id,
         "type": activity.spec_type,
@@ -642,7 +652,56 @@ fn activity_envelope_json(activity: &Activity) -> Value {
         }
     }
 
+    let family = agent_family_from_cli(agent_cli);
+    let pair = resolve_agent_model_pair(agent_cli);
+    let orchestrator = pair
+        .as_ref()
+        .map(|p| p.orchestrator.as_str())
+        .unwrap_or("");
+    let helper = pair.as_ref().map(|p| p.helper.as_str()).unwrap_or("");
+
+    if let Some(activity_map) = envelope.as_object_mut() {
+        activity_map.insert("agent_family".to_string(), json!(family));
+        activity_map.insert("orchestrator_model".to_string(), json!(orchestrator));
+        activity_map.insert("helper_model".to_string(), json!(helper));
+
+        if let Some(instruction_value) = activity_map.get("instruction").cloned()
+            && let Some(instruction_str) = instruction_value.as_str()
+        {
+            let rendered = render_agent_pair_placeholders(instruction_str, &family, &pair);
+            activity_map.insert("instruction".to_string(), Value::String(rendered));
+        }
+    }
+
     envelope
+}
+
+/// Substitute the orchestrator/helper placeholders inside an instruction
+/// string. Falls back to descriptive sentinels when no mapping exists for the
+/// configured agent family so unknown families do not silently render the
+/// placeholder tokens to the agent.
+fn render_agent_pair_placeholders(
+    instruction: &str,
+    family: &str,
+    pair: &Option<AgentModelPair>,
+) -> String {
+    let family_value = if family.is_empty() {
+        "(unspecified)".to_string()
+    } else {
+        family.to_string()
+    };
+    let (orchestrator_value, helper_value) = match pair {
+        Some(pair) => (pair.orchestrator.clone(), pair.helper.clone()),
+        None => (
+            format!("(no orchestrator mapping for {family_value})"),
+            format!("(no helper mapping for {family_value})"),
+        ),
+    };
+
+    instruction
+        .replace("{{agent_family}}", &family_value)
+        .replace("{{orchestrator_model}}", &orchestrator_value)
+        .replace("{{helper_model}}", &helper_value)
 }
 
 fn current_repo_root(runtime: &OrbitRuntime) -> Result<String, OrbitError> {
@@ -679,7 +738,8 @@ mod tests {
 
     use super::{
         ExecutionEnvelope, ExecutionSkillEnvelope, activity_envelope_json,
-        codex_workspace_write_writable_dirs, task_detail_envelope_json, task_detail_for_input,
+        activity_envelope_json_for_execution, codex_workspace_write_writable_dirs,
+        task_detail_envelope_json, task_detail_for_input,
     };
 
     struct MockTaskHost {
@@ -922,6 +982,104 @@ mod tests {
                 .and_then(|task| task.get("workspace_path")),
             Some(&json!("/override/worktree"))
         );
+    }
+
+    fn implement_change_sample_activity() -> Activity {
+        let now = Utc::now();
+        Activity {
+            id: "implement_change".to_string(),
+            spec_type: "agent_invoke".to_string(),
+            description: "implement an Orbit task".to_string(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({}),
+            spec_config: json!({
+                "instruction": "Roles: orchestrator={{orchestrator_model}}, helper={{helper_model}}, family={{agent_family}}",
+            }),
+            tools: vec![],
+            proc_allowed_programs: vec![],
+            workspace_path: None,
+            created_by: None,
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn activity_envelope_renders_codex_orchestrator_helper_pair() {
+        let envelope = activity_envelope_json_for_execution(&implement_change_sample_activity(), "codex");
+        assert_eq!(envelope.get("agent_family"), Some(&json!("codex")));
+        assert_eq!(envelope.get("orchestrator_model"), Some(&json!("gpt-5.4")));
+        assert_eq!(envelope.get("helper_model"), Some(&json!("gpt-5.4-mini")));
+        let instruction = envelope
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        assert!(instruction.contains("orchestrator=gpt-5.4"));
+        assert!(instruction.contains("helper=gpt-5.4-mini"));
+        assert!(instruction.contains("family=codex"));
+        assert!(!instruction.contains("{{"));
+    }
+
+    #[test]
+    fn activity_envelope_renders_claude_orchestrator_helper_pair() {
+        let envelope = activity_envelope_json_for_execution(
+            &implement_change_sample_activity(),
+            "/usr/local/bin/claude",
+        );
+        assert_eq!(envelope.get("agent_family"), Some(&json!("claude")));
+        assert_eq!(envelope.get("orchestrator_model"), Some(&json!("opus")));
+        assert_eq!(envelope.get("helper_model"), Some(&json!("sonnet")));
+        let instruction = envelope
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        assert!(instruction.contains("orchestrator=opus"));
+        assert!(instruction.contains("helper=sonnet"));
+        assert!(instruction.contains("family=claude"));
+    }
+
+    #[test]
+    fn activity_envelope_renders_gemini_orchestrator_helper_pair() {
+        let envelope =
+            activity_envelope_json_for_execution(&implement_change_sample_activity(), "gemini");
+        assert_eq!(envelope.get("agent_family"), Some(&json!("gemini")));
+        assert_eq!(
+            envelope.get("orchestrator_model"),
+            Some(&json!("gemini-3.1-pro"))
+        );
+        assert_eq!(envelope.get("helper_model"), Some(&json!("gemini-3-flash")));
+        let instruction = envelope
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        assert!(instruction.contains("orchestrator=gemini-3.1-pro"));
+        assert!(instruction.contains("helper=gemini-3-flash"));
+    }
+
+    #[test]
+    fn activity_envelope_unknown_agent_family_emits_sentinel_text() {
+        let envelope =
+            activity_envelope_json_for_execution(&implement_change_sample_activity(), "mock-agent");
+        assert_eq!(envelope.get("orchestrator_model"), Some(&json!("")));
+        let instruction = envelope
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        // The placeholders must still be substituted (no raw template tokens)
+        // even when no mapping is registered.
+        assert!(!instruction.contains("{{"));
+        assert!(instruction.contains("no orchestrator mapping for mock-agent"));
+        assert!(instruction.contains("no helper mapping for mock-agent"));
+    }
+
+    #[test]
+    fn activity_envelope_without_instruction_still_injects_pair_fields() {
+        let mut activity = implement_change_sample_activity();
+        activity.spec_config = json!({});
+        let envelope = activity_envelope_json_for_execution(&activity, "codex");
+        assert_eq!(envelope.get("orchestrator_model"), Some(&json!("gpt-5.4")));
+        assert!(envelope.get("instruction").is_none());
     }
 
     #[test]

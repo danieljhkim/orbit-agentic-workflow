@@ -21,6 +21,7 @@
 
 pub mod activity;
 pub mod actor;
+pub mod agent_pair;
 pub mod audit;
 pub mod audit_event;
 pub mod error;
@@ -40,6 +41,7 @@ pub mod workspace;
 
 pub use activity::Activity;
 pub use actor::ActorIdentity;
+pub use agent_pair::{AgentModelPair, agent_family_from_cli, resolve_agent_model_pair};
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use error::OrbitError;

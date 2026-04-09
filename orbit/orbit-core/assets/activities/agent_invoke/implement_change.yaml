@@ -15,6 +15,21 @@ activity:
     Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to tested code.
 
+    Execution roles for this run:
+      - Agent family: {{agent_family}}
+      - Orchestrator model: {{orchestrator_model}}
+          Owns plan review, scope decisions, integration of helper output,
+          verification, and the final execution summary. Do not delegate
+          these responsibilities — they require the orchestrator's judgment.
+      - Helper model: {{helper_model}}
+          Performs the bounded code-change work the orchestrator hands off:
+          targeted file edits inside the task scope, mechanical refactors,
+          and small implementation steps that the orchestrator has already
+          framed. The helper must not make scope or design decisions.
+    These names are resolved by Orbit from the configured agent family;
+    they are the authoritative duo for this execution. Do not substitute
+    other models on your own.
+
     Steps:
     1. Load task context:
        - Read the injected `task` object from this execution envelope. When `input.task_id`
