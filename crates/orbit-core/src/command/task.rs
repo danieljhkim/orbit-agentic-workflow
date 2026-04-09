@@ -204,8 +204,7 @@ impl OrbitRuntime {
     pub fn dry_run_prune_context_files(&self, task: &Task) -> Vec<String> {
         let prune_root =
             context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
-        let (_kept, dropped) =
-            prune_missing_context_files(&prune_root, task.context_files.clone());
+        let (_kept, dropped) = prune_missing_context_files(&prune_root, task.context_files.clone());
         dropped
     }
 
@@ -275,17 +274,16 @@ impl OrbitRuntime {
         // Prune non-existent context_files entries before forwarding to the store.
         // Resolve relative paths against the task's recorded workspace (falling back
         // to the runtime repo root).
-        let dropped_context_files: Vec<String> = if let Some(candidates) =
-            params.context_files.take()
-        {
-            let prune_root =
-                context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
-            let (kept, dropped) = prune_missing_context_files(&prune_root, candidates);
-            params.context_files = Some(kept);
-            dropped
-        } else {
-            Vec::new()
-        };
+        let dropped_context_files: Vec<String> =
+            if let Some(candidates) = params.context_files.take() {
+                let prune_root =
+                    context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
+                let (kept, dropped) = prune_missing_context_files(&prune_root, candidates);
+                params.context_files = Some(kept);
+                dropped
+            } else {
+                Vec::new()
+            };
         let locked_field_update = params.plan.is_some()
             || params.execution_summary.is_some()
             || params.comment.is_some()
@@ -1333,7 +1331,10 @@ mod tests {
             })
             .expect("task");
 
-        assert_eq!(task.context_files, vec!["a.md".to_string(), "b.md".to_string()]);
+        assert_eq!(
+            task.context_files,
+            vec!["a.md".to_string(), "b.md".to_string()]
+        );
         assert!(
             task.history
                 .iter()
@@ -1352,11 +1353,7 @@ mod tests {
             .add_task(TaskAddParams {
                 title: "ctx".to_string(),
                 description: "desc".to_string(),
-                context_files: vec![
-                    "".to_string(),
-                    "   ".to_string(),
-                    "real.md".to_string(),
-                ],
+                context_files: vec!["".to_string(), "   ".to_string(), "real.md".to_string()],
                 ..Default::default()
             })
             .expect("task");
@@ -1410,7 +1407,10 @@ mod tests {
             .find(|h| h.event == "context_files_pruned")
             .expect("history entry for pruned context_files");
         let note = prune_event.note.as_deref().unwrap_or("");
-        assert!(note.contains("missing.md"), "note should name dropped: {note}");
+        assert!(
+            note.contains("missing.md"),
+            "note should name dropped: {note}"
+        );
     }
 
     #[test]

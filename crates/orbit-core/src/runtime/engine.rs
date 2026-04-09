@@ -663,10 +663,7 @@ fn activity_envelope_json_for_execution(activity: &Activity, agent_cli: &str) ->
 
     let family = agent_family_from_cli(agent_cli);
     let pair = resolve_agent_model_pair(agent_cli);
-    let orchestrator = pair
-        .as_ref()
-        .map(|p| p.orchestrator.as_str())
-        .unwrap_or("");
+    let orchestrator = pair.as_ref().map(|p| p.orchestrator.as_str()).unwrap_or("");
     let helper = pair.as_ref().map(|p| p.helper.as_str()).unwrap_or("");
 
     if let Some(activity_map) = envelope.as_object_mut() {
@@ -815,7 +812,8 @@ mod tests {
             execution_summary: String::new(),
             context_files: vec![
                 "crates/orbit-core/src/runtime/engine.rs".to_string(),
-                "crates/orbit-core/assets/activities/agent_invoke/implement_change.yaml".to_string(),
+                "crates/orbit-core/assets/activities/agent_invoke/implement_change.yaml"
+                    .to_string(),
             ],
             workspace_path: Some("/task/worktree".to_string()),
             repo_root: Some("/task/repo".to_string()),
@@ -933,10 +931,7 @@ mod tests {
             .get("context_files")
             .and_then(serde_json::Value::as_array)
             .expect("context_files array");
-        let kept_strings: Vec<&str> = kept
-            .iter()
-            .filter_map(serde_json::Value::as_str)
-            .collect();
+        let kept_strings: Vec<&str> = kept.iter().filter_map(serde_json::Value::as_str).collect();
         assert_eq!(kept_strings, vec!["real.md"]);
     }
 
@@ -946,8 +941,8 @@ mod tests {
             task: sample_task(),
         };
 
-        let detail =
-            task_detail_for_input(&host, &json!({}), std::path::Path::new("/")).expect("task detail");
+        let detail = task_detail_for_input(&host, &json!({}), std::path::Path::new("/"))
+            .expect("task detail");
 
         assert!(detail.is_none());
     }
@@ -961,8 +956,8 @@ mod tests {
             "task_id": "T20260408-0133",
             "workspace_path": "/override/worktree",
         });
-        let task = task_detail_for_input(&host, &input, std::path::Path::new("/"))
-            .expect("task detail");
+        let task =
+            task_detail_for_input(&host, &input, std::path::Path::new("/")).expect("task detail");
 
         let envelope = ExecutionEnvelope {
             schema_version: 1,
@@ -1016,7 +1011,8 @@ mod tests {
 
     #[test]
     fn activity_envelope_renders_codex_orchestrator_helper_pair() {
-        let envelope = activity_envelope_json_for_execution(&implement_change_sample_activity(), "codex");
+        let envelope =
+            activity_envelope_json_for_execution(&implement_change_sample_activity(), "codex");
         assert_eq!(envelope.get("agent_family"), Some(&json!("codex")));
         assert_eq!(envelope.get("orchestrator_model"), Some(&json!("gpt-5.4")));
         assert_eq!(envelope.get("helper_model"), Some(&json!("gpt-5.4-mini")));

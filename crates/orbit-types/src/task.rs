@@ -469,10 +469,8 @@ mod prune_context_files_tests {
     #[test]
     fn all_missing() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let (kept, dropped) = prune_missing_context_files(
-            tmp.path(),
-            vec!["a.md".into(), "b.md".into()],
-        );
+        let (kept, dropped) =
+            prune_missing_context_files(tmp.path(), vec!["a.md".into(), "b.md".into()]);
         assert!(kept.is_empty());
         assert_eq!(dropped, vec!["a.md".to_string(), "b.md".to_string()]);
     }
@@ -483,10 +481,8 @@ mod prune_context_files_tests {
         let other = tempfile::tempdir().expect("other tempdir");
         let abs = other.path().join("doc.md");
         fs::write(&abs, "hi").expect("write");
-        let (kept, dropped) = prune_missing_context_files(
-            tmp.path(),
-            vec![abs.to_string_lossy().into_owned()],
-        );
+        let (kept, dropped) =
+            prune_missing_context_files(tmp.path(), vec![abs.to_string_lossy().into_owned()]);
         assert_eq!(kept, vec![abs.to_string_lossy().into_owned()]);
         assert!(dropped.is_empty());
     }
@@ -500,7 +496,10 @@ mod prune_context_files_tests {
             vec!["".into(), "   ".into(), "\t\n".into(), "real.md".into()],
         );
         assert_eq!(kept, vec!["real.md".to_string()]);
-        assert!(dropped.is_empty(), "empty entries must not be reported as dropped");
+        assert!(
+            dropped.is_empty(),
+            "empty entries must not be reported as dropped"
+        );
     }
 
     #[test]

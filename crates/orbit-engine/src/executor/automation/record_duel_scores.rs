@@ -19,12 +19,12 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use orbit_store::duel_scoreboard::{self, ReviewerTally};
+use orbit_types::OrbitError;
 use orbit_types::{
     Ambiguity, Cost, Decision, DuelRun, ImplementerStats, Outcome, PerCommentVerdict,
     ReviewerStats, RoleAssignment, Roles, Scores, Severity, TaskClass, TaskScope,
     ValidIssuesBySeverity, Verdict,
 };
-use orbit_types::OrbitError;
 use serde_json::Value;
 
 use crate::context::{RuntimeHost, TaskHost};
@@ -59,9 +59,8 @@ fn parse_decision(input: &Value) -> Result<Decision, OrbitError> {
 fn parse_per_comment(input: &Value) -> Result<Vec<PerCommentVerdict>, OrbitError> {
     match input.get("per_comment") {
         None | Some(Value::Null) => Ok(Vec::new()),
-        Some(value) => serde_json::from_value::<Vec<PerCommentVerdict>>(value.clone()).map_err(
-            |err| OrbitError::InvalidInput(format!("invalid per_comment array: {err}")),
-        ),
+        Some(value) => serde_json::from_value::<Vec<PerCommentVerdict>>(value.clone())
+            .map_err(|err| OrbitError::InvalidInput(format!("invalid per_comment array: {err}"))),
     }
 }
 
@@ -97,9 +96,10 @@ fn parse_bool(input: &Value, key: &str, default: bool) -> bool {
 }
 
 fn parse_pr_number(input: &Value) -> Option<u64> {
-    input
-        .get("pr_number")
-        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+    input.get("pr_number").and_then(|v| {
+        v.as_u64()
+            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    })
 }
 
 fn parse_started_at(input: &Value) -> Result<DateTime<Utc>, OrbitError> {
@@ -107,9 +107,7 @@ fn parse_started_at(input: &Value) -> Result<DateTime<Utc>, OrbitError> {
     DateTime::parse_from_rfc3339(raw)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|err| {
-            OrbitError::InvalidInput(format!(
-                "duel_started_at must be RFC3339 timestamp: {err}"
-            ))
+            OrbitError::InvalidInput(format!("duel_started_at must be RFC3339 timestamp: {err}"))
         })
 }
 
@@ -186,10 +184,7 @@ pub(crate) fn build_duel_run(
     let merged = parse_bool(input, "merged", false);
     let pr_number = parse_pr_number(input);
 
-    let wall_clock_seconds = now
-        .signed_duration_since(started_at)
-        .num_seconds()
-        .max(0) as u64;
+    let wall_clock_seconds = now.signed_duration_since(started_at).num_seconds().max(0) as u64;
 
     Ok(DuelRun {
         run_id: generate_run_id(now),
@@ -236,8 +231,7 @@ fn resolve_scope<H: RuntimeHost + ?Sized>(host: &H, input: &Value) -> TaskScope 
     let head = input_string_field(input, "head_ref");
     match (base, head) {
         (Some(base), Some(head)) => {
-            duel_scoreboard::derive_task_scope(&repo_root, &base, &head)
-                .unwrap_or(TaskScope::Other)
+            duel_scoreboard::derive_task_scope(&repo_root, &base, &head).unwrap_or(TaskScope::Other)
         }
         _ => TaskScope::Other,
     }

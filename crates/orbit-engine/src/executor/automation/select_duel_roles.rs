@@ -248,8 +248,10 @@ mod tests {
             let (implementer, reviewer, arbiter) = role_triple(&out);
 
             // All three roles drawn from the canonical candidate set.
-            let as_set: BTreeSet<String> =
-                [&implementer, &reviewer, &arbiter].iter().map(|s| s.to_string()).collect();
+            let as_set: BTreeSet<String> = [&implementer, &reviewer, &arbiter]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let canonical: BTreeSet<String> = all_agent_families()
                 .into_iter()
                 .map(str::to_string)
@@ -317,9 +319,10 @@ mod tests {
         push_test_permutations([[0, 1, 2]]);
         let host = StubTaskHost::default();
         let out = select_duel_roles(&host, &json!({ "task_id": "T-ts" })).unwrap();
-        let ts = out["duel_started_at"].as_str().expect("duel_started_at string");
-        chrono::DateTime::parse_from_rfc3339(ts)
-            .expect("duel_started_at must be RFC3339");
+        let ts = out["duel_started_at"]
+            .as_str()
+            .expect("duel_started_at string");
+        chrono::DateTime::parse_from_rfc3339(ts).expect("duel_started_at must be RFC3339");
     }
 
     #[test]

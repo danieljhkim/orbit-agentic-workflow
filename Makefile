@@ -6,7 +6,7 @@
 BINARY := orbit
 BIN_CRATE := orbit-cli
 # Crate sources live under orbit/ (see root Cargo.toml workspace members).
-BIN_CRATE_PATH := orbit/$(BIN_CRATE)
+BIN_CRATE_PATH := crates/$(BIN_CRATE)
 WORKSPACE := --workspace
 
 # Detect profile

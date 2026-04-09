@@ -1467,9 +1467,7 @@ impl Execute for TaskPruneContextArgs {
             println!("{id}: {dropped}");
         }
         let action = if self.write { "pruned" } else { "would prune" };
-        println!(
-            "\n{action} {total_dropped} entries across {tasks_with_drops} task(s)."
-        );
+        println!("\n{action} {total_dropped} entries across {tasks_with_drops} task(s).");
         if !self.write {
             println!("Re-run with --write to apply.");
         }

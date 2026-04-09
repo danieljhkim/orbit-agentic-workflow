@@ -181,7 +181,8 @@ fn classify_scope(files: &[&str], crates: &[String]) -> TaskScope {
             TaskScope::SingleFile
         }
         _ => {
-            let buckets: BTreeSet<String> = files.iter().map(|f| bucket_for_path(f, crates)).collect();
+            let buckets: BTreeSet<String> =
+                files.iter().map(|f| bucket_for_path(f, crates)).collect();
             if buckets.len() == 1 {
                 let bucket = buckets.iter().next().expect("len == 1");
                 if bucket == "other" {
@@ -773,11 +774,8 @@ mod tests {
             },
         );
         // Two segments: single_file (2 runs, 1 merged) and multi_file (1 run, 1 merged)
-        let by_segment: BTreeMap<&str, &AggregateRow> = agg
-            .rows
-            .iter()
-            .map(|r| (r.segment.as_str(), r))
-            .collect();
+        let by_segment: BTreeMap<&str, &AggregateRow> =
+            agg.rows.iter().map(|r| (r.segment.as_str(), r)).collect();
         let single = by_segment.get("single_file").expect("single_file row");
         assert_eq!(single.runs, 2);
         assert!((single.merge_rate - 0.5).abs() < 1e-9);

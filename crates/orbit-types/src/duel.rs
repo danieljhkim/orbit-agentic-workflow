@@ -336,8 +336,7 @@ mod tests {
                 "blocking_comment_ids": [],
                 "task_class_ambiguity": raw,
             });
-            let parsed: ArbiterVerdict =
-                serde_json::from_value(verdict_json).expect("deserialize");
+            let parsed: ArbiterVerdict = serde_json::from_value(verdict_json).expect("deserialize");
             assert_eq!(parsed.task_class_ambiguity, expected);
         }
     }

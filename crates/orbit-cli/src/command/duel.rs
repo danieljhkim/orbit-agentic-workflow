@@ -311,7 +311,10 @@ mod tests {
         // many (role, agent, model) keys collided.
         assert!(!aggs.rows.is_empty());
         let total_runs: u64 = aggs.rows.iter().map(|r| r.runs as u64).sum();
-        assert_eq!(total_runs, 9, "every run contributes to all three role rows");
+        assert_eq!(
+            total_runs, 9,
+            "every run contributes to all three role rows"
+        );
     }
 
     #[test]

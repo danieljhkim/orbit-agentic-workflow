@@ -305,8 +305,7 @@ mod resolve_step_agent_tests {
     use super::*;
     use chrono::Utc;
     use orbit_types::{
-        ActorIdentity, JobStep, JobTargetType, OrbitError, Task, TaskPriority, TaskStatus,
-        TaskType,
+        ActorIdentity, JobStep, JobTargetType, OrbitError, Task, TaskPriority, TaskStatus, TaskType,
     };
     use serde_json::json;
 
