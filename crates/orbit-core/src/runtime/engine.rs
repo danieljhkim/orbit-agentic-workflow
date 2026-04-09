@@ -814,8 +814,8 @@ mod tests {
             plan: "1. Inject task detail\n2. Update tests".to_string(),
             execution_summary: String::new(),
             context_files: vec![
-                "orbit/orbit-core/src/runtime/engine.rs".to_string(),
-                "orbit/orbit-core/assets/activities/agent_invoke/implement_change.yaml".to_string(),
+                "crates/orbit-core/src/runtime/engine.rs".to_string(),
+                "crates/orbit-core/assets/activities/agent_invoke/implement_change.yaml".to_string(),
             ],
             workspace_path: Some("/task/worktree".to_string()),
             repo_root: Some("/task/repo".to_string()),

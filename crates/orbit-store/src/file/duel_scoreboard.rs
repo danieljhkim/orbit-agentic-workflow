@@ -130,15 +130,15 @@ pub fn derive_task_scope(
     Ok(classify_scope(&files, &crates))
 }
 
-/// Walk `repo_root/orbit/` and return the set of crate directory names.
-/// A crate directory is any immediate child of `orbit/` that contains a
+/// Walk `repo_root/crates/` and return the set of crate directory names.
+/// A crate directory is any immediate child of `crates/` that contains a
 /// `Cargo.toml`. Returned as a `Vec<String>` sorted for determinism.
 ///
 /// This is discovered at runtime precisely so adding a new crate does NOT
 /// require touching this module.
 fn discover_crate_dirs(repo_root: &Path) -> Vec<String> {
-    let orbit_dir = repo_root.join("orbit");
-    let Ok(entries) = fs::read_dir(&orbit_dir) else {
+    let crates_dir = repo_root.join("crates");
+    let Ok(entries) = fs::read_dir(&crates_dir) else {
         return Vec::new();
     };
     let mut crates: Vec<String> = entries
@@ -197,12 +197,12 @@ fn classify_scope(files: &[&str], crates: &[String]) -> TaskScope {
 }
 
 /// Map a repo-relative path to its bucket name:
-/// - `orbit/<crate>/...` where `<crate>` is in `crates` → `<crate>`
+/// - `crates/<crate>/...` where `<crate>` is in `crates` → `<crate>`
 /// - anything else → `"other"`
 ///
 /// Exposed at module scope for focused unit testing.
 fn bucket_for_path(path: &str, crates: &[String]) -> String {
-    if let Some(rest) = path.strip_prefix("orbit/")
+    if let Some(rest) = path.strip_prefix("crates/")
         && let Some(first) = rest.split('/').next()
         && crates.iter().any(|c| c == first)
     {
@@ -565,7 +565,7 @@ mod tests {
     fn classify_scope_single_file_regardless_of_bucket() {
         let crates = vec!["orbit-types".to_string()];
         assert_eq!(
-            classify_scope(&["orbit/orbit-types/src/lib.rs"], &crates),
+            classify_scope(&["crates/orbit-types/src/lib.rs"], &crates),
             TaskScope::SingleFile
         );
         assert_eq!(
@@ -578,8 +578,8 @@ mod tests {
     fn classify_scope_multi_file_same_crate() {
         let crates = vec!["orbit-types".to_string(), "orbit-core".to_string()];
         let files = &[
-            "orbit/orbit-types/src/lib.rs",
-            "orbit/orbit-types/src/job.rs",
+            "crates/orbit-types/src/lib.rs",
+            "crates/orbit-types/src/job.rs",
         ];
         assert_eq!(classify_scope(files, &crates), TaskScope::MultiFile);
     }
@@ -588,8 +588,8 @@ mod tests {
     fn classify_scope_cross_crate_for_two_real_crates() {
         let crates = vec!["orbit-types".to_string(), "orbit-core".to_string()];
         let files = &[
-            "orbit/orbit-types/src/job.rs",
-            "orbit/orbit-core/src/lib.rs",
+            "crates/orbit-types/src/job.rs",
+            "crates/orbit-core/src/lib.rs",
         ];
         assert_eq!(classify_scope(files, &crates), TaskScope::CrossCrate);
     }
@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn classify_scope_cross_crate_for_crate_plus_non_crate_file() {
         let crates = vec!["orbit-types".to_string()];
-        let files = &["orbit/orbit-types/src/job.rs", "README.md"];
+        let files = &["crates/orbit-types/src/job.rs", "README.md"];
         assert_eq!(classify_scope(files, &crates), TaskScope::CrossCrate);
     }
 
@@ -612,19 +612,19 @@ mod tests {
     fn bucket_for_path_resolves_known_crates_and_falls_back_to_other() {
         let crates = vec!["orbit-types".to_string(), "orbit-engine".to_string()];
         assert_eq!(
-            bucket_for_path("orbit/orbit-types/src/lib.rs", &crates),
+            bucket_for_path("crates/orbit-types/src/lib.rs", &crates),
             "orbit-types"
         );
         assert_eq!(
-            bucket_for_path("orbit/orbit-engine/src/executor/mod.rs", &crates),
+            bucket_for_path("crates/orbit-engine/src/executor/mod.rs", &crates),
             "orbit-engine"
         );
-        // Unknown crate directory under orbit/: this is the "new crate added"
+        // Unknown crate directory under crates/: this is the "new crate added"
         // case — bucketed as `other` here because the walker only knows what
         // it discovered. In production, `discover_crate_dirs` reads the
         // filesystem so new crates are picked up automatically.
         assert_eq!(
-            bucket_for_path("orbit/orbit-future/src/lib.rs", &crates),
+            bucket_for_path("crates/orbit-future/src/lib.rs", &crates),
             "other"
         );
         assert_eq!(bucket_for_path("README.md", &crates), "other");
@@ -633,18 +633,18 @@ mod tests {
 
     #[test]
     fn discover_crate_dirs_auto_picks_up_new_crate_directories() {
-        // This test simulates "a new crate is added to orbit/" by creating
+        // This test simulates "a new crate is added to crates/" by creating
         // a fake repo layout in a temp dir and asserting the discovery fn
         // walks it without any hardcoded list.
         let dir = tempdir().unwrap();
-        let orbit_dir = dir.path().join("orbit");
+        let crates_dir = dir.path().join("crates");
         for name in ["orbit-types", "orbit-core", "orbit-future"] {
-            let crate_dir = orbit_dir.join(name);
+            let crate_dir = crates_dir.join(name);
             fs::create_dir_all(&crate_dir).unwrap();
             fs::write(crate_dir.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
         }
         // Non-crate directory (no Cargo.toml) — must be ignored.
-        fs::create_dir_all(orbit_dir.join("scratch")).unwrap();
+        fs::create_dir_all(crates_dir.join("scratch")).unwrap();
 
         let crates = discover_crate_dirs(dir.path());
         assert_eq!(

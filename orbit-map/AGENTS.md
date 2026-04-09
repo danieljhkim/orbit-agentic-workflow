@@ -20,7 +20,7 @@ The Orbit Rust workspace lives at `orbit/` and contains 10 crates:
 orbit-types → orbit-policy, orbit-exec → orbit-tools → orbit-store, orbit-agent → orbit-engine → orbit-core → orbit-cli
 ```
 
-The Rust `orbit-agent` crate (`orbit/orbit-agent/`) currently handles the **agent runtime** — provider abstraction (Claude, Codex, mock) via the `AgentRuntime` trait.
+The Rust `orbit-agent` crate (`crates/orbit-agent/`) currently handles the **agent runtime** — provider abstraction (Claude, Codex, mock) via the `AgentRuntime` trait.
 
 This Python `orbit-map` handles **knowledge building**. Its optional LLM-backed summarization stages use a temporary provider boundary under `orbit_map.runtime.agent`, but deterministic graph/bootstrap/context code should not import or initialize provider implementations. Long term, provider adapters should move behind a reusable Orbit SDK/runtime that both knowledge generation and Orbit-owned execution flows can consume.
 

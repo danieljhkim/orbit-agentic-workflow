@@ -238,7 +238,7 @@ mod tests {
             &test_context(),
             &json!({
                 "id": "T20260330-002312",
-                "context_files": "orbit/orbit-cli/src/command/task.rs,orbit/orbit-tools/src/builtin/orbit/task_update.rs"
+                "context_files": "crates/orbit-cli/src/command/task.rs,crates/orbit-tools/src/builtin/orbit/task_update.rs"
             }),
         )
         .expect("request should build");
@@ -277,8 +277,8 @@ mod tests {
             &json!({
                 "id": "T20260330-002312",
                 "context_files": [
-                    "orbit/orbit-cli/src/command/task.rs",
-                    "orbit/orbit-tools/src/builtin/orbit/task_update.rs"
+                    "crates/orbit-cli/src/command/task.rs",
+                    "crates/orbit-tools/src/builtin/orbit/task_update.rs"
                 ]
             }),
         )
@@ -292,7 +292,7 @@ mod tests {
         assert_eq!(
             update.args.get(context_index + 1).map(String::as_str),
             Some(
-                "orbit/orbit-cli/src/command/task.rs,orbit/orbit-tools/src/builtin/orbit/task_update.rs"
+                "crates/orbit-cli/src/command/task.rs,crates/orbit-tools/src/builtin/orbit/task_update.rs"
             )
         );
     }
@@ -348,7 +348,7 @@ mod tests {
             &test_context(),
             &json!({
                 "id": "T20260330-002312",
-                "context_files": ["orbit/orbit-cli/src/command/task.rs", 7]
+                "context_files": ["crates/orbit-cli/src/command/task.rs", 7]
             }),
         )
         .expect_err("non-string entries should fail");

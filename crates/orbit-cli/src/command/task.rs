@@ -1494,7 +1494,7 @@ mod tests {
             "update",
             "T20260330-002312",
             "--context",
-            "orbit/orbit-cli/src/command/task.rs,orbit/orbit-tools/src/builtin/orbit/task_update.rs",
+            "crates/orbit-cli/src/command/task.rs,crates/orbit-tools/src/builtin/orbit/task_update.rs",
         ])
         .expect("`--context` should parse");
 
@@ -1507,7 +1507,7 @@ mod tests {
         assert_eq!(
             args.context_files.as_deref(),
             Some(
-                "orbit/orbit-cli/src/command/task.rs,orbit/orbit-tools/src/builtin/orbit/task_update.rs"
+                "crates/orbit-cli/src/command/task.rs,crates/orbit-tools/src/builtin/orbit/task_update.rs"
             )
         );
     }
@@ -1520,7 +1520,7 @@ mod tests {
             "update",
             "T20260330-002312",
             "--context-files",
-            "orbit/orbit-cli/src/command/task.rs",
+            "crates/orbit-cli/src/command/task.rs",
         ])
         .expect("`--context-files` should remain supported");
 
@@ -1532,7 +1532,7 @@ mod tests {
         };
         assert_eq!(
             args.context_files.as_deref(),
-            Some("orbit/orbit-cli/src/command/task.rs")
+            Some("crates/orbit-cli/src/command/task.rs")
         );
     }
 
@@ -1540,11 +1540,11 @@ mod tests {
     fn parse_context_csv_trims_update_context_values() {
         assert_eq!(
             parse_context_csv(
-                " orbit/orbit-cli/src/command/task.rs, orbit/orbit-tools/src/builtin/orbit/task_update.rs "
+                " crates/orbit-cli/src/command/task.rs, crates/orbit-tools/src/builtin/orbit/task_update.rs "
             ),
             vec![
-                "orbit/orbit-cli/src/command/task.rs".to_string(),
-                "orbit/orbit-tools/src/builtin/orbit/task_update.rs".to_string(),
+                "crates/orbit-cli/src/command/task.rs".to_string(),
+                "crates/orbit-tools/src/builtin/orbit/task_update.rs".to_string(),
             ]
         );
     }

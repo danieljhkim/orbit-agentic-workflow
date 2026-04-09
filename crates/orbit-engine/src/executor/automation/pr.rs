@@ -793,7 +793,7 @@ mod tests {
         let body = build_batch_pr_body(
             &[first, second],
             &freshness,
-            &["orbit/orbit-engine/src/executor/automation/pr.rs"],
+            &["crates/orbit-engine/src/executor/automation/pr.rs"],
         );
 
         assert!(body.contains("### T20260330-063823: Task T20260330-063823"));
@@ -848,7 +848,7 @@ mod tests {
         task.actor_identity = ActorIdentity::agent("codex", "gpt-5.4");
         task.review_threads = vec![ReviewThread {
             thread_id: "rt-1".to_string(),
-            path: Some("orbit/orbit-engine/src/executor/automation/pr.rs".to_string()),
+            path: Some("crates/orbit-engine/src/executor/automation/pr.rs".to_string()),
             line: Some(42),
             status: ReviewThreadStatus::Resolved,
             messages: vec![ReviewMessage {
