@@ -421,6 +421,7 @@ pub(crate) fn job_run_to_json(run: &JobRun) -> Value {
         "agent_response_json": last.and_then(|s| s.agent_response_json.as_ref()),
         "error_code": last.and_then(|s| s.error_code.as_deref()),
         "error_message": last.and_then(|s| s.error_message.as_deref()),
+        "knowledge_metrics": run.knowledge_metrics,
         "steps": run.steps.iter().map(|s| json!({
             "step_index": s.step_index,
             "target_type": s.target_type.to_string(),

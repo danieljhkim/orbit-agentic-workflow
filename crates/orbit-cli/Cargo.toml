@@ -23,4 +23,5 @@ tracing-subscriber.workspace = true
 assert_cmd = "2"
 predicates = "3"
 serde_json.workspace = true
+serde_yaml.workspace = true
 tempfile = "3"

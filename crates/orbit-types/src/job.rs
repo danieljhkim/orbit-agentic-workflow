@@ -345,6 +345,22 @@ pub struct JobRunStep {
     pub error_message: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct KnowledgeRunMetrics {
+    pub raw_read_token_baseline: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knowledge_pack_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression_ratio: Option<f64>,
+    pub actual_fs_read_tokens_during_run: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub double_read_rate: Option<f64>,
+    pub knowledge_pack_used: bool,
+    #[serde(default)]
+    pub knowledge_pack_unresolved_count: u32,
+    pub total_llm_input_tokens: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JobRun {
     pub run_id: OrbitId,
@@ -370,6 +386,8 @@ pub struct JobRun {
     /// When this run is a retry, links back to the source run ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_source_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knowledge_metrics: Option<KnowledgeRunMetrics>,
     /// Step execution results; populated in-memory from step files, not stored in jrun.yaml.
     #[serde(skip)]
     pub steps: Vec<JobRunStep>,
@@ -422,5 +440,40 @@ mod tests {
         let step: JobStep = serde_json::from_str(json).expect("deserialize minimal step");
         assert!(step.agent_cli_from_input.is_none());
         assert!(step.model_from_input.is_none());
+    }
+
+    #[test]
+    fn job_run_round_trip_preserves_knowledge_metrics() {
+        let run = JobRun {
+            run_id: "jrun-123".to_string(),
+            job_id: "job-123".to_string(),
+            attempt: 1,
+            state: JobRunState::Success,
+            scheduled_at: Utc::now(),
+            started_at: None,
+            finished_at: None,
+            duration_ms: Some(42),
+            created_at: Utc::now(),
+            pid: None,
+            pid_start_time: None,
+            input: None,
+            retry_source_run_id: None,
+            knowledge_metrics: Some(KnowledgeRunMetrics {
+                raw_read_token_baseline: 1000,
+                knowledge_pack_tokens: Some(250),
+                compression_ratio: Some(4.0),
+                actual_fs_read_tokens_during_run: 100,
+                double_read_rate: Some(0.1),
+                knowledge_pack_used: true,
+                knowledge_pack_unresolved_count: 2,
+                total_llm_input_tokens: 1800,
+            }),
+            steps: vec![],
+        };
+
+        let yaml = serde_yaml::to_string(&run).expect("serialize");
+        let parsed: JobRun = serde_yaml::from_str(&yaml).expect("deserialize");
+
+        assert_eq!(parsed.knowledge_metrics, run.knowledge_metrics);
     }
 }

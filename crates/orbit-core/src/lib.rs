@@ -32,6 +32,7 @@ pub mod workspace_registry;
 
 pub use orbit_engine::JobRunResult;
 pub use orbit_store::duel_scoreboard;
+pub use orbit_store::knowledge_stats;
 pub use orbit_store::skill_store as skill_catalog;
 pub use orbit_store::{ActivityInvocationMetrics, TaskInvocationMetrics, ToolInvocationMetrics};
 

@@ -15,6 +15,7 @@ pub(crate) mod friction_bounty;
 pub(crate) mod friction_log;
 pub(crate) mod fs_utils;
 pub(crate) mod job_store;
+pub(crate) mod knowledge_stats;
 pub(crate) mod metrics_log;
 pub(crate) mod pr_scoreboard;
 pub(crate) mod skill_store;

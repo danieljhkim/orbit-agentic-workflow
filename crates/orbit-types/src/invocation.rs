@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenUsage {
@@ -18,7 +19,7 @@ impl TokenUsage {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ToolCallTrace {
     #[serde(default)]
     pub seq: u32,
@@ -26,9 +27,11 @@ pub struct ToolCallTrace {
     pub tool_name: String,
     #[serde(default)]
     pub result_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_payload: Option<Value>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct InvocationTrace {
     #[serde(default)]
     pub usage: TokenUsage,

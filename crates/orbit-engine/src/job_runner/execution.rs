@@ -12,9 +12,10 @@ use crate::context::{
 
 use super::friction::{append_failed_step_friction, append_step_metrics};
 use super::helpers::{
-    check_loop_exit, log_step_completion, merge_job_input, normalize_agent_label,
-    record_task_agent_context, release_task_locks_for_job_input, resolve_step_agent,
-    resolved_model_name, run_was_cancelled, should_run_step, step_state_records_incident,
+    build_knowledge_run_metrics, check_loop_exit, log_step_completion, merge_job_input,
+    normalize_agent_label, prepare_implement_change_metrics, record_task_agent_context,
+    release_task_locks_for_job_input, resolve_step_agent, resolved_model_name, run_was_cancelled,
+    should_run_step, step_state_records_incident,
 };
 use super::stale_recovery::{finalize_failed_started_run, recover_stale_active_run_for_job};
 
@@ -461,6 +462,8 @@ fn execute_activity_with_retries<H: EngineHost>(
                 if !step.agent_cli.trim().is_empty() {
                     record_task_agent_context(host, &execution)?;
                 }
+                let prepared_knowledge_metrics =
+                    prepare_implement_change_metrics(host, &execution)?;
                 let step_started = Utc::now();
                 let outcome = execute_with_retry(
                     host,
@@ -530,6 +533,18 @@ fn execute_activity_with_retries<H: EngineHost>(
                         &execution,
                         &outcome.invocation_trace,
                     )?;
+                }
+
+                if step_state == JobRunState::Success
+                    && let Some(prepared) = prepared_knowledge_metrics.as_ref()
+                {
+                    let knowledge_metrics =
+                        build_knowledge_run_metrics(prepared, &outcome.invocation_trace)?;
+                    let changed =
+                        host.record_job_run_knowledge_metrics(&run.run_id, knowledge_metrics)?;
+                    if !changed {
+                        return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
+                    }
                 }
 
                 log_step_completion(

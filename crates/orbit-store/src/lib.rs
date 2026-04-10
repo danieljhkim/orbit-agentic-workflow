@@ -54,6 +54,12 @@ pub mod duel_scoreboard {
     };
 }
 
+pub mod knowledge_stats {
+    pub use crate::file::knowledge_stats::{
+        DoubleReadSummary, KnowledgeStatsSummary, RatioSummary, TokenInputSummary, aggregate,
+    };
+}
+
 pub mod friction_log {
     pub use crate::file::friction_log::{append_friction_entry, read_friction_entries_for_month};
 }

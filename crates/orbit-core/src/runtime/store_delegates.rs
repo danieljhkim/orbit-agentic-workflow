@@ -4,8 +4,8 @@ use orbit_store::{
     TaskUpdateParams as StoreTaskUpdateParams,
 };
 use orbit_types::{
-    Activity, AuditEvent, Job, JobRun, JobRunState, OrbitError, StoredTool, Task, TaskPriority,
-    TaskStatus,
+    Activity, AuditEvent, Job, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError, StoredTool,
+    Task, TaskPriority, TaskStatus,
 };
 
 use super::OrbitRuntime;
@@ -177,6 +177,16 @@ impl OrbitRuntime {
         self.context
             .job_store()
             .complete_job_run_step(run_id, params)
+    }
+
+    pub(crate) fn record_job_run_knowledge_metrics_record(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
+    ) -> Result<bool, OrbitError> {
+        self.context
+            .job_store()
+            .record_job_run_knowledge_metrics(run_id, metrics)
     }
 
     pub(crate) fn finalize_job_run_record(

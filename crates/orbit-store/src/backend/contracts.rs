@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
     Activity, ActorIdentity, AuditEvent, Job, JobRun, JobRunState, JobScheduleState, JobStep,
-    OrbitError, OrbitId, ReviewThread, StoredTool, Task, TaskComment, TaskComplexity,
-    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    KnowledgeRunMetrics, OrbitError, OrbitId, ReviewThread, StoredTool, Task, TaskComment,
+    TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use serde_json::Value;
 
@@ -191,6 +191,11 @@ pub trait JobStoreBackend: Send + Sync {
         &self,
         run_id: &str,
         params: &JobRunStepParams,
+    ) -> Result<bool, OrbitError>;
+    fn record_job_run_knowledge_metrics(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
     ) -> Result<bool, OrbitError>;
     fn finalize_job_run(
         &self,

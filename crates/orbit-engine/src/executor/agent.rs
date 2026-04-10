@@ -36,11 +36,11 @@ fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
 ) -> AttemptOutcome {
     let invocation = match build_agent_invocation(host, execution) {
         Ok(invocation) => invocation,
-        Err(outcome) => return outcome,
+        Err(outcome) => return *outcome,
     };
     let exec_result = match execute_agent_process(host, execution, invocation, working_dir) {
         Ok(result) => result,
-        Err(outcome) => return outcome,
+        Err(outcome) => return *outcome,
     };
 
     if agent_process_was_interrupted(&exec_result) && exec_result.stdout.trim().is_empty() {
@@ -130,14 +130,14 @@ fn agent_process_was_interrupted(exec_result: &orbit_types::ExecutionResult) -> 
 fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
-) -> Result<orbit_agent::AgentResponse, AttemptOutcome> {
+) -> Result<orbit_agent::AgentResponse, Box<AttemptOutcome>> {
     let config = host
         .agent_config_for(&execution.agent_cli, execution.model.as_deref())
-        .map_err(invocation_failed_outcome)?;
-    let agent = Agent::new(&config).map_err(invocation_failed_outcome)?;
+        .map_err(|error| Box::new(invocation_failed_outcome(error)))?;
+    let agent = Agent::new(&config).map_err(|error| Box::new(invocation_failed_outcome(error)))?;
     let stdin_payload: Vec<u8> = host
         .build_agent_stdin_envelope_payload(execution)
-        .map_err(invocation_failed_outcome)?;
+        .map_err(|error| Box::new(invocation_failed_outcome(error)))?;
 
     let (invocation, _) = agent
         .invoke(
@@ -151,19 +151,19 @@ fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
             }
             .with_verbose(execution.debug),
         )
-        .map_err(invocation_failed_outcome)?;
+        .map_err(|error| Box::new(invocation_failed_outcome(error)))?;
 
     let missing_env = host.missing_required_environment_vars(invocation.required_env_vars);
     if !missing_env.is_empty() {
         let vars = missing_env.join(", ");
-        return Err(AttemptOutcome::failed(
+        return Err(Box::new(AttemptOutcome::failed(
             AGENT_INVOCATION_FAILED,
             format!(
                 "missing required environment variable(s) for provider '{}': {vars}. \
 configure .orbit/config.toml [execution.env].pass and set these variables in the parent shell.",
                 invocation.runtime_key
             ),
-        ));
+        )));
     }
 
     Ok(invocation)
@@ -174,9 +174,9 @@ fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     execution: &ExecutionContext,
     invocation: orbit_agent::AgentResponse,
     working_dir: Option<String>,
-) -> Result<orbit_types::ExecutionResult, AttemptOutcome> {
-    let (args, _stdout_schema_file) =
-        prepare_exec_args(&invocation).map_err(invocation_failed_outcome)?;
+) -> Result<orbit_types::ExecutionResult, Box<AttemptOutcome>> {
+    let (args, _stdout_schema_file) = prepare_exec_args(&invocation)
+        .map_err(|error| Box::new(invocation_failed_outcome(error)))?;
 
     let resolved_model = resolve_model_for_env(host, execution);
     let environment_mode = apply_env_set(
@@ -209,7 +209,7 @@ fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         },
         &NoSandbox,
     )
-    .map_err(invocation_failed_outcome)
+    .map_err(|error| Box::new(invocation_failed_outcome(error)))
 }
 
 fn inject_activity_tools(mode: EnvironmentMode, tools: &[String]) -> EnvironmentMode {

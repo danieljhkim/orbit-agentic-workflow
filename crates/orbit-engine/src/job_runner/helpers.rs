@@ -1,9 +1,18 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use orbit_agent::Agent;
-use orbit_types::{JobRunState, JobStep, OrbitError, StepCondition};
+use orbit_types::{
+    InvocationTrace, JobRunState, JobStep, KnowledgeRunMetrics, OrbitError, StepCondition,
+};
 use serde_json::Value;
+use tiktoken_rs::cl100k_base;
 use tracing::info;
 
-use crate::context::{EngineHost, ExecutionContext, JobRunHost, RuntimeHost, TaskAutomationUpdate};
+use crate::context::{
+    EngineHost, ExecutionContext, JobRunHost, RuntimeHost, TaskAutomationUpdate,
+    execution_working_directory_with_task,
+};
 
 pub(super) fn extract_task_id(input: &Value) -> Option<&str> {
     input
@@ -294,6 +303,135 @@ pub(super) fn resolved_model_name<H: EngineHost>(
         .or(model_from_config)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PreparedImplementChangeMetrics {
+    raw_read_token_baseline: u64,
+}
+
+pub(super) fn prepare_implement_change_metrics<H: crate::context::TaskHost + ?Sized>(
+    host: &H,
+    execution: &ExecutionContext,
+) -> Result<Option<PreparedImplementChangeMetrics>, OrbitError> {
+    if execution.activity.id != "implement_change" {
+        return Ok(None);
+    }
+
+    let Some(task_id) = extract_task_id(&execution.input) else {
+        return Ok(None);
+    };
+    let task = host.get_task(task_id)?;
+    let workspace_root = execution_working_directory_with_task(host, execution)
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            OrbitError::Execution(
+                "implement_change metrics require an effective workspace_path".to_string(),
+            )
+        })?;
+
+    let mut raw_read_token_baseline = 0_u64;
+    for context_file in task.context_files {
+        let path = resolve_context_path(&workspace_root, &context_file);
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        raw_read_token_baseline = raw_read_token_baseline.saturating_add(tokenize_text(&content)?);
+    }
+
+    Ok(Some(PreparedImplementChangeMetrics {
+        raw_read_token_baseline,
+    }))
+}
+
+pub(super) fn build_knowledge_run_metrics(
+    prepared: &PreparedImplementChangeMetrics,
+    trace: &InvocationTrace,
+) -> Result<KnowledgeRunMetrics, OrbitError> {
+    let actual_fs_read_tokens_during_run = trace
+        .tool_calls
+        .iter()
+        .filter(|call| call.tool_name == "fs.read")
+        .try_fold(0_u64, |acc, call| {
+            let payload_tokens = call
+                .result_payload
+                .as_ref()
+                .map(tokenize_json_value)
+                .transpose()?
+                .unwrap_or(0);
+            Ok::<u64, OrbitError>(acc.saturating_add(payload_tokens))
+        })?;
+
+    let pack_payload = trace
+        .tool_calls
+        .iter()
+        .find(|call| call.tool_name == "orbit.knowledge.pack")
+        .and_then(|call| call.result_payload.as_ref());
+
+    let knowledge_unavailable = pack_payload
+        .and_then(|payload| payload.get("kind"))
+        .and_then(Value::as_str)
+        == Some("knowledge_unavailable");
+
+    let knowledge_pack_used = pack_payload.is_some() && !knowledge_unavailable;
+    let knowledge_pack_tokens = if knowledge_pack_used {
+        pack_payload.map(tokenize_json_value).transpose()?
+    } else {
+        None
+    };
+    let knowledge_pack_unresolved_count = if knowledge_pack_used {
+        pack_payload
+            .and_then(|payload| payload.get("unresolved_selectors"))
+            .and_then(Value::as_array)
+            .map(|items| items.len() as u32)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    Ok(KnowledgeRunMetrics {
+        raw_read_token_baseline: prepared.raw_read_token_baseline,
+        knowledge_pack_tokens,
+        compression_ratio: knowledge_pack_tokens
+            .and_then(|tokens| safe_ratio(prepared.raw_read_token_baseline, tokens)),
+        actual_fs_read_tokens_during_run,
+        double_read_rate: knowledge_pack_used
+            .then(|| {
+                safe_ratio(
+                    actual_fs_read_tokens_during_run,
+                    prepared.raw_read_token_baseline,
+                )
+            })
+            .flatten(),
+        knowledge_pack_used,
+        knowledge_pack_unresolved_count,
+        total_llm_input_tokens: trace.usage.input,
+    })
+}
+
+pub(super) fn tokenize_text(text: &str) -> Result<u64, OrbitError> {
+    let encoder = cl100k_base()
+        .map_err(|error| OrbitError::Execution(format!("load cl100k_base: {error}")))?;
+    Ok(encoder.encode_with_special_tokens(text).len() as u64)
+}
+
+fn tokenize_json_value(value: &Value) -> Result<u64, OrbitError> {
+    let serialized = serde_json::to_string(value)
+        .map_err(|error| OrbitError::Execution(format!("serialize tool result: {error}")))?;
+    tokenize_text(&serialized)
+}
+
+fn safe_ratio(numerator: u64, denominator: u64) -> Option<f64> {
+    (denominator != 0).then(|| numerator as f64 / denominator as f64)
+}
+
+fn resolve_context_path(workspace_root: &Path, context_file: &str) -> PathBuf {
+    let path = Path::new(context_file);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root.join(path)
+    }
+}
+
 #[cfg(test)]
 mod resolve_step_agent_tests {
     //! Covers the three-layer precedence chain for step agent resolution:
@@ -496,5 +634,234 @@ mod resolve_step_agent_tests {
 
         let resolved = resolve_step_agent(&host, &step, &input).expect("resolver should fire");
         assert_eq!(resolved.agent_cli, "claude");
+    }
+}
+
+#[cfg(test)]
+mod knowledge_metrics_tests {
+    use chrono::Utc;
+    use orbit_types::{ActorIdentity, Task, TaskPriority, TaskStatus, TaskType, ToolCallTrace};
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::context::{TaskAutomationUpdate, TaskHost};
+
+    struct MetricsTaskHost {
+        task: Task,
+    }
+
+    impl TaskHost for MetricsTaskHost {
+        fn get_task(&self, task_id: &str) -> Result<Task, OrbitError> {
+            if self.task.id == task_id {
+                Ok(self.task.clone())
+            } else {
+                Err(OrbitError::TaskNotFound(task_id.to_string()))
+            }
+        }
+
+        fn list_tasks_filtered(
+            &self,
+            _status: Option<TaskStatus>,
+            _priority: Option<TaskPriority>,
+            _parent_id: Option<&str>,
+            _batch_id: Option<&str>,
+        ) -> Result<Vec<Task>, OrbitError> {
+            unimplemented!("not used in metrics tests")
+        }
+
+        fn start_task(
+            &self,
+            _task_id: &str,
+            _note: Option<String>,
+            _comment: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not used in metrics tests")
+        }
+
+        fn update_task_from_activity(
+            &self,
+            _task_id: &str,
+            _status: TaskStatus,
+            _execution_summary: Option<String>,
+            _comment: Option<String>,
+            _note: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not used in metrics tests")
+        }
+
+        fn apply_task_automation_update(
+            &self,
+            _task_id: &str,
+            _update: TaskAutomationUpdate,
+        ) -> Result<(), OrbitError> {
+            unimplemented!("not used in metrics tests")
+        }
+    }
+
+    fn task(workspace_path: &str) -> Task {
+        Task {
+            id: "T1".to_string(),
+            parent_id: None,
+            title: "measure implement_change".to_string(),
+            description: String::new(),
+            acceptance_criteria: vec![],
+            plan: "1. do work".to_string(),
+            execution_summary: String::new(),
+            context_files: vec!["src/lib.rs".to_string(), "README.md".to_string()],
+            workspace_path: Some(workspace_path.to_string()),
+            repo_root: None,
+            assigned_to: None,
+            created_by: None,
+            actor_identity: ActorIdentity::default(),
+            status: TaskStatus::InProgress,
+            priority: TaskPriority::High,
+            complexity: None,
+            task_type: TaskType::Feature,
+            pr_number: None,
+            pr_status: None,
+            proposed_by: None,
+            source_task_id: None,
+            batch_id: None,
+            comments: vec![],
+            history: vec![],
+            review_threads: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn execution() -> ExecutionContext {
+        ExecutionContext {
+            activity: orbit_types::Activity {
+                id: "implement_change".to_string(),
+                spec_type: "agent_invoke".to_string(),
+                description: String::new(),
+                input_schema_json: json!({}),
+                output_schema_json: json!({}),
+                spec_config: json!({}),
+                tools: vec![],
+                proc_allowed_programs: vec![],
+                workspace_path: None,
+                created_by: None,
+                is_active: true,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+            job: None,
+            agent_cli: "codex".to_string(),
+            model: Some("gpt-5.4".to_string()),
+            timeout_seconds: 60,
+            env_extra: vec![],
+            env_set: Default::default(),
+            input: json!({"task_id": "T1"}),
+            debug: false,
+        }
+    }
+
+    #[test]
+    fn tokenize_text_uses_cl100k_base() {
+        assert_eq!(tokenize_text("hello world").expect("tokens"), 2);
+    }
+
+    #[test]
+    fn prepare_implement_change_metrics_reads_context_file_baseline() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("src")).expect("src dir");
+        std::fs::write(dir.path().join("src/lib.rs"), "pub fn alpha() {}\n").expect("lib");
+        std::fs::write(dir.path().join("README.md"), "workspace readme\n").expect("readme");
+
+        let host = MetricsTaskHost {
+            task: task(&dir.path().to_string_lossy()),
+        };
+
+        let prepared =
+            prepare_implement_change_metrics(&host, &execution()).expect("prepared metrics");
+
+        assert!(prepared.is_some());
+        assert!(prepared.expect("metrics").raw_read_token_baseline > 0);
+    }
+
+    #[test]
+    fn build_knowledge_run_metrics_records_pack_success_path() {
+        let prepared = PreparedImplementChangeMetrics {
+            raw_read_token_baseline: 120,
+        };
+        let trace = InvocationTrace {
+            usage: orbit_types::TokenUsage {
+                input: 900,
+                ..Default::default()
+            },
+            tool_calls: vec![
+                ToolCallTrace {
+                    seq: 1,
+                    tool_name: "orbit.knowledge.pack".to_string(),
+                    result_bytes: 0,
+                    result_payload: Some(json!({
+                        "entries": [{"selector": "file:src/lib.rs"}],
+                        "unresolved_selectors": ["file:README.md"]
+                    })),
+                },
+                ToolCallTrace {
+                    seq: 2,
+                    tool_name: "fs.read".to_string(),
+                    result_bytes: 0,
+                    result_payload: Some(json!({"path": "README.md", "content": "hello world"})),
+                },
+            ],
+            duration_ms: 0,
+        };
+
+        let metrics = build_knowledge_run_metrics(&prepared, &trace).expect("metrics");
+
+        assert_eq!(metrics.raw_read_token_baseline, 120);
+        assert!(metrics.knowledge_pack_used);
+        assert_eq!(metrics.knowledge_pack_unresolved_count, 1);
+        assert_eq!(metrics.total_llm_input_tokens, 900);
+        assert!(metrics.knowledge_pack_tokens.is_some());
+        assert!(metrics.compression_ratio.is_some());
+        assert!(metrics.double_read_rate.is_some());
+        assert!(metrics.actual_fs_read_tokens_during_run > 0);
+    }
+
+    #[test]
+    fn build_knowledge_run_metrics_records_fallback_path() {
+        let prepared = PreparedImplementChangeMetrics {
+            raw_read_token_baseline: 120,
+        };
+        let trace = InvocationTrace {
+            usage: orbit_types::TokenUsage {
+                input: 700,
+                ..Default::default()
+            },
+            tool_calls: vec![
+                ToolCallTrace {
+                    seq: 1,
+                    tool_name: "orbit.knowledge.pack".to_string(),
+                    result_bytes: 0,
+                    result_payload: Some(json!({
+                        "kind": "knowledge_unavailable",
+                        "reason": "missing manifest"
+                    })),
+                },
+                ToolCallTrace {
+                    seq: 2,
+                    tool_name: "fs.read".to_string(),
+                    result_bytes: 0,
+                    result_payload: Some(json!({"path": "src/lib.rs", "content": "fallback"})),
+                },
+            ],
+            duration_ms: 0,
+        };
+
+        let metrics = build_knowledge_run_metrics(&prepared, &trace).expect("metrics");
+
+        assert!(!metrics.knowledge_pack_used);
+        assert!(metrics.knowledge_pack_tokens.is_none());
+        assert!(metrics.compression_ratio.is_none());
+        assert!(metrics.double_read_rate.is_none());
+        assert_eq!(metrics.knowledge_pack_unresolved_count, 0);
+        assert_eq!(metrics.total_llm_input_tokens, 700);
+        assert!(metrics.actual_fs_read_tokens_during_run > 0);
     }
 }

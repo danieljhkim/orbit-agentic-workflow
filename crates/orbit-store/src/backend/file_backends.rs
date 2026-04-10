@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Activity, Job, JobRun, JobScheduleState, OrbitError, Task, TaskPriority, TaskStatus,
+    Activity, Job, JobRun, JobScheduleState, KnowledgeRunMetrics, OrbitError, Task, TaskPriority,
+    TaskStatus,
 };
 
 use super::contracts::{
@@ -149,6 +150,14 @@ impl JobStoreBackend for JobFileStore {
         params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
         self.complete_job_run_step(run_id, params)
+    }
+
+    fn record_job_run_knowledge_metrics(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
+    ) -> Result<bool, OrbitError> {
+        self.record_job_run_knowledge_metrics(run_id, metrics)
     }
 
     fn finalize_job_run(

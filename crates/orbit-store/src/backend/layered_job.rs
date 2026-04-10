@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use orbit_types::{Job, JobRun, JobRunState, JobScheduleState, OrbitError};
+use orbit_types::{Job, JobRun, JobRunState, JobScheduleState, KnowledgeRunMetrics, OrbitError};
 
 use super::contracts::{
     JobCreateParams, JobRunQuery, JobRunStepParams, JobStoreBackend, JobUpdateParams,
@@ -126,6 +126,15 @@ impl JobStoreBackend for LayeredJobStore {
         params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
         self.workspace.complete_job_run_step(run_id, params)
+    }
+
+    fn record_job_run_knowledge_metrics(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
+    ) -> Result<bool, OrbitError> {
+        self.workspace
+            .record_job_run_knowledge_metrics(run_id, metrics)
     }
 
     fn finalize_job_run(

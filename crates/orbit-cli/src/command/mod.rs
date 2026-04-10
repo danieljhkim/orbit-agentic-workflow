@@ -5,6 +5,7 @@ pub mod duel;
 pub mod init;
 pub mod job;
 pub mod job_run;
+pub mod knowledge;
 pub mod metrics;
 pub mod run;
 pub mod skill;
@@ -36,6 +37,7 @@ Run workflows:
   job        Define and run automation jobs
   job-run    Inspect and manage job run history
   duel       Inspect duel workflow results
+  knowledge  Inspect knowledge-pack usage and savings metrics
 
 Manage work:
   task       Create, update, and manage tasks
@@ -69,6 +71,7 @@ pub enum Commands {
     Job(job::JobCommand),
     JobRun(job_run::JobRunCommand),
     Duel(duel::DuelCommand),
+    Knowledge(knowledge::KnowledgeCommand),
 
     // ── manage work ──
     Task(task::TaskCommand),
@@ -98,6 +101,7 @@ impl Execute for Commands {
             Commands::JobRun(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Duel(cmd) => cmd.execute(runtime),
+            Commands::Knowledge(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
         }

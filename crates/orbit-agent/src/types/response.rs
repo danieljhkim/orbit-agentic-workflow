@@ -36,9 +36,8 @@ pub fn is_timeout(exec_result: &ExecutionResult) -> bool {
 }
 
 fn parse_json_documents(stdout: &str) -> Result<Vec<Value>, OrbitError> {
-    let mut stream = Deserializer::from_str(stdout).into_iter::<Value>();
     let mut documents = Vec::new();
-    while let Some(item) = stream.next() {
+    for item in Deserializer::from_str(stdout).into_iter::<Value>() {
         let value = item.map_err(|error| {
             OrbitError::AgentProtocolViolation(format!("stdout is not valid JSON: {error}"))
         })?;
@@ -319,9 +318,7 @@ fn usage_from_map(map: &serde_json::Map<String, Value>) -> Option<TokenUsage> {
         ],
     );
 
-    if input.or(cache_read).or(cache_create).or(output).is_none() {
-        return None;
-    }
+    input.or(cache_read).or(cache_create).or(output)?;
 
     Some(TokenUsage {
         input: input.unwrap_or(0),
@@ -409,8 +406,9 @@ impl ToolCallCollector {
         }
         self.calls.push(ToolCallTrace {
             seq: (self.calls.len() + 1) as u32,
-            tool_name,
+            tool_name: tool_name.clone(),
             result_bytes: inline_result_bytes(map),
+            result_payload: inline_result_payload(map, &tool_name),
         });
     }
 
@@ -424,6 +422,7 @@ impl ToolCallCollector {
             seq: (index + 1) as u32,
             tool_name,
             result_bytes: 0,
+            result_payload: None,
         });
         if let Some(id) = map
             .get("id")
@@ -449,6 +448,8 @@ impl ToolCallCollector {
             && let Some(index) = self.by_id.get(tool_use_id).copied()
         {
             self.calls[index].result_bytes = result_bytes;
+            self.calls[index].result_payload =
+                structured_result_payload(map, &self.calls[index].tool_name);
             return;
         }
 
@@ -459,6 +460,7 @@ impl ToolCallCollector {
             .find(|call| call.result_bytes == 0)
         {
             last.result_bytes = result_bytes;
+            last.result_payload = structured_result_payload(map, &last.tool_name);
         }
     }
 
@@ -485,6 +487,27 @@ fn inline_result_bytes(map: &serde_json::Map<String, Value>) -> u64 {
                 .map(serialized_size)
                 .unwrap_or(0)
         })
+}
+
+fn inline_result_payload(map: &serde_json::Map<String, Value>, tool_name: &str) -> Option<Value> {
+    if !should_capture_result_payload(tool_name) {
+        return None;
+    }
+    map.get("result").or_else(|| map.get("content")).cloned()
+}
+
+fn structured_result_payload(
+    map: &serde_json::Map<String, Value>,
+    tool_name: &str,
+) -> Option<Value> {
+    if !should_capture_result_payload(tool_name) {
+        return None;
+    }
+    map.get("content").or_else(|| map.get("result")).cloned()
+}
+
+fn should_capture_result_payload(tool_name: &str) -> bool {
+    matches!(tool_name, "fs.read" | "orbit.knowledge.pack")
 }
 
 fn serialized_size(value: &Value) -> u64 {
@@ -586,5 +609,51 @@ mod tests {
         assert_eq!(trace.tool_calls.len(), 1);
         assert_eq!(trace.tool_calls[0].tool_name, "fs.read");
         assert!(trace.tool_calls[0].result_bytes > 0);
+        assert_eq!(
+            trace.tool_calls[0].result_payload,
+            Some(json!({ "ok": true, "bytes": 12 }))
+        );
+    }
+
+    #[test]
+    fn captures_knowledge_pack_result_payloads() {
+        let stdout = json!({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    { "type": "tool_use", "id": "toolu_pack", "name": "orbit.knowledge.pack" },
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_pack",
+                        "content": {
+                            "entries": [{"selector": "file:src/lib.rs"}],
+                            "unresolved_selectors": ["file:src/missing.rs"]
+                        }
+                    },
+                    { "type": "text", "text": "{\"schemaVersion\":1,\"status\":\"success\",\"result\":{}}" }
+                ]
+            }
+        })
+        .to_string();
+        let exec_result = ExecutionResult {
+            success: true,
+            stdout,
+            stderr: String::new(),
+            exit_code: Some(0),
+            duration_ms: 12,
+            output: None,
+        };
+
+        let (_, _, trace) = parse_and_validate_response(&exec_result).expect("parse");
+
+        assert_eq!(trace.tool_calls.len(), 1);
+        assert_eq!(trace.tool_calls[0].tool_name, "orbit.knowledge.pack");
+        assert_eq!(
+            trace.tool_calls[0].result_payload,
+            Some(json!({
+                "entries": [{"selector": "file:src/lib.rs"}],
+                "unresolved_selectors": ["file:src/missing.rs"]
+            }))
+        );
     }
 }

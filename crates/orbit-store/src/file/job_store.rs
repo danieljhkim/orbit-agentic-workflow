@@ -6,8 +6,8 @@ use std::sync::{Mutex, OnceLock};
 
 use chrono::{DateTime, Utc};
 use orbit_types::{
-    Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, OrbitError,
-    default_job_max_active_runs, default_max_iterations,
+    Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep, KnowledgeRunMetrics,
+    OrbitError, default_job_max_active_runs, default_max_iterations,
 };
 use serde::{Deserialize, Serialize};
 
@@ -319,6 +319,7 @@ impl JobFileStore {
             retry_source_run_id,
             created_at: Utc::now(),
             steps: vec![],
+            knowledge_metrics: None,
         };
         self.write_run(job_id, &run)?;
         Ok(run)
@@ -392,6 +393,20 @@ impl JobFileStore {
             error_message: params.error_message.clone(),
         };
         self.write_run_step(&job_id, run_id, params.step_index, &params.target_id, &step)?;
+        Ok(true)
+    }
+
+    pub(crate) fn record_job_run_knowledge_metrics(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
+    ) -> Result<bool, OrbitError> {
+        let Some((job_id, run_dir)) = self.find_run_path(run_id)? else {
+            return Ok(false);
+        };
+        let mut run = self.read_run_at(&run_dir)?;
+        run.knowledge_metrics = Some(metrics);
+        self.write_run(&job_id, &run)?;
         Ok(true)
     }
 

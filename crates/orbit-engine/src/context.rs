@@ -3,9 +3,9 @@ use orbit_exec::EnvironmentMode;
 use orbit_store::JobRunStepParams;
 use orbit_tools::ToolContext;
 use orbit_types::{
-    Activity, InvocationTrace, Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent,
-    ReviewThread, Role, Task, TaskPriority, TaskStatus, redact_sensitive_env_json,
-    redact_sensitive_env_option,
+    Activity, InvocationTrace, Job, JobRun, JobRunState, JobTargetType, KnowledgeRunMetrics,
+    OrbitError, OrbitEvent, ReviewThread, Role, Task, TaskPriority, TaskStatus,
+    redact_sensitive_env_json, redact_sensitive_env_option,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -152,6 +152,11 @@ pub trait JobRunHost {
         &self,
         run_id: &str,
         params: &JobRunStepParams,
+    ) -> Result<bool, OrbitError>;
+    fn record_job_run_knowledge_metrics(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
     ) -> Result<bool, OrbitError>;
     fn finalize_job_run(
         &self,

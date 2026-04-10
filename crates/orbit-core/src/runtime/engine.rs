@@ -11,9 +11,9 @@ use orbit_store::{
 use orbit_tools::ToolContext;
 use orbit_types::{
     Activity, ActorIdentity, AgentCommitRequest, AgentModelPair, InvocationTrace, JobRun,
-    JobRunState, JobTargetType, OrbitError, OrbitEvent, Role, Task, TaskPriority, TaskStatus,
-    TaskType, WorkspacePaths, agent_family_from_cli, prune_missing_context_files,
-    resolve_agent_model_pair,
+    JobRunState, JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, Role, Task,
+    TaskPriority, TaskStatus, TaskType, WorkspacePaths, agent_family_from_cli,
+    prune_missing_context_files, resolve_agent_model_pair,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -475,6 +475,14 @@ impl JobRunHost for OrbitRuntime {
         params: &JobRunStepParams,
     ) -> Result<bool, OrbitError> {
         self.complete_job_run_step_record(run_id, params)
+    }
+
+    fn record_job_run_knowledge_metrics(
+        &self,
+        run_id: &str,
+        metrics: KnowledgeRunMetrics,
+    ) -> Result<bool, OrbitError> {
+        self.record_job_run_knowledge_metrics_record(run_id, metrics)
     }
 
     fn finalize_job_run(

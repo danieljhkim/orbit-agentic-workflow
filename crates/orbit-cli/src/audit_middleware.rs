@@ -343,6 +343,21 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Knowledge(cmd) => {
+            use crate::command::knowledge::KnowledgeSubcommand;
+            let sub = match &cmd.command {
+                KnowledgeSubcommand::Stats(_) => "stats",
+            };
+            CommandMeta {
+                command: "knowledge".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: None,
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Metrics(cmd) => {
             use crate::command::metrics::MetricsSubcommand;
             let (sub, target_id) = match &cmd.command {
