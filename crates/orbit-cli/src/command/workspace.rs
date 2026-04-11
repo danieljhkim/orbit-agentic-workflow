@@ -85,6 +85,28 @@ impl WorkspaceInitArgs {
         println!("  id:        {}", init_result.id);
         println!("  root:      {}", init_result.root.display());
         println!("  orbit_dir: {}", init_result.orbit_dir.display());
+
+        // Build the knowledge graph
+        eprintln!("graph build: scanning {}", init_result.root.display());
+        let config = orbit_knowledge::pipeline::context::BuildConfig {
+            repo_path: init_result.root.clone(),
+            output_dir: init_result.orbit_dir.join("knowledge"),
+            incremental: false,
+        };
+        match orbit_knowledge::pipeline::run_build(config) {
+            Ok(ctx) => {
+                eprintln!(
+                    "graph build: {} dirs, {} files, {} symbols",
+                    ctx.graph.dirs.len(),
+                    ctx.graph.files.len(),
+                    ctx.graph.leaves.len(),
+                );
+            }
+            Err(e) => {
+                eprintln!("graph build: failed ({e}), run `orbit graph build` manually");
+            }
+        }
+
         Ok(())
     }
 

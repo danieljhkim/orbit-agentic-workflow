@@ -16,39 +16,39 @@ use crate::output::table::{add_single_line_row, build_table};
 
 #[derive(Args)]
 #[command(about = "Build and query the knowledge graph")]
-pub struct KnowledgeCommand {
+pub struct GraphCommand {
     #[command(subcommand)]
-    pub subcommand: KnowledgeSubcommand,
+    pub subcommand: GraphSubcommand,
 }
 
 #[derive(Subcommand)]
-pub enum KnowledgeSubcommand {
+pub enum GraphSubcommand {
     /// Build the knowledge graph from scratch
-    Build(KnowledgeBuildArgs),
+    Build(GraphBuildArgs),
     /// Incrementally update the knowledge graph
-    Update(KnowledgeUpdateArgs),
+    Update(GraphUpdateArgs),
     /// Show a node and its context
-    Show(KnowledgeShowArgs),
+    Show(GraphShowArgs),
     /// Search nodes by name or location
-    Search(KnowledgeSearchArgs),
+    Search(GraphSearchArgs),
 }
 
 #[derive(Args)]
-pub struct KnowledgeBuildArgs {
+pub struct GraphBuildArgs {
     /// Repository root (defaults to current working directory)
     #[arg(long)]
     pub repo: Option<PathBuf>,
 }
 
 #[derive(Args)]
-pub struct KnowledgeUpdateArgs {
+pub struct GraphUpdateArgs {
     /// Repository root (defaults to current working directory)
     #[arg(long)]
     pub repo: Option<PathBuf>,
 }
 
 #[derive(Args)]
-pub struct KnowledgeShowArgs {
+pub struct GraphShowArgs {
     /// Selector (e.g. file:src/lib.rs, symbol:src/lib.rs#hello:function, dir:src)
     pub selector: String,
 
@@ -70,7 +70,7 @@ pub struct KnowledgeShowArgs {
 }
 
 #[derive(Args)]
-pub struct KnowledgeSearchArgs {
+pub struct GraphSearchArgs {
     /// Search query (matches name or location)
     pub query: String,
 
@@ -91,30 +91,30 @@ pub struct KnowledgeSearchArgs {
     pub json: bool,
 }
 
-impl Execute for KnowledgeCommand {
+impl Execute for GraphCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self.subcommand {
-            KnowledgeSubcommand::Build(args) => args.execute(runtime),
-            KnowledgeSubcommand::Update(args) => args.execute(runtime),
-            KnowledgeSubcommand::Show(args) => args.execute(runtime),
-            KnowledgeSubcommand::Search(args) => args.execute(runtime),
+            GraphSubcommand::Build(args) => args.execute(runtime),
+            GraphSubcommand::Update(args) => args.execute(runtime),
+            GraphSubcommand::Show(args) => args.execute(runtime),
+            GraphSubcommand::Search(args) => args.execute(runtime),
         }
     }
 }
 
-impl Execute for KnowledgeBuildArgs {
+impl Execute for GraphBuildArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         run_pipeline(runtime, self.repo, false)
     }
 }
 
-impl Execute for KnowledgeUpdateArgs {
+impl Execute for GraphUpdateArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         run_pipeline(runtime, self.repo, true)
     }
 }
 
-impl Execute for KnowledgeShowArgs {
+impl Execute for GraphShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let graph = load_graph(runtime)?;
         let svc = GraphContextService::new(&graph);
@@ -143,7 +143,7 @@ impl Execute for KnowledgeShowArgs {
     }
 }
 
-impl Execute for KnowledgeSearchArgs {
+impl Execute for GraphSearchArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let graph = load_graph(runtime)?;
         let svc = GraphContextService::new(&graph);

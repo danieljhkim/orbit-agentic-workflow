@@ -336,7 +336,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             let (sub, target_id) = match &cmd.command {
                 None => ("overview", None),
                 Some(MetricsSubcommand::Overview(_)) => ("overview", None),
-                Some(MetricsSubcommand::Knowledge(_)) => ("knowledge", None),
+                Some(MetricsSubcommand::Knowledge(_)) => ("graph", None),
                 Some(MetricsSubcommand::Activity(_)) => ("activity", None),
                 Some(MetricsSubcommand::Task(args)) => ("task", Some(args.id.as_str())),
                 Some(MetricsSubcommand::Tools(_)) => ("tools", None),
@@ -351,18 +351,18 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Knowledge(cmd) => {
+        Commands::Graph(cmd) => {
             let sub = match &cmd.subcommand {
-                crate::command::knowledge::KnowledgeSubcommand::Build(_) => "build",
-                crate::command::knowledge::KnowledgeSubcommand::Update(_) => "update",
-                crate::command::knowledge::KnowledgeSubcommand::Show(_) => "show",
-                crate::command::knowledge::KnowledgeSubcommand::Search(_) => "search",
+                crate::command::graph::GraphSubcommand::Build(_) => "build",
+                crate::command::graph::GraphSubcommand::Update(_) => "update",
+                crate::command::graph::GraphSubcommand::Show(_) => "show",
+                crate::command::graph::GraphSubcommand::Search(_) => "search",
             };
             CommandMeta {
-                command: "knowledge".to_string(),
+                command: "graph".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
-                target_type: Some("knowledge".to_string()),
+                target_type: Some("graph".to_string()),
                 target_id: None,
                 role: "admin".to_string(),
                 arguments_json: None,
@@ -430,7 +430,7 @@ mod tests {
         }));
 
         assert_eq!(meta.command, "metrics");
-        assert_eq!(meta.subcommand.as_deref(), Some("knowledge"));
+        assert_eq!(meta.subcommand.as_deref(), Some("graph"));
     }
 
     #[test]
