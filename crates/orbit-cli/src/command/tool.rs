@@ -2,7 +2,7 @@ use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{OrbitError, OrbitRuntime};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::command::Execute;
 
@@ -181,6 +181,15 @@ pub struct ToolRunArgs {
     /// Validate without executing
     #[arg(long)]
     pub dry_run: bool,
+    /// Comma-separated top-level fields to keep from object output
+    #[arg(long, value_delimiter = ',', conflicts_with = "full")]
+    pub fields: Vec<String>,
+    /// Return the tool's full unfiltered JSON output
+    #[arg(long)]
+    pub full: bool,
+    /// Pretty-print JSON output for human debugging
+    #[arg(long)]
+    pub pretty: bool,
     /// Output format
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub output: OutputFormat,
@@ -221,15 +230,235 @@ impl Execute for ToolRunArgs {
             return Ok(());
         }
 
-        let output = runtime.execute_tool_command(&self.name, input, self.agent, self.model)?;
+        let output =
+            runtime.execute_tool_command(&self.name, input.clone(), self.agent, self.model)?;
+        let output = shape_tool_output(&self.name, &input, output, self.full, &self.fields);
 
         match self.output {
-            OutputFormat::Json => crate::output::json::print_pretty(&output),
+            OutputFormat::Json => {
+                if self.pretty {
+                    crate::output::json::print_pretty(&output)
+                } else {
+                    crate::output::json::print(&output)
+                }
+            }
             OutputFormat::Text => {
                 println!("{}", output);
                 Ok(())
             }
         }
+    }
+}
+
+const MINIMAL_TASK_FIELDS: &[&str] = &[
+    "id",
+    "title",
+    "status",
+    "priority",
+    "type",
+    "assigned_to",
+    "created_at",
+    "updated_at",
+];
+
+fn shape_tool_output(
+    tool_name: &str,
+    input: &Value,
+    output: Value,
+    full: bool,
+    fields: &[String],
+) -> Value {
+    if full {
+        return output;
+    }
+
+    if !fields.is_empty() {
+        return filter_top_level_fields(output, fields);
+    }
+
+    if should_project_minimal_task_output(tool_name, input) {
+        return filter_top_level_fields(
+            output,
+            &MINIMAL_TASK_FIELDS
+                .iter()
+                .map(|field| (*field).to_string())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    output
+}
+
+fn should_project_minimal_task_output(tool_name: &str, input: &Value) -> bool {
+    if !matches!(
+        tool_name,
+        "orbit.task.list" | "orbit.task.show" | "orbit.task.add" | "orbit.task.update"
+    ) {
+        return false;
+    }
+
+    if tool_name == "orbit.task.show" && input.get("field").is_some() {
+        return false;
+    }
+
+    true
+}
+
+fn filter_top_level_fields(value: Value, fields: &[String]) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(select_fields(map, fields)),
+        Value::Array(items) => Value::Array(
+            items
+                .into_iter()
+                .map(|item| match item {
+                    Value::Object(map) => Value::Object(select_fields(map, fields)),
+                    other => other,
+                })
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn select_fields(map: Map<String, Value>, fields: &[String]) -> Map<String, Value> {
+    let mut selected = Map::new();
+    for field in fields {
+        if let Some(value) = map.get(field) {
+            selected.insert(field.clone(), value.clone());
+        }
+    }
+    selected
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{filter_top_level_fields, shape_tool_output};
+
+    #[test]
+    fn fields_filter_array_items_individually() {
+        let value = json!([
+            {
+                "id": "T001",
+                "title": "First",
+                "status": "backlog",
+                "plan": "full"
+            }
+        ]);
+        let filtered = filter_top_level_fields(value, &["id".to_string(), "status".to_string()]);
+
+        assert_eq!(filtered, json!([{ "id": "T001", "status": "backlog" }]));
+    }
+
+    #[test]
+    fn default_task_projection_keeps_minimal_fields() {
+        let output = json!({
+            "id": "T001",
+            "title": "First",
+            "status": "backlog",
+            "priority": "high",
+            "type": "task",
+            "assigned_to": "codex / gpt-5.4",
+            "created_at": "2026-04-11T00:00:00Z",
+            "updated_at": "2026-04-11T00:00:00Z",
+            "plan": "long plan",
+            "description": "long description"
+        });
+
+        let shaped = shape_tool_output(
+            "orbit.task.show",
+            &json!({"id": "T001"}),
+            output,
+            false,
+            &[],
+        );
+
+        assert_eq!(
+            shaped,
+            json!({
+                "id": "T001",
+                "title": "First",
+                "status": "backlog",
+                "priority": "high",
+                "type": "task",
+                "assigned_to": "codex / gpt-5.4",
+                "created_at": "2026-04-11T00:00:00Z",
+                "updated_at": "2026-04-11T00:00:00Z"
+            })
+        );
+    }
+
+    #[test]
+    fn fields_override_default_task_projection() {
+        let output = json!({
+            "id": "T001",
+            "title": "First",
+            "status": "backlog",
+            "plan": "long plan"
+        });
+
+        let shaped = shape_tool_output(
+            "orbit.task.show",
+            &json!({"id": "T001"}),
+            output,
+            false,
+            &["id".to_string(), "plan".to_string()],
+        );
+
+        assert_eq!(shaped, json!({ "id": "T001", "plan": "long plan" }));
+    }
+
+    #[test]
+    fn full_preserves_complete_output() {
+        let output = json!({
+            "id": "T001",
+            "title": "First",
+            "plan": "long plan"
+        });
+
+        let shaped = shape_tool_output(
+            "orbit.task.show",
+            &json!({"id": "T001"}),
+            output.clone(),
+            true,
+            &[],
+        );
+
+        assert_eq!(shaped, output);
+    }
+
+    #[test]
+    fn task_show_field_input_skips_task_projection() {
+        let output = json!("plan body");
+
+        let shaped = shape_tool_output(
+            "orbit.task.show",
+            &json!({"id": "T001", "field": "plan"}),
+            output.clone(),
+            false,
+            &[],
+        );
+
+        assert_eq!(shaped, output);
+    }
+
+    #[test]
+    fn non_task_tools_are_left_unchanged_by_default() {
+        let output = json!({
+            "kind": "knowledge_pack",
+            "entries": 4
+        });
+
+        let shaped = shape_tool_output(
+            "orbit.knowledge.pack",
+            &json!({}),
+            output.clone(),
+            false,
+            &[],
+        );
+
+        assert_eq!(shaped, output);
     }
 }
 

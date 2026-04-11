@@ -1,10 +1,87 @@
 use orbit_core::OrbitError;
-use serde_json::Value;
+use serde_json::{Value, json};
+
+pub fn print(value: &Value) -> Result<(), OrbitError> {
+    print_with_format(value, false)
+}
 
 pub fn print_pretty(value: &Value) -> Result<(), OrbitError> {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).map_err(|e| OrbitError::Execution(e.to_string()))?
-    );
+    print_with_format(value, true)
+}
+
+pub fn print_with_format(value: &Value, pretty: bool) -> Result<(), OrbitError> {
+    println!("{}", render(value, pretty)?);
     Ok(())
+}
+
+pub fn render(value: &Value, pretty: bool) -> Result<String, OrbitError> {
+    if pretty {
+        serde_json::to_string_pretty(value).map_err(|e| OrbitError::Execution(e.to_string()))
+    } else {
+        serde_json::to_string(value).map_err(|e| OrbitError::Execution(e.to_string()))
+    }
+}
+
+pub fn error_payload(error: &OrbitError) -> Value {
+    json!({
+        "error": error.to_string(),
+        "code": error_code(error),
+    })
+}
+
+fn error_code(error: &OrbitError) -> &'static str {
+    match error {
+        OrbitError::PolicyDenied(_) => "policy_denied",
+        OrbitError::ToolNotFound(_) => "tool_not_found",
+        OrbitError::TaskNotFound(_) => "task_not_found",
+        OrbitError::TaskApprovalRequired(_) => "task_approval_required",
+        OrbitError::SkillNotFound(_) => "skill_not_found",
+        OrbitError::JobNotFound(_) => "job_not_found",
+        OrbitError::JobRunNotFound(_) => "job_run_not_found",
+        OrbitError::ActivityNotFound(_) => "activity_not_found",
+        OrbitError::AgentSessionNotFound(_) => "agent_session_not_found",
+        OrbitError::InvalidInput(_) => "invalid_input",
+        OrbitError::SkillValidation(_) => "skill_validation_failed",
+        OrbitError::JobValidation(_) => "job_validation_failed",
+        OrbitError::AgentProtocolViolation(_) => "agent_protocol_violation",
+        OrbitError::UnsupportedAgentProvider(_) => "unsupported_agent_provider",
+        OrbitError::Execution(_) => "execution_failed",
+        OrbitError::Store(_) => "store_error",
+        OrbitError::TaskStatusTransition(_) => "task_status_transition",
+        OrbitError::JobRunStateTransition(_) => "job_run_state_transition",
+        OrbitError::WorkspaceNotFound(_) => "workspace_not_found",
+        OrbitError::WorkspaceError(_) => "workspace_error",
+        OrbitError::Io(_) => "io_error",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use orbit_core::OrbitError;
+    use serde_json::json;
+
+    use super::{error_payload, render};
+
+    #[test]
+    fn render_defaults_to_compact_json() {
+        let rendered = render(&json!({"id": "T001", "status": "backlog"}), false)
+            .expect("compact JSON should render");
+
+        assert_eq!(rendered, "{\"id\":\"T001\",\"status\":\"backlog\"}");
+    }
+
+    #[test]
+    fn render_pretty_json_keeps_indentation() {
+        let rendered = render(&json!({"id": "T001"}), true).expect("pretty JSON should render");
+
+        assert!(rendered.contains("\n  \"id\": \"T001\"\n"));
+    }
+
+    #[test]
+    fn error_payload_uses_structured_code() {
+        let payload = error_payload(&OrbitError::InvalidInput("missing `id`".to_string()));
+
+        assert_eq!(payload["code"], "invalid_input");
+        assert_eq!(payload["error"], "invalid input: missing `id`");
+    }
 }

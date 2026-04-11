@@ -27,6 +27,7 @@ mod parse;
 use clap::Parser;
 use orbit_core::OrbitRuntime;
 
+use crate::command::tool::{OutputFormat, ToolSubcommand};
 use crate::command::workspace::{WorkspaceCommand, WorkspaceSubcommand};
 use crate::command::{Commands, Execute, init::InitCommand};
 
@@ -41,12 +42,13 @@ fn main() {
 
     let cli = command::Cli::parse();
     let root_override = cli.root.clone();
+    let tool_run_json_output = tool_run_json_output_preference(&cli.command);
 
     // Commands that run without a pre-existing runtime
     match cli.command {
         Commands::Init(cmd) => {
             if let Err(err) = execute_init_command(cmd, root_override.as_deref()) {
-                eprintln!("error: {err}");
+                print_error(&err, tool_run_json_output);
                 std::process::exit(1);
             }
             return;
@@ -55,7 +57,7 @@ fn main() {
             command: WorkspaceSubcommand::Init(args),
         }) => {
             if let Err(err) = args.execute_without_runtime() {
-                eprintln!("error: {err}");
+                print_error(&err, tool_run_json_output);
                 std::process::exit(1);
             }
             return;
@@ -66,7 +68,7 @@ fn main() {
     let runtime = match OrbitRuntime::initialize_with_root_override(root_override.as_deref()) {
         Ok(runtime) => runtime,
         Err(err) => {
-            eprintln!("failed to initialize runtime: {err}");
+            print_error(&err, tool_run_json_output);
             std::process::exit(1);
         }
     };
@@ -87,7 +89,7 @@ fn main() {
     };
 
     if let Err(err) = result {
-        eprintln!("error: {err}");
+        print_error(&err, tool_run_json_output);
         std::process::exit(1);
     }
 }
@@ -97,4 +99,27 @@ fn execute_init_command(
     root_override: Option<&std::path::Path>,
 ) -> Result<(), orbit_core::OrbitError> {
     cmd.execute_without_runtime(root_override)
+}
+
+fn tool_run_json_output_preference(command: &Commands) -> Option<bool> {
+    match command {
+        Commands::Tool(command) => match &command.command {
+            ToolSubcommand::Run(args) if matches!(args.output, OutputFormat::Json) => {
+                Some(args.pretty)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn print_error(error: &orbit_core::OrbitError, tool_run_json_output: Option<bool>) {
+    if let Some(pretty) = tool_run_json_output {
+        let payload = crate::output::json::error_payload(error);
+        if crate::output::json::print_with_format(&payload, pretty).is_ok() {
+            return;
+        }
+    }
+
+    eprintln!("error: {error}");
 }
