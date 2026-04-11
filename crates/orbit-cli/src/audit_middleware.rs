@@ -351,6 +351,21 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Knowledge(cmd) => {
+            let sub = match &cmd.subcommand {
+                crate::command::knowledge::KnowledgeSubcommand::Build(_) => "build",
+                crate::command::knowledge::KnowledgeSubcommand::Update(_) => "update",
+            };
+            CommandMeta {
+                command: "knowledge".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("knowledge".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;

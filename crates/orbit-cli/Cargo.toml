@@ -15,6 +15,7 @@ colored = "2"
 comfy-table = "7"
 csv = "1"
 orbit-core = { path = "../orbit-core", features = ["clap"] }
+orbit-knowledge = { path = "../orbit-knowledge" }
 orbit-types = { path = "../orbit-types" }
 serde_json.workspace = true
 tracing-subscriber.workspace = true

@@ -5,6 +5,7 @@ pub mod duel;
 pub mod init;
 pub mod job;
 pub(crate) mod job_run_support;
+pub mod knowledge;
 pub mod metrics;
 pub mod ship;
 pub mod skill;
@@ -44,6 +45,7 @@ Manage work:
   task       Create, update, and manage tasks
   tool       Manage and run Orbit tools
   skill      Manage agent skill definitions
+  knowledge  Build and query the knowledge graph
 
 Inspect:
   audit      Query the audit event log
@@ -78,6 +80,7 @@ pub enum Commands {
     Job(job::JobCommand),
     Tool(tool::ToolCommand),
     Skill(skill::SkillCommand),
+    Knowledge(knowledge::KnowledgeCommand),
 
     // ── inspect ──
     Audit(audit::AuditCommand),
@@ -97,6 +100,7 @@ impl Execute for Commands {
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::Tool(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),
+            Commands::Knowledge(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
         }
