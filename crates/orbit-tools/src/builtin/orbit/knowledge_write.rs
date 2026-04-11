@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 
+use orbit_knowledge::extractor::{self, Language};
+use orbit_knowledge::{
+    KnowledgeStore, Selector, WorkingGraph, WorkingLeaf, load_task_working_graph,
+    save_task_working_graph,
+};
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::Value;
 
-use crate::knowledge::Selector;
-use crate::knowledge::working_graph::WorkingGraph;
 use crate::{Tool, ToolContext};
 
 pub struct OrbitKnowledgeWriteTool;
@@ -72,29 +75,24 @@ impl Tool for OrbitKnowledgeWriteTool {
             .as_deref()
             .ok_or_else(|| OrbitError::InvalidInput("workspace_root is required".to_string()))?;
 
-        // Initialize or retrieve working graph from context
-        // For now, we create a fresh working graph per call and populate it
-        // from the file on disk. In a full integration, the working graph
-        // would be stored in the ToolContext and shared across calls.
         let knowledge_dir = resolve_knowledge_dir(ctx, &input)?;
         let mut working_graph =
-            initialize_working_graph(&knowledge_dir, &selector, workspace_root)?;
+            match load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())? {
+                Some(graph) => graph,
+                None => initialize_working_graph(&knowledge_dir, &selector, workspace_root)?,
+            };
 
-        if working_graph.has_leaf(&selector) {
-            // Edit mode
-            let result = working_graph
+        let result = if working_graph.has_leaf(&selector) {
+            working_graph
                 .edit_leaf(&selector, &new_source, reason.as_deref(), workspace_root)
                 .map_err(|e| {
                     serde_json::to_value(&e)
                         .map(|v| OrbitError::Execution(v.to_string()))
                         .unwrap_or_else(|_| OrbitError::Execution(format!("{:?}", e)))
-                })?;
-            serde_json::to_value(result)
-                .map_err(|e| OrbitError::Execution(format!("serialize result: {e}")))
+                })?
         } else {
-            // Insert mode
             let position_selector = parse_position_selector(position_str.as_deref())?;
-            let result = working_graph
+            working_graph
                 .insert_leaf(
                     &selector,
                     &new_source,
@@ -106,10 +104,17 @@ impl Tool for OrbitKnowledgeWriteTool {
                     serde_json::to_value(&e)
                         .map(|v| OrbitError::Execution(v.to_string()))
                         .unwrap_or_else(|_| OrbitError::Execution(format!("{:?}", e)))
-                })?;
-            serde_json::to_value(result)
-                .map_err(|e| OrbitError::Execution(format!("serialize result: {e}")))
-        }
+                })?
+        };
+
+        save_task_working_graph(
+            ctx.orbit_root.as_deref(),
+            ctx.task_id.as_deref(),
+            &working_graph,
+        )?;
+
+        serde_json::to_value(result)
+            .map_err(|e| OrbitError::Execution(format!("serialize result: {e}")))
     }
 }
 
@@ -178,9 +183,6 @@ fn initialize_working_graph(
     selector: &Selector,
     workspace_root: &Path,
 ) -> Result<WorkingGraph, OrbitError> {
-    use crate::knowledge::KnowledgeStore;
-    use crate::knowledge::extractor::{self, Language};
-
     // Try to load from persisted store
     if let Ok(store) = KnowledgeStore::open(knowledge_dir)
         && let Ok(graph) = WorkingGraph::from_store(&store)
@@ -208,7 +210,7 @@ fn initialize_working_graph(
     // Populate from extraction
     for leaf in &extraction.leaves {
         let sel_str = format!("leaf:{path}#{}:{}", leaf.qualified_name, leaf.kind);
-        let working_leaf = crate::knowledge::working_graph::WorkingLeaf {
+        let working_leaf = WorkingLeaf {
             selector: sel_str.clone(),
             file_path: path.clone(),
             name: leaf.name.clone(),
@@ -231,6 +233,7 @@ fn initialize_working_graph(
 mod tests {
     use std::path::PathBuf;
 
+    use orbit_knowledge::{Selector, load_task_working_graph, task_working_graph_state_path};
     use serde_json::json;
 
     use crate::{Tool, ToolContext, ToolRegistry};
@@ -250,6 +253,15 @@ mod tests {
         ).unwrap();
 
         (dir, ws)
+    }
+
+    fn task_context(ws: &std::path::Path, task_id: &str) -> ToolContext {
+        ToolContext {
+            workspace_root: Some(ws.to_path_buf()),
+            orbit_root: Some(ws.join(".orbit")),
+            task_id: Some(task_id.to_string()),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -346,5 +358,47 @@ mod tests {
             .expect_err("should reject missing new_source");
 
         assert!(matches!(err, orbit_types::OrbitError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn persists_task_scoped_working_graph_state() {
+        let (_dir, ws) = make_test_workspace();
+        let ctx = task_context(&ws, "T-state");
+
+        OrbitKnowledgeWriteTool
+            .execute(
+                &ctx,
+                json!({
+                    "selector": "leaf:src/lib.rs#hello:function",
+                    "new_source": "pub fn hello() -> &'static str {\n    \"first\"\n}",
+                    "reason": "first edit"
+                }),
+            )
+            .expect("first edit");
+        OrbitKnowledgeWriteTool
+            .execute(
+                &ctx,
+                json!({
+                    "selector": "leaf:src/lib.rs#hello:function",
+                    "new_source": "pub fn hello() -> &'static str {\n    \"second\"\n}",
+                    "reason": "second edit"
+                }),
+            )
+            .expect("second edit");
+
+        let state_path =
+            task_working_graph_state_path(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())
+                .expect("state path");
+        assert!(state_path.exists());
+
+        let graph = load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())
+            .expect("load graph")
+            .expect("graph");
+        let selector: Selector = "leaf:src/lib.rs#hello:function".parse().unwrap();
+        let chain = graph.version_chains().get(&selector.to_string()).unwrap();
+        assert_eq!(chain.edits.len(), 2);
+        assert_eq!(chain.edits[0].edit_sequence, 1);
+        assert_eq!(chain.edits[1].edit_sequence, 2);
+        assert_eq!(chain.edits[1].reason.as_deref(), Some("second edit"));
     }
 }

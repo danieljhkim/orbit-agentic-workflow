@@ -1362,6 +1362,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "orbit-knowledge"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "orbit-types",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "orbit-lock"
 version = "0.1.0"
 dependencies = [
@@ -1400,6 +1414,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "orbit-exec",
+ "orbit-knowledge",
  "orbit-lock",
  "orbit-types",
  "regex",

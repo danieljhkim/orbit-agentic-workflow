@@ -1,14 +1,14 @@
-pub mod extractor;
-pub mod working_graph;
-
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use orbit_types::OrbitError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
+
+use crate::working_graph::{WorkingGraph, WorkingLeaf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Error)]
 #[error("{kind}: {reason}")]
@@ -67,6 +67,8 @@ pub struct KnowledgePack {
     pub total_nodes: usize,
     pub entries: Vec<KnowledgePackEntry>,
 }
+
+const TASK_WORKING_GRAPH_DIR: &str = "runtime/knowledge-write";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selector {
@@ -329,20 +331,17 @@ impl KnowledgeStore {
                 .unwrap_or("")
                 .to_string();
 
-            // Resolve source from inline or blob
             let source = extract_leaf_source(&self.knowledge_dir, &object, &mut blob_cache)
                 .ok()
                 .flatten()
                 .unwrap_or_default();
 
-            // Parse location "path#symbol" to get file path and qualified name
             let (file_path, qualified_name) = if let Some((p, s)) = entry.location.split_once('#') {
                 (p.to_string(), s.to_string())
             } else {
                 continue;
             };
 
-            // Extract children qualified names
             let children: Vec<String> = node
                 .get("children")
                 .and_then(|v| v.as_array())
@@ -365,7 +364,7 @@ impl KnowledgeStore {
                     end_line,
                     source,
                     source_hash,
-                    parent_qualified_name: None, // Not tracked in persisted graph index
+                    parent_qualified_name: None,
                     children_qualified_names: children,
                 },
             ));
@@ -442,6 +441,215 @@ impl KnowledgeStore {
             entries,
         })
     }
+}
+
+pub fn task_working_graph_state_path(
+    orbit_root: Option<&Path>,
+    task_id: Option<&str>,
+) -> Option<PathBuf> {
+    let orbit_root = orbit_root?;
+    let task_id = task_id?.trim();
+    if task_id.is_empty() {
+        return None;
+    }
+    Some(
+        orbit_root
+            .join(TASK_WORKING_GRAPH_DIR)
+            .join(format!("{task_id}.json")),
+    )
+}
+
+pub fn load_task_working_graph(
+    orbit_root: Option<&Path>,
+    task_id: Option<&str>,
+) -> Result<Option<WorkingGraph>, OrbitError> {
+    let Some(path) = task_working_graph_state_path(orbit_root, task_id) else {
+        return Ok(None);
+    };
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| OrbitError::Execution(format!("read {}: {error}", path.display())))?;
+    let graph = serde_json::from_str(&raw).map_err(|error| {
+        OrbitError::Execution(format!(
+            "parse task working graph state {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(Some(graph))
+}
+
+pub fn save_task_working_graph(
+    orbit_root: Option<&Path>,
+    task_id: Option<&str>,
+    graph: &WorkingGraph,
+) -> Result<(), OrbitError> {
+    let Some(path) = task_working_graph_state_path(orbit_root, task_id) else {
+        return Ok(());
+    };
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| OrbitError::Execution(format!("no parent dir for {}", path.display())))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| OrbitError::Execution(format!("create {}: {error}", parent.display())))?;
+
+    let tmp_path = parent.join(format!(
+        ".{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("working-graph")
+    ));
+    let payload = serde_json::to_string_pretty(graph).map_err(|error| {
+        OrbitError::Execution(format!(
+            "serialize task working graph state {}: {error}",
+            path.display()
+        ))
+    })?;
+    fs::write(&tmp_path, format!("{payload}\n"))
+        .map_err(|error| OrbitError::Execution(format!("write {}: {error}", tmp_path.display())))?;
+    fs::rename(&tmp_path, &path).map_err(|error| {
+        OrbitError::Execution(format!(
+            "rename {} -> {}: {error}",
+            tmp_path.display(),
+            path.display()
+        ))
+    })?;
+    Ok(())
+}
+
+pub fn overlay_pack_with_working_graph(
+    mut pack: KnowledgePack,
+    selectors: &[Selector],
+    graph: &WorkingGraph,
+) -> KnowledgePack {
+    for (entry, selector) in pack.entries.iter_mut().zip(selectors.iter()) {
+        let Some(working_leaf) = graph.resolve_leaf(selector) else {
+            continue;
+        };
+
+        entry.kind = KnowledgeEntryKind::Leaf;
+        entry.source = Some(working_leaf.source.clone());
+        entry.resolved_id = entry
+            .resolved_id
+            .clone()
+            .or_else(|| Some(selector.to_string()));
+        entry.content = Some(match entry.content.take() {
+            Some(content) => overlay_leaf_content(content, working_leaf),
+            None => build_working_leaf_content(working_leaf),
+        });
+    }
+
+    pack.unresolved_selectors = pack
+        .entries
+        .iter()
+        .filter(|entry| entry.resolved_id.is_none())
+        .map(|entry| entry.selector.clone())
+        .collect();
+    pack.total_nodes = pack
+        .entries
+        .iter()
+        .filter(|entry| entry.resolved_id.is_some())
+        .count();
+    pack
+}
+
+pub fn pack_from_working_graph(
+    knowledge_dir: &Path,
+    selectors: &[Selector],
+    graph: &WorkingGraph,
+) -> KnowledgePack {
+    let mut entries = Vec::with_capacity(selectors.len());
+
+    for selector in selectors {
+        let selector_string = selector.to_string();
+        if let Some(working_leaf) = graph.resolve_leaf(selector) {
+            entries.push(KnowledgePackEntry {
+                selector: selector_string.clone(),
+                resolved_id: Some(selector_string),
+                kind: KnowledgeEntryKind::Leaf,
+                content: Some(build_working_leaf_content(working_leaf)),
+                source: Some(working_leaf.source.clone()),
+            });
+        } else {
+            entries.push(KnowledgePackEntry {
+                selector: selector_string,
+                resolved_id: None,
+                kind: KnowledgeEntryKind::Unresolved,
+                content: None,
+                source: None,
+            });
+        }
+    }
+
+    let unresolved_selectors = entries
+        .iter()
+        .filter(|entry| entry.resolved_id.is_none())
+        .map(|entry| entry.selector.clone())
+        .collect();
+    let total_nodes = entries
+        .iter()
+        .filter(|entry| entry.resolved_id.is_some())
+        .count();
+
+    KnowledgePack {
+        knowledge_dir: knowledge_dir.display().to_string(),
+        manifest_generated_at: String::new(),
+        unresolved_selectors,
+        total_nodes,
+        entries,
+    }
+}
+
+fn overlay_leaf_content(mut content: Value, leaf: &WorkingLeaf) -> Value {
+    let Some(node) = content.get_mut("node").and_then(Value::as_object_mut) else {
+        return build_working_leaf_content(leaf);
+    };
+
+    node.insert("name".to_string(), Value::String(leaf.name.clone()));
+    node.insert("kind".to_string(), Value::String(leaf.kind.clone()));
+    node.insert(
+        "location".to_string(),
+        Value::String(format!("{}#{}", leaf.file_path, leaf.qualified_name)),
+    );
+    node.insert("start_line".to_string(), json!(leaf.start_line));
+    node.insert("end_line".to_string(), json!(leaf.end_line));
+    node.insert("source".to_string(), Value::String(leaf.source.clone()));
+    node.insert(
+        "source_hash".to_string(),
+        Value::String(leaf.source_hash.clone()),
+    );
+    node.insert("children".to_string(), json!(leaf.children_qualified_names));
+    if let Some(parent) = &leaf.parent_qualified_name {
+        node.insert("parent".to_string(), Value::String(parent.clone()));
+    } else {
+        node.remove("parent");
+    }
+
+    content
+}
+
+fn build_working_leaf_content(leaf: &WorkingLeaf) -> Value {
+    json!({
+        "node": {
+            "name": leaf.name.clone(),
+            "qualified_name": leaf.qualified_name.clone(),
+            "kind": leaf.kind.clone(),
+            "location": format!("{}#{}", leaf.file_path, leaf.qualified_name),
+            "language": Path::new(&leaf.file_path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or_default(),
+            "start_line": leaf.start_line,
+            "end_line": leaf.end_line,
+            "source": leaf.source.clone(),
+            "source_hash": leaf.source_hash.clone(),
+            "parent": leaf.parent_qualified_name.clone(),
+            "children": leaf.children_qualified_names.clone(),
+        }
+    })
 }
 
 fn read_graph_object(
@@ -551,7 +759,7 @@ mod tests {
 
     fn fixture_knowledge_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/knowledge")
+            .join("../orbit-tools/tests/fixtures/knowledge")
             .join(".orbit/knowledge")
     }
 

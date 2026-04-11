@@ -31,7 +31,7 @@ pub struct LeafVersionChain {
 }
 
 /// In-memory leaf state tracked by the working graph.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkingLeaf {
     pub selector: String,
     pub file_path: String,
@@ -117,7 +117,7 @@ impl WriteError {
 ///
 /// Initialized from the persisted knowledge store, then mutated in memory
 /// as `knowledge.write` calls modify files and re-extract.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkingGraph {
     /// Leaves indexed by selector string (e.g. "leaf:path#symbol:kind").
     leaves: HashMap<String, WorkingLeaf>,
@@ -967,6 +967,49 @@ pub fn gamma() -> i32 {
             .edit_leaf(&selector, "def foo():\n    return 42", None, &ws)
             .unwrap();
         assert_eq!(result.status, "ok");
+    }
+
+    #[test]
+    fn working_graph_round_trips_through_json_with_version_chains() {
+        let (_dir, ws) = make_test_dir();
+        write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
+
+        let mut graph = WorkingGraph::new();
+        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
+
+        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        graph
+            .edit_leaf(
+                &selector,
+                "pub fn alpha() -> i32 {\n    10\n}",
+                Some("first"),
+                &ws,
+            )
+            .unwrap();
+        graph
+            .edit_leaf(
+                &selector,
+                "pub fn alpha() -> i32 {\n    20\n}",
+                Some("second"),
+                &ws,
+            )
+            .unwrap();
+
+        let json = serde_json::to_string(&graph).unwrap();
+        let restored: WorkingGraph = serde_json::from_str(&json).unwrap();
+
+        let restored_leaf = restored.resolve_leaf(&selector).unwrap();
+        assert!(restored_leaf.source.contains("20"));
+
+        let chain = restored
+            .version_chains()
+            .get(&selector.to_string())
+            .unwrap();
+        assert_eq!(chain.edits.len(), 2);
+        assert_eq!(chain.edits[0].edit_sequence, 1);
+        assert_eq!(chain.edits[1].edit_sequence, 2);
+        assert_eq!(chain.edits[1].reason.as_deref(), Some("second"));
     }
 
     /// Helper: populate graph from extraction result (simulates loading from store).

@@ -12,12 +12,13 @@ use crate::context::{
 
 use super::friction::{append_failed_step_friction, append_step_metrics};
 use super::helpers::{
-    build_knowledge_run_metrics, check_loop_exit, log_step_completion, merge_job_input,
-    normalize_agent_label, prepare_implement_change_metrics, record_task_agent_context,
-    release_task_locks_for_job_input, resolve_step_agent, resolved_model_name, run_was_cancelled,
-    should_run_step, step_state_records_incident,
+    build_knowledge_run_metrics, check_loop_exit, extract_task_id, log_step_completion,
+    merge_job_input, normalize_agent_label, prepare_implement_change_metrics,
+    record_task_agent_context, release_task_locks_for_job_input, resolve_step_agent,
+    resolved_model_name, run_was_cancelled, should_run_step, step_state_records_incident,
 };
 use super::stale_recovery::{finalize_failed_started_run, recover_stale_active_run_for_job};
+use crate::context::TaskAutomationUpdate;
 
 pub fn run_job_with_input<H: EngineHost>(
     host: &H,
@@ -174,6 +175,33 @@ struct ActivityExecutionRequest<'a> {
     replayed_steps: &'a [orbit_types::JobRunStep],
 }
 
+fn apply_loop_outcome_metadata(
+    current_input: &mut Value,
+    final_state: JobRunState,
+    max_iterations: u32,
+    loop_iterations_completed: u32,
+    loop_exited: bool,
+) -> (JobRunState, bool) {
+    let exhausted = !loop_exited
+        && final_state == JobRunState::Success
+        && loop_iterations_completed == max_iterations;
+    if let Value::Object(input_map) = current_input {
+        input_map.insert(
+            "fix_loop_iterations".to_string(),
+            Value::from(loop_iterations_completed),
+        );
+        input_map.insert("fix_loop_exhausted".to_string(), Value::from(exhausted));
+    }
+    (
+        if exhausted {
+            JobRunState::Failed
+        } else {
+            final_state
+        },
+        exhausted,
+    )
+}
+
 fn execute_activity_with_retries<H: EngineHost>(
     host: &H,
     data_root: &Path,
@@ -256,8 +284,15 @@ fn execute_activity_with_retries<H: EngineHost>(
         let mut last_failure: Option<FailureInfo> = None;
         let num_steps = job.steps.len();
         let max_iterations = job.max_iterations.max(1);
+        let looping_job = max_iterations > 1;
+        let mut loop_iterations_completed = 0u32;
+        let mut loop_exited = false;
 
         'outer: for iteration in 0..max_iterations {
+            if looping_job && check_loop_exit(host, &current_input) {
+                loop_exited = true;
+                break;
+            }
             let mut previous_step_state: Option<JobRunState> = None;
 
             // Clear loop_exit flag at the start of each iteration so a
@@ -395,6 +430,14 @@ fn execute_activity_with_retries<H: EngineHost>(
                     } else {
                         step_state
                     };
+                    if let Ok(result) = &sub_result
+                        && let Some(Value::Object(output_map)) = result.output.as_ref()
+                        && let Value::Object(ref mut input_map) = current_input
+                    {
+                        for (key, value) in output_map {
+                            input_map.insert(key.clone(), value.clone());
+                        }
+                    }
                     previous_step_state = Some(step_state);
 
                     let changed = host.complete_job_run_step(
@@ -616,13 +659,39 @@ fn execute_activity_with_retries<H: EngineHost>(
                     && step_state == JobRunState::Success
                     && check_loop_exit(host, &current_input)
                 {
+                    loop_iterations_completed = iteration + 1;
+                    loop_exited = true;
                     break 'outer;
                 }
+            }
+
+            if looping_job && final_state == JobRunState::Success {
+                loop_iterations_completed = iteration + 1;
             }
 
             // If any step failed in this iteration, stop looping.
             if final_state != JobRunState::Success {
                 break;
+            }
+        }
+
+        if looping_job {
+            let (adjusted_state, exhausted) = apply_loop_outcome_metadata(
+                &mut current_input,
+                final_state,
+                max_iterations,
+                loop_iterations_completed,
+                loop_exited,
+            );
+            final_state = adjusted_state;
+            if exhausted && let Some(task_id) = extract_task_id(&current_input) {
+                let _ = host.apply_task_automation_update(
+                    task_id,
+                    TaskAutomationUpdate {
+                        status: Some(orbit_types::TaskStatus::Blocked),
+                        ..Default::default()
+                    },
+                );
             }
         }
 
@@ -670,6 +739,7 @@ fn execute_activity_with_retries<H: EngineHost>(
             run_id: run.run_id.clone(),
             state: final_state,
             attempt: run.attempt,
+            output: Some(current_input),
         })
     })();
 
@@ -771,4 +841,44 @@ fn execute_job_step<H: EngineHost>(
             replayed_steps: &[],
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_loop_outcome_metadata;
+    use orbit_types::JobRunState;
+    use serde_json::json;
+
+    #[test]
+    fn loop_metadata_marks_exhaustion_as_failed() {
+        let mut input = json!({"task_id": "T1"});
+        let (state, exhausted) =
+            apply_loop_outcome_metadata(&mut input, JobRunState::Success, 3, 3, false);
+        assert_eq!(state, JobRunState::Failed);
+        assert!(exhausted);
+        assert_eq!(input["fix_loop_iterations"], json!(3));
+        assert_eq!(input["fix_loop_exhausted"], json!(true));
+    }
+
+    #[test]
+    fn loop_metadata_preserves_success_when_loop_already_exited() {
+        let mut input = json!({"task_id": "T1", "loop_exit": true});
+        let (state, exhausted) =
+            apply_loop_outcome_metadata(&mut input, JobRunState::Success, 3, 0, true);
+        assert_eq!(state, JobRunState::Success);
+        assert!(!exhausted);
+        assert_eq!(input["fix_loop_iterations"], json!(0));
+        assert_eq!(input["fix_loop_exhausted"], json!(false));
+    }
+
+    #[test]
+    fn loop_metadata_preserves_non_success_failures() {
+        let mut input = json!({"task_id": "T1"});
+        let (state, exhausted) =
+            apply_loop_outcome_metadata(&mut input, JobRunState::Failed, 3, 1, false);
+        assert_eq!(state, JobRunState::Failed);
+        assert!(!exhausted);
+        assert_eq!(input["fix_loop_iterations"], json!(1));
+        assert_eq!(input["fix_loop_exhausted"], json!(false));
+    }
 }

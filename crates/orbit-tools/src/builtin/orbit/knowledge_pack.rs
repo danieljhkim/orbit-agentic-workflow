@@ -1,9 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use orbit_knowledge::{
+    KnowledgeStore, Selector, load_task_working_graph, overlay_pack_with_working_graph,
+    pack_from_working_graph,
+};
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::Value;
 
-use crate::knowledge::{KnowledgeStore, Selector};
 use crate::{Tool, ToolContext};
 
 pub struct OrbitKnowledgePackTool;
@@ -38,10 +41,20 @@ impl Tool for OrbitKnowledgePackTool {
         let selectors = Selector::parse_many(&selectors)
             .map_err(|error| OrbitError::InvalidInput(error.to_string()))?;
         let knowledge_dir = resolve_knowledge_dir(ctx, &input)?;
+        let working_graph =
+            load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())?;
 
         let store = match KnowledgeStore::open(&knowledge_dir) {
             Ok(store) => store,
             Err(error) => {
+                if let Some(graph) = working_graph.as_ref() {
+                    let pack = pack_from_working_graph(&knowledge_dir, &selectors, graph);
+                    return serde_json::to_value(pack).map_err(|serialize| {
+                        OrbitError::Execution(format!(
+                            "failed to serialize knowledge pack: {serialize}"
+                        ))
+                    });
+                }
                 return serde_json::to_value(error).map_err(|serialize| {
                     OrbitError::Execution(format!(
                         "failed to serialize knowledge error: {serialize}"
@@ -58,6 +71,11 @@ impl Tool for OrbitKnowledgePackTool {
                     ))
                 });
             }
+        };
+        let pack = if let Some(graph) = working_graph.as_ref() {
+            overlay_pack_with_working_graph(pack, &selectors, graph)
+        } else {
+            pack
         };
 
         serde_json::to_value(pack)
@@ -128,6 +146,7 @@ mod tests {
 
     use serde_json::{Value, json};
 
+    use crate::builtin::orbit::knowledge_write::OrbitKnowledgeWriteTool;
     use crate::{Tool, ToolContext, ToolRegistry};
 
     use super::OrbitKnowledgePackTool;
@@ -136,6 +155,31 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/knowledge")
             .join(".orbit/knowledge")
+    }
+
+    fn make_test_workspace() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ws = dir.path().to_path_buf();
+
+        let src_dir = ws.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::create_dir_all(ws.join(".orbit")).unwrap();
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            "pub fn hello() -> &'static str {\n    \"hello\"\n}\n",
+        )
+        .unwrap();
+
+        (dir, ws)
+    }
+
+    fn task_context(ws: &std::path::Path, task_id: &str) -> ToolContext {
+        ToolContext {
+            workspace_root: Some(ws.to_path_buf()),
+            orbit_root: Some(ws.join(".orbit")),
+            task_id: Some(task_id.to_string()),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -230,6 +274,44 @@ mod tests {
         assert_eq!(
             value["entries"][0]["kind"],
             Value::String("dir".to_string())
+        );
+    }
+
+    #[test]
+    fn pack_uses_task_scoped_working_graph_after_write() {
+        let (_dir, ws) = make_test_workspace();
+        let ctx = task_context(&ws, "T-pack");
+
+        OrbitKnowledgeWriteTool
+            .execute(
+                &ctx,
+                json!({
+                    "selector": "leaf:src/lib.rs#hello:function",
+                    "new_source": "pub fn hello() -> &'static str {\n    \"hi there\"\n}",
+                    "reason": "updated greeting"
+                }),
+            )
+            .expect("write");
+
+        let result = OrbitKnowledgePackTool
+            .execute(
+                &ctx,
+                json!({
+                    "selectors": ["leaf:src/lib.rs#hello:function"]
+                }),
+            )
+            .expect("pack");
+
+        assert_eq!(result["total_nodes"], 1);
+        assert_eq!(
+            result["entries"][0]["source"],
+            Value::String("pub fn hello() -> &'static str {\n    \"hi there\"\n}".to_string())
+        );
+        assert!(
+            result["unresolved_selectors"]
+                .as_array()
+                .expect("unresolved selectors")
+                .is_empty()
         );
     }
 }

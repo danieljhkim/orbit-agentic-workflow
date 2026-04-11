@@ -4,6 +4,7 @@ members = [
   "crates/orbit-cli",
   "crates/orbit-core",
   "crates/orbit-engine",
+  "crates/orbit-knowledge",
   "crates/orbit-lock",
   "crates/orbit-types",
   "crates/orbit-store",
