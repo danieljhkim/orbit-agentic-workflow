@@ -34,7 +34,10 @@ pub use orbit_engine::JobRunResult;
 pub use orbit_store::duel_scoreboard;
 pub use orbit_store::knowledge_stats;
 pub use orbit_store::skill_store as skill_catalog;
-pub use orbit_store::{ActivityInvocationMetrics, TaskInvocationMetrics, ToolInvocationMetrics};
+pub use orbit_store::{
+    ActivityInvocationMetrics, InvocationQuery, InvocationRecord, InvocationToolCallRecord,
+    TaskInvocationMetrics, ToolInvocationMetrics,
+};
 
 pub use command::task_template::TaskTemplate;
 pub use command::workflow::{

@@ -330,6 +330,8 @@ fn usage_from_map(map: &serde_json::Map<String, Value>) -> Option<TokenUsage> {
             "cacheReadInputTokens",
             "cache_read_tokens",
             "cacheReadTokens",
+            "cached_input_tokens",
+            "cachedInputTokens",
         ],
     );
     let cache_create = first_u64(
@@ -391,6 +393,10 @@ impl ToolCallCollector {
     fn walk(&mut self, value: &Value) {
         match value {
             Value::Object(map) => {
+                if self.handle_wrapped_item_event(map) {
+                    return;
+                }
+
                 if let Some(tool_calls) = map.get("tool_calls").and_then(Value::as_array) {
                     for item in tool_calls {
                         self.record_inline_tool_call(item);
@@ -399,10 +405,13 @@ impl ToolCallCollector {
 
                 if let Some(kind) = map.get("type").and_then(Value::as_str) {
                     match kind {
-                        "tool_use" | "tool_call" => {
+                        "tool_use" | "tool_call" | "function_call" | "custom_tool_call" => {
                             self.record_tool_use(map);
                         }
-                        "tool_result" => {
+                        "tool_result"
+                        | "function_call_output"
+                        | "custom_tool_call_output"
+                        | "command_execution" => {
                             self.record_tool_result(map);
                         }
                         _ => {}
@@ -429,24 +438,48 @@ impl ToolCallCollector {
         }
     }
 
+    fn handle_wrapped_item_event(&mut self, map: &serde_json::Map<String, Value>) -> bool {
+        let Some(event_kind) = map.get("type").and_then(Value::as_str) else {
+            return false;
+        };
+        let Some(item) = map.get("item").and_then(Value::as_object) else {
+            return false;
+        };
+        let Some(item_kind) = item.get("type").and_then(Value::as_str) else {
+            return false;
+        };
+
+        match event_kind {
+            "item.started" if is_tool_use_kind(item_kind) => {
+                self.record_tool_use(item);
+                true
+            }
+            "item.completed" if is_tool_use_kind(item_kind) || is_tool_result_kind(item_kind) => {
+                self.record_tool_result(item);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn record_inline_tool_call(&mut self, value: &Value) {
         let Some(map) = value.as_object() else {
             return;
         };
-        let tool_name = tool_name_from_map(map);
+        let tool_name = tool_name_or_kind(map);
         if tool_name.is_empty() {
             return;
         }
         self.calls.push(ToolCallTrace {
             seq: (self.calls.len() + 1) as u32,
             tool_name: tool_name.clone(),
-            result_bytes: inline_result_bytes(map),
+            result_bytes: result_bytes_from_map(map),
             result_payload: inline_result_payload(map, &tool_name),
         });
     }
 
     fn record_tool_use(&mut self, map: &serde_json::Map<String, Value>) {
-        let tool_name = tool_name_from_map(map);
+        let tool_name = tool_name_or_kind(map);
         if tool_name.is_empty() {
             return;
         }
@@ -457,27 +490,15 @@ impl ToolCallCollector {
             result_bytes: 0,
             result_payload: None,
         });
-        if let Some(id) = map
-            .get("id")
-            .and_then(Value::as_str)
-            .or_else(|| map.get("tool_use_id").and_then(Value::as_str))
-        {
+        if let Some(id) = tool_call_id(map) {
             self.by_id.insert(id.to_string(), index);
         }
     }
 
     fn record_tool_result(&mut self, map: &serde_json::Map<String, Value>) {
-        let result_bytes = map
-            .get("result_bytes")
-            .and_then(value_as_u64)
-            .unwrap_or_else(|| {
-                map.get("content")
-                    .or_else(|| map.get("result"))
-                    .map(serialized_size)
-                    .unwrap_or(0)
-            });
+        let result_bytes = result_bytes_from_map(map);
 
-        if let Some(tool_use_id) = map.get("tool_use_id").and_then(Value::as_str)
+        if let Some(tool_use_id) = tool_call_id(map)
             && let Some(index) = self.by_id.get(tool_use_id).copied()
         {
             self.calls[index].result_bytes = result_bytes;
@@ -494,6 +515,27 @@ impl ToolCallCollector {
         {
             last.result_bytes = result_bytes;
             last.result_payload = structured_result_payload(map, &last.tool_name);
+            if let Some(id) = tool_call_id(map) {
+                self.by_id
+                    .entry(id.to_string())
+                    .or_insert(last.seq as usize - 1);
+            }
+            return;
+        }
+
+        let tool_name = tool_name_or_kind(map);
+        if tool_name.is_empty() {
+            return;
+        }
+        let index = self.calls.len();
+        self.calls.push(ToolCallTrace {
+            seq: (index + 1) as u32,
+            tool_name: tool_name.clone(),
+            result_bytes,
+            result_payload: structured_result_payload(map, &tool_name),
+        });
+        if let Some(id) = tool_call_id(map) {
+            self.by_id.insert(id.to_string(), index);
         }
     }
 
@@ -511,22 +553,37 @@ fn tool_name_from_map(map: &serde_json::Map<String, Value>) -> String {
         .to_string()
 }
 
-fn inline_result_bytes(map: &serde_json::Map<String, Value>) -> u64 {
+fn tool_name_or_kind(map: &serde_json::Map<String, Value>) -> String {
+    let name = tool_name_from_map(map);
+    if !name.is_empty() {
+        return name;
+    }
+
+    map.get("type")
+        .and_then(Value::as_str)
+        .filter(|kind| is_tool_use_kind(kind))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn tool_call_id(map: &serde_json::Map<String, Value>) -> Option<&str> {
+    map.get("id")
+        .and_then(Value::as_str)
+        .or_else(|| map.get("tool_use_id").and_then(Value::as_str))
+        .or_else(|| map.get("call_id").and_then(Value::as_str))
+}
+
+fn result_bytes_from_map(map: &serde_json::Map<String, Value>) -> u64 {
     map.get("result_bytes")
         .and_then(value_as_u64)
-        .unwrap_or_else(|| {
-            map.get("result")
-                .or_else(|| map.get("content"))
-                .map(serialized_size)
-                .unwrap_or(0)
-        })
+        .unwrap_or_else(|| result_value_from_map(map).map(serialized_size).unwrap_or(0))
 }
 
 fn inline_result_payload(map: &serde_json::Map<String, Value>, tool_name: &str) -> Option<Value> {
     if !should_capture_result_payload(tool_name) {
         return None;
     }
-    map.get("result").or_else(|| map.get("content")).cloned()
+    result_value_from_map(map).map(normalize_captured_payload)
 }
 
 fn structured_result_payload(
@@ -536,11 +593,44 @@ fn structured_result_payload(
     if !should_capture_result_payload(tool_name) {
         return None;
     }
-    map.get("content").or_else(|| map.get("result")).cloned()
+    result_value_from_map(map).map(normalize_captured_payload)
+}
+
+fn result_value_from_map<'a>(map: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
+    map.get("result")
+        .or_else(|| map.get("content"))
+        .or_else(|| map.get("output"))
+        .or_else(|| map.get("aggregated_output"))
+}
+
+fn normalize_captured_payload(value: &Value) -> Value {
+    if let Value::String(raw) = value {
+        let trimmed = raw.trim();
+        if (trimmed.starts_with('{') || trimmed.starts_with('['))
+            && let Ok(parsed) = serde_json::from_str::<Value>(trimmed)
+        {
+            return parsed;
+        }
+    }
+    value.clone()
 }
 
 fn should_capture_result_payload(tool_name: &str) -> bool {
     matches!(tool_name, "fs.read" | "orbit.graph.pack")
+}
+
+fn is_tool_use_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "tool_use" | "tool_call" | "function_call" | "custom_tool_call" | "command_execution"
+    )
+}
+
+fn is_tool_result_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "tool_result" | "function_call_output" | "custom_tool_call_output"
+    )
 }
 
 fn serialized_size(value: &Value) -> u64 {
@@ -646,6 +736,40 @@ mod tests {
             trace.tool_calls[0].result_payload,
             Some(json!({ "ok": true, "bytes": 12 }))
         );
+    }
+
+    #[test]
+    fn parses_claude_message_usage_nested_inside_assistant_payload() {
+        let stdout = json!({
+            "type": "assistant",
+            "message": {
+                "usage": {
+                    "input_tokens": 11,
+                    "cache_creation_input_tokens": 7,
+                    "cache_read_input_tokens": 5,
+                    "output_tokens": 3
+                },
+                "content": [
+                    { "type": "text", "text": "{\"schemaVersion\":1,\"status\":\"success\",\"result\":{}}" }
+                ]
+            }
+        })
+        .to_string();
+        let exec_result = ExecutionResult {
+            success: true,
+            stdout,
+            stderr: String::new(),
+            exit_code: Some(0),
+            duration_ms: 16,
+            output: None,
+        };
+
+        let (_, _, trace) = parse_and_validate_response(&exec_result).expect("parse");
+
+        assert_eq!(trace.usage.input, 11);
+        assert_eq!(trace.usage.cache_create, 7);
+        assert_eq!(trace.usage.cache_read, 5);
+        assert_eq!(trace.usage.output, 3);
     }
 
     #[test]
@@ -789,5 +913,108 @@ mod tests {
                 "unresolved_selectors": ["file:src/missing.rs"]
             }))
         );
+    }
+
+    #[test]
+    fn normalizes_stringified_captured_payloads() {
+        let stdout = json!({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    { "type": "tool_use", "id": "toolu_pack", "name": "orbit.graph.pack" },
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_pack",
+                        "content": "{\"entries\":[{\"selector\":\"file:src/lib.rs\"}],\"unresolved_selectors\":[]}"
+                    },
+                    { "type": "text", "text": "{\"schemaVersion\":1,\"status\":\"success\",\"result\":{}}" }
+                ]
+            }
+        })
+        .to_string();
+        let exec_result = ExecutionResult {
+            success: true,
+            stdout,
+            stderr: String::new(),
+            exit_code: Some(0),
+            duration_ms: 12,
+            output: None,
+        };
+
+        let (_, _, trace) = parse_and_validate_response(&exec_result).expect("parse");
+
+        assert_eq!(
+            trace.tool_calls[0].result_payload,
+            Some(json!({
+                "entries": [{"selector": "file:src/lib.rs"}],
+                "unresolved_selectors": []
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_codex_jsonl_turn_usage_and_command_execution_items() {
+        let stdout = [
+            json!({
+                "type": "item.started",
+                "item": {
+                    "id": "item_0",
+                    "type": "command_execution",
+                    "command": "/bin/zsh -lc pwd",
+                    "aggregated_output": "",
+                    "exit_code": null,
+                    "status": "in_progress"
+                }
+            })
+            .to_string(),
+            json!({
+                "type": "item.completed",
+                "item": {
+                    "id": "item_0",
+                    "type": "command_execution",
+                    "command": "/bin/zsh -lc pwd",
+                    "aggregated_output": "/Users/daniel/workspace/repos/orbit\n",
+                    "exit_code": 0,
+                    "status": "completed"
+                }
+            })
+            .to_string(),
+            json!({
+                "type": "item.completed",
+                "item": {
+                    "id": "item_1",
+                    "type": "agent_message",
+                    "text": "{\"schemaVersion\":1,\"status\":\"success\",\"result\":{}}"
+                }
+            })
+            .to_string(),
+            json!({
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 22,
+                    "cached_input_tokens": 17,
+                    "output_tokens": 9
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+        let exec_result = ExecutionResult {
+            success: true,
+            stdout,
+            stderr: String::new(),
+            exit_code: Some(0),
+            duration_ms: 30,
+            output: None,
+        };
+
+        let (_, _, trace) = parse_and_validate_response(&exec_result).expect("parse");
+
+        assert_eq!(trace.usage.input, 22);
+        assert_eq!(trace.usage.cache_read, 17);
+        assert_eq!(trace.usage.output, 9);
+        assert_eq!(trace.tool_calls.len(), 1);
+        assert_eq!(trace.tool_calls[0].tool_name, "command_execution");
+        assert!(trace.tool_calls[0].result_bytes > 0);
     }
 }

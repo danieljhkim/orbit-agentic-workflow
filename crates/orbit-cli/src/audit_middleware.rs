@@ -340,6 +340,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 Some(MetricsSubcommand::Activity(_)) => ("activity", None),
                 Some(MetricsSubcommand::Task(args)) => ("task", Some(args.id.as_str())),
                 Some(MetricsSubcommand::Tools(_)) => ("tools", None),
+                Some(MetricsSubcommand::Invocations(_)) => ("invocations", None),
             };
             CommandMeta {
                 command: "metrics".to_string(),

@@ -1,11 +1,25 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use orbit_types::{InvocationTrace, OrbitError};
 use rusqlite::params;
 
 use crate::{Store, now_string};
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct InvocationQuery {
+    pub since: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
+    pub job_run_id: Option<String>,
+    pub activity_id: Option<String>,
+    pub task_id: Option<String>,
+    pub agent: Option<String>,
+    pub model: Option<String>,
+    pub tool_name: Option<String>,
+    pub limit: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct InvocationInsertParams {
@@ -15,6 +29,33 @@ pub struct InvocationInsertParams {
     pub model: Option<String>,
     pub task_ids: Vec<String>,
     pub trace: InvocationTrace,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InvocationToolCallRecord {
+    pub invocation_id: i64,
+    pub seq: u64,
+    pub tool_name: String,
+    pub result_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InvocationRecord {
+    pub id: i64,
+    pub ts: DateTime<Utc>,
+    pub job_run_id: String,
+    pub activity_id: String,
+    pub agent: String,
+    pub model: Option<String>,
+    pub duration_ms: u64,
+    pub input_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_create_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub tool_call_count: u64,
+    pub task_ids: Vec<String>,
+    pub tool_calls: Vec<InvocationToolCallRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -135,6 +176,141 @@ impl Store {
         tx.commit().map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    pub fn list_invocation_records(
+        &self,
+        filter: &InvocationQuery,
+    ) -> Result<Vec<InvocationRecord>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let mut conditions = Vec::new();
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(ref since) = filter.since {
+            conditions.push(format!("i.ts >= ?{}", param_values.len() + 1));
+            param_values.push(Box::new(since.to_rfc3339()));
+        }
+        if let Some(ref until) = filter.until {
+            conditions.push(format!("i.ts <= ?{}", param_values.len() + 1));
+            param_values.push(Box::new(until.to_rfc3339()));
+        }
+        if let Some(ref job_run_id) = filter.job_run_id {
+            conditions.push(format!("i.job_run_id = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(job_run_id.clone()));
+        }
+        if let Some(ref activity_id) = filter.activity_id {
+            conditions.push(format!("i.activity_id = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(activity_id.clone()));
+        }
+        if let Some(ref task_id) = filter.task_id {
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM invocation_tasks it WHERE it.invocation_id = i.id AND it.task_id = ?{})",
+                param_values.len() + 1
+            ));
+            param_values.push(Box::new(task_id.clone()));
+        }
+        if let Some(ref agent) = filter.agent {
+            conditions.push(format!("i.agent = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(agent.clone()));
+        }
+        if let Some(ref model) = filter.model {
+            conditions.push(format!("i.model = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(model.clone()));
+        }
+        if let Some(ref tool_name) = filter.tool_name {
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM tool_calls tc WHERE tc.invocation_id = i.id AND tc.tool_name = ?{})",
+                param_values.len() + 1
+            ));
+            param_values.push(Box::new(tool_name.clone()));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let limit = if filter.limit == 0 { 100 } else { filter.limit };
+        let sql = format!(
+            "SELECT i.id, i.ts, i.job_run_id, i.activity_id, i.agent, i.model, i.duration_ms, \
+             i.input_tokens, i.cache_read_tokens, i.cache_create_tokens, i.output_tokens, \
+             i.tool_call_count \
+             FROM invocations i {where_clause} ORDER BY i.ts DESC, i.id DESC LIMIT ?{}",
+            param_values.len() + 1
+        );
+        param_values.push(Box::new(limit as i64));
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|value| value.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                let ts_raw: String = row.get(1)?;
+                Ok(InvocationRecord {
+                    id: row.get(0)?,
+                    ts: DateTime::parse_from_rfc3339(&ts_raw)
+                        .map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                ts_raw.len(),
+                                rusqlite::types::Type::Text,
+                                Box::new(e),
+                            )
+                        })?
+                        .with_timezone(&Utc),
+                    job_run_id: row.get(2)?,
+                    activity_id: row.get(3)?,
+                    agent: row.get(4)?,
+                    model: row.get(5)?,
+                    duration_ms: row.get::<_, i64>(6)? as u64,
+                    input_tokens: row.get::<_, i64>(7)? as u64,
+                    cache_read_tokens: row.get::<_, i64>(8)? as u64,
+                    cache_create_tokens: row.get::<_, i64>(9)? as u64,
+                    output_tokens: row.get::<_, i64>(10)? as u64,
+                    total_tokens: row.get::<_, i64>(7)? as u64 + row.get::<_, i64>(10)? as u64,
+                    tool_call_count: row.get::<_, i64>(11)? as u64,
+                    task_ids: Vec::new(),
+                    tool_calls: Vec::new(),
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let mut records = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        drop(stmt);
+        drop(conn);
+        if records.is_empty() {
+            return Ok(records);
+        }
+
+        let invocation_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+        let task_ids = self.load_invocation_task_ids(&invocation_ids)?;
+        let tool_calls = self.load_invocation_tool_calls(&invocation_ids)?;
+
+        let mut index_by_id = HashMap::new();
+        for (index, record) in records.iter().enumerate() {
+            index_by_id.insert(record.id, index);
+        }
+
+        for (invocation_id, values) in task_ids {
+            if let Some(index) = index_by_id.get(&invocation_id).copied() {
+                records[index].task_ids = values;
+            }
+        }
+        for (invocation_id, values) in tool_calls {
+            if let Some(index) = index_by_id.get(&invocation_id).copied() {
+                records[index].tool_calls = values;
+            }
+        }
+
+        Ok(records)
+    }
+
     pub fn list_activity_invocation_metrics(
         &self,
     ) -> Result<Vec<ActivityInvocationMetrics>, OrbitError> {
@@ -248,6 +424,99 @@ impl Store {
 
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    fn load_invocation_task_ids(
+        &self,
+        invocation_ids: &[i64],
+    ) -> Result<HashMap<i64, Vec<String>>, OrbitError> {
+        if invocation_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let placeholders = invocation_ids
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT invocation_id, task_id FROM invocation_tasks WHERE invocation_id IN ({placeholders}) ORDER BY invocation_id ASC, task_id ASC"
+        );
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = invocation_ids
+            .iter()
+            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|value| value.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let mut grouped: HashMap<i64, Vec<String>> = HashMap::new();
+        for row in rows {
+            let (invocation_id, task_id) = row.map_err(|e| OrbitError::Store(e.to_string()))?;
+            grouped.entry(invocation_id).or_default().push(task_id);
+        }
+        Ok(grouped)
+    }
+
+    fn load_invocation_tool_calls(
+        &self,
+        invocation_ids: &[i64],
+    ) -> Result<HashMap<i64, Vec<InvocationToolCallRecord>>, OrbitError> {
+        if invocation_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let placeholders = invocation_ids
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT invocation_id, seq, tool_name, result_bytes FROM tool_calls WHERE invocation_id IN ({placeholders}) ORDER BY invocation_id ASC, seq ASC"
+        );
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = invocation_ids
+            .iter()
+            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|value| value.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok(InvocationToolCallRecord {
+                    invocation_id: row.get(0)?,
+                    seq: row.get::<_, i64>(1)? as u64,
+                    tool_name: row.get(2)?,
+                    result_bytes: row.get::<_, i64>(3)? as u64,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let mut grouped: HashMap<i64, Vec<InvocationToolCallRecord>> = HashMap::new();
+        for row in rows {
+            let call = row.map_err(|e| OrbitError::Store(e.to_string()))?;
+            grouped.entry(call.invocation_id).or_default().push(call);
+        }
+        Ok(grouped)
     }
 
     fn load_activity_samples(&self) -> Result<Vec<ActivitySample>, OrbitError> {
@@ -384,4 +653,180 @@ fn percentile(sorted_values: &[u64], percentile: u64) -> u64 {
     let rank = (percentile as usize * n).div_ceil(100);
     let index = rank.saturating_sub(1).min(n - 1);
     sorted_values[index]
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, Utc};
+    use orbit_types::{InvocationTrace, TokenUsage, ToolCallTrace};
+    use rusqlite::params;
+
+    use super::{InvocationInsertParams, InvocationQuery, Store};
+
+    fn ts(raw: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(raw)
+            .expect("timestamp")
+            .with_timezone(&Utc)
+    }
+
+    fn seed_raw_invocation(
+        store: &Store,
+        id_ts: &str,
+        job_run_id: &str,
+        activity_id: &str,
+        agent: &str,
+        model: Option<&str>,
+        task_ids: &[&str],
+        tool_calls: &[(&str, u64, u64)],
+        usage: TokenUsage,
+        duration_ms: u64,
+    ) {
+        let conn = store.conn.lock().expect("store lock");
+        conn.execute(
+            r#"INSERT INTO invocations(
+                ts, job_run_id, activity_id, agent, model, duration_ms,
+                input_tokens, cache_read_tokens, cache_create_tokens,
+                output_tokens, tool_call_count
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+            params![
+                id_ts,
+                job_run_id,
+                activity_id,
+                agent,
+                model,
+                duration_ms as i64,
+                usage.input as i64,
+                usage.cache_read as i64,
+                usage.cache_create as i64,
+                usage.output as i64,
+                tool_calls.len() as i64,
+            ],
+        )
+        .expect("insert invocation");
+
+        let invocation_id = conn.last_insert_rowid();
+        for task_id in task_ids {
+            conn.execute(
+                "INSERT INTO invocation_tasks(invocation_id, task_id) VALUES (?1, ?2)",
+                params![invocation_id, task_id],
+            )
+            .expect("insert task");
+        }
+        for (seq, (tool_name, result_bytes, _)) in tool_calls.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO tool_calls(invocation_id, seq, tool_name, result_bytes) VALUES (?1, ?2, ?3, ?4)",
+                params![invocation_id, seq as i64 + 1, tool_name, *result_bytes as i64],
+            )
+            .expect("insert tool call");
+        }
+    }
+
+    #[test]
+    fn list_invocation_records_loads_tasks_and_tools_with_filters() {
+        let store = Store::open_in_memory().expect("store");
+        seed_raw_invocation(
+            &store,
+            "2026-04-11T12:00:00Z",
+            "run-1",
+            "activity-a",
+            "claude",
+            Some("claude-3-7-sonnet"),
+            &["task-a", "task-b"],
+            &[("fs.read", 12, 0)],
+            TokenUsage {
+                input: 100,
+                cache_read: 20,
+                cache_create: 0,
+                output: 10,
+            },
+            55,
+        );
+        seed_raw_invocation(
+            &store,
+            "2026-04-11T12:05:00Z",
+            "run-2",
+            "activity-b",
+            "codex",
+            Some("gpt-5.4"),
+            &["task-c"],
+            &[("exec", 99, 0)],
+            TokenUsage {
+                input: 200,
+                cache_read: 0,
+                cache_create: 5,
+                output: 20,
+            },
+            77,
+        );
+
+        let rows = store
+            .list_invocation_records(&InvocationQuery {
+                since: Some(ts("2026-04-11T12:01:00Z")),
+                until: Some(ts("2026-04-11T12:10:00Z")),
+                tool_name: Some("exec".to_string()),
+                limit: 20,
+                ..Default::default()
+            })
+            .expect("query");
+
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.job_run_id, "run-2");
+        assert_eq!(row.activity_id, "activity-b");
+        assert_eq!(row.agent, "codex");
+        assert_eq!(row.model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(row.total_tokens, 220);
+        assert_eq!(row.tool_call_count, 1);
+        assert_eq!(row.task_ids, vec!["task-c".to_string()]);
+        assert_eq!(row.tool_calls.len(), 1);
+        assert_eq!(row.tool_calls[0].tool_name, "exec");
+        assert_eq!(row.tool_calls[0].result_bytes, 99);
+    }
+
+    #[test]
+    fn insert_invocation_trace_record_round_trips_into_raw_query() {
+        let store = Store::open_in_memory().expect("store");
+        store
+            .insert_invocation_trace_record(&InvocationInsertParams {
+                job_run_id: "run-3".to_string(),
+                activity_id: "activity-c".to_string(),
+                agent: "claude".to_string(),
+                model: Some("claude-3-7-sonnet".to_string()),
+                task_ids: vec!["task-z".to_string()],
+                trace: InvocationTrace {
+                    usage: TokenUsage {
+                        input: 10,
+                        cache_read: 2,
+                        cache_create: 1,
+                        output: 3,
+                    },
+                    tool_calls: vec![ToolCallTrace {
+                        seq: 1,
+                        tool_name: "fs.read".to_string(),
+                        result_bytes: 42,
+                        result_payload: None,
+                    }],
+                    duration_ms: 88,
+                },
+            })
+            .expect("insert trace");
+
+        let rows = store
+            .list_invocation_records(&InvocationQuery {
+                job_run_id: Some("run-3".to_string()),
+                limit: 20,
+                ..Default::default()
+            })
+            .expect("query");
+
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.job_run_id, "run-3");
+        assert_eq!(row.activity_id, "activity-c");
+        assert_eq!(row.total_tokens, 13);
+        assert_eq!(row.tool_call_count, 1);
+        assert_eq!(row.task_ids, vec!["task-z".to_string()]);
+        assert_eq!(row.tool_calls[0].tool_name, "fs.read");
+        assert_eq!(row.tool_calls[0].result_bytes, 42);
+    }
 }

@@ -83,7 +83,8 @@ pub use backend::{
     task_store_resolved, tool_store_sqlite,
 };
 pub use invocation_store_impl::{
-    ActivityInvocationMetrics, InvocationInsertParams, TaskInvocationMetrics, ToolInvocationMetrics,
+    ActivityInvocationMetrics, InvocationInsertParams, InvocationQuery, InvocationRecord,
+    InvocationToolCallRecord, TaskInvocationMetrics, ToolInvocationMetrics,
 };
 pub use json_schema::{validate_instance_against_schema, validate_schema_document};
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};

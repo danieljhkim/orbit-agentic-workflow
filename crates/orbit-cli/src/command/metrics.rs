@@ -1,14 +1,15 @@
+use chrono::{DateTime, Utc};
 use clap::{Args, Subcommand};
 use orbit_core::knowledge_stats::{KnowledgeStatsSummary, aggregate as aggregate_knowledge_stats};
 use orbit_core::{
-    ActivityInvocationMetrics, OrbitError, OrbitRuntime, TaskInvocationMetrics,
-    ToolInvocationMetrics,
+    ActivityInvocationMetrics, InvocationQuery, InvocationRecord, OrbitError, OrbitRuntime,
+    TaskInvocationMetrics, ToolInvocationMetrics,
 };
 use serde_json::json;
 
 use crate::command::Execute;
 
-const LIMITATIONS_HELP: &str = "Known limitations:\n  - Subagent attribution folds into the parent invocation totals.\n  - cache_read_tokens are reported separately from input_tokens.\n  - Multi-task invocations are fully attributed to every tagged task.\n  - Non-Claude providers currently emit zero traces.";
+const LIMITATIONS_HELP: &str = "Known limitations:\n  - Subagent attribution folds into the parent invocation totals.\n  - cache_read_tokens are reported separately from input_tokens.\n  - Multi-task invocations are fully attributed to every tagged task.\n  - Trace completeness depends on provider CLI output shape; unsupported providers may still persist zero traces.";
 
 #[derive(Args)]
 #[command(
@@ -51,6 +52,8 @@ pub enum MetricsSubcommand {
     Task(MetricsTaskArgs),
     /// Show tool call frequency and result sizes grouped by activity
     Tools(MetricsToolsArgs),
+    /// Show raw invocation records with filters
+    Invocations(MetricsInvocationsArgs),
 }
 
 impl Execute for MetricsSubcommand {
@@ -61,6 +64,7 @@ impl Execute for MetricsSubcommand {
             MetricsSubcommand::Activity(args) => args.execute(runtime),
             MetricsSubcommand::Task(args) => args.execute(runtime),
             MetricsSubcommand::Tools(args) => args.execute(runtime),
+            MetricsSubcommand::Invocations(args) => args.execute(runtime),
         }
     }
 }
@@ -181,6 +185,64 @@ impl Execute for MetricsToolsArgs {
             );
         }
         print_tool_rows(&rows);
+        Ok(())
+    }
+}
+
+#[derive(Args, Default)]
+pub struct MetricsInvocationsArgs {
+    /// Include invocations on or after this RFC3339 timestamp
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Include invocations on or before this RFC3339 timestamp
+    #[arg(long)]
+    pub until: Option<String>,
+    /// Filter by job run ID
+    #[arg(long)]
+    pub job_run_id: Option<String>,
+    /// Filter by activity ID
+    #[arg(long)]
+    pub activity_id: Option<String>,
+    /// Filter by task ID
+    #[arg(long)]
+    pub task_id: Option<String>,
+    /// Filter by agent family
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Filter by model
+    #[arg(long)]
+    pub model: Option<String>,
+    /// Filter by tool name
+    #[arg(long)]
+    pub tool_name: Option<String>,
+    /// Limit the number of invocations returned
+    #[arg(long, default_value_t = 20)]
+    pub limit: usize,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for MetricsInvocationsArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let query = InvocationQuery {
+            since: parse_rfc3339_opt(self.since, "since")?,
+            until: parse_rfc3339_opt(self.until, "until")?,
+            job_run_id: self.job_run_id,
+            activity_id: self.activity_id,
+            task_id: self.task_id,
+            agent: self.agent,
+            model: self.model,
+            tool_name: self.tool_name,
+            limit: self.limit,
+        };
+        let rows = runtime.invocation_records(query)?;
+        if self.json {
+            return crate::output::json::print_pretty(
+                &serde_json::to_value(&rows).map_err(|e| OrbitError::Store(e.to_string()))?,
+            );
+        }
+        print_invocation_rows(&rows);
         Ok(())
     }
 }
@@ -339,8 +401,65 @@ fn print_tool_rows(rows: &[ToolInvocationMetrics]) {
     println!("{table}");
 }
 
+fn print_invocation_rows(rows: &[InvocationRecord]) {
+    if rows.is_empty() {
+        println!("No invocation records found.");
+        return;
+    }
+
+    println!("Invocation Records:");
+    use comfy_table::Cell;
+    let mut table = crate::output::table::build_table(&[
+        "TS",
+        "JOB RUN",
+        "ACTIVITY",
+        "AGENT",
+        "MODEL",
+        "TOTAL",
+        "INPUT",
+        "CACHE READ",
+        "CACHE CREATE",
+        "OUTPUT",
+        "TOOLS",
+        "TASKS",
+    ]);
+    for row in rows {
+        table.add_row(vec![
+            Cell::new(format_table_timestamp(&row.ts)),
+            Cell::new(&row.job_run_id),
+            Cell::new(&row.activity_id),
+            Cell::new(&row.agent),
+            Cell::new(row.model.as_deref().unwrap_or("-")),
+            Cell::new(row.total_tokens),
+            Cell::new(row.input_tokens),
+            Cell::new(row.cache_read_tokens),
+            Cell::new(row.cache_create_tokens),
+            Cell::new(row.output_tokens),
+            Cell::new(row.tool_call_count),
+            Cell::new(row.task_ids.len()),
+        ]);
+    }
+    println!("{table}");
+}
+
 fn format_decimal(value: f64) -> String {
     format!("{value:.1}")
+}
+
+fn format_table_timestamp(value: &DateTime<Utc>) -> String {
+    value.to_rfc3339()
+}
+
+fn parse_rfc3339_opt(
+    value: Option<String>,
+    field_name: &str,
+) -> Result<Option<DateTime<Utc>>, OrbitError> {
+    match value {
+        Some(raw) => DateTime::parse_from_rfc3339(&raw)
+            .map(|dt| Some(dt.with_timezone(&Utc)))
+            .map_err(|error| OrbitError::InvalidInput(format!("invalid {field_name}: {error}"))),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

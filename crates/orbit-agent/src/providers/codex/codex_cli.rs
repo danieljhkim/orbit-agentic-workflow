@@ -31,6 +31,7 @@ impl CodexCliTransport {
             args.push(approval_policy.clone());
         }
         args.push("exec".to_string());
+        args.push("--json".to_string());
         if let Some(model) = &self.model {
             args.push("--model".to_string());
             args.push(model.clone());

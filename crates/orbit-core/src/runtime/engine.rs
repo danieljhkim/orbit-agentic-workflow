@@ -4,9 +4,9 @@ use orbit_engine::{
     TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
 };
 use orbit_store::{
-    ActivityInvocationMetrics, InvocationInsertParams, JobRunStepParams, Store,
-    TaskInvocationMetrics, TaskUpdateParams as StoreTaskUpdateParams, ToolInvocationMetrics,
-    token_scoreboard,
+    ActivityInvocationMetrics, InvocationInsertParams, InvocationQuery, InvocationRecord,
+    JobRunStepParams, Store, TaskInvocationMetrics, TaskUpdateParams as StoreTaskUpdateParams,
+    ToolInvocationMetrics, token_scoreboard,
 };
 use orbit_tools::ToolContext;
 use orbit_types::{
@@ -259,6 +259,13 @@ impl OrbitRuntime {
 
     pub fn tool_invocation_metrics(&self) -> Result<Vec<ToolInvocationMetrics>, OrbitError> {
         open_invocation_store(self)?.list_tool_invocation_metrics()
+    }
+
+    pub fn invocation_records(
+        &self,
+        query: InvocationQuery,
+    ) -> Result<Vec<InvocationRecord>, OrbitError> {
+        open_invocation_store(self)?.list_invocation_records(&query)
     }
 
     /// Read the append-only duel scoreboard log. The CLI's
