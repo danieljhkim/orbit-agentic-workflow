@@ -237,46 +237,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Job(job_cmd) => {
-            use crate::command::job::JobSubcommand;
-            let (sub, target_id) = match &job_cmd.command {
-                JobSubcommand::Add(_) => ("add", None),
-                JobSubcommand::List(_) => ("list", None),
-                JobSubcommand::Show(args) => ("show", Some(args.job_id.as_str())),
-                JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
-                JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
-                JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
-            };
-            CommandMeta {
-                command: "job".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("job".to_string()),
-                target_id: target_id.map(String::from),
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
-        Commands::JobRun(job_run_cmd) => {
-            use crate::command::job_run::JobRunSubcommand;
-            let (sub, target_id) = match &job_run_cmd.command {
-                JobRunSubcommand::List(_) => ("list", None),
-                JobRunSubcommand::Show(args) => ("show", Some(args.run_id.as_str())),
-                JobRunSubcommand::Cancel(args) => ("cancel", Some(args.run_id.as_str())),
-                JobRunSubcommand::Archive(args) => ("archive", Some(args.run_id.as_str())),
-                JobRunSubcommand::Delete(args) => ("delete", Some(args.run_id.as_str())),
-                JobRunSubcommand::Retry(args) => ("retry", Some(args.run_id.as_str())),
-            };
-            CommandMeta {
-                command: "job-run".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("job_run".to_string()),
-                target_id: target_id.map(String::from),
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
         Commands::Activity(cmd) => {
             use crate::command::activity::ActivitySubcommand;
             let (sub, target_id) = match &cmd.command {
@@ -292,6 +252,26 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
                 target_type: Some("activity".to_string()),
+                target_id: target_id.map(String::from),
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
+        Commands::Job(job_cmd) => {
+            use crate::command::job::JobSubcommand;
+            let (sub, target_id) = match &job_cmd.command {
+                JobSubcommand::Add(_) => ("add", None),
+                JobSubcommand::List(_) => ("list", None),
+                JobSubcommand::Show(args) => ("show", Some(args.job_id.as_str())),
+                JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
+                JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
+                JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
+            };
+            CommandMeta {
+                command: "job".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("job".to_string()),
                 target_id: target_id.map(String::from),
                 role: "admin".to_string(),
                 arguments_json: None,
@@ -316,11 +296,16 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Run(cmd) => {
-            let target_id = cmd.workflow.as_deref();
+        Commands::Ship(cmd) => {
+            use crate::command::ship::ShipSubcommand;
+            let (sub, target_id) = match &cmd.command {
+                ShipSubcommand::Run(_) => ("run", Some("ship")),
+                ShipSubcommand::List(_) => ("list", Some("ship")),
+                ShipSubcommand::Show(args) => ("show", args.run_id.as_deref()),
+            };
             CommandMeta {
-                command: "run".to_string(),
-                subcommand: target_id.map(String::from),
+                command: "ship".to_string(),
+                subcommand: Some(sub.to_string()),
                 tool_name: None,
                 target_type: Some("workflow".to_string()),
                 target_id: target_id.map(String::from),
@@ -330,30 +315,18 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
         }
         Commands::Duel(cmd) => {
             use crate::command::duel::DuelSubcommand;
-            let sub = match &cmd.command {
-                DuelSubcommand::Scoreboard(_) => "scoreboard",
+            let (sub, target_id) = match &cmd.command {
+                DuelSubcommand::Run(args) => ("run", args.task_id.as_deref()),
+                DuelSubcommand::Score(_) => ("score", None),
+                DuelSubcommand::List(_) => ("list", None),
+                DuelSubcommand::Show(args) => ("show", args.run_id.as_deref()),
             };
             CommandMeta {
                 command: "duel".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
                 target_type: Some("duel".to_string()),
-                target_id: None,
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
-        Commands::Knowledge(cmd) => {
-            use crate::command::knowledge::KnowledgeSubcommand;
-            let sub = match &cmd.command {
-                KnowledgeSubcommand::Stats(_) => "stats",
-            };
-            CommandMeta {
-                command: "knowledge".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: None,
-                target_id: None,
+                target_id: target_id.map(String::from),
                 role: "admin".to_string(),
                 arguments_json: None,
             }
@@ -361,9 +334,12 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
         Commands::Metrics(cmd) => {
             use crate::command::metrics::MetricsSubcommand;
             let (sub, target_id) = match &cmd.command {
-                MetricsSubcommand::Activity(_) => ("activity", None),
-                MetricsSubcommand::Task(args) => ("task", Some(args.id.as_str())),
-                MetricsSubcommand::Tools(_) => ("tools", None),
+                None => ("overview", None),
+                Some(MetricsSubcommand::Overview(_)) => ("overview", None),
+                Some(MetricsSubcommand::Knowledge(_)) => ("knowledge", None),
+                Some(MetricsSubcommand::Activity(_)) => ("activity", None),
+                Some(MetricsSubcommand::Task(args)) => ("task", Some(args.id.as_str())),
+                Some(MetricsSubcommand::Tools(_)) => ("tools", None),
             };
             CommandMeta {
                 command: "metrics".to_string(),
@@ -395,5 +371,63 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_command_meta;
+    use crate::command::Commands;
+    use crate::command::duel::{DuelCommand, DuelListArgs, DuelSubcommand};
+    use crate::command::metrics::{MetricsCommand, MetricsKnowledgeArgs, MetricsSubcommand};
+    use crate::command::ship::{ShipCommand, ShipRunArgs, ShipSubcommand};
+
+    #[test]
+    fn extract_command_meta_uses_ship_surface() {
+        let meta = extract_command_meta(&Commands::Ship(ShipCommand {
+            command: ShipSubcommand::Run(ShipRunArgs {
+                local: false,
+                tasks: None,
+                parallelism: None,
+                base: None,
+                loop_count: 1,
+                debug: false,
+                json: false,
+            }),
+        }));
+
+        assert_eq!(meta.command, "ship");
+        assert_eq!(meta.subcommand.as_deref(), Some("run"));
+        assert_eq!(meta.target_id.as_deref(), Some("ship"));
+    }
+
+    #[test]
+    fn extract_command_meta_tags_metrics_knowledge_under_metrics() {
+        let meta = extract_command_meta(&Commands::Metrics(MetricsCommand {
+            limit: None,
+            json: false,
+            command: Some(MetricsSubcommand::Knowledge(MetricsKnowledgeArgs {
+                limit: Some(5),
+                json: true,
+            })),
+        }));
+
+        assert_eq!(meta.command, "metrics");
+        assert_eq!(meta.subcommand.as_deref(), Some("knowledge"));
+    }
+
+    #[test]
+    fn extract_command_meta_tags_duel_list() {
+        let meta = extract_command_meta(&Commands::Duel(DuelCommand {
+            command: DuelSubcommand::List(DuelListArgs {
+                status: None,
+                since: None,
+                limit: Some(10),
+                json: false,
+            }),
+        }));
+
+        assert_eq!(meta.command, "duel");
+        assert_eq!(meta.subcommand.as_deref(), Some("list"));
     }
 }

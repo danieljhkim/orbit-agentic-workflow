@@ -4,10 +4,9 @@ pub mod config;
 pub mod duel;
 pub mod init;
 pub mod job;
-pub mod job_run;
-pub mod knowledge;
+pub(crate) mod job_run_support;
 pub mod metrics;
-pub mod run;
+pub mod ship;
 pub mod skill;
 pub mod task;
 pub mod tool;
@@ -32,25 +31,23 @@ pub trait Execute {
 
 {usage-heading} {usage}
 
+Setup:
+  init       Initialize the global Orbit root (~/.orbit)
+  workspace  Initialize and manage workspaces
+  config     Show or update Orbit configuration
+
 Run workflows:
-  run        Run a first-class workflow
-  job        Define and run automation jobs
-  job-run    Inspect and manage job run history
-  duel       Inspect duel workflow results
-  knowledge  Inspect knowledge-pack usage and savings metrics
+  ship       Ship tasks through the pipeline
+  duel       Cross-agent scoring
 
 Manage work:
   task       Create, update, and manage tasks
-  activity   Manage activity definitions
-  skill      Manage agent skill definitions
   tool       Manage and run Orbit tools
+  skill      Manage agent skill definitions
 
-Configure and inspect:
-  config     Show or update Orbit configuration
-  init       Initialize the global Orbit root (~/.orbit)
-  workspace  Initialize and manage workspaces
+Inspect:
   audit      Query the audit event log
-  metrics    Inspect invocation token and tool-call metrics
+  metrics    Inspect token, tool-call, and knowledge-pack metrics
 
 Options:
 {options}"
@@ -66,23 +63,23 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    // ── setup ──
+    Init(init::InitCommand),
+    Workspace(workspace::WorkspaceCommand),
+    Config(config::ConfigCommand),
+
     // ── run workflows ──
-    Run(run::RunCommand),
-    Job(job::JobCommand),
-    JobRun(job_run::JobRunCommand),
+    Ship(ship::ShipCommand),
     Duel(duel::DuelCommand),
-    Knowledge(knowledge::KnowledgeCommand),
 
     // ── manage work ──
     Task(task::TaskCommand),
     Activity(activity::ActivityCommand),
-    Skill(skill::SkillCommand),
+    Job(job::JobCommand),
     Tool(tool::ToolCommand),
+    Skill(skill::SkillCommand),
 
-    // ── configure and inspect ──
-    Config(config::ConfigCommand),
-    Init(init::InitCommand),
-    Workspace(workspace::WorkspaceCommand),
+    // ── inspect ──
     Audit(audit::AuditCommand),
     Metrics(metrics::MetricsCommand),
 }
@@ -90,19 +87,17 @@ pub enum Commands {
 impl Execute for Commands {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            Commands::Config(cmd) => cmd.execute(runtime),
             Commands::Init(cmd) => cmd.execute(runtime),
-            Commands::Tool(cmd) => cmd.execute(runtime),
-            Commands::Task(cmd) => cmd.execute(runtime),
-            Commands::Audit(cmd) => cmd.execute(runtime),
-            Commands::Activity(cmd) => cmd.execute(runtime),
-            Commands::Skill(cmd) => cmd.execute(runtime),
-            Commands::Job(cmd) => cmd.execute(runtime),
-            Commands::JobRun(cmd) => cmd.execute(runtime),
-            Commands::Run(cmd) => cmd.execute(runtime),
-            Commands::Duel(cmd) => cmd.execute(runtime),
-            Commands::Knowledge(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
+            Commands::Config(cmd) => cmd.execute(runtime),
+            Commands::Ship(cmd) => cmd.execute(runtime),
+            Commands::Duel(cmd) => cmd.execute(runtime),
+            Commands::Task(cmd) => cmd.execute(runtime),
+            Commands::Activity(cmd) => cmd.execute(runtime),
+            Commands::Job(cmd) => cmd.execute(runtime),
+            Commands::Tool(cmd) => cmd.execute(runtime),
+            Commands::Skill(cmd) => cmd.execute(runtime),
+            Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
         }
     }

@@ -9,13 +9,28 @@ use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::duel_scoreboard::{
     AggregateFilter, AggregateRow, Aggregates, RoleAxis, SegmentBy, aggregate,
 };
-use orbit_core::{OrbitError, OrbitRuntime};
+use orbit_core::{
+    OrbitError, OrbitRuntime, WorkflowInput, build_workflow_input_for, find_workflow,
+    validate_workflow_flags,
+};
 use orbit_types::DuelRun;
+use serde_json::json;
 
 use crate::command::Execute;
+use crate::command::job_run_support::{
+    RunHistoryFilter, job_run_step_to_json, job_run_to_json, load_filtered_job_runs,
+    load_latest_job_run, print_job_run, print_job_run_list, print_step_detail,
+};
+
+const DUEL_WORKFLOW: &str = "duel";
+const DUEL_JOB_IDS: &[&str] = &["job_duel_pipeline"];
 
 #[derive(Args)]
-#[command(about = "Inspect duel workflow results")]
+#[command(
+    about = "Cross-agent scoring",
+    arg_required_else_help = true,
+    subcommand_required = true
+)]
 pub struct DuelCommand {
     #[command(subcommand)]
     pub command: DuelSubcommand,
@@ -29,15 +44,98 @@ impl Execute for DuelCommand {
 
 #[derive(Subcommand)]
 pub enum DuelSubcommand {
+    /// Run a single-task duel
+    Run(DuelRunArgs),
     /// Show scoreboard aggregates computed from `.orbit/scoreboard/duel.json`.
-    Scoreboard(DuelScoreboardArgs),
+    #[command(alias = "scoreboard")]
+    Score(DuelScoreboardArgs),
+    /// List duel job runs
+    List(DuelListArgs),
+    /// Show a duel run, or the latest one when no run ID is provided
+    Show(DuelShowArgs),
 }
 
 impl Execute for DuelSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            DuelSubcommand::Scoreboard(args) => args.execute(runtime),
+            DuelSubcommand::Run(args) => args.execute(runtime),
+            DuelSubcommand::Score(args) => args.execute(runtime),
+            DuelSubcommand::List(args) => args.execute(runtime),
+            DuelSubcommand::Show(args) => args.execute(runtime),
         }
+    }
+}
+
+#[derive(Args)]
+#[command(
+    after_help = "Examples:\n  orbit duel run\n  orbit duel run T20260409-0310\n  orbit duel run T20260409-0310 --base main --json"
+)]
+pub struct DuelRunArgs {
+    /// Optional task ID. Omit to auto-select the first available duel-eligible task.
+    pub task_id: Option<String>,
+    /// Base branch for the duel pipeline
+    #[arg(long)]
+    pub base: Option<String>,
+    /// Stream agent stderr to the terminal for debugging
+    #[arg(long)]
+    pub debug: bool,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for DuelRunArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let workflow = find_workflow(DUEL_WORKFLOW)
+            .ok_or_else(|| OrbitError::InvalidInput("unknown workflow 'duel'".to_string()))?;
+        let input = WorkflowInput {
+            tasks: self.task_id.clone(),
+            parallelism: None,
+            base: self.base.clone(),
+            pr_number: None,
+        };
+        validate_workflow_flags(workflow, &input)?;
+        let built_input = build_workflow_input_for(Some(workflow), &input)?;
+        let run = runtime.run_job_now_with_input_debug(workflow.job_id, built_input, self.debug)?;
+        let run_details = runtime
+            .job_history(workflow.job_id)?
+            .into_iter()
+            .find(|entry| entry.run_id == run.run_id);
+
+        if self.json {
+            return crate::output::json::print_pretty(&json!({
+                "workflow": workflow.alias,
+                "job_id": run.job_id,
+                "run_id": run.run_id,
+                "state": run.state.to_string(),
+                "attempt": run.attempt,
+                "error_code": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|step| step.error_code.clone()),
+                "error_message": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|step| step.error_message.clone()),
+            }));
+        }
+
+        let error_code = run_details
+            .as_ref()
+            .and_then(|entry| entry.steps.last())
+            .and_then(|step| step.error_code.clone())
+            .unwrap_or_else(|| "-".to_string());
+        let error_message = run_details
+            .as_ref()
+            .and_then(|entry| entry.steps.last())
+            .and_then(|step| step.error_message.clone())
+            .unwrap_or_else(|| "-".to_string())
+            .replace('\n', " ");
+        println!(
+            "workflow={};job_id={};run_id={};state={};attempt={};error_code={};error_message={}",
+            workflow.alias,
+            run.job_id,
+            run.run_id,
+            run.state,
+            run.attempt,
+            error_code,
+            error_message
+        );
+        Ok(())
     }
 }
 
@@ -113,6 +211,86 @@ impl Execute for DuelScoreboardArgs {
     }
 }
 
+#[derive(Args)]
+pub struct DuelListArgs {
+    #[arg(long, value_enum)]
+    pub status: Option<orbit_core::JobRunState>,
+    #[arg(long)]
+    pub since: Option<String>,
+    #[arg(long)]
+    pub limit: Option<usize>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for DuelListArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let runs = load_filtered_job_runs(
+            runtime,
+            DUEL_JOB_IDS,
+            &RunHistoryFilter {
+                status: self.status,
+                since: self.since,
+                limit: self.limit,
+            },
+        )?;
+
+        if self.json {
+            return crate::output::json::print_pretty(&serde_json::Value::Array(
+                runs.iter().map(job_run_to_json).collect::<Vec<_>>(),
+            ));
+        }
+
+        print_job_run_list(&runs);
+        Ok(())
+    }
+}
+
+#[derive(Args)]
+pub struct DuelShowArgs {
+    pub run_id: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+    #[arg(long)]
+    pub step: Option<usize>,
+}
+
+impl Execute for DuelShowArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let run = match &self.run_id {
+            Some(run_id) => runtime.show_job_run(run_id)?,
+            None => load_latest_job_run(runtime, DUEL_JOB_IDS, "duel")?,
+        };
+        ensure_duel_run(&run)?;
+
+        if let Some(step_index) = self.step {
+            let step = run
+                .steps
+                .iter()
+                .find(|step| step.step_index as usize == step_index)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput(format!(
+                        "step {step_index} not found in run '{}' (run has {} step(s))",
+                        run.run_id,
+                        run.steps.len()
+                    ))
+                })?;
+            if self.json {
+                return crate::output::json::print_pretty(&job_run_step_to_json(step));
+            }
+            print_step_detail(step);
+            return Ok(());
+        }
+
+        if self.json {
+            return crate::output::json::print_pretty(&job_run_to_json(&run));
+        }
+
+        print_job_run(&run);
+        Ok(())
+    }
+}
+
 fn emit_json(runs: &[DuelRun], aggs: &Aggregates) -> Result<(), OrbitError> {
     let payload = serde_json::json!({
         "runs": runs.len(),
@@ -171,14 +349,27 @@ fn render_table(runs: &[DuelRun], aggs: &Aggregates) {
     println!("{table}");
 }
 
+fn ensure_duel_run(run: &orbit_core::JobRun) -> Result<(), OrbitError> {
+    if DUEL_JOB_IDS.contains(&run.job_id.as_str()) {
+        return Ok(());
+    }
+    Err(OrbitError::InvalidInput(format!(
+        "run '{}' belongs to job '{}', not a duel pipeline",
+        run.run_id, run.job_id
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
+    use clap::Parser;
     use orbit_types::{
         Ambiguity, Cost, Decision, DuelRun, ImplementerStats, Outcome, ReviewerStats,
         RoleAssignment, Roles, Scores, TaskClass, TaskScope, ValidIssuesBySeverity,
     };
+
+    use crate::command::{Cli, Commands};
 
     fn ts(s: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
@@ -409,5 +600,50 @@ mod tests {
             .expect("codex implementer row");
         assert_eq!(codex_row.runs, 1);
         assert!((codex_row.merge_rate - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn duel_score_parser_preserves_existing_flags() {
+        let cli = Cli::try_parse_from([
+            "orbit", "duel", "score", "--by", "scope", "--role", "reviewer", "--json",
+        ])
+        .expect("duel score should parse");
+
+        let Commands::Duel(duel) = cli.command else {
+            panic!("expected duel command");
+        };
+        let DuelSubcommand::Score(args) = duel.command else {
+            panic!("expected duel score subcommand");
+        };
+        assert!(matches!(args.by, SegmentByArg::Scope));
+        assert!(matches!(args.role, RoleFilterArg::Reviewer));
+        assert!(args.json);
+    }
+
+    #[test]
+    fn duel_run_parser_accepts_optional_task_id() {
+        let cli = Cli::try_parse_from(["orbit", "duel", "run", "T20260409-0310"])
+            .expect("duel run should parse");
+
+        let Commands::Duel(duel) = cli.command else {
+            panic!("expected duel command");
+        };
+        let DuelSubcommand::Run(args) = duel.command else {
+            panic!("expected duel run subcommand");
+        };
+        assert_eq!(args.task_id.as_deref(), Some("T20260409-0310"));
+    }
+
+    #[test]
+    fn duel_show_accepts_missing_run_id() {
+        let cli = Cli::try_parse_from(["orbit", "duel", "show"]).expect("duel show should parse");
+
+        let Commands::Duel(duel) = cli.command else {
+            panic!("expected duel command");
+        };
+        let DuelSubcommand::Show(args) = duel.command else {
+            panic!("expected duel show subcommand");
+        };
+        assert!(args.run_id.is_none());
     }
 }

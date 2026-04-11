@@ -20,8 +20,8 @@ while :; do
 
   echo "[orbit] backlog tasks: ${BACKLOG_COUNT}; running pipeline at $(date -Is)"
 
-  if ! orbit job run job_parallel_task_pipeline; then
-    echo "[orbit] job failed at $(date -Is)" >&2
+  if ! orbit ship run; then
+    echo "[orbit] ship pipeline failed at $(date -Is)" >&2
     # Keep trying until backlog is empty.
   fi
 done

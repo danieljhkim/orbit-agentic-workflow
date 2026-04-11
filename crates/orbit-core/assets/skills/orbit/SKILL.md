@@ -50,10 +50,15 @@ orbit tool run orbit.task.update --input '{"id": "<id>", "comment": "..."}'
 orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "..."}'
 orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "..."}'
 
-# Job run commands
-orbit tool run orbit.job_run.list --input '{"status": "failed"}'
-orbit tool run orbit.job_run.show --input '{"id": "<job_run_id>"}'
-orbit tool run orbit.job_run.archive --input '{"id": "<job_run_id>"}'
+```
+
+For workflow-run inspection, use the CLI surfaces that remain public:
+
+```bash
+orbit ship list --json
+orbit duel list --json
+orbit ship show [run-id] --json
+orbit duel show [run-id] --json
 ```
 
 Never edit task files directly.

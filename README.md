@@ -18,7 +18,7 @@ Orbit should make agents spend judgment on what matters: intent, correctness, tr
 
 Suggestion: Get cheapest tier subscriptions for above 3, and milk every dollar out of it.
 
-For the PR-based workflow (`orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship-local` instead.
+For the PR-based workflow (`orbit ship run`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit ship run --local` instead.
 
 ```bash
 # install via Homebrew (macOS)
@@ -45,16 +45,16 @@ orbit task show <task_id>
 orbit task approve <task_id> --note "LGTM"
 
 # run the default PR-based workflow (this requires gh)
-orbit run ship
+orbit ship run
 
 # or run a local-only workflow with no PR/review loop
-orbit run ship-local
+orbit ship run --local
 ```
 
 If you already know which tasks you want to run, pin them explicitly:
 
 ```bash
-orbit run ship --tasks T123,T456 --parallelism 2 --base main
+orbit ship run --tasks T123,T456 --parallelism 2 --base main
 ```
 
 ---
@@ -66,7 +66,7 @@ Orbit has four core concepts:
 - **Task**: a unit of work to be proposed, approved, implemented, reviewed, and tracked
 - **Activity**: a reusable operation with a defined input/output shape
 - **Job**: an ordered workflow made of activities and nested jobs
-- **Workflow**: a human-friendly alias over a common job pipeline, exposed through `orbit run`
+- **Workflow**: a human-friendly entrypoint over a common job pipeline, exposed through `orbit ship` and `orbit duel`
 
 In practice:
 
@@ -82,12 +82,12 @@ For most repositories, the intended path is:
 
 1. Create tasks
 2. Review and approve them
-3. Run `orbit run ship`
+3. Run `orbit ship run`
 4. Let Orbit dispatch agents, verify results, open a PR, review it, and merge when approved
 
-Most users should start with the first-class workflows below. Reach for `orbit job run ...` only when you need lower-level control or custom automation behavior.
+Most users should start with the first-class workflows below rather than the lower-level job and activity internals.
 
-Note: `orbit run ship` depends on GitHub-backed PR operations and therefore requires `gh` to be installed and logged in. `orbit run ship-local` does not.
+Note: `orbit ship run` depends on GitHub-backed PR operations and therefore requires `gh` to be installed and logged in. `orbit ship run --local` does not.
 
 ---
 
@@ -95,7 +95,7 @@ Note: `orbit run ship` depends on GitHub-backed PR operations and therefore requ
 
 Orbit has different surfaces for different actors:
 
-- **Humans** usually use the CLI directly: `orbit task ...`, `orbit run ...`, `orbit job ...`
+- **Humans** usually use the CLI directly: `orbit task ...`, `orbit ship ...`, `orbit duel ...`, `orbit metrics ...`
 - **Agents** should use the Orbit tool surface: `orbit tool run ...`
 - **Automations/jobs** operate through activities, runtime hooks, and registered tools
 
@@ -105,48 +105,39 @@ These surfaces are intentionally distinct because Orbit records provenance and e
 
 ## First-Class Workflows
 
-`orbit run` provides ergonomic aliases for the most common flows:
+Orbit exposes a small, workflow-oriented top-level surface:
 
 | Workflow | Command | Description |
 | :--- | :--- | :--- |
-| **ship** | `orbit run ship` | Select tasks, dispatch agents, verify results, open a PR, review, and merge; requires `gh` auth |
-| **ship-local** | `orbit run ship-local` | Select tasks, dispatch agents, and commit locally without a PR |
-| **review** | `orbit run review` | Review tasks in `proposed` or `review` state |
-| **review-pr** | `orbit run review-pr --pr-number 42` | Review, gate, fix-loop, and merge an existing batch PR by PR number |
-| **duel** | `orbit run duel --tasks T123` | Single-task cross-agent evaluation: a random permutation of implementer/reviewer/arbiter across agent families, scored into `.orbit/scoreboard/duel.json` |
+| **ship** | `orbit ship run` | Select tasks, dispatch agents, verify results, open a PR, review, and merge; requires `gh` auth |
+| **ship-local** | `orbit ship run --local` | Select tasks, dispatch agents, and commit locally without a PR |
+| **duel** | `orbit duel run [task_id]` | Single-task cross-agent evaluation: a random permutation of implementer/reviewer/arbiter across agent families, scored into `.orbit/scoreboard/duel.json` |
 
-Each duel run appends an entry to `.orbit/scoreboard/duel.json`. Inspect aggregates with `orbit duel scoreboard` (add `--by scope` or `--by ambiguity` to segment, `--role implementer` to filter, `--json` for raw output). The numbers feed back into agent selection for `ship`.
+Each duel run appends an entry to `.orbit/scoreboard/duel.json`. Inspect aggregates with `orbit duel score` (add `--by scope` or `--by ambiguity` to segment, `--role implementer` to filter, `--json` for raw output). The numbers feed back into agent selection for `ship`.
 
 Optional flags:
 
 - `--tasks T1,T2` pin specific task IDs instead of auto-selecting from backlog
 - `--parallelism N` control the number of parallel workers
 - `--base BRANCH` override the base branch
-- `--pr-number N` identify the batch PR for `review-pr`
 
 Examples:
 
 ```bash
 # auto-select tasks from backlog
-orbit run ship
+orbit ship run
 
 # pin specific tasks
-orbit run ship --tasks T20260402-0352,T20260402-0406 --parallelism 2
+orbit ship run --tasks T20260402-0352,T20260402-0406 --parallelism 2
 
 # local-only pipeline
-orbit run ship-local --base main
+orbit ship run --local --base main
 
-# review queue
-orbit run review
+# run a duel against a specific task
+orbit duel run T20260402-0352
 
-# review and complete an existing batch PR
-orbit run review-pr --pr-number 42 --base main
-```
-
-For advanced cases, the lower-level job interface remains available:
-
-```bash
-orbit job run <job_id> --input base=main
+# inspect duel scoreboard aggregates
+orbit duel score --by scope
 ```
 
 ---
@@ -159,21 +150,22 @@ Orbit exposes a small set of top-level command groups:
 orbit [OPTIONS] <COMMAND>
 
 Run workflows:
-  run        Run a first-class workflow
-  job        Define and run automation jobs
-  job-run    Inspect and manage job run history
+  ship       Ship tasks through the pipeline
+  duel       Cross-agent scoring
 
 Manage work:
   task       Create, update, and manage tasks
-  activity   Manage activity definitions
-  skill      Manage agent skill definitions
   tool       Manage and run Orbit tools
+  skill      Manage agent skill definitions
 
-Configure and inspect:
-  config     Show or update Orbit configuration
+Setup:
   init       Initialize the global Orbit root (~/.orbit)
   workspace  Initialize and manage workspaces
+  config     Show or update Orbit configuration
+
+Inspect:
   audit      Query the audit event log
+  metrics    Inspect token, tool-call, and knowledge-pack metrics
 ```
 
 ---
@@ -233,7 +225,7 @@ Jobs are workflows composed of activities:
 
 - They encode repeatable automation
 - They can call nested jobs
-- They are the engine behind the higher-level `orbit run` workflows
+- They are the engine behind the higher-level `orbit ship run` and `orbit duel run` workflows
 
 ---
 
@@ -246,7 +238,7 @@ Orbit currently ships with a small set of default jobs that cover planning, impl
 The main PR-based workflow. It selects a conflict-free batch of tasks, dispatches parallel workers in a shared worktree, verifies the result, opens a PR, and hands off to the review cycle.
 
 ```bash
-orbit run ship
+orbit ship run
 ```
 
 Source: [`crates/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml`](crates/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml)
@@ -256,7 +248,7 @@ Source: [`crates/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml`](crates
 A local-only workflow. It plans, implements, and commits directly without opening a PR or entering the GitHub review loop.
 
 ```bash
-orbit run ship-local
+orbit ship run --local
 ```
 
 Source: [`crates/orbit-core/assets/jobs/job_local_task_pipeline.yaml`](crates/orbit-core/assets/jobs/job_local_task_pipeline.yaml)
@@ -266,23 +258,13 @@ Source: [`crates/orbit-core/assets/jobs/job_local_task_pipeline.yaml`](crates/or
 
 Reviews a batch PR against task acceptance criteria, syncs review threads to GitHub, and either merges on approval or enters the fix loop.
 
-```bash
-orbit run review-pr --pr-number 42 --base main
-```
-
-Underlying job:
-
-```bash
-orbit job run job_batch_review_cycle --input base=main --input pr_number=42
-```
+This job is triggered internally by the ship pipeline after a PR is opened.
 
 ### `job_review_tasks`
 
 Runs standalone task review for items in `proposed` or `review`.
 
-```bash
-orbit run review
-```
+This job is used internally when Orbit performs standalone task review.
 
 ---
 

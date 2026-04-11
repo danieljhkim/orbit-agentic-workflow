@@ -1,7 +1,4 @@
 pub mod activity_show;
-pub mod job_run_archive;
-pub mod job_run_list;
-pub mod job_run_show;
 pub mod knowledge_pack;
 pub mod knowledge_write;
 pub mod review_thread_add;
@@ -44,9 +41,6 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(task_show::OrbitTaskShowTool);
     registry.register(task_list::OrbitTaskListTool);
     registry.register(task_update::OrbitTaskUpdateTool);
-    registry.register(job_run_list::OrbitJobRunListTool);
-    registry.register(job_run_show::OrbitJobRunShowTool);
-    registry.register(job_run_archive::OrbitJobRunArchiveTool);
     registry.register(knowledge_pack::OrbitKnowledgePackTool);
     registry.register(knowledge_write::OrbitKnowledgeWriteTool);
     registry.register(activity_show::OrbitActivityShowTool);
