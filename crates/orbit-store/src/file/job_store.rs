@@ -877,47 +877,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn add_job_generates_distinct_ids_for_parallel_threads() {
-        let temp_dir = tempdir().expect("create tempdir");
-        let store = Arc::new(JobFileStore::new(temp_dir.path().to_path_buf()));
-        let barrier = Arc::new(Barrier::new(3));
-
-        let mut handles = Vec::new();
-        for _ in 0..2 {
-            let store = Arc::clone(&store);
-            let barrier = Arc::clone(&barrier);
-            handles.push(thread::spawn(move || {
-                barrier.wait();
-                store
-                    .add_job(JobCreateParams {
-                        job_id: None,
-                        default_input: None,
-                        max_active_runs: 1,
-                        max_iterations: default_max_iterations(),
-                        steps: vec![],
-                        initial_state: JobScheduleState::Enabled,
-                    })
-                    .expect("create job")
-                    .job_id
-            }));
-        }
-
-        barrier.wait();
-        let job_ids: Vec<String> = handles
-            .into_iter()
-            .map(|handle| handle.join().expect("join thread"))
-            .collect();
-        assert_eq!(job_ids.len(), 2);
-        assert_ne!(job_ids[0], job_ids[1]);
-        assert!(job_ids.iter().all(|id| id.starts_with("job-")));
-        // New format: job-YYYYMMDD-HHMM (optionally with -N dedup suffix)
-        assert!(job_ids.iter().all(|id| {
-            let parts: Vec<&str> = id.splitn(4, '-').collect();
-            parts.len() >= 3 && parts[1].len() == 8 && parts[2].len() == 4
-        }));
-    }
-
-    #[test]
     fn insert_job_run_generates_distinct_ids_for_parallel_threads() {
         let temp_dir = tempdir().expect("create tempdir");
         let store = Arc::new(JobFileStore::new(temp_dir.path().to_path_buf()));

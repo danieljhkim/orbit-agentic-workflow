@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use orbit_lock::FileLockChecker;
 use orbit_policy::PolicyContext;
 use orbit_tools::ToolContext;
 use orbit_types::{
@@ -51,11 +49,6 @@ impl OrbitRuntime {
         // Ensure fs tools always have a workspace boundary for sandboxing.
         if tool_context.workspace_root.is_none() {
             tool_context.workspace_root = resolve_workspace_root_from_context(self, &tool_context)?;
-        }
-
-        if tool_context.file_lock_checker.is_none() {
-            let checker: Arc<dyn FileLockChecker> = self.context.file_lock_store().clone();
-            tool_context.file_lock_checker = Some(checker);
         }
 
         self.check_tool_enabled(name)?;

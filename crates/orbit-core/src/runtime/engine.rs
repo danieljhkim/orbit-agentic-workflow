@@ -284,39 +284,6 @@ impl RuntimeHost for OrbitRuntime {
         self.context.data_root()
     }
 
-    fn acquire_file_locks(
-        &self,
-        task_id: &str,
-        repo_root: &str,
-        paths: &[&str],
-    ) -> Result<(), OrbitError> {
-        self.context
-            .file_lock_store()
-            .acquire_locks(task_id, repo_root, paths)
-    }
-
-    fn release_file_locks(&self, task_id: &str) -> Result<usize, OrbitError> {
-        self.context
-            .file_lock_store()
-            .release_locks_for_task(task_id)
-    }
-
-    fn cleanup_stale_file_locks(&self) -> Result<usize, OrbitError> {
-        let active_task_ids = self
-            .list_task_records()?
-            .into_iter()
-            .filter(|task| matches!(task.status, TaskStatus::InProgress | TaskStatus::Review))
-            .map(|task| task.id)
-            .collect::<Vec<_>>();
-        let active_refs = active_task_ids
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        self.context
-            .file_lock_store()
-            .release_stale_locks(&active_refs)
-    }
-
     fn run_job_now_with_input_debug(
         &self,
         job_id: &str,

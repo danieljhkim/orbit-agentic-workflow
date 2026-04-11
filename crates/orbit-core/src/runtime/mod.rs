@@ -183,10 +183,6 @@ impl OrbitRuntime {
         self.context.paths()
     }
 
-    pub(crate) fn file_lock_store(&self) -> &Arc<orbit_lock::FileLockStore> {
-        self.context.file_lock_store()
-    }
-
     pub(crate) fn data_root_path(&self) -> &Path {
         self.context.data_root()
     }

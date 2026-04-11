@@ -375,9 +375,6 @@ impl OrbitRuntime {
         if let Some(new_status) = target_status
             && new_status != old_status
         {
-            if should_release_file_locks(old_status, new_status) {
-                let _ = self.file_lock_store().release_locks_for_task(id);
-            }
             self.try_record_friction_transition(&task, old_status, new_status);
         }
 
@@ -459,10 +456,6 @@ impl OrbitRuntime {
                 "task '{id}' is in status '{other}'; approve requires 'proposed' or 'review'"
             ))),
         }?;
-
-        if task.status == TaskStatus::Review {
-            let _ = self.file_lock_store().release_locks_for_task(id);
-        }
 
         self.try_record_friction_transition(
             &task,
@@ -696,10 +689,6 @@ impl OrbitRuntime {
             ))),
         }?;
 
-        if matches!(task.status, TaskStatus::Review | TaskStatus::InProgress) {
-            let _ = self.file_lock_store().release_locks_for_task(id);
-        }
-
         self.try_record_friction_transition(&task, task.status, TaskStatus::Rejected);
 
         Ok(result)
@@ -726,7 +715,6 @@ impl OrbitRuntime {
             Ok(((), OrbitEvent::TaskArchived { id: id.to_string() }))
         })?;
 
-        let _ = self.file_lock_store().release_locks_for_task(id);
         Ok(())
     }
 
@@ -1130,11 +1118,6 @@ fn effective_actor_label(default_label: &str, agent: Option<&str>, model: Option
         (None, Some(model)) => model.to_string(),
         (None, None) => default_label.to_string(),
     }
-}
-
-fn should_release_file_locks(old_status: TaskStatus, new_status: TaskStatus) -> bool {
-    matches!(old_status, TaskStatus::InProgress | TaskStatus::Review)
-        && !matches!(new_status, TaskStatus::InProgress | TaskStatus::Review)
 }
 
 #[cfg(test)]

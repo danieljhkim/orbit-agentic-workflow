@@ -15,8 +15,8 @@ use super::friction::{append_failed_step_friction, append_step_metrics};
 use super::helpers::{
     build_knowledge_run_metrics, check_loop_exit, extract_task_id, log_step_completion,
     merge_job_input, normalize_agent_label, prepare_implement_change_metrics,
-    record_task_agent_context, release_task_locks_for_job_input, resolve_step_agent,
-    resolved_model_name, run_was_cancelled, should_run_step, step_state_records_incident,
+    record_task_agent_context, resolve_step_agent, resolved_model_name, run_was_cancelled,
+    should_run_step, step_state_records_incident,
 };
 use super::stale_recovery::{finalize_failed_started_run, recover_stale_active_run_for_job};
 use crate::context::TaskAutomationUpdate;
@@ -31,7 +31,6 @@ pub fn run_job_with_input<H: EngineHost>(
     let job_span = info_span!("job_dispatch", job_id = %job.job_id);
     let _job_span = job_span.enter();
     info!(max_active_runs = job.max_active_runs, "job run requested");
-    let _ = host.cleanup_stale_file_locks()?;
     let _ = recover_stale_active_run_for_job(host, data_root, &job, Utc::now())?;
     let active_runs = host.list_pending_or_running_job_runs(&job.job_id)?;
     if active_runs.len() as u32 >= job.max_active_runs {
@@ -98,7 +97,6 @@ pub fn retry_job_run_from_step<H: EngineHost>(
     );
     let _job_span = job_span.enter();
     info!("job run retry requested");
-    let _ = host.cleanup_stale_file_locks()?;
     // Find the step index to retry from (in the job definition, not the run steps).
     // Only supports first iteration (iteration 0) for v1.
     let retry_from_index = job
@@ -704,9 +702,6 @@ fn execute_activity_with_retries<H: EngineHost>(
             return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
         }
         info!(state = %final_state, duration_ms = ?duration_ms, "job run completed");
-        if final_state != JobRunState::Success {
-            release_task_locks_for_job_input(host, &input)?;
-        }
         host.record_event(OrbitEvent::JobRunCompleted {
             job_id: job.job_id.clone(),
             run_id: run.run_id.clone(),
@@ -785,7 +780,6 @@ fn execute_activity_with_retries<H: EngineHost>(
                     );
                 }
             }
-            release_task_locks_for_job_input(host, &input)?;
             Err(err)
         }
     }

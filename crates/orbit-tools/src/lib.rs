@@ -32,9 +32,7 @@ pub mod external;
 pub mod registry;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use orbit_lock::FileLockChecker;
 use serde_json::{Map, Value};
 
 use orbit_types::{OrbitError, ToolSchema};
@@ -75,8 +73,6 @@ pub struct ToolContext {
     pub orbit_root: Option<PathBuf>,
     /// Active Orbit task id for the current tool invocation when known.
     pub task_id: Option<String>,
-    /// Shared file-lock checker used by fs tools for write/delete conflict prevention.
-    pub file_lock_checker: Option<Arc<dyn FileLockChecker>>,
     /// Normalized agent name (e.g. `"claude"`). When set, GitHub tools auto-append
     /// an attribution footer to PR bodies and review comments.
     pub agent_name: Option<String>,
@@ -96,14 +92,6 @@ impl std::fmt::Debug for ToolContext {
             .field("workspace_root", &self.workspace_root)
             .field("orbit_root", &self.orbit_root)
             .field("task_id", &self.task_id)
-            .field(
-                "has_file_lock_checker",
-                &self
-                    .file_lock_checker
-                    .as_ref()
-                    .map(|_| true)
-                    .unwrap_or(false),
-            )
             .field("agent_name", &self.agent_name)
             .field("model_name", &self.model_name)
             .field("proc_allowed_programs", &self.proc_allowed_programs)

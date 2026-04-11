@@ -637,7 +637,7 @@ mod tests {
             "".parse::<Selector>().unwrap_err(),
             SelectorParseError {
                 selector: "".to_string(),
-                reason: "selectors must start with `dir:`, `file:`, or `leaf:`".to_string(),
+                reason: "selectors must start with `dir:`, `file:`, or `symbol:`".to_string(),
             }
         );
         assert_eq!(
@@ -653,7 +653,7 @@ mod tests {
                 .unwrap_err(),
             SelectorParseError {
                 selector: "symbol:crates/orbit-tools/src/lib.rs#register_builtins".to_string(),
-                reason: "leaf selectors must use `leaf:<path>#<symbol>:<kind>`".to_string(),
+                reason: "symbol selectors must use `symbol:<path>#<symbol>:<kind>`".to_string(),
             }
         );
     }
@@ -728,7 +728,7 @@ mod tests {
                                 "extension": "rs",
                                 "id": "node-file-lib",
                                 "identity_key": "file:crates/orbit-tools/src/lib.rs",
-                                "imports": ["orbit_lock::FileLockChecker", "serde_json::Value"],
+                                "imports": ["serde_json::Value"],
                                 "is_locked": false,
                                 "language": "rust",
                                 "leaf_children": ["node-leaf-register-builtins"],

@@ -203,21 +203,8 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
 
             match outcome.result {
                 Ok(result) if result.state == JobRunState::Success => {
-                    match host.release_file_locks(&outcome.task_id) {
-                        Ok(_) => {
-                            completed_task_ids.insert(outcome.task_id);
-                            succeeded += 1;
-                        }
-                        Err(error) => {
-                            failed += 1;
-                            failures.push(json!({
-                                "task_id": outcome.task_id,
-                                "error": format!(
-                                    "parallel worker succeeded but lock release failed: {error}"
-                                ),
-                            }));
-                        }
-                    }
+                    completed_task_ids.insert(outcome.task_id);
+                    succeeded += 1;
                 }
                 Ok(result) => {
                     failed += 1;
@@ -228,13 +215,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                             result.state
                         ),
                     }));
-                    if let Err(lock_err) = host.release_file_locks(&outcome.task_id) {
-                        eprintln!(
-                            "orbit: failed to release file locks for task '{}' \
-                             after non-success worker: {lock_err}",
-                            outcome.task_id
-                        );
-                    }
                 }
                 Err(error) => {
                     failed += 1;
@@ -242,13 +222,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                         "task_id": outcome.task_id,
                         "error": error.to_string(),
                     }));
-                    if let Err(lock_err) = host.release_file_locks(&outcome.task_id) {
-                        eprintln!(
-                            "orbit: failed to release file locks for task '{}' \
-                             after worker error: {lock_err}",
-                            outcome.task_id
-                        );
-                    }
                 }
             }
         }

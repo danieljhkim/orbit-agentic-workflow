@@ -9,7 +9,7 @@
     "file_hash_at_capture": "7777777777777777777777777777777777777777777777777777777777777777",
     "history": [],
     "id": "node-leaf-register-builtins",
-    "identity_key": "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function",
+    "identity_key": "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function",
     "input_signature": [],
     "is_locked": false,
     "kind": "function",

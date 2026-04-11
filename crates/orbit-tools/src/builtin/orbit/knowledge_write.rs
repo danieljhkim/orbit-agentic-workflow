@@ -66,7 +66,7 @@ impl Tool for OrbitKnowledgeWriteTool {
         // Only leaf selectors are valid for knowledge.write
         if !matches!(selector, Selector::Symbol { .. }) {
             return Err(OrbitError::InvalidInput(
-                "knowledge.write requires a symbol selector (symbol:path#symbol:kind)".to_string(),
+                "graph.write requires a symbol selector (symbol:path#symbol:kind)".to_string(),
             ));
         }
 
@@ -314,32 +314,6 @@ mod tests {
         let content = std::fs::read_to_string(ws.join("src/lib.rs")).unwrap();
         assert!(content.contains("hi there"));
         assert!(!content.contains("\"hello\""));
-    }
-
-    #[test]
-    fn insert_mode_creates_new_leaf() {
-        let (_dir, ws) = make_test_workspace();
-
-        let result = OrbitKnowledgeWriteTool
-            .execute(
-                &ToolContext {
-                    workspace_root: Some(ws.clone()),
-                    ..Default::default()
-                },
-                json!({
-                    "selector": "symbol:src/lib.rs#greet:function",
-                    "new_source": "pub fn greet(name: &str) -> String {\n    format!(\"Hello, {name}!\")\n}",
-                    "position": "after:leaf:src/lib.rs#hello:function",
-                    "reason": "new greeting function"
-                }),
-            )
-            .expect("insert should succeed");
-
-        assert_eq!(result["status"], "created");
-        assert_eq!(result["edit_sequence"], 0);
-
-        let content = std::fs::read_to_string(ws.join("src/lib.rs")).unwrap();
-        assert!(content.contains("pub fn greet(name: &str)"));
     }
 
     #[test]

@@ -498,23 +498,6 @@ mod tests {
             Path::new(".")
         }
 
-        fn acquire_file_locks(
-            &self,
-            _task_id: &str,
-            _repo_root: &str,
-            _paths: &[&str],
-        ) -> Result<(), OrbitError> {
-            Ok(())
-        }
-
-        fn release_file_locks(&self, _task_id: &str) -> Result<usize, OrbitError> {
-            Ok(0)
-        }
-
-        fn cleanup_stale_file_locks(&self) -> Result<usize, OrbitError> {
-            Ok(0)
-        }
-
         fn run_job_now_with_input_debug(
             &self,
             _job_id: &str,

@@ -264,14 +264,6 @@ pub trait RuntimeHost {
     fn record_event(&self, event: OrbitEvent) -> Result<(), OrbitError>;
     fn repo_root(&self) -> Result<String, OrbitError>;
     fn data_root(&self) -> &Path;
-    fn acquire_file_locks(
-        &self,
-        task_id: &str,
-        repo_root: &str,
-        paths: &[&str],
-    ) -> Result<(), OrbitError>;
-    fn release_file_locks(&self, task_id: &str) -> Result<usize, OrbitError>;
-    fn cleanup_stale_file_locks(&self) -> Result<usize, OrbitError>;
     fn run_job_now_with_input_debug(
         &self,
         job_id: &str,

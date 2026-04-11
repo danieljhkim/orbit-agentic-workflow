@@ -10,7 +10,7 @@ use tiktoken_rs::cl100k_base;
 use tracing::info;
 
 use crate::context::{
-    EngineHost, ExecutionContext, JobRunHost, RuntimeHost, TaskAutomationUpdate,
+    EngineHost, ExecutionContext, JobRunHost, TaskAutomationUpdate,
     execution_working_directory_with_task,
 };
 
@@ -28,16 +28,6 @@ pub(super) fn normalize_agent_label(agent_cli: &str) -> String {
         .and_then(|value| value.to_str())
         .unwrap_or(agent_cli)
         .to_ascii_lowercase()
-}
-
-pub(super) fn release_task_locks_for_job_input<H: RuntimeHost>(
-    host: &H,
-    input: &Value,
-) -> Result<(), OrbitError> {
-    if let Some(task_id) = extract_task_id(input) {
-        let _ = host.release_file_locks(task_id)?;
-    }
-    Ok(())
 }
 
 pub(super) fn json_value_type_name(value: &Value) -> &'static str {

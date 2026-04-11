@@ -11,7 +11,6 @@ use crate::context::{
 };
 
 use super::friction::{FrictionContext, append_failed_step_friction_without_execution};
-use super::helpers::{extract_task_id, release_task_locks_for_job_input};
 
 pub fn recover_stale_active_run_for_job<H: JobRunHost + RuntimeHost>(
     host: &H,
@@ -132,10 +131,6 @@ pub fn recover_stale_active_run_for_job<H: JobRunHost + RuntimeHost>(
             host.finalize_job_run(&active_run.run_id, JobRunState::Failed, now, duration_ms)?;
         if !changed {
             return Err(OrbitError::JobRunNotFound(active_run.run_id.clone()));
-        }
-        let empty_input = serde_json::Value::Null;
-        if let Some(task_id) = extract_task_id(active_run.input.as_ref().unwrap_or(&empty_input)) {
-            let _ = host.release_file_locks(task_id);
         }
         host.record_event(OrbitEvent::JobRunCompleted {
             job_id: job.job_id.clone(),
@@ -277,7 +272,6 @@ pub(super) fn finalize_failed_started_run<H: JobRunHost + RuntimeHost>(
     if !changed {
         return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
     }
-    release_task_locks_for_job_input(host, run.input.as_ref().unwrap_or(&serde_json::Value::Null))?;
     host.record_event(OrbitEvent::JobRunCompleted {
         job_id: job.job_id.clone(),
         run_id: run.run_id.clone(),

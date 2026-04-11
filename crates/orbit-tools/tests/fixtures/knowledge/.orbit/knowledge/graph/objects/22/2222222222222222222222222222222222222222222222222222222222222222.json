@@ -11,7 +11,6 @@
     "id": "node-file-lib",
     "identity_key": "file:crates/orbit-tools/src/lib.rs",
     "imports": [
-      "orbit_lock::FileLockChecker",
       "serde_json::Value"
     ],
     "is_locked": false,

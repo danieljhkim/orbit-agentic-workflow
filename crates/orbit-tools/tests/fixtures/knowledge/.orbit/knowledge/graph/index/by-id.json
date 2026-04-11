@@ -31,7 +31,7 @@
       "object_hash": "3333333333333333333333333333333333333333333333333333333333333333",
       "node_type": "leaf",
       "location": "crates/orbit-tools/src/lib.rs#register_builtins",
-      "identity_key": "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function",
+      "identity_key": "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function",
       "kind": "function"
     }
   }

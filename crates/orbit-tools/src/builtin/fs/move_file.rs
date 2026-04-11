@@ -61,11 +61,8 @@ impl Tool for FsMoveTool {
 mod tests {
     use std::fs;
     use std::path::Path;
-    use std::sync::{Arc, Mutex};
 
-    use orbit_lock::{FileLockChecker, FileLockStore, apply_lock_schema};
     use orbit_types::OrbitError;
-    use rusqlite::Connection;
     use serde_json::json;
 
     use crate::{Tool, ToolContext};
@@ -80,12 +77,6 @@ mod tests {
     #[cfg(windows)]
     fn create_file_symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
         std::os::windows::fs::symlink_file(src, dst)
-    }
-
-    fn lock_store() -> Arc<FileLockStore> {
-        let conn = Connection::open_in_memory().expect("sqlite");
-        apply_lock_schema(&conn).expect("schema");
-        Arc::new(FileLockStore::new(Arc::new(Mutex::new(conn))))
     }
 
     #[test]
@@ -173,59 +164,6 @@ mod tests {
             )
             .expect_err("workspace escape should be denied");
 
-        assert!(matches!(err, OrbitError::PolicyDenied(_)));
-    }
-
-    #[test]
-    fn checks_file_locks_for_source_and_destination() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let source = dir.path().join("source.txt");
-        let destination = dir.path().join("destination.txt");
-        fs::write(&source, "hello").expect("seed source");
-        let store = lock_store();
-        let repo_root = dir.path().canonicalize().expect("canonical root");
-        let repo_root_str = repo_root.to_string_lossy().into_owned();
-        store
-            .auto_acquire("T-source", &repo_root_str, "source.txt")
-            .expect("lock source");
-
-        let err = FsMoveTool
-            .execute(
-                &ToolContext {
-                    workspace_root: Some(dir.path().to_path_buf()),
-                    task_id: Some("T-destination".to_string()),
-                    file_lock_checker: Some(store.clone()),
-                    ..Default::default()
-                },
-                json!({
-                    "source": source.display().to_string(),
-                    "destination": destination.display().to_string(),
-                }),
-            )
-            .expect_err("source lock should be enforced");
-        assert!(matches!(err, OrbitError::PolicyDenied(_)));
-
-        store
-            .release_locks_for_task("T-source")
-            .expect("release source lock");
-        store
-            .auto_acquire("T-other", &repo_root_str, "destination.txt")
-            .expect("lock destination");
-
-        let err = FsMoveTool
-            .execute(
-                &ToolContext {
-                    workspace_root: Some(dir.path().to_path_buf()),
-                    task_id: Some("T-destination".to_string()),
-                    file_lock_checker: Some(store),
-                    ..Default::default()
-                },
-                json!({
-                    "source": source.display().to_string(),
-                    "destination": destination.display().to_string(),
-                }),
-            )
-            .expect_err("destination lock should be enforced");
         assert!(matches!(err, OrbitError::PolicyDenied(_)));
     }
 }
