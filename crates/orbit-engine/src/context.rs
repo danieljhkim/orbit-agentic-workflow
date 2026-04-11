@@ -112,6 +112,7 @@ pub struct JobRunResult {
     pub run_id: String,
     pub state: JobRunState,
     pub attempt: u32,
+    pub output: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default)]

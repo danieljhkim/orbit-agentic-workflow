@@ -16,9 +16,9 @@ job:
   #   sync_batch_review_to_github   — publish threads to GitHub
   #   arbitrate_review              — arbiter classifies every comment and emits the authoritative decision
   #   check_duel_review_decision    — gate on the arbiter's decision (loop_exit = arbiter APPROVED)
-  #   job_duel_review_loop          — (on_failure) iterative fix-and-re-review loop
+  #   job_duel_review_loop          — iterative fix-and-re-review loop; no-ops when already approved
+  #   merge_batch_pr                — merge the approved PR when the loop converged
   #   record_duel_scores            — append one DuelRun entry to .orbit/scoreboard/duel.json
-  #   merge_batch_pr                — merge the approved PR
   #
   max_active_runs: 1
   max_iterations: 1
@@ -51,15 +51,15 @@ job:
 
     - target_type: job
       target_id: job_duel_review_loop
-      condition: on_failure
-      timeout_seconds: 7200
-
-    - target_type: activity
-      target_id: record_duel_scores
       condition: on_success
-      timeout_seconds: 60
+      timeout_seconds: 7200
 
     - target_type: activity
       target_id: merge_batch_pr
       condition: on_success
+      timeout_seconds: 60
+
+    - target_type: activity
+      target_id: record_duel_scores
+      condition: always
       timeout_seconds: 60

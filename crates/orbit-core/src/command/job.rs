@@ -468,3 +468,50 @@ fn validate_job_max_active_runs(max_active_runs: Option<u32>) -> Result<u32, Orb
     }
     Ok(value)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_JOB_FILES, load_default_job_specs};
+    use orbit_types::StepCondition;
+
+    #[test]
+    fn duel_review_cycle_runs_loop_before_merge_and_records_after_merge_attempt() {
+        let specs = load_default_job_specs(DEFAULT_JOB_FILES).expect("jobs");
+        let duel_cycle = specs
+            .into_iter()
+            .find(|spec| spec.job_id == "job_duel_review_cycle")
+            .expect("job_duel_review_cycle");
+
+        let step_ids = duel_cycle
+            .steps
+            .iter()
+            .map(|step| step.target_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            step_ids,
+            vec![
+                "review_duel_pr",
+                "sync_batch_review_to_github",
+                "arbitrate_review",
+                "check_duel_review_decision",
+                "job_duel_review_loop",
+                "merge_batch_pr",
+                "record_duel_scores",
+            ]
+        );
+
+        let loop_step = duel_cycle
+            .steps
+            .iter()
+            .find(|step| step.target_id == "job_duel_review_loop")
+            .expect("loop step");
+        assert_eq!(loop_step.condition, StepCondition::OnSuccess);
+
+        let record_step = duel_cycle
+            .steps
+            .iter()
+            .find(|step| step.target_id == "record_duel_scores")
+            .expect("record step");
+        assert_eq!(record_step.condition, StepCondition::Always);
+    }
+}

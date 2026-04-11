@@ -534,4 +534,23 @@ mod tests {
         assert!(tools.contains(&"orbit.knowledge.write"));
         assert!(tools.contains(&"fs.read"));
     }
+
+    #[test]
+    fn duel_publish_activity_requires_duel_roles_footer() {
+        let specs = load_default_activity_specs(DEFAULT_ACTIVITY_FILES, None).expect("activities");
+        let publish_duel = specs
+            .into_iter()
+            .find(|spec| spec.id == "implement_and_publish_duel")
+            .expect("implement_and_publish_duel activity");
+
+        let instruction = publish_duel
+            .spec_config
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        assert!(instruction.contains("## Duel roles"));
+        assert!(instruction.contains("- Implementer: {{agent_family}} / {{orchestrator_model}}"));
+        assert!(instruction.contains("- Reviewer: <will be filled in by the reviewer step>"));
+        assert!(instruction.contains("- Arbiter: <will be filled in by the arbiter step>"));
+    }
 }

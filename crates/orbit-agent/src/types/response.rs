@@ -266,11 +266,9 @@ fn sum_usage(documents: &[Value]) -> TokenUsage {
 fn collect_usage(value: &Value, usage: &mut TokenUsage, allow_direct_usage: bool) {
     match value {
         Value::Object(map) => {
-            if allow_direct_usage {
-                if let Some(found) = usage_from_map(map) {
-                    add_usage(usage, found);
-                    return;
-                }
+            if allow_direct_usage && let Some(found) = usage_from_map(map) {
+                add_usage(usage, found);
+                return;
             }
 
             if matches!(map.get("type").and_then(Value::as_str), Some("tool_result")) {
@@ -300,10 +298,8 @@ fn collect_usage(value: &Value, usage: &mut TokenUsage, allow_direct_usage: bool
             }
         }
         Value::String(raw) => {
-            if allow_direct_usage {
-                if let Ok(nested) = serde_json::from_str::<Value>(raw) {
-                    collect_usage(&nested, usage, true);
-                }
+            if allow_direct_usage && let Ok(nested) = serde_json::from_str::<Value>(raw) {
+                collect_usage(&nested, usage, true);
             }
         }
         _ => {}

@@ -16,17 +16,22 @@ Before any non-trivial task, name the single assumption you're making that, if w
 - Don't edit task files directly — use `orbit.task.update`.
 - Don't add cross-crate dependencies without checking the architecture diagram below.
 - When adding a store module, match the atomic-write pattern of `orbit/orbit-store/src/file/pr_scoreboard.rs` — do not invent a new one.
-- When adding a new scoreboard or metric, prefer append-only `runs[]` + on-demand aggregation over stored aggregates.
 - When you hit friction, ambiguity, naming drift, or duplicated sources of truth: file a friction task via the `orbit-track-issues` skill instead of working around it.
+
+## Project Do's
+
+- Use subagents to support you through large tasks and keep your context window clean.
+- Use terse/succinct prose in all agent-written text: tasks, docs, comments, commit messages.
 
 ## Build / Test / Lint
 
-- Build: `cargo build --workspace`
-- Test:  `cargo test --workspace`
-- Lint:  `cargo clippy --workspace --all-targets -- -D warnings`
-- Fmt:   `cargo fmt --all`
+- Build: `make build`
+- Test:  `make test`
+- Lint:  `make clippy`
+- Fmt:   `make fmt`
+- CI:    `make ci` (runs fmt + clippy + test)
 
-All four must pass before a task moves to `review`.
+All must pass before a task moves to `review`.
 
 ## Crate Architecture
 
@@ -57,7 +62,7 @@ For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs)
 
 ## Task Authoring Quality
 
-Follow the `## Task Quality Standards` section in `orbit/orbit-core/assets/skills/orbit-create-task/SKILL.md`: deterministic mock-based testing, explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.
+Follow the `## Task Quality Standards` section in `orbit-create-task` skill: deterministic mock-based testing, explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.
 
 ## Agent Identity
 
