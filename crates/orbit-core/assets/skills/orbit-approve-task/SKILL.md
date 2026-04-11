@@ -19,21 +19,21 @@ The tool commands auto-detect the current status and record the decision in task
 - `review -> rejected`: appends `review_rejected`
 
 ```bash
-orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'
-orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<note>"}'
-orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>"}'
+orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>", "comment": "<audit summary>"}'
+orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<note>", "comment": "<audit summary>"}'
+orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>", "comment": "<audit summary>"}'
 ```
 
 ## Workflow
 
 1. Run `orbit tool run orbit.task.list --input '{"status": "proposed"}'` and `'{"status": "review"}'`. If both are empty, your job is done.
 2. For `proposed` tasks, review the task carefully.
-   - If valid and execution should begin immediately: run `orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>"}'`.
-   - If valid but execution should remain queued: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'`.
-   - If not valid: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<reason>"}'`.
+   - If valid and execution should begin immediately: run `orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>", "comment": "<audit summary>"}'`.
+   - If valid but execution should remain queued: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>", "comment": "<audit summary>"}'`.
+   - If not valid: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<reason>", "comment": "<audit summary>"}'`.
 3. For `review` tasks, confirm all requirements were fulfilled as outlined in the task.
-   - If complete and code changes are acceptable: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>"}'`.
-   - If incomplete: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<what still needs resolving>"}'`.
+   - If complete and code changes are acceptable: run `orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "<note>", "comment": "<audit summary>"}'`.
+   - If incomplete: run `orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "<what still needs resolving>", "comment": "<audit summary>"}'`.
 
 ## Verification
 
@@ -47,11 +47,12 @@ After each decision, run `orbit tool run orbit.task.show --input '{"id": "<id>"}
 
 ## Persisting Results
 
-After each decision, persist a brief summary via the task's comment field:
+Include the brief audit summary in the same `approve`, `reject`, or `start` command via its `comment` field. Do not try to append a follow-up comment after `review -> done`; done tasks reject further mutation.
 
 ```bash
-orbit tool run orbit.task.update --input '{
+orbit tool run orbit.task.approve --input '{
   "id": "<id>",
+  "note": "<decision note>",
   "comment": "<action taken> — <decision note> — <verification result>"
 }'
 ```
