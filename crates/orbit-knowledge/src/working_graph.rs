@@ -8,8 +8,10 @@ use std::path::Path;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use super::extractor::{self, Language};
-use super::{KnowledgeError, KnowledgeStore, Selector};
+use crate::error::KnowledgeError;
+use crate::extract::{self, Language};
+use crate::selector::Selector;
+use crate::store::KnowledgeStore;
 
 /// A single edit in a leaf's version chain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,7 +268,7 @@ impl WorkingGraph {
             .join("\n")
             .trim()
             .to_string();
-        let actual_hash = extractor::compute_source_hash(&actual_source);
+        let actual_hash = extract::compute_source_hash(&actual_source);
 
         if actual_hash != leaf.source_hash {
             return Err(WriteError::source_conflict(
@@ -304,7 +306,7 @@ impl WorkingGraph {
         let affected = self.re_extract_file(&leaf.file_path, &new_content, language);
 
         // Append to version chain
-        let new_hash = extractor::compute_source_hash(new_source.trim());
+        let new_hash = extract::compute_source_hash(new_source.trim());
         let edit_seq = self.append_version_chain(
             &selector_str,
             &leaf.source_hash,
@@ -400,7 +402,7 @@ impl WorkingGraph {
         let affected = self.re_extract_file(&file_path, &new_content, language);
 
         // Create version chain for new leaf
-        let new_hash = extractor::compute_source_hash(new_source.trim());
+        let new_hash = extract::compute_source_hash(new_source.trim());
         let chain = LeafVersionChain {
             leaf_id: selector_str.clone(),
             selector: selector_str.clone(),
@@ -434,7 +436,7 @@ impl WorkingGraph {
         content: &str,
         language: Language,
     ) -> Vec<String> {
-        let result = extractor::extract_file(content, language);
+        let result = extract::extract_file(content, language);
 
         // Collect old selectors for this file
         let old_selectors: Vec<String> =
@@ -564,8 +566,8 @@ fn find_test_module_line(lines: &[&str]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::extractor::ExtractionResult;
     use super::*;
+    use crate::extract::ExtractionResult;
     use std::path::PathBuf;
 
     fn make_test_dir() -> (tempfile::TempDir, PathBuf) {
@@ -601,7 +603,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
@@ -632,7 +634,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         // Modify file on disk externally
@@ -657,7 +659,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         // Edit alpha (near top) - add 2 extra lines
@@ -687,7 +689,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let new_selector: Selector = "leaf:src/lib.rs#delta:function".parse().unwrap();
@@ -723,7 +725,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", &source_with_tests);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(&source_with_tests, Language::Rust);
+        let extraction = extract::extract_file(&source_with_tests, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let new_selector: Selector = "leaf:src/lib.rs#delta:function".parse().unwrap();
@@ -749,7 +751,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
@@ -850,7 +852,7 @@ pub fn gamma() -> i32 {
                 start_line: 1,
                 end_line: 1,
                 source: "package main".to_string(),
-                source_hash: extractor::compute_source_hash("package main"),
+                source_hash: extract::compute_source_hash("package main"),
                 parent_qualified_name: None,
                 children_qualified_names: vec![],
             },
@@ -890,7 +892,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         // Simulate fs.write modifying the file externally
@@ -916,7 +918,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
@@ -942,7 +944,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
@@ -959,7 +961,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/main.py", py_source);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(py_source, Language::Python);
+        let extraction = extract::extract_file(py_source, Language::Python);
         populate_graph_from_extraction(&mut graph, "src/main.py", &extraction);
 
         let selector: Selector = "leaf:src/main.py#foo:function".parse().unwrap();
@@ -975,7 +977,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", SAMPLE_RS);
 
         let mut graph = WorkingGraph::new();
-        let extraction = extractor::extract_file(SAMPLE_RS, Language::Rust);
+        let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();

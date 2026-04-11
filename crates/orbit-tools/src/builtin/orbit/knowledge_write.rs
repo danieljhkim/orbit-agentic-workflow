@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use orbit_knowledge::extractor::{self, Language};
+use orbit_knowledge::extract::{self, Language};
 use orbit_knowledge::{
     KnowledgeStore, Selector, WorkingGraph, WorkingLeaf, load_task_working_graph,
     save_task_working_graph,
@@ -204,7 +204,7 @@ fn initialize_working_graph(
     let content = std::fs::read_to_string(&file_path)
         .map_err(|e| OrbitError::Execution(format!("read {}: {e}", file_path.display())))?;
 
-    let extraction = extractor::extract_file(&content, language);
+    let extraction = extract::extract_file(&content, language);
     let mut graph = WorkingGraph::new();
 
     // Populate from extraction

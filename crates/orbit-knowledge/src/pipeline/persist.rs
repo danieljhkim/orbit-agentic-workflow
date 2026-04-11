@@ -1,0 +1,33 @@
+use std::fs;
+
+use chrono::Utc;
+use serde_json::json;
+
+use crate::error::KnowledgeError;
+use crate::graph::object_store::GraphObjectStore;
+use crate::pipeline::context::PipelineContext;
+
+/// Write the assembled graph to the content-addressed object store.
+pub fn persist_graph(ctx: &PipelineContext) -> Result<String, KnowledgeError> {
+    let store = GraphObjectStore::new(ctx.graph_dir());
+    store.write_graph(&ctx.graph)
+}
+
+/// Write a `manifest.json` with build metadata.
+pub fn write_manifest(ctx: &PipelineContext) -> Result<(), KnowledgeError> {
+    fs::create_dir_all(&ctx.output_dir)
+        .map_err(|e| KnowledgeError::io(format!("mkdir {}: {e}", ctx.output_dir.display())))?;
+
+    let manifest = json!({
+        "generated_at": Utc::now().to_rfc3339(),
+        "graph": "graph/",
+        "file_count": ctx.graph.files.len(),
+        "leaf_count": ctx.graph.leaves.len(),
+    });
+
+    let json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| KnowledgeError::invalid_data(format!("manifest serialize: {e}")))?;
+    fs::write(ctx.manifest_path(), json)
+        .map_err(|e| KnowledgeError::io(format!("write manifest: {e}")))?;
+    Ok(())
+}
