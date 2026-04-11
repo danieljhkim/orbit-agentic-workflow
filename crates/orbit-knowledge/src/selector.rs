@@ -18,7 +18,7 @@ pub enum Selector {
     File {
         path: String,
     },
-    Leaf {
+    Symbol {
         path: String,
         symbol: String,
         kind: String,
@@ -37,8 +37,8 @@ impl Selector {
         match self {
             Self::Dir { path } => SelectorLookupKey::Dir(path.clone()),
             Self::File { path } => SelectorLookupKey::File(path.clone()),
-            Self::Leaf { path, symbol, kind } => {
-                SelectorLookupKey::Leaf(format!("{path}#{symbol}"), kind.clone())
+            Self::Symbol { path, symbol, kind } => {
+                SelectorLookupKey::Symbol(format!("{path}#{symbol}"), kind.clone())
             }
         }
     }
@@ -49,7 +49,7 @@ impl std::fmt::Display for Selector {
         match self {
             Self::Dir { path } => write!(f, "dir:{path}"),
             Self::File { path } => write!(f, "file:{path}"),
-            Self::Leaf { path, symbol, kind } => write!(f, "leaf:{path}#{symbol}:{kind}"),
+            Self::Symbol { path, symbol, kind } => write!(f, "symbol:{path}#{symbol}:{kind}"),
         }
     }
 }
@@ -83,31 +83,32 @@ impl FromStr for Selector {
             });
         }
 
-        if let Some(remainder) = trimmed.strip_prefix("leaf:") {
+        if let Some(remainder) = trimmed.strip_prefix("symbol:") {
             let (location, kind) =
                 remainder
                     .rsplit_once(':')
                     .ok_or_else(|| SelectorParseError {
                         selector: selector.to_string(),
-                        reason: "leaf selectors must use `leaf:<path>#<symbol>:<kind>`".to_string(),
+                        reason: "symbol selectors must use `symbol:<path>#<symbol>:<kind>`"
+                            .to_string(),
                     })?;
             if location.is_empty() || kind.is_empty() {
                 return Err(SelectorParseError {
                     selector: selector.to_string(),
-                    reason: "leaf selectors must include both a location and kind".to_string(),
+                    reason: "symbol selectors must include both a location and kind".to_string(),
                 });
             }
             let (path, symbol) = location.split_once('#').ok_or_else(|| SelectorParseError {
                 selector: selector.to_string(),
-                reason: "leaf selectors must include `#<symbol>`".to_string(),
+                reason: "symbol selectors must include `#<symbol>`".to_string(),
             })?;
             if path.is_empty() || symbol.is_empty() {
                 return Err(SelectorParseError {
                     selector: selector.to_string(),
-                    reason: "leaf selectors must include non-empty path and symbol".to_string(),
+                    reason: "symbol selectors must include non-empty path and symbol".to_string(),
                 });
             }
-            return Ok(Self::Leaf {
+            return Ok(Self::Symbol {
                 path: path.to_string(),
                 symbol: symbol.to_string(),
                 kind: kind.to_string(),
@@ -116,7 +117,7 @@ impl FromStr for Selector {
 
         Err(SelectorParseError {
             selector: selector.to_string(),
-            reason: "selectors must start with `dir:`, `file:`, or `leaf:`".to_string(),
+            reason: "selectors must start with `dir:`, `file:`, or `symbol:`".to_string(),
         })
     }
 }
@@ -125,8 +126,8 @@ impl FromStr for Selector {
 pub(crate) enum SelectorLookupKey {
     Dir(String),
     File(String),
-    /// Leaf(location, kind) where location = "path#symbol".
-    Leaf(String, String),
+    /// Symbol(location, kind) where location = "path#symbol".
+    Symbol(String, String),
 }
 
 impl SelectorLookupKey {
@@ -134,7 +135,7 @@ impl SelectorLookupKey {
         match self {
             Self::Dir(path) => format!("dir:{path}"),
             Self::File(path) => format!("file:{path}"),
-            Self::Leaf(location, kind) => format!("leaf:{location}:{kind}"),
+            Self::Symbol(location, kind) => format!("symbol:{location}:{kind}"),
         }
     }
 }

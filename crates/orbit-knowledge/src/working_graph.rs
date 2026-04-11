@@ -121,7 +121,7 @@ impl WriteError {
 /// as `knowledge.write` calls modify files and re-extract.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkingGraph {
-    /// Leaves indexed by selector string (e.g. "leaf:path#symbol:kind").
+    /// Leaves indexed by selector string (e.g. "symbol:path#symbol:kind").
     leaves: HashMap<String, WorkingLeaf>,
     /// Reverse index: file_path → list of leaf selector strings.
     file_leaves: HashMap<String, Vec<String>>,
@@ -339,7 +339,7 @@ impl WorkingGraph {
     ) -> Result<WriteResult, WriteError> {
         let selector_str = selector.to_string();
         let file_path = match selector {
-            Selector::Leaf { path, .. } => path.clone(),
+            Selector::Symbol { path, .. } => path.clone(),
             _ => {
                 return Err(WriteError {
                     kind: "invalid_selector".to_string(),
@@ -448,7 +448,7 @@ impl WorkingGraph {
 
         for extracted in &result.leaves {
             let selector_str = format!(
-                "leaf:{rel_path}#{}:{}",
+                "symbol:{rel_path}#{}:{}",
                 extracted.qualified_name, extracted.kind
             );
             new_selectors.push(selector_str.clone());
@@ -606,9 +606,9 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         let old_beta = graph
-            .resolve_leaf(&"leaf:src/lib.rs#beta:function".parse().unwrap())
+            .resolve_leaf(&"symbol:src/lib.rs#beta:function".parse().unwrap())
             .unwrap();
         let old_beta_start = old_beta.start_line;
 
@@ -623,7 +623,7 @@ pub fn gamma() -> i32 {
 
         // Beta's start_line should have shifted by 1 (added one line to alpha)
         let new_beta = graph
-            .resolve_leaf(&"leaf:src/lib.rs#beta:function".parse().unwrap())
+            .resolve_leaf(&"symbol:src/lib.rs#beta:function".parse().unwrap())
             .unwrap();
         assert_eq!(new_beta.start_line, old_beta_start + 1);
     }
@@ -644,7 +644,7 @@ pub fn gamma() -> i32 {
         );
         write_rust_file(&ws, "src/lib.rs", &modified);
 
-        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         let err = graph
             .edit_leaf(&selector, "pub fn alpha() {}", None, &ws)
             .unwrap_err();
@@ -663,14 +663,14 @@ pub fn gamma() -> i32 {
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
         // Edit alpha (near top) - add 2 extra lines
-        let selector_alpha: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector_alpha: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         let new_alpha = "pub fn alpha() -> i32 {\n    let a = 1;\n    let b = 2;\n    a + b\n}";
         graph
             .edit_leaf(&selector_alpha, new_alpha, None, &ws)
             .unwrap();
 
         // Now edit gamma (near bottom) - should succeed without conflict
-        let selector_gamma: Selector = "leaf:src/lib.rs#gamma:function".parse().unwrap();
+        let selector_gamma: Selector = "symbol:src/lib.rs#gamma:function".parse().unwrap();
         let new_gamma = "pub fn gamma() -> i32 {\n    99\n}";
         let result = graph
             .edit_leaf(&selector_gamma, new_gamma, None, &ws)
@@ -692,8 +692,8 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let new_selector: Selector = "leaf:src/lib.rs#delta:function".parse().unwrap();
-        let position: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let new_selector: Selector = "symbol:src/lib.rs#delta:function".parse().unwrap();
+        let position: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         let result = graph
             .insert_leaf(
                 &new_selector,
@@ -728,7 +728,7 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(&source_with_tests, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let new_selector: Selector = "leaf:src/lib.rs#delta:function".parse().unwrap();
+        let new_selector: Selector = "symbol:src/lib.rs#delta:function".parse().unwrap();
         graph
             .insert_leaf(
                 &new_selector,
@@ -754,7 +754,7 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         let sel_str = selector.to_string();
 
         // Edit 1
@@ -797,8 +797,8 @@ pub fn gamma() -> i32 {
     #[test]
     fn version_chain_serializes_to_json() {
         let chain = LeafVersionChain {
-            leaf_id: "leaf:src/lib.rs#alpha:function".to_string(),
-            selector: "leaf:src/lib.rs#alpha:function".to_string(),
+            leaf_id: "symbol:src/lib.rs#alpha:function".to_string(),
+            selector: "symbol:src/lib.rs#alpha:function".to_string(),
             original_source_hash: "abc123".to_string(),
             edits: vec![
                 LeafEdit {
@@ -839,7 +839,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/main.go", "package main\n");
 
         let mut graph = WorkingGraph::new();
-        let selector: Selector = "leaf:src/main.go#main:function".parse().unwrap();
+        let selector: Selector = "symbol:src/main.go#main:function".parse().unwrap();
         // Manually add a leaf
         graph.leaves.insert(
             selector.to_string(),
@@ -903,7 +903,7 @@ pub fn gamma() -> i32 {
         write_rust_file(&ws, "src/lib.rs", &tampered);
 
         // Next knowledge.write to beta should detect the conflict
-        let selector: Selector = "leaf:src/lib.rs#beta:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#beta:function".parse().unwrap();
         let err = graph
             .edit_leaf(&selector, "pub fn beta() -> i32 {\n    22\n}", None, &ws)
             .unwrap_err();
@@ -921,7 +921,7 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
 
         // Verify original source
         let original = graph.get_leaf_source(&selector).unwrap();
@@ -947,7 +947,7 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         let result = graph
             .edit_leaf(&selector, "pub fn alpha() -> i32 {\n    100\n}", None, &ws)
             .unwrap();
@@ -964,7 +964,7 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(py_source, Language::Python);
         populate_graph_from_extraction(&mut graph, "src/main.py", &extraction);
 
-        let selector: Selector = "leaf:src/main.py#foo:function".parse().unwrap();
+        let selector: Selector = "symbol:src/main.py#foo:function".parse().unwrap();
         let result = graph
             .edit_leaf(&selector, "def foo():\n    return 42", None, &ws)
             .unwrap();
@@ -980,7 +980,7 @@ pub fn gamma() -> i32 {
         let extraction = extract::extract_file(SAMPLE_RS, Language::Rust);
         populate_graph_from_extraction(&mut graph, "src/lib.rs", &extraction);
 
-        let selector: Selector = "leaf:src/lib.rs#alpha:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#alpha:function".parse().unwrap();
         graph
             .edit_leaf(
                 &selector,
@@ -1022,7 +1022,7 @@ pub fn gamma() -> i32 {
     ) {
         let mut selectors = Vec::new();
         for leaf in &extraction.leaves {
-            let sel = format!("leaf:{file_path}#{}:{}", leaf.qualified_name, leaf.kind);
+            let sel = format!("symbol:{file_path}#{}:{}", leaf.qualified_name, leaf.kind);
             selectors.push(sel.clone());
             graph.leaves.insert(
                 sel.clone(),

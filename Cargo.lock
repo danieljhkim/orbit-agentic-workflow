@@ -1302,6 +1302,7 @@ dependencies = [
  "comfy-table",
  "csv",
  "orbit-core",
+ "orbit-knowledge",
  "orbit-types",
  "predicates",
  "serde_json",

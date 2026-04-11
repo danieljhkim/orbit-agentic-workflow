@@ -258,8 +258,8 @@ pub fn build_graph_leaves(ctx: &mut PipelineContext) -> Result<(), KnowledgeErro
 
         for extracted in &result.leaves {
             let loc = leaf_location(&location, &extracted.qualified_name);
-            let id = node_id("leaf", &loc, &extracted.kind);
-            let ikey = identity_key("leaf", &loc, &extracted.kind);
+            let id = node_id("symbol", &loc, &extracted.kind);
+            let ikey = identity_key("symbol", &loc, &extracted.kind);
 
             let kind = parse_leaf_kind(&extracted.kind);
 
@@ -293,7 +293,7 @@ pub fn build_graph_leaves(ctx: &mut PipelineContext) -> Result<(), KnowledgeErro
                     .iter()
                     .map(|qn| {
                         let child_loc = leaf_location(&location, qn);
-                        node_id("leaf", &child_loc, "method")
+                        node_id("symbol", &child_loc, "method")
                     })
                     .collect(),
             };

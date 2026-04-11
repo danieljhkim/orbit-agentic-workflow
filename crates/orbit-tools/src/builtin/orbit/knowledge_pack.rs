@@ -21,7 +21,7 @@ impl Tool for OrbitKnowledgePackTool {
             parameters: vec![
                 ToolParam {
                     name: "selectors".to_string(),
-                    description: "Selector strings like `file:path`, `leaf:path#symbol:kind`, or `dir:path`".to_string(),
+                    description: "Selector strings like `file:path`, `symbol:path#symbol:kind`, or `dir:path`".to_string(),
                     param_type: "array".to_string(),
                     required: true,
                 },
@@ -197,7 +197,7 @@ mod tests {
                 json!({
                     "selectors": [
                         "file:crates/orbit-tools/src/lib.rs",
-                        "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function"
+                        "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function"
                     ],
                     "knowledge_dir": fixture_knowledge_dir().display().to_string()
                 }),
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(entries[0]["selector"], "file:crates/orbit-tools/src/lib.rs");
         assert_eq!(
             entries[1]["selector"],
-            "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function"
+            "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function"
         );
     }
 
@@ -286,7 +286,7 @@ mod tests {
             .execute(
                 &ctx,
                 json!({
-                    "selector": "leaf:src/lib.rs#hello:function",
+                    "selector": "symbol:src/lib.rs#hello:function",
                     "new_source": "pub fn hello() -> &'static str {\n    \"hi there\"\n}",
                     "reason": "updated greeting"
                 }),
@@ -297,7 +297,7 @@ mod tests {
             .execute(
                 &ctx,
                 json!({
-                    "selectors": ["leaf:src/lib.rs#hello:function"]
+                    "selectors": ["symbol:src/lib.rs#hello:function"]
                 }),
             )
             .expect("pack");

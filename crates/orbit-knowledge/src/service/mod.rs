@@ -16,8 +16,10 @@ use crate::selector::Selector;
 pub struct GraphContextService<'a> {
     graph: &'a CodebaseGraphV1,
     nav: GraphNavigator<'a>,
-    /// location → node ID (for selector resolution).
-    location_index: HashMap<&'a str, &'a str>,
+    /// location key → node ID (for selector resolution).
+    /// Dirs/files use location as-is; leaves use "location:kind" to
+    /// disambiguate struct vs impl at the same qualified name.
+    location_index: HashMap<String, &'a str>,
 }
 
 impl<'a> GraphContextService<'a> {
@@ -26,13 +28,14 @@ impl<'a> GraphContextService<'a> {
 
         let mut location_index = HashMap::new();
         for dir in &graph.dirs {
-            location_index.insert(dir.base.location.as_str(), dir.base.id.as_str());
+            location_index.insert(dir.base.location.clone(), dir.base.id.as_str());
         }
         for file in &graph.files {
-            location_index.insert(file.base.location.as_str(), file.base.id.as_str());
+            location_index.insert(file.base.location.clone(), file.base.id.as_str());
         }
         for leaf in &graph.leaves {
-            location_index.insert(leaf.base.location.as_str(), leaf.base.id.as_str());
+            let key = format!("{}:{}", leaf.base.location, leaf.kind);
+            location_index.insert(key, leaf.base.id.as_str());
         }
 
         Self {
@@ -55,13 +58,13 @@ impl<'a> GraphContextService<'a> {
         &self,
         selector: &Selector,
     ) -> Result<GraphNodeRef<'a>, KnowledgeError> {
-        let location = match selector {
+        let key = match selector {
             Selector::Dir { path } => format!("{path}/"),
             Selector::File { path } => path.clone(),
-            Selector::Leaf { path, symbol, .. } => format!("{path}#{symbol}"),
+            Selector::Symbol { path, symbol, kind } => format!("{path}#{symbol}:{kind}"),
         };
 
-        let node_id = self.location_index.get(location.as_str()).ok_or_else(|| {
+        let node_id = self.location_index.get(key.as_str()).ok_or_else(|| {
             KnowledgeError::invalid_data(format!(
                 "selector `{selector}` does not resolve to a node"
             ))
@@ -133,7 +136,7 @@ impl<'a> GraphContextService<'a> {
         }
         for leaf in &self.graph.leaves {
             let node = GraphNodeRef::Leaf(leaf);
-            if matches(node, "leaf") {
+            if matches(node, "symbol") {
                 results.push(node);
                 if results.len() >= limit {
                     return results;
@@ -157,7 +160,7 @@ impl<'a> GraphContextService<'a> {
             }
             GraphNodeRef::File(f) => format!("file:{}", f.base.location),
             GraphNodeRef::Leaf(l) => {
-                format!("leaf:{}:{}", l.base.location, l.kind)
+                format!("symbol:{}:{}", l.base.location, l.kind)
             }
         }
     }
@@ -288,7 +291,7 @@ mod tests {
     fn resolve_leaf_selector() {
         let graph = fixture_graph();
         let svc = GraphContextService::new(&graph);
-        let sel: Selector = "leaf:src/lib.rs#hello:function".parse().unwrap();
+        let sel: Selector = "symbol:src/lib.rs#hello:function".parse().unwrap();
         let node = svc.resolve_selector(&sel).unwrap();
         assert_eq!(node.id(), "l-hello");
     }

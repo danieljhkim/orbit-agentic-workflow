@@ -101,7 +101,7 @@ impl KnowledgeStore {
             let key = match entry.node_type.as_str() {
                 "dir" => SelectorLookupKey::Dir(entry.location.clone()),
                 "file" => SelectorLookupKey::File(entry.location.clone()),
-                "leaf" => SelectorLookupKey::Leaf(
+                "leaf" => SelectorLookupKey::Symbol(
                     entry.location.clone(),
                     entry.kind.clone().ok_or_else(|| {
                         KnowledgeError::invalid_data(format!(
@@ -193,7 +193,7 @@ impl KnowledgeStore {
                 })
                 .unwrap_or_default();
 
-            let key = SelectorLookupKey::Leaf(entry.location.clone(), kind.clone());
+            let key = SelectorLookupKey::Symbol(entry.location.clone(), kind.clone());
             result.push((
                 key,
                 LeafData {
@@ -620,10 +620,10 @@ mod tests {
             }
         );
         assert_eq!(
-            "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function"
+            "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function"
                 .parse::<Selector>()
                 .unwrap(),
-            Selector::Leaf {
+            Selector::Symbol {
                 path: "crates/orbit-tools/src/lib.rs".to_string(),
                 symbol: "register_builtins".to_string(),
                 kind: "function".to_string(),
@@ -648,11 +648,11 @@ mod tests {
             }
         );
         assert_eq!(
-            "leaf:crates/orbit-tools/src/lib.rs#register_builtins"
+            "symbol:crates/orbit-tools/src/lib.rs#register_builtins"
                 .parse::<Selector>()
                 .unwrap_err(),
             SelectorParseError {
-                selector: "leaf:crates/orbit-tools/src/lib.rs#register_builtins".to_string(),
+                selector: "symbol:crates/orbit-tools/src/lib.rs#register_builtins".to_string(),
                 reason: "leaf selectors must use `leaf:<path>#<symbol>:<kind>`".to_string(),
             }
         );
@@ -700,7 +700,7 @@ mod tests {
         let store = KnowledgeStore::open(&fixture_knowledge_dir()).expect("store");
         let selectors = Selector::parse_many(&[
             "file:crates/orbit-tools/src/lib.rs".to_string(),
-            "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function".to_string(),
+            "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function".to_string(),
         ])
         .expect("selectors");
 
@@ -747,7 +747,7 @@ mod tests {
                         source: None,
                     },
                     KnowledgePackEntry {
-                        selector: "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function"
+                        selector: "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function"
                             .to_string(),
                         resolved_id: Some("node-leaf-register-builtins".to_string()),
                         kind: KnowledgeEntryKind::Leaf,
@@ -762,7 +762,7 @@ mod tests {
                                 "file_hash_at_capture": "7777777777777777777777777777777777777777777777777777777777777777",
                                 "history": [],
                                 "id": "node-leaf-register-builtins",
-                                "identity_key": "leaf:crates/orbit-tools/src/lib.rs#register_builtins:function",
+                                "identity_key": "symbol:crates/orbit-tools/src/lib.rs#register_builtins:function",
                                 "input_signature": [],
                                 "is_locked": false,
                                 "kind": "function",

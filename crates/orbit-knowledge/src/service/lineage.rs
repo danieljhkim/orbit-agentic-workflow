@@ -114,7 +114,7 @@ fn node_type_str(node: GraphNodeRef<'_>) -> &'static str {
     match node {
         GraphNodeRef::Dir(_) => "dir",
         GraphNodeRef::File(_) => "file",
-        GraphNodeRef::Leaf(_) => "leaf",
+        GraphNodeRef::Leaf(_) => "symbol",
     }
 }
 
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn json_pack_includes_selections_and_nodes() {
         let graph = fixture_graph();
-        let sel: Selector = "leaf:src/lib.rs#hello:function".parse().unwrap();
+        let sel: Selector = "symbol:src/lib.rs#hello:function".parse().unwrap();
         let opts = LineagePackOptions::default();
 
         let result = render_lineage_pack_from_graph(&graph, &[sel], &opts).unwrap();
@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn markdown_pack_contains_source() {
         let graph = fixture_graph();
-        let sel: Selector = "leaf:src/lib.rs#hello:function".parse().unwrap();
+        let sel: Selector = "symbol:src/lib.rs#hello:function".parse().unwrap();
         let opts = LineagePackOptions {
             format: LineageFormat::Markdown,
             ..Default::default()

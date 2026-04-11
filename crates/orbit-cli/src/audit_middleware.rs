@@ -355,6 +355,8 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             let sub = match &cmd.subcommand {
                 crate::command::knowledge::KnowledgeSubcommand::Build(_) => "build",
                 crate::command::knowledge::KnowledgeSubcommand::Update(_) => "update",
+                crate::command::knowledge::KnowledgeSubcommand::Show(_) => "show",
+                crate::command::knowledge::KnowledgeSubcommand::Search(_) => "search",
             };
             CommandMeta {
                 command: "knowledge".to_string(),

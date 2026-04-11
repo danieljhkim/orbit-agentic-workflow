@@ -64,9 +64,9 @@ impl Tool for OrbitKnowledgeWriteTool {
             .map_err(|e| OrbitError::InvalidInput(format!("{e}")))?;
 
         // Only leaf selectors are valid for knowledge.write
-        if !matches!(selector, Selector::Leaf { .. }) {
+        if !matches!(selector, Selector::Symbol { .. }) {
             return Err(OrbitError::InvalidInput(
-                "knowledge.write requires a leaf selector (leaf:path#symbol:kind)".to_string(),
+                "knowledge.write requires a symbol selector (symbol:path#symbol:kind)".to_string(),
             ));
         }
 
@@ -191,7 +191,7 @@ fn initialize_working_graph(
     }
 
     // Fallback: extract the target file to build a minimal working graph
-    let Selector::Leaf { path, .. } = selector else {
+    let Selector::Symbol { path, .. } = selector else {
         return Ok(WorkingGraph::new());
     };
 
@@ -209,7 +209,7 @@ fn initialize_working_graph(
 
     // Populate from extraction
     for leaf in &extraction.leaves {
-        let sel_str = format!("leaf:{path}#{}:{}", leaf.qualified_name, leaf.kind);
+        let sel_str = format!("symbol:{path}#{}:{}", leaf.qualified_name, leaf.kind);
         let working_leaf = WorkingLeaf {
             selector: sel_str.clone(),
             file_path: path.clone(),
@@ -282,7 +282,7 @@ mod tests {
                     ..Default::default()
                 },
                 json!({
-                    "selector": "leaf:src/lib.rs#hello:function",
+                    "selector": "symbol:src/lib.rs#hello:function",
                     "new_source": "pub fn hello() -> &'static str {\n    \"hi there\"\n}",
                     "reason": "friendlier greeting"
                 }),
@@ -310,7 +310,7 @@ mod tests {
                     ..Default::default()
                 },
                 json!({
-                    "selector": "leaf:src/lib.rs#greet:function",
+                    "selector": "symbol:src/lib.rs#greet:function",
                     "new_source": "pub fn greet(name: &str) -> String {\n    format!(\"Hello, {name}!\")\n}",
                     "position": "after:leaf:src/lib.rs#hello:function",
                     "reason": "new greeting function"
@@ -352,7 +352,7 @@ mod tests {
                     ..Default::default()
                 },
                 json!({
-                    "selector": "leaf:src/lib.rs#foo:function"
+                    "selector": "symbol:src/lib.rs#foo:function"
                 }),
             )
             .expect_err("should reject missing new_source");
@@ -369,7 +369,7 @@ mod tests {
             .execute(
                 &ctx,
                 json!({
-                    "selector": "leaf:src/lib.rs#hello:function",
+                    "selector": "symbol:src/lib.rs#hello:function",
                     "new_source": "pub fn hello() -> &'static str {\n    \"first\"\n}",
                     "reason": "first edit"
                 }),
@@ -379,7 +379,7 @@ mod tests {
             .execute(
                 &ctx,
                 json!({
-                    "selector": "leaf:src/lib.rs#hello:function",
+                    "selector": "symbol:src/lib.rs#hello:function",
                     "new_source": "pub fn hello() -> &'static str {\n    \"second\"\n}",
                     "reason": "second edit"
                 }),
@@ -394,7 +394,7 @@ mod tests {
         let graph = load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())
             .expect("load graph")
             .expect("graph");
-        let selector: Selector = "leaf:src/lib.rs#hello:function".parse().unwrap();
+        let selector: Selector = "symbol:src/lib.rs#hello:function".parse().unwrap();
         let chain = graph.version_chains().get(&selector.to_string()).unwrap();
         assert_eq!(chain.edits.len(), 2);
         assert_eq!(chain.edits[0].edit_sequence, 1);
