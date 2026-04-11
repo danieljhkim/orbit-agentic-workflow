@@ -212,14 +212,17 @@ impl WorkingGraph {
         &self.version_chains
     }
 
+    // -----------------------------------------------------------------
+    // Locking
+    // -----------------------------------------------------------------
+
+    /// Lock a node for exclusive editing.
+    ///
+    /// Returns `Err` if already locked by a different owner.
     /// Execute an edit on an existing leaf.
     ///
-    /// 1. Validate source hash against file on disk
-    /// 2. Replace the leaf's lines in the file
-    /// 3. Write the file back to disk
-    /// 4. Re-extract all leaves in the file
-    /// 5. Update the working graph
-    /// 6. Append to version chain
+    /// Locking is handled externally via the shared `LockStore` —
+    /// callers must acquire the lock before calling this method.
     pub fn edit_leaf(
         &mut self,
         selector: &Selector,
@@ -329,6 +332,9 @@ impl WorkingGraph {
     ///
     /// When position is provided, inserts after the anchor leaf's end_line.
     /// When position is None, appends before #[cfg(test)] mod tests or at EOF.
+    /// Insert a new leaf into a file.
+    ///
+    /// Locking is handled externally via the shared `LockStore`.
     pub fn insert_leaf(
         &mut self,
         selector: &Selector,

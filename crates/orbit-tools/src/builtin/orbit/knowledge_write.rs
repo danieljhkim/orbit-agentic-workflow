@@ -82,6 +82,23 @@ impl Tool for OrbitKnowledgeWriteTool {
                 None => initialize_working_graph(&knowledge_dir, &selector, workspace_root)?,
             };
 
+        // Acquire shared lock before editing
+        let lock_owner = ctx
+            .agent_name
+            .as_deref()
+            .or(ctx.task_id.as_deref())
+            .unwrap_or("unknown");
+        let lock_path = orbit_knowledge::lock::lock_store_path(&knowledge_dir);
+        orbit_knowledge::lock::with_lock_store(&lock_path, |store| {
+            store.lock(
+                &selector_str,
+                lock_owner,
+                ctx.task_id.as_deref(),
+                reason.as_deref().unwrap_or("editing"),
+            )
+        })
+        .map_err(|e| OrbitError::Execution(format!("lock failed: {e}")))?;
+
         let result = if working_graph.has_leaf(&selector) {
             working_graph
                 .edit_leaf(&selector, &new_source, reason.as_deref(), workspace_root)

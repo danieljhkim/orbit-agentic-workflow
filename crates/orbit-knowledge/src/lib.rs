@@ -1,6 +1,7 @@
 mod error;
 pub mod extract;
 pub mod graph;
+pub mod lock;
 pub mod pipeline;
 mod selector;
 pub mod service;
