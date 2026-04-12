@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::Utc;
 use orbit_store::{InvocationRecord, planning_duel_scoreboard};
 use orbit_types::{
-    Activity, EfficiencyMetrics, InvocationTrace, OrbitError, PlannerSlot, PlanningDuelRun,
+    Activity, EfficiencyMetrics, OrbitError, PlannerSlot, PlanningDuelRun,
     PlanningEfficiency, PlanningOutcome, PlanningRoleAssignment, PlanningRoles, TaskArtifact,
     TaskComment, TaskStatus, TokenUsage, all_agent_families, resolve_agent_model_pair,
 };
@@ -323,10 +323,13 @@ fn arbiter_input(task_id: &str) -> Value {
     json!({ "task_id": task_id })
 }
 
-fn efficiency_from_trace(trace: &InvocationTrace) -> PlanningDuelEfficiency {
+fn efficiency_from_invocation(invocation: &ActivityInvocationResult) -> PlanningDuelEfficiency {
+    let trace = &invocation.invocation_trace;
     PlanningDuelEfficiency {
         invocation_count: 1,
-        wall_clock_ms: trace.duration_ms,
+        // The direct activity runner already records the authoritative elapsed
+        // wall clock separately from the invocation trace payload.
+        wall_clock_ms: invocation.duration_ms,
         tool_call_count: trace.tool_calls.len() as u64,
         input_tokens: trace.usage.input,
         cache_read_tokens: trace.usage.cache_read,
@@ -351,7 +354,7 @@ fn role_metrics_from_invocation(
         agent: role.agent.clone(),
         model: role.model.clone(),
         activity_id: activity_id.to_string(),
-        efficiency: efficiency_from_trace(&invocation.invocation_trace),
+        efficiency: efficiency_from_invocation(invocation),
     }
 }
 
@@ -1055,7 +1058,7 @@ mod tests {
     use orbit_store::{
         InvocationQuery, InvocationRecord, InvocationToolCallRecord, planning_duel_scoreboard,
     };
-    use orbit_types::{OrbitError, TaskStatus, TokenUsage, ToolCallTrace};
+    use orbit_types::{OrbitError, PlanningRoleAssignment, TaskStatus, TokenUsage, ToolCallTrace};
     use serde_json::Value;
     use serde_json::json;
     use tempfile::tempdir;
@@ -1327,8 +1330,10 @@ mod tests {
 
                     Ok(ActivityInvocationResult {
                         response_json: None,
+                        // Keep the trace duration shared so tests catch any
+                        // accidental fallback to `invocation_trace.duration_ms`.
                         invocation_trace: sample_trace(
-                            if agent_cli == "codex" { 40 } else { 65 },
+                            90,
                             if agent_cli == "codex" { 11 } else { 17 },
                             if agent_cli == "codex" { 5 } else { 8 },
                             if agent_cli == "codex" { 48 } else { 96 },
@@ -1946,5 +1951,27 @@ mod tests {
                 byte_proxy_total: 12,
             }
         );
+    }
+
+    #[test]
+    fn role_metrics_from_invocation_uses_explicit_activity_duration() {
+        let metrics = super::role_metrics_from_invocation(
+            &PlanningRoleAssignment {
+                agent: "codex".to_string(),
+                model: "gpt-5.4".to_string(),
+            },
+            super::PLANNER_ACTIVITY_ID,
+            &ActivityInvocationResult {
+                response_json: None,
+                invocation_trace: sample_trace(999, 11, 5, 48),
+                exit_code: Some(0),
+                duration_ms: 40,
+            },
+        );
+
+        assert_eq!(metrics.efficiency.wall_clock_ms, 40);
+        assert_eq!(metrics.efficiency.tool_call_count, 1);
+        assert_eq!(metrics.efficiency.total_tokens, 16);
+        assert_eq!(metrics.efficiency.byte_proxy_total, 48);
     }
 }
