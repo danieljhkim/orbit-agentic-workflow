@@ -70,7 +70,7 @@ activity:
   skill_refs:
     - orbit
     - orbit-track-issues
-    - orbit-execute-change-request
+    - orbit-execute-task
   tools:
     - orbit.task.list
     - orbit.task.show

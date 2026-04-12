@@ -19,8 +19,8 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 7] = [
         include_str!("../../assets/skills/orbit-approve-task/SKILL.md"),
     ),
     (
-        "orbit-execute-change-request",
-        include_str!("../../assets/skills/orbit-execute-change-request/SKILL.md"),
+        "orbit-execute-task",
+        include_str!("../../assets/skills/orbit-execute-task/SKILL.md"),
     ),
     (
         "orbit-raise-pr",
