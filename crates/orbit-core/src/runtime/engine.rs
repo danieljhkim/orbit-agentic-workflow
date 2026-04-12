@@ -140,6 +140,7 @@ fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Pa
         "acceptance_criteria": task.acceptance_criteria.clone(),
         "plan": task.plan.clone(),
         "context_files": kept_context_files,
+        "pr_number": task.pr_number.clone(),
         "workspace_path": workspace_path,
         "repo_root": repo_root,
     })
@@ -825,7 +826,7 @@ mod tests {
             priority: TaskPriority::High,
             complexity: None,
             task_type: TaskType::Feature,
-            pr_number: None,
+            pr_number: Some("42".to_string()),
             pr_status: None,
             proposed_by: None,
             source_task_id: None,
@@ -909,6 +910,7 @@ mod tests {
             task_detail_envelope_json(&sample_task(), &json!({}), std::path::Path::new("/"));
 
         assert_eq!(detail.get("id"), Some(&json!("T20260408-0133")));
+        assert_eq!(detail.get("pr_number"), Some(&json!("42")));
         assert_eq!(detail.get("workspace_path"), Some(&json!("/task/worktree")));
         assert_eq!(detail.get("repo_root"), Some(&json!("/task/repo")));
     }
@@ -980,6 +982,12 @@ mod tests {
         assert_eq!(
             serialized.get("task").and_then(|task| task.get("title")),
             Some(&json!("Inject task details"))
+        );
+        assert_eq!(
+            serialized
+                .get("task")
+                .and_then(|task| task.get("pr_number")),
+            Some(&json!("42"))
         );
         assert_eq!(
             serialized

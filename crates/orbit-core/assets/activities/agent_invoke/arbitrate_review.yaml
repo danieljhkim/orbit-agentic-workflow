@@ -18,24 +18,30 @@ activity:
     fix loop and is recorded verbatim into the duel scoreboard.
 
     Steps:
-    1. Load the task spec:
-       - Call orbit.task.show with input: {"id": "<task_id>"} and read
-         title, description, plan, acceptance_criteria, context_files, and
-         prNumber.
+    1. Read the injected `task` object from the activity envelope first.
+       - Treat it as the normal source of task title, description, plan,
+         acceptance_criteria, context_files, workspace_path, and pr_number.
 
-    2. Read the diff:
-       - Call github.pr.view with pr: <prNumber> to inspect the PR metadata.
-       - Use proc.spawn to run `gh pr diff <prNumber>` from the task's
+    2. Fallback only if the injected task context is missing or malformed.
+       - If the envelope has no usable `task` object, or `task.pr_number` /
+         `task.workspace_path` are null/missing, call orbit.task.show with
+         input: {"id": "<task_id>"} to recover the canonical task record.
+
+    3. Read the diff:
+       - Call github.pr.view with pr: <pr_number> to inspect the PR metadata.
+       - Use proc.spawn to run `gh pr diff <pr_number>` from the task's
          workspace_path and read the full diff output. Do not judge without
          seeing the actual diff.
+       - If `task.pr_number` or `task.workspace_path` is still missing after
+         the fallback step, return a clear error instead of guessing.
 
-    3. Read the reviewer's comments:
+    4. Read the reviewer's comments:
        - The previous step's review_duel_pr output is piped into this step's
          input and contains the `threads` array. Each thread has an `id`,
          optional `path`/`line`, and a `body`.
        - Treat every thread as a blocking claim the reviewer has made.
 
-    4. Classify every reviewer comment:
+    5. Classify every reviewer comment:
        - For each thread, emit a PerCommentVerdict with:
            comment_id: "<thread.id>"
            verdict: one of "valid" | "invalid" | "out_of_scope" | "nitpick"
@@ -46,7 +52,7 @@ activity:
        - "out_of_scope" — real issue but outside the acceptance criteria.
        - "nitpick"      — stylistic or trivial, not worth blocking.
 
-    5. Score both agents on a 0.0–5.0 scale (float):
+    6. Score both agents on a 0.0–5.0 scale (float):
        - reviewer_score: quality of the review. High when the reviewer
          caught real issues precisely; low when the reviewer flooded the PR
          with invalid or nitpick comments.
@@ -54,7 +60,7 @@ activity:
          diff satisfies acceptance criteria cleanly; low when valid issues
          remain or scope/regression problems exist.
 
-    6. Emit the authoritative decision:
+    7. Emit the authoritative decision:
        - decision: "APPROVED" if there are no `valid` comments remaining
          AND the diff satisfies all acceptance criteria; otherwise
          "REQUEST_CHANGES".
@@ -62,7 +68,7 @@ activity:
          "valid". These are the only comments the implementer must address
          in the next fix-loop iteration.
 
-    7. Classify task-spec ambiguity:
+    8. Classify task-spec ambiguity:
        - task_class_ambiguity: one of "well_specified" | "needs_judgment" |
          "exploratory" | null.
        - "well_specified"  — requirements fully determine the correct
@@ -73,7 +79,7 @@ activity:
                               end-states exist.
        - null              — abstain only when you genuinely cannot judge.
 
-    8. Return a JSON object matching this exact shape (field names are
+    9. Return a JSON object matching this exact shape (field names are
        load-bearing — the record_duel_scores automation reads them directly):
          {
            "per_comment": [

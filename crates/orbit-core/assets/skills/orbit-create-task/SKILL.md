@@ -16,7 +16,7 @@ Create an Orbit task another engineer or agent can execute without guessing. Foc
 3. Write clear acceptance criteria that define observable success.
 4. Add assumptions, risks, and rollback notes to the description when they matter.
 5. Run `orbit tool run orbit.task.add` with the description, acceptance criteria, and workspace. Leave `plan` blank unless you have a compelling reason to pre-seed it.
-6. Verify with `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'`.
+6. Use the `orbit.task.add` result as the default confirmation. If you need to confirm the canonical stored task record, run `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'`.
 
 ## Operating Rules
 

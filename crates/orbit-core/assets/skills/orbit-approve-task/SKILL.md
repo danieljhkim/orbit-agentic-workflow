@@ -37,7 +37,10 @@ orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>", "comme
 
 ## Verification
 
-After each decision, run `orbit tool run orbit.task.show --input '{"id": "<id>"}'` and confirm:
+Prefer the returned payload from `approve`, `reject`, or `start` as your
+default verification. If you need to confirm the canonical stored task
+record, run `orbit tool run orbit.task.show --input '{"id": "<id>"}'` and
+confirm:
 
 - After proposal approval: status is `backlog`
 - After immediate proposal start: status is `in-progress` and history includes both `proposal_approved` and `started`

@@ -17,19 +17,25 @@ activity:
     pull request. Evaluate it and post blocking or approving review threads.
 
     Steps:
-    1. Load the task:
-       - Call orbit.task.show with input: {"id": "<task_id>"} to fetch
-         title, description, plan, acceptance_criteria, context_files, and
-         prNumber.
+    1. Read the injected `task` object from the activity envelope first.
+       - Treat it as the normal source of task title, description, plan,
+         acceptance_criteria, context_files, workspace_path, and pr_number.
+       - Use `task.acceptance_criteria` and `task.context_files` directly when
+         reviewing scope and correctness.
 
-    2. Locate the PR:
-       - Use the task's `prNumber` field. If it is missing, return a clear
-         error — do not guess the PR identifier.
+    2. Fallback only if the injected task context is missing or malformed.
+       - If the envelope has no usable `task` object, or `task.pr_number` is
+         null/missing, call orbit.task.show with input: {"id": "<task_id>"} to
+         recover the canonical task record.
 
-    3. Call github.pr.view with pr: <prNumber>.
+    3. Locate the PR:
+       - Use `task.pr_number`. If it is still missing after the fallback step,
+         return a clear error — do not guess the PR identifier.
+
+    4. Call github.pr.view with pr: <pr_number>.
        - Inspect the PR title, body, changed files, commits, and full diff.
 
-    4. Evaluate the PR against the task:
+    5. Evaluate the PR against the task:
        - Check each acceptance criterion against the diff.
        - Are there correctness, logic, or safety issues?
        - Scope check: compare the PR's changed files against the task's
@@ -40,7 +46,7 @@ activity:
          are always BLOCKING.
        - Missing tests for changed behavior are BLOCKING.
 
-    5. Choose an action — apply strictly in order:
+    6. Choose an action — apply strictly in order:
        - "request-changes" — ANY of the following apply:
              • an acceptance criterion is not met
              • correctness or logic error
@@ -49,7 +55,7 @@ activity:
              • missing tests for changed behavior
        - "approve" — all criteria met AND no blocking issues found.
 
-    6. Post review feedback:
+    7. Post review feedback:
        - For each issue, call orbit.task.review_thread.add with the task's id.
          Set path and line when the issue is tied to a specific diff line.
        - Exactly one issue per thread. Never bundle findings.
@@ -57,13 +63,13 @@ activity:
          once more with a short overall summary of the decision and blocking
          themes.
 
-    7. Update the task with the review decision:
+    8. Update the task with the review decision:
        - Call orbit.task.update with input:
          {"id": "<task_id>", "pr_status": "<pr_status>"}
        - This is the CRITICAL step. Downstream automation reads pr_status
          from the task artifacts to gate the fix loop.
 
-    8. Emit a per-thread JSON output so the arbiter step can read it:
+    9. Emit a per-thread JSON output so the arbiter step can read it:
        - Return a JSON object of shape:
          {
            "decision": "approve" | "request-changes",
