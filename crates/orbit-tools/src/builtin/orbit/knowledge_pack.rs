@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use orbit_knowledge::{
     KnowledgeStore, Selector, load_task_working_graph, overlay_pack_with_working_graph,
@@ -107,37 +107,7 @@ fn parse_selector_strings(input: &Value) -> Result<Vec<String>, OrbitError> {
 }
 
 fn resolve_knowledge_dir(ctx: &ToolContext, input: &Value) -> Result<PathBuf, OrbitError> {
-    if let Some(raw) = input.get("knowledge_dir") {
-        let raw = raw.as_str().ok_or_else(|| {
-            OrbitError::InvalidInput("`knowledge_dir` must be a string".to_string())
-        })?;
-        if raw.trim().is_empty() {
-            return Err(OrbitError::InvalidInput(
-                "`knowledge_dir` must not be empty".to_string(),
-            ));
-        }
-        return Ok(resolve_path(ctx, Path::new(raw)));
-    }
-
-    let Some(workspace_root) = ctx.workspace_root.as_deref() else {
-        return Err(OrbitError::InvalidInput(
-            "`knowledge_dir` is required when `workspace_root` is unavailable".to_string(),
-        ));
-    };
-    Ok(workspace_root.join(".orbit/knowledge"))
-}
-
-fn resolve_path(ctx: &ToolContext, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    if let Some(workspace_root) = ctx.workspace_root.as_deref() {
-        return workspace_root.join(path);
-    }
-    if let Some(cwd) = ctx.cwd.as_deref() {
-        return Path::new(cwd).join(path);
-    }
-    path.to_path_buf()
+    super::knowledge_write::resolve_knowledge_dir(ctx, input)
 }
 
 #[cfg(test)]

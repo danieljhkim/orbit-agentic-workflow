@@ -207,6 +207,13 @@ pub(super) fn resolve_knowledge_dir(
         return Ok(path.to_path_buf());
     }
 
+    // Prefer orbit_root (the resolved .orbit data directory) over workspace_root.
+    // In worktree contexts, workspace_root points to the worktree checkout while
+    // orbit_root points to the main repo's .orbit/ where knowledge artifacts live.
+    if let Some(orbit_root) = ctx.orbit_root.as_deref() {
+        return Ok(orbit_root.join("knowledge"));
+    }
+
     let Some(workspace_root) = ctx.workspace_root.as_deref() else {
         return Err(OrbitError::InvalidInput(
             "`knowledge_dir` is required when `workspace_root` is unavailable".to_string(),
@@ -413,5 +420,39 @@ mod tests {
         assert_eq!(chain.edits[0].edit_sequence, 1);
         assert_eq!(chain.edits[1].edit_sequence, 2);
         assert_eq!(chain.edits[1].reason.as_deref(), Some("second edit"));
+    }
+
+    #[test]
+    fn resolve_knowledge_dir_prefers_orbit_root() {
+        let ctx = ToolContext {
+            workspace_root: Some(PathBuf::from("/worktree/checkout")),
+            orbit_root: Some(PathBuf::from("/main/repo/.orbit")),
+            ..Default::default()
+        };
+        let dir = super::resolve_knowledge_dir(&ctx, &serde_json::Value::Null).unwrap();
+        assert_eq!(dir, PathBuf::from("/main/repo/.orbit/knowledge"));
+    }
+
+    #[test]
+    fn resolve_knowledge_dir_falls_back_to_workspace_root() {
+        let ctx = ToolContext {
+            workspace_root: Some(PathBuf::from("/some/repo")),
+            orbit_root: None,
+            ..Default::default()
+        };
+        let dir = super::resolve_knowledge_dir(&ctx, &serde_json::Value::Null).unwrap();
+        assert_eq!(dir, PathBuf::from("/some/repo/.orbit/knowledge"));
+    }
+
+    #[test]
+    fn resolve_knowledge_dir_explicit_input_overrides_orbit_root() {
+        let ctx = ToolContext {
+            workspace_root: Some(PathBuf::from("/repo")),
+            orbit_root: Some(PathBuf::from("/repo/.orbit")),
+            ..Default::default()
+        };
+        let input = serde_json::json!({ "knowledge_dir": "/custom/knowledge" });
+        let dir = super::resolve_knowledge_dir(&ctx, &input).unwrap();
+        assert_eq!(dir, PathBuf::from("/custom/knowledge"));
     }
 }

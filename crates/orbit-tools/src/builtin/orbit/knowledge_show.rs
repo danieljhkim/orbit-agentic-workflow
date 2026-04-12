@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use orbit_knowledge::Selector;
 use orbit_knowledge::graph::navigator::GraphNodeRef;
 use orbit_knowledge::graph::object_store::GraphObjectStore;
@@ -77,11 +75,9 @@ impl Tool for OrbitKnowledgeShowTool {
 fn load_graph(
     ctx: &ToolContext,
 ) -> Result<orbit_knowledge::graph::nodes::CodebaseGraphV1, OrbitError> {
-    let workspace_root = ctx
-        .workspace_root
-        .as_deref()
-        .ok_or_else(|| OrbitError::InvalidInput("workspace_root is required".to_string()))?;
-    let graph_dir = Path::new(workspace_root).join(".orbit/knowledge/graph");
+    let knowledge_dir =
+        super::knowledge_write::resolve_knowledge_dir(ctx, &serde_json::Value::Null)?;
+    let graph_dir = knowledge_dir.join("graph");
     GraphObjectStore::new(graph_dir)
         .read_graph()
         .map_err(|e| OrbitError::Execution(format!("failed to load knowledge graph: {e}")))

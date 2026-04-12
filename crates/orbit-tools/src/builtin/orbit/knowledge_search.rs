@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use orbit_knowledge::graph::object_store::GraphObjectStore;
 use orbit_knowledge::service::GraphContextService;
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
@@ -50,11 +48,8 @@ impl Tool for OrbitKnowledgeSearchTool {
         let prefix = super::optional_string(&input, "prefix")?;
         let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
 
-        let workspace_root = ctx
-            .workspace_root
-            .as_deref()
-            .ok_or_else(|| OrbitError::InvalidInput("workspace_root is required".to_string()))?;
-        let graph_dir = Path::new(workspace_root).join(".orbit/knowledge/graph");
+        let knowledge_dir = super::knowledge_write::resolve_knowledge_dir(ctx, &input)?;
+        let graph_dir = knowledge_dir.join("graph");
         let graph = GraphObjectStore::new(graph_dir)
             .read_graph()
             .map_err(|e| OrbitError::Execution(format!("failed to load knowledge graph: {e}")))?;
