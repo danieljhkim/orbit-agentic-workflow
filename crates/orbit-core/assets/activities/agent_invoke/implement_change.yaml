@@ -57,7 +57,9 @@ activity:
        - Call orbit.graph.pack with the selector list.
        - If the response succeeds, use the pack entries as your primary context.
          Each entry includes the leaf source, imports, and immediate neighbors —
-         you do NOT need to fs.read the full file.
+         you do NOT need to fs.read the full file. File entries include
+         symbol_summary listing child symbols; dir entries include children
+         listing child files and subdirs.
        - If the response error kind is "knowledge_unavailable", fall back to
          fs.read on each context_file as before. This keeps the activity working
          when orbit-map has not been run yet.
@@ -65,8 +67,14 @@ activity:
          specific files as a fallback. Do NOT fall back to raw reads for
          selectors that resolved cleanly.
        - Use orbit.graph.search to discover related symbols when the plan
-         references names not in context_files. Use orbit.graph.show to
-         inspect a specific node's lineage, siblings, and source.
+         references names not in context_files. Omit query to browse all nodes;
+         use kind filter (function, struct, trait, etc.) to narrow results.
+         Use orbit.graph.show to inspect a specific node's lineage, siblings,
+         and source.
+       - Use orbit.graph.overview with a prefix to get an aggregate summary
+         of a module: file counts, symbol kinds, per-file symbol listings.
+       - Use orbit.graph.refs to find references to a symbol across the graph
+         when you need to understand who calls or uses a given function/type.
        - All relative file and process work should happen inside the effective workspace_path
          (input.workspace_path if provided, otherwise the task's workspace_path).
        - If the plan is missing or still placeholder text, stop and return status: "blocked"
@@ -159,12 +167,14 @@ activity:
     - orbit-track-issues
   tools:
     - orbit.graph.pack
+    - orbit.graph.search
+    - orbit.graph.show
+    - orbit.graph.overview
+    - orbit.graph.refs
     - orbit.graph.write
     - orbit.graph.add
     - orbit.graph.delete
     - orbit.graph.move
-    - orbit.graph.show
-    - orbit.graph.search
     - orbit.task.update
     - orbit.task.add
     - fs.read
