@@ -500,6 +500,7 @@ mod tests {
                 "check_duel_review_decision",
                 "job_duel_review_loop",
                 "merge_batch_pr",
+                "cleanup_worktree",
                 "record_duel_scores",
             ]
         );
@@ -517,6 +518,39 @@ mod tests {
             .find(|step| step.target_id == "record_duel_scores")
             .expect("record step");
         assert_eq!(record_step.condition, StepCondition::Always);
+
+        let cleanup_step = duel_cycle
+            .steps
+            .iter()
+            .find(|step| step.target_id == "cleanup_worktree")
+            .expect("cleanup step");
+        assert_eq!(cleanup_step.condition, StepCondition::OnSuccess);
+    }
+
+    #[test]
+    fn local_task_pipeline_cleans_up_worktree_only_after_successful_merge() {
+        let specs = load_default_job_specs(DEFAULT_JOB_FILES).expect("jobs");
+        let local_pipeline = specs
+            .into_iter()
+            .find(|spec| spec.job_id == "job_local_task_pipeline")
+            .expect("job_local_task_pipeline");
+
+        let step_ids = local_pipeline
+            .steps
+            .iter()
+            .map(|step| step.target_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            step_ids[step_ids.len() - 2..],
+            ["merge_batch_worktree_into_base", "cleanup_worktree"]
+        );
+
+        let cleanup_step = local_pipeline
+            .steps
+            .iter()
+            .find(|step| step.target_id == "cleanup_worktree")
+            .expect("cleanup step");
+        assert_eq!(cleanup_step.condition, StepCondition::OnSuccess);
     }
 
     #[test]

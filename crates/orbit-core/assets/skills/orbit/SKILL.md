@@ -13,7 +13,9 @@ This skill orients agents working with Orbit. Orbit operations should go through
 
 ### Loading and executing a task
 
-1. Load the task: `orbit tool run orbit.task.show --input '{"id": "<task-id>"}'`
+**Inside `implement_change` (and any activity that injects `task` into the execution envelope):** use the injected `task.*` fields directly. Do not call `orbit.task.show` unless the activity instructions explicitly require it and the tool appears in the activity allowlist.
+
+1. If the activity did not preload `task`, load the task: `orbit tool run orbit.task.show --input '{"id": "<task-id>"}'`
 2. Read the `description` and `acceptance_criteria` first — they define the required outcome.
 3. If the `plan` field is blank or placeholder text, author a fresh plan with `orbit.task.update`.
 4. Read each file listed in `context_files` before making changes.
@@ -34,6 +36,8 @@ This skill orients agents working with Orbit. Orbit operations should go through
 ## Command Reference
 
 Invoke Orbit through `orbit tool run`:
+
+If an activity already injected `task` into the execution envelope, use that snapshot instead of calling `orbit.task.show` again.
 
 ```bash
 # Task commands
