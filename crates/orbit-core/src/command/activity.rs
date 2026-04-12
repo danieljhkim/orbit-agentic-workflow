@@ -40,6 +40,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/automation/commit_and_open_batch_pr.yaml"),
     ),
     (
+        "cleanup_worktree",
+        include_str!("../../assets/activities/automation/cleanup_worktree.yaml"),
+    ),
+    (
         "implement_change",
         include_str!("../../assets/activities/agent_invoke/implement_change.yaml"),
     ),
@@ -616,6 +620,47 @@ mod tests {
         assert!(tools.contains(&"fs.read"));
         assert!(tools.contains(&"fs.write"));
         assert!(!tools.iter().any(|t| t.starts_with("orbit.graph.")));
+    }
+
+    #[test]
+    fn implement_change_allowlist_stays_aligned_with_orbit_skill_guidance() {
+        let specs = load_default_activity_specs(DEFAULT_ACTIVITY_FILES, None).expect("activities");
+        let implement_change = specs
+            .into_iter()
+            .find(|spec| spec.id == "implement_change")
+            .expect("implement_change activity");
+
+        let instruction = implement_change
+            .spec_config
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        assert!(
+            instruction.contains("Read the injected `task` object from this execution envelope")
+        );
+        assert!(instruction.contains(
+            "The injected task snapshot is the authoritative task context for implementation"
+        ));
+
+        let tools = implement_change
+            .spec_config
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .expect("tools")
+            .iter()
+            .map(|value| value.as_str().expect("tool name"))
+            .collect::<Vec<_>>();
+        assert!(
+            !tools.contains(&"orbit.task.show"),
+            "orbit.task.show must stay out of the implement_change allowlist when task context is preloaded"
+        );
+        assert!(tools.contains(&"orbit.task.update"));
+
+        let orbit_skill = include_str!("../../assets/skills/orbit/SKILL.md");
+        assert!(orbit_skill.contains("Inside `implement_change`"));
+        assert!(orbit_skill.contains("use the injected `task.*` fields directly"));
+        assert!(orbit_skill.contains("Do not call `orbit.task.show`"));
+        assert!(orbit_skill.contains("If the activity did not preload `task`, load the task"));
     }
 
     #[test]
