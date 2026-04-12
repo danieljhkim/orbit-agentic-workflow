@@ -38,7 +38,7 @@ pub struct KnowledgePack {
     pub entries: Vec<KnowledgePackEntry>,
 }
 
-const TASK_WORKING_GRAPH_DIR: &str = "runtime/knowledge-write";
+const TASK_WORKING_GRAPH_DIR: &str = "knowledge/working";
 
 /// Leaf data extracted from a graph object, used to initialize a WorkingGraph.
 #[derive(Debug, Clone)]
@@ -593,7 +593,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry, KnowledgeStore};
+    use super::{
+        KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry, KnowledgeStore,
+        task_working_graph_state_path,
+    };
     use crate::error::KnowledgeError;
     use crate::selector::{Selector, SelectorParseError};
 
@@ -693,6 +696,15 @@ mod tests {
         assert!(!KnowledgeStore::is_available(Path::new(
             "/tmp/definitely-missing-orbit"
         )));
+    }
+
+    #[test]
+    fn task_working_graph_state_path_is_under_knowledge() {
+        let root = Path::new("/tmp/test-orbit");
+        let path = task_working_graph_state_path(Some(root), Some("T-001")).expect("path");
+
+        assert!(path.ends_with("knowledge/working/T-001.json"));
+        assert!(!path.to_string_lossy().contains("runtime"));
     }
 
     #[test]

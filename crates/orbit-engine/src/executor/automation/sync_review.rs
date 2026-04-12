@@ -16,6 +16,97 @@ enum ThreadSyncMode {
     General,
 }
 
+trait GhClient {
+    fn get_owner_repo(&self, repo_root: &str) -> Result<String, OrbitError>;
+    fn get_pr_head_sha(&self, repo_root: &str, pr_number: &str) -> Result<String, OrbitError>;
+    fn load_pr_file_patches(
+        &self,
+        repo_root: &str,
+        owner_repo: &str,
+        pr_number: &str,
+    ) -> Result<PrFilePatchMap, OrbitError>;
+    fn create_inline_review_comment(
+        &self,
+        repo_root: &str,
+        owner_repo: &str,
+        pr_number: &str,
+        commit_id: &str,
+        path: &str,
+        line: u64,
+        body: &str,
+    ) -> Result<u64, OrbitError>;
+    fn create_general_comment(
+        &self,
+        repo_root: &str,
+        pr_number: &str,
+        body: &str,
+    ) -> Result<u64, OrbitError>;
+    fn create_reply_comment(
+        &self,
+        repo_root: &str,
+        owner_repo: &str,
+        pr_number: &str,
+        parent_comment_id: u64,
+        body: &str,
+    ) -> Result<u64, OrbitError>;
+}
+
+struct RealGhClient;
+
+impl GhClient for RealGhClient {
+    fn get_owner_repo(&self, repo_root: &str) -> Result<String, OrbitError> {
+        get_owner_repo(repo_root)
+    }
+
+    fn get_pr_head_sha(&self, repo_root: &str, pr_number: &str) -> Result<String, OrbitError> {
+        get_pr_head_sha(repo_root, pr_number)
+    }
+
+    fn load_pr_file_patches(
+        &self,
+        repo_root: &str,
+        owner_repo: &str,
+        pr_number: &str,
+    ) -> Result<PrFilePatchMap, OrbitError> {
+        load_pr_file_patches(repo_root, owner_repo, pr_number)
+    }
+
+    fn create_inline_review_comment(
+        &self,
+        repo_root: &str,
+        owner_repo: &str,
+        pr_number: &str,
+        commit_id: &str,
+        path: &str,
+        line: u64,
+        body: &str,
+    ) -> Result<u64, OrbitError> {
+        create_inline_review_comment(
+            repo_root, owner_repo, pr_number, commit_id, path, line, body,
+        )
+    }
+
+    fn create_general_comment(
+        &self,
+        repo_root: &str,
+        pr_number: &str,
+        body: &str,
+    ) -> Result<u64, OrbitError> {
+        create_general_comment(repo_root, pr_number, body)
+    }
+
+    fn create_reply_comment(
+        &self,
+        repo_root: &str,
+        owner_repo: &str,
+        pr_number: &str,
+        parent_comment_id: u64,
+        body: &str,
+    ) -> Result<u64, OrbitError> {
+        create_reply_comment(repo_root, owner_repo, pr_number, parent_comment_id, body)
+    }
+}
+
 pub(super) fn sync_batch_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
@@ -51,6 +142,18 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     task_id: &str,
 ) -> Result<u64, OrbitError> {
+    let gh = RealGhClient;
+    sync_task_review_to_github_with_client(host, &gh, task_id)
+}
+
+fn sync_task_review_to_github_with_client<
+    H: RuntimeHost + TaskHost + ?Sized,
+    C: GhClient + ?Sized,
+>(
+    host: &H,
+    gh: &C,
+    task_id: &str,
+) -> Result<u64, OrbitError> {
     let task = host.get_task(task_id)?;
 
     if task.pr_number.is_none() {
@@ -72,12 +175,13 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
         return Ok(0);
     };
 
-    let owner_repo = get_owner_repo(repo_root)?;
-    let head_sha = get_pr_head_sha(repo_root, pr_number)?;
+    let owner_repo = gh.get_owner_repo(repo_root)?;
+    let head_sha = gh.get_pr_head_sha(repo_root, pr_number)?;
     // If patch metadata can't be resolved, fall back to general PR comments
     // instead of failing the entire review sync run.
-    let pr_file_patches =
-        load_pr_file_patches(repo_root, &owner_repo, pr_number).unwrap_or_default();
+    let pr_file_patches = gh
+        .load_pr_file_patches(repo_root, &owner_repo, pr_number)
+        .unwrap_or_default();
 
     let mut threads = task.review_threads.clone();
     let mut synced_count: u64 = 0;
@@ -85,6 +189,7 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     for thread in threads.iter_mut() {
         let pending_labels = pending_sync_message_labels(thread);
         let thread_synced = sync_thread(
+            gh,
             repo_root,
             &owner_repo,
             pr_number,
@@ -120,7 +225,8 @@ fn sync_task_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     Ok(synced_count)
 }
 
-fn sync_thread(
+fn sync_thread<C: GhClient + ?Sized>(
+    gh: &C,
     repo_root: &str,
     owner_repo: &str,
     pr_number: &str,
@@ -137,7 +243,7 @@ fn sync_thread(
         let first_msg = &thread.messages[0];
 
         let github_id = match &sync_mode {
-            ThreadSyncMode::Inline { path, line } => create_inline_review_comment(
+            ThreadSyncMode::Inline { path, line } => gh.create_inline_review_comment(
                 repo_root,
                 owner_repo,
                 pr_number,
@@ -146,7 +252,7 @@ fn sync_thread(
                 *line,
                 &first_msg.body,
             )?,
-            ThreadSyncMode::General => create_general_comment(
+            ThreadSyncMode::General => gh.create_general_comment(
                 repo_root,
                 pr_number,
                 &render_general_comment_body(thread_path.as_deref(), thread_line, &first_msg.body),
@@ -165,7 +271,7 @@ fn sync_thread(
                     if msg.github_comment_id.is_some() {
                         continue;
                     }
-                    let reply_id = create_reply_comment(
+                    let reply_id = gh.create_reply_comment(
                         repo_root, owner_repo, pr_number, parent_id, &msg.body,
                     )?;
                     msg.github_comment_id = Some(reply_id);
@@ -178,7 +284,7 @@ fn sync_thread(
                 if msg.github_comment_id.is_some() {
                     continue;
                 }
-                let comment_id = create_general_comment(
+                let comment_id = gh.create_general_comment(
                     repo_root,
                     pr_number,
                     &render_general_comment_body(thread_path.as_deref(), thread_line, &msg.body),
@@ -602,12 +708,10 @@ fn json_type_name(value: &Value) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::env;
+    use std::collections::{HashMap, VecDeque};
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::Mutex;
 
     use chrono::Utc;
     use orbit_tools::ToolContext;
@@ -619,13 +723,11 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        ThreadSyncMode, parse_agent_model_label, parse_pr_file_patches,
+        GhClient, PrFilePatchMap, ThreadSyncMode, parse_agent_model_label, parse_pr_file_patches,
         patch_supports_right_side_line, pending_sync_message_labels, render_general_comment_body,
-        sync_mode_for_thread, sync_task_review_to_github,
+        sync_mode_for_thread, sync_task_review_to_github_with_client,
     };
     use crate::context::{JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
-
-    static SYNC_REVIEW_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct TestHost {
         task: Task,
@@ -766,46 +868,149 @@ mod tests {
         }
     }
 
-    struct PathGuard {
-        original_path: Option<String>,
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum GhCall {
+        InlineComment {
+            commit_id: String,
+            path: String,
+            line: u64,
+            body: String,
+        },
+        GeneralComment {
+            body: String,
+        },
+        ReplyComment {
+            parent_comment_id: u64,
+            body: String,
+        },
     }
 
-    impl PathGuard {
-        fn prepend(dir: &Path) -> Self {
-            let original_path = env::var("PATH").ok();
-            let mut new_path = dir.display().to_string();
-            if let Some(existing) = &original_path
-                && !existing.is_empty()
-            {
-                new_path.push(':');
-                new_path.push_str(existing);
-            }
+    struct FakeGhClient {
+        owner_repo: String,
+        head_sha: String,
+        pr_file_patches: Result<PrFilePatchMap, String>,
+        inline_comment_ids: Mutex<VecDeque<u64>>,
+        general_comment_ids: Mutex<VecDeque<u64>>,
+        reply_comment_ids: Mutex<VecDeque<u64>>,
+        calls: Mutex<Vec<GhCall>>,
+    }
 
-            // SAFETY: tests serialize PATH mutation via SYNC_REVIEW_ENV_LOCK.
-            unsafe {
-                env::set_var("PATH", new_path);
+    impl FakeGhClient {
+        fn new(pr_file_patches: Result<PrFilePatchMap, String>) -> Self {
+            Self {
+                owner_repo: "orbit/orbit".to_string(),
+                head_sha: "deadbeef".to_string(),
+                pr_file_patches,
+                inline_comment_ids: Mutex::new(VecDeque::new()),
+                general_comment_ids: Mutex::new(VecDeque::new()),
+                reply_comment_ids: Mutex::new(VecDeque::new()),
+                calls: Mutex::new(Vec::new()),
             }
+        }
 
-            Self { original_path }
+        fn with_inline_comment_ids(self, ids: impl IntoIterator<Item = u64>) -> Self {
+            *self.inline_comment_ids.lock().expect("inline ids lock") = ids.into_iter().collect();
+            self
+        }
+
+        fn with_general_comment_ids(self, ids: impl IntoIterator<Item = u64>) -> Self {
+            *self.general_comment_ids.lock().expect("general ids lock") = ids.into_iter().collect();
+            self
+        }
+
+        fn with_reply_comment_ids(self, ids: impl IntoIterator<Item = u64>) -> Self {
+            *self.reply_comment_ids.lock().expect("reply ids lock") = ids.into_iter().collect();
+            self
+        }
+
+        fn take_next_id(queue: &Mutex<VecDeque<u64>>, label: &str) -> Result<u64, OrbitError> {
+            queue
+                .lock()
+                .expect("comment id queue lock")
+                .pop_front()
+                .ok_or_else(|| OrbitError::Execution(format!("missing fake {label} id")))
+        }
+
+        fn calls(&self) -> Vec<GhCall> {
+            self.calls.lock().expect("calls lock").clone()
         }
     }
 
-    impl Drop for PathGuard {
-        fn drop(&mut self) {
-            match &self.original_path {
-                Some(path) => {
-                    // SAFETY: tests serialize PATH mutation via SYNC_REVIEW_ENV_LOCK.
-                    unsafe {
-                        env::set_var("PATH", path);
-                    }
-                }
-                None => {
-                    // SAFETY: tests serialize PATH mutation via SYNC_REVIEW_ENV_LOCK.
-                    unsafe {
-                        env::remove_var("PATH");
-                    }
-                }
-            }
+    impl GhClient for FakeGhClient {
+        fn get_owner_repo(&self, _repo_root: &str) -> Result<String, OrbitError> {
+            Ok(self.owner_repo.clone())
+        }
+
+        fn get_pr_head_sha(
+            &self,
+            _repo_root: &str,
+            _pr_number: &str,
+        ) -> Result<String, OrbitError> {
+            Ok(self.head_sha.clone())
+        }
+
+        fn load_pr_file_patches(
+            &self,
+            _repo_root: &str,
+            _owner_repo: &str,
+            _pr_number: &str,
+        ) -> Result<PrFilePatchMap, OrbitError> {
+            self.pr_file_patches.clone().map_err(OrbitError::Execution)
+        }
+
+        fn create_inline_review_comment(
+            &self,
+            _repo_root: &str,
+            _owner_repo: &str,
+            _pr_number: &str,
+            commit_id: &str,
+            path: &str,
+            line: u64,
+            body: &str,
+        ) -> Result<u64, OrbitError> {
+            self.calls
+                .lock()
+                .expect("calls lock")
+                .push(GhCall::InlineComment {
+                    commit_id: commit_id.to_string(),
+                    path: path.to_string(),
+                    line,
+                    body: body.to_string(),
+                });
+            Self::take_next_id(&self.inline_comment_ids, "inline review comment")
+        }
+
+        fn create_general_comment(
+            &self,
+            _repo_root: &str,
+            _pr_number: &str,
+            body: &str,
+        ) -> Result<u64, OrbitError> {
+            self.calls
+                .lock()
+                .expect("calls lock")
+                .push(GhCall::GeneralComment {
+                    body: body.to_string(),
+                });
+            Self::take_next_id(&self.general_comment_ids, "general comment")
+        }
+
+        fn create_reply_comment(
+            &self,
+            _repo_root: &str,
+            _owner_repo: &str,
+            _pr_number: &str,
+            parent_comment_id: u64,
+            body: &str,
+        ) -> Result<u64, OrbitError> {
+            self.calls
+                .lock()
+                .expect("calls lock")
+                .push(GhCall::ReplyComment {
+                    parent_comment_id,
+                    body: body.to_string(),
+                });
+            Self::take_next_id(&self.reply_comment_ids, "reply comment")
         }
     }
 
@@ -849,39 +1054,52 @@ mod tests {
         .expect("valid scoreboard json")
     }
 
-    fn install_fake_gh(bin_dir: &Path) {
-        let script = r#"#!/bin/sh
-set -eu
+    fn review_message(
+        message_id: &str,
+        by: &str,
+        body: &str,
+        github_comment_id: Option<u64>,
+    ) -> ReviewMessage {
+        ReviewMessage {
+            message_id: message_id.to_string(),
+            at: Utc::now(),
+            by: by.to_string(),
+            body: body.to_string(),
+            github_comment_id,
+        }
+    }
 
-if [ "$#" -ge 2 ] && [ "$1" = "repo" ] && [ "$2" = "view" ]; then
-  printf 'orbit/orbit\n'
-  exit 0
-fi
+    fn review_thread(
+        thread_id: &str,
+        path: Option<&str>,
+        line: Option<u64>,
+        messages: Vec<ReviewMessage>,
+        github_thread_id: Option<u64>,
+    ) -> ReviewThread {
+        ReviewThread {
+            thread_id: thread_id.to_string(),
+            path: path.map(str::to_string),
+            line,
+            status: ReviewThreadStatus::Open,
+            messages,
+            github_thread_id,
+        }
+    }
 
-if [ "$#" -ge 3 ] && [ "$1" = "pr" ] && [ "$2" = "view" ]; then
-  printf 'deadbeef\n'
-  exit 0
-fi
+    fn sample_patch_map(path: &str) -> PrFilePatchMap {
+        HashMap::from([(
+            path.to_string(),
+            Some("@@ -9,2 +9,3 @@\n context\n-old\n+new\n+more".to_string()),
+        )])
+    }
 
-if [ "$#" -ge 2 ] && [ "$1" = "api" ] && [ "$2" = "repos/orbit/orbit/pulls/91/files" ]; then
-  printf '[[]]\n'
-  exit 0
-fi
-
-if [ "$#" -ge 2 ] && [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
-  printf 'https://github.com/orbit/orbit/pull/91#issuecomment-123\n'
-  exit 0
-fi
-
-printf 'unexpected gh invocation: %s\n' "$*" >&2
-exit 1
-"#;
-
-        let gh_path = bin_dir.join("gh");
-        fs::write(&gh_path, script).expect("write fake gh");
-        let mut perms = fs::metadata(&gh_path).expect("gh metadata").permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&gh_path, perms).expect("chmod fake gh");
+    fn updated_threads(host: &TestHost) -> Vec<ReviewThread> {
+        let updates = host.applied_updates.lock().expect("applied updates");
+        assert_eq!(updates.len(), 1);
+        updates[0]
+            .review_threads
+            .clone()
+            .expect("review threads updated")
     }
 
     #[test]
@@ -1030,48 +1248,164 @@ exit 1
     }
 
     #[test]
-    fn sync_task_review_to_github_records_pr_review_comments_in_scoreboard() {
-        let _env_lock = SYNC_REVIEW_ENV_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("env lock");
+    fn sync_general_comment_persists_github_id_and_task_update() {
         let repo_dir = tempdir().expect("repo dir");
-        let bin_dir = tempdir().expect("bin dir");
         let scoreboard_dir = tempdir().expect("scoreboard dir");
-        install_fake_gh(bin_dir.path());
-        let _path_guard = PathGuard::prepend(bin_dir.path());
-
         let mut task = sample_task("T20260402-0425", repo_dir.path());
-        task.review_threads = vec![ReviewThread {
-            thread_id: "rt-1".to_string(),
-            path: None,
-            line: None,
-            status: ReviewThreadStatus::Open,
-            messages: vec![ReviewMessage {
-                message_id: "rm-1".to_string(),
-                at: Utc::now(),
-                by: "claude / sonnet".to_string(),
-                body: "Please add a behavior-level sync test.".to_string(),
-                github_comment_id: None,
-            }],
-            github_thread_id: None,
-        }];
+        task.review_threads = vec![review_thread(
+            "rt-1",
+            None,
+            None,
+            vec![review_message(
+                "rm-1",
+                "claude / sonnet",
+                "Please add a behavior-level sync test.",
+                None,
+            )],
+            None,
+        )];
 
         let host = TestHost::with_scoreboard(task, scoreboard_dir.path().to_path_buf());
+        let gh = FakeGhClient::new(Ok(HashMap::new())).with_general_comment_ids([123]);
 
-        let synced = sync_task_review_to_github(&host, "T20260402-0425").expect("sync succeeds");
+        let synced = sync_task_review_to_github_with_client(&host, &gh, "T20260402-0425")
+            .expect("sync succeeds");
 
         assert_eq!(synced, 1);
+        assert_eq!(
+            gh.calls(),
+            vec![GhCall::GeneralComment {
+                body: "Please add a behavior-level sync test.".to_string(),
+            }]
+        );
         let scoreboard = scoreboard_value(scoreboard_dir.path());
         assert_eq!(scoreboard["pr-review-comments"]["claude"]["sonnet"], 1);
 
-        let updates = host.applied_updates.lock().expect("applied updates");
-        assert_eq!(updates.len(), 1);
-        let threads = updates[0]
-            .review_threads
-            .as_ref()
-            .expect("review threads updated");
+        let threads = updated_threads(&host);
         assert_eq!(threads[0].github_thread_id, Some(123));
         assert_eq!(threads[0].messages[0].github_comment_id, Some(123));
+    }
+
+    #[test]
+    fn sync_inline_comment_persists_github_ids() {
+        let repo_dir = tempdir().expect("repo dir");
+        let scoreboard_dir = tempdir().expect("scoreboard dir");
+        let mut task = sample_task("T20260402-0501", repo_dir.path());
+        task.review_threads = vec![review_thread(
+            "rt-1",
+            Some("src/lib.rs"),
+            Some(10),
+            vec![
+                review_message("rm-1", "human reviewer", "Inline note", None),
+                review_message("rm-2", "human reviewer", "Follow-up", None),
+            ],
+            None,
+        )];
+
+        let host = TestHost::with_scoreboard(task, scoreboard_dir.path().to_path_buf());
+        let gh = FakeGhClient::new(Ok(sample_patch_map("src/lib.rs")))
+            .with_inline_comment_ids([200])
+            .with_reply_comment_ids([201]);
+
+        let synced = sync_task_review_to_github_with_client(&host, &gh, "T20260402-0501")
+            .expect("sync succeeds");
+
+        assert_eq!(synced, 2);
+        assert_eq!(
+            gh.calls(),
+            vec![
+                GhCall::InlineComment {
+                    commit_id: "deadbeef".to_string(),
+                    path: "src/lib.rs".to_string(),
+                    line: 10,
+                    body: "Inline note".to_string(),
+                },
+                GhCall::ReplyComment {
+                    parent_comment_id: 200,
+                    body: "Follow-up".to_string(),
+                },
+            ]
+        );
+
+        let threads = updated_threads(&host);
+        assert_eq!(threads[0].github_thread_id, Some(200));
+        assert_eq!(threads[0].messages[0].github_comment_id, Some(200));
+        assert_eq!(threads[0].messages[1].github_comment_id, Some(201));
+    }
+
+    #[test]
+    fn sync_reply_for_inline_thread_already_has_thread_id() {
+        let repo_dir = tempdir().expect("repo dir");
+        let scoreboard_dir = tempdir().expect("scoreboard dir");
+        let mut task = sample_task("T20260402-0502", repo_dir.path());
+        task.review_threads = vec![review_thread(
+            "rt-1",
+            Some("src/lib.rs"),
+            Some(10),
+            vec![
+                review_message("rm-1", "human reviewer", "Original note", Some(200)),
+                review_message("rm-2", "human reviewer", "New reply", None),
+            ],
+            Some(200),
+        )];
+
+        let host = TestHost::with_scoreboard(task, scoreboard_dir.path().to_path_buf());
+        let gh =
+            FakeGhClient::new(Ok(sample_patch_map("src/lib.rs"))).with_reply_comment_ids([102]);
+
+        let synced = sync_task_review_to_github_with_client(&host, &gh, "T20260402-0502")
+            .expect("sync succeeds");
+
+        assert_eq!(synced, 1);
+        assert_eq!(
+            gh.calls(),
+            vec![GhCall::ReplyComment {
+                parent_comment_id: 200,
+                body: "New reply".to_string(),
+            }]
+        );
+
+        let threads = updated_threads(&host);
+        assert_eq!(threads[0].github_thread_id, Some(200));
+        assert_eq!(threads[0].messages[0].github_comment_id, Some(200));
+        assert_eq!(threads[0].messages[1].github_comment_id, Some(102));
+    }
+
+    #[test]
+    fn patch_lookup_failure_falls_back_to_general_comment() {
+        let repo_dir = tempdir().expect("repo dir");
+        let scoreboard_dir = tempdir().expect("scoreboard dir");
+        let mut task = sample_task("T20260402-0503", repo_dir.path());
+        task.review_threads = vec![review_thread(
+            "rt-1",
+            Some("src/lib.rs"),
+            Some(10),
+            vec![review_message(
+                "rm-1",
+                "human reviewer",
+                "Fallback note",
+                None,
+            )],
+            None,
+        )];
+
+        let host = TestHost::with_scoreboard(task, scoreboard_dir.path().to_path_buf());
+        let gh = FakeGhClient::new(Err("patch lookup failed".to_string()))
+            .with_general_comment_ids([321]);
+
+        let synced = sync_task_review_to_github_with_client(&host, &gh, "T20260402-0503")
+            .expect("sync succeeds");
+
+        assert_eq!(synced, 1);
+        assert_eq!(
+            gh.calls(),
+            vec![GhCall::GeneralComment {
+                body: "On `src/lib.rs:10`:\n\nFallback note".to_string(),
+            }]
+        );
+
+        let threads = updated_threads(&host);
+        assert_eq!(threads[0].github_thread_id, Some(321));
+        assert_eq!(threads[0].messages[0].github_comment_id, Some(321));
     }
 }

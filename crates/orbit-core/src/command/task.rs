@@ -7,7 +7,10 @@ use orbit_types::{
     ActorIdentity, OrbitError, OrbitEvent, OrbitId, Task, TaskComment, TaskComplexity,
     TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, prune_missing_context_files,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use crate::OrbitRuntime;
 use crate::context::ActorKind;
@@ -60,6 +63,29 @@ pub struct TaskUpdateParams {
     pub batch_id: Option<Option<String>>,
     pub context_files: Option<Vec<String>>,
     pub append_review_threads: Vec<orbit_types::ReviewThread>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskLintReport {
+    pub task_id: OrbitId,
+    pub duration_ms: u64,
+    pub finding_count: usize,
+    pub findings: Vec<TaskLintFinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskLintFinding {
+    pub severity: TaskLintSeverity,
+    pub check: String,
+    pub message: String,
+    pub fix_it: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskLintSeverity {
+    Error,
+    Warning,
 }
 
 impl From<TaskUpdateParams> for StoreTaskUpdateParams {
@@ -755,6 +781,28 @@ impl OrbitRuntime {
         self.search_task_records(query)
     }
 
+    pub fn lint_task(&self, id: &str) -> Result<TaskLintReport, OrbitError> {
+        let started_at = Instant::now();
+        let task = self.get_task(id)?;
+        let workspace_root =
+            context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
+        let description_paths = extract_task_path_mentions(&task.description);
+        let mut findings = Vec::new();
+
+        lint_context_file_paths(&task, &workspace_root, &mut findings);
+        lint_description_paths(&description_paths, &workspace_root, &mut findings);
+        lint_context_completeness(&task, &description_paths, &workspace_root, &mut findings);
+        lint_acceptance_criteria(&task.acceptance_criteria, &mut findings);
+        lint_identity_cleanup(&task, &mut findings);
+
+        Ok(TaskLintReport {
+            task_id: task.id,
+            duration_ms: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            finding_count: findings.len(),
+            findings,
+        })
+    }
+
     // ---- Review thread operations ----
 
     pub fn add_review_thread(
@@ -1027,6 +1075,246 @@ fn build_task_comments(message: Option<String>, by: &str) -> Result<Vec<TaskComm
     }])
 }
 
+fn lint_context_file_paths(
+    task: &Task,
+    workspace_root: &Path,
+    findings: &mut Vec<TaskLintFinding>,
+) {
+    for path in &task.context_files {
+        if task_path_exists(workspace_root, path) {
+            continue;
+        }
+        findings.push(TaskLintFinding {
+            severity: TaskLintSeverity::Error,
+            check: "path_validity".to_string(),
+            message: format!("context file `{path}` does not exist in the task worktree"),
+            fix_it: format!(
+                "Remove `{path}` from `context_files` or replace it with an existing path under `{}`.",
+                workspace_root.display()
+            ),
+        });
+    }
+}
+
+fn lint_description_paths(
+    mentioned_paths: &[String],
+    workspace_root: &Path,
+    findings: &mut Vec<TaskLintFinding>,
+) {
+    for path in mentioned_paths {
+        if task_path_exists(workspace_root, path) {
+            continue;
+        }
+        findings.push(TaskLintFinding {
+            severity: TaskLintSeverity::Error,
+            check: "path_validity".to_string(),
+            message: format!("description references `{path}`, but that path does not exist"),
+            fix_it: format!(
+                "Update the task description to reference an existing file, or add `{path}` to the worktree."
+            ),
+        });
+    }
+}
+
+fn lint_context_completeness(
+    task: &Task,
+    mentioned_paths: &[String],
+    workspace_root: &Path,
+    findings: &mut Vec<TaskLintFinding>,
+) {
+    let known_context: BTreeSet<&str> = task.context_files.iter().map(String::as_str).collect();
+    for path in mentioned_paths {
+        if !task_path_exists(workspace_root, path) || known_context.contains(path.as_str()) {
+            continue;
+        }
+        findings.push(TaskLintFinding {
+            severity: TaskLintSeverity::Warning,
+            check: "context_completeness".to_string(),
+            message: format!(
+                "description references `{path}`, but it is missing from `context_files`"
+            ),
+            fix_it: format!("Add `{path}` to `context_files` so implementers get the right scope."),
+        });
+    }
+}
+
+fn lint_acceptance_criteria(acceptance_criteria: &[String], findings: &mut Vec<TaskLintFinding>) {
+    const GENERIC_PHRASES: &[&str] = &[
+        "implement the feature",
+        "implement feature",
+        "fix the bug",
+        "fix bug",
+        "make it work",
+        "ensure it works",
+        "support the change",
+        "handle edge cases",
+        "works correctly",
+        "update as needed",
+    ];
+    const NON_DETERMINISTIC_TERMS: &[&str] = &[
+        "appropriately",
+        "reasonable",
+        "clean",
+        "intuitive",
+        "user-friendly",
+        "robust",
+        "better",
+        "improved",
+        "as needed",
+        "if needed",
+    ];
+
+    for criterion in acceptance_criteria {
+        let trimmed = criterion.trim();
+        if trimmed.is_empty() {
+            findings.push(TaskLintFinding {
+                severity: TaskLintSeverity::Warning,
+                check: "ac_specificity".to_string(),
+                message: "acceptance criterion is blank".to_string(),
+                fix_it: "Replace blank acceptance criteria with observable outcomes.".to_string(),
+            });
+            continue;
+        }
+
+        let normalized = trimmed.to_lowercase();
+        let has_observable_detail = trimmed.contains('`')
+            || trimmed.contains('/')
+            || trimmed.chars().any(|ch| ch.is_ascii_digit())
+            || [
+                "json", "warning", "error", "path", "status", "output", "under ",
+            ]
+            .iter()
+            .any(|needle| normalized.contains(needle));
+        let is_generic = GENERIC_PHRASES.iter().any(|phrase| normalized == *phrase);
+        let is_too_short = trimmed.len() < 20;
+        let is_non_deterministic = NON_DETERMINISTIC_TERMS
+            .iter()
+            .any(|term| normalized.contains(term));
+
+        if is_too_short || is_generic || (is_non_deterministic && !has_observable_detail) {
+            findings.push(TaskLintFinding {
+                severity: TaskLintSeverity::Warning,
+                check: "ac_specificity".to_string(),
+                message: format!(
+                    "acceptance criterion is too broad or non-deterministic: `{trimmed}`"
+                ),
+                fix_it: "Rewrite the criterion as an observable outcome: name the command, file, output, error, or measurable threshold.".to_string(),
+            });
+        }
+    }
+}
+
+fn lint_identity_cleanup(task: &Task, findings: &mut Vec<TaskLintFinding>) {
+    const STALE_IDENTITIES: &[(&str, &str)] = &[("orbit-map", "crates/orbit-knowledge")];
+
+    for (needle, replacement) in STALE_IDENTITIES {
+        let mut reported_locations = BTreeSet::new();
+        if task.description.contains(needle) {
+            reported_locations.insert("description".to_string());
+        }
+        if task.plan.contains(needle) {
+            reported_locations.insert("plan".to_string());
+        }
+        for (index, criterion) in task.acceptance_criteria.iter().enumerate() {
+            if criterion.contains(needle) {
+                reported_locations.insert(format!("acceptance_criteria[{index}]"));
+            }
+        }
+
+        for location in reported_locations {
+            findings.push(TaskLintFinding {
+                severity: TaskLintSeverity::Warning,
+                check: "identity_cleanup".to_string(),
+                message: format!(
+                    "`{needle}` appears in {location}, but that repository identity is stale in this worktree"
+                ),
+                fix_it: format!(
+                    "Replace `{needle}` with the current crate or path name, such as `{replacement}`."
+                ),
+            });
+        }
+    }
+}
+
+fn extract_task_path_mentions(text: &str) -> Vec<String> {
+    let mut paths = BTreeSet::new();
+    for raw in text.split_whitespace() {
+        let trimmed = raw.trim_matches(|ch: char| {
+            matches!(
+                ch,
+                '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | ',' | ':' | ';'
+            )
+        });
+        let trimmed = trimmed.trim_end_matches(&['.', '!', '?'][..]);
+        if let Some(path) = normalize_path_token(trimmed) {
+            paths.insert(path);
+        }
+    }
+    paths.into_iter().collect()
+}
+
+fn normalize_path_token(token: &str) -> Option<String> {
+    if token.is_empty() || token.contains("://") {
+        return None;
+    }
+
+    let token = token
+        .strip_prefix("file:")
+        .or_else(|| token.strip_prefix("dir:"))
+        .or_else(|| token.strip_prefix("symbol:"))
+        .unwrap_or(token);
+    let token = token.split_once('#').map(|(path, _)| path).unwrap_or(token);
+    let token = token.trim_matches('`').trim_end_matches('/');
+    if token.is_empty() {
+        return None;
+    }
+
+    let standalone_files = [
+        "Cargo.toml",
+        "Cargo.lock",
+        "Makefile",
+        "README.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+    ];
+    let has_known_prefix = [
+        "./",
+        "../",
+        "crates/",
+        "src/",
+        "tests/",
+        "scripts/",
+        "docs/",
+        "examples/",
+        ".orbit/",
+    ]
+    .iter()
+    .any(|prefix| token.starts_with(prefix));
+    let last_segment_looks_like_file = token
+        .rsplit('/')
+        .next()
+        .is_some_and(|segment| segment.contains('.'));
+
+    if has_known_prefix
+        || standalone_files.contains(&token)
+        || (token.contains('/') && last_segment_looks_like_file)
+    {
+        return Some(token.to_string());
+    }
+
+    None
+}
+
+fn task_path_exists(workspace_root: &Path, raw_path: &str) -> bool {
+    let candidate = Path::new(raw_path.trim());
+    let resolved = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        workspace_root.join(candidate)
+    };
+    resolved.exists()
+}
+
 /// Filesystem root used to resolve relative `context_files` entries when pruning.
 ///
 /// Prefers the task's recorded `workspace_path` (already absolute post-normalization)
@@ -1126,9 +1414,12 @@ mod tests {
         TaskAddParams, TaskUpdateParams, UNAUTHORED_TASK_PLAN_PLACEHOLDER,
         ensure_task_has_execution_plan,
     };
-    use crate::context::ActorIdentity;
-    use crate::{OrbitError, OrbitRuntime, TaskStatus, TaskType};
+    use crate::context::ActorIdentity as CoreActorIdentity;
+    use orbit_types::ActorIdentity;
+
+    use crate::{OrbitError, OrbitRuntime, Task, TaskPriority, TaskStatus, TaskType};
     use orbit_engine::{TaskAutomationUpdate, TaskHost};
+    use orbit_store::TaskCreateParams as StoreTaskCreateParams;
     use serde_json::Value;
     use std::fs;
     use std::path::Path;
@@ -1141,7 +1432,7 @@ mod tests {
     }
 
     fn scoring_runtime(
-        actor: ActorIdentity,
+        actor: CoreActorIdentity,
         approval_required_for_agent: bool,
     ) -> (tempfile::TempDir, OrbitRuntime) {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -1169,6 +1460,42 @@ mod tests {
                 .expect("scoreboard"),
         )
         .expect("valid scoreboard json")
+    }
+
+    fn seed_task_for_lint(
+        runtime: &OrbitRuntime,
+        description: &str,
+        acceptance_criteria: Vec<&str>,
+        context_files: Vec<&str>,
+    ) -> Task {
+        runtime
+            .create_task_record(StoreTaskCreateParams {
+                actor: "tester".to_string(),
+                parent_id: None,
+                title: "lint target".to_string(),
+                description: description.to_string(),
+                acceptance_criteria: acceptance_criteria
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+                plan: "## Plan\n- lint it".to_string(),
+                execution_summary: String::new(),
+                context_files: context_files.into_iter().map(str::to_string).collect(),
+                workspace_path: None,
+                repo_root: None,
+                created_by: Some("tester".to_string()),
+                actor_identity: ActorIdentity::System,
+                assigned_to: Some("tester".to_string()),
+                status: TaskStatus::Backlog,
+                priority: TaskPriority::Medium,
+                complexity: None,
+                task_type: TaskType::Task,
+                pr_number: None,
+                proposed_by: None,
+                source_task_id: None,
+                comments: Vec::new(),
+            })
+            .expect("task")
     }
 
     #[test]
@@ -1261,6 +1588,128 @@ mod tests {
 
         let loaded = runtime.get_task(&task.id).expect("load");
         assert_eq!(loaded.acceptance_criteria, task.acceptance_criteria);
+    }
+
+    #[test]
+    fn lint_flags_missing_context_file() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = seed_task_for_lint(
+            &runtime,
+            "See crates/orbit-core/src/command/task.rs",
+            vec![],
+            vec!["ghost.md"],
+        );
+
+        let report = runtime.lint_task(&task.id).expect("lint report");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.check == "path_validity"
+                    && finding.message.contains("context file `ghost.md`")),
+            "expected missing context file finding: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn lint_flags_vague_ac() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = seed_task_for_lint(&runtime, "desc", vec!["Implement the feature"], vec![]);
+
+        let report = runtime.lint_task(&task.id).expect("lint report");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.check == "ac_specificity"
+                    && finding.message.contains("Implement the feature")),
+            "expected vague AC finding: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn lint_flags_stale_name_orbit_map() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = seed_task_for_lint(
+            &runtime,
+            "Update the old orbit-map integration instead of orbit-agent docs.",
+            vec![],
+            vec![],
+        );
+
+        let report = runtime.lint_task(&task.id).expect("lint report");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.check == "identity_cleanup"
+                    && finding.message.contains("orbit-map")),
+            "expected stale identity finding: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn lint_clean_task() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        fs::create_dir_all(repo_root.join("crates/orbit-core/src/command")).expect("dirs");
+        fs::write(
+            repo_root.join("crates/orbit-core/src/command/task.rs"),
+            "// ok",
+        )
+        .expect("write task.rs");
+        let task = seed_task_for_lint(
+            &runtime,
+            "Review crates/orbit-core/src/command/task.rs",
+            vec!["`orbit task lint <id> --json` returns zero findings for a clean task"],
+            vec!["crates/orbit-core/src/command/task.rs"],
+        );
+
+        let report = runtime.lint_task(&task.id).expect("lint report");
+
+        assert!(
+            report.findings.is_empty(),
+            "expected clean report: {:?}",
+            report
+        );
+    }
+
+    #[test]
+    fn lint_suggests_context_completeness() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let repo_root = runtime.paths().repo_root.clone();
+        fs::create_dir_all(repo_root.join("crates/orbit-cli/src/command")).expect("dirs");
+        fs::write(
+            repo_root.join("crates/orbit-cli/src/command/task.rs"),
+            "// cli",
+        )
+        .expect("write task.rs");
+        let task = seed_task_for_lint(
+            &runtime,
+            "Touch crates/orbit-cli/src/command/task.rs while updating the command.",
+            vec![],
+            vec![],
+        );
+
+        let report = runtime.lint_task(&task.id).expect("lint report");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.check == "context_completeness"
+                    && finding
+                        .message
+                        .contains("crates/orbit-cli/src/command/task.rs")),
+            "expected context completeness finding: {:?}",
+            report.findings
+        );
     }
 
     #[test]
@@ -1601,7 +2050,7 @@ mod tests {
 
     #[test]
     fn issue_task_lifecycle_updates_friction_bounty_scoreboard() {
-        let (_temp, runtime) = scoring_runtime(ActorIdentity::agent("executor"), true);
+        let (_temp, runtime) = scoring_runtime(CoreActorIdentity::agent("executor"), true);
         let task = runtime
             .add_task_with_identity(
                 TaskAddParams {

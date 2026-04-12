@@ -207,6 +207,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 TaskSubcommand::Add(_) => ("add", Some("task"), None),
                 TaskSubcommand::List(_) => ("list", None, None),
                 TaskSubcommand::Show(args) => ("show", Some("task"), Some(args.id.as_str())),
+                TaskSubcommand::Lint(args) => ("lint", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Update(args) => ("update", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Start(args) => ("start", Some("task"), Some(args.id.as_str())),
                 TaskSubcommand::Approve(args) => (

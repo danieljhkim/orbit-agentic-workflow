@@ -27,6 +27,8 @@ pub enum TaskSubcommand {
     List(TaskListArgs),
     /// Show detailed information about a task
     Show(TaskShowArgs),
+    /// Lint a task for stale paths and vague acceptance criteria
+    Lint(TaskLintArgs),
     /// Update task fields
     Update(TaskUpdateArgs),
     /// Start work on a task, approving proposed work when needed
@@ -60,6 +62,7 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::Add(args) => args.execute(runtime),
             TaskSubcommand::List(args) => args.execute(runtime),
             TaskSubcommand::Show(args) => args.execute(runtime),
+            TaskSubcommand::Lint(args) => args.execute(runtime),
             TaskSubcommand::Update(args) => args.execute(runtime),
             TaskSubcommand::Start(args) => args.execute(runtime),
             TaskSubcommand::Approve(args) => args.execute(runtime),
@@ -608,6 +611,50 @@ impl Execute for TaskShowArgs {
             );
             Ok(())
         }
+    }
+}
+
+// --- Lint ---
+
+#[derive(Args)]
+pub struct TaskLintArgs {
+    /// Task ID
+    pub id: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for TaskLintArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let report = runtime.lint_task(&self.id)?;
+
+        if self.json {
+            let value = serde_json::to_value(&report).map_err(|e| OrbitError::Io(e.to_string()))?;
+            return crate::output::json::print_pretty(&value);
+        }
+
+        if report.findings.is_empty() {
+            println!(
+                "No lint findings for '{}' ({} ms).",
+                report.task_id, report.duration_ms
+            );
+            return Ok(());
+        }
+
+        println!(
+            "{} finding(s) for '{}' ({} ms):",
+            report.finding_count, report.task_id, report.duration_ms
+        );
+        for finding in report.findings {
+            let severity = match finding.severity {
+                orbit_core::command::task::TaskLintSeverity::Error => "error",
+                orbit_core::command::task::TaskLintSeverity::Warning => "warning",
+            };
+            println!("[{severity}] {}: {}", finding.check, finding.message);
+            println!("  fix: {}", finding.fix_it);
+        }
+        Ok(())
     }
 }
 
@@ -1575,6 +1622,21 @@ mod tests {
                 "crates/orbit-tools/src/builtin/orbit/task_update.rs".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn task_lint_accepts_id_and_json_flag() {
+        let cli = Cli::try_parse_from(["orbit", "task", "lint", "T20260408-0503", "--json"])
+            .expect("task lint parses");
+
+        let Commands::Task(task_command) = cli.command else {
+            panic!("expected task command");
+        };
+        let TaskSubcommand::Lint(args) = task_command.command else {
+            panic!("expected task lint command");
+        };
+        assert_eq!(args.id, "T20260408-0503");
+        assert!(args.json);
     }
 
     #[test]
