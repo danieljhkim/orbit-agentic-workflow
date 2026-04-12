@@ -1,0 +1,30 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: run_planning_duel
+  spec_type: automation
+
+  # ---- content ----
+  description: "Run the full planning duel as a single automation step."
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+    properties:
+      task_id:
+        type: string
+        description: Orbit task ID whose plan is being decided.
+      base:
+        type: string
+        description: Base branch used to resolve the task context. Defaults to main.
+  output_schema_json: {}
+
+  # ---- execution ----
+  action: run_planning_duel

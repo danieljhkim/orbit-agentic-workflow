@@ -1,9 +1,10 @@
 //! Planning-duel automation helpers.
 //!
-//! This module stays intentionally small:
-//! - role selection picks two distinct planners plus one arbiter
-//! - task writeback persists the winning plan and a backlog history entry
-//! - efficiency recording replays persisted invocation traces by role
+//! The unified planning-duel automation:
+//! - selects two distinct planners plus one arbiter
+//! - runs the two planners concurrently via real agent CLIs
+//! - runs the arbiter after both planner artifacts exist
+//! - writes back the winning plan and appends a planning-duel scoreboard record
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
@@ -12,14 +13,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::Utc;
 use orbit_store::{InvocationRecord, planning_duel_scoreboard};
 use orbit_types::{
-    EfficiencyMetrics, OrbitError, PlannerSlot, PlanningDuelRun, PlanningEfficiency,
-    PlanningOutcome, PlanningRoleAssignment, PlanningRoles, TaskComment, TaskStatus, TokenUsage,
-    all_agent_families, resolve_agent_model_pair,
+    Activity, EfficiencyMetrics, InvocationTrace, OrbitError, PlannerSlot, PlanningDuelRun,
+    PlanningEfficiency, PlanningOutcome, PlanningRoleAssignment, PlanningRoles, TaskArtifact,
+    TaskComment, TaskStatus, TokenUsage, all_agent_families, resolve_agent_model_pair,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
+use crate::context::{ActivityInvocationResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
 
 use super::input::{input_string_field, required_input_string};
 
@@ -31,6 +32,100 @@ const PERMUTATIONS: [[usize; 3]; 6] = [
     [2, 0, 1],
     [2, 1, 0],
 ];
+const PLANNING_DUEL_ARTIFACT_PREFIX: &str = "planning-duel/";
+const PLANNING_DUEL_PLAN_EXTENSION: &str = ".md";
+const WINNER_ARTIFACT_PATH: &str = "planning-duel/winner.json";
+const AUTHOR_SIGNATURE_PREFIX: &str = "*authored by: ";
+const AUTHOR_SIGNATURE_SEPARATOR: &str = " / ";
+const PLANNER_ACTIVITY_ID: &str = "propose_duel_plan";
+const ARBITER_ACTIVITY_ID: &str = "arbitrate_duel_plan";
+const PLANNER_TIMEOUT_SECONDS: u64 = 1800;
+const ARBITER_TIMEOUT_SECONDS: u64 = 900;
+const PLANNER_INSTRUCTION: &str = r#"Only use skills listed in this activity's skill_refs. Ignore all others.
+You are a PLANNER in an Orbit planning duel. Inspect the task and surrounding
+code, draft one implementation-ready proposal, and persist it to the task's
+`artifacts/` directory. Do not edit source files, open PRs, or rely on your
+structured response as the workflow handoff.
+
+Steps:
+1. Load the task:
+   - Call orbit.task.show with input: {"id": "<task_id>"} to fetch the task title,
+     description, plan, acceptance_criteria, context_files, and workspace_path.
+
+2. Determine your artifact path from the active agent signature:
+   - Your active agent family is `{{agent_family}}`.
+   - Your active orchestrator model is `{{orchestrator_model}}`.
+   - Your plan artifact path must be `planning-duel/{{agent_family}}-{{orchestrator_model}}.md`.
+   - Do not invent a role-specific filename such as `planner_a.md` or `planner_b.md`.
+
+3. Gather context with the graph surface first:
+   - Build graph selectors from task.context_files and call orbit.graph.pack.
+   - If pack returns knowledge_unavailable, use orbit.graph.overview to map the
+     affected area, then orbit.graph.search, orbit.graph.refs, and orbit.graph.show
+     to discover the relevant symbols and relationships.
+   - If pack returns unresolved selectors, fall back to fs.read only for those paths.
+   - Prefer orbit.graph.pack/search/show/overview/refs over raw file reads whenever
+     the graph has the needed knowledge.
+
+4. Draft exactly one proposal as markdown:
+   - The first line must be exactly: `*authored by: {{agent_family}} / {{orchestrator_model}}*`
+   - Then include these sections:
+     ## Plan
+     ## Context Files
+     ## Risks
+   - Keep the plan concise, implementation-ready, and specific to the current codebase.
+   - Ignore any existing planner artifact for the other role. Your proposal must be independently reasoned.
+
+5. Persist the proposal as a task artifact:
+   - Use orbit.duel.plan.add to write the artifact under the signature-derived path.
+   - Exact example:
+     {"id":"<task_id>","content":"*authored by: {{agent_family}} / {{orchestrator_model}}*\n## Plan\n..."}
+
+6. Stay narrowly scoped:
+   - Do not edit source files, update task.plan, or touch PR state.
+   - The only permitted mutation is writing your own planner artifact via orbit.duel.plan.add.
+
+7. Structured output is optional:
+   - The workflow does not depend on your response payload. Persist the artifact correctly even if you return null."#;
+const ARBITER_INSTRUCTION: &str = r#"Only use skills listed in this activity's skill_refs. Ignore all others.
+You are the ARBITER in an Orbit planning duel. Your job is to compare the
+two submitted planner artifacts, choose the better one, and persist the
+winning decision to the task artifact bundle.
+
+Steps:
+1. Load the task:
+   - Call orbit.task.show with input: {"id": "<task_id>"} to fetch the task title,
+     description, plan, acceptance_criteria, and context_files.
+
+2. Load only the planner artifacts:
+   - Call orbit.task.show with input: {"id":"<task_id>","field":"artifacts"} to fetch only the task artifacts.
+   - From that response, inspect planner markdown artifacts under `planning-duel/` and ignore `planning-duel/winner.json`.
+   - There must be exactly two planner markdown artifacts for this duel. If there are not exactly two, fail instead of guessing.
+   - Treat both planner artifacts as read-only inputs. Do not invent a third plan.
+
+3. Infer planner identity from the artifact signatures:
+   - The first line of each planner artifact must be `*authored by: <agent> / <model>*`.
+   - Parse those lines to recover each planner's agent CLI family and model.
+   - The artifact signature is the canonical planner identity source.
+
+4. Use the graph surface to verify claims:
+   - Prefer orbit.graph.overview, orbit.graph.search, orbit.graph.refs, orbit.graph.show,
+     and orbit.graph.pack for spot checks against the codebase.
+   - Fall back to fs.read only when the graph does not have enough knowledge.
+
+5. Decide the winner:
+   - Choose the artifact proposal that is more feasible, complete, scoped, and aligned
+     with the current codebase.
+   - Keep a short `arbiter_rationale` that explains why the winning proposal is better.
+
+6. Persist the winner marker:
+   - Use orbit.duel.plan.winner to write `planning-duel/winner.json`.
+   - Exact example:
+     {"id":"<task_id>","winner_agent_cli":"codex","winner_model":"gpt-5.4","arbiter_rationale":"More concrete writeback and test coverage."}
+
+7. Stay narrowly scoped:
+   - Do not edit source files, update task.plan directly, or open PRs.
+   - The only permitted mutation is writing `planning-duel/winner.json` via orbit.duel.plan.winner."#;
 
 thread_local! {
     static TEST_PERMUTATION_QUEUE: RefCell<VecDeque<[usize; 3]>> =
@@ -47,12 +142,6 @@ pub(crate) fn push_test_permutations(perms: impl IntoIterator<Item = [usize; 3]>
 #[cfg(test)]
 pub(crate) fn clear_test_permutations() {
     TEST_PERMUTATION_QUEUE.with(|cell| cell.borrow_mut().clear());
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct PlanningDuelRoleAssignment {
-    agent: String,
-    model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +163,23 @@ struct PlanningDuelEfficiency {
     output_tokens: u64,
     total_tokens: u64,
     byte_proxy_total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct PlanningDuelWinnerArtifact {
+    winner_agent_cli: String,
+    winner_model: String,
+    artifact_path: String,
+    arbiter_agent_cli: String,
+    arbiter_model: String,
+    arbiter_rationale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PlanningDuelPlanArtifact {
+    path: String,
+    content: String,
+    author: PlanningRoleAssignment,
 }
 
 fn next_permutation() -> [usize; 3] {
@@ -99,8 +205,8 @@ fn orchestrator_model_for(family: &str) -> Result<String, OrbitError> {
         })
 }
 
-fn build_role_assignment(family: &str) -> Result<PlanningDuelRoleAssignment, OrbitError> {
-    Ok(PlanningDuelRoleAssignment {
+fn build_role_assignment(family: &str) -> Result<PlanningRoleAssignment, OrbitError> {
+    Ok(PlanningRoleAssignment {
         agent: family.to_string(),
         model: orchestrator_model_for(family)?,
     })
@@ -137,9 +243,139 @@ fn build_roles_output(perm: [usize; 3]) -> Result<Value, OrbitError> {
     }))
 }
 
+fn planning_duel_agent_activity(
+    id: &str,
+    description: &str,
+    instruction: &str,
+    tools: &[&str],
+) -> Activity {
+    let now = Utc::now();
+    Activity {
+        id: id.to_string(),
+        spec_type: "agent_invoke".to_string(),
+        description: description.to_string(),
+        input_schema_json: json!({
+            "type": "object",
+            "required": ["task_id"],
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "Orbit task ID for the planning duel."
+                }
+            }
+        }),
+        output_schema_json: json!({}),
+        spec_config: json!({
+            "instruction": instruction,
+            "skill_refs": ["orbit", "orbit-graph"],
+        }),
+        tools: tools.iter().map(|tool| (*tool).to_string()).collect(),
+        proc_allowed_programs: Vec::new(),
+        workspace_path: None,
+        created_by: Some("system".to_string()),
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+fn planner_activity() -> Activity {
+    planning_duel_agent_activity(
+        PLANNER_ACTIVITY_ID,
+        "Draft one planning-duel proposal, then persist it as a task artifact using the graph surface.",
+        PLANNER_INSTRUCTION,
+        &[
+            "orbit.task.show",
+            "orbit.duel.plan.add",
+            "orbit.graph.pack",
+            "orbit.graph.search",
+            "orbit.graph.show",
+            "orbit.graph.overview",
+            "orbit.graph.refs",
+            "fs.read",
+        ],
+    )
+}
+
+fn arbiter_activity() -> Activity {
+    planning_duel_agent_activity(
+        ARBITER_ACTIVITY_ID,
+        "Choose the better of two planning-duel task artifacts for a single task and persist the winner marker.",
+        ARBITER_INSTRUCTION,
+        &[
+            "orbit.task.show",
+            "orbit.duel.plan.winner",
+            "orbit.graph.pack",
+            "orbit.graph.search",
+            "orbit.graph.show",
+            "orbit.graph.overview",
+            "orbit.graph.refs",
+            "fs.read",
+        ],
+    )
+}
+
+fn planner_input(task_id: &str) -> Value {
+    json!({ "task_id": task_id })
+}
+
+fn arbiter_input(task_id: &str) -> Value {
+    json!({ "task_id": task_id })
+}
+
+fn efficiency_from_trace(trace: &InvocationTrace) -> PlanningDuelEfficiency {
+    PlanningDuelEfficiency {
+        invocation_count: 1,
+        wall_clock_ms: trace.duration_ms,
+        tool_call_count: trace.tool_calls.len() as u64,
+        input_tokens: trace.usage.input,
+        cache_read_tokens: trace.usage.cache_read,
+        cache_create_tokens: trace.usage.cache_create,
+        output_tokens: trace.usage.output,
+        total_tokens: trace
+            .usage
+            .input
+            .saturating_add(trace.usage.cache_read)
+            .saturating_add(trace.usage.cache_create)
+            .saturating_add(trace.usage.output),
+        byte_proxy_total: trace.tool_calls.iter().map(|call| call.result_bytes).sum(),
+    }
+}
+
+fn role_metrics_from_invocation(
+    role: &PlanningRoleAssignment,
+    activity_id: &str,
+    invocation: &ActivityInvocationResult,
+) -> PlanningDuelRoleMetrics {
+    PlanningDuelRoleMetrics {
+        agent: role.agent.clone(),
+        model: role.model.clone(),
+        activity_id: activity_id.to_string(),
+        efficiency: efficiency_from_trace(&invocation.invocation_trace),
+    }
+}
+
+fn join_activity_result(
+    result: std::thread::Result<Result<ActivityInvocationResult, OrbitError>>,
+    label: &str,
+) -> Result<ActivityInvocationResult, OrbitError> {
+    match result {
+        Ok(inner) => inner,
+        Err(_) => Err(OrbitError::Execution(format!(
+            "{label} activity thread panicked"
+        ))),
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn role_activity_id(input: &Value, role: &str) -> Result<String, OrbitError> {
     let flat_key = format!("{role}_activity_id");
     if let Some(value) = input_string_field(input, &flat_key) {
+        return Ok(value);
+    }
+    if matches!(role, "planner_a" | "planner_b")
+        && let Some(value) = input_string_field(input, "planner_activity_id")
+    {
         return Ok(value);
     }
 
@@ -158,14 +394,167 @@ fn role_activity_id(input: &Value, role: &str) -> Result<String, OrbitError> {
         .ok_or_else(|| OrbitError::InvalidInput(format!("missing required input.{flat_key}")))
 }
 
-fn role_identity(input: &Value, role: &str) -> Result<PlanningDuelRoleAssignment, OrbitError> {
-    let agent_key = format!("{role}_agent_cli");
-    let model_key = format!("{role}_model");
-    let agent = required_input_string(input, &agent_key)?.to_string();
-    let model = required_input_string(input, &model_key)?.to_string();
-    Ok(PlanningDuelRoleAssignment { agent, model })
+fn parse_planning_duel_roles(input: &Value) -> Result<PlanningRoles, OrbitError> {
+    serde_json::from_value(input.get("planning_duel_roles").cloned().ok_or_else(|| {
+        OrbitError::InvalidInput("missing required input.planning_duel_roles".to_string())
+    })?)
+    .map_err(|err| OrbitError::InvalidInput(format!("invalid planning_duel_roles payload: {err}")))
 }
 
+fn parse_planning_duel_signature(content: &str) -> Result<PlanningRoleAssignment, OrbitError> {
+    let first_line = content
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "planning duel artifact must start with an authored-by signature line".to_string(),
+            )
+        })?;
+    let signature = first_line
+        .strip_prefix(AUTHOR_SIGNATURE_PREFIX)
+        .and_then(|value| value.strip_suffix('*'))
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "planning duel artifact signature must match `{AUTHOR_SIGNATURE_PREFIX}<agent> / <model>*`"
+            ))
+        })?;
+    let (agent, model) = signature
+        .split_once(AUTHOR_SIGNATURE_SEPARATOR)
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "planning duel artifact signature must contain `{AUTHOR_SIGNATURE_SEPARATOR}`"
+            ))
+        })?;
+    if agent.trim().is_empty() || model.trim().is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "planning duel artifact signature must include both agent and model".to_string(),
+        ));
+    }
+    Ok(PlanningRoleAssignment {
+        agent: agent.trim().to_string(),
+        model: model.trim().to_string(),
+    })
+}
+
+fn planning_duel_plan_artifacts(
+    artifacts: &[TaskArtifact],
+) -> Result<Vec<PlanningDuelPlanArtifact>, OrbitError> {
+    let mut plan_artifacts = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.path.starts_with(PLANNING_DUEL_ARTIFACT_PREFIX)
+                && artifact.path.ends_with(PLANNING_DUEL_PLAN_EXTENSION)
+        })
+        .map(|artifact| {
+            Ok(PlanningDuelPlanArtifact {
+                path: artifact.path.clone(),
+                content: artifact.content.clone(),
+                author: parse_planning_duel_signature(&artifact.content)?,
+            })
+        })
+        .collect::<Result<Vec<_>, OrbitError>>()?;
+    plan_artifacts.sort_by(|left, right| left.path.cmp(&right.path));
+    if plan_artifacts.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "missing planning duel markdown artifacts under planning-duel/".to_string(),
+        ));
+    }
+    Ok(plan_artifacts)
+}
+
+fn plan_artifact_for_assignment<'a>(
+    plan_artifacts: &'a [PlanningDuelPlanArtifact],
+    assignment: &PlanningRoleAssignment,
+) -> Result<&'a PlanningDuelPlanArtifact, OrbitError> {
+    let matches = plan_artifacts
+        .iter()
+        .filter(|artifact| artifact.author == *assignment)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [artifact] => Ok(*artifact),
+        [] => Err(OrbitError::InvalidInput(format!(
+            "missing planning duel artifact for {}/{}",
+            assignment.agent, assignment.model
+        ))),
+        _ => Err(OrbitError::InvalidInput(format!(
+            "found multiple planning duel artifacts for {}/{}",
+            assignment.agent, assignment.model
+        ))),
+    }
+}
+
+fn plan_artifact_by_path<'a>(
+    plan_artifacts: &'a [PlanningDuelPlanArtifact],
+    artifact_path: &str,
+) -> Result<&'a PlanningDuelPlanArtifact, OrbitError> {
+    let matches = plan_artifacts
+        .iter()
+        .filter(|artifact| artifact.path == artifact_path)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [artifact] => Ok(*artifact),
+        [] => Err(OrbitError::InvalidInput(format!(
+            "missing planning duel artifact `{artifact_path}`"
+        ))),
+        _ => Err(OrbitError::InvalidInput(format!(
+            "found multiple planning duel artifacts at `{artifact_path}`"
+        ))),
+    }
+}
+
+fn winner_artifact_from_artifacts(
+    artifacts: &[TaskArtifact],
+) -> Result<PlanningDuelWinnerArtifact, OrbitError> {
+    let winner_artifact = artifacts
+        .iter()
+        .find(|artifact| artifact.path == WINNER_ARTIFACT_PATH)
+        .ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "missing required task artifact `{WINNER_ARTIFACT_PATH}`"
+            ))
+        })?;
+    serde_json::from_str::<PlanningDuelWinnerArtifact>(&winner_artifact.content).map_err(|err| {
+        OrbitError::InvalidInput(format!("invalid `{WINNER_ARTIFACT_PATH}` payload: {err}"))
+    })
+}
+
+fn winner_assignment(winner: &PlanningDuelWinnerArtifact) -> PlanningRoleAssignment {
+    PlanningRoleAssignment {
+        agent: winner.winner_agent_cli.clone(),
+        model: winner.winner_model.clone(),
+    }
+}
+
+fn winner_slot_for_assignment(
+    roles: &PlanningRoles,
+    winner: &PlanningRoleAssignment,
+) -> Result<PlannerSlot, OrbitError> {
+    if roles.planner_a == *winner {
+        return Ok(PlannerSlot::PlannerA);
+    }
+    if roles.planner_b == *winner {
+        return Ok(PlannerSlot::PlannerB);
+    }
+    Err(OrbitError::InvalidInput(format!(
+        "winner {}/{} does not match the current planner assignments",
+        winner.agent, winner.model
+    )))
+}
+
+fn normalize_winning_plan_for_task(content: &str) -> String {
+    let lines = content.lines().collect::<Vec<_>>();
+    if lines.len() <= 1 {
+        return content.trim().to_string();
+    }
+    if parse_planning_duel_signature(content).is_ok() {
+        return lines[1..].join("\n").trim().to_string();
+    }
+    content.trim().to_string()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn summarize_role_metrics(records: &[InvocationRecord]) -> PlanningDuelEfficiency {
     let mut efficiency = PlanningDuelEfficiency {
         invocation_count: records.len() as u64,
@@ -200,44 +589,36 @@ fn summarize_role_metrics(records: &[InvocationRecord]) -> PlanningDuelEfficienc
     efficiency
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn role_metrics_for_activity<H: RuntimeHost + ?Sized>(
     host: &H,
     job_run_id: &str,
-    role_id: &PlanningDuelRoleAssignment,
+    role_id: &PlanningRoleAssignment,
     activity_id: &str,
 ) -> Result<PlanningDuelRoleMetrics, OrbitError> {
-    let records = host.invocation_records_for_job_run_and_activity(job_run_id, activity_id)?;
-    for record in &records {
-        if record.agent != role_id.agent || record.model.as_deref() != Some(role_id.model.as_str())
-        {
-            return Err(OrbitError::Execution(format!(
-                "activity '{activity_id}' for job run '{job_run_id}' returned invocation \
-                 attributed to {}/{:?} instead of expected {}/{}",
-                record.agent, record.model, role_id.agent, role_id.model
-            )));
-        }
+    let all_records = host.invocation_records_for_job_run_and_activity(job_run_id, activity_id)?;
+    let matching_records = all_records
+        .iter()
+        .filter(|record| {
+            record.agent == role_id.agent && record.model.as_deref() == Some(role_id.model.as_str())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if matching_records.is_empty() && !all_records.is_empty() {
+        return Err(OrbitError::Execution(format!(
+            "activity '{activity_id}' for job run '{job_run_id}' did not produce invocations \
+             attributed to expected {}/{}",
+            role_id.agent, role_id.model
+        )));
     }
 
     Ok(PlanningDuelRoleMetrics {
         agent: role_id.agent.clone(),
         model: role_id.model.clone(),
         activity_id: activity_id.to_string(),
-        efficiency: summarize_role_metrics(&records),
+        efficiency: summarize_role_metrics(&matching_records),
     })
-}
-
-fn ensure_distinct_activity_ids(activity_ids: [(&str, &str); 3]) -> Result<(), OrbitError> {
-    for left in 0..activity_ids.len() {
-        for right in (left + 1)..activity_ids.len() {
-            if activity_ids[left].1 == activity_ids[right].1 {
-                return Err(OrbitError::InvalidInput(format!(
-                    "{} and {} must use distinct activity ids (both were '{}')",
-                    activity_ids[left].0, activity_ids[right].0, activity_ids[left].1
-                )));
-            }
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn select_planning_duel_roles(input: &Value) -> Result<Value, OrbitError> {
@@ -258,24 +639,176 @@ pub(super) fn select_planning_duel_roles(input: &Value) -> Result<Value, OrbitEr
     }))
 }
 
+pub(super) fn run_planning_duel<H: RuntimeHost + TaskHost + Sync + ?Sized>(
+    host: &H,
+    input: &Value,
+    debug: bool,
+) -> Result<Value, OrbitError> {
+    let task_id = required_input_string(input, "task_id")?;
+    let job_run_id = input_string_field(input, "job_run_id")
+        .or_else(|| input_string_field(input, "run_id"))
+        .ok_or_else(|| OrbitError::InvalidInput("missing required input.run_id".to_string()))?;
+
+    let roles_output = select_planning_duel_roles(&json!({ "task_id": task_id }))?;
+    let planning_roles = parse_planning_duel_roles(&roles_output)?;
+
+    let planner_activity = planner_activity();
+    let planner_a_input = planner_input(task_id);
+    let planner_b_input = planner_input(task_id);
+    let (planner_a_result, planner_b_result) = std::thread::scope(|scope| {
+        let planner_a = planning_roles.planner_a.clone();
+        let planner_b = planning_roles.planner_b.clone();
+        let planner_activity_a = planner_activity.clone();
+        let planner_activity_b = planner_activity.clone();
+        let handle_a = scope.spawn(move || {
+            host.invoke_activity(
+                planner_activity_a,
+                &planner_a.agent,
+                Some(planner_a.model.as_str()),
+                planner_a_input,
+                PLANNER_TIMEOUT_SECONDS,
+                debug,
+            )
+        });
+        let handle_b = scope.spawn(move || {
+            host.invoke_activity(
+                planner_activity_b,
+                &planner_b.agent,
+                Some(planner_b.model.as_str()),
+                planner_b_input,
+                PLANNER_TIMEOUT_SECONDS,
+                debug,
+            )
+        });
+        (
+            join_activity_result(handle_a.join(), "planner_a"),
+            join_activity_result(handle_b.join(), "planner_b"),
+        )
+    });
+    let planner_a_result = planner_a_result?;
+    let planner_b_result = planner_b_result?;
+
+    let planner_artifacts = host.get_task_artifacts(task_id)?;
+    let plan_artifacts = planning_duel_plan_artifacts(&planner_artifacts)?;
+    let _ = plan_artifact_for_assignment(&plan_artifacts, &planning_roles.planner_a)?;
+    let _ = plan_artifact_for_assignment(&plan_artifacts, &planning_roles.planner_b)?;
+
+    let arbiter_result = host.invoke_activity(
+        arbiter_activity(),
+        &planning_roles.arbiter.agent,
+        Some(planning_roles.arbiter.model.as_str()),
+        arbiter_input(task_id),
+        ARBITER_TIMEOUT_SECONDS,
+        debug,
+    )?;
+
+    let artifacts_after_arbiter = host.get_task_artifacts(task_id)?;
+    let winner = winner_artifact_from_artifacts(&artifacts_after_arbiter)?;
+
+    let role_metrics = BTreeMap::from([
+        (
+            "planner_a".to_string(),
+            role_metrics_from_invocation(
+                &planning_roles.planner_a,
+                PLANNER_ACTIVITY_ID,
+                &planner_a_result,
+            ),
+        ),
+        (
+            "planner_b".to_string(),
+            role_metrics_from_invocation(
+                &planning_roles.planner_b,
+                PLANNER_ACTIVITY_ID,
+                &planner_b_result,
+            ),
+        ),
+        (
+            "arbiter".to_string(),
+            role_metrics_from_invocation(
+                &planning_roles.arbiter,
+                ARBITER_ACTIVITY_ID,
+                &arbiter_result,
+            ),
+        ),
+    ]);
+
+    let _ = writeback_planning_duel_task(
+        host,
+        &json!({
+            "task_id": task_id,
+            "planning_duel_roles": roles_output["planning_duel_roles"].clone(),
+        }),
+    )?;
+    let _ = record_planning_duel_scores(
+        host,
+        &json!({
+            "task_id": task_id,
+            "job_run_id": job_run_id,
+            "roles": role_metrics,
+        }),
+    )?;
+
+    Ok(json!({
+        "task_id": task_id,
+        "run_id": job_run_id,
+        "winner_agent_cli": winner.winner_agent_cli,
+        "winner_model": winner.winner_model,
+        "recorded": true,
+    }))
+}
+
 pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
-    let winning_plan = required_input_string(input, "winning_plan")?.to_string();
-    let winner_role = required_input_string(input, "winner_role")?;
-    let winner = role_identity(input, "winner")?;
-    let arbiter = role_identity(input, "arbiter")?;
-    let rationale = required_input_string(input, "arbiter_rationale")?.to_string();
+    let artifacts = host.get_task_artifacts(task_id)?;
+    let winner = winner_artifact_from_artifacts(&artifacts)?;
+    let winner_assignment = winner_assignment(&winner);
+    let plan_artifacts = planning_duel_plan_artifacts(&artifacts)?;
+    let winning_artifact = plan_artifact_by_path(&plan_artifacts, &winner.artifact_path)?;
+    if winning_artifact.author != winner_assignment {
+        return Err(OrbitError::InvalidInput(format!(
+            "winner artifact `{}` is authored by {}/{} instead of declared winner {}/{}",
+            winner.artifact_path,
+            winning_artifact.author.agent,
+            winning_artifact.author.model,
+            winner_assignment.agent,
+            winner_assignment.model
+        )));
+    }
+    let winner_slot = if input.get("planning_duel_roles").is_some() {
+        let roles = parse_planning_duel_roles(input)?;
+        if winner.arbiter_agent_cli != roles.arbiter.agent
+            || winner.arbiter_model != roles.arbiter.model
+        {
+            return Err(OrbitError::InvalidInput(format!(
+                "winner artifact arbiter {}/{} does not match recorded arbiter {}/{}",
+                winner.arbiter_agent_cli,
+                winner.arbiter_model,
+                roles.arbiter.agent,
+                roles.arbiter.model
+            )));
+        }
+        Some(winner_slot_for_assignment(&roles, &winner_assignment)?)
+    } else {
+        None
+    };
+    let winning_plan = normalize_winning_plan_for_task(&winning_artifact.content);
+    let winner_label = winner_slot
+        .map(|slot| match slot {
+            PlannerSlot::PlannerA => "planner_a",
+            PlannerSlot::PlannerB => "planner_b",
+        })
+        .unwrap_or("planner");
 
     let status_note = format!(
-        "planning duel winner={winner_role} ({}/{})",
-        winner.agent, winner.model
+        "planning duel winner={winner_label} ({}/{})",
+        winner_assignment.agent, winner_assignment.model
     );
     let comment_message = format!(
-        "Planning duel resolved.\n\nWinner: {winner_role} ({}/{})\n\nRationale: {rationale}\n\nWinning plan persisted to task.plan.",
-        winner.agent, winner.model
+        "Planning duel resolved.\n\nWinner: {winner_label} ({}/{})\n\nRationale: {}\n\nWinning plan persisted to task.plan.",
+        winner_assignment.agent, winner_assignment.model, winner.arbiter_rationale
     );
 
     host.apply_task_automation_update(
@@ -284,14 +817,17 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
             plan: Some(winning_plan),
             status: Some(TaskStatus::Backlog),
             status_event: Some("planning_duel_resolved".to_string()),
-            status_note: Some(format!("{status_note}; rationale={rationale}")),
+            status_note: Some(format!(
+                "{status_note}; rationale={}",
+                winner.arbiter_rationale
+            )),
             append_comments: vec![TaskComment {
                 at: Utc::now(),
-                by: arbiter.agent.clone(),
+                by: winner.arbiter_agent_cli.clone(),
                 message: comment_message,
             }],
-            agent: Some(winner.agent.clone()),
-            model: Some(winner.model.clone()),
+            agent: Some(winner_assignment.agent.clone()),
+            model: Some(winner_assignment.model.clone()),
             ..TaskAutomationUpdate::default()
         },
     )?;
@@ -299,14 +835,12 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
     Ok(json!({
         "task_id": task_id,
         "status": "backlog",
-        "winner_role": winner_role,
-        "winner_agent_cli": winner.agent,
-        "winner_model": winner.model,
-        "arbiter_agent_cli": arbiter.agent,
-        "arbiter_model": arbiter.model,
+        "winner_agent_cli": winner_assignment.agent,
+        "winner_model": winner_assignment.model,
     }))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn record_planning_duel_efficiency<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
@@ -316,25 +850,30 @@ pub(super) fn record_planning_duel_efficiency<H: RuntimeHost + ?Sized>(
         .or_else(|| input_string_field(input, "run_id"))
         .ok_or_else(|| OrbitError::InvalidInput("missing required input.run_id".to_string()))?;
 
-    let planner_a = role_identity(input, "planner_a")?;
-    let planner_b = role_identity(input, "planner_b")?;
-    let arbiter = role_identity(input, "arbiter")?;
+    let planning_roles = parse_planning_duel_roles(input)?;
 
     let planner_a_activity_id = role_activity_id(input, "planner_a")?;
     let planner_b_activity_id = role_activity_id(input, "planner_b")?;
     let arbiter_activity_id = role_activity_id(input, "arbiter")?;
-    ensure_distinct_activity_ids([
-        ("planner_a_activity_id", &planner_a_activity_id),
-        ("planner_b_activity_id", &planner_b_activity_id),
-        ("arbiter_activity_id", &arbiter_activity_id),
-    ])?;
 
-    let planner_a_metrics =
-        role_metrics_for_activity(host, &job_run_id, &planner_a, &planner_a_activity_id)?;
-    let planner_b_metrics =
-        role_metrics_for_activity(host, &job_run_id, &planner_b, &planner_b_activity_id)?;
-    let arbiter_metrics =
-        role_metrics_for_activity(host, &job_run_id, &arbiter, &arbiter_activity_id)?;
+    let planner_a_metrics = role_metrics_for_activity(
+        host,
+        &job_run_id,
+        &planning_roles.planner_a,
+        &planner_a_activity_id,
+    )?;
+    let planner_b_metrics = role_metrics_for_activity(
+        host,
+        &job_run_id,
+        &planning_roles.planner_b,
+        &planner_b_activity_id,
+    )?;
+    let arbiter_metrics = role_metrics_for_activity(
+        host,
+        &job_run_id,
+        &planning_roles.arbiter,
+        &arbiter_activity_id,
+    )?;
 
     let roles = BTreeMap::from([
         ("planner_a".to_string(), planner_a_metrics),
@@ -347,13 +886,6 @@ pub(super) fn record_planning_duel_efficiency<H: RuntimeHost + ?Sized>(
         "job_run_id": job_run_id,
         "roles": roles,
     }))
-}
-
-fn into_role_assignment(value: PlanningDuelRoleAssignment) -> PlanningRoleAssignment {
-    PlanningRoleAssignment {
-        agent: value.agent,
-        model: value.model,
-    }
 }
 
 fn into_efficiency_metrics(value: PlanningDuelEfficiency) -> EfficiencyMetrics {
@@ -377,7 +909,7 @@ fn into_efficiency_metrics(value: PlanningDuelEfficiency) -> EfficiencyMetrics {
     }
 }
 
-pub(super) fn record_planning_duel_scores<H: RuntimeHost + ?Sized>(
+pub(super) fn record_planning_duel_scores<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
@@ -385,16 +917,6 @@ pub(super) fn record_planning_duel_scores<H: RuntimeHost + ?Sized>(
     let job_run_id = input_string_field(input, "job_run_id")
         .or_else(|| input_string_field(input, "run_id"))
         .ok_or_else(|| OrbitError::InvalidInput("missing required input.job_run_id".to_string()))?;
-    let winner_role = required_input_string(input, "winner_role")?;
-    let winner = match winner_role {
-        "planner_a" => PlannerSlot::PlannerA,
-        "planner_b" => PlannerSlot::PlannerB,
-        other => {
-            return Err(OrbitError::InvalidInput(format!(
-                "winner_role must be 'planner_a' or 'planner_b', got '{other}'"
-            )));
-        }
-    };
 
     let planner_a_role = serde_json::from_value::<PlanningDuelRoleMetrics>(
         input
@@ -445,31 +967,65 @@ pub(super) fn record_planning_duel_scores<H: RuntimeHost + ?Sized>(
         activity_id: _,
         efficiency: arbiter_efficiency,
     } = arbiter_role;
+    let roles = PlanningRoles {
+        planner_a: PlanningRoleAssignment {
+            agent: planner_a_agent,
+            model: planner_a_model,
+        },
+        planner_b: PlanningRoleAssignment {
+            agent: planner_b_agent,
+            model: planner_b_model,
+        },
+        arbiter: PlanningRoleAssignment {
+            agent: arbiter_agent,
+            model: arbiter_model,
+        },
+    };
+    let artifacts = host.get_task_artifacts(task_id)?;
+    let plan_artifacts = planning_duel_plan_artifacts(&artifacts)?;
+    let winner = winner_artifact_from_artifacts(&artifacts)?;
+    let winner_assignment = winner_assignment(&winner);
+    let winner_plan = plan_artifact_by_path(&plan_artifacts, &winner.artifact_path)?;
+    if winner_plan.author != winner_assignment {
+        return Err(OrbitError::InvalidInput(format!(
+            "winner artifact `{}` is authored by {}/{} instead of declared winner {}/{}",
+            winner.artifact_path,
+            winner_plan.author.agent,
+            winner_plan.author.model,
+            winner_assignment.agent,
+            winner_assignment.model
+        )));
+    }
+    let winner_slot = winner_slot_for_assignment(&roles, &winner_assignment)?;
+    if winner.arbiter_agent_cli != roles.arbiter.agent
+        || winner.arbiter_model != roles.arbiter.model
+    {
+        return Err(OrbitError::InvalidInput(format!(
+            "winner artifact arbiter {}/{} does not match recorded arbiter {}/{}",
+            winner.arbiter_agent_cli,
+            winner.arbiter_model,
+            roles.arbiter.agent,
+            roles.arbiter.model
+        )));
+    }
+    let planner_a_plan = plan_artifact_for_assignment(&plan_artifacts, &roles.planner_a)?
+        .content
+        .clone();
+    let planner_b_plan = plan_artifact_for_assignment(&plan_artifacts, &roles.planner_b)?
+        .content
+        .clone();
 
     let completed_at = Utc::now();
     let run = PlanningDuelRun {
         run_id: job_run_id,
         task_id: task_id.to_string(),
         completed_at,
-        roles: PlanningRoles {
-            planner_a: into_role_assignment(PlanningDuelRoleAssignment {
-                agent: planner_a_agent,
-                model: planner_a_model,
-            }),
-            planner_b: into_role_assignment(PlanningDuelRoleAssignment {
-                agent: planner_b_agent,
-                model: planner_b_model,
-            }),
-            arbiter: into_role_assignment(PlanningDuelRoleAssignment {
-                agent: arbiter_agent,
-                model: arbiter_model,
-            }),
-        },
-        planner_a_plan: required_input_string(input, "planner_a_proposal")?.to_string(),
-        planner_b_plan: required_input_string(input, "planner_b_proposal")?.to_string(),
+        roles,
+        planner_a_plan,
+        planner_b_plan,
         outcome: PlanningOutcome {
-            winner,
-            arbiter_rationale: required_input_string(input, "arbiter_rationale")?.to_string(),
+            winner: winner_slot,
+            arbiter_rationale: winner.arbiter_rationale,
         },
         efficiency: PlanningEfficiency {
             planner_a: into_efficiency_metrics(planner_a_efficiency),
@@ -489,33 +1045,51 @@ pub(super) fn record_planning_duel_scores<H: RuntimeHost + ?Sized>(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::Mutex;
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
 
     use chrono::{DateTime, Utc};
     use orbit_store::{
         InvocationQuery, InvocationRecord, InvocationToolCallRecord, planning_duel_scoreboard,
     };
-    use orbit_types::{OrbitError, TaskStatus};
+    use orbit_types::{OrbitError, TaskStatus, TokenUsage, ToolCallTrace};
     use serde_json::Value;
     use serde_json::json;
     use tempfile::tempdir;
 
-    use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
+    use crate::context::{ActivityInvocationResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
 
     use super::{
         PlanningDuelEfficiency, clear_test_permutations, push_test_permutations,
-        record_planning_duel_efficiency, record_planning_duel_scores, select_planning_duel_roles,
-        summarize_role_metrics, writeback_planning_duel_task,
+        record_planning_duel_efficiency, record_planning_duel_scores, run_planning_duel,
+        select_planning_duel_roles, summarize_role_metrics, writeback_planning_duel_task,
     };
 
     #[derive(Default)]
     struct StubTaskHost {
         updates: Mutex<Vec<(String, TaskAutomationUpdate)>>,
+        artifacts: Mutex<HashMap<String, Vec<orbit_types::TaskArtifact>>>,
     }
 
     impl TaskHost for StubTaskHost {
         fn get_task(&self, _task_id: &str) -> Result<orbit_types::Task, OrbitError> {
             unimplemented!("not used")
+        }
+
+        fn get_task_artifacts(
+            &self,
+            task_id: &str,
+        ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+            Ok(self
+                .artifacts
+                .lock()
+                .unwrap()
+                .get(task_id)
+                .cloned()
+                .unwrap_or_default())
         }
 
         fn list_tasks_filtered(
@@ -565,6 +1139,11 @@ mod tests {
         scoreboard_dir: tempfile::TempDir,
         queries: Mutex<Vec<(String, String)>>,
         records: Mutex<HashMap<(String, String), Vec<InvocationRecord>>>,
+        artifacts: Mutex<HashMap<String, Vec<orbit_types::TaskArtifact>>>,
+        updates: Mutex<Vec<(String, TaskAutomationUpdate)>>,
+        invocations: Mutex<Vec<(String, String)>>,
+        active_planners: AtomicUsize,
+        max_active_planners: AtomicUsize,
     }
 
     impl StubRuntimeHost {
@@ -573,7 +1152,73 @@ mod tests {
                 scoreboard_dir: tempdir().expect("tempdir"),
                 queries: Mutex::new(Vec::new()),
                 records: Mutex::new(HashMap::new()),
+                artifacts: Mutex::new(HashMap::new()),
+                updates: Mutex::new(Vec::new()),
+                invocations: Mutex::new(Vec::new()),
+                active_planners: AtomicUsize::new(0),
+                max_active_planners: AtomicUsize::new(0),
             }
+        }
+    }
+
+    impl TaskHost for StubRuntimeHost {
+        fn get_task(&self, _task_id: &str) -> Result<orbit_types::Task, OrbitError> {
+            unimplemented!()
+        }
+
+        fn get_task_artifacts(
+            &self,
+            task_id: &str,
+        ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+            Ok(self
+                .artifacts
+                .lock()
+                .unwrap()
+                .get(task_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        fn list_tasks_filtered(
+            &self,
+            _status: Option<orbit_types::TaskStatus>,
+            _priority: Option<orbit_types::TaskPriority>,
+            _parent_id: Option<&str>,
+            _batch_id: Option<&str>,
+        ) -> Result<Vec<orbit_types::Task>, OrbitError> {
+            Ok(Vec::new())
+        }
+
+        fn start_task(
+            &self,
+            _task_id: &str,
+            _note: Option<String>,
+            _comment: Option<String>,
+        ) -> Result<orbit_types::Task, OrbitError> {
+            unimplemented!()
+        }
+
+        fn update_task_from_activity(
+            &self,
+            _task_id: &str,
+            _status: orbit_types::TaskStatus,
+            _execution_summary: Option<String>,
+            _comment: Option<String>,
+            _note: Option<String>,
+        ) -> Result<orbit_types::Task, OrbitError> {
+            unimplemented!()
+        }
+
+        fn apply_task_automation_update(
+            &self,
+            task_id: &str,
+            update: TaskAutomationUpdate,
+        ) -> Result<(), OrbitError> {
+            self.updates
+                .lock()
+                .unwrap()
+                .push((task_id.to_string(), update));
+            Ok(())
         }
     }
 
@@ -640,6 +1285,88 @@ mod tests {
             unimplemented!()
         }
 
+        fn invoke_activity(
+            &self,
+            activity: orbit_types::Activity,
+            agent_cli: &str,
+            model: Option<&str>,
+            input: Value,
+            _timeout_seconds: u64,
+            _debug: bool,
+        ) -> Result<ActivityInvocationResult, OrbitError> {
+            let task_id = input
+                .get("task_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    OrbitError::InvalidInput("missing required input.task_id".to_string())
+                })?
+                .to_string();
+            self.invocations
+                .lock()
+                .unwrap()
+                .push((activity.id.clone(), agent_cli.to_string()));
+
+            match activity.id.as_str() {
+                super::PLANNER_ACTIVITY_ID => {
+                    let model = model.ok_or_else(|| {
+                        OrbitError::InvalidInput("planner invocation requires model".to_string())
+                    })?;
+                    let active = self.active_planners.fetch_add(1, Ordering::SeqCst) + 1;
+                    self.max_active_planners.fetch_max(active, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(50));
+                    self.active_planners.fetch_sub(1, Ordering::SeqCst);
+
+                    self.artifacts.lock().unwrap().entry(task_id).or_default().push(
+                        orbit_types::TaskArtifact {
+                            path: format!("planning-duel/{agent_cli}-{model}.md"),
+                            content: format!(
+                                "*authored by: {agent_cli} / {model}*\n## Plan\n- planner from {agent_cli}"
+                            ),
+                        },
+                    );
+
+                    Ok(ActivityInvocationResult {
+                        response_json: None,
+                        invocation_trace: sample_trace(
+                            if agent_cli == "codex" { 40 } else { 65 },
+                            if agent_cli == "codex" { 11 } else { 17 },
+                            if agent_cli == "codex" { 5 } else { 8 },
+                            if agent_cli == "codex" { 48 } else { 96 },
+                        ),
+                        exit_code: Some(0),
+                        duration_ms: if agent_cli == "codex" { 40 } else { 65 },
+                    })
+                }
+                super::ARBITER_ACTIVITY_ID => {
+                    let _model = model.ok_or_else(|| {
+                        OrbitError::InvalidInput("arbiter invocation requires model".to_string())
+                    })?;
+                    let mut artifacts = self.artifacts.lock().unwrap();
+                    let task_artifacts = artifacts.entry(task_id).or_default();
+                    let planner_count = task_artifacts
+                        .iter()
+                        .filter(|artifact| artifact.path.ends_with(".md"))
+                        .count();
+                    if planner_count != 2 {
+                        return Err(OrbitError::Execution(format!(
+                            "arbiter expected 2 planner artifacts, found {planner_count}"
+                        )));
+                    }
+                    task_artifacts.push(winner_artifact());
+
+                    Ok(ActivityInvocationResult {
+                        response_json: None,
+                        invocation_trace: sample_trace(25, 9, 4, 32),
+                        exit_code: Some(0),
+                        duration_ms: 25,
+                    })
+                }
+                other => Err(OrbitError::Execution(format!(
+                    "unexpected activity invocation '{other}'"
+                ))),
+            }
+        }
+
         fn maybe_create_failure_task(
             &self,
             _job_id: &str,
@@ -662,6 +1389,28 @@ mod tests {
 
         fn scoreboard_dir(&self) -> &std::path::Path {
             self.scoreboard_dir.path()
+        }
+    }
+
+    fn sample_trace(
+        duration_ms: u64,
+        input_tokens: u64,
+        output_tokens: u64,
+        result_bytes: u64,
+    ) -> orbit_types::InvocationTrace {
+        orbit_types::InvocationTrace {
+            usage: TokenUsage {
+                input: input_tokens,
+                output: output_tokens,
+                ..TokenUsage::default()
+            },
+            tool_calls: vec![ToolCallTrace {
+                seq: 1,
+                tool_name: "orbit.graph.show".to_string(),
+                result_bytes,
+                result_payload: None,
+            }],
+            duration_ms,
         }
     }
 
@@ -709,6 +1458,51 @@ mod tests {
         }
     }
 
+    fn planning_roles_json() -> Value {
+        json!({
+            "planner_a": {
+                "agent": "codex",
+                "model": "gpt-5.4"
+            },
+            "planner_b": {
+                "agent": "claude",
+                "model": "opus"
+            },
+            "arbiter": {
+                "agent": "gemini",
+                "model": "gemini-3.1-pro-preview"
+            }
+        })
+    }
+
+    fn planner_artifacts() -> Vec<orbit_types::TaskArtifact> {
+        vec![
+            orbit_types::TaskArtifact {
+                path: "planning-duel/codex-gpt-5.4.md".to_string(),
+                content: "*authored by: codex / gpt-5.4*\n## Plan\n- planner a".to_string(),
+            },
+            orbit_types::TaskArtifact {
+                path: "planning-duel/claude-opus.md".to_string(),
+                content: "*authored by: claude / opus*\n## Plan\n- planner b".to_string(),
+            },
+        ]
+    }
+
+    fn winner_artifact() -> orbit_types::TaskArtifact {
+        orbit_types::TaskArtifact {
+            path: super::WINNER_ARTIFACT_PATH.to_string(),
+            content: serde_json::to_string(&json!({
+                "winner_agent_cli": "claude",
+                "winner_model": "opus",
+                "artifact_path": "planning-duel/claude-opus.md",
+                "arbiter_agent_cli": "gemini",
+                "arbiter_model": "gemini-3.1-pro-preview",
+                "arbiter_rationale": "planner_b grounded the writeback path more clearly"
+            }))
+            .expect("winner json"),
+        }
+    }
+
     #[test]
     fn select_planning_duel_roles_returns_distinct_assignments() {
         clear_test_permutations();
@@ -731,17 +1525,16 @@ mod tests {
     #[test]
     fn writeback_planning_duel_task_persists_plan_backlog_and_commentary() {
         let host = StubTaskHost::default();
+        host.artifacts.lock().unwrap().insert("T1".to_string(), {
+            let mut artifacts = planner_artifacts();
+            artifacts.push(winner_artifact());
+            artifacts
+        });
         let out = writeback_planning_duel_task(
             &host,
             &json!({
                 "task_id": "T1",
-                "winning_plan": "new plan",
-                "winner_role": "planner_a",
-                "winner_agent_cli": "codex",
-                "winner_model": "gpt-5.4",
-                "arbiter_agent_cli": "gemini",
-                "arbiter_model": "gemini-3.1-pro",
-                "arbiter_rationale": "best plan",
+                "planning_duel_roles": planning_roles_json(),
             }),
         )
         .unwrap();
@@ -750,15 +1543,85 @@ mod tests {
         let updates = host.updates.lock().unwrap();
         assert_eq!(updates.len(), 1);
         let update = &updates[0].1;
-        assert_eq!(update.plan.as_deref(), Some("new plan"));
+        assert_eq!(update.plan.as_deref(), Some("## Plan\n- planner b"));
         assert_eq!(update.status, Some(TaskStatus::Backlog));
         assert_eq!(
             update.status_event.as_deref(),
             Some("planning_duel_resolved")
         );
-        assert_eq!(update.agent.as_deref(), Some("codex"));
+        assert_eq!(update.agent.as_deref(), Some("claude"));
         assert_eq!(update.append_comments.len(), 1);
         assert_eq!(update.append_comments[0].by, "gemini");
+    }
+
+    #[test]
+    fn run_planning_duel_invokes_planners_in_parallel_then_records_winner() {
+        clear_test_permutations();
+        push_test_permutations([[0, 1, 2]]);
+
+        let host = StubRuntimeHost::new();
+        let out = run_planning_duel(
+            &host,
+            &json!({
+                "task_id": "T1",
+                "run_id": "run-42",
+            }),
+            false,
+        )
+        .expect("planning duel succeeds");
+
+        assert_eq!(out["run_id"], json!("run-42"));
+        assert_eq!(out["winner_agent_cli"], json!("claude"));
+        assert_eq!(out["winner_model"], json!("opus"));
+
+        let invocations = host.invocations.lock().unwrap().clone();
+        assert_eq!(invocations.len(), 3);
+        assert_eq!(invocations[0].0, super::PLANNER_ACTIVITY_ID);
+        assert_eq!(invocations[1].0, super::PLANNER_ACTIVITY_ID);
+        assert_eq!(invocations[2].0, super::ARBITER_ACTIVITY_ID);
+        assert!(
+            host.max_active_planners.load(Ordering::SeqCst) >= 2,
+            "expected planner invocations to overlap"
+        );
+
+        let updates = host.updates.lock().unwrap();
+        assert_eq!(updates.len(), 1);
+        let update = &updates[0].1;
+        assert_eq!(update.status, Some(TaskStatus::Backlog));
+        assert_eq!(
+            update.plan.as_deref(),
+            Some("## Plan\n- planner from claude")
+        );
+
+        let runs = planning_duel_scoreboard::load_runs(host.scoreboard_dir.path())
+            .expect("scoreboard loads");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].task_id, "T1");
+        assert_eq!(runs[0].outcome.winner, orbit_types::PlannerSlot::PlannerB);
+        assert_eq!(runs[0].roles.arbiter.agent, "gemini");
+        assert_eq!(runs[0].efficiency.planner_a.wall_clock_ms, 40);
+        assert_eq!(runs[0].efficiency.planner_b.wall_clock_ms, 65);
+        assert_eq!(runs[0].efficiency.arbiter.wall_clock_ms, 25);
+
+        let artifacts = host
+            .artifacts
+            .lock()
+            .unwrap()
+            .get("T1")
+            .cloned()
+            .expect("task artifacts");
+        assert_eq!(
+            artifacts
+                .iter()
+                .filter(|artifact| artifact.path.ends_with(".md"))
+                .count(),
+            2
+        );
+        assert!(
+            artifacts
+                .iter()
+                .any(|artifact| artifact.path == super::WINNER_ARTIFACT_PATH)
+        );
     }
 
     #[test]
@@ -816,7 +1679,7 @@ mod tests {
                 "run-1",
                 "activity-c",
                 "gemini",
-                "gemini-3.1-pro",
+                "gemini-3.1-pro-preview",
                 90,
                 1,
                 2,
@@ -829,14 +1692,9 @@ mod tests {
             &json!({
                 "task_id": "T1",
                 "job_run_id": "run-1",
-                "planner_a_agent_cli": "codex",
-                "planner_a_model": "gpt-5.4",
+                "planning_duel_roles": planning_roles_json(),
                 "planner_a_activity_id": "activity-a",
-                "planner_b_agent_cli": "claude",
-                "planner_b_model": "opus",
                 "planner_b_activity_id": "activity-b",
-                "arbiter_agent_cli": "gemini",
-                "arbiter_model": "gemini-3.1-pro",
                 "arbiter_activity_id": "activity-c",
             }),
         )
@@ -873,21 +1731,22 @@ mod tests {
     #[test]
     fn record_planning_duel_scores_appends_scoreboard_entry() {
         let host = StubRuntimeHost::new();
+        host.artifacts.lock().unwrap().insert("T1".to_string(), {
+            let mut artifacts = planner_artifacts();
+            artifacts.push(winner_artifact());
+            artifacts
+        });
 
         let out = record_planning_duel_scores(
             &host,
             &json!({
                 "job_run_id": "run-77",
                 "task_id": "T1",
-                "planner_a_proposal": "## Plan\n- planner a",
-                "planner_b_proposal": "## Plan\n- planner b",
-                "winner_role": "planner_b",
-                "arbiter_rationale": "planner_b grounded the writeback path more clearly",
                 "roles": {
                     "planner_a": {
                         "agent": "codex",
                         "model": "gpt-5.4",
-                        "activity_id": "propose_duel_plan_a",
+                        "activity_id": "propose_duel_plan",
                         "efficiency": {
                             "invocation_count": 1,
                             "wall_clock_ms": 1200,
@@ -903,7 +1762,7 @@ mod tests {
                     "planner_b": {
                         "agent": "claude",
                         "model": "opus",
-                        "activity_id": "propose_duel_plan_b",
+                        "activity_id": "propose_duel_plan",
                         "efficiency": {
                             "invocation_count": 1,
                             "wall_clock_ms": 1500,
@@ -918,7 +1777,7 @@ mod tests {
                     },
                     "arbiter": {
                         "agent": "gemini",
-                        "model": "gemini-3.1-pro",
+                        "model": "gemini-3.1-pro-preview",
                         "activity_id": "arbitrate_duel_plan",
                         "efficiency": {
                             "invocation_count": 1,
@@ -944,34 +1803,67 @@ mod tests {
         assert_eq!(runs[0].task_id, "T1");
         assert_eq!(runs[0].outcome.winner, orbit_types::PlannerSlot::PlannerB);
         assert_eq!(runs[0].roles.planner_b.agent, "claude");
-        assert_eq!(runs[0].planner_b_plan, "## Plan\n- planner b");
+        assert_eq!(
+            runs[0].planner_b_plan,
+            "*authored by: claude / opus*\n## Plan\n- planner b"
+        );
         assert_eq!(runs[0].efficiency.planner_a.token_total(), Some(30));
         assert_eq!(runs[0].efficiency.planner_b.byte_proxy_total(), Some(4096));
     }
 
     #[test]
-    fn record_planning_duel_efficiency_rejects_duplicate_activity_ids() {
+    fn record_planning_duel_efficiency_supports_shared_planner_activity_id() {
         let host = StubRuntimeHost::new();
+        host.records.lock().unwrap().insert(
+            ("run-1".to_string(), "shared-activity".to_string()),
+            vec![
+                record(
+                    1,
+                    "2026-04-11T12:00:00Z",
+                    "run-1",
+                    "shared-activity",
+                    "codex",
+                    "gpt-5.4",
+                    25,
+                    10,
+                    3,
+                    &[("orbit.graph.search", 40)],
+                ),
+                record(
+                    2,
+                    "2026-04-11T12:01:00Z",
+                    "run-1",
+                    "shared-activity",
+                    "claude",
+                    "opus",
+                    45,
+                    0,
+                    0,
+                    &[("orbit.graph.show", 80)],
+                ),
+            ],
+        );
 
-        let err = record_planning_duel_efficiency(
+        let out = record_planning_duel_efficiency(
             &host,
             &json!({
                 "task_id": "T1",
                 "job_run_id": "run-1",
-                "planner_a_agent_cli": "codex",
-                "planner_a_model": "gpt-5.4",
-                "planner_a_activity_id": "shared-activity",
-                "planner_b_agent_cli": "claude",
-                "planner_b_model": "opus",
-                "planner_b_activity_id": "shared-activity",
-                "arbiter_agent_cli": "gemini",
-                "arbiter_model": "gemini-3.1-pro",
+                "planning_duel_roles": planning_roles_json(),
+                "planner_activity_id": "shared-activity",
                 "arbiter_activity_id": "activity-c",
             }),
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(err.to_string().contains("must use distinct activity ids"));
+        assert_eq!(
+            out["roles"]["planner_a"]["efficiency"]["wall_clock_ms"],
+            json!(25)
+        );
+        assert_eq!(
+            out["roles"]["planner_b"]["efficiency"]["byte_proxy_total"],
+            json!(80)
+        );
     }
 
     #[test]
@@ -998,14 +1890,8 @@ mod tests {
             &json!({
                 "task_id": "T1",
                 "job_run_id": "run-1",
-                "planner_a_agent_cli": "codex",
-                "planner_a_model": "gpt-5.4",
-                "planner_a_activity_id": "activity-a",
-                "planner_b_agent_cli": "claude",
-                "planner_b_model": "opus",
-                "planner_b_activity_id": "activity-b",
-                "arbiter_agent_cli": "gemini",
-                "arbiter_model": "gemini-3.1-pro",
+                "planning_duel_roles": planning_roles_json(),
+                "planner_activity_id": "activity-a",
                 "arbiter_activity_id": "activity-c",
             }),
         )
@@ -1013,7 +1899,7 @@ mod tests {
 
         assert!(
             err.to_string()
-                .contains("instead of expected codex/gpt-5.4")
+                .contains("did not produce invocations attributed to expected codex/gpt-5.4")
         );
     }
 

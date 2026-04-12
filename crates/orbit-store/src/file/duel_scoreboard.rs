@@ -469,7 +469,7 @@ mod tests {
                 },
                 arbiter: RoleAssignment {
                     agent: "gemini".into(),
-                    model: "gemini-3.1-pro".into(),
+                    model: "gemini-3.1-pro-preview".into(),
                 },
             },
             outcome: Outcome {

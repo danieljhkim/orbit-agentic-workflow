@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn duel_plan_pipeline_runs_selection_then_two_proposals_then_arbitration() {
+    fn duel_plan_pipeline_runs_a_single_planning_duel_activity() {
         let specs = load_default_job_specs(DEFAULT_JOB_FILES).expect("jobs");
         let duel_plan = specs
             .into_iter()
@@ -566,56 +566,11 @@ mod tests {
             .iter()
             .map(|step| step.target_id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(
-            step_ids,
-            vec![
-                "select_duel_plan_roles",
-                "propose_duel_plan_a",
-                "propose_duel_plan_b",
-                "arbitrate_duel_plan",
-                "record_planning_duel_efficiency",
-                "writeback_planning_duel_task",
-                "record_planning_duel_scores",
-            ]
-        );
+        assert_eq!(step_ids, vec!["run_planning_duel"]);
 
-        let first_proposal = duel_plan.steps.get(1).expect("first proposal step");
-        assert_eq!(first_proposal.condition, StepCondition::OnSuccess);
-        assert_eq!(
-            first_proposal
-                .output_map
-                .get("proposal")
-                .map(String::as_str),
-            Some("planner_a_proposal")
-        );
-        assert_eq!(
-            first_proposal.output_map.get("summary").map(String::as_str),
-            Some("planner_a_summary")
-        );
-
-        let second_proposal = duel_plan.steps.get(2).expect("second proposal step");
-        assert_eq!(
-            second_proposal
-                .output_map
-                .get("proposal")
-                .map(String::as_str),
-            Some("planner_b_proposal")
-        );
-        assert_eq!(
-            second_proposal
-                .output_map
-                .get("summary")
-                .map(String::as_str),
-            Some("planner_b_summary")
-        );
-
-        let arbiter = duel_plan.steps.get(3).expect("arbiter step");
-        assert_eq!(arbiter.condition, StepCondition::OnSuccess);
-        let metrics = duel_plan.steps.get(4).expect("metrics step");
-        assert_eq!(metrics.condition, StepCondition::OnSuccess);
-        let record = duel_plan.steps.get(5).expect("score record step");
-        assert_eq!(record.condition, StepCondition::OnSuccess);
-        let writeback = duel_plan.steps.get(6).expect("writeback step");
-        assert_eq!(writeback.condition, StepCondition::OnSuccess);
+        let step = duel_plan.steps.first().expect("run_planning_duel step");
+        assert_eq!(step.condition, StepCondition::OnSuccess);
+        assert!(step.output_map.is_empty());
+        assert_eq!(step.timeout_seconds, 3600);
     }
 }

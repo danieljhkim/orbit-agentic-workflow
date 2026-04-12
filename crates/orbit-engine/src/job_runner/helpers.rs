@@ -480,6 +480,13 @@ mod resolve_step_agent_tests {
             }
         }
 
+        fn get_task_artifacts(
+            &self,
+            _task_id: &str,
+        ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+            Ok(Vec::new())
+        }
+
         fn list_tasks_filtered(
             &self,
             _status: Option<TaskStatus>,
@@ -601,12 +608,12 @@ mod resolve_step_agent_tests {
         let input = json!({
             "task_id": "T1",
             "reviewer_agent_cli": "gemini",
-            "duel_model": "gemini-3.1-pro",
+            "duel_model": "gemini-3.1-pro-preview",
         });
 
         let resolved = resolve_step_agent(&host, &step, &input).expect("resolver should fire");
         assert_eq!(resolved.agent_cli, "gemini");
-        assert_eq!(resolved.model.as_deref(), Some("gemini-3.1-pro"));
+        assert_eq!(resolved.model.as_deref(), Some("gemini-3.1-pro-preview"));
     }
 
     #[test]
@@ -675,6 +682,13 @@ mod knowledge_metrics_tests {
             } else {
                 Err(OrbitError::TaskNotFound(task_id.to_string()))
             }
+        }
+
+        fn get_task_artifacts(
+            &self,
+            _task_id: &str,
+        ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+            Ok(Vec::new())
         }
 
         fn list_tasks_filtered(

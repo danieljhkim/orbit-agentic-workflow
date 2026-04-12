@@ -180,6 +180,12 @@ mod tests {
         fn get_task(&self, _task_id: &str) -> Result<Task, OrbitError> {
             unimplemented!("not used by select_duel_roles")
         }
+        fn get_task_artifacts(
+            &self,
+            _task_id: &str,
+        ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+            Ok(Vec::new())
+        }
         fn list_tasks_filtered(
             &self,
             _status: Option<TaskStatus>,
@@ -310,7 +316,7 @@ mod tests {
         assert_eq!(roles["reviewer"]["agent"], json!("claude"));
         assert_eq!(roles["reviewer"]["model"], json!("opus"));
         assert_eq!(roles["arbiter"]["agent"], json!("gemini"));
-        assert_eq!(roles["arbiter"]["model"], json!("gemini-3.1-pro"));
+        assert_eq!(roles["arbiter"]["model"], json!("gemini-3.1-pro-preview"));
     }
 
     #[test]

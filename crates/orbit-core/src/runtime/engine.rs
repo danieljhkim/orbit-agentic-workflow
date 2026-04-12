@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_engine::{
-    AgentProtocolHost, EnvironmentHost, ExecutionContext, JobRunHost, RuntimeHost,
-    TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
+    ActivityInvocationResult, AgentProtocolHost, EnvironmentHost, ExecutionContext, JobRunHost,
+    RuntimeHost, TaskAutomationUpdate, TaskHost, activity_skill_refs_from_spec_config,
+    execute_single_attempt, validate_activity_input_schema,
 };
 use orbit_store::{
     ActivityInvocationMetrics, InvocationInsertParams, InvocationQuery, InvocationRecord,
@@ -330,6 +331,65 @@ impl RuntimeHost for OrbitRuntime {
         OrbitRuntime::run_tool_with_context_and_role(self, name, input, role, tool_context)
     }
 
+    fn invoke_activity(
+        &self,
+        activity: Activity,
+        agent_cli: &str,
+        model: Option<&str>,
+        input: Value,
+        timeout_seconds: u64,
+        debug: bool,
+    ) -> Result<ActivityInvocationResult, OrbitError> {
+        if activity.spec_type != "agent_invoke" {
+            return Err(OrbitError::InvalidInput(format!(
+                "invoke_activity only supports agent_invoke activities, got '{}'",
+                activity.spec_type
+            )));
+        }
+
+        validate_activity_input_schema(&activity, &input)?;
+
+        let execution = ExecutionContext {
+            activity,
+            job: None,
+            agent_cli: agent_cli.to_string(),
+            model: model.map(ToOwned::to_owned),
+            timeout_seconds,
+            env_extra: vec![],
+            env_set: std::collections::HashMap::new(),
+            input,
+            debug,
+        };
+        let activity_id = execution.activity.id.clone();
+        let outcome = execute_single_attempt(self, &execution);
+        let duration_ms = outcome
+            .duration_ms
+            .unwrap_or(outcome.invocation_trace.duration_ms);
+
+        if outcome.state != JobRunState::Success {
+            let error_code = outcome
+                .error_code
+                .unwrap_or_else(|| outcome.state.to_string());
+            let error_message = outcome.error_message.unwrap_or_else(|| {
+                format!("activity '{activity_id}' finished in non-success state")
+            });
+            return if error_code == orbit_engine::AGENT_PROTOCOL_VIOLATION {
+                Err(OrbitError::AgentProtocolViolation(error_message))
+            } else {
+                Err(OrbitError::Execution(format!(
+                    "activity '{activity_id}' failed [{error_code}]: {error_message}"
+                )))
+            };
+        }
+
+        Ok(ActivityInvocationResult {
+            response_json: outcome.response_json,
+            invocation_trace: outcome.invocation_trace,
+            exit_code: outcome.exit_code,
+            duration_ms,
+        })
+    }
+
     fn maybe_create_failure_task(
         &self,
         job_id: &str,
@@ -552,6 +612,13 @@ impl TaskHost for OrbitRuntime {
         OrbitRuntime::get_task(self, task_id)
     }
 
+    fn get_task_artifacts(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+        OrbitRuntime::get_task_artifacts(self, task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
@@ -762,6 +829,13 @@ mod tests {
             } else {
                 Err(OrbitError::TaskNotFound(task_id.to_string()))
             }
+        }
+
+        fn get_task_artifacts(
+            &self,
+            _task_id: &str,
+        ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+            Ok(Vec::new())
         }
 
         fn list_tasks_filtered(
@@ -1107,15 +1181,18 @@ mod tests {
         assert_eq!(envelope.get("agent_family"), Some(&json!("gemini")));
         assert_eq!(
             envelope.get("orchestrator_model"),
-            Some(&json!("gemini-3.1-pro"))
+            Some(&json!("gemini-3.1-pro-preview"))
         );
-        assert_eq!(envelope.get("helper_model"), Some(&json!("gemini-3-flash")));
+        assert_eq!(
+            envelope.get("helper_model"),
+            Some(&json!("gemini-3-flash-preview"))
+        );
         let instruction = envelope
             .get("instruction")
             .and_then(serde_json::Value::as_str)
             .expect("instruction");
-        assert!(instruction.contains("orchestrator=gemini-3.1-pro"));
-        assert!(instruction.contains("helper=gemini-3-flash"));
+        assert!(instruction.contains("orchestrator=gemini-3.1-pro-preview"));
+        assert!(instruction.contains("helper=gemini-3-flash-preview"));
     }
 
     #[test]

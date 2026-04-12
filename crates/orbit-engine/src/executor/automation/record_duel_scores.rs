@@ -265,7 +265,7 @@ mod tests {
             "reviewer_agent_cli": "codex",
             "reviewer_model": "gpt-5.4",
             "arbiter_agent_cli": "gemini",
-            "arbiter_model": "gemini-3.1-pro",
+            "arbiter_model": "gemini-3.1-pro-preview",
             "decision": "APPROVED",
             "per_comment": [],
             "reviewer_score": 4.5,

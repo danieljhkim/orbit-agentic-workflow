@@ -5,8 +5,8 @@ use orbit_store::{InvocationQuery, InvocationRecord};
 use orbit_tools::ToolContext;
 use orbit_types::{
     Activity, InvocationTrace, Job, JobRun, JobRunState, JobTargetType, KnowledgeRunMetrics,
-    OrbitError, OrbitEvent, ReviewThread, Role, Task, TaskComment, TaskPriority, TaskStatus,
-    redact_sensitive_env_json, redact_sensitive_env_option,
+    OrbitError, OrbitEvent, ReviewThread, Role, Task, TaskArtifact, TaskComment, TaskPriority,
+    TaskStatus, redact_sensitive_env_json, redact_sensitive_env_option,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -158,6 +158,14 @@ pub struct JobRunResult {
     pub output: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ActivityInvocationResult {
+    pub response_json: Option<Value>,
+    pub invocation_trace: InvocationTrace,
+    pub exit_code: Option<i32>,
+    pub duration_ms: u64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TaskAutomationUpdate {
     pub status: Option<TaskStatus>,
@@ -218,6 +226,7 @@ pub trait JobRunHost {
 
 pub trait TaskHost {
     fn get_task(&self, task_id: &str) -> Result<Task, OrbitError>;
+    fn get_task_artifacts(&self, task_id: &str) -> Result<Vec<TaskArtifact>, OrbitError>;
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
@@ -347,6 +356,19 @@ pub trait RuntimeHost {
         role: Role,
         tool_context: ToolContext,
     ) -> Result<Value, OrbitError>;
+    fn invoke_activity(
+        &self,
+        _activity: Activity,
+        _agent_cli: &str,
+        _model: Option<&str>,
+        _input: Value,
+        _timeout_seconds: u64,
+        _debug: bool,
+    ) -> Result<ActivityInvocationResult, OrbitError> {
+        Err(OrbitError::Execution(
+            "invoke_activity is not implemented for this host".to_string(),
+        ))
+    }
     /// Create a task capturing a job run failure, skipping creation if an open
     /// task for the same `job_id` + `error_code` combination already exists.
     /// When `agent` and `model` are provided, they are recorded on the created

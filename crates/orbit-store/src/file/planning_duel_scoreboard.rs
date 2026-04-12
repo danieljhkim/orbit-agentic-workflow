@@ -241,7 +241,7 @@ mod tests {
                 },
                 arbiter: PlanningRoleAssignment {
                     agent: "gemini".into(),
-                    model: "gemini-3.1-pro".into(),
+                    model: "gemini-3.1-pro-preview".into(),
                 },
             },
             planner_a_plan: "Plan A".into(),

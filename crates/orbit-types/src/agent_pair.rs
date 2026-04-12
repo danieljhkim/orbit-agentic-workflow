@@ -68,7 +68,10 @@ pub fn resolve_agent_model_pair(agent_cli: &str) -> Option<AgentModelPair> {
     match family.as_str() {
         "codex" => Some(AgentModelPair::new("gpt-5.4", "gpt-5.4-mini")),
         "claude" => Some(AgentModelPair::new("opus", "sonnet")),
-        "gemini" => Some(AgentModelPair::new("gemini-3.1-pro", "gemini-3-flash")),
+        "gemini" => Some(AgentModelPair::new(
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+        )),
         _ => None,
     }
 }
@@ -101,8 +104,8 @@ mod tests {
     #[test]
     fn resolves_gemini_pair() {
         let pair = resolve_agent_model_pair("gemini").expect("gemini pair");
-        assert_eq!(pair.orchestrator, "gemini-3.1-pro");
-        assert_eq!(pair.helper, "gemini-3-flash");
+        assert_eq!(pair.orchestrator, "gemini-3.1-pro-preview");
+        assert_eq!(pair.helper, "gemini-3-flash-preview");
     }
 
     #[test]
