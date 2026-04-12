@@ -4,12 +4,6 @@ Orbit is a local-first workflow engine for agent-driven software delivery. It he
 
 Orbit runs on top of agent CLIs such as Codex and Claude Code. No provider API keys are required by Orbit itself.
 
-## Philosophy
-
-> Minimize irrelevant decisions. Maximize determinism. Make every token count.
-
-Orbit should make agents spend judgment on what matters: intent, correctness, tradeoffs, design, and risk. Agent opinions and decisions should directly support these values; if a choice does not reduce token usage, remove irrelevant discretion, or make the system more deterministic, Orbit should make that choice instead.
-
 ---
 
 ## Quick Start
@@ -56,50 +50,6 @@ If you already know which tasks you want to run, pin them explicitly:
 ```bash
 orbit ship run --tasks T123,T456 --parallelism 2 --base main
 ```
-
----
-
-## Mental Model
-
-Orbit has four core concepts:
-
-- **Task**: a unit of work to be proposed, approved, implemented, reviewed, and tracked
-- **Activity**: a reusable operation with a defined input/output shape
-- **Job**: an ordered workflow made of activities and nested jobs
-- **Workflow**: a human-friendly entrypoint over a common job pipeline, exposed through `orbit ship` and `orbit duel`
-
-In practice:
-
-- Humans review and approve work
-- Agents create and implement tasks
-- Orbit jobs orchestrate planning, execution, review, and merge
-
----
-
-## Canonical Path
-
-For most repositories, the intended path is:
-
-1. Create tasks
-2. Review and approve them
-3. Run `orbit ship run`
-4. Let Orbit dispatch agents, verify results, open a PR, review it, and merge when approved
-
-Most users should start with the first-class workflows below rather than the lower-level job and activity internals.
-
-Note: `orbit ship run` depends on GitHub-backed PR operations and therefore requires `gh` to be installed and logged in. `orbit ship run --local` does not.
-
----
-
-## Who Uses Which Surface?
-
-Orbit has different surfaces for different actors:
-
-- **Humans** usually use the CLI directly: `orbit task ...`, `orbit ship ...`, `orbit duel ...`, `orbit metrics ...`
-- **Agents** should use the Orbit tool surface: `orbit tool run ...`
-- **Automations/jobs** operate through activities, runtime hooks, and registered tools
-
-These surfaces are intentionally distinct because Orbit records provenance and execution context differently for humans, agents, and automation. If you are writing agent workflows, prefer the tool surface rather than shelling out to human-oriented CLI commands.
 
 ---
 
@@ -174,8 +124,6 @@ Inspect:
   metrics    Inspect token, tool-call, and knowledge-pack metrics
 ```
 
-`orbit job ...` and `orbit activity ...` still work for compatibility, but they are intentionally omitted from `orbit --help` and are not the documented primary surface.
-
 ---
 
 ## Workspace Model
@@ -221,61 +169,6 @@ Tasks are tightly coupled to Orbit jobs. If you already use Linear or Jira, Orbi
 
 ---
 
-## Activities And Jobs
-
-Activities are atomic, reusable operations:
-
-- They have defined schemas and input/output contracts
-- They can be implemented as automation, agent invocation, or CLI commands
-- They can run independently or as part of a job
-
-Jobs are workflows composed of activities:
-
-- They encode repeatable automation
-- They can call nested jobs
-- They are the engine behind the higher-level `orbit ship run` and `orbit duel run` workflows
-
----
-
-## Default Jobs
-
-Orbit currently ships with a small set of default jobs that cover planning, implementation, review, and merge.
-
-### `job_parallel_task_pipeline`
-
-The main PR-based workflow. It selects a conflict-free batch of tasks, dispatches parallel workers in a shared worktree, verifies the result, opens a PR, and hands off to the review cycle.
-
-```bash
-orbit ship run
-```
-
-Source: [`crates/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml`](crates/orbit-core/assets/jobs/job_parallel_task_pipeline.yaml)
-
-### `job_local_task_pipeline`
-
-A local-only workflow. It plans, implements, and commits directly without opening a PR or entering the GitHub review loop.
-
-```bash
-orbit ship run --local
-```
-
-Source: [`crates/orbit-core/assets/jobs/job_local_task_pipeline.yaml`](crates/orbit-core/assets/jobs/job_local_task_pipeline.yaml)
-
-
-### `job_batch_review_cycle`
-
-Reviews a batch PR against task acceptance criteria, syncs review threads to GitHub, and either merges on approval or enters the fix loop.
-
-This job is triggered internally by the ship pipeline after a PR is opened.
-
-### `job_review_tasks`
-
-Runs standalone task review for items in `proposed` or `review`.
-
-This job is used internally when Orbit performs standalone task review.
-
----
-
 ## Architecture
 
 Orbit is structured as a layered set of Rust crates. Lower layers have no knowledge of higher layers.
@@ -318,10 +211,6 @@ Orbit state is local by default.
 - Global state lives under `~/.orbit/`
 - Workspace execution state lives under `<repo>/.orbit/`
 - Scoreboards, tasks, diagnostics, and job runs are workspace-scoped artifacts
-
-If you want Orbit state to persist across machines without polluting normal git history, use an overlay or similar mechanism. One example is tracked here:
-
-- [monodev Orbit state overlay](https://github.com/danieljhkim/orbit/tree/monodev/persist/persist/stores/orbit-states/overlay/.orbit)
 
 ---
 

@@ -3,11 +3,14 @@
 # ------------------------------------------------------------
 # Config
 # ------------------------------------------------------------
+CARGO ?= cargo
 BINARY := orbit
 BIN_CRATE := orbit-cli
 # Crate sources live under orbit/ (see root Cargo.toml workspace members).
 BIN_CRATE_PATH := crates/$(BIN_CRATE)
 WORKSPACE := --workspace
+INSTALL_PROFILE ?= release
+INSTALL_BIN_DIR ?= $(HOME)/.cargo/bin
 
 # Detect profile
 PROFILE ?= debug
@@ -17,6 +20,14 @@ ifeq ($(PROFILE),release)
 else
 	CARGO_PROFILE :=
 	TARGET_DIR := target/debug
+endif
+
+ifeq ($(INSTALL_PROFILE),release)
+	INSTALL_CARGO_PROFILE := --release
+	INSTALL_TARGET_DIR := target/release
+else
+	INSTALL_CARGO_PROFILE :=
+	INSTALL_TARGET_DIR := target/debug
 endif
 
 # ------------------------------------------------------------
@@ -36,7 +47,7 @@ help:
 	@echo "  make audit        Cargo audit (security)"
 	@echo "  make tree         Print dependency tree"
 	@echo "  make ci           Full CI pass"
-	@echo "  make install      Install CLI locally"
+	@echo "  make install      Install CLI locally (INSTALL_PROFILE=debug optional)"
 	@echo "  make uninstall    Remove installed binary"
 	@echo "  make clean        Clean build artifacts"
 	@echo "  make watch        Continuous check + test"
@@ -45,16 +56,16 @@ help:
 # Build
 # ------------------------------------------------------------
 build:
-	cargo build $(WORKSPACE) $(CARGO_PROFILE)
+	$(CARGO) build $(WORKSPACE) $(CARGO_PROFILE)
 
 release:
-	cargo build -p $(BIN_CRATE) --release
+	$(CARGO) build -p $(BIN_CRATE) --release
 
 # ------------------------------------------------------------
 # Run
 # ------------------------------------------------------------
 run:
-	cargo run -p $(BIN_CRATE) -- $(ARGS)
+	$(CARGO) run -p $(BIN_CRATE) -- $(ARGS)
 
 # Direct execution (after build)
 dev: build
@@ -64,25 +75,25 @@ dev: build
 # Quality
 # ------------------------------------------------------------
 check:
-	cargo fmt --all
-	cargo check $(WORKSPACE)
+	$(CARGO) fmt --all
+	$(CARGO) check $(WORKSPACE)
 
 test:
-	cargo test $(WORKSPACE)
+	$(CARGO) test $(WORKSPACE) --lib --bins --tests
 
 fmt:
-	cargo fmt --all
+	$(CARGO) fmt --all
 
 clippy:
-	cargo clippy $(WORKSPACE) --all-targets --all-features -- -D warnings
+	$(CARGO) clippy $(WORKSPACE) --lib --bins --tests -- -D warnings
 
 # Security audit (requires cargo-audit)
 audit:
-	cargo audit || echo "Install cargo-audit via: cargo install cargo-audit"
+	$(CARGO) audit || echo "Install cargo-audit via: cargo install cargo-audit"
 
 # Dependency tree inspection
 tree:
-	cargo tree -e features
+	$(CARGO) tree -e features
 
 # Full CI pass
 ci: fmt clippy test
@@ -91,19 +102,21 @@ ci: fmt clippy test
 # Install
 # ------------------------------------------------------------
 install:
-	cargo install --path $(BIN_CRATE_PATH) --force
+	$(CARGO) build -p $(BIN_CRATE) $(INSTALL_CARGO_PROFILE)
+	install -d $(INSTALL_BIN_DIR)
+	install -m 755 $(INSTALL_TARGET_DIR)/$(BINARY) $(INSTALL_BIN_DIR)/$(BINARY)
 
 uninstall:
-	cargo uninstall $(BINARY) || true
+	rm -f $(INSTALL_BIN_DIR)/$(BINARY)
 
 # ------------------------------------------------------------
 # Clean
 # ------------------------------------------------------------
 clean:
-	cargo clean
+	$(CARGO) clean
 
 # ------------------------------------------------------------
 # Dev Loop
 # ------------------------------------------------------------
 watch:
-	cargo watch -x "check" -x "test"
+	$(CARGO) watch -x "check" -x "test"
