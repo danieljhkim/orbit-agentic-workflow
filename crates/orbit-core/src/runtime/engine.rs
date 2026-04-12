@@ -375,7 +375,7 @@ impl RuntimeHost for OrbitRuntime {
                 workspace_path: None,
                 priority: TaskPriority::High,
                 complexity: None,
-                task_type: TaskType::Friction,
+                task_type: TaskType::Issue,
                 source_task_id: None,
             },
             agent.map(ToOwned::to_owned),
@@ -1202,6 +1202,61 @@ mod tests {
                 .any(|entry| entry.event == "planning_duel_resolved"
                     && entry.note.as_deref() == Some("winner=planner_a"))
         );
+    }
+
+    #[test]
+    fn maybe_create_failure_task_uses_issue_type() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+
+        runtime
+            .maybe_create_failure_task(
+                "job_fail_issue_type",
+                "run-123",
+                "ACTIVITY_EXECUTION_FAILED",
+                "unsupported automation action",
+                Some("codex"),
+                Some("gpt-5.4"),
+            )
+            .expect("failure task");
+
+        let task = runtime
+            .list_tasks()
+            .expect("tasks")
+            .into_iter()
+            .find(|task| {
+                task.title == "Job failure: job_fail_issue_type [ACTIVITY_EXECUTION_FAILED]"
+            })
+            .expect("created failure task");
+
+        assert_eq!(task.task_type, TaskType::Issue);
+        assert!(!task.task_type.counts_toward_friction_bounty());
+    }
+
+    #[test]
+    fn maybe_create_failure_task_dedupes_open_task() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+
+        for _ in 0..2 {
+            runtime
+                .maybe_create_failure_task(
+                    "job_fail_dedupe",
+                    "run-123",
+                    "ACTIVITY_EXECUTION_FAILED",
+                    "unsupported automation action",
+                    Some("codex"),
+                    Some("gpt-5.4"),
+                )
+                .expect("failure task");
+        }
+
+        let matching_tasks = runtime
+            .list_tasks()
+            .expect("tasks")
+            .into_iter()
+            .filter(|task| task.title == "Job failure: job_fail_dedupe [ACTIVITY_EXECUTION_FAILED]")
+            .count();
+
+        assert_eq!(matching_tasks, 1);
     }
 
     #[test]
