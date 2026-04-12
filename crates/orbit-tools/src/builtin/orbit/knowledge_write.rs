@@ -16,24 +16,36 @@ impl Tool for OrbitKnowledgeWriteTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.write".to_string(),
-            description: "Edit or insert a leaf in the knowledge graph, writing to disk and updating the working graph".to_string(),
+            description: "Edit a symbol or file in the knowledge graph. Accepts symbol selectors (edit/insert leaf) or file selectors (rewrite file or region).".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description: "Leaf selector like `leaf:path#symbol:kind`. If it resolves to an existing leaf, the tool edits it. If not, it inserts a new leaf.".to_string(),
+                    description: "Symbol selector (`symbol:path#symbol:kind`) to edit a leaf, or file selector (`file:path`) for file-level writes.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "new_source".to_string(),
-                    description: "The source code to write for this leaf".to_string(),
+                    description: "The source code to write".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "position".to_string(),
-                    description: "For insert mode: anchor selector like `after:leaf:path#symbol:kind`. Inserts after the anchor leaf. Omit to append before `#[cfg(test)]` or at end of file.".to_string(),
+                    description: "For insert mode: anchor selector like `after:symbol:path#symbol:kind`. Inserts after the anchor leaf.".to_string(),
                     param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "start_line".to_string(),
+                    description: "For file selectors: start line of region to replace (1-indexed). Requires end_line.".to_string(),
+                    param_type: "number".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "end_line".to_string(),
+                    description: "For file selectors: end line of region to replace (1-indexed, inclusive). Requires start_line.".to_string(),
+                    param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
@@ -69,10 +81,10 @@ impl Tool for OrbitKnowledgeWriteTool {
             .parse()
             .map_err(|e| OrbitError::InvalidInput(format!("{e}")))?;
 
-        // Only leaf selectors are valid for knowledge.write
-        if !matches!(selector, Selector::Symbol { .. }) {
+        // Reject dir selectors — only symbol and file are valid
+        if matches!(selector, Selector::Dir { .. }) {
             return Err(OrbitError::InvalidInput(
-                "graph.write requires a symbol selector (symbol:path#symbol:kind)".to_string(),
+                "graph.write does not accept dir selectors".to_string(),
             ));
         }
 
@@ -103,29 +115,57 @@ impl Tool for OrbitKnowledgeWriteTool {
         })
         .map_err(|e| OrbitError::Execution(format!("lock failed: {e}")))?;
 
-        let result = if working_graph.has_leaf(&selector) {
-            working_graph
-                .edit_leaf(&selector, &new_source, reason.as_deref(), workspace_root)
-                .map_err(|e| {
-                    serde_json::to_value(&e)
-                        .map(|v| OrbitError::Execution(v.to_string()))
-                        .unwrap_or_else(|_| OrbitError::Execution(format!("{:?}", e)))
-                })?
-        } else {
-            let position_selector = parse_position_selector(position_str.as_deref())?;
-            working_graph
-                .insert_leaf(
-                    &selector,
-                    &new_source,
-                    position_selector.as_ref(),
-                    reason.as_deref(),
-                    workspace_root,
-                )
-                .map_err(|e| {
-                    serde_json::to_value(&e)
-                        .map(|v| OrbitError::Execution(v.to_string()))
-                        .unwrap_or_else(|_| OrbitError::Execution(format!("{:?}", e)))
-                })?
+        let write_err_to_orbit = |e: orbit_knowledge::WriteError| -> OrbitError {
+            serde_json::to_value(&e)
+                .map(|v| OrbitError::Execution(v.to_string()))
+                .unwrap_or_else(|_| OrbitError::Execution(format!("{:?}", e)))
+        };
+
+        let result = match &selector {
+            Selector::File { path } => {
+                // File-level write: full rewrite or region edit
+                let start_line = input.get("start_line").and_then(Value::as_u64);
+                let end_line = input.get("end_line").and_then(Value::as_u64);
+                match (start_line, end_line) {
+                    (Some(sl), Some(el)) => working_graph
+                        .rewrite_file_region(
+                            path,
+                            sl as usize,
+                            el as usize,
+                            &new_source,
+                            workspace_root,
+                        )
+                        .map_err(write_err_to_orbit)?,
+                    (None, None) => working_graph
+                        .rewrite_file(path, &new_source, workspace_root)
+                        .map_err(write_err_to_orbit)?,
+                    _ => {
+                        return Err(OrbitError::InvalidInput(
+                            "both start_line and end_line are required for region edits"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+            Selector::Symbol { .. } => {
+                if working_graph.has_leaf(&selector) {
+                    working_graph
+                        .edit_leaf(&selector, &new_source, reason.as_deref(), workspace_root)
+                        .map_err(write_err_to_orbit)?
+                } else {
+                    let position_selector = parse_position_selector(position_str.as_deref())?;
+                    working_graph
+                        .insert_leaf(
+                            &selector,
+                            &new_source,
+                            position_selector.as_ref(),
+                            reason.as_deref(),
+                            workspace_root,
+                        )
+                        .map_err(write_err_to_orbit)?
+                }
+            }
+            Selector::Dir { .. } => unreachable!(),
         };
 
         save_task_working_graph(
@@ -346,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_leaf_selector() {
+    fn rejects_dir_selector() {
         let err = OrbitKnowledgeWriteTool
             .execute(
                 &ToolContext {
@@ -354,11 +394,11 @@ mod tests {
                     ..Default::default()
                 },
                 json!({
-                    "selector": "file:src/lib.rs",
+                    "selector": "dir:src",
                     "new_source": "something"
                 }),
             )
-            .expect_err("should reject file selector");
+            .expect_err("should reject dir selector");
 
         assert!(matches!(err, orbit_types::OrbitError::InvalidInput(_)));
     }

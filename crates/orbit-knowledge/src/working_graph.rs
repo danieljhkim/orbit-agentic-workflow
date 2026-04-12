@@ -722,6 +722,93 @@ impl WorkingGraph {
         })
     }
 
+    // -----------------------------------------------------------------
+    // File-level rewrites
+    // -----------------------------------------------------------------
+
+    /// Rewrite an entire file and re-extract all leaves.
+    pub fn rewrite_file(
+        &mut self,
+        rel_path: &str,
+        new_content: &str,
+        workspace_root: &Path,
+    ) -> Result<WriteResult, WriteError> {
+        let abs_path = workspace_root.join(rel_path);
+        let ext = abs_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let language = Language::from_extension(ext).ok_or_else(|| WriteError {
+            kind: "unsupported_language".to_string(),
+            reason: format!("no extractor for extension `.{ext}`"),
+            expected_source_hash: None,
+            actual_source: None,
+            leaf_id: Some(format!("file:{rel_path}")),
+        })?;
+
+        fs::write(&abs_path, new_content).map_err(|e| WriteError {
+            kind: "io_error".to_string(),
+            reason: format!("write {}: {e}", abs_path.display()),
+            expected_source_hash: None,
+            actual_source: None,
+            leaf_id: Some(format!("file:{rel_path}")),
+        })?;
+
+        let affected = self.re_extract_file(rel_path, new_content, language);
+
+        Ok(WriteResult {
+            status: "ok".to_string(),
+            selector: format!("file:{rel_path}"),
+            edit_sequence: 0,
+            new_source_hash: String::new(),
+            affected_leaves: affected,
+            new_leaf_id: None,
+        })
+    }
+
+    /// Rewrite a line range in a file and re-extract all leaves.
+    pub fn rewrite_file_region(
+        &mut self,
+        rel_path: &str,
+        start_line: usize,
+        end_line: usize,
+        new_content: &str,
+        workspace_root: &Path,
+    ) -> Result<WriteResult, WriteError> {
+        let abs_path = workspace_root.join(rel_path);
+        let old_content = fs::read_to_string(&abs_path).map_err(|e| WriteError {
+            kind: "io_error".to_string(),
+            reason: format!("read {}: {e}", abs_path.display()),
+            expected_source_hash: None,
+            actual_source: None,
+            leaf_id: Some(format!("file:{rel_path}")),
+        })?;
+
+        let old_lines: Vec<&str> = old_content.lines().collect();
+        if start_line == 0 || start_line > old_lines.len() || end_line < start_line {
+            return Err(WriteError {
+                kind: "invalid_range".to_string(),
+                reason: format!(
+                    "line range {start_line}..{end_line} out of bounds (file has {} lines)",
+                    old_lines.len()
+                ),
+                expected_source_hash: None,
+                actual_source: None,
+                leaf_id: Some(format!("file:{rel_path}")),
+            });
+        }
+        let end_clamped = end_line.min(old_lines.len());
+
+        let mut new_lines: Vec<&str> = Vec::new();
+        new_lines.extend_from_slice(&old_lines[..start_line - 1]);
+        for line in new_content.lines() {
+            new_lines.push(line);
+        }
+        if end_clamped < old_lines.len() {
+            new_lines.extend_from_slice(&old_lines[end_clamped..]);
+        }
+
+        let merged = format!("{}\n", new_lines.join("\n"));
+        self.rewrite_file(rel_path, &merged, workspace_root)
+    }
+
     /// Re-run the extractor on a modified file and update the working graph.
     ///
     /// Returns the list of leaf selectors whose positions changed.

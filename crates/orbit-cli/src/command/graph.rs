@@ -155,7 +155,13 @@ impl Execute for GraphSearchArgs {
             Some(type_refs.as_slice())
         };
 
-        let results = svc.search(&self.query, node_types, self.prefix.as_deref(), self.limit);
+        let results = svc.search(
+            &self.query,
+            node_types,
+            self.prefix.as_deref(),
+            None,
+            self.limit,
+        );
 
         if self.json {
             let items: Vec<String> = results.iter().map(|n| svc.selector_for_node(*n)).collect();

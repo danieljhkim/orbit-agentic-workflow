@@ -38,6 +38,9 @@ pub struct KnowledgePackEntry {
     pub exports: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<String>>,
+    // File: symbol index of child leaves
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_summary: Option<Vec<SymbolSummary>>,
     // Leaf fields
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -52,6 +55,13 @@ pub struct KnowledgePackEntry {
     /// Internal — used to track resolution status, not serialized.
     #[serde(skip)]
     pub resolved: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SymbolSummary {
+    pub selector: String,
+    pub name: String,
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -124,7 +134,7 @@ impl KnowledgeStore {
         let mut selector_index = HashMap::new();
         for (node_id, entry) in &graph_index.nodes {
             let key = match entry.node_type.as_str() {
-                "dir" => SelectorLookupKey::Dir(entry.location.clone()),
+                "dir" => SelectorLookupKey::Dir(entry.location.trim_end_matches('/').to_string()),
                 "file" => SelectorLookupKey::File(entry.location.clone()),
                 "leaf" => SelectorLookupKey::Symbol(
                     entry.location.clone(),
@@ -149,6 +159,80 @@ impl KnowledgeStore {
             graph_index,
             selector_index,
         })
+    }
+
+    /// Build child selector strings for a dir node from the graph index.
+    fn dir_child_selectors(&self, dir_node_id: &str) -> Option<Vec<String>> {
+        let dir_location = self
+            .graph_index
+            .nodes
+            .get(dir_node_id)?
+            .location
+            .trim_end_matches('/')
+            .to_string();
+
+        let mut children = Vec::new();
+        for entry in self.graph_index.nodes.values() {
+            let entry_parent = match entry.node_type.as_str() {
+                "dir" => {
+                    let loc = entry.location.trim_end_matches('/');
+                    std::path::Path::new(loc)
+                        .parent()
+                        .map(|p| p.to_string_lossy().into_owned())
+                }
+                "file" => std::path::Path::new(&entry.location)
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                _ => continue,
+            };
+            let parent = match entry_parent {
+                Some(p) if p == dir_location || (p.is_empty() && dir_location == ".") => p,
+                _ => continue,
+            };
+            let _ = parent;
+            let sel = match entry.node_type.as_str() {
+                "dir" => format!("dir:{}", entry.location.trim_end_matches('/')),
+                "file" => format!("file:{}", entry.location),
+                _ => continue,
+            };
+            children.push(sel);
+        }
+        children.sort();
+        if children.is_empty() {
+            None
+        } else {
+            Some(children)
+        }
+    }
+
+    /// Build symbol summaries for leaf children of a file node.
+    fn file_symbol_summary(&self, node: Option<&Value>) -> Option<Vec<SymbolSummary>> {
+        let leaf_ids = node?.get("leaf_children").and_then(Value::as_array)?;
+        let mut summaries = Vec::new();
+        for leaf_id_val in leaf_ids {
+            let leaf_id = leaf_id_val.as_str()?;
+            let entry = self.graph_index.nodes.get(leaf_id)?;
+            let kind = entry.kind.clone().unwrap_or_default();
+            let (location, _kind_suffix) = entry
+                .location
+                .rsplit_once(':')
+                .unwrap_or((&entry.location, ""));
+            let name = location
+                .rsplit_once('#')
+                .map(|(_, n)| n.to_string())
+                .unwrap_or_default();
+            let selector = format!("symbol:{}:{}", entry.location, kind);
+            summaries.push(SymbolSummary {
+                selector,
+                name,
+                kind,
+            });
+        }
+        if summaries.is_empty() {
+            None
+        } else {
+            Some(summaries)
+        }
     }
 
     pub fn is_available(knowledge_dir: &Path) -> bool {
@@ -281,7 +365,21 @@ impl KnowledgeStore {
                 }
             };
 
-            entries.push(project_entry(selector_string, kind, node, source));
+            let child_selectors = if kind == KnowledgeEntryKind::Dir {
+                self.dir_child_selectors(&node_id)
+            } else {
+                None
+            };
+
+            let symbol_summary = if kind == KnowledgeEntryKind::File {
+                self.file_symbol_summary(node)
+            } else {
+                None
+            };
+
+            let mut entry = project_entry(selector_string, kind, node, source, child_selectors);
+            entry.symbol_summary = symbol_summary;
+            entries.push(entry);
         }
 
         let total_nodes = entries.iter().filter(|e| e.resolved).count();
@@ -439,6 +537,7 @@ fn unresolved_entry(selector: String) -> KnowledgePackEntry {
         imports: None,
         exports: None,
         children: None,
+        symbol_summary: None,
         source: None,
         start_line: None,
         end_line: None,
@@ -454,6 +553,7 @@ fn project_entry(
     kind: KnowledgeEntryKind,
     node: Option<&Value>,
     source: Option<String>,
+    child_selectors: Option<Vec<String>>,
 ) -> KnowledgePackEntry {
     let str_field = |key| {
         node.and_then(|n| n.get(key))
@@ -491,7 +591,8 @@ fn project_entry(
         extension: str_field("extension"),
         imports: str_vec_field("imports"),
         exports: str_vec_field("exports"),
-        children: None, // child node IDs are internal; omit for now
+        children: child_selectors,
+        symbol_summary: None, // populated by caller for file entries
         source,
         start_line: u32_field("start_line"),
         end_line: u32_field("end_line"),
@@ -775,7 +876,12 @@ mod tests {
         assert_eq!(leaf_entry.language.as_deref(), Some("rust"));
         assert_eq!(leaf_entry.start_line, Some(11));
         assert_eq!(leaf_entry.end_line, Some(22));
-        assert!(leaf_entry.source.as_ref().is_some_and(|s| s.contains("register_builtins")));
+        assert!(
+            leaf_entry
+                .source
+                .as_ref()
+                .is_some_and(|s| s.contains("register_builtins"))
+        );
 
         // Verify internal fields are not present in JSON serialization
         let json = serde_json::to_value(&pack).expect("serialize");

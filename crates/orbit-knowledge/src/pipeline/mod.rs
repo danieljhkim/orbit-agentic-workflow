@@ -50,12 +50,10 @@ pub fn ensure_fresh(knowledge_dir: &Path, repo_path: &Path) -> Result<bool, Know
     };
 
     let needs_rebuild = if manifest_path.is_file() {
-        let raw = std::fs::read_to_string(&manifest_path).map_err(|e| {
-            KnowledgeError::knowledge_unavailable(format!("read manifest: {e}"))
-        })?;
-        let manifest: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
-            KnowledgeError::knowledge_unavailable(format!("parse manifest: {e}"))
-        })?;
+        let raw = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| KnowledgeError::knowledge_unavailable(format!("read manifest: {e}")))?;
+        let manifest: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| KnowledgeError::knowledge_unavailable(format!("parse manifest: {e}")))?;
         let generated_at = manifest
             .get("generated_at")
             .and_then(|v| v.as_str())
@@ -77,9 +75,8 @@ pub fn ensure_fresh(knowledge_dir: &Path, repo_path: &Path) -> Result<bool, Know
         output_dir: knowledge_dir.to_path_buf(),
         incremental: manifest_path.is_file(), // incremental if manifest exists
     };
-    run_build(config).map_err(|e| {
-        KnowledgeError::knowledge_unavailable(format!("auto-refresh failed: {e}"))
-    })?;
+    run_build(config)
+        .map_err(|e| KnowledgeError::knowledge_unavailable(format!("auto-refresh failed: {e}")))?;
 
     Ok(true)
 }

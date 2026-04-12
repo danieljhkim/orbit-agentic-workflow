@@ -28,7 +28,11 @@ impl<'a> GraphContextService<'a> {
 
         let mut location_index = HashMap::new();
         for dir in &graph.dirs {
-            location_index.insert(dir.base.location.clone(), dir.base.id.as_str());
+            // Normalize dir locations by stripping trailing slash so that
+            // `dir:src` resolves regardless of whether the stored location
+            // is `"src"` or `"src/"`.
+            let key = dir.base.location.trim_end_matches('/').to_string();
+            location_index.insert(key, dir.base.id.as_str());
         }
         for file in &graph.files {
             location_index.insert(file.base.location.clone(), file.base.id.as_str());
@@ -59,7 +63,7 @@ impl<'a> GraphContextService<'a> {
         selector: &Selector,
     ) -> Result<GraphNodeRef<'a>, KnowledgeError> {
         let key = match selector {
-            Selector::Dir { path } => format!("{path}/"),
+            Selector::Dir { path } => path.trim_end_matches('/').to_string(),
             Selector::File { path } => path.clone(),
             Selector::Symbol { path, symbol, kind } => format!("{path}#{symbol}:{kind}"),
         };
@@ -90,15 +94,19 @@ impl<'a> GraphContextService<'a> {
     // Search
     // -----------------------------------------------------------------
 
-    /// Search nodes by name substring, optionally filtered by node type and location prefix.
+    /// Search nodes by name substring, optionally filtered by node type,
+    /// location prefix, and leaf kind. An empty `query` matches all nodes
+    /// (browse mode).
     pub fn search(
         &self,
         query: &str,
         node_types: Option<&[&str]>,
         location_prefix: Option<&str>,
+        kind_filter: Option<&str>,
         limit: usize,
     ) -> Vec<GraphNodeRef<'a>> {
         let query_lower = query.to_lowercase();
+        let browse = query_lower.is_empty();
         let mut results = Vec::new();
 
         let matches = |node: GraphNodeRef<'a>, ntype: &str| -> bool {
@@ -112,7 +120,20 @@ impl<'a> GraphContextService<'a> {
             {
                 return false;
             }
-            node.base().name.to_lowercase().contains(&query_lower)
+            // kind_filter only applies to leaf nodes; non-leaves are excluded
+            // when a kind filter is active.
+            if let Some(kf) = kind_filter {
+                match node {
+                    GraphNodeRef::Leaf(l) => {
+                        if l.kind.to_string() != kf {
+                            return false;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+            browse
+                || node.base().name.to_lowercase().contains(&query_lower)
                 || node.location().to_lowercase().contains(&query_lower)
         };
 
@@ -145,6 +166,43 @@ impl<'a> GraphContextService<'a> {
         }
 
         results
+    }
+
+    /// Search returning structured results with name, kind, and file info.
+    pub fn search_structured(
+        &self,
+        query: &str,
+        node_types: Option<&[&str]>,
+        location_prefix: Option<&str>,
+        kind_filter: Option<&str>,
+        limit: usize,
+    ) -> Vec<SearchResult> {
+        let nodes = self.search(query, node_types, location_prefix, kind_filter, limit);
+        nodes
+            .into_iter()
+            .map(|node| {
+                let selector = self.selector_for_node(node);
+                let name = node.base().name.to_string();
+                let kind = match node {
+                    GraphNodeRef::Dir(_) => "dir".to_string(),
+                    GraphNodeRef::File(_) => "file".to_string(),
+                    GraphNodeRef::Leaf(l) => l.kind.to_string(),
+                };
+                let file = match node {
+                    GraphNodeRef::Leaf(l) => {
+                        l.base.location.split_once('#').map(|(f, _)| f.to_string())
+                    }
+                    GraphNodeRef::File(f) => Some(f.base.location.clone()),
+                    GraphNodeRef::Dir(_) => None,
+                };
+                SearchResult {
+                    selector,
+                    name,
+                    kind,
+                    file,
+                }
+            })
+            .collect()
     }
 
     // -----------------------------------------------------------------
@@ -197,6 +255,160 @@ impl<'a> GraphContextService<'a> {
             children: bounded_children,
         })
     }
+
+    // -----------------------------------------------------------------
+    // Overview
+    // -----------------------------------------------------------------
+
+    /// Build an aggregate overview of the graph, optionally scoped by location prefix.
+    pub fn overview(&self, location_prefix: Option<&str>) -> GraphOverview {
+        let in_scope =
+            |loc: &str| -> bool { location_prefix.map(|p| loc.starts_with(p)).unwrap_or(true) };
+
+        let mut total_dirs = 0usize;
+        let mut total_files = 0usize;
+        let mut total_symbols = 0usize;
+        let mut languages: HashMap<String, usize> = HashMap::new();
+        let mut symbol_kinds: HashMap<String, usize> = HashMap::new();
+        let mut file_overviews: Vec<FileOverview> = Vec::new();
+
+        for dir in &self.graph.dirs {
+            if in_scope(&dir.base.location) {
+                total_dirs += 1;
+            }
+        }
+
+        // Index leaves by parent file
+        let mut file_leaves: HashMap<&str, Vec<SymbolBrief>> = HashMap::new();
+        for leaf in &self.graph.leaves {
+            if !in_scope(&leaf.base.location) {
+                continue;
+            }
+            total_symbols += 1;
+            let kind_str = leaf.kind.to_string();
+            *symbol_kinds.entry(kind_str.clone()).or_default() += 1;
+            let file_path = leaf
+                .base
+                .location
+                .split_once('#')
+                .map(|(f, _)| f)
+                .unwrap_or(&leaf.base.location);
+            file_leaves.entry(file_path).or_default().push(SymbolBrief {
+                name: leaf.base.name.clone(),
+                kind: kind_str,
+                selector: self.selector_for_node(GraphNodeRef::Leaf(leaf)),
+            });
+        }
+
+        for file in &self.graph.files {
+            if !in_scope(&file.base.location) {
+                continue;
+            }
+            total_files += 1;
+            if !file.base.language.is_empty() {
+                *languages.entry(file.base.language.clone()).or_default() += 1;
+            }
+            let symbols = file_leaves
+                .remove(file.base.location.as_str())
+                .unwrap_or_default();
+            file_overviews.push(FileOverview {
+                selector: self.selector_for_node(GraphNodeRef::File(file)),
+                name: file.base.name.clone(),
+                symbol_count: symbols.len(),
+                symbols,
+            });
+        }
+
+        GraphOverview {
+            total_dirs,
+            total_files,
+            total_symbols,
+            languages,
+            symbol_kinds,
+            files: file_overviews,
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // References
+    // -----------------------------------------------------------------
+
+    /// Find graph nodes whose source mentions `symbol_name`.
+    pub fn find_references(
+        &self,
+        symbol_name: &str,
+        exclude_file: Option<&str>,
+    ) -> Vec<ReferenceHit> {
+        let mut hits: Vec<ReferenceHit> = Vec::new();
+
+        for leaf in &self.graph.leaves {
+            // Skip the definition itself
+            if leaf.base.name == symbol_name {
+                continue;
+            }
+            // Skip leaves in the excluded file
+            let file_path = leaf
+                .base
+                .location
+                .split_once('#')
+                .map(|(f, _)| f)
+                .unwrap_or(&leaf.base.location);
+            if exclude_file == Some(file_path) {
+                continue;
+            }
+            if leaf.source.contains(symbol_name) {
+                hits.push(ReferenceHit {
+                    selector: self.selector_for_node(GraphNodeRef::Leaf(leaf)),
+                    name: leaf.base.name.clone(),
+                    file: file_path.to_string(),
+                    kind: leaf.kind.to_string(),
+                });
+            }
+        }
+
+        hits
+    }
+}
+
+/// A single structured search result.
+pub struct SearchResult {
+    pub selector: String,
+    pub name: String,
+    /// `"dir"`, `"file"`, or a leaf kind like `"function"`, `"struct"`.
+    pub kind: String,
+    /// The containing file path (populated for file and leaf nodes).
+    pub file: Option<String>,
+}
+
+/// Aggregate overview of a (scoped) graph.
+pub struct GraphOverview {
+    pub total_dirs: usize,
+    pub total_files: usize,
+    pub total_symbols: usize,
+    pub languages: HashMap<String, usize>,
+    pub symbol_kinds: HashMap<String, usize>,
+    pub files: Vec<FileOverview>,
+}
+
+pub struct FileOverview {
+    pub selector: String,
+    pub name: String,
+    pub symbol_count: usize,
+    pub symbols: Vec<SymbolBrief>,
+}
+
+pub struct SymbolBrief {
+    pub name: String,
+    pub kind: String,
+    pub selector: String,
+}
+
+/// A reference hit from `find_references`.
+pub struct ReferenceHit {
+    pub selector: String,
+    pub name: String,
+    pub file: String,
+    pub kind: String,
 }
 
 /// Bounded context around a single node.
@@ -308,7 +520,7 @@ mod tests {
     fn search_by_name() {
         let graph = fixture_graph();
         let svc = GraphContextService::new(&graph);
-        let results = svc.search("hello", None, None, 10);
+        let results = svc.search("hello", None, None, None, 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id(), "l-hello");
     }
@@ -317,7 +529,7 @@ mod tests {
     fn search_with_type_filter() {
         let graph = fixture_graph();
         let svc = GraphContextService::new(&graph);
-        let results = svc.search("lib", Some(&["file"]), None, 10);
+        let results = svc.search("lib", Some(&["file"]), None, None, 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id(), "f-lib");
     }
@@ -326,8 +538,39 @@ mod tests {
     fn search_with_location_prefix() {
         let graph = fixture_graph();
         let svc = GraphContextService::new(&graph);
-        let results = svc.search("hello", None, Some("src/"), 10);
+        let results = svc.search("hello", None, Some("src/"), None, 10);
         assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn search_empty_query_returns_all() {
+        let graph = fixture_graph();
+        let svc = GraphContextService::new(&graph);
+        // Empty query = browse mode, returns all nodes up to limit
+        let results = svc.search("", None, None, None, 100);
+        // fixture has 2 dirs + 1 file + 1 leaf = 4 nodes
+        assert_eq!(results.len(), 4);
+    }
+
+    #[test]
+    fn search_with_kind_filter() {
+        let graph = fixture_graph();
+        let svc = GraphContextService::new(&graph);
+        let results = svc.search("", None, None, Some("function"), 100);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id(), "l-hello");
+    }
+
+    #[test]
+    fn search_structured_returns_name_and_kind() {
+        let graph = fixture_graph();
+        let svc = GraphContextService::new(&graph);
+        let results = svc.search_structured("hello", None, None, None, 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "hello");
+        assert_eq!(results[0].kind, "function");
+        assert_eq!(results[0].file.as_deref(), Some("src/lib.rs"));
+        assert_eq!(results[0].selector, "symbol:src/lib.rs#hello:function");
     }
 
     #[test]
