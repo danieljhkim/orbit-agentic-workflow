@@ -8,7 +8,7 @@ use tracing::{error, info, info_span, warn};
 use crate::activity_runner::{build_execution_context_for_step, execute_with_retry};
 use crate::context::{
     ACTIVITY_EXECUTION_FAILED, EngineHost, INPUT_VALIDATION_FAILED, JobRunResult,
-    step_output_for_following_input,
+    blocked_workflow_failure_update, step_output_for_following_input,
 };
 
 use super::friction::{append_failed_step_friction, append_step_metrics};
@@ -19,7 +19,6 @@ use super::helpers::{
     should_run_step, step_state_records_incident,
 };
 use super::stale_recovery::{finalize_failed_started_run, recover_stale_active_run_for_job};
-use crate::context::TaskAutomationUpdate;
 
 pub fn run_job_with_input<H: EngineHost>(
     host: &H,
@@ -286,6 +285,7 @@ fn execute_activity_with_retries<H: EngineHost>(
         let looping_job = max_iterations > 1;
         let mut loop_iterations_completed = 0u32;
         let mut loop_exited = false;
+        let mut loop_exhausted = false;
 
         'outer: for iteration in 0..max_iterations {
             if looping_job && check_loop_exit(host, &current_input) {
@@ -683,15 +683,7 @@ fn execute_activity_with_retries<H: EngineHost>(
                 loop_exited,
             );
             final_state = adjusted_state;
-            if exhausted && let Some(task_id) = extract_task_id(&current_input) {
-                let _ = host.apply_task_automation_update(
-                    task_id,
-                    TaskAutomationUpdate {
-                        status: Some(orbit_types::TaskStatus::Blocked),
-                        ..Default::default()
-                    },
-                );
-            }
+            loop_exhausted = exhausted;
         }
 
         let finished_at = Utc::now();
@@ -707,6 +699,33 @@ fn execute_activity_with_retries<H: EngineHost>(
             run_id: run.run_id.clone(),
             state: final_state.to_string(),
         })?;
+
+        if !matches!(final_state, JobRunState::Success | JobRunState::Cancelled)
+            && let Some(task_id) = extract_task_id(&current_input)
+        {
+            let loop_failure_message = format!("loop exhausted after {max_iterations} iterations");
+            let (error_code, error_message) = if loop_exhausted {
+                (Some("LOOP_EXHAUSTED"), Some(loop_failure_message.as_str()))
+            } else {
+                (
+                    last_failure
+                        .as_ref()
+                        .map(|failure| failure.error_code.as_str()),
+                    last_failure
+                        .as_ref()
+                        .map(|failure| failure.error_message.as_str()),
+                )
+            };
+            let _ = host.apply_task_automation_update(
+                task_id,
+                blocked_workflow_failure_update(
+                    &job.job_id,
+                    &run.run_id,
+                    error_code,
+                    error_message,
+                ),
+            );
+        }
 
         if create_failure_task
             && !matches!(final_state, JobRunState::Success | JobRunState::Cancelled)
@@ -779,6 +798,24 @@ fn execute_activity_with_retries<H: EngineHost>(
                         failure_step.1.model.as_deref(),
                     );
                 }
+            }
+            if let Some(task_id) = extract_task_id(&input)
+                .or_else(|| job.default_input.as_ref().and_then(extract_task_id))
+            {
+                let error_code = if matches!(err, OrbitError::InvalidInput(_)) {
+                    INPUT_VALIDATION_FAILED
+                } else {
+                    ACTIVITY_EXECUTION_FAILED
+                };
+                let _ = host.apply_task_automation_update(
+                    task_id,
+                    blocked_workflow_failure_update(
+                        &job.job_id,
+                        &run.run_id,
+                        Some(error_code),
+                        Some(&err.to_string()),
+                    ),
+                );
             }
             Err(err)
         }

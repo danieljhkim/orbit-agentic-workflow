@@ -25,6 +25,7 @@ pub const AGENT_RATE_LIMIT: &str = "AGENT_RATE_LIMIT";
 pub const ACTIVITY_EXECUTION_FAILED: &str = "ACTIVITY_EXECUTION_FAILED";
 pub const INPUT_VALIDATION_FAILED: &str = "INPUT_VALIDATION_FAILED";
 pub const RUN_ABANDONED: &str = "RUN_ABANDONED";
+pub const WORKFLOW_RUN_FAILED_EVENT: &str = "workflow_run_failed";
 pub const STALE_RUN_GRACE_SECONDS: u64 = 30;
 
 /// Returns `true` for error codes that indicate a transient infrastructure failure
@@ -36,6 +37,46 @@ pub fn is_transient_error(code: &str) -> bool {
         AGENT_TRANSPORT_FAILURE | AGENT_PROVIDER_OVERLOAD | AGENT_RATE_LIMIT | AGENT_TIMEOUT
     )
 }
+
+pub fn workflow_failure_note(
+    job_id: &str,
+    run_id: &str,
+    error_code: Option<&str>,
+    error_message: Option<&str>,
+) -> String {
+    let error_code = error_code
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("-");
+    let error_message = error_message
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("-");
+
+    format!(
+        "workflow run failed: job={job_id}, run_id={run_id}, error_code={error_code}, error={error_message}"
+    )
+}
+
+pub fn blocked_workflow_failure_update(
+    job_id: &str,
+    run_id: &str,
+    error_code: Option<&str>,
+    error_message: Option<&str>,
+) -> TaskAutomationUpdate {
+    TaskAutomationUpdate {
+        status: Some(TaskStatus::Blocked),
+        status_event: Some(WORKFLOW_RUN_FAILED_EVENT.to_string()),
+        status_note: Some(workflow_failure_note(
+            job_id,
+            run_id,
+            error_code,
+            error_message,
+        )),
+        ..TaskAutomationUpdate::default()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub activity: Activity,

@@ -423,6 +423,33 @@ fn resolve_context_path(workspace_root: &Path, context_file: &str) -> PathBuf {
 }
 
 #[cfg(test)]
+mod condition_tests {
+    use orbit_types::{JobRunState, StepCondition};
+
+    use super::should_run_step;
+
+    #[test]
+    fn on_success_steps_do_not_run_after_failed_merge_steps() {
+        assert!(!should_run_step(
+            StepCondition::OnSuccess,
+            Some(JobRunState::Failed),
+        ));
+        assert!(!should_run_step(
+            StepCondition::OnSuccess,
+            Some(JobRunState::Timeout),
+        ));
+        assert!(!should_run_step(
+            StepCondition::OnSuccess,
+            Some(JobRunState::Cancelled),
+        ));
+        assert!(should_run_step(
+            StepCondition::OnSuccess,
+            Some(JobRunState::Success),
+        ));
+    }
+}
+
+#[cfg(test)]
 mod resolve_step_agent_tests {
     //! Covers the three-layer precedence chain for step agent resolution:
     //!

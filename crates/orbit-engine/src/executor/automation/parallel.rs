@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 use super::git::{
     git_output, git_success, refresh_local_base_branch, resolve_worktree_start_point,
 };
-use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
+use crate::context::{
+    RuntimeHost, TaskAutomationUpdate, TaskHost, blocked_workflow_failure_update,
+};
 
 const DEFAULT_PARALLEL_BASE: &str = "main";
 const DEFAULT_PARALLELISM: usize = 4;
@@ -85,6 +87,24 @@ struct PendingTask {
 struct WorkerOutcome {
     task_id: String,
     result: Result<crate::context::JobRunResult, OrbitError>,
+}
+
+fn block_failed_parallel_task<H: TaskHost + ?Sized>(
+    host: &H,
+    task_id: &str,
+    run_id: &str,
+    error_code: &str,
+    error_message: &str,
+) {
+    let _ = host.apply_task_automation_update(
+        task_id,
+        blocked_workflow_failure_update(
+            PARALLEL_WORKER_JOB_ID,
+            run_id,
+            Some(error_code),
+            Some(error_message),
+        ),
+    );
 }
 
 pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Sized>(
@@ -179,19 +199,36 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                         "orbit: parallel task pipeline timed out waiting for worker after 7200s; \
                          breaking out of receive loop"
                     );
+                    let timeout_error = "worker timed out after 7200s";
                     for task in active.drain(..) {
                         failed += 1;
+                        block_failed_parallel_task(
+                            host,
+                            &task.task_id,
+                            &run_id,
+                            "WORKER_TIMEOUT",
+                            timeout_error,
+                        );
                         failures.push(json!({
                             "task_id": task.task_id,
-                            "error": "worker timed out after 7200s",
+                            "error": timeout_error,
                         }));
                     }
                     break;
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(OrbitError::Execution(
-                        "parallel task pipeline lost worker coordination channel".to_string(),
-                    ));
+                    let disconnect_error =
+                        "parallel task pipeline lost worker coordination channel";
+                    for task in active.drain(..) {
+                        block_failed_parallel_task(
+                            host,
+                            &task.task_id,
+                            &run_id,
+                            "WORKER_CHANNEL_DISCONNECTED",
+                            disconnect_error,
+                        );
+                    }
+                    return Err(OrbitError::Execution(disconnect_error.to_string()));
                 }
             };
             if let Some(index) = active
@@ -208,19 +245,35 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
                 }
                 Ok(result) => {
                     failed += 1;
+                    let error = format!(
+                        "parallel worker completed in non-success state '{}'",
+                        result.state
+                    );
+                    block_failed_parallel_task(
+                        host,
+                        &outcome.task_id,
+                        &result.run_id,
+                        "WORKER_NON_SUCCESS",
+                        &error,
+                    );
                     failures.push(json!({
                         "task_id": outcome.task_id,
-                        "error": format!(
-                            "parallel worker completed in non-success state '{}'",
-                            result.state
-                        ),
+                        "error": error,
                     }));
                 }
                 Err(error) => {
                     failed += 1;
+                    let error = error.to_string();
+                    block_failed_parallel_task(
+                        host,
+                        &outcome.task_id,
+                        &run_id,
+                        "WORKER_EXECUTION_ERROR",
+                        &error,
+                    );
                     failures.push(json!({
                         "task_id": outcome.task_id,
-                        "error": error.to_string(),
+                        "error": error,
                     }));
                 }
             }
@@ -458,14 +511,21 @@ fn normalize_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PendingTask, ensure_shared_worktree, find_launchable_index, paths_conflict,
-        resolve_shared_worktree_path, restore_task_workspace_paths, sanitize_run_id_token,
-        set_worker_workspace_path, shared_worktree_branch_name, shared_worktree_dir_name,
-        validate_selected_group,
+        PARALLEL_WORKER_JOB_ID, PendingTask, ensure_shared_worktree, find_launchable_index,
+        paths_conflict, resolve_shared_worktree_path, restore_task_workspace_paths,
+        run_parallel_task_pipeline, sanitize_run_id_token, set_worker_workspace_path,
+        shared_worktree_branch_name, shared_worktree_dir_name, validate_selected_group,
     };
-    use crate::context::{TaskAutomationUpdate, TaskHost};
-    use orbit_types::{OrbitError, Task, TaskPriority, TaskStatus};
-    use std::collections::VecDeque;
+    use crate::context::{JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
+    use chrono::Utc;
+    use orbit_tools::ToolContext;
+    use orbit_types::{
+        Activity, ActorIdentity, Job, JobRunState, JobTargetType, OrbitError, OrbitEvent, Role,
+        Task, TaskPriority, TaskStatus, TaskType,
+    };
+    use serde_json::{Value, json};
+    use std::collections::{HashMap, VecDeque};
+    use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -524,6 +584,208 @@ mod tests {
                 .expect("workspace updates lock")
                 .push((task_id.to_string(), update.workspace_path));
             Ok(())
+        }
+    }
+
+    struct PipelineHost {
+        tasks: Vec<Task>,
+        results: Mutex<HashMap<String, Result<JobRunResult, OrbitError>>>,
+        updates: Mutex<Vec<(String, TaskAutomationUpdate)>>,
+        repo_root: PathBuf,
+    }
+
+    impl PipelineHost {
+        fn new(
+            tasks: Vec<Task>,
+            results: HashMap<String, Result<JobRunResult, OrbitError>>,
+            repo_root: PathBuf,
+        ) -> Self {
+            Self {
+                tasks,
+                results: Mutex::new(results),
+                updates: Mutex::new(Vec::new()),
+                repo_root,
+            }
+        }
+
+        fn blocked_updates(&self) -> Vec<(String, TaskAutomationUpdate)> {
+            self.updates
+                .lock()
+                .expect("pipeline updates lock")
+                .iter()
+                .filter(|(_, update)| update.status == Some(TaskStatus::Blocked))
+                .cloned()
+                .collect()
+        }
+    }
+
+    impl TaskHost for PipelineHost {
+        fn get_task(&self, task_id: &str) -> Result<Task, OrbitError> {
+            self.tasks
+                .iter()
+                .find(|task| task.id == task_id)
+                .cloned()
+                .ok_or_else(|| OrbitError::TaskNotFound(task_id.to_string()))
+        }
+
+        fn list_tasks_filtered(
+            &self,
+            status: Option<TaskStatus>,
+            _priority: Option<TaskPriority>,
+            _parent_id: Option<&str>,
+            batch_id: Option<&str>,
+        ) -> Result<Vec<Task>, OrbitError> {
+            Ok(self
+                .tasks
+                .iter()
+                .filter(|task| status.is_none_or(|expected| task.status == expected))
+                .filter(|task| {
+                    batch_id.is_none_or(|expected| task.batch_id.as_deref() == Some(expected))
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn start_task(
+            &self,
+            _task_id: &str,
+            _note: Option<String>,
+            _comment: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not needed for pipeline tests")
+        }
+
+        fn update_task_from_activity(
+            &self,
+            _task_id: &str,
+            _status: TaskStatus,
+            _execution_summary: Option<String>,
+            _comment: Option<String>,
+            _note: Option<String>,
+        ) -> Result<Task, OrbitError> {
+            unimplemented!("not needed for pipeline tests")
+        }
+
+        fn apply_task_automation_update(
+            &self,
+            task_id: &str,
+            update: TaskAutomationUpdate,
+        ) -> Result<(), OrbitError> {
+            self.updates
+                .lock()
+                .expect("pipeline updates lock")
+                .push((task_id.to_string(), update));
+            Ok(())
+        }
+    }
+
+    impl RuntimeHost for PipelineHost {
+        fn record_event(&self, _event: OrbitEvent) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn repo_root(&self) -> Result<String, OrbitError> {
+            Ok(self.repo_root.to_string_lossy().into_owned())
+        }
+
+        fn data_root(&self) -> &Path {
+            Path::new(".")
+        }
+
+        fn run_job_now_with_input_debug(
+            &self,
+            _job_id: &str,
+            input: Value,
+            _debug: bool,
+        ) -> Result<JobRunResult, OrbitError> {
+            let task_id = input
+                .get("task_id")
+                .and_then(Value::as_str)
+                .expect("worker input task_id");
+            self.results
+                .lock()
+                .expect("pipeline results lock")
+                .remove(task_id)
+                .expect("task result registered")
+        }
+
+        fn validate_activity_target_exists(
+            &self,
+            _target_type: JobTargetType,
+            _target_id: &str,
+        ) -> Result<Activity, OrbitError> {
+            unimplemented!("not needed for pipeline tests")
+        }
+
+        fn get_job(&self, _job_id: &str) -> Result<Option<Job>, OrbitError> {
+            Ok(None)
+        }
+
+        fn run_tool_with_context_and_role(
+            &self,
+            _name: &str,
+            _input: Value,
+            _role: Role,
+            _tool_context: ToolContext,
+        ) -> Result<Value, OrbitError> {
+            unimplemented!("not needed for pipeline tests")
+        }
+
+        fn maybe_create_failure_task(
+            &self,
+            _job_id: &str,
+            _run_id: &str,
+            _error_code: &str,
+            _error_message: &str,
+            _agent: Option<&str>,
+            _model: Option<&str>,
+        ) -> Result<(), OrbitError> {
+            Ok(())
+        }
+
+        fn scoring_enabled(&self) -> bool {
+            false
+        }
+
+        fn graph_editing(&self) -> bool {
+            false
+        }
+
+        fn scoreboard_dir(&self) -> &Path {
+            Path::new(".")
+        }
+    }
+
+    fn pipeline_task(task_id: &str, batch_id: &str, context_file: &str) -> Task {
+        let now = Utc::now();
+        Task {
+            id: task_id.to_string(),
+            parent_id: None,
+            title: format!("Task {task_id}"),
+            description: String::new(),
+            acceptance_criteria: Vec::new(),
+            plan: String::new(),
+            execution_summary: String::new(),
+            context_files: vec![context_file.to_string()],
+            workspace_path: None,
+            repo_root: None,
+            assigned_to: None,
+            created_by: None,
+            actor_identity: ActorIdentity::default(),
+            status: TaskStatus::Backlog,
+            priority: TaskPriority::Medium,
+            complexity: None,
+            task_type: TaskType::Task,
+            pr_number: None,
+            pr_status: None,
+            proposed_by: None,
+            source_task_id: None,
+            batch_id: Some(batch_id.to_string()),
+            comments: Vec::new(),
+            history: Vec::new(),
+            review_threads: Vec::new(),
+            created_at: now,
+            updated_at: now,
         }
     }
 
@@ -600,6 +862,90 @@ mod tests {
                     "/repo/.orbit/worktrees/parallel-batch-jrun-1".to_string()
                 )),
             )]
+        );
+    }
+
+    #[test]
+    fn blocks_only_failed_parallel_worker_tasks() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let repo_root = tempdir.path();
+
+        run_git(repo_root, &["init", "--initial-branch=main"]);
+        run_git(repo_root, &["config", "user.name", "Orbit Tests"]);
+        run_git(
+            repo_root,
+            &["config", "user.email", "orbit-tests@example.com"],
+        );
+        std::fs::write(repo_root.join("README.md"), "hello\n").expect("write readme");
+        run_git(repo_root, &["add", "README.md"]);
+        run_git(repo_root, &["commit", "-m", "initial"]);
+
+        let batch_id = "jrun-parallel-test";
+        let host = PipelineHost::new(
+            vec![
+                pipeline_task("T-success", batch_id, "src/lib.rs"),
+                pipeline_task("T-failed", batch_id, "docs/readme.md"),
+            ],
+            HashMap::from([
+                (
+                    "T-success".to_string(),
+                    Ok(JobRunResult {
+                        job_id: PARALLEL_WORKER_JOB_ID.to_string(),
+                        run_id: "run-success".to_string(),
+                        state: JobRunState::Success,
+                        attempt: 1,
+                        output: Some(json!({})),
+                    }),
+                ),
+                (
+                    "T-failed".to_string(),
+                    Ok(JobRunResult {
+                        job_id: PARALLEL_WORKER_JOB_ID.to_string(),
+                        run_id: "run-failed".to_string(),
+                        state: JobRunState::Failed,
+                        attempt: 1,
+                        output: Some(json!({})),
+                    }),
+                ),
+            ]),
+            repo_root.to_path_buf(),
+        );
+
+        let output = run_parallel_task_pipeline(
+            &host,
+            &json!({
+                "run_id": batch_id,
+                "parallelism": 2,
+            }),
+            false,
+        )
+        .expect("parallel pipeline succeeds");
+
+        assert_eq!(output["succeeded"], json!(1));
+        assert_eq!(output["failed"], json!(1));
+        assert_eq!(output["completed_task_ids"], json!(["T-success"]));
+
+        let blocked_updates = host.blocked_updates();
+        assert_eq!(blocked_updates.len(), 1);
+        assert_eq!(blocked_updates[0].0, "T-failed");
+        assert_eq!(blocked_updates[0].1.status, Some(TaskStatus::Blocked));
+        assert_eq!(
+            blocked_updates[0].1.status_event.as_deref(),
+            Some("workflow_run_failed")
+        );
+        let note = blocked_updates[0]
+            .1
+            .status_note
+            .as_deref()
+            .expect("blocked note");
+        assert!(note.contains(&format!("job={PARALLEL_WORKER_JOB_ID}")));
+        assert!(note.contains("run_id=run-failed"));
+        assert!(note.contains("error_code=WORKER_NON_SUCCESS"));
+        assert!(note.contains("parallel worker completed in non-success state 'failed'"));
+        assert!(
+            blocked_updates
+                .iter()
+                .all(|(task_id, _)| task_id != "T-success")
         );
     }
 

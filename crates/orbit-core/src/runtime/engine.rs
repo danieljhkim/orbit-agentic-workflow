@@ -737,8 +737,9 @@ mod tests {
     use chrono::Utc;
     use orbit_engine::{RuntimeHost, TaskAutomationUpdate, TaskHost};
     use orbit_types::{
-        Activity, ActorIdentity, InvocationTrace, OrbitError, ReviewThread, Task, TaskComment,
-        TaskPriority, TaskStatus, TaskType, TokenUsage, ToolCallTrace, WorkspacePaths,
+        Activity, ActorIdentity, InvocationTrace, JobRunState, JobScheduleState, JobStep,
+        JobTargetType, OrbitError, ReviewThread, Task, TaskComment, TaskPriority, TaskStatus,
+        TaskType, TokenUsage, ToolCallTrace, WorkspacePaths,
     };
     use serde_json::json;
 
@@ -748,7 +749,7 @@ mod tests {
         task_detail_envelope_json, task_detail_for_input,
     };
     use crate::OrbitRuntime;
-    use crate::command::task::TaskAddParams;
+    use crate::command::{activity::ActivityAddParams, job::JobAddParams, task::TaskAddParams};
 
     struct MockTaskHost {
         task: Task,
@@ -856,6 +857,52 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn add_automation_activity(runtime: &OrbitRuntime, id: &str, action: &str) {
+        runtime
+            .add_activity(ActivityAddParams {
+                id: id.to_string(),
+                spec_type: "automation".to_string(),
+                description: format!("automation activity {id}"),
+                input_schema_json: json!({}),
+                output_schema_json: json!({}),
+                spec_config: json!({ "action": action }),
+                workspace_path: None,
+                created_by: None,
+            })
+            .expect("activity");
+    }
+
+    fn add_single_step_job(
+        runtime: &OrbitRuntime,
+        job_id: &str,
+        activity_id: &str,
+        max_iterations: u32,
+    ) {
+        runtime
+            .add_job(JobAddParams {
+                job_id: Some(job_id.to_string()),
+                default_input: None,
+                max_active_runs: Some(1),
+                max_iterations: Some(max_iterations),
+                steps: vec![JobStep {
+                    target_type: JobTargetType::Activity,
+                    target_id: activity_id.to_string(),
+                    timeout_seconds: 30,
+                    ..JobStep::default()
+                }],
+                initial_state_override: Some(JobScheduleState::Enabled),
+            })
+            .expect("job");
+    }
+
+    fn blocked_history_note(task: &Task) -> &str {
+        task.history
+            .iter()
+            .find(|entry| entry.to_status == Some(TaskStatus::Blocked))
+            .and_then(|entry| entry.note.as_deref())
+            .expect("blocked history note")
     }
 
     #[test]
@@ -1155,6 +1202,70 @@ mod tests {
                 .any(|entry| entry.event == "planning_duel_resolved"
                     && entry.note.as_deref() == Some("winner=planner_a"))
         );
+    }
+
+    #[test]
+    fn failed_task_scoped_job_run_blocks_task_with_failure_history() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task_with_status("workflow failure", TaskStatus::InProgress)
+            .expect("task");
+        add_automation_activity(&runtime, "failing_automation", "unsupported_action");
+        add_single_step_job(&runtime, "job_fail_task_scoped", "failing_automation", 1);
+
+        let result = runtime
+            .run_job_now_with_input(
+                "job_fail_task_scoped",
+                json!({
+                    "task_id": task.id,
+                }),
+            )
+            .expect("job result");
+
+        assert_eq!(result.state, JobRunState::Failed);
+
+        let updated = runtime.get_task(&task.id).expect("updated task");
+        assert_eq!(updated.status, TaskStatus::Blocked);
+        let blocked_entry = updated
+            .history
+            .iter()
+            .find(|entry| entry.to_status == Some(TaskStatus::Blocked))
+            .expect("blocked history entry");
+        assert_eq!(blocked_entry.event, "workflow_run_failed");
+        let note = blocked_entry.note.as_deref().expect("blocked note");
+        assert!(note.contains("job=job_fail_task_scoped"));
+        assert!(note.contains(&format!("run_id={}", result.run_id)));
+        assert!(note.contains("error_code=ACTIVITY_EXECUTION_FAILED"));
+        assert!(note.contains("unsupported automation action 'unsupported_action'"));
+    }
+
+    #[test]
+    fn loop_exhaustion_blocks_task_with_run_context_in_history() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task_with_status("loop exhausted", TaskStatus::InProgress)
+            .expect("task");
+        add_automation_activity(&runtime, "successful_automation", "update_task");
+        add_single_step_job(&runtime, "job_loop_exhaustion", "successful_automation", 2);
+
+        let result = runtime
+            .run_job_now_with_input(
+                "job_loop_exhaustion",
+                json!({
+                    "task_id": task.id,
+                }),
+            )
+            .expect("job result");
+
+        assert_eq!(result.state, JobRunState::Failed);
+
+        let updated = runtime.get_task(&task.id).expect("updated task");
+        assert_eq!(updated.status, TaskStatus::Blocked);
+        let note = blocked_history_note(&updated);
+        assert!(note.contains("job=job_loop_exhaustion"));
+        assert!(note.contains(&format!("run_id={}", result.run_id)));
+        assert!(note.contains("error_code=LOOP_EXHAUSTED"));
+        assert!(note.contains("loop exhausted after 2 iterations"));
     }
 
     #[test]
