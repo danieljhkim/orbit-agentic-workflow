@@ -312,6 +312,13 @@ impl RuntimeHost for OrbitRuntime {
         self.get_job_record(job_id)
     }
 
+    fn invocation_records(
+        &self,
+        query: InvocationQuery,
+    ) -> Result<Vec<InvocationRecord>, OrbitError> {
+        OrbitRuntime::invocation_records(self, query)
+    }
+
     fn run_tool_with_context_and_role(
         &self,
         name: &str,
@@ -598,11 +605,15 @@ impl TaskHost for OrbitRuntime {
                 StoreTaskUpdateParams {
                     actor: "agent".to_string(),
                     execution_summary: update.execution_summary.clone(),
+                    plan: update.plan.clone(),
                     status: update.status,
                     workspace_path: update.workspace_path.clone(),
                     repo_root: update.repo_root.clone().map(Some),
                     pr_number: update.pr_number.clone().map(Some),
                     batch_id: update.batch_id.clone().map(Some),
+                    status_event: update.status_event.clone(),
+                    status_note: update.status_note.clone(),
+                    append_comments: update.append_comments.clone(),
                     actor_identity: Some(ActorIdentity::from_legacy(
                         update.agent.as_deref(),
                         update.model.as_deref(),
@@ -723,10 +734,10 @@ mod tests {
     use std::path::PathBuf;
 
     use chrono::Utc;
-    use orbit_engine::TaskAutomationUpdate;
+    use orbit_engine::{RuntimeHost, TaskAutomationUpdate, TaskHost};
     use orbit_types::{
-        Activity, ActorIdentity, OrbitError, ReviewThread, Task, TaskPriority, TaskStatus,
-        TaskType, WorkspacePaths,
+        Activity, ActorIdentity, InvocationTrace, OrbitError, ReviewThread, Task, TaskComment,
+        TaskPriority, TaskStatus, TaskType, TokenUsage, ToolCallTrace, WorkspacePaths,
     };
     use serde_json::json;
 
@@ -735,6 +746,8 @@ mod tests {
         activity_envelope_json_for_execution, codex_workspace_write_writable_dirs,
         task_detail_envelope_json, task_detail_for_input,
     };
+    use crate::OrbitRuntime;
+    use crate::command::task::TaskAddParams;
 
     struct MockTaskHost {
         task: Task,
@@ -1073,6 +1086,115 @@ mod tests {
         let envelope = activity_envelope_json_for_execution(&activity, "codex");
         assert_eq!(envelope.get("orchestrator_model"), Some(&json!("gpt-5.4")));
         assert!(envelope.get("instruction").is_none());
+    }
+
+    #[test]
+    fn apply_task_automation_update_persists_plan_history_and_commentary() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let task = runtime
+            .add_task_with_identity(
+                TaskAddParams {
+                    title: "Planning duel".to_string(),
+                    description: "Test planning-duel writeback".to_string(),
+                    acceptance_criteria: vec!["persist winning plan".to_string()],
+                    plan: "old plan".to_string(),
+                    comment: None,
+                    context_files: vec![],
+                    workspace_path: None,
+                    priority: orbit_types::TaskPriority::Medium,
+                    complexity: None,
+                    task_type: orbit_types::TaskType::Task,
+                    source_task_id: None,
+                    ..Default::default()
+                },
+                Some("planner-a".to_string()),
+                Some("model-a".to_string()),
+            )
+            .expect("task");
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    plan: Some("winning plan".to_string()),
+                    status: Some(TaskStatus::Backlog),
+                    status_event: Some("planning_duel_resolved".to_string()),
+                    status_note: Some("winner=planner_a".to_string()),
+                    append_comments: vec![TaskComment {
+                        at: Utc::now(),
+                        by: "arbiter".to_string(),
+                        message: "arbiter rationale".to_string(),
+                    }],
+                    agent: Some("planner-a".to_string()),
+                    model: Some("model-a".to_string()),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("update");
+
+        let updated = runtime.get_task(&task.id).expect("updated task");
+        assert_eq!(updated.plan, "winning plan");
+        assert_eq!(updated.status, TaskStatus::Backlog);
+        assert_eq!(updated.actor_identity.agent_name(), Some("planner-a"));
+        assert_eq!(updated.actor_identity.agent_model(), Some("model-a"));
+        assert_eq!(updated.comments.len(), 1);
+        assert_eq!(updated.comments[0].by, "arbiter");
+        assert_eq!(updated.comments[0].message, "arbiter rationale");
+        assert!(
+            updated
+                .history
+                .iter()
+                .any(|entry| entry.event == "planning_duel_resolved"
+                    && entry.note.as_deref() == Some("winner=planner_a"))
+        );
+    }
+
+    #[test]
+    fn invocation_records_for_job_run_and_activity_reads_persisted_trace() {
+        let runtime = OrbitRuntime::in_memory().expect("runtime");
+        let execution = orbit_engine::ExecutionContext {
+            activity: sample_activity(),
+            job: None,
+            agent_cli: "codex".to_string(),
+            model: Some("gpt-5.4".to_string()),
+            timeout_seconds: 30,
+            env_extra: vec![],
+            env_set: std::collections::HashMap::new(),
+            input: json!({
+                "task_id": "T1"
+            }),
+            debug: false,
+        };
+        let trace = InvocationTrace {
+            usage: TokenUsage {
+                input: 12,
+                cache_read: 1,
+                cache_create: 2,
+                output: 5,
+            },
+            tool_calls: vec![ToolCallTrace {
+                seq: 1,
+                tool_name: "orbit.graph.search".to_string(),
+                result_bytes: 42,
+                result_payload: None,
+            }],
+            duration_ms: 88,
+        };
+
+        runtime
+            .persist_invocation_trace("run-123", &execution, &trace)
+            .expect("persist trace");
+
+        let records = runtime
+            .invocation_records_for_job_run_and_activity("run-123", "implement_change")
+            .expect("query records");
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].job_run_id, "run-123");
+        assert_eq!(records[0].activity_id, "implement_change");
+        assert_eq!(records[0].tool_call_count, 1);
+        assert_eq!(records[0].total_tokens, 17);
+        assert_eq!(records[0].tool_calls[0].result_bytes, 42);
     }
 
     #[test]

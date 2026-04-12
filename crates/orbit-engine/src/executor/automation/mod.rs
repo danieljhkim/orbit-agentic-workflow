@@ -8,6 +8,7 @@ mod input;
 mod knowledge;
 mod merge_worktree;
 mod parallel;
+mod planning_duel;
 mod pr;
 mod pull;
 mod push;
@@ -43,6 +44,10 @@ const AUTOMATION_CHECK_BATCH_REVIEW_DECISION: &str = "check_batch_review_decisio
 const AUTOMATION_SELECT_DUEL_ROLES: &str = "select_duel_roles";
 const AUTOMATION_CHECK_DUEL_REVIEW_DECISION: &str = "check_duel_review_decision";
 const AUTOMATION_RECORD_DUEL_SCORES: &str = "record_duel_scores";
+const AUTOMATION_SELECT_PLANNING_DUEL_ROLES: &str = "select_planning_duel_roles";
+const AUTOMATION_WRITEBACK_PLANNING_DUEL_TASK: &str = "writeback_planning_duel_task";
+const AUTOMATION_RECORD_PLANNING_DUEL_EFFICIENCY: &str = "record_planning_duel_efficiency";
+const AUTOMATION_RECORD_PLANNING_DUEL_SCORES: &str = "record_planning_duel_scores";
 const AUTOMATION_SYNC_BATCH_REVIEW_TO_GITHUB: &str = "sync_batch_review_to_github";
 const AUTOMATION_PULL_BATCH_CHANGES: &str = "pull_batch_changes";
 const AUTOMATION_PUSH_BATCH_CHANGES: &str = "push_batch_changes";
@@ -135,6 +140,16 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
             check_duel_review_decision::check_duel_review_decision(input)
         }
         AUTOMATION_RECORD_DUEL_SCORES => record_duel_scores::record_duel_scores(host, input),
+        AUTOMATION_SELECT_PLANNING_DUEL_ROLES => planning_duel::select_planning_duel_roles(input),
+        AUTOMATION_WRITEBACK_PLANNING_DUEL_TASK => {
+            planning_duel::writeback_planning_duel_task(host, input)
+        }
+        AUTOMATION_RECORD_PLANNING_DUEL_EFFICIENCY => {
+            planning_duel::record_planning_duel_efficiency(host, input)
+        }
+        AUTOMATION_RECORD_PLANNING_DUEL_SCORES => {
+            planning_duel::record_planning_duel_scores(host, input)
+        }
         AUTOMATION_UPDATE_KNOWLEDGE_GRAPH => knowledge::update_knowledge_graph(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"

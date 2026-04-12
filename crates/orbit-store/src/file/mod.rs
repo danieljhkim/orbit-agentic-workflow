@@ -17,6 +17,7 @@ pub(crate) mod fs_utils;
 pub(crate) mod job_store;
 pub(crate) mod knowledge_stats;
 pub(crate) mod metrics_log;
+pub(crate) mod planning_duel_scoreboard;
 pub(crate) mod pr_scoreboard;
 pub(crate) mod skill_store;
 pub(crate) mod task_store;

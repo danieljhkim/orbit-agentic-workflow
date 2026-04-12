@@ -1,10 +1,11 @@
 use orbit_agent::AgentConfig;
 use orbit_exec::EnvironmentMode;
 use orbit_store::JobRunStepParams;
+use orbit_store::{InvocationQuery, InvocationRecord};
 use orbit_tools::ToolContext;
 use orbit_types::{
     Activity, InvocationTrace, Job, JobRun, JobRunState, JobTargetType, KnowledgeRunMetrics,
-    OrbitError, OrbitEvent, ReviewThread, Role, Task, TaskPriority, TaskStatus,
+    OrbitError, OrbitEvent, ReviewThread, Role, Task, TaskComment, TaskPriority, TaskStatus,
     redact_sensitive_env_json, redact_sensitive_env_option,
 };
 use serde_json::Value;
@@ -119,10 +120,14 @@ pub struct JobRunResult {
 #[derive(Debug, Clone, Default)]
 pub struct TaskAutomationUpdate {
     pub status: Option<TaskStatus>,
+    pub plan: Option<String>,
     pub workspace_path: Option<Option<String>>,
     pub repo_root: Option<String>,
     pub pr_number: Option<String>,
     pub execution_summary: Option<String>,
+    pub status_event: Option<String>,
+    pub status_note: Option<String>,
+    pub append_comments: Vec<TaskComment>,
     pub agent: Option<String>,
     pub model: Option<String>,
     pub review_threads: Option<Vec<ReviewThread>>,
@@ -276,6 +281,24 @@ pub trait RuntimeHost {
         target_id: &str,
     ) -> Result<Activity, OrbitError>;
     fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError>;
+    fn invocation_records(
+        &self,
+        _query: InvocationQuery,
+    ) -> Result<Vec<InvocationRecord>, OrbitError> {
+        Ok(Vec::new())
+    }
+    fn invocation_records_for_job_run_and_activity(
+        &self,
+        job_run_id: &str,
+        activity_id: &str,
+    ) -> Result<Vec<InvocationRecord>, OrbitError> {
+        self.invocation_records(InvocationQuery {
+            job_run_id: Some(job_run_id.to_string()),
+            activity_id: Some(activity_id.to_string()),
+            limit: 1_000_000,
+            ..InvocationQuery::default()
+        })
+    }
     fn run_tool_with_context_and_role(
         &self,
         name: &str,

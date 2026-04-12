@@ -54,6 +54,12 @@ pub mod duel_scoreboard {
     };
 }
 
+pub mod planning_duel_scoreboard {
+    pub use crate::file::planning_duel_scoreboard::{
+        AggregateFilter, AggregateRow, Aggregates, RoleAxis, aggregate, append_run, load_runs,
+    };
+}
+
 pub mod knowledge_stats {
     pub use crate::file::knowledge_stats::{
         DoubleReadSummary, KnowledgeStatsSummary, RatioSummary, TokenInputSummary, aggregate,

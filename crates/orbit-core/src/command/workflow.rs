@@ -74,6 +74,17 @@ pub const WORKFLOWS: &[Workflow] = &[
         requires_pr_number: false,
         max_tasks: Some(1),
     },
+    Workflow {
+        alias: "duel-plan",
+        job_id: "job_duel_plan_pipeline",
+        description: "Single-task planning duel: two planners and one arbiter, scored",
+        supports_tasks: true,
+        supports_parallelism: false,
+        supports_base: true,
+        supports_pr_number: false,
+        requires_pr_number: false,
+        max_tasks: Some(1),
+    },
 ];
 
 pub fn find_workflow(name: &str) -> Option<&'static Workflow> {
@@ -227,6 +238,10 @@ mod tests {
             find_workflow("review-pr").unwrap().job_id,
             "job_batch_review_cycle"
         );
+        assert_eq!(
+            find_workflow("duel-plan").unwrap().job_id,
+            "job_duel_plan_pipeline"
+        );
     }
 
     #[test]
@@ -281,6 +296,58 @@ mod tests {
             pr_number: None,
         };
         let built = build_workflow_input_for(Some(duel), &input).unwrap();
+        assert_eq!(built["task_ids"], json!(["T20260409-0310"]));
+        assert_eq!(built["task_id"], json!("T20260409-0310"));
+        assert_eq!(built["base"], json!("main"));
+    }
+
+    #[test]
+    fn duel_plan_workflow_is_registered_with_single_task_cap() {
+        let duel_plan = find_workflow("duel-plan").expect("duel-plan workflow");
+        assert_eq!(duel_plan.job_id, "job_duel_plan_pipeline");
+        assert!(duel_plan.supports_tasks);
+        assert!(!duel_plan.supports_parallelism);
+        assert!(duel_plan.supports_base);
+        assert!(!duel_plan.supports_pr_number);
+        assert_eq!(duel_plan.max_tasks, Some(1));
+        assert!(
+            duel_plan.description.to_lowercase().contains("plan")
+                || duel_plan.description.to_lowercase().contains("arbiter"),
+            "description should mention planning duel"
+        );
+    }
+
+    #[test]
+    fn duel_plan_rejects_multi_task_input_with_workflow_specific_message() {
+        let duel_plan = find_workflow("duel-plan").expect("duel-plan workflow");
+        let input = WorkflowInput {
+            tasks: Some("T20260409-0310,T20260409-0311".to_string()),
+            parallelism: None,
+            base: None,
+            pr_number: None,
+        };
+        let err = build_workflow_input_for(Some(duel_plan), &input).unwrap_err();
+        match err {
+            OrbitError::InvalidInput(msg) => {
+                assert!(
+                    msg.contains("duel-plan") && msg.contains("exactly one task id"),
+                    "error must name the workflow and its constraint, got: {msg}"
+                );
+            }
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn duel_plan_accepts_a_single_task_id() {
+        let duel_plan = find_workflow("duel-plan").expect("duel-plan workflow");
+        let input = WorkflowInput {
+            tasks: Some("T20260409-0310".to_string()),
+            parallelism: None,
+            base: Some("main".to_string()),
+            pr_number: None,
+        };
+        let built = build_workflow_input_for(Some(duel_plan), &input).unwrap();
         assert_eq!(built["task_ids"], json!(["T20260409-0310"]));
         assert_eq!(built["task_id"], json!("T20260409-0310"));
         assert_eq!(built["base"], json!("main"));

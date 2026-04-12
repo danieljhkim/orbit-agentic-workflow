@@ -1,0 +1,78 @@
+schemaVersion: 1
+
+# ---- job ----
+job:
+  # ---- registration ----
+  job_id: job_duel_plan_pipeline
+  state: enabled
+
+  # ---- execution ----
+  #
+  # Planning duel pipeline: runs a single Orbit task through two read-only
+  # planner passes and one arbiter pass, then records efficiency and appends
+  # the winning result to the planning-duel scoreboard before writing the
+  # winning plan back to the task.
+  #
+  # Step flow:
+  #   select_duel_plan_roles         — assign planner/arbiter families
+  #   propose_duel_plan_a            — planner A drafts a read-only proposal
+  #   propose_duel_plan_b            — planner B drafts a competing proposal
+  #   arbitrate_duel_plan            — arbiter chooses the winning proposal
+  #   record_planning_duel_efficiency — query per-role invocation metrics
+  #   writeback_planning_duel_task   — persist the winning plan to task.plan and backlog
+  #   record_planning_duel_scores    — append one PlanningDuelRun to duel_plan.json
+  #
+  max_active_runs: 1
+  max_iterations: 1
+  default_input:
+    base: main
+    planner_a_activity_id: propose_duel_plan_a
+    planner_b_activity_id: propose_duel_plan_b
+    arbiter_activity_id: arbitrate_duel_plan
+  steps:
+    - target_type: activity
+      target_id: select_duel_plan_roles
+      condition: on_success
+      timeout_seconds: 30
+
+    - target_type: activity
+      target_id: propose_duel_plan_a
+      agent_cli_from_input: planner_a_agent_cli
+      model_from_input: planner_a_model
+      condition: on_success
+      timeout_seconds: 1800
+      output_map:
+        proposal: planner_a_proposal
+        summary: planner_a_summary
+
+    - target_type: activity
+      target_id: propose_duel_plan_b
+      agent_cli_from_input: planner_b_agent_cli
+      model_from_input: planner_b_model
+      condition: on_success
+      timeout_seconds: 1800
+      output_map:
+        proposal: planner_b_proposal
+        summary: planner_b_summary
+
+    - target_type: activity
+      target_id: arbitrate_duel_plan
+      agent_cli_from_input: arbiter_agent_cli
+      model_from_input: arbiter_model
+      condition: on_success
+      timeout_seconds: 900
+
+    - target_type: activity
+      target_id: record_planning_duel_efficiency
+      condition: on_success
+      timeout_seconds: 60
+
+    - target_type: activity
+      target_id: writeback_planning_duel_task
+      condition: on_success
+      timeout_seconds: 60
+
+    - target_type: activity
+      target_id: record_planning_duel_scores
+      condition: on_success
+      timeout_seconds: 60

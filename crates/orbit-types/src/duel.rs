@@ -12,6 +12,10 @@
 //! - the `orbit-store` duel_scoreboard module (which persists runs),
 //! - the `orbit duel scoreboard` CLI (which computes aggregates over runs).
 //!
+//! Planning duels reuse the same crate boundary but store a sibling schema:
+//! two planners propose plans, an arbiter picks a winner, and the scoreboard
+//! keeps per-role efficiency metrics alongside the winning slot.
+//!
 //! `orbit-types` is the correct home for this module because the engine
 //! executors must deserialize [`ArbiterVerdict`] without taking a dependency
 //! on `orbit-store`.
@@ -22,6 +26,7 @@
 //! must bump `schema_version` on the enclosing scoreboard file and add a
 //! migration path in `orbit-store::file::duel_scoreboard`.
 
+use crate::invocation::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -269,6 +274,106 @@ pub struct Cost {
 }
 
 // ============================================================================
+// Planning duel schema + reusable efficiency metrics
+// ============================================================================
+
+/// Slot identifier for the two planning agents in a planning duel.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PlannerSlot {
+    PlannerA,
+    PlannerB,
+}
+
+/// Reusable efficiency payload for a single role in a planning duel.
+///
+/// Token usage is stored exactly when available. When the runtime cannot
+/// produce exact token counts, the byte-proxy total is stored instead so the
+/// report still carries a concrete usage signal.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EfficiencyMetrics {
+    /// Wall-clock duration for the role's work, in milliseconds.
+    pub wall_clock_ms: u64,
+    /// Number of tool calls executed by the role.
+    pub tool_call_count: u32,
+    /// Exact token usage when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<TokenUsage>,
+    /// Explicit byte-proxy total when token usage is unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_proxy_total: Option<u64>,
+}
+
+impl EfficiencyMetrics {
+    /// Return the wall-clock duration in seconds with sub-second precision.
+    pub fn wall_clock_seconds(&self) -> f64 {
+        self.wall_clock_ms as f64 / 1_000.0
+    }
+
+    /// Return the exact prompt+response token total when exact token usage is
+    /// present.
+    pub fn token_total(&self) -> Option<u64> {
+        self.token_usage
+            .as_ref()
+            .map(TokenUsage::prompt_response_total)
+    }
+
+    /// Return the stored byte-proxy total, if one was recorded.
+    pub fn byte_proxy_total(&self) -> Option<u64> {
+        self.byte_proxy_total
+    }
+}
+
+/// Agent/model assignment for one side of a planning duel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(deny_unknown_fields)]
+pub struct PlanningRoleAssignment {
+    pub agent: String,
+    pub model: String,
+}
+
+/// The three role assignments for a planning duel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanningRoles {
+    pub planner_a: PlanningRoleAssignment,
+    pub planner_b: PlanningRoleAssignment,
+    pub arbiter: PlanningRoleAssignment,
+}
+
+/// Arbiter outcome for a planning duel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanningOutcome {
+    pub winner: PlannerSlot,
+    pub arbiter_rationale: String,
+}
+
+/// Per-role efficiency metrics for a planning duel run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanningEfficiency {
+    pub planner_a: EfficiencyMetrics,
+    pub planner_b: EfficiencyMetrics,
+    pub arbiter: EfficiencyMetrics,
+}
+
+/// One row in the planning-duel run log (`duel_plan.json`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanningDuelRun {
+    pub run_id: String,
+    pub task_id: String,
+    pub completed_at: chrono::DateTime<chrono::Utc>,
+    pub roles: PlanningRoles,
+    pub planner_a_plan: String,
+    pub planner_b_plan: String,
+    pub outcome: PlanningOutcome,
+    pub efficiency: PlanningEfficiency,
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -457,6 +562,127 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&TaskScope::CrossCrate).unwrap(),
             "\"cross_crate\""
+        );
+    }
+
+    #[test]
+    fn efficiency_metrics_round_trips_with_exact_token_usage() {
+        let metrics = EfficiencyMetrics {
+            wall_clock_ms: 42_000,
+            tool_call_count: 3,
+            token_usage: Some(TokenUsage {
+                input: 11,
+                cache_read: 7,
+                cache_create: 5,
+                output: 13,
+            }),
+            byte_proxy_total: None,
+        };
+
+        let json = serde_json::to_string(&metrics).expect("serialize");
+        let parsed: EfficiencyMetrics = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, metrics);
+        assert!((parsed.wall_clock_seconds() - 42.0).abs() < 1e-9);
+        assert_eq!(parsed.token_total(), Some(24));
+        assert_eq!(parsed.byte_proxy_total(), None);
+    }
+
+    #[test]
+    fn efficiency_metrics_round_trips_with_byte_proxy_usage() {
+        let metrics = EfficiencyMetrics {
+            wall_clock_ms: 17_250,
+            tool_call_count: 1,
+            token_usage: None,
+            byte_proxy_total: Some(8192),
+        };
+
+        let json = serde_json::to_string(&metrics).expect("serialize");
+        let parsed: EfficiencyMetrics = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, metrics);
+        assert!((parsed.wall_clock_seconds() - 17.25).abs() < 1e-9);
+        assert_eq!(parsed.token_total(), None);
+        assert_eq!(parsed.byte_proxy_total(), Some(8192));
+    }
+
+    fn planning_sample_run() -> PlanningDuelRun {
+        PlanningDuelRun {
+            run_id: "P20260409-0310-001".into(),
+            task_id: "T20260409-0310".into(),
+            completed_at: "2026-04-09T04:12:33Z".parse().unwrap(),
+            roles: PlanningRoles {
+                planner_a: PlanningRoleAssignment {
+                    agent: "claude".into(),
+                    model: "opus".into(),
+                },
+                planner_b: PlanningRoleAssignment {
+                    agent: "codex".into(),
+                    model: "gpt-5.4".into(),
+                },
+                arbiter: PlanningRoleAssignment {
+                    agent: "gemini".into(),
+                    model: "gemini-3.1-pro".into(),
+                },
+            },
+            planner_a_plan: "Plan A".into(),
+            planner_b_plan: "Plan B".into(),
+            outcome: PlanningOutcome {
+                winner: PlannerSlot::PlannerB,
+                arbiter_rationale: "Plan B has the smaller blast radius.".into(),
+            },
+            efficiency: PlanningEfficiency {
+                planner_a: EfficiencyMetrics {
+                    wall_clock_ms: 30_000,
+                    tool_call_count: 2,
+                    token_usage: Some(TokenUsage {
+                        input: 100,
+                        cache_read: 0,
+                        cache_create: 0,
+                        output: 20,
+                    }),
+                    byte_proxy_total: None,
+                },
+                planner_b: EfficiencyMetrics {
+                    wall_clock_ms: 25_000,
+                    tool_call_count: 1,
+                    token_usage: None,
+                    byte_proxy_total: Some(4096),
+                },
+                arbiter: EfficiencyMetrics {
+                    wall_clock_ms: 8_000,
+                    tool_call_count: 0,
+                    token_usage: Some(TokenUsage {
+                        input: 12,
+                        cache_read: 0,
+                        cache_create: 0,
+                        output: 4,
+                    }),
+                    byte_proxy_total: None,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn planning_duel_run_round_trips_every_documented_field() {
+        let run = planning_sample_run();
+        let json = serde_json::to_string(&run).expect("serialize");
+        let parsed: PlanningDuelRun = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, run);
+        assert_eq!(parsed.outcome.winner, PlannerSlot::PlannerB);
+        assert_eq!(parsed.efficiency.planner_a.token_total(), Some(120));
+        assert_eq!(parsed.efficiency.planner_b.byte_proxy_total(), Some(4096));
+    }
+
+    #[test]
+    fn planning_duel_run_rejects_unknown_top_level_field() {
+        let mut raw = serde_json::to_value(planning_sample_run()).unwrap();
+        raw.as_object_mut()
+            .unwrap()
+            .insert("future_field".into(), json!("surprise"));
+        let err = serde_json::from_value::<PlanningDuelRun>(raw).unwrap_err();
+        assert!(
+            err.to_string().contains("future_field"),
+            "deny_unknown_fields should mention the unknown field: {err}"
         );
     }
 }

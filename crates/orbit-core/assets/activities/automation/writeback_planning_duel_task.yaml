@@ -1,0 +1,74 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: writeback_planning_duel_task
+  spec_type: automation
+
+  # ---- content ----
+  description: "Persist the winning planning duel proposal to task.plan, record winner/rationale commentary, and return the task to backlog."
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+      - winner_role
+      - winner_agent_cli
+      - winner_model
+      - arbiter_agent_cli
+      - arbiter_model
+      - winning_plan
+      - arbiter_rationale
+    properties:
+      task_id:
+        type: string
+      winner_role:
+        type: string
+        enum:
+          - planner_a
+          - planner_b
+      winner_agent_cli:
+        type: string
+      winner_model:
+        type: string
+      arbiter_agent_cli:
+        type: string
+      arbiter_model:
+        type: string
+      winning_plan:
+        type: string
+      arbiter_rationale:
+        type: string
+  output_schema_json:
+    type: object
+    required:
+      - task_id
+      - status
+      - winner_role
+      - winner_agent_cli
+      - winner_model
+      - arbiter_agent_cli
+      - arbiter_model
+    properties:
+      task_id:
+        type: string
+      status:
+        type: string
+      winner_role:
+        type: string
+      winner_agent_cli:
+        type: string
+      winner_model:
+        type: string
+      arbiter_agent_cli:
+        type: string
+      arbiter_model:
+        type: string
+
+  # ---- execution ----
+  action: writeback_planning_duel_task

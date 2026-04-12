@@ -1,0 +1,106 @@
+schema_version: 1
+
+# ---- metadata ----
+created_by: system
+
+# ---- activity ----
+activity:
+  # ---- registration ----
+  id: propose_duel_plan_b
+  spec_type: agent_invoke
+
+  # ---- content ----
+  description: Draft planner B's read-only planning proposal for a single duel task using the graph surface.
+  instruction: |
+    Only use skills listed in this activity's skill_refs. Ignore all others.
+    You are PLANNER B in an Orbit planning duel. Inspect the task and surrounding
+    code, then produce one competing implementation-ready proposal. Do not write
+    files, update tasks, or perform any mutating action.
+
+    Steps:
+    1. Load the task:
+       - Call orbit.task.show with input: {"id": "<task_id>"} to fetch the task title,
+         description, plan, acceptance_criteria, context_files, and workspace_path.
+
+    2. Gather context with the graph surface first:
+       - Build graph selectors from task.context_files and call orbit.graph.pack.
+       - If pack returns knowledge_unavailable, use orbit.graph.overview to map the
+         affected area, then orbit.graph.search, orbit.graph.refs, and orbit.graph.show
+         to discover the relevant symbols and relationships.
+       - If pack returns unresolved selectors, fall back to fs.read only for those paths.
+       - Prefer orbit.graph.pack/search/show/overview/refs over raw file reads whenever
+         the graph has the needed knowledge.
+
+    3. Stay read-only:
+       - Do not edit files, update tasks, or open PRs.
+       - Ignore planner A's proposal if it is present in the input. Your proposal
+         must be independently reasoned from the task and codebase.
+
+    4. Produce exactly one proposal:
+       - You are the second planner and must emit planner_role = "planner_b".
+       - Return a concise markdown proposal with these sections:
+         ## Plan
+         ## Context Files
+         ## Risks
+       - Keep the plan implementation-ready and specific to the current codebase.
+
+    5. Return JSON with:
+       - planner_role: "planner_b"
+       - proposal: the markdown proposal string
+       - summary: a short one-paragraph summary of the proposal
+
+  # ---- interface ----
+  input_schema_json:
+    type: object
+    required:
+      - task_id
+    properties:
+      task_id:
+        type: string
+        description: Orbit task ID being planned.
+      planner_a_agent_cli:
+        type: string
+      planner_a_model:
+        type: string
+      planner_b_agent_cli:
+        type: string
+      planner_b_model:
+        type: string
+      arbiter_agent_cli:
+        type: string
+      arbiter_model:
+        type: string
+      planning_duel_started_at:
+        type: string
+      planning_duel_roles:
+        type: object
+      planner_a_proposal:
+        type: string
+  output_schema_json:
+    type: object
+    required:
+      - planner_role
+      - proposal
+      - summary
+    properties:
+      planner_role:
+        type: string
+        enum:
+          - planner_b
+      proposal:
+        type: string
+      summary:
+        type: string
+
+  # ---- execution ----
+  skill_refs:
+    - orbit
+    - orbit-graph
+  tools:
+    - orbit.task.show
+    - orbit.graph.pack
+    - orbit.graph.search
+    - orbit.graph.show
+    - orbit.graph.overview
+    - orbit.graph.refs
+    - fs.read

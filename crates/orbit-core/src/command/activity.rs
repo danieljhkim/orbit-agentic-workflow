@@ -104,6 +104,34 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/automation/select_duel_roles.yaml"),
     ),
     (
+        "select_duel_plan_roles",
+        include_str!("../../assets/activities/automation/select_duel_plan_roles.yaml"),
+    ),
+    (
+        "propose_duel_plan_a",
+        include_str!("../../assets/activities/agent_invoke/propose_duel_plan_a.yaml"),
+    ),
+    (
+        "propose_duel_plan_b",
+        include_str!("../../assets/activities/agent_invoke/propose_duel_plan_b.yaml"),
+    ),
+    (
+        "arbitrate_duel_plan",
+        include_str!("../../assets/activities/agent_invoke/arbitrate_duel_plan.yaml"),
+    ),
+    (
+        "record_planning_duel_efficiency",
+        include_str!("../../assets/activities/automation/record_planning_duel_efficiency.yaml"),
+    ),
+    (
+        "record_planning_duel_scores",
+        include_str!("../../assets/activities/automation/record_planning_duel_scores.yaml"),
+    ),
+    (
+        "writeback_planning_duel_task",
+        include_str!("../../assets/activities/automation/writeback_planning_duel_task.yaml"),
+    ),
+    (
         "check_duel_review_decision",
         include_str!("../../assets/activities/automation/check_duel_review_decision.yaml"),
     ),
@@ -588,5 +616,63 @@ mod tests {
         assert!(tools.contains(&"fs.read"));
         assert!(tools.contains(&"fs.write"));
         assert!(!tools.iter().any(|t| t.starts_with("orbit.graph.")));
+    }
+
+    #[test]
+    fn planning_duel_activities_use_graph_surface_and_stay_read_only() {
+        let specs = load_default_activity_specs(DEFAULT_ACTIVITY_FILES, None).expect("activities");
+        let proposer_a = specs
+            .iter()
+            .find(|spec| spec.id == "propose_duel_plan_a")
+            .expect("propose_duel_plan_a activity");
+        let proposer_b = specs
+            .iter()
+            .find(|spec| spec.id == "propose_duel_plan_b")
+            .expect("propose_duel_plan_b activity");
+        let arbiter = specs
+            .iter()
+            .find(|spec| spec.id == "arbitrate_duel_plan")
+            .expect("arbitrate_duel_plan activity");
+
+        for activity in [proposer_a, proposer_b, arbiter] {
+            let instruction = activity
+                .spec_config
+                .get("instruction")
+                .and_then(serde_json::Value::as_str)
+                .expect("instruction");
+            assert!(instruction.contains("orbit.graph.pack"));
+            assert!(instruction.contains("orbit.graph.search"));
+            assert!(instruction.contains("orbit.graph.show"));
+            assert!(instruction.contains("orbit.graph.overview"));
+            assert!(instruction.contains("orbit.graph.refs"));
+            assert!(instruction.contains("read-only"));
+
+            let tools = activity
+                .spec_config
+                .get("tools")
+                .and_then(serde_json::Value::as_array)
+                .expect("tools")
+                .iter()
+                .map(|value| value.as_str().expect("tool name"))
+                .collect::<Vec<_>>();
+            assert!(tools.contains(&"orbit.task.show"));
+            assert!(tools.contains(&"orbit.graph.pack"));
+            assert!(tools.contains(&"orbit.graph.search"));
+            assert!(tools.contains(&"orbit.graph.show"));
+            assert!(tools.contains(&"orbit.graph.overview"));
+            assert!(tools.contains(&"orbit.graph.refs"));
+            assert!(tools.contains(&"fs.read"));
+            assert!(!tools.contains(&"orbit.graph.write"));
+
+            let skills = activity
+                .spec_config
+                .get("skill_refs")
+                .and_then(serde_json::Value::as_array)
+                .expect("skill refs")
+                .iter()
+                .map(|value| value.as_str().expect("skill name"))
+                .collect::<Vec<_>>();
+            assert!(skills.contains(&"orbit-graph"));
+        }
     }
 }

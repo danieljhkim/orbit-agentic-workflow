@@ -48,9 +48,10 @@ pub use agent_pair::{
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
 pub use duel::{
-    Ambiguity, ArbiterVerdict, Cost, Decision, DuelRun, ImplementerStats, Outcome,
-    PerCommentVerdict, ReviewerStats, RoleAssignment, Roles, Scores, Severity, TaskClass,
-    TaskScope, ValidIssuesBySeverity, Verdict,
+    Ambiguity, ArbiterVerdict, Cost, Decision, DuelRun, EfficiencyMetrics, ImplementerStats,
+    Outcome, PerCommentVerdict, PlannerSlot, PlanningDuelRun, PlanningEfficiency, PlanningOutcome,
+    PlanningRoleAssignment, PlanningRoles, ReviewerStats, RoleAssignment, Roles, Scores, Severity,
+    TaskClass, TaskScope, ValidIssuesBySeverity, Verdict,
 };
 pub use error::OrbitError;
 pub use event::OrbitEvent;

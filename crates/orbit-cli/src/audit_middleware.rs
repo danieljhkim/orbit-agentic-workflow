@@ -318,6 +318,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             use crate::command::duel::DuelSubcommand;
             let (sub, target_id) = match &cmd.command {
                 DuelSubcommand::Run(args) => ("run", args.task_id.as_deref()),
+                DuelSubcommand::Plan(args) => ("plan", Some(args.task_id.as_str())),
                 DuelSubcommand::Score(_) => ("score", None),
                 DuelSubcommand::List(_) => ("list", None),
                 DuelSubcommand::Show(args) => ("show", args.run_id.as_deref()),
