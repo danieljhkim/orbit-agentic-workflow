@@ -34,15 +34,33 @@ job:
       condition: on_success
       timeout_seconds: 7200
 
-    # 4. Agent verifies and wraps up (runs always, even on worker failure).
+    # 4. Commit each completed task separately from stored task artifacts.
+    - target_type: activity
+      target_id: commit_task_artifact_changes
+      condition: on_success
+      timeout_seconds: 300
+
+    # 5. Agent verifies and wraps up (runs always, even on worker failure).
     - target_type: activity
       target_id: finalize_tasks
       agent_cli: gemini
       condition: always
       timeout_seconds: 3600
 
-    # 5. Commit all changes on main (no PR).
+    # 6. Commit finalize-only follow-up edits that still map cleanly to task artifacts.
+    - target_type: activity
+      target_id: commit_finalize_artifact_changes
+      condition: on_success
+      timeout_seconds: 300
+
+    # 7. Catch-all safety net: commit any leftover shared-worktree changes.
     - target_type: activity
       target_id: commit_batch_changes
       condition: on_success
       timeout_seconds: 300
+
+    # 8. Fast-forward the requested base branch to include the shared worktree history.
+    - target_type: activity
+      target_id: merge_batch_worktree_into_base
+      condition: on_success
+      timeout_seconds: 120

@@ -10,7 +10,7 @@ activity:
   spec_type: automation
 
   # ---- content ----
-  description: "Stage and commit changes in the shared parallel worktree. Skips silently when clean."
+  description: "Stage and commit any leftover changes in the shared parallel worktree. Skips silently when clean."
 
   # ---- interface ----
   input_schema_json:

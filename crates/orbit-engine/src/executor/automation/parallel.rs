@@ -247,6 +247,7 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         "succeeded": succeeded,
         "failed": failed,
         "skipped": 0,
+        "workspace_path": shared_worktree_str,
         "completed_task_ids": completed_task_ids,
         "failures": failures,
     }))

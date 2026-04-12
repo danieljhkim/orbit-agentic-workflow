@@ -5,6 +5,7 @@ mod commit_and_pr;
 mod freshness;
 mod git;
 mod input;
+mod merge_worktree;
 mod parallel;
 mod pr;
 mod pull;
@@ -26,9 +27,12 @@ use crate::context::{ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EngineHost, Exec
 
 const AUTOMATION_UPDATE_TASK: &str = "update_task";
 const AUTOMATION_RUN_PARALLEL_TASK_PIPELINE: &str = "run_parallel_task_pipeline";
+const AUTOMATION_COMMIT_TASK_ARTIFACT_CHANGES: &str = "commit_task_artifact_changes";
+const AUTOMATION_COMMIT_FINALIZE_ARTIFACT_CHANGES: &str = "commit_finalize_artifact_changes";
 const AUTOMATION_COMMIT_BATCH_CHANGES: &str = "commit_batch_changes";
 const AUTOMATION_OPEN_BATCH_PR: &str = "open_batch_pr";
 const AUTOMATION_COMMIT_AND_OPEN_BATCH_PR: &str = "commit_and_open_batch_pr";
+const AUTOMATION_MERGE_BATCH_WORKTREE_INTO_BASE: &str = "merge_batch_worktree_into_base";
 const AUTOMATION_SNAPSHOT_BATCH_STATE: &str = "snapshot_batch_state";
 const AUTOMATION_BOOTSTRAP_BATCH_REVIEW: &str = "bootstrap_batch_review";
 
@@ -97,9 +101,18 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
         AUTOMATION_RUN_PARALLEL_TASK_PIPELINE => {
             parallel::run_parallel_task_pipeline(host, input, debug)
         }
+        AUTOMATION_COMMIT_TASK_ARTIFACT_CHANGES => {
+            commit::commit_task_artifact_changes(host, input)
+        }
+        AUTOMATION_COMMIT_FINALIZE_ARTIFACT_CHANGES => {
+            commit::commit_finalize_artifact_changes(host, input)
+        }
         AUTOMATION_COMMIT_BATCH_CHANGES => commit::commit_batch_changes(host, input),
         AUTOMATION_OPEN_BATCH_PR => pr::open_batch_pr(host, input),
         AUTOMATION_COMMIT_AND_OPEN_BATCH_PR => commit_and_pr::commit_and_open_batch_pr(host, input),
+        AUTOMATION_MERGE_BATCH_WORKTREE_INTO_BASE => {
+            merge_worktree::merge_batch_worktree_into_base(host, input)
+        }
         AUTOMATION_SNAPSHOT_BATCH_STATE => snapshot::snapshot_batch_state(host, input),
         AUTOMATION_BOOTSTRAP_BATCH_REVIEW => pr::bootstrap_batch_review(host, input),
 

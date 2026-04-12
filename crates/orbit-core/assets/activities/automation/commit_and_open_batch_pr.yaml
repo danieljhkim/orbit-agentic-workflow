@@ -3,7 +3,7 @@ created_by: system
 activity:
   id: commit_and_open_batch_pr
   spec_type: automation
-  description: "Stage and commit all changes in the shared parallel worktree, then push the branch and open a single PR for the entire batch."
+  description: "Stage and commit any leftover changes in the shared parallel worktree, then push the branch and open a single PR for the entire batch."
   input_schema_json:
     type: object
     required:

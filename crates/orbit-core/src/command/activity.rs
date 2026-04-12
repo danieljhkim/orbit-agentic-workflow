@@ -28,6 +28,14 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/automation/parallel_dispatch_tasks.yaml"),
     ),
     (
+        "commit_task_artifact_changes",
+        include_str!("../../assets/activities/automation/commit_task_artifact_changes.yaml"),
+    ),
+    (
+        "commit_finalize_artifact_changes",
+        include_str!("../../assets/activities/automation/commit_finalize_artifact_changes.yaml"),
+    ),
+    (
         "commit_and_open_batch_pr",
         include_str!("../../assets/activities/automation/commit_and_open_batch_pr.yaml"),
     ),
@@ -74,6 +82,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
     (
         "commit_batch_changes",
         include_str!("../../assets/activities/automation/commit_batch_changes.yaml"),
+    ),
+    (
+        "merge_batch_worktree_into_base",
+        include_str!("../../assets/activities/automation/merge_batch_worktree_into_base.yaml"),
     ),
     (
         "pull_batch_changes",
