@@ -277,16 +277,8 @@ fn path_matches_scope(path: &str, scope: &str) -> bool {
 }
 
 fn task_commit_message(task: &Task) -> String {
-    let summary =
-        execution_summary_paragraph(task).unwrap_or_else(|| task.title.trim().to_string());
-    let subject = single_line_summary(&summary);
-    let mut message = format!(
-        "{}: {} [{}]",
-        conventional_prefix(task.task_type),
-        subject,
-        task.id
-    );
-    if summary != subject {
+    let mut message = format!("[{}] {}", task.id, task.title.trim());
+    if let Some(summary) = execution_summary_paragraph(task) {
         message.push_str("\n\n");
         message.push_str(&summary);
     }
@@ -635,7 +627,7 @@ mod tests {
         assert_eq!(result.get("skipped_task_ids"), Some(&json!(["T3"])));
         assert_eq!(
             git_stdout(&repo_root, &["log", "--pretty=%s", "-2"]),
-            "fix: Fix task two edge case. [T2]\nfeat: Add task one flow. [T1]"
+            "[T2] Task T2\n[T1] Task T1"
         );
         assert_eq!(git_stdout(&repo_root, &["status", "--short"]), "");
     }
@@ -703,6 +695,22 @@ mod tests {
         assert_eq!(
             execution_summary_paragraph(&task).as_deref(),
             Some("Added retry logic to batch dispatch.")
+        );
+    }
+
+    #[test]
+    fn task_commit_message_uses_title_subject_and_summary_body() {
+        let task = sample_task(
+            "T1",
+            "batch-1",
+            TaskType::Feature,
+            vec!["a.txt"],
+            "Added retry logic to batch dispatch.",
+        );
+
+        assert_eq!(
+            task_commit_message(&task),
+            "[T1] Task T1\n\nAdded retry logic to batch dispatch."
         );
     }
 
