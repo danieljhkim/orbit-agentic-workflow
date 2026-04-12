@@ -354,6 +354,21 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Scoreboard(cmd) => {
+            use crate::command::scoreboard::ScoreboardSubcommand;
+            let sub = match &cmd.command {
+                ScoreboardSubcommand::Summary(_) => "summary",
+            };
+            CommandMeta {
+                command: "scoreboard".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("scoreboard".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Graph(cmd) => {
             let sub = match &cmd.subcommand {
                 crate::command::graph::GraphSubcommand::Build(_) => "build",
@@ -400,6 +415,9 @@ mod tests {
     use crate::command::Commands;
     use crate::command::duel::{DuelCommand, DuelListArgs, DuelSubcommand};
     use crate::command::metrics::{MetricsCommand, MetricsKnowledgeArgs, MetricsSubcommand};
+    use crate::command::scoreboard::{
+        ScoreboardCommand, ScoreboardSubcommand, ScoreboardSummaryArgs,
+    };
     use crate::command::ship::{ShipCommand, ShipRunArgs, ShipSubcommand};
 
     #[test]
@@ -450,5 +468,15 @@ mod tests {
 
         assert_eq!(meta.command, "duel");
         assert_eq!(meta.subcommand.as_deref(), Some("list"));
+    }
+
+    #[test]
+    fn extract_command_meta_tags_scoreboard_summary() {
+        let meta = extract_command_meta(&Commands::Scoreboard(ScoreboardCommand {
+            command: ScoreboardSubcommand::Summary(ScoreboardSummaryArgs { json: true }),
+        }));
+
+        assert_eq!(meta.command, "scoreboard");
+        assert_eq!(meta.subcommand.as_deref(), Some("summary"));
     }
 }

@@ -1294,6 +1294,43 @@ mod tests {
     }
 
     #[test]
+    fn sync_general_comment_skips_scoreboard_when_scoring_disabled() {
+        let repo_dir = tempdir().expect("repo dir");
+        let scoreboard_dir = tempdir().expect("scoreboard dir");
+        let mut task = sample_task("T20260402-0425", repo_dir.path());
+        task.review_threads = vec![review_thread(
+            "rt-1",
+            None,
+            None,
+            vec![review_message(
+                "rm-1",
+                "claude / sonnet",
+                "Please add a behavior-level sync test.",
+                None,
+            )],
+            None,
+        )];
+
+        let host = TestHost {
+            task,
+            scoreboard_dir: scoreboard_dir.path().to_path_buf(),
+            scoring_enabled: false,
+            applied_updates: Mutex::new(Vec::new()),
+        };
+        let gh = FakeGhClient::new(Ok(HashMap::new())).with_general_comment_ids([123]);
+
+        let synced = sync_task_review_to_github_with_client(&host, &gh, "T20260402-0425")
+            .expect("sync succeeds");
+
+        assert_eq!(synced, 1);
+        assert!(!scoreboard_dir.path().join("pr.json").exists());
+
+        let threads = updated_threads(&host);
+        assert_eq!(threads[0].github_thread_id, Some(123));
+        assert_eq!(threads[0].messages[0].github_comment_id, Some(123));
+    }
+
+    #[test]
     fn sync_inline_comment_persists_github_ids() {
         let repo_dir = tempdir().expect("repo dir");
         let scoreboard_dir = tempdir().expect("scoreboard dir");

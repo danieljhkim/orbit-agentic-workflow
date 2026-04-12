@@ -111,9 +111,8 @@ pub(super) fn identity_params() -> Vec<ToolParam> {
         },
         ToolParam {
             name: "model".to_string(),
-            description:
-                "LLM model identifier (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
-                    .to_string(),
+            description: "LLM model identifier (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
+                .to_string(),
             param_type: "string".to_string(),
             required: false,
         },

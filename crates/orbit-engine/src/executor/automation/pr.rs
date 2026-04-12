@@ -872,6 +872,35 @@ mod tests {
     }
 
     #[test]
+    fn merge_batch_pr_skips_scoreboard_when_scoring_disabled() {
+        let repo = init_batch_merge_repo();
+        let repo_root = repo.path().to_string_lossy().to_string();
+        let scoreboard_dir = tempfile::tempdir().expect("scoreboard dir");
+
+        let mut task = sample_task("T20260330-063823", "batch-1", &repo_root, "76");
+        task.actor_identity = ActorIdentity::agent("codex", "gpt-5.4");
+
+        let host = TestHost {
+            tasks: vec![task],
+            merge_inputs: Mutex::new(Vec::new()),
+            task_updates: Mutex::new(Vec::new()),
+            scoreboard_dir: scoreboard_dir.path().to_path_buf(),
+            scoring_enabled: false,
+        };
+
+        merge_batch_pr(
+            &host,
+            &json!({
+                "run_id": "batch-1",
+                "base": "main",
+            }),
+        )
+        .expect("merge_batch_pr succeeds");
+
+        assert!(!scoreboard_dir.path().join("pr.json").exists());
+    }
+
+    #[test]
     fn task_required_revision_detects_review_rejection_history() {
         let mut task = sample_task("T20260330-063823", "batch-1", "/tmp", "76");
         task.history.push(TaskHistoryEntry {

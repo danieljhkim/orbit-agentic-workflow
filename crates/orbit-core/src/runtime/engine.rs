@@ -5,9 +5,9 @@ use orbit_engine::{
     execute_single_attempt, validate_activity_input_schema,
 };
 use orbit_store::{
-    ActivityInvocationMetrics, InvocationInsertParams, InvocationQuery, InvocationRecord,
-    JobRunStepParams, Store, TaskInvocationMetrics, TaskUpdateParams as StoreTaskUpdateParams,
-    ToolInvocationMetrics, token_scoreboard,
+    ActivityInvocationMetrics, AgentInvocationMetrics, InvocationInsertParams, InvocationQuery,
+    InvocationRecord, JobRunStepParams, Store, TaskInvocationMetrics,
+    TaskUpdateParams as StoreTaskUpdateParams, ToolInvocationMetrics, token_scoreboard,
 };
 use orbit_tools::ToolContext;
 use orbit_types::{
@@ -252,6 +252,10 @@ impl OrbitRuntime {
         open_invocation_store(self)?.list_activity_invocation_metrics()
     }
 
+    pub fn agent_invocation_metrics(&self) -> Result<Vec<AgentInvocationMetrics>, OrbitError> {
+        open_invocation_store(self)?.list_agent_invocation_metrics()
+    }
+
     pub fn task_invocation_metrics(
         &self,
         task_id: &str,
@@ -261,6 +265,23 @@ impl OrbitRuntime {
 
     pub fn tool_invocation_metrics(&self) -> Result<Vec<ToolInvocationMetrics>, OrbitError> {
         open_invocation_store(self)?.list_tool_invocation_metrics()
+    }
+
+    pub fn generate_scoreboard_summary(
+        &self,
+    ) -> Result<orbit_store::scoreboard_summary::ScoreboardSummary, OrbitError> {
+        let tasks = self.list_tasks()?;
+        let summary = orbit_store::scoreboard_summary::generate_summary(
+            &self.paths().scoreboard_dir,
+            &tasks,
+        )?;
+        let _ =
+            orbit_store::scoreboard_summary::write_summary(&self.paths().scoreboard_dir, &summary)?;
+        Ok(summary)
+    }
+
+    pub fn scoreboard_summary_path(&self) -> std::path::PathBuf {
+        orbit_store::scoreboard_summary::summary_path(&self.paths().scoreboard_dir)
     }
 
     pub fn invocation_records(

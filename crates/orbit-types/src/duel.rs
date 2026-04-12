@@ -367,8 +367,10 @@ pub struct PlanningDuelRun {
     pub task_id: String,
     pub completed_at: chrono::DateTime<chrono::Utc>,
     pub roles: PlanningRoles,
-    pub planner_a_plan: String,
-    pub planner_b_plan: String,
+    /// Artifact path for planner A's proposal markdown.
+    pub planner_a_artifact_path: String,
+    /// Artifact path for planner B's proposal markdown.
+    pub planner_b_artifact_path: String,
     pub outcome: PlanningOutcome,
     pub efficiency: PlanningEfficiency,
 }
@@ -623,8 +625,8 @@ mod tests {
                     model: "gemini-3.1-pro-preview".into(),
                 },
             },
-            planner_a_plan: "Plan A".into(),
-            planner_b_plan: "Plan B".into(),
+            planner_a_artifact_path: "planning-duel/claude-opus.md".into(),
+            planner_b_artifact_path: "planning-duel/codex-gpt-5.4.md".into(),
             outcome: PlanningOutcome {
                 winner: PlannerSlot::PlannerB,
                 arbiter_rationale: "Plan B has the smaller blast radius.".into(),

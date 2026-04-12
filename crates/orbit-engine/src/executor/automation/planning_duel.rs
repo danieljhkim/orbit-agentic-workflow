@@ -13,9 +13,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::Utc;
 use orbit_store::{InvocationRecord, planning_duel_scoreboard};
 use orbit_types::{
-    Activity, EfficiencyMetrics, OrbitError, PlannerSlot, PlanningDuelRun,
-    PlanningEfficiency, PlanningOutcome, PlanningRoleAssignment, PlanningRoles, TaskArtifact,
-    TaskComment, TaskStatus, TokenUsage, all_agent_families, resolve_agent_model_pair,
+    Activity, EfficiencyMetrics, OrbitError, PlannerSlot, PlanningDuelRun, PlanningEfficiency,
+    PlanningOutcome, PlanningRoleAssignment, PlanningRoles, TaskArtifact, TaskComment, TaskStatus,
+    TokenUsage, all_agent_families, resolve_agent_model_pair,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1011,11 +1011,11 @@ pub(super) fn record_planning_duel_scores<H: RuntimeHost + TaskHost + ?Sized>(
             roles.arbiter.model
         )));
     }
-    let planner_a_plan = plan_artifact_for_assignment(&plan_artifacts, &roles.planner_a)?
-        .content
+    let planner_a_artifact_path = plan_artifact_for_assignment(&plan_artifacts, &roles.planner_a)?
+        .path
         .clone();
-    let planner_b_plan = plan_artifact_for_assignment(&plan_artifacts, &roles.planner_b)?
-        .content
+    let planner_b_artifact_path = plan_artifact_for_assignment(&plan_artifacts, &roles.planner_b)?
+        .path
         .clone();
 
     let completed_at = Utc::now();
@@ -1024,8 +1024,8 @@ pub(super) fn record_planning_duel_scores<H: RuntimeHost + TaskHost + ?Sized>(
         task_id: task_id.to_string(),
         completed_at,
         roles,
-        planner_a_plan,
-        planner_b_plan,
+        planner_a_artifact_path,
+        planner_b_artifact_path,
         outcome: PlanningOutcome {
             winner: winner_slot,
             arbiter_rationale: winner.arbiter_rationale,
@@ -1809,8 +1809,8 @@ mod tests {
         assert_eq!(runs[0].outcome.winner, orbit_types::PlannerSlot::PlannerB);
         assert_eq!(runs[0].roles.planner_b.agent, "claude");
         assert_eq!(
-            runs[0].planner_b_plan,
-            "*authored by: claude / opus*\n## Plan\n- planner b"
+            runs[0].planner_b_artifact_path,
+            "planning-duel/claude-opus.md"
         );
         assert_eq!(runs[0].efficiency.planner_a.token_total(), Some(30));
         assert_eq!(runs[0].efficiency.planner_b.byte_proxy_total(), Some(4096));

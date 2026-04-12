@@ -320,6 +320,8 @@ fn print_activity_rows(rows: &[ActivityInvocationMetrics]) {
     use comfy_table::Cell;
     let mut table = crate::output::table::build_table(&[
         "ACTIVITY",
+        "AGENT",
+        "MODEL",
         "INVOCATIONS",
         "AVG",
         "P50",
@@ -334,6 +336,8 @@ fn print_activity_rows(rows: &[ActivityInvocationMetrics]) {
     for row in rows {
         table.add_row(vec![
             Cell::new(&row.activity_id),
+            Cell::new(&row.agent),
+            Cell::new(row.model.as_deref().unwrap_or("-")),
             Cell::new(row.invocation_count),
             Cell::new(format_decimal(row.avg_tokens)),
             Cell::new(row.p50_tokens),

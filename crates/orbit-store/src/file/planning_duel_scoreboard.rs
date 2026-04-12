@@ -244,8 +244,8 @@ mod tests {
                     model: "gemini-3.1-pro-preview".into(),
                 },
             },
-            planner_a_plan: "Plan A".into(),
-            planner_b_plan: "Plan B".into(),
+            planner_a_artifact_path: "planning-duel/claude-opus.md".into(),
+            planner_b_artifact_path: "planning-duel/codex-gpt-5.4.md".into(),
             outcome: PlanningOutcome {
                 winner,
                 arbiter_rationale: "Plan B has the smaller blast radius.".into(),

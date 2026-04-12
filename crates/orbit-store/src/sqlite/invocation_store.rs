@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,24 @@ pub struct InvocationRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ActivityInvocationMetrics {
     pub activity_id: String,
+    pub agent: String,
+    pub model: Option<String>,
+    pub invocation_count: u64,
+    pub total_input_tokens: u64,
+    pub total_cache_read_tokens: u64,
+    pub total_cache_create_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_tokens: u64,
+    pub avg_tokens: f64,
+    pub p50_tokens: u64,
+    pub p95_tokens: u64,
+    pub total_tool_calls: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentInvocationMetrics {
+    pub agent: String,
+    pub model: Option<String>,
     pub invocation_count: u64,
     pub total_input_tokens: u64,
     pub total_cache_read_tokens: u64,
@@ -95,13 +113,39 @@ pub struct ToolInvocationMetrics {
 }
 
 #[derive(Debug, Clone)]
-struct ActivitySample {
+struct InvocationSample {
     activity_id: String,
+    agent: String,
+    model: Option<String>,
     input_tokens: u64,
     cache_read_tokens: u64,
     cache_create_tokens: u64,
     output_tokens: u64,
     tool_call_count: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct MetricBucket {
+    invocation_count: u64,
+    total_input_tokens: u64,
+    total_cache_read_tokens: u64,
+    total_cache_create_tokens: u64,
+    total_output_tokens: u64,
+    total_tool_calls: u64,
+    totals: Vec<u64>,
+}
+
+impl MetricBucket {
+    fn add(&mut self, sample: &InvocationSample) {
+        self.invocation_count += 1;
+        self.total_input_tokens += sample.input_tokens;
+        self.total_cache_read_tokens += sample.cache_read_tokens;
+        self.total_cache_create_tokens += sample.cache_create_tokens;
+        self.total_output_tokens += sample.output_tokens;
+        self.total_tool_calls += sample.tool_call_count;
+        self.totals
+            .push(sample.input_tokens.saturating_add(sample.output_tokens));
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -314,43 +358,35 @@ impl Store {
     pub fn list_activity_invocation_metrics(
         &self,
     ) -> Result<Vec<ActivityInvocationMetrics>, OrbitError> {
-        let samples = self.load_activity_samples()?;
-        let mut grouped: HashMap<String, Vec<ActivitySample>> = HashMap::new();
-        for sample in samples {
-            grouped
-                .entry(sample.activity_id.clone())
-                .or_default()
-                .push(sample);
-        }
-
+        let samples = self.load_invocation_samples()?;
+        let grouped = self.group_invocation_metrics(samples, |sample| {
+            (
+                sample.activity_id.clone(),
+                sample.agent.clone(),
+                sample.model.clone(),
+            )
+        });
         let mut rows = grouped
             .into_iter()
-            .map(|(activity_id, samples)| {
-                let total_input_tokens = samples.iter().map(|s| s.input_tokens).sum::<u64>();
-                let total_cache_read_tokens =
-                    samples.iter().map(|s| s.cache_read_tokens).sum::<u64>();
-                let total_cache_create_tokens =
-                    samples.iter().map(|s| s.cache_create_tokens).sum::<u64>();
-                let total_output_tokens = samples.iter().map(|s| s.output_tokens).sum::<u64>();
-                let total_tool_calls = samples.iter().map(|s| s.tool_call_count).sum::<u64>();
-                let mut totals = samples
-                    .iter()
-                    .map(|sample| sample.input_tokens.saturating_add(sample.output_tokens))
-                    .collect::<Vec<_>>();
+            .map(|((activity_id, agent, model), bucket)| {
+                let mut totals = bucket.totals;
                 totals.sort_unstable();
-
                 ActivityInvocationMetrics {
                     activity_id,
-                    invocation_count: totals.len() as u64,
-                    total_input_tokens,
-                    total_cache_read_tokens,
-                    total_cache_create_tokens,
-                    total_output_tokens,
-                    total_tokens: total_input_tokens.saturating_add(total_output_tokens),
+                    agent,
+                    model,
+                    invocation_count: bucket.invocation_count,
+                    total_input_tokens: bucket.total_input_tokens,
+                    total_cache_read_tokens: bucket.total_cache_read_tokens,
+                    total_cache_create_tokens: bucket.total_cache_create_tokens,
+                    total_output_tokens: bucket.total_output_tokens,
+                    total_tokens: bucket
+                        .total_input_tokens
+                        .saturating_add(bucket.total_output_tokens),
                     avg_tokens: average(&totals),
                     p50_tokens: percentile(&totals, 50),
                     p95_tokens: percentile(&totals, 95),
-                    total_tool_calls,
+                    total_tool_calls: bucket.total_tool_calls,
                 }
             })
             .collect::<Vec<_>>();
@@ -360,6 +396,47 @@ impl Store {
                 .total_tokens
                 .cmp(&left.total_tokens)
                 .then_with(|| left.activity_id.cmp(&right.activity_id))
+                .then_with(|| left.agent.cmp(&right.agent))
+                .then_with(|| left.model.cmp(&right.model))
+        });
+        Ok(rows)
+    }
+
+    pub fn list_agent_invocation_metrics(&self) -> Result<Vec<AgentInvocationMetrics>, OrbitError> {
+        let samples = self.load_invocation_samples()?;
+        let grouped = self.group_invocation_metrics(samples, |sample| {
+            (sample.agent.clone(), sample.model.clone())
+        });
+        let mut rows = grouped
+            .into_iter()
+            .map(|((agent, model), bucket)| {
+                let mut totals = bucket.totals;
+                totals.sort_unstable();
+                AgentInvocationMetrics {
+                    agent,
+                    model,
+                    invocation_count: bucket.invocation_count,
+                    total_input_tokens: bucket.total_input_tokens,
+                    total_cache_read_tokens: bucket.total_cache_read_tokens,
+                    total_cache_create_tokens: bucket.total_cache_create_tokens,
+                    total_output_tokens: bucket.total_output_tokens,
+                    total_tokens: bucket
+                        .total_input_tokens
+                        .saturating_add(bucket.total_output_tokens),
+                    avg_tokens: average(&totals),
+                    p50_tokens: percentile(&totals, 50),
+                    p95_tokens: percentile(&totals, 95),
+                    total_tool_calls: bucket.total_tool_calls,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        rows.sort_by(|left, right| {
+            right
+                .total_tokens
+                .cmp(&left.total_tokens)
+                .then_with(|| left.agent.cmp(&right.agent))
+                .then_with(|| left.model.cmp(&right.model))
         });
         Ok(rows)
     }
@@ -519,7 +596,7 @@ impl Store {
         Ok(grouped)
     }
 
-    fn load_activity_samples(&self) -> Result<Vec<ActivitySample>, OrbitError> {
+    fn load_invocation_samples(&self) -> Result<Vec<InvocationSample>, OrbitError> {
         let conn = self
             .conn
             .lock()
@@ -527,29 +604,48 @@ impl Store {
         let mut stmt = conn
             .prepare(
                 r#"
-                SELECT activity_id, input_tokens, cache_read_tokens, cache_create_tokens,
-                       output_tokens, tool_call_count
+                SELECT activity_id, agent, model, input_tokens, cache_read_tokens,
+                       cache_create_tokens, output_tokens, tool_call_count
                 FROM invocations
-                ORDER BY activity_id ASC, id ASC
+                ORDER BY activity_id ASC, agent ASC, model ASC, id ASC
                 "#,
             )
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
         let rows = stmt
             .query_map([], |row| {
-                Ok(ActivitySample {
+                Ok(InvocationSample {
                     activity_id: row.get(0)?,
-                    input_tokens: row.get::<_, i64>(1)? as u64,
-                    cache_read_tokens: row.get::<_, i64>(2)? as u64,
-                    cache_create_tokens: row.get::<_, i64>(3)? as u64,
-                    output_tokens: row.get::<_, i64>(4)? as u64,
-                    tool_call_count: row.get::<_, i64>(5)? as u64,
+                    agent: row.get(1)?,
+                    model: row.get(2)?,
+                    input_tokens: row.get::<_, i64>(3)? as u64,
+                    cache_read_tokens: row.get::<_, i64>(4)? as u64,
+                    cache_create_tokens: row.get::<_, i64>(5)? as u64,
+                    output_tokens: row.get::<_, i64>(6)? as u64,
+                    tool_call_count: row.get::<_, i64>(7)? as u64,
                 })
             })
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    fn group_invocation_metrics<K, F>(
+        &self,
+        samples: Vec<InvocationSample>,
+        key_fn: F,
+    ) -> BTreeMap<K, MetricBucket>
+    where
+        K: Ord,
+        F: Fn(&InvocationSample) -> K,
+    {
+        let mut grouped: BTreeMap<K, MetricBucket> = BTreeMap::new();
+        for sample in samples {
+            let key = key_fn(&sample);
+            grouped.entry(key).or_default().add(&sample);
+        }
+        grouped
     }
 
     fn list_task_invocation_metrics(
@@ -829,5 +925,105 @@ mod tests {
         assert_eq!(row.task_ids, vec!["task-z".to_string()]);
         assert_eq!(row.tool_calls[0].tool_name, "fs.read");
         assert_eq!(row.tool_calls[0].result_bytes, 42);
+    }
+
+    #[test]
+    fn list_activity_and_agent_metrics_group_by_identity() {
+        let store = Store::open_in_memory().expect("store");
+        seed_raw_invocation(
+            &store,
+            "2026-04-11T12:00:00Z",
+            "run-1",
+            "activity-a",
+            "claude",
+            Some("opus"),
+            &["task-a"],
+            &[("fs.read", 12, 0)],
+            TokenUsage {
+                input: 10,
+                cache_read: 0,
+                cache_create: 0,
+                output: 3,
+            },
+            55,
+        );
+        seed_raw_invocation(
+            &store,
+            "2026-04-11T12:05:00Z",
+            "run-2",
+            "activity-a",
+            "codex",
+            Some("gpt-5.4"),
+            &["task-b"],
+            &[("exec", 99, 0)],
+            TokenUsage {
+                input: 7,
+                cache_read: 1,
+                cache_create: 0,
+                output: 2,
+            },
+            77,
+        );
+        seed_raw_invocation(
+            &store,
+            "2026-04-11T12:10:00Z",
+            "run-3",
+            "activity-b",
+            "claude",
+            Some("opus"),
+            &["task-c"],
+            &[("fs.read", 4, 0)],
+            TokenUsage {
+                input: 5,
+                cache_read: 0,
+                cache_create: 0,
+                output: 1,
+            },
+            31,
+        );
+
+        let activity_rows = store
+            .list_activity_invocation_metrics()
+            .expect("activity metrics");
+        assert_eq!(activity_rows.len(), 3);
+        let claude_activity = activity_rows
+            .iter()
+            .find(|row| {
+                row.activity_id == "activity-a"
+                    && row.agent == "claude"
+                    && row.model.as_deref() == Some("opus")
+            })
+            .expect("claude activity");
+        assert_eq!(claude_activity.invocation_count, 1);
+        assert_eq!(claude_activity.total_tokens, 13);
+
+        let codex_activity = activity_rows
+            .iter()
+            .find(|row| {
+                row.activity_id == "activity-a"
+                    && row.agent == "codex"
+                    && row.model.as_deref() == Some("gpt-5.4")
+            })
+            .expect("codex activity");
+        assert_eq!(codex_activity.invocation_count, 1);
+        assert_eq!(codex_activity.total_tokens, 9);
+
+        let agent_rows = store
+            .list_agent_invocation_metrics()
+            .expect("agent metrics");
+        assert_eq!(agent_rows.len(), 2);
+        let claude_agent = agent_rows
+            .iter()
+            .find(|row| row.agent == "claude" && row.model.as_deref() == Some("opus"))
+            .expect("claude agent");
+        assert_eq!(claude_agent.invocation_count, 2);
+        assert_eq!(claude_agent.total_tokens, 19);
+
+        let codex_agent = agent_rows
+            .iter()
+            .find(|row| row.agent == "codex" && row.model.as_deref() == Some("gpt-5.4"))
+            .expect("codex agent");
+        assert_eq!(codex_agent.invocation_count, 1);
+        assert_eq!(codex_agent.total_tokens, 9);
     }
 }

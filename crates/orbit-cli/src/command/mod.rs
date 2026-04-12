@@ -7,6 +7,7 @@ pub mod init;
 pub mod job;
 pub(crate) mod job_run_support;
 pub mod metrics;
+pub mod scoreboard;
 pub mod ship;
 pub mod skill;
 pub mod task;
@@ -50,6 +51,7 @@ Manage work:
 Inspect:
   audit      Query the audit event log
   metrics    Inspect token, tool-call, and knowledge-pack metrics
+  scoreboard Generate read-only scoreboard summaries
 
 Options:
 {options}"
@@ -85,6 +87,7 @@ pub enum Commands {
     // ── inspect ──
     Audit(audit::AuditCommand),
     Metrics(metrics::MetricsCommand),
+    Scoreboard(scoreboard::ScoreboardCommand),
 }
 
 impl Execute for Commands {
@@ -103,6 +106,7 @@ impl Execute for Commands {
             Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
+            Commands::Scoreboard(cmd) => cmd.execute(runtime),
         }
     }
 }

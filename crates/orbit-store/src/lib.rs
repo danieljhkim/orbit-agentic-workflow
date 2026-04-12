@@ -47,6 +47,13 @@ pub mod pr_scoreboard {
     };
 }
 
+pub mod scoreboard_summary {
+    pub use crate::file::scoreboard_summary::{
+        AgentSummary, DuelSummary, FrictionSummary, PrSummary, ScoreboardSummary, TokenSummary,
+        generate_summary, summary_path, write_summary,
+    };
+}
+
 pub mod duel_scoreboard {
     pub use crate::file::duel_scoreboard::{
         AggregateFilter, AggregateRow, Aggregates, ReviewerTally, RoleAxis, SegmentBy, aggregate,
@@ -89,8 +96,8 @@ pub use backend::{
     task_store_resolved, tool_store_sqlite,
 };
 pub use invocation_store_impl::{
-    ActivityInvocationMetrics, InvocationInsertParams, InvocationQuery, InvocationRecord,
-    InvocationToolCallRecord, TaskInvocationMetrics, ToolInvocationMetrics,
+    ActivityInvocationMetrics, AgentInvocationMetrics, InvocationInsertParams, InvocationQuery,
+    InvocationRecord, InvocationToolCallRecord, TaskInvocationMetrics, ToolInvocationMetrics,
 };
 pub use json_schema::{validate_instance_against_schema, validate_schema_document};
 pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
