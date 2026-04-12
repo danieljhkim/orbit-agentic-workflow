@@ -16,6 +16,11 @@ job:
     base: main
     parallelism: 4
   steps:
+    # 0. Refresh knowledge graph so agents get fresh symbol data.
+    - target_type: activity
+      target_id: update_knowledge_graph
+      timeout_seconds: 120
+
     # 1. Select a conflict-free batch, author plans, refine context_files.
     - target_type: activity
       target_id: dispatch_and_plan_batch

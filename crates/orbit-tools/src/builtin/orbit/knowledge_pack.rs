@@ -40,7 +40,20 @@ impl Tool for OrbitKnowledgePackTool {
         let selectors = parse_selector_strings(&input)?;
         let selectors = Selector::parse_many(&selectors)
             .map_err(|error| OrbitError::InvalidInput(error.to_string()))?;
+        let explicit_knowledge_dir = input
+            .get("knowledge_dir")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
         let knowledge_dir = resolve_knowledge_dir(ctx, &input)?;
+
+        // Auto-refresh the knowledge graph if it is stale relative to HEAD.
+        // Skip when an explicit knowledge_dir was provided (caller controls freshness).
+        if !explicit_knowledge_dir {
+            if let Some(repo_path) = ctx.workspace_root.as_deref() {
+                let _ = orbit_knowledge::pipeline::ensure_fresh(&knowledge_dir, repo_path);
+            }
+        }
+
         let working_graph =
             load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())?;
 

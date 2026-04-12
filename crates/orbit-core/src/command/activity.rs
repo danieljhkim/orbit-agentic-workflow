@@ -127,6 +127,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         "arbitrate_review",
         include_str!("../../assets/activities/agent_invoke/arbitrate_review.yaml"),
     ),
+    (
+        "update_knowledge_graph",
+        include_str!("../../assets/activities/automation/update_knowledge_graph.yaml"),
+    ),
 ];
 
 const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "automation"];

@@ -5,6 +5,7 @@ mod commit_and_pr;
 mod freshness;
 mod git;
 mod input;
+mod knowledge;
 mod merge_worktree;
 mod parallel;
 mod pr;
@@ -46,6 +47,7 @@ const AUTOMATION_SYNC_BATCH_REVIEW_TO_GITHUB: &str = "sync_batch_review_to_githu
 const AUTOMATION_PULL_BATCH_CHANGES: &str = "pull_batch_changes";
 const AUTOMATION_PUSH_BATCH_CHANGES: &str = "push_batch_changes";
 const AUTOMATION_SETUP_WORKTREE: &str = "setup_worktree";
+const AUTOMATION_UPDATE_KNOWLEDGE_GRAPH: &str = "update_knowledge_graph";
 
 #[derive(Debug, Clone, Deserialize)]
 struct AutomationSpec {
@@ -133,6 +135,7 @@ pub fn execute<H: crate::context::RuntimeHost + crate::context::TaskHost + Sync 
             check_duel_review_decision::check_duel_review_decision(input)
         }
         AUTOMATION_RECORD_DUEL_SCORES => record_duel_scores::record_duel_scores(host, input),
+        AUTOMATION_UPDATE_KNOWLEDGE_GRAPH => knowledge::update_knowledge_graph(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "unsupported automation action '{other}'"
         ))),
