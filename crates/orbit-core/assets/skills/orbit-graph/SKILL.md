@@ -1,6 +1,6 @@
 ---
 name: orbit-graph
-description: Use when navigating, inspecting, or editing code via the knowledge graph instead of raw file reads.
+description: Use when navigating, inspecting, or editing orbit-harnessed codebase via the knowledge graph instead of raw file reads.
 ---
 
 # Orbit Graph
