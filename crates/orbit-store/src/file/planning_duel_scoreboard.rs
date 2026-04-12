@@ -375,7 +375,7 @@ mod tests {
         let row = &agg.rows[0];
         assert_eq!(row.role, "planner_b");
         assert_eq!(row.points, 0);
-        assert_eq!(row.avg_token_total.is_none(), true);
+        assert!(row.avg_token_total.is_none());
         assert_eq!(row.avg_byte_proxy_total, Some(4096.0));
     }
 }

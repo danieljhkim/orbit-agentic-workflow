@@ -48,10 +48,9 @@ impl Tool for OrbitKnowledgePackTool {
 
         // Auto-refresh the knowledge graph if it is stale relative to HEAD.
         // Skip when an explicit knowledge_dir was provided (caller controls freshness).
-        if !explicit_knowledge_dir {
-            if let Some(repo_path) = ctx.workspace_root.as_deref() {
-                let _ = orbit_knowledge::pipeline::ensure_fresh(&knowledge_dir, repo_path);
-            }
+        if !explicit_knowledge_dir && ctx.workspace_root.is_some() {
+            let repo_path = ctx.workspace_root.as_deref().unwrap();
+            let _ = orbit_knowledge::pipeline::ensure_fresh(&knowledge_dir, repo_path);
         }
 
         let working_graph =

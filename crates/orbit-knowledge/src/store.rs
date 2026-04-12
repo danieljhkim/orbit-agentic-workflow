@@ -714,12 +714,7 @@ struct GraphIndexEntry {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use serde_json::json;
-
-    use super::{
-        KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry, KnowledgeStore,
-        task_working_graph_state_path,
-    };
+    use super::{KnowledgeEntryKind, KnowledgeStore, task_working_graph_state_path};
     use crate::error::KnowledgeError;
     use crate::selector::{Selector, SelectorParseError};
 
