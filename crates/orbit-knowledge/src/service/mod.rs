@@ -2,7 +2,10 @@
 
 pub mod lineage;
 
-use std::collections::HashMap;
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+};
 
 use crate::error::KnowledgeError;
 use crate::graph::navigator::{GraphNavigator, GraphNodeRef};
@@ -313,6 +316,7 @@ impl<'a> GraphContextService<'a> {
                 .unwrap_or_default();
             file_overviews.push(FileOverview {
                 selector: self.selector_for_node(GraphNodeRef::File(file)),
+                path: file.base.location.clone(),
                 name: file.base.name.clone(),
                 symbol_count: symbols.len(),
                 symbols,
@@ -390,17 +394,107 @@ pub struct GraphOverview {
     pub files: Vec<FileOverview>,
 }
 
+impl GraphOverview {
+    /// Select the most symbol-dense files with deterministic tie-breaking.
+    pub fn top_files(&self, limit: usize) -> Vec<TopFileEntry> {
+        let mut files: Vec<&FileOverview> = self.files.iter().collect();
+        files.sort_by(|left, right| compare_file_overview_rank(left, right));
+        files
+            .into_iter()
+            .take(limit)
+            .map(FileOverview::top_file_entry)
+            .collect()
+    }
+}
+
+/// Build a compact overview summary suitable for broad repo orientation.
+pub fn compact_from_overview(
+    overview: &GraphOverview,
+    location_prefix: Option<&str>,
+    hint: &str,
+) -> GraphOverviewSummary {
+    let mut dir_file_counts = BTreeMap::new();
+    for file in &overview.files {
+        let key = top_level_dir_key(&file.path, location_prefix);
+        *dir_file_counts.entry(key).or_insert(0) += 1;
+    }
+
+    GraphOverviewSummary {
+        total_dirs: overview.total_dirs,
+        total_files: overview.total_files,
+        total_symbols: overview.total_symbols,
+        languages: overview.languages.clone(),
+        symbol_kinds: overview.symbol_kinds.clone(),
+        dir_file_counts,
+        top_files: overview.top_files(10),
+        hint: hint.to_string(),
+    }
+}
+
 pub struct FileOverview {
     pub selector: String,
+    pub path: String,
     pub name: String,
     pub symbol_count: usize,
     pub symbols: Vec<SymbolBrief>,
+}
+
+impl FileOverview {
+    fn top_file_entry(&self) -> TopFileEntry {
+        TopFileEntry {
+            selector: self.selector.clone(),
+            name: self.name.clone(),
+            symbol_count: self.symbol_count,
+        }
+    }
 }
 
 pub struct SymbolBrief {
     pub name: String,
     pub kind: String,
     pub selector: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphOverviewSummary {
+    pub total_dirs: usize,
+    pub total_files: usize,
+    pub total_symbols: usize,
+    pub languages: HashMap<String, usize>,
+    pub symbol_kinds: HashMap<String, usize>,
+    pub dir_file_counts: BTreeMap<String, usize>,
+    pub top_files: Vec<TopFileEntry>,
+    pub hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopFileEntry {
+    pub selector: String,
+    pub name: String,
+    pub symbol_count: usize,
+}
+
+fn compare_file_overview_rank(left: &FileOverview, right: &FileOverview) -> Ordering {
+    right
+        .symbol_count
+        .cmp(&left.symbol_count)
+        .then_with(|| left.path.cmp(&right.path))
+        .then_with(|| left.selector.cmp(&right.selector))
+        .then_with(|| left.name.cmp(&right.name))
+}
+
+fn top_level_dir_key(path: &str, location_prefix: Option<&str>) -> String {
+    let relative = location_prefix
+        .and_then(|prefix| path.strip_prefix(prefix))
+        .unwrap_or(path)
+        .trim_start_matches('/');
+
+    relative
+        .split_once('/')
+        .map(|(segment, _)| segment)
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or(".")
+        .to_string()
 }
 
 /// A reference hit from `find_references`.
@@ -478,6 +572,417 @@ mod tests {
                 end_line: Some(1),
                 children: vec![],
             }],
+        }
+    }
+
+    fn overview_fixture_graph() -> CodebaseGraphV1 {
+        CodebaseGraphV1 {
+            root_dir_id: "d-root".to_string(),
+            dirs: vec![
+                DirNode {
+                    base: make_base("d-root", ".", "./", None),
+                    dir_children: vec!["d-src".to_string()],
+                    file_children: vec![],
+                },
+                DirNode {
+                    base: make_base("d-src", "src", "src/", Some("d-root")),
+                    dir_children: vec!["d-api".to_string(), "d-model".to_string()],
+                    file_children: vec!["f-lib".to_string()],
+                },
+                DirNode {
+                    base: make_base("d-api", "api", "src/api/", Some("d-src")),
+                    dir_children: vec![],
+                    file_children: vec!["f-api-mod".to_string(), "f-api-types".to_string()],
+                },
+                DirNode {
+                    base: make_base("d-model", "model", "src/model/", Some("d-src")),
+                    dir_children: vec![],
+                    file_children: vec!["f-user".to_string()],
+                },
+            ],
+            files: vec![
+                FileNode {
+                    base: make_base("f-lib", "lib.rs", "src/lib.rs", Some("d-src")),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-alpha".to_string(), "l-beta".to_string()],
+                },
+                FileNode {
+                    base: make_base("f-api-mod", "mod.rs", "src/api/mod.rs", Some("d-api")),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-handler".to_string(), "l-router".to_string()],
+                },
+                FileNode {
+                    base: make_base("f-api-types", "types.rs", "src/api/types.rs", Some("d-api")),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-api-type".to_string()],
+                },
+                FileNode {
+                    base: make_base("f-user", "user.rs", "src/model/user.rs", Some("d-model")),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-user".to_string()],
+                },
+            ],
+            leaves: vec![
+                LeafNode {
+                    base: make_base("l-alpha", "alpha", "src/lib.rs#alpha", Some("f-lib")),
+                    kind: LeafKind::Function,
+                    source: "pub fn alpha() {}".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base("l-beta", "Beta", "src/lib.rs#Beta", Some("f-lib")),
+                    kind: LeafKind::Struct,
+                    source: "pub struct Beta;".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(3),
+                    end_line: Some(3),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-handler",
+                        "handler",
+                        "src/api/mod.rs#handler",
+                        Some("f-api-mod"),
+                    ),
+                    kind: LeafKind::Function,
+                    source: "pub fn handler() {}".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-router",
+                        "Router",
+                        "src/api/mod.rs#Router",
+                        Some("f-api-mod"),
+                    ),
+                    kind: LeafKind::Struct,
+                    source: "pub struct Router;".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(3),
+                    end_line: Some(3),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-api-type",
+                        "ApiType",
+                        "src/api/types.rs#ApiType",
+                        Some("f-api-types"),
+                    ),
+                    kind: LeafKind::Struct,
+                    source: "pub struct ApiType;".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base("l-user", "User", "src/model/user.rs#User", Some("f-user")),
+                    kind: LeafKind::Struct,
+                    source: "pub struct User;".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+            ],
+        }
+    }
+
+    fn prefixed_overview_fixture_graph() -> CodebaseGraphV1 {
+        CodebaseGraphV1 {
+            root_dir_id: "d-root".to_string(),
+            dirs: vec![
+                DirNode {
+                    base: make_base("d-root", ".", "./", None),
+                    dir_children: vec!["d-crates".to_string(), "d-docs".to_string()],
+                    file_children: vec![],
+                },
+                DirNode {
+                    base: make_base("d-crates", "crates", "crates/", Some("d-root")),
+                    dir_children: vec!["d-tools".to_string(), "d-core".to_string()],
+                    file_children: vec![],
+                },
+                DirNode {
+                    base: make_base(
+                        "d-tools",
+                        "orbit-tools",
+                        "crates/orbit-tools/",
+                        Some("d-crates"),
+                    ),
+                    dir_children: vec![],
+                    file_children: vec!["f-tools-lib".to_string(), "f-tools-api".to_string()],
+                },
+                DirNode {
+                    base: make_base(
+                        "d-core",
+                        "orbit-core",
+                        "crates/orbit-core/",
+                        Some("d-crates"),
+                    ),
+                    dir_children: vec![],
+                    file_children: vec!["f-core-main".to_string()],
+                },
+                DirNode {
+                    base: make_base("d-docs", "docs", "docs/", Some("d-root")),
+                    dir_children: vec![],
+                    file_children: vec!["f-guide".to_string()],
+                },
+            ],
+            files: vec![
+                FileNode {
+                    base: make_base(
+                        "f-tools-lib",
+                        "lib.rs",
+                        "crates/orbit-tools/src/lib.rs",
+                        Some("d-tools"),
+                    ),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-tools-lib-fn".to_string(), "l-tools-lib-struct".to_string()],
+                },
+                FileNode {
+                    base: make_base(
+                        "f-tools-api",
+                        "api.rs",
+                        "crates/orbit-tools/src/api.rs",
+                        Some("d-tools"),
+                    ),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-tools-api-fn".to_string()],
+                },
+                FileNode {
+                    base: make_base(
+                        "f-core-main",
+                        "main.rs",
+                        "crates/orbit-core/src/main.rs",
+                        Some("d-core"),
+                    ),
+                    extension: Some("rs".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-core-main-fn".to_string()],
+                },
+                FileNode {
+                    base: make_base("f-guide", "guide.md", "docs/guide.md", Some("d-docs")),
+                    extension: Some("md".to_string()),
+                    source_blob_hash: None,
+                    imports: vec![],
+                    exports: vec![],
+                    leaf_children: vec!["l-guide-module".to_string()],
+                },
+            ],
+            leaves: vec![
+                LeafNode {
+                    base: make_base(
+                        "l-tools-lib-fn",
+                        "register",
+                        "crates/orbit-tools/src/lib.rs#register",
+                        Some("f-tools-lib"),
+                    ),
+                    kind: LeafKind::Function,
+                    source: "pub fn register() {}".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-tools-lib-struct",
+                        "Registry",
+                        "crates/orbit-tools/src/lib.rs#Registry",
+                        Some("f-tools-lib"),
+                    ),
+                    kind: LeafKind::Struct,
+                    source: "pub struct Registry;".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(3),
+                    end_line: Some(3),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-tools-api-fn",
+                        "overview",
+                        "crates/orbit-tools/src/api.rs#overview",
+                        Some("f-tools-api"),
+                    ),
+                    kind: LeafKind::Function,
+                    source: "pub fn overview() {}".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-core-main-fn",
+                        "main",
+                        "crates/orbit-core/src/main.rs#main",
+                        Some("f-core-main"),
+                    ),
+                    kind: LeafKind::Function,
+                    source: "fn main() {}".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+                LeafNode {
+                    base: make_base(
+                        "l-guide-module",
+                        "guide",
+                        "docs/guide.md#guide",
+                        Some("f-guide"),
+                    ),
+                    kind: LeafKind::Module,
+                    source: "# Guide".to_string(),
+                    source_blob_hash: None,
+                    source_hash: None,
+                    file_hash_at_capture: None,
+                    history: vec![],
+                    input_signature: vec![],
+                    output_signature: vec![],
+                    start_line: Some(1),
+                    end_line: Some(1),
+                    children: vec![],
+                },
+            ],
+        }
+    }
+
+    fn many_files_fixture_graph(file_count: usize) -> CodebaseGraphV1 {
+        let mut files = Vec::new();
+        let mut leaves = Vec::new();
+        let mut file_children = Vec::new();
+
+        for index in 0..file_count {
+            let file_id = format!("f-{index}");
+            let leaf_id = format!("l-{index}");
+            let file_name = format!("file_{index:02}.rs");
+            let file_path = format!("src/{file_name}");
+            file_children.push(file_id.clone());
+            files.push(FileNode {
+                base: make_base(&file_id, &file_name, &file_path, Some("d-src")),
+                extension: Some("rs".to_string()),
+                source_blob_hash: None,
+                imports: vec![],
+                exports: vec![],
+                leaf_children: vec![leaf_id.clone()],
+            });
+            leaves.push(LeafNode {
+                base: make_base(
+                    &leaf_id,
+                    &format!("item_{index:02}"),
+                    &format!("{file_path}#item_{index:02}"),
+                    Some(&file_id),
+                ),
+                kind: LeafKind::Function,
+                source: format!("pub fn item_{index:02}() {{}}"),
+                source_blob_hash: None,
+                source_hash: None,
+                file_hash_at_capture: None,
+                history: vec![],
+                input_signature: vec![],
+                output_signature: vec![],
+                start_line: Some(1),
+                end_line: Some(1),
+                children: vec![],
+            });
+        }
+
+        CodebaseGraphV1 {
+            root_dir_id: "d-root".to_string(),
+            dirs: vec![
+                DirNode {
+                    base: make_base("d-root", ".", "./", None),
+                    dir_children: vec!["d-src".to_string()],
+                    file_children: vec![],
+                },
+                DirNode {
+                    base: make_base("d-src", "src", "src/", Some("d-root")),
+                    dir_children: vec![],
+                    file_children,
+                },
+            ],
+            files,
+            leaves,
         }
     }
 
@@ -592,5 +1097,80 @@ mod tests {
         let node = svc.resolve_selector(&sel).unwrap();
         let generated = svc.selector_for_node(node);
         assert_eq!(generated, sel_str);
+    }
+
+    #[test]
+    fn overview_top_files_are_selected_deterministically() {
+        let graph = overview_fixture_graph();
+        let svc = GraphContextService::new(&graph);
+        let overview = svc.overview(Some("src/"));
+
+        let top_files = overview.top_files(3);
+        let top_selectors = top_files
+            .iter()
+            .map(|file| file.selector.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            top_selectors,
+            vec![
+                "file:src/api/mod.rs",
+                "file:src/lib.rs",
+                "file:src/api/types.rs",
+            ]
+        );
+        assert_eq!(top_files[0].symbol_count, 2);
+        assert_eq!(top_files[1].symbol_count, 2);
+    }
+
+    #[test]
+    fn overview_compact_returns_dir_file_counts() {
+        let graph = prefixed_overview_fixture_graph();
+        let svc = GraphContextService::new(&graph);
+        let overview = svc.overview(Some("crates/"));
+
+        let summary = compact_from_overview(
+            &overview,
+            Some("crates/"),
+            "Use `prefix` to drill into a smaller subtree.",
+        );
+
+        assert_eq!(summary.total_files, 3);
+        assert_eq!(
+            summary.dir_file_counts,
+            BTreeMap::from([
+                ("orbit-core".to_string(), 1),
+                ("orbit-tools".to_string(), 2),
+            ])
+        );
+    }
+
+    #[test]
+    fn overview_compact_top_files_capped_at_10() {
+        let graph = many_files_fixture_graph(12);
+        let svc = GraphContextService::new(&graph);
+        let overview = svc.overview(Some("src/"));
+
+        let summary = compact_from_overview(&overview, Some("src/"), "hint");
+
+        assert_eq!(summary.top_files.len(), 10);
+    }
+
+    #[test]
+    fn overview_compact_hint_is_present() {
+        let graph = overview_fixture_graph();
+        let svc = GraphContextService::new(&graph);
+        let overview = svc.overview(Some("src/"));
+
+        let summary = compact_from_overview(
+            &overview,
+            Some("src/"),
+            "Use `prefix` to drill into a smaller subtree.",
+        );
+
+        assert_eq!(
+            summary.hint,
+            "Use `prefix` to drill into a smaller subtree."
+        );
     }
 }
