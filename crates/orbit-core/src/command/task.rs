@@ -127,8 +127,8 @@ impl OrbitRuntime {
             } else {
                 TaskStatus::Backlog
             };
-        let is_friction = params.task_type.is_friction();
-        let (create_actor, create_identity, create_label) = if is_friction {
+        let uses_system_identity = params.task_type.is_friction();
+        let (create_actor, create_identity, create_label) = if uses_system_identity {
             (
                 "system".to_string(),
                 ActorIdentity::from_legacy(agent.as_deref(), model.as_deref()),
@@ -181,9 +181,9 @@ impl OrbitRuntime {
             ))
         })?;
 
-        // Friction bounty: record issues-reported on creation when agent+model present.
+        // Friction bounty: record self-reported friction on creation when agent+model present.
         if self.scoring_enabled()
-            && params.task_type.is_friction()
+            && params.task_type.counts_toward_friction_bounty()
             && let (Some(a), Some(m)) = (&agent, &model)
         {
             let _ = friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, a, m);
@@ -980,7 +980,7 @@ impl OrbitRuntime {
 
     /// Best-effort friction bounty scoreboard update after a status transition.
     fn try_record_friction_transition(&self, task: &Task, from: TaskStatus, to: TaskStatus) {
-        if !self.scoring_enabled() || !task.task_type.is_friction() {
+        if !self.scoring_enabled() || !task.task_type.counts_toward_friction_bounty() {
             return;
         }
         let (Some(agent), Some(model)) = (
@@ -1455,11 +1455,12 @@ mod tests {
     }
 
     fn read_friction_bounty(runtime: &OrbitRuntime) -> Value {
-        serde_json::from_str(
-            &fs::read_to_string(runtime.paths().scoreboard_dir.join("friction_bounty.json"))
-                .expect("scoreboard"),
-        )
-        .expect("valid scoreboard json")
+        let path = runtime.paths().scoreboard_dir.join("friction_bounty.json");
+        match fs::read_to_string(path) {
+            Ok(content) => serde_json::from_str(&content).expect("valid scoreboard json"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+            Err(error) => panic!("scoreboard: {error}"),
+        }
     }
 
     fn seed_task_for_lint(
@@ -2028,7 +2029,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_task_attributes_to_system() {
+    fn issue_task_attributes_to_agent() {
         let runtime = OrbitRuntime::in_memory().expect("runtime");
         let task = runtime
             .add_task_with_identity(
@@ -2043,19 +2044,63 @@ mod tests {
             )
             .expect("issue task");
 
-        assert_eq!(task.created_by, Some("system".to_string()));
-        assert_eq!(task.proposed_by, Some("system".to_string()));
-        assert_eq!(task.assigned_to, Some("system".to_string()));
+        assert_eq!(task.created_by, Some("claude / opus".to_string()));
+        assert_eq!(task.proposed_by, Some("claude / opus".to_string()));
+        assert_eq!(task.assigned_to, Some("claude / opus".to_string()));
+        assert_eq!(
+            task.history.first().map(|h| h.by.as_str()),
+            Some("claude / opus"),
+            "history actor should use the agent label for issue tasks"
+        );
     }
 
     #[test]
-    fn issue_task_lifecycle_updates_friction_bounty_scoreboard() {
+    fn friction_task_lifecycle_updates_friction_bounty_scoreboard() {
+        let (_temp, runtime) = scoring_runtime(CoreActorIdentity::agent("executor"), true);
+        let task = runtime
+            .add_task_with_identity(
+                TaskAddParams {
+                    title: "friction report".to_string(),
+                    description: "friction in orbit".to_string(),
+                    task_type: TaskType::Friction,
+                    ..Default::default()
+                },
+                Some("codex".to_string()),
+                Some("gpt-5.4".to_string()),
+            )
+            .expect("friction task");
+
+        assert_eq!(task.status, TaskStatus::Proposed);
+
+        let scoreboard = read_friction_bounty(&runtime);
+        assert_eq!(scoreboard["issues-reported"]["codex"]["gpt-5.4"], 1);
+
+        runtime
+            .approve_task(&task.id, None, None)
+            .expect("approve proposed friction");
+
+        let scoreboard = read_friction_bounty(&runtime);
+        assert_eq!(scoreboard["issues-reported"]["codex"]["gpt-5.4"], 1);
+        assert_eq!(scoreboard["issues-accepted"]["codex"]["gpt-5.4"], 1);
+
+        runtime
+            .reject_task(&task.id, "not actionable".to_string(), None)
+            .expect("reject backlog friction");
+
+        let scoreboard = read_friction_bounty(&runtime);
+        assert_eq!(scoreboard["issues-reported"]["codex"]["gpt-5.4"], 1);
+        assert_eq!(scoreboard["issues-accepted"]["codex"]["gpt-5.4"], 1);
+        assert_eq!(scoreboard["issues-rejected"]["codex"]["gpt-5.4"], 1);
+    }
+
+    #[test]
+    fn issue_task_lifecycle_does_not_update_friction_bounty_scoreboard() {
         let (_temp, runtime) = scoring_runtime(CoreActorIdentity::agent("executor"), true);
         let task = runtime
             .add_task_with_identity(
                 TaskAddParams {
                     title: "issue report".to_string(),
-                    description: "friction in orbit".to_string(),
+                    description: "needs tracking".to_string(),
                     task_type: TaskType::Issue,
                     ..Default::default()
                 },
@@ -2065,26 +2110,17 @@ mod tests {
             .expect("issue task");
 
         assert_eq!(task.status, TaskStatus::Proposed);
-
-        let scoreboard = read_friction_bounty(&runtime);
-        assert_eq!(scoreboard["issues-reported"]["codex"]["gpt-5.4"], 1);
+        assert_eq!(read_friction_bounty(&runtime), serde_json::json!({}));
 
         runtime
             .approve_task(&task.id, None, None)
             .expect("approve proposed issue");
-
-        let scoreboard = read_friction_bounty(&runtime);
-        assert_eq!(scoreboard["issues-reported"]["codex"]["gpt-5.4"], 1);
-        assert_eq!(scoreboard["issues-accepted"]["codex"]["gpt-5.4"], 1);
+        assert_eq!(read_friction_bounty(&runtime), serde_json::json!({}));
 
         runtime
             .reject_task(&task.id, "not actionable".to_string(), None)
             .expect("reject backlog issue");
-
-        let scoreboard = read_friction_bounty(&runtime);
-        assert_eq!(scoreboard["issues-reported"]["codex"]["gpt-5.4"], 1);
-        assert_eq!(scoreboard["issues-accepted"]["codex"]["gpt-5.4"], 1);
-        assert_eq!(scoreboard["issues-rejected"]["codex"]["gpt-5.4"], 1);
+        assert_eq!(read_friction_bounty(&runtime), serde_json::json!({}));
     }
 
     #[test]

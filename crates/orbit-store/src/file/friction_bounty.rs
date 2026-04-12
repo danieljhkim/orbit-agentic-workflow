@@ -1,6 +1,6 @@
 //! Friction bounty scoreboard auto-increment.
 //!
-//! Updates `.orbit/scoreboard/friction_bounty.json` when friction/issue tasks
+//! Updates `.orbit/scoreboard/friction_bounty.json` when self-reported friction tasks
 //! transition through lifecycle states:
 //! - **creation** (agent + model present): increment `issues-reported`
 //! - **approval** (proposed→backlog, review→done): increment `issues-accepted`

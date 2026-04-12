@@ -215,9 +215,9 @@ pub enum TaskType {
     Task,
     Feature,
     /// Agent-reported friction, DX issues, or system problems.
-    /// Preferred type for agent issue reports — triggers scoreboard hooks.
+    /// Self-reported friction path — triggers system attribution and scoreboard hooks.
     Friction,
-    /// Legacy alias for Friction. Both types trigger scoreboard hooks.
+    /// General issue tracking. Valid task type, but not part of friction-bounty scoring.
     #[serde(alias = "issue")]
     Issue,
     /// An attributable defect — tracks which agent/model introduced the bug
@@ -264,9 +264,14 @@ impl FromStr for TaskType {
 }
 
 impl TaskType {
-    /// Returns true for task types that trigger friction bounty scoreboard hooks.
+    /// Returns true for self-reported friction tasks.
     pub fn is_friction(&self) -> bool {
-        matches!(self, TaskType::Friction | TaskType::Issue)
+        matches!(self, TaskType::Friction)
+    }
+
+    /// Returns true for task types that should update friction bounty scorekeeping.
+    pub fn counts_toward_friction_bounty(&self) -> bool {
+        self.is_friction()
     }
 }
 
