@@ -69,3 +69,9 @@ job:
       target_id: merge_batch_worktree_into_base
       condition: on_success
       timeout_seconds: 120
+
+    # 9. Remove the shared worktree and local branch after a successful merge.
+    - target_type: activity
+      target_id: cleanup_worktree
+      condition: on_success
+      timeout_seconds: 30

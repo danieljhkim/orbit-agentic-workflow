@@ -18,6 +18,7 @@ job:
   #   check_duel_review_decision    — gate on the arbiter's decision (loop_exit = arbiter APPROVED)
   #   job_duel_review_loop          — iterative fix-and-re-review loop; no-ops when already approved
   #   merge_batch_pr                — merge the approved PR when the loop converged
+  #   cleanup_worktree             — remove the local duel worktree and branch after a successful merge
   #   record_duel_scores            — append one DuelRun entry to .orbit/scoreboard/duel.json
   #
   max_active_runs: 1
@@ -58,6 +59,11 @@ job:
       target_id: merge_batch_pr
       condition: on_success
       timeout_seconds: 60
+
+    - target_type: activity
+      target_id: cleanup_worktree
+      condition: on_success
+      timeout_seconds: 30
 
     - target_type: activity
       target_id: record_duel_scores
