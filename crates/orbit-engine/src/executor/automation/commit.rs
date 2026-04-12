@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-use orbit_types::{OrbitError, Task, TaskType};
+use orbit_types::{OrbitError, Task};
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskHost};
@@ -368,15 +368,6 @@ fn single_line_summary(summary: &str) -> String {
         .to_string()
 }
 
-fn conventional_prefix(task_type: TaskType) -> &'static str {
-    match task_type {
-        TaskType::Bug => "fix",
-        TaskType::Refactor => "refactor",
-        TaskType::Chore | TaskType::Friction | TaskType::Issue => "chore",
-        TaskType::Task | TaskType::Feature => "feat",
-    }
-}
-
 fn stage_paths(workspace_path: &Path, files: &[String]) -> Result<(), OrbitError> {
     if files.is_empty() {
         return Ok(());
@@ -444,7 +435,8 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        commit_finalize_artifact_changes, commit_task_artifact_changes, execution_summary_paragraph,
+        commit_finalize_artifact_changes, commit_task_artifact_changes,
+        execution_summary_paragraph, task_commit_message,
     };
     use crate::context::{JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskHost};
 

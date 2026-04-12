@@ -10,8 +10,7 @@ use crate::{Tool, ToolContext};
 pub struct OrbitKnowledgeOverviewTool;
 
 const FILE_THRESHOLD: usize = 50;
-const SUMMARY_HINT: &str =
-    "Use `prefix` to narrow the overview and get per-file symbol listings.";
+const SUMMARY_HINT: &str = "Use `prefix` to narrow the overview and get per-file symbol listings.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OverviewFormat {
@@ -324,7 +323,10 @@ mod tests {
         }));
 
         assert_eq!(result["mode"], json!("summary"));
-        assert_eq!(result["dir_file_counts"], json!({ "crates": 160, "docs": 60 }));
+        assert_eq!(
+            result["dir_file_counts"],
+            json!({ "crates": 160, "docs": 60 })
+        );
         assert_eq!(
             result["top_files"]
                 .as_array()
@@ -382,11 +384,6 @@ mod tests {
         assert_eq!(result["total_files"], json!(40));
         let files = result["files"].as_array().expect("files array");
         assert_eq!(files.len(), 40);
-        assert!(
-            files[0]
-                .get("symbols")
-                .and_then(Value::as_array)
-                .is_some()
-        );
+        assert!(files[0].get("symbols").and_then(Value::as_array).is_some());
     }
 }

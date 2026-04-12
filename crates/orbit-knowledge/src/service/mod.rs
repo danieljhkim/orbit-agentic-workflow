@@ -790,7 +790,10 @@ mod tests {
                     source_blob_hash: None,
                     imports: vec![],
                     exports: vec![],
-                    leaf_children: vec!["l-tools-lib-fn".to_string(), "l-tools-lib-struct".to_string()],
+                    leaf_children: vec![
+                        "l-tools-lib-fn".to_string(),
+                        "l-tools-lib-struct".to_string(),
+                    ],
                 },
                 FileNode {
                     base: make_base(
