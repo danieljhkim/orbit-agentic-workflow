@@ -16,6 +16,7 @@ const DEFAULT_ENV_INHERIT: bool = false;
 const DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT: bool = false;
 const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
 const DEFAULT_SCORING_ENABLED: bool = false;
+const DEFAULT_GRAPH_EDITING: bool = false;
 
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeConfig {
@@ -24,6 +25,7 @@ pub(crate) struct RuntimeConfig {
     pub(crate) persistence: PersistenceConfig,
     pub(crate) task_approval: TaskApprovalConfig,
     pub(crate) scoring_enabled: bool,
+    pub(crate) graph_editing: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -40,6 +42,7 @@ impl RuntimeConfig {
             persistence: PersistenceConfig::default_for_data_root(data_root),
             task_approval: TaskApprovalConfig::default(),
             scoring_enabled: DEFAULT_SCORING_ENABLED,
+            graph_editing: DEFAULT_GRAPH_EDITING,
         }
     }
 
@@ -102,6 +105,12 @@ impl RuntimeConfig {
             .and_then(|s| s.enabled)
             .unwrap_or(DEFAULT_SCORING_ENABLED);
 
+        let graph_editing = parsed
+            .graph
+            .as_ref()
+            .and_then(|g| g.editing)
+            .unwrap_or(DEFAULT_GRAPH_EDITING);
+
         Ok(Self {
             execution_env: ExecutionEnvPolicy::from_raw(
                 parsed.execution.clone().and_then(|v| v.env),
@@ -112,6 +121,7 @@ impl RuntimeConfig {
             persistence,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
             scoring_enabled,
+            graph_editing,
         })
     }
 }

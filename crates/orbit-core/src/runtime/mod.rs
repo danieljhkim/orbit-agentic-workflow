@@ -159,6 +159,10 @@ impl OrbitRuntime {
         self.context.scoring_enabled()
     }
 
+    pub fn graph_editing(&self) -> bool {
+        self.context.graph_editing()
+    }
+
     pub(crate) fn actor(&self) -> &ActorIdentity {
         self.context.actor()
     }

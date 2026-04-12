@@ -596,7 +596,7 @@ fn structured_result_payload(
     result_value_from_map(map).map(normalize_captured_payload)
 }
 
-fn result_value_from_map<'a>(map: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
+fn result_value_from_map(map: &serde_json::Map<String, Value>) -> Option<&Value> {
     map.get("result")
         .or_else(|| map.get("content"))
         .or_else(|| map.get("output"))

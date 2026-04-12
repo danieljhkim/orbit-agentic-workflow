@@ -380,6 +380,10 @@ impl RuntimeHost for OrbitRuntime {
         self.context.scoring_enabled()
     }
 
+    fn graph_editing(&self) -> bool {
+        self.context.graph_editing()
+    }
+
     fn scoreboard_dir(&self) -> &std::path::Path {
         &self.context.paths().scoreboard_dir
     }

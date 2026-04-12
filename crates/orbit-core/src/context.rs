@@ -85,6 +85,7 @@ pub struct OrbitContext {
     task_approval_required_for_agent: bool,
     task_delegate_approval: bool,
     scoring_enabled: bool,
+    graph_editing: bool,
 }
 
 impl OrbitContext {
@@ -106,6 +107,7 @@ impl OrbitContext {
         task_approval_required_for_agent: bool,
         task_delegate_approval: bool,
         scoring_enabled: bool,
+        graph_editing: bool,
     ) -> Self {
         Self {
             paths,
@@ -124,6 +126,7 @@ impl OrbitContext {
             task_approval_required_for_agent,
             task_delegate_approval,
             scoring_enabled,
+            graph_editing,
         }
     }
 
@@ -206,6 +209,10 @@ impl OrbitContext {
 
     pub(crate) fn scoring_enabled(&self) -> bool {
         self.scoring_enabled
+    }
+
+    pub(crate) fn graph_editing(&self) -> bool {
+        self.graph_editing
     }
 }
 

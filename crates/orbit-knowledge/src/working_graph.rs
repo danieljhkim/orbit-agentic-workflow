@@ -113,6 +113,25 @@ impl WriteError {
             leaf_id: None,
         }
     }
+
+    pub fn leaf_already_exists(selector: &str) -> Self {
+        Self {
+            kind: "leaf_already_exists".to_string(),
+            reason: format!("selector `{selector}` already exists; use graph.write to edit"),
+            expected_source_hash: None,
+            actual_source: None,
+            leaf_id: Some(selector.to_string()),
+        }
+    }
+}
+
+/// Result of a move operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct MoveResult {
+    pub status: String,
+    pub old_selector: String,
+    pub new_selector: String,
+    pub affected_leaves: Vec<String>,
 }
 
 /// In-memory working graph that tracks leaf state during an activity run.
@@ -430,6 +449,276 @@ impl WorkingGraph {
             new_source_hash: new_hash,
             affected_leaves: affected,
             new_leaf_id: Some(selector_str),
+        })
+    }
+
+    /// Delete a leaf from a file.
+    ///
+    /// Removes the leaf's source lines from the file on disk, re-extracts,
+    /// and records a deletion marker in the version chain.
+    /// Locking is handled externally via the shared `LockStore`.
+    pub fn delete_leaf(
+        &mut self,
+        selector: &Selector,
+        reason: Option<&str>,
+        workspace_root: &Path,
+    ) -> Result<WriteResult, WriteError> {
+        let selector_str = selector.to_string();
+        let leaf = self
+            .leaves
+            .get(&selector_str)
+            .ok_or_else(|| WriteError {
+                kind: "leaf_not_found".to_string(),
+                reason: format!("selector `{selector_str}` does not resolve to a leaf"),
+                expected_source_hash: None,
+                actual_source: None,
+                leaf_id: None,
+            })?
+            .clone();
+
+        let file_path = workspace_root.join(&leaf.file_path);
+        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let language =
+            Language::from_extension(ext).ok_or_else(|| WriteError::unsupported_language(ext))?;
+
+        let file_content = fs::read_to_string(&file_path)
+            .map_err(|e| WriteError::io_error(format!("read {}: {e}", file_path.display())))?;
+        let file_lines: Vec<&str> = file_content.lines().collect();
+
+        // Validate source hash
+        if leaf.start_line == 0 || leaf.end_line == 0 || leaf.end_line > file_lines.len() {
+            return Err(WriteError::source_conflict(
+                &leaf.source_hash,
+                &format!(
+                    "(line range {}..{} out of bounds for {}-line file)",
+                    leaf.start_line,
+                    leaf.end_line,
+                    file_lines.len()
+                ),
+                &selector_str,
+            ));
+        }
+
+        let actual_source = file_lines[leaf.start_line - 1..leaf.end_line]
+            .join("\n")
+            .trim()
+            .to_string();
+        let actual_hash = extract::compute_source_hash(&actual_source);
+
+        if actual_hash != leaf.source_hash {
+            return Err(WriteError::source_conflict(
+                &leaf.source_hash,
+                &actual_source,
+                &selector_str,
+            ));
+        }
+
+        // Remove lines and collapse any resulting double blank lines
+        let mut new_lines: Vec<String> = Vec::new();
+        for line in &file_lines[..leaf.start_line - 1] {
+            new_lines.push(line.to_string());
+        }
+        // Skip a trailing blank line to avoid double gaps
+        let after_start = leaf.end_line;
+        let skip_blank = after_start < file_lines.len()
+            && file_lines[after_start].trim().is_empty()
+            && !new_lines.is_empty()
+            && new_lines.last().is_some_and(|l| l.trim().is_empty());
+        let skip_count = if skip_blank { 1 } else { 0 };
+        for line in &file_lines[after_start + skip_count..] {
+            new_lines.push(line.to_string());
+        }
+
+        let new_content = new_lines.join("\n");
+        let new_content = if file_content.ends_with('\n') && !new_content.ends_with('\n') {
+            new_content + "\n"
+        } else {
+            new_content
+        };
+
+        fs::write(&file_path, &new_content)
+            .map_err(|e| WriteError::io_error(format!("write {}: {e}", file_path.display())))?;
+
+        let affected = self.re_extract_file(&leaf.file_path, &new_content, language);
+
+        // Record deletion in version chain
+        self.append_version_chain(
+            &selector_str,
+            &leaf.source_hash,
+            "",
+            &extract::compute_source_hash(""),
+            Some(reason.unwrap_or("deleted")),
+        );
+
+        // Remove from leaves and file_leaves (re_extract_file already handles this
+        // because the deleted symbol no longer appears in extraction results)
+
+        Ok(WriteResult {
+            status: "deleted".to_string(),
+            selector: selector_str,
+            edit_sequence: 0,
+            new_source_hash: String::new(),
+            affected_leaves: affected,
+            new_leaf_id: None,
+        })
+    }
+
+    /// Move a leaf from its current file to a target file.
+    ///
+    /// Removes the leaf's source from the source file, inserts it into
+    /// the target file at the given position, and re-extracts both files.
+    /// Locking is handled externally via the shared `LockStore`.
+    pub fn move_leaf(
+        &mut self,
+        selector: &Selector,
+        target_file: &str,
+        position: Option<&Selector>,
+        reason: Option<&str>,
+        workspace_root: &Path,
+    ) -> Result<MoveResult, WriteError> {
+        let selector_str = selector.to_string();
+        let leaf = self
+            .leaves
+            .get(&selector_str)
+            .ok_or_else(|| WriteError {
+                kind: "leaf_not_found".to_string(),
+                reason: format!("selector `{selector_str}` does not resolve to a leaf"),
+                expected_source_hash: None,
+                actual_source: None,
+                leaf_id: None,
+            })?
+            .clone();
+
+        let source_text = leaf.source.clone();
+        let old_file_path = leaf.file_path.clone();
+
+        // --- Step 1: Delete from source file ---
+        let src_abs = workspace_root.join(&old_file_path);
+        let src_ext = src_abs.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let src_language = Language::from_extension(src_ext)
+            .ok_or_else(|| WriteError::unsupported_language(src_ext))?;
+
+        let src_content = fs::read_to_string(&src_abs)
+            .map_err(|e| WriteError::io_error(format!("read {}: {e}", src_abs.display())))?;
+        let src_lines: Vec<&str> = src_content.lines().collect();
+
+        if leaf.start_line == 0 || leaf.end_line == 0 || leaf.end_line > src_lines.len() {
+            return Err(WriteError::source_conflict(
+                &leaf.source_hash,
+                &format!(
+                    "(line range {}..{} out of bounds for {}-line file)",
+                    leaf.start_line,
+                    leaf.end_line,
+                    src_lines.len()
+                ),
+                &selector_str,
+            ));
+        }
+
+        let actual_source = src_lines[leaf.start_line - 1..leaf.end_line]
+            .join("\n")
+            .trim()
+            .to_string();
+        let actual_hash = extract::compute_source_hash(&actual_source);
+        if actual_hash != leaf.source_hash {
+            return Err(WriteError::source_conflict(
+                &leaf.source_hash,
+                &actual_source,
+                &selector_str,
+            ));
+        }
+
+        // Remove lines from source file
+        let mut new_src_lines: Vec<String> = Vec::new();
+        for line in &src_lines[..leaf.start_line - 1] {
+            new_src_lines.push(line.to_string());
+        }
+        let after_start = leaf.end_line;
+        let skip_blank = after_start < src_lines.len()
+            && src_lines[after_start].trim().is_empty()
+            && !new_src_lines.is_empty()
+            && new_src_lines.last().is_some_and(|l| l.trim().is_empty());
+        let skip_count = if skip_blank { 1 } else { 0 };
+        for line in &src_lines[after_start + skip_count..] {
+            new_src_lines.push(line.to_string());
+        }
+
+        let new_src_content = new_src_lines.join("\n");
+        let new_src_content = if src_content.ends_with('\n') && !new_src_content.ends_with('\n') {
+            new_src_content + "\n"
+        } else {
+            new_src_content
+        };
+
+        fs::write(&src_abs, &new_src_content)
+            .map_err(|e| WriteError::io_error(format!("write {}: {e}", src_abs.display())))?;
+        self.re_extract_file(&old_file_path, &new_src_content, src_language);
+
+        // --- Step 2: Insert into target file ---
+        let tgt_abs = workspace_root.join(target_file);
+        let tgt_ext = tgt_abs.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let tgt_language = Language::from_extension(tgt_ext)
+            .ok_or_else(|| WriteError::unsupported_language(tgt_ext))?;
+
+        let tgt_content = fs::read_to_string(&tgt_abs)
+            .map_err(|e| WriteError::io_error(format!("read {}: {e}", tgt_abs.display())))?;
+        let tgt_lines: Vec<&str> = tgt_content.lines().collect();
+
+        let insert_after_line = if let Some(pos_selector) = position {
+            let pos_str = pos_selector.to_string();
+            let anchor = self
+                .leaves
+                .get(&pos_str)
+                .ok_or_else(|| WriteError::position_not_found(&pos_str))?;
+            anchor.end_line
+        } else {
+            find_test_module_line(&tgt_lines).unwrap_or(tgt_lines.len())
+        };
+
+        let mut new_tgt_lines: Vec<String> = Vec::new();
+        for line in &tgt_lines[..insert_after_line] {
+            new_tgt_lines.push(line.to_string());
+        }
+        new_tgt_lines.push(String::new());
+        for line in source_text.lines() {
+            new_tgt_lines.push(line.to_string());
+        }
+        for line in &tgt_lines[insert_after_line..] {
+            new_tgt_lines.push(line.to_string());
+        }
+
+        let new_tgt_content = new_tgt_lines.join("\n");
+        let new_tgt_content = if tgt_content.ends_with('\n') && !new_tgt_content.ends_with('\n') {
+            new_tgt_content + "\n"
+        } else {
+            new_tgt_content
+        };
+
+        fs::write(&tgt_abs, &new_tgt_content)
+            .map_err(|e| WriteError::io_error(format!("write {}: {e}", tgt_abs.display())))?;
+        let tgt_affected = self.re_extract_file(target_file, &new_tgt_content, tgt_language);
+
+        // Build new selector for the moved leaf
+        let new_selector_str = format!("symbol:{target_file}#{}:{}", leaf.name, leaf.kind);
+
+        // Record move in version chain
+        let new_hash = extract::compute_source_hash(source_text.trim());
+        self.append_version_chain(
+            &selector_str,
+            &leaf.source_hash,
+            &format!("moved to {new_selector_str}"),
+            &new_hash,
+            Some(reason.unwrap_or("moved")),
+        );
+
+        let mut all_affected = tgt_affected;
+        all_affected.push(selector_str.clone());
+
+        Ok(MoveResult {
+            status: "moved".to_string(),
+            old_selector: selector_str,
+            new_selector: new_selector_str,
+            affected_leaves: all_affected,
         })
     }
 

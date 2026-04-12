@@ -22,3 +22,6 @@ delegate_approval = true
 
 [scoring]
 enabled = false
+
+[graph]
+editing = false

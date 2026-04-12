@@ -297,6 +297,7 @@ pub trait RuntimeHost {
         model: Option<&str>,
     ) -> Result<(), OrbitError>;
     fn scoring_enabled(&self) -> bool;
+    fn graph_editing(&self) -> bool;
     fn scoreboard_dir(&self) -> &Path;
     fn persist_invocation_trace(
         &self,

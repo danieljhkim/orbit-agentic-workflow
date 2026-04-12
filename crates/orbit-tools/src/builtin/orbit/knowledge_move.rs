@@ -1,0 +1,148 @@
+use orbit_knowledge::{Selector, load_task_working_graph, save_task_working_graph};
+use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use serde_json::Value;
+
+use crate::{Tool, ToolContext};
+
+use super::knowledge_write::{
+    initialize_working_graph, resolve_knowledge_dir, resolve_workspace_root_with_override,
+};
+
+pub struct OrbitKnowledgeMoveTool;
+
+impl Tool for OrbitKnowledgeMoveTool {
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "orbit.graph.move".to_string(),
+            description: "Move a symbol from one file to another, updating both source files and the working graph".to_string(),
+            parameters: vec![
+                ToolParam {
+                    name: "selector".to_string(),
+                    description: "Source symbol selector like `symbol:path#name:kind`".to_string(),
+                    param_type: "string".to_string(),
+                    required: true,
+                },
+                ToolParam {
+                    name: "target_file".to_string(),
+                    description: "Destination file path (relative to workspace root)".to_string(),
+                    param_type: "string".to_string(),
+                    required: true,
+                },
+                ToolParam {
+                    name: "position".to_string(),
+                    description: "Optional anchor selector like `after:symbol:path#name:kind` in the target file. Omit to append before `#[cfg(test)]` or at end of file.".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "reason".to_string(),
+                    description: "Optional reason for the move, stored in version chain".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "workspace_path".to_string(),
+                    description: "Optional workspace root override for branch/worktree targeting".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+            ],
+            builtin: true,
+        }
+    }
+
+    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let selector_str = crate::require_str(&input, "selector")?;
+        let target_file = crate::require_str(&input, "target_file")?;
+        let reason = input
+            .get("reason")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string());
+        let position_str = input
+            .get("position")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string());
+
+        let selector: Selector = selector_str
+            .parse()
+            .map_err(|e| OrbitError::InvalidInput(format!("{e}")))?;
+
+        if !matches!(selector, Selector::Symbol { .. }) {
+            return Err(OrbitError::InvalidInput(
+                "graph.move requires a symbol selector (symbol:path#name:kind)".to_string(),
+            ));
+        }
+
+        let workspace_root_buf = resolve_workspace_root_with_override(ctx, &input)?;
+        let workspace_root = workspace_root_buf.as_path();
+
+        let knowledge_dir = resolve_knowledge_dir(ctx, &input)?;
+        let mut working_graph =
+            match load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())? {
+                Some(graph) => graph,
+                None => initialize_working_graph(&knowledge_dir, &selector, workspace_root)?,
+            };
+
+        // Acquire locks on both source selector and target file
+        let lock_owner = ctx
+            .agent_name
+            .as_deref()
+            .or(ctx.task_id.as_deref())
+            .unwrap_or("unknown");
+        let lock_path = orbit_knowledge::lock::lock_store_path(&knowledge_dir);
+        orbit_knowledge::lock::with_lock_store(&lock_path, |store| {
+            store.lock(
+                &selector_str,
+                lock_owner,
+                ctx.task_id.as_deref(),
+                reason.as_deref().unwrap_or("moving (source)"),
+            )?;
+            store.lock(
+                &format!("file:{target_file}"),
+                lock_owner,
+                ctx.task_id.as_deref(),
+                reason.as_deref().unwrap_or("moving (target)"),
+            )
+        })
+        .map_err(|e| OrbitError::Execution(format!("lock failed: {e}")))?;
+
+        // Parse optional position selector
+        let position_selector = parse_position(position_str.as_deref())?;
+
+        let result = working_graph
+            .move_leaf(
+                &selector,
+                &target_file,
+                position_selector.as_ref(),
+                reason.as_deref(),
+                workspace_root,
+            )
+            .map_err(|e| {
+                serde_json::to_value(&e)
+                    .map(|v| OrbitError::Execution(v.to_string()))
+                    .unwrap_or_else(|_| OrbitError::Execution(format!("{e:?}")))
+            })?;
+
+        save_task_working_graph(
+            ctx.orbit_root.as_deref(),
+            ctx.task_id.as_deref(),
+            &working_graph,
+        )?;
+
+        serde_json::to_value(result)
+            .map_err(|e| OrbitError::Execution(format!("serialize result: {e}")))
+    }
+}
+
+fn parse_position(position: Option<&str>) -> Result<Option<Selector>, OrbitError> {
+    let Some(pos) = position else {
+        return Ok(None);
+    };
+    let selector_str = pos.strip_prefix("after:").unwrap_or(pos);
+    let selector: Selector = selector_str
+        .parse()
+        .map_err(|e| OrbitError::InvalidInput(format!("invalid position: {e}")))?;
+    Ok(Some(selector))
+}

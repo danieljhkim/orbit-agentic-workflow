@@ -89,6 +89,7 @@ pub(crate) fn build_context_from_roots(
     let task_approval_required_for_agent = runtime_config.task_approval.required_for_agent;
     let task_delegate_approval = runtime_config.task_approval.delegate_approval;
     let scoring_enabled = runtime_config.scoring_enabled;
+    let graph_editing = runtime_config.graph_editing;
 
     Ok(OrbitContext::new(
         paths,
@@ -107,6 +108,7 @@ pub(crate) fn build_context_from_roots(
         task_approval_required_for_agent,
         task_delegate_approval,
         scoring_enabled,
+        graph_editing,
     ))
 }
 

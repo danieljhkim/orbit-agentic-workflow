@@ -36,6 +36,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/agent_invoke/implement_change.yaml"),
     ),
     (
+        "implement_change_classic",
+        include_str!("../../assets/activities/agent_invoke/implement_change_classic.yaml"),
+    ),
+    (
         "review_tasks",
         include_str!("../../assets/activities/agent_invoke/review_tasks.yaml"),
     ),
@@ -532,7 +536,42 @@ mod tests {
             1
         );
         assert!(tools.contains(&"orbit.graph.write"));
+        assert!(tools.contains(&"orbit.graph.add"));
+        assert!(tools.contains(&"orbit.graph.delete"));
+        assert!(tools.contains(&"orbit.graph.move"));
+        assert!(tools.contains(&"orbit.graph.show"));
+        assert!(tools.contains(&"orbit.graph.search"));
         assert!(tools.contains(&"fs.read"));
+    }
+
+    #[test]
+    fn default_implement_change_classic_omits_graph_tools() {
+        let specs = load_default_activity_specs(DEFAULT_ACTIVITY_FILES, None).expect("activities");
+        let classic = specs
+            .into_iter()
+            .find(|spec| spec.id == "implement_change_classic")
+            .expect("implement_change_classic activity");
+
+        let instruction = classic
+            .spec_config
+            .get("instruction")
+            .and_then(serde_json::Value::as_str)
+            .expect("instruction");
+        assert!(instruction.contains("Use fs.read to read each file"));
+        assert!(!instruction.contains("orbit.graph.pack"));
+        assert!(!instruction.contains("orbit.graph.write"));
+
+        let tools = classic
+            .spec_config
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .expect("tools")
+            .iter()
+            .map(|value| value.as_str().expect("tool name"))
+            .collect::<Vec<_>>();
+        assert!(tools.contains(&"fs.read"));
+        assert!(tools.contains(&"fs.write"));
+        assert!(!tools.iter().any(|t| t.starts_with("orbit.graph.")));
     }
 
     #[test]

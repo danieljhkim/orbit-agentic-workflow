@@ -6,11 +6,11 @@ created_by: system
 # ---- activity ----
 activity:
   # ---- registration ----
-  id: implement_change
+  id: implement_change_classic
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Implement an Orbit task from plan to code, then return the next task status and execution summary
+  description: Implement an Orbit task from plan to code using direct file I/O (classic variant, no graph tools)
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to tested code.
@@ -50,23 +50,8 @@ activity:
        - If you are invoked outside that standard pipeline and the task is not already
          `in-progress`, it is the caller's responsibility to transition it first.
 
-    3. Load scoped knowledge for context_files:
-       - Build a selector list from task.context_files: each file becomes `file:<path>`.
-         If the plan names specific symbols in the form `<path>#<symbol>`, add
-         `symbol:<path>#<symbol>:<kind>` selectors as well.
-       - Call orbit.graph.pack with the selector list.
-       - If the response succeeds, use the pack entries as your primary context.
-         Each entry includes the leaf source, imports, and immediate neighbors —
-         you do NOT need to fs.read the full file.
-       - If the response error kind is "knowledge_unavailable", fall back to
-         fs.read on each context_file as before. This keeps the activity working
-         when orbit-map has not been run yet.
-       - If specific selectors come back in unresolved_selectors, fs.read those
-         specific files as a fallback. Do NOT fall back to raw reads for
-         selectors that resolved cleanly.
-       - Use orbit.graph.search to discover related symbols when the plan
-         references names not in context_files. Use orbit.graph.show to
-         inspect a specific node's lineage, siblings, and source.
+    3. Load context for context_files:
+       - Use fs.read to read each file listed in task.context_files.
        - All relative file and process work should happen inside the effective workspace_path
          (input.workspace_path if provided, otherwise the task's workspace_path).
        - If the plan is missing or still placeholder text, stop and return status: "blocked"
@@ -158,13 +143,6 @@ activity:
     - orbit
     - orbit-track-issues
   tools:
-    - orbit.graph.pack
-    - orbit.graph.write
-    - orbit.graph.add
-    - orbit.graph.delete
-    - orbit.graph.move
-    - orbit.graph.show
-    - orbit.graph.search
     - orbit.task.update
     - orbit.task.add
     - fs.read

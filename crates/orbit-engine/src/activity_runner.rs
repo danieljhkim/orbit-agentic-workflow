@@ -52,7 +52,8 @@ pub fn build_execution_context_for_step<H: RuntimeHost>(
     input: Value,
     debug: bool,
 ) -> Result<ExecutionContext, OrbitError> {
-    let activity = host.validate_activity_target_exists(step.target_type, &step.target_id)?;
+    let effective_target_id = resolve_activity_variant(&step.target_id, host.graph_editing());
+    let activity = host.validate_activity_target_exists(step.target_type, &effective_target_id)?;
     validate_activity_input_schema(&activity, &input)?;
     Ok(ExecutionContext {
         activity,
@@ -226,6 +227,39 @@ pub(crate) fn execution_template_context_with_env(
 }
 
 #[cfg(test)]
+mod variant_tests {
+    use super::resolve_activity_variant;
+
+    #[test]
+    fn graph_editing_off_swaps_implement_change() {
+        assert_eq!(
+            resolve_activity_variant("implement_change", false),
+            "implement_change_classic"
+        );
+    }
+
+    #[test]
+    fn graph_editing_on_keeps_implement_change() {
+        assert_eq!(
+            resolve_activity_variant("implement_change", true),
+            "implement_change"
+        );
+    }
+
+    #[test]
+    fn other_activities_pass_through() {
+        assert_eq!(
+            resolve_activity_variant("review_tasks", false),
+            "review_tasks"
+        );
+        assert_eq!(
+            resolve_activity_variant("review_tasks", true),
+            "review_tasks"
+        );
+    }
+}
+
+#[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod retry_tests {
     use orbit_types::JobRunState;
@@ -340,6 +374,19 @@ mod retry_tests {
         // AGENT_INVOCATION_FAILED is non-transient, so stops after 1 attempt
         assert_eq!(outcome.state, JobRunState::Failed);
         assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
+
+/// Resolve the effective activity ID based on feature flags.
+///
+/// When `graph_editing` is disabled, `implement_change` is swapped to
+/// `implement_change_classic` which omits graph tools from the agent's
+/// tool list and instruction. All other activity IDs pass through unchanged.
+fn resolve_activity_variant(target_id: &str, graph_editing: bool) -> String {
+    if !graph_editing && target_id == "implement_change" {
+        "implement_change_classic".to_string()
+    } else {
+        target_id.to_string()
     }
 }
 

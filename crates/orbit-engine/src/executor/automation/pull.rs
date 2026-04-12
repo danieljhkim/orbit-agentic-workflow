@@ -93,6 +93,9 @@ mod tests {
         fn scoring_enabled(&self) -> bool {
             false
         }
+        fn graph_editing(&self) -> bool {
+            false
+        }
         fn scoreboard_dir(&self) -> &Path {
             Path::new(".")
         }

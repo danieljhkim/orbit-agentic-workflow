@@ -669,6 +669,7 @@ mod tests {
             .with_timezone(&Utc)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn seed_raw_invocation(
         store: &Store,
         id_ts: &str,

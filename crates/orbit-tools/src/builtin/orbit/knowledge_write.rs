@@ -43,6 +43,12 @@ impl Tool for OrbitKnowledgeWriteTool {
                     required: false,
                 },
                 ToolParam {
+                    name: "workspace_path".to_string(),
+                    description: "Optional workspace root override for branch/worktree targeting".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
                     name: "knowledge_dir".to_string(),
                     description: "Optional knowledge artifact directory; defaults to `<workspace>/.orbit/knowledge`".to_string(),
                     param_type: "string".to_string(),
@@ -70,10 +76,8 @@ impl Tool for OrbitKnowledgeWriteTool {
             ));
         }
 
-        let workspace_root = ctx
-            .workspace_root
-            .as_deref()
-            .ok_or_else(|| OrbitError::InvalidInput("workspace_root is required".to_string()))?;
+        let workspace_root_buf = resolve_workspace_root_with_override(ctx, &input)?;
+        let workspace_root = workspace_root_buf.as_path();
 
         let knowledge_dir = resolve_knowledge_dir(ctx, &input)?;
         let mut working_graph =
@@ -135,6 +139,21 @@ impl Tool for OrbitKnowledgeWriteTool {
     }
 }
 
+/// Resolve the effective workspace root, with optional override from input.
+pub(super) fn resolve_workspace_root_with_override(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<std::path::PathBuf, OrbitError> {
+    if let Some(ws) = input.get("workspace_path").and_then(Value::as_str)
+        && !ws.trim().is_empty()
+    {
+        return Ok(std::path::PathBuf::from(ws));
+    }
+    ctx.workspace_root
+        .clone()
+        .ok_or_else(|| OrbitError::InvalidInput("workspace_root is required".to_string()))
+}
+
 fn require_new_source(input: &Value) -> Result<String, OrbitError> {
     let value = input
         .get("new_source")
@@ -171,7 +190,10 @@ fn parse_position_selector(position: Option<&str>) -> Result<Option<Selector>, O
     Ok(Some(selector))
 }
 
-fn resolve_knowledge_dir(ctx: &ToolContext, input: &Value) -> Result<PathBuf, OrbitError> {
+pub(super) fn resolve_knowledge_dir(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<PathBuf, OrbitError> {
     if let Some(raw) = input.get("knowledge_dir").and_then(|v| v.as_str())
         && !raw.trim().is_empty()
     {
@@ -195,7 +217,7 @@ fn resolve_knowledge_dir(ctx: &ToolContext, input: &Value) -> Result<PathBuf, Or
 
 /// Initialize a working graph by loading the persisted knowledge store,
 /// or create a minimal graph by extracting the target file.
-fn initialize_working_graph(
+pub(super) fn initialize_working_graph(
     knowledge_dir: &Path,
     selector: &Selector,
     workspace_root: &Path,

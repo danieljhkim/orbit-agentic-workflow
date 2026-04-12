@@ -16,5 +16,5 @@ pub use store::{
     save_task_working_graph, task_working_graph_state_path,
 };
 pub use working_graph::{
-    LeafEdit, LeafVersionChain, WorkingGraph, WorkingLeaf, WriteError, WriteResult,
+    LeafEdit, LeafVersionChain, MoveResult, WorkingGraph, WorkingLeaf, WriteError, WriteResult,
 };

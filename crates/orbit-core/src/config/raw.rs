@@ -7,7 +7,13 @@ pub(super) struct RawRuntimeConfig {
     pub(super) identity: Option<toml::Value>,
     pub(super) task: Option<RawTaskSection>,
     pub(super) scoring: Option<RawScoringConfig>,
+    pub(super) graph: Option<RawGraphConfig>,
     pub(super) watch: Option<toml::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct RawGraphConfig {
+    pub(super) editing: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

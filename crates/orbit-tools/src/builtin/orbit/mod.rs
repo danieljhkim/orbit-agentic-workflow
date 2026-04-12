@@ -1,4 +1,7 @@
 pub mod activity_show;
+pub mod knowledge_add;
+pub mod knowledge_delete;
+pub mod knowledge_move;
 pub mod knowledge_pack;
 pub mod knowledge_search;
 pub mod knowledge_show;
@@ -43,6 +46,9 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(task_show::OrbitTaskShowTool);
     registry.register(task_list::OrbitTaskListTool);
     registry.register(task_update::OrbitTaskUpdateTool);
+    registry.register(knowledge_add::OrbitKnowledgeAddTool);
+    registry.register(knowledge_delete::OrbitKnowledgeDeleteTool);
+    registry.register(knowledge_move::OrbitKnowledgeMoveTool);
     registry.register(knowledge_pack::OrbitKnowledgePackTool);
     registry.register(knowledge_search::OrbitKnowledgeSearchTool);
     registry.register(knowledge_show::OrbitKnowledgeShowTool);
