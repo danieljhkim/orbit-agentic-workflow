@@ -10,7 +10,7 @@ activity:
   spec_type: agent_invoke
 
   # ---- content ----
-  description: Implement an Orbit task from plan to code using direct file I/O (classic variant, no graph tools)
+  description: Implement an Orbit task from plan to code using direct file I/O and persist execution details to the task record
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
     You are implementing an Orbit task from plan to tested code.
@@ -105,6 +105,8 @@ activity:
 
            ## 7. Recommended Follow-Ups
            - <next step>
+       - Do not rely on the agent response payload to move the task through lifecycle stages.
+         The surrounding workflow owns task status transitions.
        - Do not stage files, create commits, or open pull requests. The job pipeline will handle persistence and those steps after this activity succeeds.
 
     7. Persist execution details to the task:

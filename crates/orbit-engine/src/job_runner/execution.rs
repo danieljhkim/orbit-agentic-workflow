@@ -13,8 +13,8 @@ use crate::context::{
 
 use super::friction::{append_failed_step_friction, append_step_metrics};
 use super::helpers::{
-    build_knowledge_run_metrics, check_loop_exit, extract_task_id, log_step_completion,
-    merge_job_input, normalize_agent_label, prepare_implement_change_metrics,
+    build_knowledge_run_metrics, build_step_input, check_loop_exit, extract_task_id,
+    log_step_completion, merge_job_input, normalize_agent_label, prepare_implement_change_metrics,
     record_task_agent_context, resolve_step_agent, resolve_step_agent_from_input,
     resolved_model_name, run_was_cancelled, should_run_step, step_state_records_incident,
 };
@@ -446,9 +446,10 @@ fn execute_activity_with_retries<H: EngineHost>(
 
                 // ---- Job-as-step: delegate to a nested job run ----
                 if step.target_type == JobTargetType::Job {
+                    let step_input = build_step_input(step, &current_input)?;
                     let step_started = Utc::now();
                     let sub_result =
-                        execute_job_step(host, data_root, &step.target_id, &current_input, debug);
+                        execute_job_step(host, data_root, &step.target_id, &step_input, debug);
                     let step_finished = Utc::now();
                     let (step_state, duration_ms, error_code, error_message) = match &sub_result {
                         Ok(result) => (result.state, None, None, None),
@@ -527,14 +528,15 @@ fn execute_activity_with_retries<H: EngineHost>(
                 // If the step's agent_cli is empty, resolve it via the
                 // precedence chain: agent_cli_from_input (job input) first,
                 // then task actor identity. See `resolve_step_agent` docs.
-                let resolved_step = resolve_step_agent(host, step, &current_input);
-                let resolved_from_input = resolve_step_agent_from_input(step, &current_input);
+                let step_input = build_step_input(step, &current_input)?;
+                let resolved_step = resolve_step_agent(host, step, &step_input);
+                let resolved_from_input = resolve_step_agent_from_input(step, &step_input);
                 let effective_step = resolved_step.as_ref().unwrap_or(step);
                 let execution = build_execution_context_for_step(
                     host,
                     &job,
                     effective_step,
-                    current_input.clone(),
+                    step_input,
                     debug,
                 )?;
                 // Record agent context for explicit steps and input-driven

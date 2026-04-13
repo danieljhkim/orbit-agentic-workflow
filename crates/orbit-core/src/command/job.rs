@@ -81,6 +81,8 @@ struct DefaultJobStep {
     target_type: String,
     target_id: String,
     #[serde(default)]
+    default_input: Option<Value>,
+    #[serde(default)]
     agent_cli: String,
     #[serde(default)]
     model: Option<String>,
@@ -238,15 +240,7 @@ impl OrbitRuntime {
             .initial_state_override
             .unwrap_or(JobScheduleState::Enabled);
 
-        let steps = params
-            .steps
-            .into_iter()
-            .map(|s| {
-                let env_extra = crate::config::normalize_pass_list(s.env_extra)
-                    .map_err(|e| OrbitError::JobValidation(e.to_string()))?;
-                Ok(JobStep { env_extra, ..s })
-            })
-            .collect::<Result<Vec<_>, OrbitError>>()?;
+        let steps = normalize_job_steps(params.steps)?;
 
         let max_iterations = params.max_iterations.unwrap_or(1);
         let job = self.add_job_record(StoreActivityCreateParams {
@@ -271,6 +265,7 @@ impl OrbitRuntime {
         steps: Vec<JobStep>,
         state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
+        let steps = normalize_job_steps(steps)?;
         let job = self.update_job_record(
             job_id,
             StoreJobUpdateParams {
@@ -348,6 +343,22 @@ fn normalize_job_default_input(default_input: Option<Value>) -> Result<Option<Va
             json_value_type_name(&other)
         ))),
     }
+}
+
+fn normalize_job_steps(steps: Vec<JobStep>) -> Result<Vec<JobStep>, OrbitError> {
+    steps
+        .into_iter()
+        .map(|step| {
+            let env_extra = crate::config::normalize_pass_list(step.env_extra)
+                .map_err(|e| OrbitError::JobValidation(e.to_string()))?;
+            let default_input = normalize_job_default_input(step.default_input)?;
+            Ok(JobStep {
+                env_extra,
+                default_input,
+                ..step
+            })
+        })
+        .collect()
 }
 
 fn json_value_type_name(value: &Value) -> &'static str {
@@ -447,6 +458,7 @@ fn default_job_steps(entry: &DefaultJobEntry) -> Result<Vec<JobStep>, OrbitError
             Ok(JobStep {
                 target_type,
                 target_id: s.target_id.clone(),
+                default_input: normalize_job_default_input(s.default_input.clone())?,
                 agent_cli: s.agent_cli.clone(),
                 model: s.model.clone(),
                 agent_cli_from_input: s.agent_cli_from_input.clone(),
@@ -572,5 +584,63 @@ mod tests {
         assert_eq!(step.condition, StepCondition::OnSuccess);
         assert!(step.output_map.is_empty());
         assert_eq!(step.timeout_seconds, 3600);
+    }
+
+    #[test]
+    fn parallel_task_worker_uses_step_default_input_for_update_task() {
+        let specs = load_default_job_specs(DEFAULT_JOB_FILES).expect("jobs");
+        let worker = specs
+            .into_iter()
+            .find(|spec| spec.job_id == "job_parallel_task_worker")
+            .expect("job_parallel_task_worker");
+
+        let step_ids = worker
+            .steps
+            .iter()
+            .map(|step| step.target_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(step_ids, vec!["implement_change", "update_task"]);
+
+        let update_step = worker
+            .steps
+            .iter()
+            .find(|step| step.target_id == "update_task")
+            .expect("update_task step");
+        assert_eq!(
+            update_step
+                .default_input
+                .as_ref()
+                .and_then(|input| input.get("status")),
+            Some(&serde_json::json!("review"))
+        );
+    }
+
+    #[test]
+    fn parallel_task_pipeline_keeps_finalize_after_commit_task_artifacts() {
+        let specs = load_default_job_specs(DEFAULT_JOB_FILES).expect("jobs");
+        let pipeline = specs
+            .into_iter()
+            .find(|spec| spec.job_id == "job_parallel_task_pipeline")
+            .expect("job_parallel_task_pipeline");
+
+        let step_ids = pipeline
+            .steps
+            .iter()
+            .map(|step| step.target_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            step_ids,
+            vec![
+                "update_knowledge_graph",
+                "dispatch_and_plan_batch",
+                "snapshot_batch_state",
+                "parallel_dispatch_tasks",
+                "commit_task_artifact_changes",
+                "finalize_tasks",
+                "commit_finalize_artifact_changes",
+                "commit_and_open_batch_pr",
+                "job_batch_review_cycle",
+            ]
+        );
     }
 }

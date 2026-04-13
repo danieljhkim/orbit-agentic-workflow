@@ -73,6 +73,10 @@ pub(super) fn merge_job_input(
     Ok(Value::Object(merged))
 }
 
+pub(super) fn build_step_input(step: &JobStep, current_input: &Value) -> Result<Value, OrbitError> {
+    merge_job_input(step.default_input.as_ref(), current_input.clone())
+}
+
 pub(super) fn should_run_step(
     condition: StepCondition,
     previous_step_state: Option<JobRunState>,
@@ -659,6 +663,32 @@ mod resolve_step_agent_tests {
 
         let resolved = resolve_step_agent(&host, &step, &input).expect("resolver should fire");
         assert_eq!(resolved.agent_cli, "claude");
+    }
+
+    #[test]
+    fn build_step_input_merges_defaults_without_overwriting_current_input() {
+        let step = JobStep {
+            default_input: Some(json!({
+                "status": "review",
+                "note": "workflow-owned transition",
+                "task_id": "T-default",
+            })),
+            ..JobStep::default()
+        };
+
+        let merged = build_step_input(
+            &step,
+            &json!({
+                "task_id": "T-run",
+                "workspace_path": "/tmp/worktree",
+            }),
+        )
+        .expect("merge step input");
+
+        assert_eq!(merged["status"], json!("review"));
+        assert_eq!(merged["note"], json!("workflow-owned transition"));
+        assert_eq!(merged["task_id"], json!("T-run"));
+        assert_eq!(merged["workspace_path"], json!("/tmp/worktree"));
     }
 }
 

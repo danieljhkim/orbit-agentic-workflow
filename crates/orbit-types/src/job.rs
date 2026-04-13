@@ -248,6 +248,8 @@ pub struct AgentCommitRequest {
 pub struct JobStep {
     pub target_type: JobTargetType,
     pub target_id: OrbitId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_input: Option<Value>,
     #[serde(default)]
     pub agent_cli: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -295,6 +297,7 @@ impl Default for JobStep {
         Self {
             target_type: JobTargetType::default(),
             target_id: OrbitId::default(),
+            default_input: None,
             agent_cli: String::new(),
             model: None,
             agent_cli_from_input: None,
@@ -400,6 +403,7 @@ mod tests {
     #[test]
     fn job_step_default_has_no_input_driven_agent_fields() {
         let step = JobStep::default();
+        assert!(step.default_input.is_none());
         assert!(step.agent_cli_from_input.is_none());
         assert!(step.model_from_input.is_none());
     }
@@ -409,6 +413,7 @@ mod tests {
         let step = JobStep {
             target_type: JobTargetType::Activity,
             target_id: OrbitId::from("review_duel_pr"),
+            default_input: Some(serde_json::json!({ "status": "review" })),
             agent_cli: String::new(),
             model: None,
             agent_cli_from_input: Some("reviewer_agent_cli".to_string()),
@@ -418,10 +423,15 @@ mod tests {
         };
 
         let json = serde_json::to_string(&step).expect("serialize");
+        assert!(json.contains("\"default_input\":{\"status\":\"review\"}"));
         assert!(json.contains("\"agent_cli_from_input\":\"reviewer_agent_cli\""));
         assert!(json.contains("\"model_from_input\":\"reviewer_model\""));
 
         let parsed: JobStep = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            parsed.default_input,
+            Some(serde_json::json!({ "status": "review" }))
+        );
         assert_eq!(
             parsed.agent_cli_from_input.as_deref(),
             Some("reviewer_agent_cli")

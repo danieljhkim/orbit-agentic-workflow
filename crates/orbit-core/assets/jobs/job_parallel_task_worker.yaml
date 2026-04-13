@@ -24,5 +24,7 @@ job:
 
     - target_type: activity
       target_id: update_task
+      default_input:
+        status: review
       condition: on_success
       timeout_seconds: 15
