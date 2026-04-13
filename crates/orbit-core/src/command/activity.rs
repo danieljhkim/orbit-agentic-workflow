@@ -559,10 +559,10 @@ mod tests {
                 .count(),
             1
         );
-        assert!(tools.contains(&"orbit.graph.write"));
-        assert!(tools.contains(&"orbit.graph.add"));
-        assert!(tools.contains(&"orbit.graph.delete"));
-        assert!(tools.contains(&"orbit.graph.move"));
+        assert!(!tools.contains(&"orbit.graph.write"));
+        assert!(!tools.contains(&"orbit.graph.add"));
+        assert!(!tools.contains(&"orbit.graph.delete"));
+        assert!(!tools.contains(&"orbit.graph.move"));
         assert!(tools.contains(&"orbit.graph.show"));
         assert!(tools.contains(&"orbit.graph.search"));
         assert!(tools.contains(&"fs.read"));

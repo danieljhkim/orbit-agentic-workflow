@@ -2177,7 +2177,7 @@ mod tests {
             "history actor should use the agent label for issue tasks"
         );
         assert_eq!(task.actor_identity.agent_name(), Some("claude"));
-        assert_eq!(task.actor_identity.agent_model(), Some("opus"));
+        assert_eq!(task.actor_identity.agent_model(), Some("opus-4.6"));
     }
 
     #[test]
@@ -2206,7 +2206,7 @@ mod tests {
             "history actor should be system for system-created tasks"
         );
         assert_eq!(task.actor_identity.agent_name(), Some("gemini"));
-        assert_eq!(task.actor_identity.agent_model(), Some("gemini-3.1-pro"));
+        assert_eq!(task.actor_identity.agent_model(), Some("gemini-3.1-pro-preview"));
     }
 
     #[test]
