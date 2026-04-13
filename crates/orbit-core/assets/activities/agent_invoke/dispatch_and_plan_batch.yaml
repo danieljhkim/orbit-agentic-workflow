@@ -13,109 +13,88 @@ activity:
   description: Select a conflict-free batch of backlog tasks, or honor explicit input.task_ids, then fan out plan authorship to parallel subagents and refine context_files for parallel execution.
   instruction: |
     Only use skills listed in this activity's skill_refs. Ignore all others.
-    Select a batch of backlog tasks for parallel execution, or honor explicit
-    input.task_ids when provided, then fan out plan authorship to parallel
-    subagents via the Task tool and persist the refined plans and context_files
-    for each selected task.
 
-    Phase 1 — Dispatch
+    Phase 1 — Load and batch
 
-    1. If input.task_ids is present, treat it as authoritative. Load exactly
-       those tasks by calling orbit.task.show for each id in input.task_ids.
-       Do not call orbit.task.list to add, replace, or supplement any tasks.
-       If input.task_ids is absent, call orbit.task.list with status: "backlog"
-       to retrieve all backlog tasks. If the backlog list is empty, exit
-       immediately.
+    1. Load tasks.
+       - If input.task_ids is present: call orbit.task.show for each id.
+         Do not call orbit.task.list. Do not add extra tasks.
+       - If input.task_ids is absent: call orbit.task.list with
+         status: "backlog". If the list is empty, exit immediately.
 
-    2. For each selected task, call orbit.task.show with the task id and read:
-       description, acceptance_criteria, context_files, priority, parent_id, task type,
-       and status.
-
-    3. Build a single batch that satisfies ALL of these rules:
+    2. Select a batch. Hard constraints (violating any of these is a fatal error):
        - If input.task_ids is present, the batch must contain exactly those
-         tasks. Do not add any extra tasks, and do not auto-select from backlog
-         to fill unused parallelism.
-       - If input.task_ids is present and the explicit set contains more task
-         ids than input.parallelism allows, fail loudly and stop instead of
-         truncating the batch.
-       - Every explicitly selected task must still be backlog-eligible. If any
-         task is not in backlog, fail loudly and stop instead of replacing it.
-       - No two selected tasks may conflict on context_files.
-       - A conflict exists when any path exactly matches, or is a path prefix of, another path.
-       - Prefer tasks that belong together logically: same area, same parent, same initiative, or
-         same kind of change. Do not group unrelated tasks just to fill the batch.
-       - Respect input.parallelism as the maximum batch size when it is provided.
-       - If only one task is a good fit, returning a one-task batch is valid.
+         tasks. If the count exceeds input.parallelism, return an error.
+       - Every task must be in backlog status. If any is not, return an error.
+       - No two tasks may share a context_files path (exact match or prefix).
+       - Batch size must not exceed input.parallelism.
 
-    4. For every selected task, call orbit.task.update with:
-       - id: "<selected task id>"
-       - batch_id: "<the value of input.run_id>"
-       - comment: "Parallel batch dispatched: <one sentence rationale>"
+       Preferences (use judgment):
+       - Prefer single-task batches for complex tasks (wide context_files,
+         many acceptance criteria, cross-cutting changes). Batch only small,
+         focused, independent tasks. When in doubt, prefer one task.
+       - Prefer tasks that belong together: same area, parent, or initiative.
+         Do not group unrelated tasks to fill the batch.
+       - A one-task batch is always valid.
 
-    Phase 2 — Plan (parallel fan-out)
+    3. Tag the batch. For each task, call orbit.task.update with:
+       - id: the task id
+       - batch_id: input.run_id
+       - comment: "Batch dispatched: <one sentence rationale>"
 
-    Because Phase 1 produced a conflict-free batch (disjoint context_files by
-    path-prefix), each task's plan can be authored independently.
+    Phase 2 — Plan
 
-    Before fanning out, check each task's plan field from the orbit.task.show
-    response loaded in Phase 1. Partition the batch into two groups:
-    - needs_plan: tasks with empty, blank, or placeholder plan text (e.g.
-      "To be authored by executing agent at start time.")
-    - has_plan: tasks with a substantive existing plan
+    4. Partition the batch by checking each task's plan field:
+       - needs_plan: empty, blank, or placeholder (e.g. "To be authored by
+         executing agent at start time.")
+       - has_plan: substantive existing plan
 
-    5. Fan out subagents. In a SINGLE message, emit multiple Task tool calls
-       in parallel — one subagent per task in the batch.
+    5. Fan out subagents. In a SINGLE message, emit one parallel subagent
+       call per task.
 
-       For needs_plan tasks, provide a self-contained prompt that includes:
-         - The task id, title, description, and acceptance_criteria
-         - The current context_files list
-         - Working directory context: "you are in the Orbit repo at the current cwd"
-         - Instructions to read the referenced files with Read/Grep/Glob, understand
-           the current code, and produce a structured markdown report
-         - The exact output contract from step 6 below
-         - A note that sibling subagents are planning disjoint tasks in parallel, so
-           no cross-coordination is required
-         - An explicit prohibition: do NOT modify any files — research and report only
+       For needs_plan tasks, the prompt must include:
+         - task id, title, description, acceptance_criteria, context_files
+         - Instruction: read the referenced files, understand the code,
+           produce a structured markdown report. Do NOT modify any files.
+         - Output contract: ## Plan, ## Context Files, ## Risks (see step 6)
 
-       For has_plan tasks, provide a prompt that includes:
-         - The task id, title, description, acceptance_criteria, and existing plan
-         - Instructions to read the codebase and refine context_files only
-         - The output contract: return only ## Context Files and ## Risks sections
-         - An explicit note: do NOT rewrite the plan — it is already authored
+       For has_plan tasks, the prompt must include:
+         - task id, title, description, acceptance_criteria, existing plan
+         - Instruction: read the codebase, refine context_files based on
+           the existing plan. Do NOT rewrite the plan.
+         - Output contract: ## Context Files, ## Risks only
+
+       If a subagent fails or returns malformed output, retry once. If it
+       fails again, remove that task from the batch and continue with the rest.
 
     6. Subagent output contract.
 
-       For needs_plan tasks, each subagent MUST return markdown with exactly
-       these sections:
-       - ## Plan — detailed, implementation-ready plan grounded in the current
-         codebase, with concrete file paths, function names, and validation steps.
-       - ## Context Files — refined list of exact file paths (not directories),
-         one per line, that the implementing agent will need to read or modify.
+       needs_plan tasks — return markdown with exactly:
+       - ## Plan — implementation-ready, with concrete file paths, function
+         names, and validation steps.
+       - ## Context Files — exact file paths (not directories), one per line.
        - ## Risks — short list of risks, unknowns, or assumptions.
 
-       For has_plan tasks, each subagent MUST return markdown with:
+       has_plan tasks — return markdown with:
        - ## Context Files — refined file paths based on the existing plan.
        - ## Risks — short list of risks, unknowns, or assumptions.
 
-    7. Collate and persist. After all subagents return, parse each report and,
-       for each task, call orbit.task.update:
+    7. Conflict re-check. Before persisting, verify the refined context_files
+       across the batch are still disjoint (path-prefix rule from step 2).
+       If a subagent widened context_files and introduced overlap, reassign
+       the overlapping file to the task that needs it most and note the
+       decision in that task's comment.
 
-       For needs_plan tasks:
-       - id: the task id
-       - plan: the full ## Plan section markdown
+    8. Persist. For each task, call orbit.task.update:
+
+       needs_plan tasks:
+       - plan: the ## Plan markdown
        - context_files: the parsed ## Context Files list
-       - comment: "Batch plan authored by parallel subagent; context_files refined for parallel execution."
+       - comment: "Plan authored by subagent; context_files refined."
 
-       For has_plan tasks:
-       - id: the task id
+       has_plan tasks:
        - context_files: the parsed ## Context Files list
-       - comment: "Existing plan preserved; context_files refined for parallel execution."
-
-    8. Conflict re-check. After collating (and BEFORE persisting if possible),
-       verify the refined context_files across the batch are still disjoint under
-       the path-prefix rule from Phase 1. If a subagent widened context_files and
-       introduced overlap, resolve by reassigning the overlapping file to the task
-       that needs it most and note the decision in that task's plan before persisting.
+       - comment: "Existing plan preserved; context_files refined."
 
   # ---- interface ----
   input_schema_json:
