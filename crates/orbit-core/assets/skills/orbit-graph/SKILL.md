@@ -1,13 +1,13 @@
 ---
 name: orbit-graph
-description: Use when navigating, inspecting, or editing orbit-harnessed codebase via the knowledge graph instead of raw file reads.
+description: Use when navigating and inspecting an orbit-harnessed codebase via the knowledge graph instead of raw file reads.
 ---
 
 # Orbit Graph
 
 ## Purpose
 
-Use `orbit.graph.*` tools for scoped context and symbol-level edits. Prefer over raw `fs.read` — graph tools return only relevant symbols, imports, and neighbors.
+Use `orbit.graph.*` tools for scoped context and symbol-level inspection. Prefer over raw `fs.read` — graph tools return only relevant symbols, imports, and neighbors.
 
 ## Command Reference
 
@@ -31,24 +31,6 @@ orbit tool run orbit.graph.refs --input '{"selector": "symbol:src/lib.rs#hello:f
 
 # Show node with lineage, siblings, children, source
 orbit tool run orbit.graph.show --input '{"selector": "symbol:src/lib.rs#hello:function"}'
-
-# Edit existing symbol
-orbit tool run orbit.graph.write --input '{"selector": "symbol:src/lib.rs#hello:function", "new_source": "pub fn hello() { }", "reason": "updated"}'
-
-# Rewrite entire file
-orbit tool run orbit.graph.write --input '{"selector": "file:src/lib.rs", "new_source": "pub fn hello() { }\n", "reason": "rewrite"}'
-
-# Rewrite file region (lines 5-10)
-orbit tool run orbit.graph.write --input '{"selector": "file:src/lib.rs", "new_source": "replacement lines", "start_line": 5, "end_line": 10, "reason": "region edit"}'
-
-# Add new symbol (rejects if exists)
-orbit tool run orbit.graph.add --input '{"selector": "symbol:src/lib.rs#greet:function", "source": "pub fn greet() { }", "position": "after:symbol:src/lib.rs#hello:function", "reason": "new helper"}'
-
-# Delete symbol
-orbit tool run orbit.graph.delete --input '{"selector": "symbol:src/lib.rs#old_fn:function", "reason": "unused"}'
-
-# Move symbol between files
-orbit tool run orbit.graph.move --input '{"selector": "symbol:src/old.rs#helper:function", "target_file": "src/new.rs", "reason": "relocated"}'
 ```
 
 ## Selector Syntax
@@ -78,16 +60,6 @@ Symbol kinds: `function`, `method`, `struct`, `trait`, `impl`, `class`, `interfa
    - **`unresolved_selectors`**: Fall back to `fs.read` only for those entries. Do NOT fall back globally.
 4. Dir pack entries include `children` (child file/dir selectors). File pack entries include `symbol_summary` (name/kind/selector for each symbol in the file).
 
-## Workflow: Code Mutation
-
-Mutation tools (`write`, `add`, `delete`, `move`) operate on a task-scoped **working graph** that writes changes to disk and tracks edits in a version chain.
-
-- `write` accepts both `symbol:` selectors (edit/insert leaf) and `file:` selectors (full rewrite or region edit with `start_line`/`end_line`)
-- `add`, `delete`, `move` accept only `symbol:` selectors
-- Locking is automatic
-- Always include `reason` for version chain auditability
-- Use `workspace_path` param to target a worktree checkout
-
 ## Tool Reference
 
 | Tool | Required Params | Optional Params |
@@ -97,10 +69,6 @@ Mutation tools (`write`, `add`, `delete`, `move`) operate on a task-scoped **wor
 | `orbit.graph.overview` | *(none)* | `prefix`, `knowledge_dir` |
 | `orbit.graph.refs` | `selector` | `limit`, `knowledge_dir` |
 | `orbit.graph.show` | `selector` | `depth`, `siblings`, `children` |
-| `orbit.graph.write` | `selector`, `new_source` | `position`, `start_line`, `end_line`, `reason`, `workspace_path`, `knowledge_dir` |
-| `orbit.graph.add` | `selector`, `source` | `position`, `reason`, `workspace_path` |
-| `orbit.graph.delete` | `selector` | `reason`, `workspace_path` |
-| `orbit.graph.move` | `selector`, `target_file` | `position`, `reason`, `workspace_path` |
 
 ## Search Output Formats
 
@@ -122,8 +90,6 @@ Pass `"format": "selectors"` for legacy flat array output.
 | Mistake | Correction |
 |---------|------------|
 | `orbit graph show ...` | Use `orbit tool run orbit.graph.show --input '{...}'` |
-| `dir:` selector with `add`/`delete`/`move` | These tools only accept `symbol:` selectors |
 | Falling back to `fs.read` globally when some selectors resolved | Only fall back for `unresolved_selectors` entries |
 | Treating `knowledge_unavailable` as fatal | Normal when graph not built; fall back to `fs.read` |
-| Omitting `reason` on mutations | Always include for version chain tracking |
 | Reading full files after successful pack | Pack entries already contain relevant source |
