@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn deserialize_leaf_node_from_fixture() {
         let fixture = include_str!(
-            "../../tests/fixtures/knowledge/.orbit/knowledge/graph/objects/33/\
+            "../../../orbit-tools/tests/fixtures/knowledge/.orbit/knowledge/graph/objects/33/\
              3333333333333333333333333333333333333333333333333333333333333333.json"
         );
 

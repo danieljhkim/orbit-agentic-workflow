@@ -483,7 +483,7 @@ mod tests {
 
     fn fixture_graph_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/knowledge/.orbit/knowledge/graph")
+            .join("../orbit-tools/tests/fixtures/knowledge/.orbit/knowledge/graph")
     }
 
     #[test]
