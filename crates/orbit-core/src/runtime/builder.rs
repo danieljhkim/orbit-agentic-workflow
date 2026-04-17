@@ -36,14 +36,6 @@ pub(crate) fn build_context_from_roots(
 
     let store = Store::open(&persistence.audit_db)?;
 
-    // Build task store (workspace only).
-    let task_store = task_store_file(persistence.task_dir.clone());
-
-    // Activities and jobs are globally scoped resources.
-    let activity_store =
-        activity_store_resolved(ResolvedScope::Single(persistence.activity_dir.clone()))?;
-    let job_store = job_store_resolved(ResolvedScope::Single(persistence.job_dir.clone()))?;
-
     // workspace_root IS the .orbit dir; repo_root is its parent.
     let repo_root = workspace_root
         .parent()
@@ -54,6 +46,18 @@ pub(crate) fn build_context_from_roots(
         workspace_root.to_path_buf(),
         global_root.to_path_buf(),
     );
+
+    // Build task store (workspace only).
+    let task_store = task_store_file(persistence.task_dir.clone());
+
+    // Activities are global-only. Jobs use layered storage so definitions stay
+    // global while run artifacts remain workspace-local.
+    let activity_store =
+        activity_store_resolved(ResolvedScope::Single(persistence.activity_dir.clone()))?;
+    let job_store = job_store_resolved(ResolvedScope::Layered {
+        global: persistence.job_dir.clone(),
+        workspace: paths.jobs_dir.clone(),
+    })?;
     let tool_store = tool_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
     let executor_def_store =

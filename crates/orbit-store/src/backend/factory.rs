@@ -8,6 +8,7 @@ use super::contracts::{
     PolicyDefStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use super::layered_executor_def::LayeredExecutorDefStore;
+use super::layered_job::LayeredJobStore;
 use super::layered_policy_def::LayeredPolicyDefStore;
 use super::sqlite_backends::{SqliteAuditEventStoreBackend, SqliteToolStoreBackend};
 use crate::Store;
@@ -86,14 +87,18 @@ pub fn activity_store_resolved(
     }
 }
 
-/// Creates a job store from a resolved scope. Runtime scoping uses `Single`
-/// because jobs are globally scoped artifacts.
+/// Creates a job store from a resolved scope.
+///
+/// Jobs use layered resolution at runtime so definitions remain global while
+/// job runs stay workspace-local.
 pub fn job_store_resolved(scope: ResolvedScope) -> Result<Arc<dyn JobStoreBackend>, OrbitError> {
     match scope {
         ResolvedScope::Single(path) => Ok(job_store_file(path)),
-        ResolvedScope::Layered { .. } => Err(OrbitError::InvalidInput(
-            "job store does not support layered resolution".to_string(),
-        )),
+        ResolvedScope::Layered { global, workspace } => {
+            let g = job_store_file(global);
+            let w = job_store_file(workspace);
+            Ok(Arc::new(LayeredJobStore::new(w, g)))
+        }
     }
 }
 
