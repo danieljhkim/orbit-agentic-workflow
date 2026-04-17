@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use orbit_knowledge::{
-    KnowledgeStore, Selector, load_task_working_graph, overlay_pack_with_working_graph,
-    pack_from_working_graph,
+    KnowledgeError, KnowledgeStore, Selector, load_task_working_graph,
+    overlay_pack_with_working_graph, pack_from_working_graph,
 };
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::Value;
@@ -46,40 +46,54 @@ impl Tool for OrbitKnowledgePackTool {
         let working_graph =
             load_task_working_graph(ctx.orbit_root.as_deref(), ctx.task_id.as_deref())?;
 
-        let store = match KnowledgeStore::open(&knowledge_dir) {
-            Ok(store) => store,
-            Err(error) => {
-                if let Some(graph) = working_graph.as_ref() {
-                    let pack = pack_from_working_graph(&knowledge_dir, &selectors, graph);
-                    return serde_json::to_value(pack).map_err(|serialize| {
-                        OrbitError::Execution(format!(
-                            "failed to serialize knowledge pack: {serialize}"
-                        ))
-                    });
-                }
-                return serde_json::to_value(error).map_err(|serialize| {
-                    OrbitError::Execution(format!(
-                        "failed to serialize knowledge error: {serialize}"
-                    ))
-                });
-            }
+        let pack_result = || -> Result<_, KnowledgeError> {
+            let store = KnowledgeStore::open(&knowledge_dir)?;
+            store.pack(&selectors)
         };
-        let pack = match store.pack(&selectors) {
+        let pack = match pack_result() {
             Ok(pack) => pack,
-            Err(error) => {
-                if let Some(graph) = working_graph.as_ref() {
-                    let pack = pack_from_working_graph(&knowledge_dir, &selectors, graph);
-                    return serde_json::to_value(pack).map_err(|serialize| {
-                        OrbitError::Execution(format!(
-                            "failed to serialize knowledge pack: {serialize}"
-                        ))
-                    });
+            Err(first_error) => {
+                let pack_or_error = match super::rebuild_default_knowledge_graph(
+                    ctx,
+                    &knowledge_dir,
+                    &first_error,
+                ) {
+                    Ok(true) => match pack_result() {
+                        Ok(pack) => Ok(pack),
+                        Err(retry_error) => Err(KnowledgeError {
+                            kind: "knowledge_unavailable".to_string(),
+                            reason: format!(
+                                "failed to load knowledge pack: {first_error}; retry after rebuild failed: {retry_error}"
+                            ),
+                        }),
+                    },
+                    Ok(false) => Err(first_error),
+                    Err(rebuild_error) => Err(KnowledgeError {
+                        kind: "knowledge_unavailable".to_string(),
+                        reason: format!(
+                            "failed to load knowledge pack: {first_error}; rebuild attempt failed: {rebuild_error}"
+                        ),
+                    }),
+                };
+
+                match pack_or_error {
+                    Ok(pack) => pack,
+                    Err(error) => {
+                        if let Some(graph) = working_graph.as_ref() {
+                            let pack = pack_from_working_graph(&knowledge_dir, &selectors, graph);
+                            return serde_json::to_value(pack).map_err(|serialize| {
+                                OrbitError::Execution(format!(
+                                    "failed to serialize knowledge pack: {serialize}"
+                                ))
+                            });
+                        }
+                        return serde_json::to_value(error).map_err(|serialize| {
+                            OrbitError::Execution(format!(
+                                "failed to serialize knowledge error: {serialize}"
+                            ))
+                        });
+                    }
                 }
-                return serde_json::to_value(error).map_err(|serialize| {
-                    OrbitError::Execution(format!(
-                        "failed to serialize knowledge error: {serialize}"
-                    ))
-                });
             }
         };
         let pack = if let Some(graph) = working_graph.as_ref() {

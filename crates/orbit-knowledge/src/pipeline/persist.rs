@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::error::KnowledgeError;
 use crate::graph::object_store::GraphObjectStore;
+use crate::io::write_text_atomic_durable;
 use crate::pipeline::context::PipelineContext;
 
 /// Write the assembled graph to the content-addressed object store.
@@ -27,7 +28,7 @@ pub fn write_manifest(ctx: &PipelineContext) -> Result<(), KnowledgeError> {
 
     let json = serde_json::to_string_pretty(&manifest)
         .map_err(|e| KnowledgeError::invalid_data(format!("manifest serialize: {e}")))?;
-    fs::write(ctx.manifest_path(), json)
+    write_text_atomic_durable(&ctx.manifest_path(), &format!("{json}\n"))
         .map_err(|e| KnowledgeError::io(format!("write manifest: {e}")))?;
     Ok(())
 }

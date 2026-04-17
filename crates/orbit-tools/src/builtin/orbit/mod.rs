@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_knowledge::graph::nodes::CodebaseGraphV1;
 use orbit_knowledge::graph::object_store::GraphObjectStore;
+use orbit_knowledge::pipeline::context::BuildConfig;
 use orbit_store::state_io;
 use orbit_types::{OrbitError, ToolParam, normalize_optional_attribution_label};
 use serde_json::Value;
@@ -279,9 +280,66 @@ pub(super) fn load_graph_for_read(
     let knowledge_dir = knowledge_write::resolve_knowledge_dir(ctx, input)?;
     maybe_refresh_knowledge_graph(ctx, input, &knowledge_dir);
 
-    GraphObjectStore::new(knowledge_dir.join("graph"))
-        .read_graph()
-        .map_err(|e| OrbitError::Execution(format!("failed to load knowledge graph: {e}")))
+    let graph_dir = knowledge_dir.join("graph");
+    match GraphObjectStore::new(&graph_dir).read_graph() {
+        Ok(graph) => Ok(graph),
+        Err(first_error) => {
+            let rebuilt = rebuild_default_knowledge_graph(ctx, &knowledge_dir, &first_error)
+                .map_err(|rebuild_error| {
+                    OrbitError::Execution(format!(
+                        "failed to load knowledge graph: {first_error}; rebuild attempt failed: {rebuild_error}"
+                    ))
+                })?;
+            if !rebuilt {
+                return Err(OrbitError::Execution(format!(
+                    "failed to load knowledge graph: {first_error}"
+                )));
+            }
+
+            GraphObjectStore::new(&graph_dir).read_graph().map_err(|retry_error| {
+                OrbitError::Execution(format!(
+                    "failed to load knowledge graph: {first_error}; retry after rebuild failed: {retry_error}"
+                ))
+            })
+        }
+    }
+}
+
+pub(super) fn rebuild_default_knowledge_graph(
+    ctx: &ToolContext,
+    knowledge_dir: &Path,
+    first_error: &orbit_knowledge::KnowledgeError,
+) -> Result<bool, String> {
+    let Some(workspace_root) = workspace_root_for_default_knowledge_dir(ctx, knowledge_dir) else {
+        return Ok(false);
+    };
+
+    eprintln!(
+        "warning: knowledge graph load failed: {first_error}; rebuilding default knowledge graph at {}",
+        knowledge_dir.display()
+    );
+    let incremental = knowledge_dir.join("manifest.json").is_file();
+    orbit_knowledge::pipeline::run_build(BuildConfig {
+        repo_path: workspace_root.to_path_buf(),
+        output_dir: knowledge_dir.to_path_buf(),
+        incremental,
+    })
+    .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+fn workspace_root_for_default_knowledge_dir<'a>(
+    ctx: &'a ToolContext,
+    knowledge_dir: &Path,
+) -> Option<&'a Path> {
+    let workspace_root = ctx.workspace_root.as_deref()?;
+    let default_knowledge_dir = if let Some(orbit_root) = ctx.orbit_root.as_deref() {
+        orbit_root.join("knowledge")
+    } else {
+        workspace_root.join(".orbit/knowledge")
+    };
+
+    (knowledge_dir == default_knowledge_dir).then_some(workspace_root)
 }
 
 pub(super) fn resolve_state_dir(ctx: &ToolContext, input: &Value) -> Result<PathBuf, OrbitError> {

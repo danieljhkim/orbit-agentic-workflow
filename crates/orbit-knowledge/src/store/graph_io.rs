@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::error::KnowledgeError;
 
@@ -18,7 +19,7 @@ pub(super) fn read_graph_object(
 
     let path = knowledge_dir
         .join("graph/objects")
-        .join(&object_hash[..2])
+        .join(hash_prefix(object_hash, "object")?)
         .join(format!("{object_hash}.json"));
     let value: Value = read_json_file(&path).map_err(|error| {
         KnowledgeError::knowledge_unavailable(format!(
@@ -26,6 +27,13 @@ pub(super) fn read_graph_object(
             path.display()
         ))
     })?;
+    let actual_hash = sha256_hex(canonical_json(&value).as_bytes());
+    if actual_hash != object_hash {
+        return Err(KnowledgeError::invalid_data(format!(
+            "object hash mismatch for {}: expected `{object_hash}`, got `{actual_hash}`",
+            path.display()
+        )));
+    }
     cache.insert(object_hash.to_string(), value.clone());
     Ok(value)
 }
@@ -58,7 +66,7 @@ pub(super) fn extract_leaf_source(
 
     let path = knowledge_dir
         .join("graph/blobs")
-        .join(&blob_hash[..2])
+        .join(hash_prefix(blob_hash, "blob")?)
         .join(format!("{blob_hash}.txt"));
     let source = fs::read_to_string(&path).map_err(|error| {
         KnowledgeError::knowledge_unavailable(format!(
@@ -66,6 +74,13 @@ pub(super) fn extract_leaf_source(
             path.display()
         ))
     })?;
+    let actual_hash = sha256_hex(source.as_bytes());
+    if actual_hash != blob_hash {
+        return Err(KnowledgeError::invalid_data(format!(
+            "blob hash mismatch for {}: expected `{blob_hash}`, got `{actual_hash}`",
+            path.display()
+        )));
+    }
     blob_cache.insert(blob_hash.to_string(), source.clone());
     Ok(Some(source))
 }
@@ -99,4 +114,38 @@ pub(super) struct GraphIndexEntry {
     pub(super) node_type: String,
     pub(super) location: String,
     pub(super) kind: Option<String>,
+}
+
+fn canonical_json(value: &Value) -> String {
+    let sorted = sort_json_value(value.clone());
+    serde_json::to_string(&sorted).unwrap()
+}
+
+fn hash_prefix<'a>(hash: &'a str, label: &str) -> Result<&'a str, KnowledgeError> {
+    if hash.len() < 2 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(KnowledgeError::invalid_data(format!(
+            "invalid {label} hash `{hash}`"
+        )));
+    }
+    Ok(&hash[..2])
+}
+
+fn sort_json_value(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let sorted: BTreeMap<String, Value> = map
+                .into_iter()
+                .map(|(key, value)| (key, sort_json_value(value)))
+                .collect();
+            Value::Object(sorted.into_iter().collect())
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sort_json_value).collect()),
+        other => other,
+    }
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    format!("{:x}", hasher.finalize())
 }

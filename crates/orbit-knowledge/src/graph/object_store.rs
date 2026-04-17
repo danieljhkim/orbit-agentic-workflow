@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 
 use super::nodes::{CodebaseGraphV1, DirNode, FileNode, LeafNode};
 use crate::error::KnowledgeError;
+use crate::io::write_text_atomic_durable;
 
 const GRAPH_STORE_SCHEMA_VERSION: u32 = 1;
 
@@ -440,18 +441,10 @@ impl GraphObjectStore {
         let canonical = canonical_json(payload);
         let digest = sha256_hex(canonical.as_bytes());
         let path = self.object_path(&digest)?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                KnowledgeError::knowledge_unavailable(format!(
-                    "create dir {}: {e}",
-                    parent.display()
-                ))
-            })?;
-        }
         let sorted = sort_json_value(payload.clone());
         let pretty = serde_json::to_string_pretty(&sorted)
             .map_err(|e| KnowledgeError::invalid_data(format!("serialize object: {e}")))?;
-        fs::write(&path, format!("{pretty}\n")).map_err(|e| {
+        write_text_atomic_durable(&path, &format!("{pretty}\n")).map_err(|e| {
             KnowledgeError::knowledge_unavailable(format!("write object {}: {e}", path.display()))
         })?;
         Ok(digest)
@@ -460,15 +453,7 @@ impl GraphObjectStore {
     fn write_blob(&self, content: &str) -> Result<String, KnowledgeError> {
         let digest = sha256_hex(content.as_bytes());
         let path = self.blob_path(&digest)?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                KnowledgeError::knowledge_unavailable(format!(
-                    "create dir {}: {e}",
-                    parent.display()
-                ))
-            })?;
-        }
-        fs::write(&path, content).map_err(|e| {
+        write_text_atomic_durable(&path, content).map_err(|e| {
             KnowledgeError::knowledge_unavailable(format!("write blob {}: {e}", path.display()))
         })?;
         Ok(digest)
@@ -506,15 +491,10 @@ fn read_json_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Know
 }
 
 fn write_json_file(path: &Path, payload: &Value) -> Result<(), KnowledgeError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            KnowledgeError::knowledge_unavailable(format!("create dir {}: {e}", parent.display()))
-        })?;
-    }
     let sorted = sort_json_value(payload.clone());
     let pretty = serde_json::to_string_pretty(&sorted)
         .map_err(|e| KnowledgeError::invalid_data(format!("serialize json: {e}")))?;
-    fs::write(path, format!("{pretty}\n")).map_err(|e| {
+    write_text_atomic_durable(path, &format!("{pretty}\n")).map_err(|e| {
         KnowledgeError::knowledge_unavailable(format!("write json {}: {e}", path.display()))
     })?;
     Ok(())
