@@ -1,5 +1,8 @@
 //! Service layer: selector resolution, search, and context pack rendering.
 
+pub mod callers;
+pub mod deps;
+pub mod implementors;
 pub mod lineage;
 
 mod context;
