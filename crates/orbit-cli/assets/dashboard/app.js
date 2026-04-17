@@ -157,6 +157,31 @@ function renderRuns(runs) {
   }
 }
 
+const SCOREBOARD_COLUMNS = [
+  { key: "agent", label: "agent", num: false },
+  { key: "tasks_completed", label: "tasks", num: true },
+  { key: "tokens.total", label: "tokens", num: true },
+  { key: "tokens.output", label: "out", num: true },
+  { key: "tool_calls", label: "tools", num: true },
+  { key: "duels.wins", label: "duel w", num: true },
+  { key: "duels.losses", label: "duel l", num: true },
+  { key: "friction.reported", label: "frict r", num: true },
+  { key: "friction.accepted", label: "frict a", num: true },
+  { key: "friction.rejected", label: "frict rej", num: true },
+  { key: "pr.merged_clean", label: "pr clean", num: true },
+  { key: "pr.merged_with_revision", label: "pr w/rev", num: true },
+  { key: "pr.review_comments", label: "pr cmts", num: true },
+];
+
+function readPath(obj, path) {
+  let cur = obj;
+  for (const part of path.split(".")) {
+    if (cur == null) return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+
 function renderScoreboard(summary) {
   const body = $("scoreboard-body");
   body.innerHTML = "";
@@ -168,28 +193,49 @@ function renderScoreboard(summary) {
     return;
   }
   entries.sort(([, a], [, b]) => (b.tasks_completed || 0) - (a.tasks_completed || 0));
-  body.appendChild(
-    el("div", { class: "scoreboard-row header" }, [
-      el("span", { text: "agent" }),
-      el("span", { class: "num", text: "tasks" }),
-      el("span", { class: "num", text: "merged" }),
-      el("span", { class: "num", text: "rev" }),
-    ]),
-  );
-  for (const [name, a] of entries) {
-    const tasks = a.tasks_completed ?? 0;
-    const pr = a.pr || {};
-    const merged = (pr.merged_clean || 0) + (pr.merged_with_revision || 0);
-    const rev = pr.merged_with_revision || 0;
-    body.appendChild(
-      el("div", { class: "scoreboard-row" }, [
-        el("span", { text: name, title: name }),
-        el("span", { class: "num", text: String(tasks) }),
-        el("span", { class: "num", text: String(merged) }),
-        el("span", { class: "num", text: String(rev) }),
-      ]),
+
+  const table = el("table", { class: "scoreboard-table" });
+  const thead = el("thead");
+  const headRow = el("tr");
+  for (const col of SCOREBOARD_COLUMNS) {
+    headRow.appendChild(
+      el(col === SCOREBOARD_COLUMNS[0] ? "th" : "th", {
+        class: col.num ? "num" : "",
+        text: col.label,
+      }),
     );
   }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  for (const [name, agent] of entries) {
+    const row = el("tr");
+    for (const col of SCOREBOARD_COLUMNS) {
+      let cellText;
+      let extra = "";
+      if (col.key === "agent") {
+        cellText = name;
+      } else {
+        const v = readPath(agent, col.key);
+        const num = typeof v === "number" ? v : 0;
+        cellText = String(num);
+        if (num === 0) extra = " zero";
+      }
+      const cellClass =
+        (col.num ? "num" : col.key === "agent" ? "agent" : "") + extra;
+      row.appendChild(
+        el("td", {
+          class: cellClass,
+          text: cellText,
+          title: col.key === "agent" ? name : undefined,
+        }),
+      );
+    }
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  body.appendChild(table);
 }
 
 function showError(panelId, err) {
@@ -244,6 +290,31 @@ function wireSearch() {
   });
 }
 
+const TABS = ["tasks", "scoreboard"];
+
+function setActiveTab(name) {
+  if (!TABS.includes(name)) name = "tasks";
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.classList.toggle("active", tab.dataset.tab === name);
+  }
+  for (const pane of document.querySelectorAll(".tab-pane")) {
+    pane.classList.toggle("active", pane.dataset.tab === name);
+  }
+  if (window.location.hash !== `#${name}`) {
+    window.location.hash = `#${name}`;
+  }
+}
+
+function initTabs() {
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
+  }
+  window.addEventListener("hashchange", () => {
+    setActiveTab(window.location.hash.replace(/^#/, ""));
+  });
+  setActiveTab(window.location.hash.replace(/^#/, "") || "tasks");
+}
+
 async function tick() {
   const now = new Date();
   $("meta").textContent = `polled ${now.toLocaleTimeString()} · ${POLL_MS}ms`;
@@ -260,6 +331,7 @@ async function tick() {
   $("footer").textContent = `orbit dashboard · GET /api/{tasks,jobs,job-runs,audit,scoreboard}`;
 }
 
+initTabs();
 buildChips();
 wireSearch();
 tick();

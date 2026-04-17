@@ -223,6 +223,68 @@
       }
       .scoreboard-row.header { color: var(--fg-dim); padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
       .scoreboard-row .num { text-align: right; }
+      .tabs {
+        display: flex;
+        gap: 2px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg);
+      }
+      .tab {
+        background: transparent;
+        color: var(--fg-dim);
+        border: none;
+        padding: 10px 14px;
+        cursor: pointer;
+        font: inherit;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 13px;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        text-transform: lowercase;
+      }
+      .tab:hover { color: var(--fg); }
+      .tab.active {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+      }
+      .tab-pane { display: none; }
+      .tab-pane.active { display: block; }
+      .scoreboard-table-wrap {
+        padding: 0;
+        overflow-x: auto;
+      }
+      table.scoreboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      table.scoreboard-table th,
+      table.scoreboard-table td {
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      table.scoreboard-table th {
+        text-align: left;
+        color: var(--fg-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 500;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 11px;
+        position: sticky;
+        top: 0;
+        background: var(--bg-elev);
+      }
+      table.scoreboard-table td.num,
+      table.scoreboard-table th.num {
+        text-align: right;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      table.scoreboard-table td.zero { color: var(--fg-dim); }
+      table.scoreboard-table tbody tr:hover { background: rgba(88, 166, 255, 0.04); }
+      table.scoreboard-table td.agent { font-weight: 500; }
       footer {
         padding: 12px 20px 24px;
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -237,26 +299,36 @@
       <div class="brand"><span class="prompt">$</span>orbit</div>
       <div class="meta" id="meta">connecting&hellip;</div>
     </header>
-    <main>
-      <section class="panel" id="tasks-panel">
-        <header><span>tasks</span><span class="count" id="tasks-count"></span></header>
-        <div class="controls">
-          <input type="search" id="task-search" placeholder="search id or title" autocomplete="off" spellcheck="false" />
-          <div id="task-filter"></div>
-        </div>
-        <div class="body" id="tasks-body"><div class="empty">loading&hellip;</div></div>
-      </section>
-      <div class="col-side">
-        <section class="panel" id="runs-panel">
-          <header><span>recent job runs</span><span class="count" id="runs-count"></span></header>
-          <div class="body" id="runs-body"><div class="empty">loading&hellip;</div></div>
+    <nav class="tabs" id="tabs">
+      <button class="tab" data-tab="tasks" type="button">tasks</button>
+      <button class="tab" data-tab="scoreboard" type="button">scoreboard</button>
+    </nav>
+    <section class="tab-pane" data-tab="tasks">
+      <main>
+        <section class="panel" id="tasks-panel">
+          <header><span>tasks</span><span class="count" id="tasks-count"></span></header>
+          <div class="controls">
+            <input type="search" id="task-search" placeholder="search id or title" autocomplete="off" spellcheck="false" />
+            <div id="task-filter"></div>
+          </div>
+          <div class="body" id="tasks-body"><div class="empty">loading&hellip;</div></div>
         </section>
+        <div class="col-side">
+          <section class="panel" id="runs-panel">
+            <header><span>recent job runs</span><span class="count" id="runs-count"></span></header>
+            <div class="body" id="runs-body"><div class="empty">loading&hellip;</div></div>
+          </section>
+        </div>
+      </main>
+    </section>
+    <section class="tab-pane" data-tab="scoreboard">
+      <main style="grid-template-columns: 1fr;">
         <section class="panel" id="scoreboard-panel">
           <header><span>scoreboard</span><span class="count" id="scoreboard-count"></span></header>
-          <div class="body" id="scoreboard-body"><div class="empty">loading&hellip;</div></div>
+          <div class="body scoreboard-table-wrap" id="scoreboard-body"><div class="empty">loading&hellip;</div></div>
         </section>
-      </div>
-    </main>
+      </main>
+    </section>
     <footer id="footer"></footer>
     <script src="/static/app.js"></script>
   </body>
