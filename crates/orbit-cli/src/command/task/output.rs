@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use orbit_core::{OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
-pub(super) fn task_to_signal_json(task: &orbit_core::Task) -> Value {
+pub(crate) fn task_to_signal_json(task: &orbit_core::Task) -> Value {
     json!({
         "id": task.id,
         "parent_id": task.parent_id,
@@ -16,7 +16,7 @@ pub(super) fn task_to_signal_json(task: &orbit_core::Task) -> Value {
     })
 }
 
-pub(super) fn task_to_json(task: &orbit_core::Task) -> Value {
+pub(crate) fn task_to_json(task: &orbit_core::Task) -> Value {
     json!({
         "id": task.id,
         "parent_id": task.parent_id,

@@ -362,7 +362,7 @@ fn format_last_run(last_run: Option<&JobRun>) -> String {
     }
 }
 
-fn job_to_json_with_last_run(job: &Job, last_run: Option<&JobRun>) -> Value {
+pub(crate) fn job_to_json_with_last_run(job: &Job, last_run: Option<&JobRun>) -> Value {
     let mut obj = job_to_json(job);
     obj["last_run_state"] = last_run
         .map(|r| serde_json::Value::String(r.state.to_string()))
@@ -383,7 +383,7 @@ fn job_to_signal_json(job: &Job) -> Value {
     })
 }
 
-fn job_to_json(job: &Job) -> Value {
+pub(crate) fn job_to_json(job: &Job) -> Value {
     json!({
         "job_id": job.job_id,
         "state": job.state.to_string(),

@@ -17,6 +17,7 @@ pub mod policy;
 pub mod reconcile;
 pub mod run;
 pub mod scoreboard;
+pub mod serve;
 pub mod ship;
 pub mod skill;
 pub mod task;
@@ -59,6 +60,7 @@ Inspect:
   audit      Query the audit event log
   metrics    Inspect token, tool-call, and knowledge-pack metrics
   scoreboard Generate read-only scoreboard summaries
+  serve      Serve a local read-only web dashboard
 
 Options:
 {options}"
@@ -108,6 +110,7 @@ pub enum Commands {
     Audit(audit::AuditCommand),
     Metrics(metrics::MetricsCommand),
     Scoreboard(scoreboard::ScoreboardCommand),
+    Serve(serve::ServeCommand),
 }
 
 impl Execute for Commands {
@@ -136,6 +139,7 @@ impl Execute for Commands {
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
             Commands::Scoreboard(cmd) => cmd.execute(runtime),
+            Commands::Serve(cmd) => cmd.execute(runtime),
         }
     }
 }

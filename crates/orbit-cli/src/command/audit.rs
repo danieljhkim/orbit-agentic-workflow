@@ -235,7 +235,7 @@ fn print_audit_event_line(event: &AuditEvent) {
     );
 }
 
-fn audit_event_to_json(event: &AuditEvent) -> Value {
+pub(crate) fn audit_event_to_json(event: &AuditEvent) -> Value {
     json!({
         "id": event.id,
         "execution_id": event.execution_id,
