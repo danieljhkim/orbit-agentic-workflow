@@ -19,6 +19,7 @@ pub fn write_token_scoreboard(scoreboard_dir: &Path, store: &Store) -> Result<()
             "Subagent attribution folds into the parent invocation totals.",
             "cache_read_tokens are reported separately from input_tokens.",
             "Multi-task invocations are fully attributed to every tagged task.",
+            "Legacy agent invocations without a resolved model are omitted from the activities and agents sections.",
             "Non-Claude providers currently emit zero traces."
         ]
     });

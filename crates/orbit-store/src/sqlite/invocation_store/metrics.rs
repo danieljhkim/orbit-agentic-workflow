@@ -60,7 +60,7 @@ impl Store {
     pub fn list_activity_invocation_metrics(
         &self,
     ) -> Result<Vec<ActivityInvocationMetrics>, OrbitError> {
-        let samples = self.load_invocation_samples()?;
+        let samples = self.load_model_attributed_invocation_samples()?;
         let grouped = self.group_invocation_metrics(samples, |sample| {
             (
                 sample.activity_id.clone(),
@@ -105,7 +105,7 @@ impl Store {
     }
 
     pub fn list_agent_invocation_metrics(&self) -> Result<Vec<AgentInvocationMetrics>, OrbitError> {
-        let samples = self.load_invocation_samples()?;
+        let samples = self.load_model_attributed_invocation_samples()?;
         let grouped = self.group_invocation_metrics(samples, |sample| {
             (sample.agent.clone(), sample.model.clone())
         });
@@ -229,6 +229,22 @@ impl Store {
 
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    fn load_model_attributed_invocation_samples(
+        &self,
+    ) -> Result<Vec<InvocationSample>, OrbitError> {
+        Ok(self
+            .load_invocation_samples()?
+            .into_iter()
+            .filter(|sample| {
+                sample
+                    .model
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|value| !value.is_empty())
+            })
+            .collect())
     }
 
     fn group_invocation_metrics<K, F>(

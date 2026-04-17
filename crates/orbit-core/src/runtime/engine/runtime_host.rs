@@ -215,8 +215,12 @@ impl RuntimeHost for OrbitRuntime {
         execution: &ExecutionContext,
         trace: &InvocationTrace,
     ) -> Result<(), OrbitError> {
-        let (agent, model) = self
-            .canonical_agent_model_identity(Some(&execution.agent_cli), execution.model.as_deref());
+        let requested_model = execution
+            .model
+            .as_deref()
+            .or(execution.model_tier.as_deref());
+        let (agent, model) =
+            self.canonical_agent_model_identity(Some(&execution.agent_cli), requested_model);
         let store = open_invocation_store(self)?;
         store.insert_invocation_trace_record(&InvocationInsertParams {
             job_run_id: job_run_id.to_string(),
