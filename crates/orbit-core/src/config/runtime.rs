@@ -15,7 +15,9 @@ use super::raw::{
 const DEFAULT_ENV_INHERIT: bool = false;
 const DEFAULT_TASK_APPROVAL_REQUIRED_FOR_AGENT: bool = false;
 const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
-const DEFAULT_SCORING_ENABLED: bool = false;
+// Keep the runtime fallback aligned with the seeded default config so repos
+// without an explicit Orbit config still record scoreboard metrics.
+const DEFAULT_SCORING_ENABLED: bool = true;
 const DEFAULT_GRAPH_EDITING: bool = false;
 
 #[derive(Debug, Clone)]
