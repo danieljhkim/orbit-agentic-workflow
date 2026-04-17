@@ -1,13 +1,22 @@
+use std::collections::HashMap;
+
+use crate::agent::{AgentConfig, ProviderOptions};
 use crate::providers::codex::codex_cli::CodexCliTransport;
-use crate::providers::{AgentProvider, build_agent_response};
-use crate::runtime::AgentRuntime;
-use crate::types::{AgentRequest, AgentResponse};
+use crate::runtime::{AgentRuntime, AgentRuntimeFactory};
+use crate::types::{AgentInvocationSpec, AgentRequest};
 use orbit_types::{InvocationTrace, OrbitError};
+
+const RUNTIME_KEY: &str = "codex";
+const REQUIRED_ENV_VARS: &[&str] = &["HOME", "PATH"];
 
 pub(crate) struct CodexRuntime {
     command: String,
     cli: CodexCliTransport,
+    runtime_key: &'static str,
+    required_env_vars: &'static [&'static str],
 }
+
+pub(crate) struct CodexFactory;
 
 impl CodexRuntime {
     pub(crate) fn new(
@@ -16,23 +25,90 @@ impl CodexRuntime {
         sandbox: String,
         approval_policy: Option<String>,
         writable_dirs: Vec<String>,
+        runtime_key: &'static str,
+        required_env_vars: &'static [&'static str],
     ) -> Self {
         Self {
             command,
             cli: CodexCliTransport::new(model, sandbox, approval_policy, writable_dirs),
+            runtime_key,
+            required_env_vars,
+        }
+    }
+}
+
+impl AgentRuntimeFactory for CodexFactory {
+    fn key(&self) -> &'static str {
+        RUNTIME_KEY
+    }
+
+    fn required_env_vars(&self) -> &'static [&'static str] {
+        REQUIRED_ENV_VARS
+    }
+
+    fn options_from_config(
+        &self,
+        config: &HashMap<String, String>,
+    ) -> Result<ProviderOptions, OrbitError> {
+        let sandbox = config
+            .get("sandbox")
+            .cloned()
+            .unwrap_or_else(|| "workspace-write".to_string());
+        let approval_policy = config.get("approval_policy").cloned();
+        let writable_dirs = config
+            .get("writable_dirs_json")
+            .map(|raw| {
+                serde_json::from_str::<Vec<String>>(raw).map_err(|err| {
+                    OrbitError::InvalidInput(format!(
+                        "invalid codex writable_dirs_json provider option: {err}"
+                    ))
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        Ok(ProviderOptions::Codex {
+            sandbox,
+            approval_policy,
+            writable_dirs,
+        })
+    }
+
+    fn build(&self, cfg: &AgentConfig) -> Result<Box<dyn AgentRuntime>, OrbitError> {
+        match &cfg.provider_options {
+            ProviderOptions::Codex {
+                sandbox,
+                approval_policy,
+                writable_dirs,
+            } => Ok(Box::new(CodexRuntime::new(
+                cfg.command.clone(),
+                cfg.model.clone(),
+                sandbox.clone(),
+                approval_policy.clone(),
+                writable_dirs.clone(),
+                self.key(),
+                self.required_env_vars(),
+            ))),
+            _ => Err(OrbitError::InvalidInput(format!(
+                "provider options '{}' cannot build codex runtime",
+                cfg.provider_key
+            ))),
         }
     }
 }
 
 impl AgentRuntime for CodexRuntime {
-    fn invoke(&self, req: AgentRequest) -> Result<(AgentResponse, InvocationTrace), OrbitError> {
+    fn invoke(
+        &self,
+        req: AgentRequest,
+    ) -> Result<(AgentInvocationSpec, InvocationTrace), OrbitError> {
         // Note: stdout_schema_json is intentionally None — Codex rejects Orbit's
         // generic envelope schema because open-ended object branches must be closed
         // with additionalProperties=false. Orbit validates the returned envelope
         // after execution instead.
         Ok((
-            build_agent_response(
-                AgentProvider::Codex,
+            crate::providers::build_invocation_spec(
+                self.runtime_key,
+                self.required_env_vars,
                 self.command.clone(),
                 self.cli.args(),
                 self.cli.stdin(&req.envelope_json),

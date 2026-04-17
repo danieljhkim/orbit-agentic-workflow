@@ -294,8 +294,8 @@ pub trait EnvironmentHost {
     // ── Config accessors (implementors provide these) ──────────────────
 
     /// Returns provider-agnostic key-value configuration that is forwarded
-    /// to `ProviderOptions::for_agent_cli`.  Each provider extracts the keys
-    /// it cares about (e.g. Codex reads `"sandbox"` and `"approval_policy"`).
+    /// to the selected provider factory so it can decode any provider-specific
+    /// settings (for example Codex reads `"sandbox"` and `"approval_policy"`).
     fn agent_provider_config(&self) -> HashMap<String, String>;
     fn execution_env_inherit(&self) -> bool;
     fn hydrated_env_allowlist(&self, env_extra: &[String]) -> Vec<(String, String)>;
@@ -310,14 +310,8 @@ pub trait EnvironmentHost {
         agent_cli: &str,
         model: Option<&str>,
     ) -> Result<AgentConfig, OrbitError> {
-        use orbit_agent::ProviderOptions;
         let config = self.agent_provider_config();
-        let provider_options = ProviderOptions::for_agent_cli(agent_cli, &config)?;
-        Ok(AgentConfig {
-            command: agent_cli.to_string(),
-            model: model.map(|m| m.to_string()),
-            provider_options,
-        })
+        AgentConfig::from_cli_config(agent_cli, model, &config)
     }
 
     fn execution_environment_mode(&self, env_extra: &[String]) -> EnvironmentMode {

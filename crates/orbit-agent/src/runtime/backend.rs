@@ -1,38 +1,60 @@
-use orbit_types::{InvocationTrace, OrbitError};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
 
-use crate::providers::{
-    ClaudeRuntime, CodexRuntime, GeminiRuntime, MockAgentRuntime, OllamaRuntime,
-};
-use crate::runtime::AgentRuntime;
-use crate::types::{AgentRequest, AgentResponse};
+use orbit_types::OrbitError;
 
-#[allow(clippy::enum_variant_names)]
-pub(crate) enum RuntimeBackend {
-    CodexCli(CodexRuntime),
-    ClaudeCli(ClaudeRuntime),
-    GeminiCli(GeminiRuntime),
-    OllamaCli(OllamaRuntime),
-    MockAgentCli(MockAgentRuntime),
+use crate::runtime::AgentRuntimeFactory;
+
+pub(crate) struct ProviderRegistry {
+    factories: HashMap<&'static str, Arc<dyn AgentRuntimeFactory>>,
 }
 
-impl AgentRuntime for RuntimeBackend {
-    fn invoke(&self, req: AgentRequest) -> Result<(AgentResponse, InvocationTrace), OrbitError> {
-        match self {
-            RuntimeBackend::CodexCli(runtime) => runtime.invoke(req),
-            RuntimeBackend::ClaudeCli(runtime) => runtime.invoke(req),
-            RuntimeBackend::GeminiCli(runtime) => runtime.invoke(req),
-            RuntimeBackend::OllamaCli(runtime) => runtime.invoke(req),
-            RuntimeBackend::MockAgentCli(runtime) => runtime.invoke(req),
+impl ProviderRegistry {
+    pub(crate) fn new() -> Self {
+        Self {
+            factories: HashMap::new(),
         }
     }
 
-    fn model_name(&self) -> Option<&str> {
-        match self {
-            RuntimeBackend::CodexCli(runtime) => runtime.model_name(),
-            RuntimeBackend::ClaudeCli(runtime) => runtime.model_name(),
-            RuntimeBackend::GeminiCli(runtime) => runtime.model_name(),
-            RuntimeBackend::OllamaCli(runtime) => runtime.model_name(),
-            RuntimeBackend::MockAgentCli(runtime) => runtime.model_name(),
-        }
+    pub(crate) fn register(
+        &mut self,
+        factory: Arc<dyn AgentRuntimeFactory>,
+    ) -> Option<Arc<dyn AgentRuntimeFactory>> {
+        self.factories.insert(factory.key(), factory)
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<&Arc<dyn AgentRuntimeFactory>> {
+        self.factories.get(key)
+    }
+
+    pub(crate) fn factory_for_cli(
+        &self,
+        agent_cli: &str,
+    ) -> Result<&Arc<dyn AgentRuntimeFactory>, OrbitError> {
+        let key = Self::normalize_cli_key(agent_cli);
+        self.factories
+            .get(key.as_str())
+            .ok_or(OrbitError::UnsupportedAgentProvider(key))
+    }
+
+    fn normalize_cli_key(agent_cli: &str) -> String {
+        Path::new(agent_cli)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase())
+            .unwrap_or_else(|| agent_cli.to_ascii_lowercase())
+    }
+}
+
+impl Default for ProviderRegistry {
+    fn default() -> Self {
+        let mut registry = Self::new();
+        let _ = registry.register(Arc::new(crate::providers::mock_agent::MockAgentFactory));
+        let _ = registry.register(Arc::new(crate::providers::codex::CodexFactory));
+        let _ = registry.register(Arc::new(crate::providers::claude::ClaudeFactory));
+        let _ = registry.register(Arc::new(crate::providers::gemini::GeminiFactory));
+        let _ = registry.register(Arc::new(crate::providers::ollama::OllamaFactory));
+        registry
     }
 }

@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use orbit_types::{InvocationTrace, OrbitError};
 
-use crate::providers::AgentProvider;
-use crate::runtime::{AgentRuntime, RuntimeBackend, resolve_runtime};
-use crate::types::{AgentRequest, AgentResponse};
+use crate::runtime::{AgentRuntime, ProviderRegistry, resolve_runtime};
+use crate::types::{AgentInvocationSpec, AgentRequest};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderOptions {
@@ -19,70 +18,36 @@ pub enum ProviderOptions {
     Mock,
 }
 
-impl ProviderOptions {
-    /// Build `ProviderOptions` for a given agent CLI binary, using the supplied
-    /// provider-agnostic config map.  Provider-specific keys are extracted
-    /// inside each provider's match arm:
-    ///
-    /// - Codex reads `"sandbox"` (defaults to `"workspace-write"`) and
-    ///   `"approval_policy"` (optional).
-    ///
-    /// Callers that do not need non-default settings can use `AgentConfig::cli()`.
-    pub fn for_agent_cli(
-        agent_cli: &str,
-        config: &HashMap<String, String>,
-    ) -> Result<Self, OrbitError> {
-        match AgentProvider::detect_from_cli(agent_cli)? {
-            AgentProvider::Codex => {
-                let sandbox = config
-                    .get("sandbox")
-                    .cloned()
-                    .unwrap_or_else(|| "workspace-write".to_string());
-                let approval_policy = config.get("approval_policy").cloned();
-                let writable_dirs = config
-                    .get("writable_dirs_json")
-                    .map(|raw| {
-                        serde_json::from_str::<Vec<String>>(raw).map_err(|err| {
-                            OrbitError::InvalidInput(format!(
-                                "invalid codex writable_dirs_json provider option: {err}"
-                            ))
-                        })
-                    })
-                    .transpose()?
-                    .unwrap_or_default();
-                Ok(Self::Codex {
-                    sandbox,
-                    approval_policy,
-                    writable_dirs,
-                })
-            }
-            AgentProvider::Claude => Ok(Self::Claude),
-            AgentProvider::Gemini => Ok(Self::Gemini),
-            AgentProvider::Ollama => Ok(Self::Ollama),
-            AgentProvider::MockAgent => Ok(Self::Mock),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentConfig {
     pub command: String,
     pub model: Option<String>,
+    pub provider_key: &'static str,
     pub provider_options: ProviderOptions,
 }
 
 impl AgentConfig {
     /// Construct an `AgentConfig` from a CLI binary name, detecting the
     /// provider automatically.  Codex defaults to `workspace-write` sandbox
-    /// and no approval-policy override; use `ProviderOptions::for_agent_cli`
-    /// directly when non-default Codex settings are required.
+    /// and no approval-policy override; use `AgentConfig::from_cli_config`
+    /// directly when non-default provider settings are required.
     pub fn cli(command: impl Into<String>) -> Result<Self, OrbitError> {
+        Self::from_cli_config(command, None, &HashMap::new())
+    }
+
+    pub fn from_cli_config(
+        command: impl Into<String>,
+        model: Option<&str>,
+        config: &HashMap<String, String>,
+    ) -> Result<Self, OrbitError> {
         let command = command.into();
-        let provider_options = ProviderOptions::for_agent_cli(&command, &HashMap::new())?;
+        let registry = ProviderRegistry::default();
+        let factory = registry.factory_for_cli(&command)?;
         Ok(Self {
             command,
-            model: None,
-            provider_options,
+            model: model.map(ToString::to_string),
+            provider_key: factory.key(),
+            provider_options: factory.options_from_config(config)?,
         })
     }
 
@@ -93,20 +58,21 @@ impl AgentConfig {
 }
 
 pub struct Agent {
-    runtime: RuntimeBackend,
+    runtime: Box<dyn AgentRuntime>,
 }
 
 impl Agent {
     pub fn new(cfg: &AgentConfig) -> Result<Self, OrbitError> {
+        let registry = ProviderRegistry::default();
         Ok(Self {
-            runtime: resolve_runtime(cfg)?,
+            runtime: resolve_runtime(&registry, cfg)?,
         })
     }
 
     pub fn invoke(
         &self,
         req: AgentRequest,
-    ) -> Result<(AgentResponse, InvocationTrace), OrbitError> {
+    ) -> Result<(AgentInvocationSpec, InvocationTrace), OrbitError> {
         self.runtime.invoke(req)
     }
 

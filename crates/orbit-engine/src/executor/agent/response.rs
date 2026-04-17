@@ -1,5 +1,5 @@
 use orbit_agent::{AgentResponseStatus, parse_and_validate_response};
-use orbit_types::{AgentResponseEnvelope, InvocationTrace, JobRunState, OrbitError};
+use orbit_types::{AgentResponseEnvelope, InvocationTrace, JobRunState, OrbitError, StdoutFormat};
 use serde_json::Value;
 
 use crate::context::{
@@ -56,15 +56,12 @@ pub(super) fn invocation_failed_outcome(err: OrbitError) -> AttemptOutcome {
 
 pub(super) fn parse_agent_output(
     exec_result: &orbit_types::ExecutionResult,
-    stdout_format: Option<&str>,
+    stdout_format: Option<StdoutFormat>,
 ) -> Result<(AgentResponseEnvelope, AgentResponseStatus, InvocationTrace), OrbitError> {
-    match stdout_format.unwrap_or("envelope") {
-        "envelope" => parse_and_validate_response(exec_result),
-        "json" => synthesize_json_response(exec_result),
-        "text" => synthesize_text_response(exec_result),
-        other => Err(OrbitError::Execution(format!(
-            "unsupported agent executor stdout_format '{other}'"
-        ))),
+    match stdout_format.unwrap_or(StdoutFormat::Envelope) {
+        StdoutFormat::Envelope => parse_and_validate_response(exec_result),
+        StdoutFormat::Json => synthesize_json_response(exec_result),
+        StdoutFormat::Text => synthesize_text_response(exec_result),
     }
 }
 

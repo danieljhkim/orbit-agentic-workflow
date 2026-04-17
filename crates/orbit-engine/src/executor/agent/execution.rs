@@ -3,7 +3,7 @@ use std::io::Write;
 use orbit_agent::{Agent, AgentRequest, AgentResponseStatus};
 use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
 use orbit_types::{
-    ExecutorDef, InvocationTrace, JobRunState, OrbitError, resolve_agent_model_pair,
+    ExecutorDef, InvocationTrace, JobRunState, OrbitError, StdoutFormat, resolve_agent_model_pair,
 };
 use serde_json::Value;
 use tempfile::NamedTempFile;
@@ -31,7 +31,7 @@ pub(super) struct ResolvedAgentExecution {
     pub(super) command: String,
     pub(super) args: Vec<String>,
     pub(super) env: std::collections::HashMap<String, String>,
-    pub(super) stdout_format: Option<String>,
+    pub(super) stdout_format: Option<StdoutFormat>,
     pub(super) model: Option<String>,
 }
 
@@ -85,7 +85,7 @@ pub(super) fn execute_with_cwd<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
         };
     }
 
-    match parse_agent_output(&exec_result, resolved.stdout_format.as_deref()) {
+    match parse_agent_output(&exec_result, resolved.stdout_format) {
         Ok((envelope, state, trace)) => {
             if state == AgentResponseStatus::Success
                 && envelope.result.is_none()
@@ -196,7 +196,7 @@ fn build_agent_invocation<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
     resolved: &ResolvedAgentExecution,
-) -> Result<orbit_agent::AgentResponse, Box<AttemptOutcome>> {
+) -> Result<orbit_agent::AgentInvocationSpec, Box<AttemptOutcome>> {
     let config = host
         .agent_config_for(&resolved.command, resolved.model.as_deref())
         .map_err(|error| Box::new(invocation_failed_outcome(error)))?;
@@ -238,7 +238,7 @@ configure .orbit/config.toml [execution.env].pass and set these variables in the
 fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
-    invocation: orbit_agent::AgentResponse,
+    invocation: orbit_agent::AgentInvocationSpec,
     working_dir: Option<String>,
     resolved: &ResolvedAgentExecution,
 ) -> Result<orbit_types::ExecutionResult, Box<AttemptOutcome>> {
@@ -285,7 +285,7 @@ fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
 }
 
 fn prepare_exec_args(
-    invocation: &orbit_agent::AgentResponse,
+    invocation: &orbit_agent::AgentInvocationSpec,
     executor_args: &[String],
 ) -> Result<(Vec<String>, Option<NamedTempFile>), OrbitError> {
     let mut args = executor_args.to_vec();

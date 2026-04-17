@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::ExecutorDef;
+use orbit_types::{ExecutorDef, ExecutorType};
 use tracing::warn;
 
 use super::agent::AgentExecutor;
@@ -50,12 +50,10 @@ impl ActivityExecutorRegistry {
     }
 
     /// Load executor definitions from YAML resources. Entries override builtins by name.
-    /// Supported types: `agent_cli`, `direct_agent`, `cli_command`.
-    /// Unknown types are logged and skipped.
     pub fn load_from_defs(&mut self, defs: &[ExecutorDef]) {
         for def in defs {
-            match def.executor_type.as_str() {
-                "agent_cli" => {
+            match def.executor_type {
+                ExecutorType::AgentCli => {
                     if def.command.is_some() {
                         let executor = AgentExecutor::from_executor_def(def.clone());
                         self.register_named(def.name.clone(), Box::new(executor));
@@ -66,7 +64,7 @@ impl ActivityExecutorRegistry {
                         );
                     }
                 }
-                "direct_agent" => {
+                ExecutorType::DirectAgent => {
                     if def.command.is_some() {
                         let executor = DirectAgentExecutor::from_executor_def(def.clone());
                         self.register_named(def.name.clone(), Box::new(executor));
@@ -77,15 +75,8 @@ impl ActivityExecutorRegistry {
                         );
                     }
                 }
-                "cli_command" => {
+                ExecutorType::CliCommand => {
                     self.register_named(def.name.clone(), Box::new(CliCommandExecutor));
-                }
-                other => {
-                    warn!(
-                        executor_name = %def.name,
-                        executor_type = other,
-                        "unknown executor type, skipping"
-                    );
                 }
             }
         }

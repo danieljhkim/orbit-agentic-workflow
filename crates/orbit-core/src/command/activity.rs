@@ -4,8 +4,8 @@ use std::path::Path;
 use orbit_store::ActivityCreateParams as StoreWorkCreateParams;
 use orbit_store::ActivityUpdateParams as StoreActivityUpdateParams;
 use orbit_types::{
-    Activity, ActivityResource, JobRunState, OrbitError, OrbitEvent, RESOURCE_SCHEMA_VERSION,
-    ResourceKind,
+    Activity, ActivityResource, ExecutorType, JobRunState, OrbitError, OrbitEvent,
+    RESOURCE_SCHEMA_VERSION, ResourceKind,
 };
 use serde_json::Value;
 
@@ -516,8 +516,8 @@ fn validate_activity_executor_for_run(
 
     if activity.spec_type == "agent_invoke"
         && !matches!(
-            executor.executor_type.as_str(),
-            "agent_cli" | "direct_agent"
+            executor.executor_type,
+            ExecutorType::AgentCli | ExecutorType::DirectAgent
         )
     {
         return Err(OrbitError::InvalidInput(format!(
