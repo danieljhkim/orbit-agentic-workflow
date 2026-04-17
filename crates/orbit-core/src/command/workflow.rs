@@ -11,7 +11,7 @@ pub struct Workflow {
     pub supports_base: bool,
     pub supports_pr_number: bool,
     pub requires_pr_number: bool,
-    /// Upper bound on `--tasks` cardinality. `None` means unbounded (the
+    /// Upper bound on explicit task-selection cardinality. `None` means unbounded (the
     /// historical default). Set to `Some(1)` for single-task workflows like
     /// `duel` that must reject multi-task input with a loud, workflow-
     /// specific error rather than silently taking the first entry.
@@ -93,7 +93,7 @@ pub fn validate_workflow_flags(
 ) -> Result<(), OrbitError> {
     if !workflow.supports_tasks && input.tasks.is_some() {
         return Err(OrbitError::InvalidInput(format!(
-            "--tasks is not supported by workflow '{}'",
+            "explicit task selection is not supported by workflow '{}'",
             workflow.alias
         )));
     }
@@ -147,7 +147,7 @@ pub fn build_workflow_input_for(
             .collect();
         if task_ids.is_empty() {
             return Err(OrbitError::InvalidInput(
-                "--tasks value must not be empty".to_string(),
+                "task id selection must not be empty".to_string(),
             ));
         }
         if let Some(workflow) = workflow

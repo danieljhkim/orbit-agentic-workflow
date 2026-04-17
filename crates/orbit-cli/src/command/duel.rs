@@ -77,6 +77,7 @@ impl Execute for DuelSubcommand {
 )]
 pub struct DuelPrArgs {
     /// Optional task ID. Omit to auto-select the first available duel-eligible task.
+    #[arg(value_name = "TASK_ID", num_args = 0..=1)]
     pub task_id: Option<String>,
     /// Base branch for the duel pipeline
     #[arg(long)]

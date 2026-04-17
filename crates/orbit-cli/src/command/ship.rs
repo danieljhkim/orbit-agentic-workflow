@@ -61,7 +61,7 @@ impl Execute for ShipSubcommand {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit ship pr\n  orbit ship pr --tasks T123,T456 --parallelism 2\n  orbit ship pr --base main\n  orbit ship pr --loop 3"
+    after_help = "Examples:\n  orbit ship pr\n  orbit ship pr T123 T456 --parallelism 2\n  orbit ship pr --base main\n  orbit ship pr --loop 3"
 )]
 pub struct ShipPrArgs {
     #[command(flatten)]
@@ -70,7 +70,7 @@ pub struct ShipPrArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit ship local\n  orbit ship local --tasks T123 --parallelism 1\n  orbit ship local --base main\n  orbit ship local --loop 3"
+    after_help = "Examples:\n  orbit ship local\n  orbit ship local T123 --parallelism 1\n  orbit ship local --base main\n  orbit ship local --loop 3"
 )]
 pub struct ShipLocalArgs {
     #[command(flatten)]
@@ -79,9 +79,9 @@ pub struct ShipLocalArgs {
 
 #[derive(Args)]
 pub struct ShipWorkflowArgs {
-    /// Comma-separated task IDs to process (omit to auto-select from backlog)
-    #[arg(long)]
-    pub tasks: Option<String>,
+    /// Task IDs to process (omit to auto-select from backlog)
+    #[arg(value_name = "TASK_IDS", num_args = 1..)]
+    pub task_ids: Vec<String>,
 
     /// Number of parallel workers
     #[arg(long)]
@@ -277,13 +277,13 @@ fn build_ship_run_plan(
         ));
     }
 
-    validate_explicit_task_selection(args.tasks.as_deref(), args.parallelism)?;
+    validate_explicit_task_selection(&args.task_ids, args.parallelism)?;
 
     let workflow = find_workflow(workflow_alias)
         .ok_or_else(|| OrbitError::InvalidInput(format!("unknown workflow '{workflow_alias}'")))?;
 
     let input = WorkflowInput {
-        tasks: args.tasks.clone(),
+        tasks: (!args.task_ids.is_empty()).then(|| args.task_ids.join(",")),
         parallelism: args.parallelism,
         base: args.base.clone(),
         pr_number: None,
@@ -298,19 +298,18 @@ fn build_ship_run_plan(
 }
 
 fn validate_explicit_task_selection(
-    tasks: Option<&str>,
+    task_ids: &[String],
     parallelism: Option<u32>,
 ) -> Result<(), OrbitError> {
-    let Some(tasks) = tasks else {
+    if task_ids.is_empty() {
         return Ok(());
-    };
+    }
 
-    let task_ids = crate::parse::csv_to_vec(tasks);
     let mut seen = HashSet::new();
-    for task_id in &task_ids {
-        if !seen.insert(task_id.clone()) {
+    for task_id in task_ids {
+        if !seen.insert(task_id.as_str()) {
             return Err(OrbitError::InvalidInput(format!(
-                "duplicate task id '{task_id}' in --tasks"
+                "duplicate task id '{task_id}' in explicit task selection"
             )));
         }
     }
@@ -319,7 +318,7 @@ fn validate_explicit_task_selection(
         && task_ids.len() > parallelism as usize
     {
         return Err(OrbitError::InvalidInput(format!(
-            "explicit --tasks batch of {} exceeds --parallelism {}",
+            "explicit task batch of {} exceeds --parallelism {}",
             task_ids.len(),
             parallelism
         )));
