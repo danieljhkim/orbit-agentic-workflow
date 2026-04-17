@@ -26,6 +26,14 @@ pub(super) fn git_merge<H: RuntimeHost + TaskHost + Sync + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
+    let batch_id = required_batch_id(input, "git_merge")?;
+    if host
+        .list_tasks_filtered(None, None, None, Some(batch_id))?
+        .is_empty()
+    {
+        return Ok(json!({}));
+    }
+
     let strategy = input
         .get("strategy")
         .and_then(Value::as_str)

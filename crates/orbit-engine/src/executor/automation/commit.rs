@@ -29,22 +29,44 @@ pub(super) fn commit_task_artifact_changes<H: TaskHost + RuntimeHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let batch_id = required_batch_id(input, "commit_task_artifact_changes")?;
+    let explicit_completed_task_ids = completed_task_ids_field(input);
+    if explicit_completed_task_ids
+        .as_ref()
+        .is_some_and(|task_ids| task_ids.is_empty())
+    {
+        return Ok(json!({
+            "committed_task_ids": [],
+            "skipped_task_ids": [],
+        }));
+    }
+
+    let fallback_batch_tasks = if explicit_completed_task_ids.is_none() {
+        Some(host.list_tasks_filtered(None, None, None, Some(batch_id))?)
+    } else {
+        None
+    };
+    if fallback_batch_tasks
+        .as_ref()
+        .is_some_and(|batch_tasks| batch_tasks.is_empty())
+    {
+        return Ok(json!({
+            "committed_task_ids": [],
+            "skipped_task_ids": [],
+        }));
+    }
+
     let workspace_path = resolve_workspace_path(host, input, batch_id)?;
     ensure_named_branch(&workspace_path)?;
     ensure_no_unmerged_changes(&workspace_path)?;
 
-    let task_ids = completed_task_ids_from_input(input).or_else(|| {
-        let batch_tasks = host
-            .list_tasks_filtered(None, None, None, Some(batch_id))
-            .ok()?;
-        let ids: Vec<String> = batch_tasks.into_iter().map(|task| task.id).collect();
-        (!ids.is_empty()).then_some(ids)
-    });
-    let task_ids = task_ids.ok_or_else(|| {
-        OrbitError::InvalidInput(format!(
-            "commit_task_artifact_changes: no completed tasks found for batch_id '{batch_id}'"
-        ))
-    })?;
+    let task_ids = match explicit_completed_task_ids {
+        Some(task_ids) => task_ids,
+        None => fallback_batch_tasks
+            .unwrap_or_default()
+            .into_iter()
+            .map(|task| task.id)
+            .collect(),
+    };
 
     let mut committed_task_ids = Vec::new();
     let mut skipped_task_ids = Vec::new();
@@ -81,6 +103,11 @@ pub(super) fn commit_finalize_artifact_changes<H: TaskHost + RuntimeHost + ?Size
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let batch_id = required_batch_id(input, "commit_finalize_artifact_changes")?;
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    if batch_tasks.is_empty() {
+        return Ok(json!({}));
+    }
+
     let workspace_path = resolve_workspace_path(host, input, batch_id)?;
     ensure_named_branch(&workspace_path)?;
     ensure_no_unmerged_changes(&workspace_path)?;
@@ -88,13 +115,6 @@ pub(super) fn commit_finalize_artifact_changes<H: TaskHost + RuntimeHost + ?Size
     let changed_files = collect_worktree_changes(&workspace_path)?;
     if changed_files.is_empty() {
         return Ok(json!({}));
-    }
-
-    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
-    if batch_tasks.is_empty() {
-        return Err(OrbitError::InvalidInput(format!(
-            "commit_finalize_artifact_changes: no tasks found for batch_id '{batch_id}'"
-        )));
     }
 
     let mut affected_tasks = Vec::new();
@@ -134,18 +154,14 @@ pub(super) fn commit_batch_changes<H: TaskHost + RuntimeHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let batch_id = required_batch_id(input, "commit_batch_changes")?;
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    if batch_tasks.is_empty() {
+        return Ok(json!({}));
+    }
 
     let workspace_path = resolve_workspace_path(host, input, batch_id)?;
     ensure_named_branch(&workspace_path)?;
-
-    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
     let completed_task_ids: Vec<String> = batch_tasks.iter().map(|t| t.id.clone()).collect();
-
-    if completed_task_ids.is_empty() {
-        return Err(OrbitError::InvalidInput(format!(
-            "commit_batch_changes: no tasks found for batch_id '{batch_id}'"
-        )));
-    }
 
     ensure_no_unmerged_changes(&workspace_path)?;
     git_success(&workspace_path, &["add", "--all", "--", "."])?;
@@ -189,16 +205,17 @@ fn resolve_workspace_path<H: RuntimeHost + ?Sized>(
     }
 }
 
-fn completed_task_ids_from_input(input: &Value) -> Option<Vec<String>> {
+fn completed_task_ids_field(input: &Value) -> Option<Vec<String>> {
     let items = input.get("completed_task_ids")?.as_array()?;
-    let ids = items
-        .iter()
-        .filter_map(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
-    (!ids.is_empty()).then_some(ids)
+    Some(
+        items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn changed_files_for_task(workspace_path: &Path, task: &Task) -> Result<Vec<String>, OrbitError> {
