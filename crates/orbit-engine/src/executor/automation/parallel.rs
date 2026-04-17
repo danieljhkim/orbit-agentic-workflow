@@ -123,7 +123,19 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let base_sync_mode = base_sync_mode_from_input(input)?;
     let parallelism = parse_parallelism(input)?;
     let run_id = require_run_id(input, "parallel_dispatch_tasks")?.to_string();
-    let selected_tasks = load_selected_tasks(host, &run_id)?;
+    let Some(selected_tasks) = load_selected_tasks(host, &run_id)? else {
+        // Planning can legitimately drain a batch by returning every selected
+        // task to backlog and clearing its batch_id. Treat that as a clean no-op
+        // so the rest of the local pipeline can short-circuit successfully.
+        return Ok(json!({
+            "launched": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "skipped": 0,
+            "completed_task_ids": [],
+            "failures": [],
+        }));
+    };
     validate_selected_group(&selected_tasks)?;
 
     // Move all selected tasks to in-progress before spawning workers. FIXME: decouple this
@@ -421,11 +433,15 @@ fn set_worker_workspace_path<H: TaskHost + ?Sized>(
 fn load_selected_tasks<H: TaskHost + ?Sized>(
     host: &H,
     batch_id: &str,
-) -> Result<Vec<PendingTask>, OrbitError> {
+) -> Result<Option<Vec<PendingTask>>, OrbitError> {
     let tasks =
         host.list_tasks_filtered(Some(TaskStatus::InProgress), None, None, Some(batch_id))?;
 
     if tasks.is_empty() {
+        let remaining_batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+        if remaining_batch_tasks.is_empty() {
+            return Ok(None);
+        }
         return Err(OrbitError::InvalidInput(format!(
             "no in-progress tasks found for batch_id '{batch_id}'"
         )));
@@ -440,7 +456,7 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
         selected.push(PendingTask::from(task));
     }
 
-    Ok(selected)
+    Ok(Some(selected))
 }
 
 pub(super) fn parse_parallelism(input: &Value) -> Result<usize, OrbitError> {

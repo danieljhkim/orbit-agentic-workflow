@@ -240,6 +240,18 @@ pub(super) fn optional_string(input: &Value, key: &str) -> Result<Option<String>
     }
 }
 
+pub(super) fn optional_raw_string(input: &Value, key: &str) -> Result<Option<String>, OrbitError> {
+    match input.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let raw = value
+                .as_str()
+                .ok_or_else(|| OrbitError::InvalidInput(format!("`{key}` must be a string")))?;
+            Ok(Some(raw.to_string()))
+        }
+    }
+}
+
 pub(super) fn has_explicit_knowledge_dir(input: &Value) -> bool {
     input
         .get("knowledge_dir")

@@ -55,7 +55,7 @@ pub(super) fn build_exec_requests(
         args.push(raw.to_string());
         changed = true;
     }
-    if let Some(summary) = super::optional_string(input, "execution_summary")? {
+    if let Some(summary) = super::optional_raw_string(input, "execution_summary")? {
         args.push("--execution-summary".to_string());
         args.push(summary);
         changed = true;
@@ -65,17 +65,17 @@ pub(super) fn build_exec_requests(
         args.push(comment);
         changed = true;
     }
-    if let Some(pr_status) = super::optional_string(input, "pr_status")? {
+    if let Some(pr_status) = super::optional_raw_string(input, "pr_status")? {
         args.push("--pr-status".to_string());
         args.push(pr_status);
         changed = true;
     }
-    if let Some(pr_number) = super::optional_string(input, "pr_number")? {
+    if let Some(pr_number) = super::optional_raw_string(input, "pr_number")? {
         args.push("--pr-number".to_string());
         args.push(pr_number);
         changed = true;
     }
-    if let Some(batch_id) = super::optional_string(input, "batch_id")? {
+    if let Some(batch_id) = super::optional_raw_string(input, "batch_id")? {
         args.push("--batch-id".to_string());
         args.push(batch_id);
         changed = true;
