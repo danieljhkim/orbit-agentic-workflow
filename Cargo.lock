@@ -1465,6 +1465,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "toml",
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-java",
