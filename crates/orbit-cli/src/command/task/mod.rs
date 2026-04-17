@@ -3,7 +3,7 @@ mod command;
 mod lifecycle;
 mod lint;
 mod list;
-mod output;
+pub(crate) mod output;
 mod prune;
 mod review;
 mod show;

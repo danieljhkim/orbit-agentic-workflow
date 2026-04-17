@@ -484,6 +484,15 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
+        Commands::Serve(_) => CommandMeta {
+            command: "serve".to_string(),
+            subcommand: None,
+            tool_name: None,
+            target_type: Some("dashboard".to_string()),
+            target_id: None,
+            role: "admin".to_string(),
+            arguments_json: None,
+        },
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;

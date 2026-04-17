@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>orbit</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --bg-elev: #131922;
+        --fg: #c9d1d9;
+        --fg-dim: #6e7681;
+        --border: #21262d;
+        --accent: #58a6ff;
+        --status-proposed: #d29922;
+        --status-backlog: #8b949e;
+        --status-in-progress: #39c5cf;
+        --status-review: #c678dd;
+        --status-done: #3fb950;
+        --status-blocked: #f85149;
+        --status-rejected: #f85149;
+        --status-archived: #6e7681;
+        --status-someday: #8b949e;
+        --priority-high: #f85149;
+        --priority-medium: #d29922;
+        --priority-low: #6e7681;
+        --priority-critical: #ff7b72;
+        --state-success: #3fb950;
+        --state-active: #3fb950;
+        --state-running: #39c5cf;
+        --state-pending: #d29922;
+        --state-failed: #f85149;
+        --state-error: #f85149;
+        --state-disabled: #6e7681;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      header {
+        border-bottom: 1px solid var(--border);
+        padding: 14px 20px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      header .brand {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-weight: 600;
+        font-size: 16px;
+        color: var(--fg);
+      }
+      header .brand .prompt { color: var(--accent); margin-right: 6px; }
+      header .meta {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: var(--fg-dim);
+      }
+      main {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 20px;
+        padding: 20px;
+        max-width: 1600px;
+      }
+      @media (max-width: 1100px) {
+        main { grid-template-columns: 1fr; }
+      }
+      .col-side {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .panel {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .panel > header {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: var(--fg-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .panel > header .count {
+        color: var(--fg);
+      }
+      .panel > .body {
+        padding: 6px 0;
+      }
+      .empty {
+        padding: 14px;
+        color: var(--fg-dim);
+        font-style: italic;
+      }
+      .err {
+        padding: 14px;
+        color: var(--status-blocked);
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+      .group-header {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 10px 14px 4px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .group-header .name { font-weight: 600; }
+      .group-header .group-count { color: var(--fg-dim); }
+      .row {
+        display: grid;
+        grid-template-columns: 130px 1fr 70px 70px;
+        gap: 10px;
+        padding: 4px 14px;
+        align-items: baseline;
+      }
+      .row:hover { background: rgba(88, 166, 255, 0.05); }
+      .row .id { color: var(--fg-dim); }
+      .row .title { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .row .priority, .row .type { font-size: 12px; color: var(--fg-dim); text-align: right; }
+      .pill {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        text-transform: lowercase;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .runs-row {
+        display: grid;
+        grid-template-columns: 100px 1fr 80px 90px;
+        gap: 10px;
+        padding: 4px 14px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        align-items: baseline;
+      }
+      .runs-row .when { color: var(--fg-dim); }
+      .runs-row .id { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .runs-row .duration { color: var(--fg-dim); text-align: right; }
+      .runs-row .state { text-align: right; }
+      .scoreboard-row {
+        display: grid;
+        grid-template-columns: 1fr 60px 60px 60px;
+        gap: 10px;
+        padding: 4px 14px;
+        font-size: 12px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      .scoreboard-row.header { color: var(--fg-dim); padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+      .scoreboard-row .num { text-align: right; }
+      footer {
+        padding: 12px 20px 24px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: var(--fg-dim);
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand"><span class="prompt">$</span>orbit</div>
+      <div class="meta" id="meta">connecting&hellip;</div>
+    </header>
+    <main>
+      <section class="panel" id="tasks-panel">
+        <header><span>tasks</span><span class="count" id="tasks-count"></span></header>
+        <div class="body" id="tasks-body"><div class="empty">loading&hellip;</div></div>
+      </section>
+      <div class="col-side">
+        <section class="panel" id="runs-panel">
+          <header><span>recent job runs</span><span class="count" id="runs-count"></span></header>
+          <div class="body" id="runs-body"><div class="empty">loading&hellip;</div></div>
+        </section>
+        <section class="panel" id="scoreboard-panel">
+          <header><span>scoreboard</span><span class="count" id="scoreboard-count"></span></header>
+          <div class="body" id="scoreboard-body"><div class="empty">loading&hellip;</div></div>
+        </section>
+      </div>
+    </main>
+    <footer id="footer"></footer>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
