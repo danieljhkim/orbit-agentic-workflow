@@ -1,3 +1,4 @@
+use orbit_knowledge::graph::navigator::GraphNodeRef;
 use orbit_knowledge::service::GraphContextService;
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
@@ -71,42 +72,42 @@ impl Tool for OrbitKnowledgeSearchTool {
         } else {
             Some(type_strs.as_slice())
         };
-
-        let total = svc.search_total(
+        let (total, nodes) = svc.search_with_total(
             &query,
             node_types,
             prefix.as_deref(),
             kind_filter.as_deref(),
+            limit,
         );
 
         if use_selectors {
-            let results = svc.search(
-                &query,
-                node_types,
-                prefix.as_deref(),
-                kind_filter.as_deref(),
-                limit,
-            );
-            let selectors: Vec<String> =
-                results.iter().map(|n| svc.selector_for_node(*n)).collect();
+            let selectors: Vec<String> = nodes.iter().map(|n| svc.selector_for_node(*n)).collect();
             Ok(json!(selectors))
         } else {
-            let results = svc.search_structured(
-                &query,
-                node_types,
-                prefix.as_deref(),
-                kind_filter.as_deref(),
-                limit,
-            );
-            let items: Vec<Value> = results
+            let items: Vec<Value> = nodes
                 .into_iter()
-                .map(|r| {
+                .map(|node| {
+                    let kind = match node {
+                        GraphNodeRef::Dir(_) => "dir".to_string(),
+                        GraphNodeRef::File(_) => "file".to_string(),
+                        GraphNodeRef::Leaf(leaf) => leaf.kind.to_string(),
+                    };
+                    let file = match node {
+                        GraphNodeRef::Leaf(leaf) => leaf
+                            .base
+                            .location
+                            .split_once('#')
+                            .map(|(path, _)| path.to_string()),
+                        GraphNodeRef::File(file) => Some(file.base.location.clone()),
+                        GraphNodeRef::Dir(_) => None,
+                    };
+
                     let mut obj = json!({
-                        "selector": r.selector,
-                        "name": r.name,
-                        "kind": r.kind,
+                        "selector": svc.selector_for_node(node),
+                        "name": node.base().name,
+                        "kind": kind,
                     });
-                    if let Some(file) = r.file {
+                    if let Some(file) = file {
                         obj["file"] = json!(file);
                     }
                     obj

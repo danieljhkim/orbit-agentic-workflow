@@ -30,4 +30,5 @@ pub struct KnowledgeStore {
     manifest: ManifestFile,
     graph_index: GraphIndexFile,
     selector_index: HashMap<SelectorLookupKey, String>,
+    dir_children_index: HashMap<String, Vec<String>>,
 }

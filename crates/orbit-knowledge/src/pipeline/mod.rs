@@ -10,15 +10,77 @@ pub mod scan;
 
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::{fs, fs::OpenOptions, io::ErrorKind};
 
 use crate::error::KnowledgeError;
+use crate::io::write_text_atomic_durable;
 use context::{BuildConfig, PipelineContext};
+use fs2::FileExt;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+const REFRESH_LOCK_NAME: &str = "refresh.lock";
+const REFRESH_STATE_NAME: &str = "refresh_state.json";
+const GRAPH_WAIT_TIMEOUT_MS: u64 = 2_500;
+const GRAPH_WAIT_POLL_MS: u64 = 100;
+const DEFAULT_DIRTY_REFRESH_DEBOUNCE_SECS: u64 = 5;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshStatus {
+    Fresh,
+    Rebuilt,
+    SkippedDirtyDebounce,
+    SkippedConcurrent,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RefreshState {
+    #[serde(default)]
+    last_refresh_at: Option<String>,
+    #[serde(default)]
+    dirty_fingerprint: Option<DirtyFingerprint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct DirtyFingerprint {
+    status_hash: String,
+    path_count: usize,
+    newest_mtime_ns: Option<u128>,
+}
+
+enum RefreshPlan {
+    Fresh,
+    SkipDirtyDebounce,
+    Rebuild {
+        dirty_fingerprint: Option<DirtyFingerprint>,
+        incremental: bool,
+    },
+}
+
+struct RefreshLockGuard(std::fs::File);
+
+impl Drop for RefreshLockGuard {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
 
 /// Run the full build pipeline.
 ///
 /// Scans the repo, computes hashes, builds the graph (dirs, files, leaves),
 /// persists the graph to the content-addressed store, and writes the manifest.
 pub fn run_build(config: BuildConfig) -> Result<PipelineContext, KnowledgeError> {
+    let _lock = acquire_refresh_lock(&config.output_dir, false)?.ok_or_else(|| {
+        KnowledgeError::io("failed to acquire refresh lock for run_build".to_string())
+    })?;
+    let dirty_fingerprint = git_dirty_fingerprint(&config.repo_path);
+    let ctx = run_build_inner(config)?;
+    save_refresh_state(&ctx.output_dir, dirty_fingerprint.as_ref())?;
+    Ok(ctx)
+}
+
+fn run_build_inner(config: BuildConfig) -> Result<PipelineContext, KnowledgeError> {
     let mut ctx = PipelineContext::new(config);
 
     scan::scan_repo(&mut ctx)?;
@@ -38,48 +100,50 @@ pub fn run_build(config: BuildConfig) -> Result<PipelineContext, KnowledgeError>
 
 /// Ensure the knowledge graph is up-to-date with the current checkout.
 ///
-/// Rebuilds when the checkout is dirty, or when the manifest's `generated_at`
-/// timestamp lags behind `git log -1 --format=%cI`. If the manifest is missing,
-/// runs an incremental build as the first refresh.
-/// Returns `true` if a rebuild was triggered, `false` if already fresh.
-pub fn ensure_fresh(knowledge_dir: &Path, repo_path: &Path) -> Result<bool, KnowledgeError> {
-    let manifest_path = knowledge_dir.join("manifest.json");
-    let worktree_dirty = git_worktree_dirty(repo_path).unwrap_or(false);
-    let head_ts = git_head_timestamp(repo_path);
+/// Rebuilds when the checkout advances beyond the persisted manifest or when a
+/// dirty worktree fingerprint changes outside the debounce window. Dirty
+/// refreshes are debounced and concurrent refreshes are single-flighted through
+/// `refresh.lock` so read-side callers can reuse the current graph instead of
+/// stacking rebuilds.
+pub fn ensure_fresh(
+    knowledge_dir: &Path,
+    repo_path: &Path,
+) -> Result<RefreshStatus, KnowledgeError> {
+    match compute_refresh_plan(knowledge_dir, repo_path)? {
+        RefreshPlan::Fresh => return Ok(RefreshStatus::Fresh),
+        RefreshPlan::SkipDirtyDebounce => return Ok(RefreshStatus::SkippedDirtyDebounce),
+        RefreshPlan::Rebuild { .. } => {}
+    }
 
-    let needs_rebuild = if worktree_dirty {
-        true
-    } else if manifest_path.is_file() {
-        let raw = std::fs::read_to_string(&manifest_path)
-            .map_err(|e| KnowledgeError::knowledge_unavailable(format!("read manifest: {e}")))?;
-        let manifest: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| KnowledgeError::knowledge_unavailable(format!("parse manifest: {e}")))?;
-        let generated_at = manifest
-            .get("generated_at")
-            .and_then(|v| v.as_str())
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
-        match (generated_at, head_ts) {
-            (Some(generated), Some(head_ts)) => head_ts > generated,
-            (None, _) => true,  // corrupt or missing timestamp
-            (_, None) => false, // not a git repo or git unavailable
-        }
-    } else {
-        true // no manifest → first build
+    let Some(_lock) = acquire_refresh_lock(knowledge_dir, true)? else {
+        wait_for_current_graph(knowledge_dir);
+        return Ok(RefreshStatus::SkippedConcurrent);
     };
 
-    if !needs_rebuild {
-        return Ok(false);
-    }
+    let plan = compute_refresh_plan(knowledge_dir, repo_path)?;
+    let RefreshPlan::Rebuild {
+        dirty_fingerprint,
+        incremental,
+    } = plan
+    else {
+        return Ok(match plan {
+            RefreshPlan::Fresh => RefreshStatus::Fresh,
+            RefreshPlan::SkipDirtyDebounce => RefreshStatus::SkippedDirtyDebounce,
+            RefreshPlan::Rebuild { .. } => unreachable!(),
+        });
+    };
 
     let config = BuildConfig {
         repo_path: repo_path.to_path_buf(),
         output_dir: knowledge_dir.to_path_buf(),
-        incremental: manifest_path.is_file(), // incremental if manifest exists
+        incremental,
     };
-    run_build(config)
+    run_build_inner(config)
+        .map_err(|e| KnowledgeError::knowledge_unavailable(format!("auto-refresh failed: {e}")))?;
+    save_refresh_state(knowledge_dir, dirty_fingerprint.as_ref())
         .map_err(|e| KnowledgeError::knowledge_unavailable(format!("auto-refresh failed: {e}")))?;
 
-    Ok(true)
+    Ok(RefreshStatus::Rebuilt)
 }
 
 /// Get the committer timestamp of HEAD as a fixed-offset DateTime.
@@ -96,7 +160,7 @@ fn git_head_timestamp(repo_path: &Path) -> Option<chrono::DateTime<chrono::Fixed
     chrono::DateTime::parse_from_rfc3339(ts_str.trim()).ok()
 }
 
-fn git_worktree_dirty(repo_path: &Path) -> Option<bool> {
+fn git_dirty_fingerprint(repo_path: &Path) -> Option<DirtyFingerprint> {
     let output = Command::new("git")
         .args(["status", "--porcelain", "--untracked-files=normal"])
         .current_dir(repo_path)
@@ -105,5 +169,203 @@ fn git_worktree_dirty(repo_path: &Path) -> Option<bool> {
     if !output.status.success() {
         return None;
     }
-    Some(!output.stdout.is_empty())
+    if output.stdout.is_empty() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut newest_mtime_ns = None;
+    let mut path_count = 0usize;
+
+    for line in stdout.lines() {
+        for rel_path in candidate_paths_from_status_line(line) {
+            path_count += 1;
+            let abs_path = repo_path.join(&rel_path);
+            let Ok(metadata) = fs::metadata(abs_path) else {
+                continue;
+            };
+            let Ok(modified) = metadata.modified() else {
+                continue;
+            };
+            let Ok(duration) = modified.duration_since(UNIX_EPOCH) else {
+                continue;
+            };
+            let mtime_ns = duration.as_nanos();
+            newest_mtime_ns =
+                Some(newest_mtime_ns.map_or(mtime_ns, |current: u128| current.max(mtime_ns)));
+        }
+    }
+
+    Some(DirtyFingerprint {
+        status_hash: format!("{:x}", Sha256::digest(stdout.as_bytes())),
+        path_count,
+        newest_mtime_ns,
+    })
+}
+
+fn candidate_paths_from_status_line(line: &str) -> Vec<String> {
+    let payload = line.get(3..).unwrap_or("").trim();
+    if payload.is_empty() {
+        return Vec::new();
+    }
+    payload
+        .split(" -> ")
+        .map(|entry| entry.trim().to_string())
+        .filter(|entry| !entry.is_empty())
+        .collect()
+}
+
+fn compute_refresh_plan(
+    knowledge_dir: &Path,
+    repo_path: &Path,
+) -> Result<RefreshPlan, KnowledgeError> {
+    let manifest_path = knowledge_dir.join("manifest.json");
+    let graph_available = current_graph_available(knowledge_dir);
+    let dirty_fingerprint = git_dirty_fingerprint(repo_path);
+    let head_ts = git_head_timestamp(repo_path);
+
+    if let Some(dirty_fingerprint) = dirty_fingerprint {
+        if manifest_path.is_file()
+            && graph_available
+            && refresh_state_within_cooldown(knowledge_dir, &dirty_fingerprint)?
+        {
+            return Ok(RefreshPlan::SkipDirtyDebounce);
+        }
+        return Ok(RefreshPlan::Rebuild {
+            dirty_fingerprint: Some(dirty_fingerprint),
+            incremental: manifest_path.is_file(),
+        });
+    }
+
+    if manifest_path.is_file() {
+        let raw = fs::read_to_string(&manifest_path)
+            .map_err(|e| KnowledgeError::knowledge_unavailable(format!("read manifest: {e}")))?;
+        let manifest: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| KnowledgeError::knowledge_unavailable(format!("parse manifest: {e}")))?;
+        let generated_at = manifest
+            .get("generated_at")
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+        return Ok(match (generated_at, head_ts) {
+            (Some(generated), Some(head_ts)) if head_ts > generated => RefreshPlan::Rebuild {
+                dirty_fingerprint: None,
+                incremental: true,
+            },
+            (None, _) => RefreshPlan::Rebuild {
+                dirty_fingerprint: None,
+                incremental: true,
+            },
+            _ => RefreshPlan::Fresh,
+        });
+    }
+
+    Ok(RefreshPlan::Rebuild {
+        dirty_fingerprint: None,
+        incremental: false,
+    })
+}
+
+fn refresh_state_within_cooldown(
+    knowledge_dir: &Path,
+    dirty_fingerprint: &DirtyFingerprint,
+) -> Result<bool, KnowledgeError> {
+    let state = load_refresh_state(knowledge_dir)?;
+    let Some(last_refresh_at) = state
+        .last_refresh_at
+        .as_deref()
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+    else {
+        return Ok(false);
+    };
+    let Some(last_dirty_fingerprint) = state.dirty_fingerprint.as_ref() else {
+        return Ok(false);
+    };
+    if last_dirty_fingerprint != dirty_fingerprint {
+        return Ok(false);
+    }
+
+    let elapsed =
+        chrono::Utc::now().signed_duration_since(last_refresh_at.with_timezone(&chrono::Utc));
+    Ok(elapsed.to_std().unwrap_or_default() < dirty_refresh_cooldown())
+}
+
+fn load_refresh_state(knowledge_dir: &Path) -> Result<RefreshState, KnowledgeError> {
+    let state_path = knowledge_dir.join(REFRESH_STATE_NAME);
+    if !state_path.is_file() {
+        return Ok(RefreshState::default());
+    }
+
+    let raw = fs::read_to_string(&state_path)
+        .map_err(|error| KnowledgeError::io(format!("read refresh state: {error}")))?;
+    serde_json::from_str(&raw)
+        .map_err(|error| KnowledgeError::invalid_data(format!("parse refresh state: {error}")))
+}
+
+fn save_refresh_state(
+    knowledge_dir: &Path,
+    dirty_fingerprint: Option<&DirtyFingerprint>,
+) -> Result<(), KnowledgeError> {
+    let state = RefreshState {
+        last_refresh_at: Some(chrono::Utc::now().to_rfc3339()),
+        dirty_fingerprint: dirty_fingerprint.cloned(),
+    };
+    let json = serde_json::to_string_pretty(&state).map_err(|error| {
+        KnowledgeError::invalid_data(format!("serialize refresh state: {error}"))
+    })?;
+    write_text_atomic_durable(
+        &knowledge_dir.join(REFRESH_STATE_NAME),
+        &format!("{json}\n"),
+    )
+    .map_err(|error| KnowledgeError::io(format!("write refresh state: {error}")))
+}
+
+fn acquire_refresh_lock(
+    knowledge_dir: &Path,
+    nonblocking: bool,
+) -> Result<Option<RefreshLockGuard>, KnowledgeError> {
+    fs::create_dir_all(knowledge_dir)
+        .map_err(|error| KnowledgeError::io(format!("mkdir knowledge dir: {error}")))?;
+    let lock_path = knowledge_dir.join(REFRESH_LOCK_NAME);
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|error| KnowledgeError::io(format!("open refresh lock: {error}")))?;
+
+    if nonblocking {
+        match file.try_lock_exclusive() {
+            Ok(()) => Ok(Some(RefreshLockGuard(file))),
+            Err(error) if error.kind() == ErrorKind::WouldBlock => Ok(None),
+            Err(error) => Err(KnowledgeError::io(format!("lock refresh lock: {error}"))),
+        }
+    } else {
+        file.lock_exclusive()
+            .map_err(|error| KnowledgeError::io(format!("lock refresh lock: {error}")))?;
+        Ok(Some(RefreshLockGuard(file)))
+    }
+}
+
+fn current_graph_available(knowledge_dir: &Path) -> bool {
+    knowledge_dir.join("manifest.json").is_file()
+        && knowledge_dir.join("graph/refs/current.json").is_file()
+}
+
+fn wait_for_current_graph(knowledge_dir: &Path) {
+    let deadline = Instant::now() + Duration::from_millis(GRAPH_WAIT_TIMEOUT_MS);
+    while Instant::now() < deadline {
+        if current_graph_available(knowledge_dir) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(GRAPH_WAIT_POLL_MS));
+    }
+}
+
+fn dirty_refresh_cooldown() -> Duration {
+    let seconds = std::env::var("ORBIT_KNOWLEDGE_REFRESH_DEBOUNCE_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DIRTY_REFRESH_DEBOUNCE_SECS);
+    Duration::from_secs(seconds)
 }

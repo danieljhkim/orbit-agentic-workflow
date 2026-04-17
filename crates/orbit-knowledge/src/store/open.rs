@@ -44,12 +44,14 @@ impl KnowledgeStore {
         })?;
 
         let selector_index = build_selector_index(&graph_index)?;
+        let dir_children_index = build_dir_children_index(&graph_index);
 
         Ok(Self {
             knowledge_dir: knowledge_dir.to_path_buf(),
             manifest,
             graph_index,
             selector_index,
+            dir_children_index,
         })
     }
 
@@ -65,41 +67,7 @@ impl KnowledgeStore {
             .location
             .trim_end_matches('/')
             .to_string();
-
-        let mut children = Vec::new();
-        for entry in self.graph_index.nodes.values() {
-            let entry_parent = match entry.node_type.as_str() {
-                "dir" => {
-                    let loc = entry.location.trim_end_matches('/');
-                    std::path::Path::new(loc)
-                        .parent()
-                        .map(|path| path.to_string_lossy().into_owned())
-                }
-                "file" => std::path::Path::new(&entry.location)
-                    .parent()
-                    .map(|path| path.to_string_lossy().into_owned()),
-                _ => continue,
-            };
-            let parent = match entry_parent {
-                Some(parent)
-                    if parent == dir_location || (parent.is_empty() && dir_location == ".") =>
-                {
-                    parent
-                }
-                _ => continue,
-            };
-            let _ = parent;
-
-            let selector = match entry.node_type.as_str() {
-                "dir" => format!("dir:{}", entry.location.trim_end_matches('/')),
-                "file" => format!("file:{}", entry.location),
-                _ => continue,
-            };
-            children.push(selector);
-        }
-
-        children.sort();
-        (!children.is_empty()).then_some(children)
+        self.dir_children_index.get(&dir_location).cloned()
     }
 
     pub(super) fn file_symbol_summary(&self, node: Option<&Value>) -> Option<Vec<SymbolSummary>> {
@@ -126,6 +94,46 @@ impl KnowledgeStore {
 
         (!summaries.is_empty()).then_some(summaries)
     }
+}
+
+fn build_dir_children_index(
+    graph_index: &super::graph_io::GraphIndexFile,
+) -> HashMap<String, Vec<String>> {
+    let mut index = HashMap::<String, Vec<String>>::new();
+
+    for entry in graph_index.nodes.values() {
+        let selector = match entry.node_type.as_str() {
+            "dir" => {
+                let location = entry.location.trim_end_matches('/');
+                if location.is_empty() || location == "." {
+                    continue;
+                }
+                format!("dir:{location}")
+            }
+            "file" => format!("file:{}", entry.location),
+            _ => continue,
+        };
+
+        let parent = match entry.node_type.as_str() {
+            "dir" => std::path::Path::new(entry.location.trim_end_matches('/'))
+                .parent()
+                .map(|path| path.to_string_lossy().into_owned()),
+            "file" => std::path::Path::new(&entry.location)
+                .parent()
+                .map(|path| path.to_string_lossy().into_owned()),
+            _ => None,
+        }
+        .filter(|parent| !parent.is_empty())
+        .unwrap_or_else(|| ".".to_string());
+
+        index.entry(parent).or_default().push(selector);
+    }
+
+    for children in index.values_mut() {
+        children.sort();
+    }
+
+    index
 }
 
 fn build_selector_index(

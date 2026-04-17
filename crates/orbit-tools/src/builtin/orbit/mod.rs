@@ -272,7 +272,9 @@ pub(super) fn maybe_refresh_knowledge_graph(
         return;
     };
 
-    let _ = orbit_knowledge::pipeline::ensure_fresh(knowledge_dir, workspace_root);
+    if let Err(error) = orbit_knowledge::pipeline::ensure_fresh(knowledge_dir, workspace_root) {
+        eprintln!("warning: knowledge graph auto-refresh failed: {error}");
+    }
 }
 
 pub(super) fn load_graph_for_read(
