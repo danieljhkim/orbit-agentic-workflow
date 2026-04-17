@@ -1,38 +1,27 @@
+use std::collections::HashMap;
+
 use orbit_types::OrbitError;
 
 use crate::agent::{AgentConfig, ProviderOptions};
-use crate::providers::{
-    ClaudeRuntime, CodexRuntime, GeminiRuntime, MockAgentRuntime, OllamaRuntime,
-};
-use crate::runtime::RuntimeBackend;
+use crate::runtime::{AgentRuntime, ProviderRegistry};
 
-pub(crate) fn resolve_runtime(cfg: &AgentConfig) -> Result<RuntimeBackend, OrbitError> {
-    match &cfg.provider_options {
-        ProviderOptions::Codex {
-            sandbox,
-            approval_policy,
-            writable_dirs,
-        } => Ok(RuntimeBackend::CodexCli(CodexRuntime::new(
-            cfg.command.clone(),
-            cfg.model.clone(),
-            sandbox.clone(),
-            approval_policy.clone(),
-            writable_dirs.clone(),
-        ))),
-        ProviderOptions::Claude => Ok(RuntimeBackend::ClaudeCli(ClaudeRuntime::new(
-            cfg.command.clone(),
-            cfg.model.clone(),
-        ))),
-        ProviderOptions::Gemini => Ok(RuntimeBackend::GeminiCli(GeminiRuntime::new(
-            cfg.command.clone(),
-            cfg.model.clone(),
-        ))),
-        ProviderOptions::Ollama => Ok(RuntimeBackend::OllamaCli(OllamaRuntime::new(
-            cfg.command.clone(),
-            cfg.model.clone(),
-        )?)),
-        ProviderOptions::Mock => Ok(RuntimeBackend::MockAgentCli(MockAgentRuntime::new(
-            cfg.command.clone(),
-        ))),
-    }
+pub trait AgentRuntimeFactory: Send + Sync {
+    fn key(&self) -> &'static str;
+    fn required_env_vars(&self) -> &'static [&'static str];
+    fn options_from_config(
+        &self,
+        config: &HashMap<String, String>,
+    ) -> Result<ProviderOptions, OrbitError>;
+    fn build(&self, cfg: &AgentConfig) -> Result<Box<dyn AgentRuntime>, OrbitError>;
+}
+
+pub(crate) fn resolve_runtime(
+    registry: &ProviderRegistry,
+    cfg: &AgentConfig,
+) -> Result<Box<dyn AgentRuntime>, OrbitError> {
+    let key = cfg.provider_key;
+    registry
+        .get(key)
+        .ok_or_else(|| OrbitError::UnsupportedAgentProvider(key.to_string()))?
+        .build(cfg)
 }
