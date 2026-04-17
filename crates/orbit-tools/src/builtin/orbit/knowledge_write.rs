@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use orbit_knowledge::extract::{self, Language};
-use orbit_knowledge::lock::LockStore;
+use orbit_knowledge::lock::GraphLockGuard;
 use orbit_knowledge::{
     KnowledgeStore, Selector, WorkingGraph, WorkingLeaf, load_task_working_graph,
     save_task_working_graph,
@@ -99,11 +99,7 @@ impl Tool for OrbitKnowledgeWriteTool {
                 None => initialize_working_graph(&knowledge_dir, &selector, workspace_root)?,
             };
 
-        let lock_owner = ctx
-            .agent_name
-            .as_deref()
-            .or(ctx.task_id.as_deref())
-            .unwrap_or("unknown");
+        let lock_owner = graph_lock_owner(ctx);
         let position_selector = parse_position_selector(position_str.as_deref())?;
         let lock_targets = lock_targets_for_mutation(&selector, &[]);
 
@@ -232,32 +228,13 @@ pub(super) fn with_graph_locks<T, F>(
 where
     F: FnOnce() -> Result<T, OrbitError>,
 {
-    let lock_path = orbit_knowledge::lock::lock_store_path(knowledge_dir);
-    let mut store = LockStore::load(&lock_path)
-        .map_err(|e| OrbitError::Execution(format!("load graph locks: {e}")))?;
-    for selector in selectors {
-        store
-            .lock(selector, owner, task_id, reason)
-            .map_err(|e| OrbitError::Execution(format!("lock failed: {e}")))?;
-    }
-    store
-        .save(&lock_path)
-        .map_err(|e| OrbitError::Execution(format!("save graph locks: {e}")))?;
+    let mut guard = GraphLockGuard::acquire(knowledge_dir, owner, task_id, reason, selectors)
+        .map_err(|e| OrbitError::Execution(format!("acquire graph locks: {e}")))?;
 
     let operation_result = f();
-
-    let unlock_result = (|| -> Result<(), OrbitError> {
-        let mut store = LockStore::load(&lock_path)
-            .map_err(|e| OrbitError::Execution(format!("reload graph locks: {e}")))?;
-        for selector in selectors {
-            store
-                .unlock(selector, owner)
-                .map_err(|e| OrbitError::Execution(format!("unlock failed: {e}")))?;
-        }
-        store
-            .save(&lock_path)
-            .map_err(|e| OrbitError::Execution(format!("save graph locks: {e}")))
-    })();
+    let unlock_result = guard
+        .release()
+        .map_err(|e| OrbitError::Execution(format!("release graph locks: {e}")));
 
     match (operation_result, unlock_result) {
         (Ok(value), Ok(())) => Ok(value),
@@ -267,6 +244,13 @@ where
             "{error}; also failed to release graph locks: {unlock_error}"
         ))),
     }
+}
+
+pub(super) fn graph_lock_owner(ctx: &ToolContext) -> &str {
+    ctx.task_id
+        .as_deref()
+        .or(ctx.agent_name.as_deref())
+        .unwrap_or("unknown")
 }
 
 fn require_new_source(input: &Value) -> Result<String, OrbitError> {

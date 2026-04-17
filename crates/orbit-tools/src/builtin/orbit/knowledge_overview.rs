@@ -47,7 +47,7 @@ impl Tool for OrbitKnowledgeOverviewTool {
                 },
                 ToolParam {
                     name: "format".to_string(),
-                    description: "Output format: `full` (default) returns per-file symbol listings when the scope stays under 50 files; `summary` always returns the compact form.".to_string(),
+                    description: "Output format: `full` (default) returns per-file symbol listings when the scope stays under 50 files, but broad queries may still auto-compact to summary above 50 files; `summary` always returns the compact form.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
@@ -68,22 +68,27 @@ impl Tool for OrbitKnowledgeOverviewTool {
         let graph = super::load_graph_for_read(ctx, &input)?;
         let svc = GraphContextService::new(&graph);
         let overview = svc.overview(prefix.as_deref());
-        let use_summary =
-            matches!(format, OverviewFormat::Summary) || overview.files.len() > FILE_THRESHOLD;
+        let downgraded =
+            matches!(format, OverviewFormat::Full) && overview.files.len() > FILE_THRESHOLD;
+        let use_summary = matches!(format, OverviewFormat::Summary) || downgraded;
+        let requested_format = match format {
+            OverviewFormat::Full => "full",
+            OverviewFormat::Summary => "summary",
+        };
 
         Ok(if use_summary {
-            summary_response(compact_from_overview(
-                &overview,
-                prefix.as_deref(),
-                SUMMARY_HINT,
-            ))
+            summary_response(
+                compact_from_overview(&overview, prefix.as_deref(), SUMMARY_HINT),
+                requested_format,
+                downgraded,
+            )
         } else {
-            full_response(overview)
+            full_response(overview, requested_format)
         })
     }
 }
 
-fn full_response(overview: GraphOverview) -> Value {
+fn full_response(overview: GraphOverview, requested_format: &str) -> Value {
     let files: Vec<Value> = overview
         .files
         .into_iter()
@@ -109,6 +114,8 @@ fn full_response(overview: GraphOverview) -> Value {
         .collect();
 
     json!({
+        "mode": "full",
+        "requested_format": requested_format,
         "total_dirs": overview.total_dirs,
         "total_files": overview.total_files,
         "total_symbols": overview.total_symbols,
@@ -118,7 +125,11 @@ fn full_response(overview: GraphOverview) -> Value {
     })
 }
 
-fn summary_response(summary: GraphOverviewSummary) -> Value {
+fn summary_response(
+    summary: GraphOverviewSummary,
+    requested_format: &str,
+    downgraded: bool,
+) -> Value {
     let top_files: Vec<Value> = summary
         .top_files
         .into_iter()
@@ -133,6 +144,8 @@ fn summary_response(summary: GraphOverviewSummary) -> Value {
 
     json!({
         "mode": "summary",
+        "requested_format": requested_format,
+        "downgraded": downgraded,
         "total_dirs": summary.total_dirs,
         "total_files": summary.total_files,
         "total_symbols": summary.total_symbols,

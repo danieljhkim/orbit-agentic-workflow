@@ -16,12 +16,12 @@ impl Tool for OrbitKnowledgePackTool {
         ToolSchema {
             name: "orbit.graph.pack".to_string(),
             description:
-                "Resolve knowledge selectors into a scoped pack from `.orbit/knowledge` artifacts"
+                "Resolve knowledge selectors into a scoped pack from `.orbit/knowledge` artifacts. `file:` selectors return file metadata and symbol summaries, not full file source."
                     .to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selectors".to_string(),
-                    description: "Selector strings like `file:path`, `symbol:path#symbol:kind`, or `dir:path`".to_string(),
+                    description: "Selector strings like `file:path`, `symbol:path#symbol:kind`, or `dir:path`. Use `orbit.graph.show` or `symbol:` selectors when you need file source.".to_string(),
                     param_type: "array".to_string(),
                     required: true,
                 },

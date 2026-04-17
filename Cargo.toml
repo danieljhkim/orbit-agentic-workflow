@@ -22,6 +22,7 @@ license = "MIT"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
+fs2 = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 jsonschema = { version = "0.18", default-features = false }
 libc = "0.2"

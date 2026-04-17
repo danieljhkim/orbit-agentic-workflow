@@ -11,7 +11,7 @@ impl Tool for OrbitKnowledgeRefsTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.refs".to_string(),
-            description: "Find references to a symbol across the knowledge graph. Returns leaves whose source mentions the symbol name.".to_string(),
+            description: "Find references to a symbol across the knowledge graph, including file-level matches that live outside extracted leaves.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
@@ -23,6 +23,12 @@ impl Tool for OrbitKnowledgeRefsTool {
                     name: "limit".to_string(),
                     description: "Max results (default 20)".to_string(),
                     param_type: "number".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "include_simple_name".to_string(),
+                    description: "When true, also search for the unqualified tail component of the symbol name. Disabled by default because common simple names produce noisy matches.".to_string(),
+                    param_type: "boolean".to_string(),
                     required: false,
                 },
                 ToolParam {
@@ -39,6 +45,10 @@ impl Tool for OrbitKnowledgeRefsTool {
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let selector_str = super::required_string(&input, &["selector"], "selector")?;
         let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
+        let include_simple_name = input
+            .get("include_simple_name")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         let selector: Selector = selector_str
             .parse()
@@ -49,6 +59,7 @@ impl Tool for OrbitKnowledgeRefsTool {
             Selector::Symbol { symbol, .. } => {
                 let mut search_terms = vec![symbol.clone()];
                 if let Some(simple_name) = symbol.rsplit("::").next()
+                    && include_simple_name
                     && simple_name != symbol
                 {
                     search_terms.push(simple_name.to_string());
@@ -63,9 +74,14 @@ impl Tool for OrbitKnowledgeRefsTool {
         };
 
         // Extract the defining file to exclude self-references
+        let knowledge_dir = super::knowledge_write::resolve_knowledge_dir(ctx, &input)?;
         let graph = super::load_graph_for_read(ctx, &input)?;
         let svc = GraphContextService::new(&graph);
-        let all_hits = svc.find_references(&search_terms, Some(selector_str.as_str()));
+        let all_hits = svc.find_references(
+            Some(&knowledge_dir),
+            &search_terms,
+            Some(selector_str.as_str()),
+        );
         let hits: Vec<&_> = all_hits.iter().take(limit).collect();
 
         let references: Vec<Value> = hits

@@ -6,8 +6,8 @@ use crate::selector::Selector;
 
 use super::model::{MoveResult, WorkingGraph, WriteError, WriteResult};
 use super::rewrite::{
-    insert_source_lines, inserted_line_range, remove_leaf_lines, render_content,
-    validate_leaf_range,
+    detect_line_ending, insert_source_lines, inserted_line_range, remove_leaf_lines,
+    render_content, stage_text_file, validate_leaf_range, write_text_file,
 };
 
 impl WorkingGraph {
@@ -51,6 +51,7 @@ impl WorkingGraph {
         let file_content = fs::read_to_string(&file_path)
             .map_err(|e| WriteError::io_error(format!("read {}: {e}", file_path.display())))?;
         self.ensure_file_snapshot(&leaf.file_path, &file_content);
+        let line_ending = detect_line_ending(&file_content);
         let file_lines: Vec<&str> = file_content.lines().collect();
 
         // Validate source hash at start_line..end_line
@@ -82,17 +83,10 @@ impl WorkingGraph {
             new_lines.push(line.to_string());
         }
 
-        let new_content = new_lines.join("\n");
-        // Preserve trailing newline if original had one
-        let new_content = if file_content.ends_with('\n') && !new_content.ends_with('\n') {
-            new_content + "\n"
-        } else {
-            new_content
-        };
+        let new_content = render_content(new_lines, line_ending, file_content.ends_with('\n'));
 
         // Write file back to disk
-        fs::write(&file_path, &new_content)
-            .map_err(|e| WriteError::io_error(format!("write {}: {e}", file_path.display())))?;
+        write_text_file(&file_path, &new_content)?;
 
         // Re-extract and update working graph
         let affected = self.re_extract_file(&leaf.file_path, &new_content, language);
@@ -153,12 +147,14 @@ impl WorkingGraph {
         let file_content = fs::read_to_string(&abs_path)
             .map_err(|e| WriteError::io_error(format!("read {}: {e}", abs_path.display())))?;
         self.ensure_file_snapshot(&file_path, &file_content);
+        let line_ending = detect_line_ending(&file_content);
         let file_lines: Vec<&str> = file_content.lines().collect();
 
         let insert_after_line =
             self.resolve_insert_after_line(position, &file_path, &file_lines)?;
         let new_content = render_content(
             insert_source_lines(&file_lines, insert_after_line, new_source),
+            line_ending,
             file_content.ends_with('\n'),
         );
         let extraction = extract::extract_file(&new_content, language);
@@ -177,8 +173,7 @@ impl WorkingGraph {
         )?;
 
         // Write file
-        fs::write(&abs_path, &new_content)
-            .map_err(|e| WriteError::io_error(format!("write {}: {e}", abs_path.display())))?;
+        write_text_file(&abs_path, &new_content)?;
 
         // Re-extract
         let affected = self.re_extract_file(&file_path, &new_content, language);
@@ -232,6 +227,7 @@ impl WorkingGraph {
         let file_content = fs::read_to_string(&file_path)
             .map_err(|e| WriteError::io_error(format!("read {}: {e}", file_path.display())))?;
         self.ensure_file_snapshot(&leaf.file_path, &file_content);
+        let line_ending = detect_line_ending(&file_content);
         let file_lines: Vec<&str> = file_content.lines().collect();
 
         // Validate source hash
@@ -251,31 +247,13 @@ impl WorkingGraph {
             ));
         }
 
-        // Remove lines and collapse any resulting double blank lines
-        let mut new_lines: Vec<String> = Vec::new();
-        for line in &file_lines[..leaf.start_line - 1] {
-            new_lines.push(line.to_string());
-        }
-        // Skip a trailing blank line to avoid double gaps
-        let after_start = leaf.end_line;
-        let skip_blank = after_start < file_lines.len()
-            && file_lines[after_start].trim().is_empty()
-            && !new_lines.is_empty()
-            && new_lines.last().is_some_and(|l| l.trim().is_empty());
-        let skip_count = if skip_blank { 1 } else { 0 };
-        for line in &file_lines[after_start + skip_count..] {
-            new_lines.push(line.to_string());
-        }
+        let new_content = render_content(
+            remove_leaf_lines(&file_lines, leaf.start_line, leaf.end_line),
+            line_ending,
+            file_content.ends_with('\n'),
+        );
 
-        let new_content = new_lines.join("\n");
-        let new_content = if file_content.ends_with('\n') && !new_content.ends_with('\n') {
-            new_content + "\n"
-        } else {
-            new_content
-        };
-
-        fs::write(&file_path, &new_content)
-            .map_err(|e| WriteError::io_error(format!("write {}: {e}", file_path.display())))?;
+        write_text_file(&file_path, &new_content)?;
 
         let affected = self.re_extract_file(&leaf.file_path, &new_content, language);
 
@@ -338,6 +316,7 @@ impl WorkingGraph {
         let src_content = fs::read_to_string(&src_abs)
             .map_err(|e| WriteError::io_error(format!("read {}: {e}", src_abs.display())))?;
         self.ensure_file_snapshot(&old_file_path, &src_content);
+        let src_line_ending = detect_line_ending(&src_content);
         let src_lines: Vec<&str> = src_content.lines().collect();
 
         validate_leaf_range(&leaf, src_lines.len(), &selector_str)?;
@@ -357,6 +336,7 @@ impl WorkingGraph {
 
         let new_src_content = render_content(
             remove_leaf_lines(&src_lines, leaf.start_line, leaf.end_line),
+            src_line_ending,
             src_content.ends_with('\n'),
         );
 
@@ -371,6 +351,7 @@ impl WorkingGraph {
             )?;
             let final_content = render_content(
                 insert_source_lines(&planned_lines, insert_after_line, &source_text),
+                src_line_ending,
                 src_content.ends_with('\n'),
             );
             let final_extraction = extract::extract_file(&final_content, src_language);
@@ -386,8 +367,7 @@ impl WorkingGraph {
                 inserted_end_line,
             )?;
 
-            fs::write(&src_abs, &final_content)
-                .map_err(|e| WriteError::io_error(format!("write {}: {e}", src_abs.display())))?;
+            write_text_file(&src_abs, &final_content)?;
 
             let affected = self.re_extract_file(&old_file_path, &final_content, src_language);
             self.transfer_version_chain(&selector_str, &canonical_selector, &leaf.source_hash);
@@ -427,11 +407,13 @@ impl WorkingGraph {
         let tgt_content = fs::read_to_string(&tgt_abs)
             .map_err(|e| WriteError::io_error(format!("read {}: {e}", tgt_abs.display())))?;
         self.ensure_file_snapshot(target_file, &tgt_content);
+        let tgt_line_ending = detect_line_ending(&tgt_content);
         let tgt_lines: Vec<&str> = tgt_content.lines().collect();
         let insert_after_line =
             self.resolve_insert_after_line(position, target_file, &tgt_lines)?;
         let new_tgt_content = render_content(
             insert_source_lines(&tgt_lines, insert_after_line, &source_text),
+            tgt_line_ending,
             tgt_content.ends_with('\n'),
         );
         let tgt_extraction = extract::extract_file(&new_tgt_content, tgt_language);
@@ -447,18 +429,26 @@ impl WorkingGraph {
             inserted_end_line,
         )?;
 
-        fs::write(&tgt_abs, &new_tgt_content)
-            .map_err(|e| WriteError::io_error(format!("write {}: {e}", tgt_abs.display())))?;
-        if let Err(source_write_err) = fs::write(&src_abs, &new_src_content) {
-            let rollback = fs::write(&tgt_abs, &tgt_content);
+        let mut staged_target = stage_text_file(&tgt_abs, &new_tgt_content)?;
+        let mut staged_source = stage_text_file(&src_abs, &new_src_content)?;
+
+        // Cross-file moves still require two renames. We stage both temp files
+        // first, then roll the target back if the source rename fails.
+        staged_target.commit().map_err(|error| {
+            WriteError::io_error(format!("rename {}: {error}", tgt_abs.display()))
+        })?;
+        if let Err(source_write_err) = staged_source.commit() {
+            let rollback = write_text_file(&tgt_abs, &tgt_content);
             return Err(match rollback {
-                Ok(()) => {
-                    WriteError::io_error(format!("write {}: {source_write_err}", src_abs.display()))
-                }
+                Ok(()) => WriteError::io_error(format!(
+                    "rename {}: {source_write_err}",
+                    src_abs.display()
+                )),
                 Err(rollback_err) => WriteError::io_error(format!(
-                    "write {}: {source_write_err}; rollback {}: {rollback_err}",
+                    "rename {}: {source_write_err}; rollback {}: {}",
                     src_abs.display(),
-                    tgt_abs.display()
+                    tgt_abs.display(),
+                    rollback_err.reason
                 )),
             });
         }

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use orbit_types::OrbitError;
 
+use crate::io::write_text_atomic_durable;
 use crate::selector::Selector;
 use crate::working_graph::{WorkingGraph, WorkingLeaf};
 
@@ -55,27 +56,14 @@ pub fn save_task_working_graph(
     fs::create_dir_all(parent)
         .map_err(|error| OrbitError::Execution(format!("create {}: {error}", parent.display())))?;
 
-    let tmp_path = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("working-graph")
-    ));
     let payload = serde_json::to_string_pretty(graph).map_err(|error| {
         OrbitError::Execution(format!(
             "serialize task working graph state {}: {error}",
             path.display()
         ))
     })?;
-    fs::write(&tmp_path, format!("{payload}\n"))
-        .map_err(|error| OrbitError::Execution(format!("write {}: {error}", tmp_path.display())))?;
-    fs::rename(&tmp_path, &path).map_err(|error| {
-        OrbitError::Execution(format!(
-            "rename {} -> {}: {error}",
-            tmp_path.display(),
-            path.display()
-        ))
-    })?;
+    write_text_atomic_durable(&path, &format!("{payload}\n"))
+        .map_err(|error| OrbitError::Execution(format!("write {}: {error}", path.display())))?;
     Ok(())
 }
 

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 chrono.workspace = true
+fs2.workspace = true
 orbit-types = { path = "../orbit-types" }
 serde.workspace = true
 serde_json.workspace = true

@@ -3,6 +3,9 @@ use std::fs;
 use std::path::Path;
 
 use crate::extract::{self, Language};
+use crate::io::{
+    LineEnding, StagedTextFile, render_content as render_text_content, write_text_atomic_durable,
+};
 use crate::selector::Selector;
 
 use super::model::{WorkingGraph, WorkingLeaf, WriteError, WriteResult};
@@ -75,13 +78,12 @@ pub(super) fn working_leaf_from_extracted(
     }
 }
 
-pub(super) fn render_content(lines: Vec<String>, preserve_trailing_newline: bool) -> String {
-    let content = lines.join("\n");
-    if preserve_trailing_newline && !content.ends_with('\n') {
-        format!("{content}\n")
-    } else {
-        content
-    }
+pub(super) fn render_content(
+    lines: Vec<String>,
+    line_ending: LineEnding,
+    preserve_trailing_newline: bool,
+) -> String {
+    render_text_content(lines, line_ending, preserve_trailing_newline)
 }
 
 pub(super) fn insert_source_lines(
@@ -132,6 +134,20 @@ pub(super) fn remove_leaf_lines(
     new_lines
 }
 
+pub(super) fn detect_line_ending(content: &str) -> LineEnding {
+    LineEnding::detect(content)
+}
+
+pub(super) fn stage_text_file(path: &Path, content: &str) -> Result<StagedTextFile, WriteError> {
+    StagedTextFile::new(path, content)
+        .map_err(|error| WriteError::io_error(format!("stage {}: {error}", path.display())))
+}
+
+pub(super) fn write_text_file(path: &Path, content: &str) -> Result<(), WriteError> {
+    write_text_atomic_durable(path, content)
+        .map_err(|error| WriteError::io_error(format!("write {}: {error}", path.display())))
+}
+
 impl WorkingGraph {
     /// Rewrite an entire file and re-extract all leaves.
     pub fn rewrite_file(
@@ -163,13 +179,7 @@ impl WorkingGraph {
         let extraction = extract::extract_file(new_content, language);
         self.validate_unique_extracted_selectors(rel_path, &extraction)?;
 
-        fs::write(&abs_path, new_content).map_err(|e| WriteError {
-            kind: "io_error".to_string(),
-            reason: format!("write {}: {e}", abs_path.display()),
-            expected_source_hash: None,
-            actual_source: None,
-            leaf_id: Some(format!("file:{rel_path}")),
-        })?;
+        write_text_file(&abs_path, new_content)?;
 
         let affected = self.re_extract_file(rel_path, new_content, language);
         self.record_file_rewrite_history(rel_path, old_leaves, &extraction, reason);
@@ -233,7 +243,11 @@ impl WorkingGraph {
             );
         }
 
-        let merged = render_content(new_lines, old_content.ends_with('\n'));
+        let merged = render_content(
+            new_lines,
+            detect_line_ending(&old_content),
+            old_content.ends_with('\n'),
+        );
         self.rewrite_file(rel_path, &merged, reason, workspace_root)
     }
 

@@ -9,6 +9,8 @@ use super::KnowledgeStore;
 use super::graph_io::{extract_leaf_source, read_graph_object};
 use super::types::{KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry};
 
+const FILE_SOURCE_HINT: &str = "File selectors return metadata only. Use `orbit.graph.show` or `symbol:` selectors when you need source.";
+
 impl KnowledgeStore {
     pub fn pack(&self, selectors: &[Selector]) -> Result<KnowledgePack, KnowledgeError> {
         let mut object_cache = HashMap::<String, Value>::new();
@@ -61,6 +63,7 @@ impl KnowledgeStore {
             let mut entry = project_entry(selector_string, kind, node, source, child_selectors);
             if entry.kind == KnowledgeEntryKind::File {
                 entry.symbol_summary = self.file_symbol_summary(node);
+                entry.hint = Some(FILE_SOURCE_HINT.to_string());
             }
             entries.push(entry);
         }
@@ -89,6 +92,7 @@ pub(super) fn unresolved_entry(selector: String) -> KnowledgePackEntry {
         children: None,
         symbol_summary: None,
         source: None,
+        hint: None,
         start_line: None,
         end_line: None,
         input_signature: None,
@@ -144,6 +148,7 @@ fn project_entry(
         children: child_selectors,
         symbol_summary: None,
         source,
+        hint: None,
         start_line: u32_field("start_line"),
         end_line: u32_field("end_line"),
         input_signature: val_vec_field("input_signature"),

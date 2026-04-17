@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::{Tool, ToolContext};
 
 use super::knowledge_write::{
-    initialize_working_graph, lock_targets_for_mutation, resolve_knowledge_dir,
+    graph_lock_owner, initialize_working_graph, lock_targets_for_mutation, resolve_knowledge_dir,
     resolve_workspace_root_with_override, with_graph_locks, write_err_to_orbit,
 };
 
@@ -96,17 +96,12 @@ impl Tool for OrbitKnowledgeAddTool {
             ));
         }
 
-        let lock_owner = ctx
-            .agent_name
-            .as_deref()
-            .or(ctx.task_id.as_deref())
-            .unwrap_or("unknown");
         let position_selector = parse_position(position_str.as_deref())?;
         let lock_targets = lock_targets_for_mutation(&selector, &[]);
 
         let result = with_graph_locks(
             &knowledge_dir,
-            lock_owner,
+            graph_lock_owner(ctx),
             ctx.task_id.as_deref(),
             reason.as_deref().unwrap_or("adding"),
             &lock_targets,
