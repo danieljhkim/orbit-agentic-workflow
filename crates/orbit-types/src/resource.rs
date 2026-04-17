@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
-    FilesystemPolicy, JobScheduleState, JobStep, ProcessPolicy, ToolPolicy,
-    default_job_max_active_runs, default_max_iterations,
+    ExecutorType, FilesystemPolicy, JobScheduleState, JobStep, ProcessPolicy, StdoutFormat,
+    ToolPolicy, default_job_max_active_runs, default_max_iterations,
 };
 
 pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
@@ -152,13 +152,13 @@ pub struct PolicyResourceSpec {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutorResourceSpec {
-    pub executor_type: String,
+    pub executor_type: ExecutorType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stdout_format: Option<String>,
+    pub stdout_format: Option<StdoutFormat>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub models: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

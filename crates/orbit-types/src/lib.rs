@@ -60,7 +60,7 @@ pub use duel::{
 };
 pub use error::OrbitError;
 pub use event::OrbitEvent;
-pub use executor_def::ExecutorDef;
+pub use executor_def::{ExecutorDef, ExecutorType, StdoutFormat};
 pub use friction::FrictionEntry;
 pub use id::OrbitId;
 pub use invocation::{InvocationTrace, TokenUsage, ToolCallTrace};

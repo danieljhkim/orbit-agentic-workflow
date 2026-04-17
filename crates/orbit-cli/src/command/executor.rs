@@ -52,7 +52,7 @@ impl Execute for ExecutorListArgs {
             for def in &defs {
                 table.add_row(vec![
                     def.name.clone(),
-                    def.executor_type.clone(),
+                    def.executor_type.to_string(),
                     def.command.clone().unwrap_or_default(),
                     def.timeout_seconds
                         .map(|t| format!("{t}s"))
@@ -110,10 +110,10 @@ impl Execute for ExecutorShowArgs {
 fn executor_def_json(def: &orbit_core::ExecutorDef) -> Value {
     json!({
         "name": def.name,
-        "executor_type": def.executor_type,
+        "executor_type": def.executor_type.to_string(),
         "command": def.command,
         "args": def.args,
-        "stdout_format": def.stdout_format,
+        "stdout_format": def.stdout_format.as_ref().map(ToString::to_string),
         "timeout_seconds": def.timeout_seconds,
         "env": def.env,
         "created_at": def.created_at.to_rfc3339(),

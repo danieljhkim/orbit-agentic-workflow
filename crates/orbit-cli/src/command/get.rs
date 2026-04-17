@@ -205,7 +205,7 @@ fn list_executors(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitErro
             .map(|d| {
                 json!({
                     "name": d.name,
-                    "executor_type": d.executor_type,
+                    "executor_type": d.executor_type.to_string(),
                     "command": d.command,
                 })
             })
@@ -220,7 +220,7 @@ fn list_executors(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitErro
         for d in &defs {
             table.add_row(vec![
                 d.name.clone(),
-                d.executor_type.clone(),
+                d.executor_type.to_string(),
                 d.command.clone().unwrap_or_default(),
                 d.timeout_seconds
                     .map(|t| format!("{t}s"))
