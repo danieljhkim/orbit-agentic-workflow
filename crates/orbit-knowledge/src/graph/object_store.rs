@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use super::nodes::{CodebaseGraphV1, DirNode, FileNode, LeafNode};
 use crate::error::KnowledgeError;
-use crate::io::write_text_atomic_durable;
+use crate::io::{write_text_atomic, write_text_atomic_durable};
 
 const GRAPH_STORE_SCHEMA_VERSION: u32 = 1;
 
@@ -444,7 +444,7 @@ impl GraphObjectStore {
         let sorted = sort_json_value(payload.clone());
         let pretty = serde_json::to_string_pretty(&sorted)
             .map_err(|e| KnowledgeError::invalid_data(format!("serialize object: {e}")))?;
-        write_text_atomic_durable(&path, &format!("{pretty}\n")).map_err(|e| {
+        write_text_atomic(&path, &format!("{pretty}\n")).map_err(|e| {
             KnowledgeError::knowledge_unavailable(format!("write object {}: {e}", path.display()))
         })?;
         Ok(digest)
@@ -453,7 +453,7 @@ impl GraphObjectStore {
     fn write_blob(&self, content: &str) -> Result<String, KnowledgeError> {
         let digest = sha256_hex(content.as_bytes());
         let path = self.blob_path(&digest)?;
-        write_text_atomic_durable(&path, content).map_err(|e| {
+        write_text_atomic(&path, content).map_err(|e| {
             KnowledgeError::knowledge_unavailable(format!("write blob {}: {e}", path.display()))
         })?;
         Ok(digest)

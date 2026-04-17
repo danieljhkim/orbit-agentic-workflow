@@ -59,14 +59,28 @@ pub(crate) fn write_text_atomic_durable(path: &Path, content: &str) -> io::Resul
     staged.commit()
 }
 
+pub(crate) fn write_text_atomic(path: &Path, content: &str) -> io::Result<()> {
+    let mut staged = StagedTextFile::new_volatile(path, content)?;
+    staged.commit()
+}
+
 pub(crate) struct StagedTextFile {
     target_path: PathBuf,
     temp_path: PathBuf,
+    sync_parent: bool,
     committed: bool,
 }
 
 impl StagedTextFile {
     pub(crate) fn new(target_path: &Path, content: &str) -> io::Result<Self> {
+        Self::new_internal(target_path, content, true)
+    }
+
+    pub(crate) fn new_volatile(target_path: &Path, content: &str) -> io::Result<Self> {
+        Self::new_internal(target_path, content, false)
+    }
+
+    fn new_internal(target_path: &Path, content: &str, durable: bool) -> io::Result<Self> {
         let parent = target_path.parent().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -87,12 +101,15 @@ impl StagedTextFile {
         }
 
         file.write_all(content.as_bytes())?;
-        file.sync_all()?;
+        if durable {
+            file.sync_all()?;
+        }
         drop(file);
 
         Ok(Self {
             target_path: target_path.to_path_buf(),
             temp_path,
+            sync_parent: durable,
             committed: false,
         })
     }
@@ -100,7 +117,10 @@ impl StagedTextFile {
     pub(crate) fn commit(&mut self) -> io::Result<()> {
         fs::rename(&self.temp_path, &self.target_path)?;
         self.committed = true;
-        sync_parent_dir(&self.target_path)
+        if self.sync_parent {
+            sync_parent_dir(&self.target_path)?;
+        }
+        Ok(())
     }
 }
 
