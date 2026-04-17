@@ -13,14 +13,21 @@ const STATUS_ORDER = [
   "archived",
 ];
 
+const DEFAULT_INACTIVE_STATUSES = new Set(["done", "someday", "archived"]);
+
 const params = new URLSearchParams(window.location.search);
 const POLL_MS = Math.max(1000, parseInt(params.get("poll") || "5000", 10));
 
 const $ = (id) => document.getElementById(id);
 
 let searchQuery = "";
-let activeStatuses = new Set(STATUS_ORDER);
+let activeStatuses = new Set(
+  STATUS_ORDER.filter((s) => !DEFAULT_INACTIVE_STATUSES.has(s)),
+);
 let lastTasks = [];
+let lastDiagnostics = { metrics: [], friction: [] };
+let activeDiagSubtab = "metrics";
+let expandedTaskIds = new Set();
 
 function el(tag, opts = {}, children = []) {
   const node = document.createElement(tag);
@@ -73,6 +80,101 @@ function filterTasks(tasks) {
   });
 }
 
+const TASK_META_FIELDS = [
+  ["implemented_by", "implemented_by"],
+  ["planned_by", "planned_by"],
+  ["created_by", "created_by"],
+  ["pr_number", "pr"],
+  ["pr_status", "pr_status"],
+  ["created_at", "created"],
+  ["updated_at", "updated"],
+];
+
+function buildTaskDetail(task) {
+  const detail = el("div", { class: "row-detail" });
+  detail.addEventListener("click", (e) => e.stopPropagation());
+
+  const meta = el("div", { class: "meta-line" });
+  let metaCount = 0;
+  for (const [key, label] of TASK_META_FIELDS) {
+    const v = task[key];
+    if (v == null || v === "") continue;
+    const display = key.endsWith("_at") ? fmtAbsTime(v) : String(v);
+    const span = el("span", {}, [
+      el("span", { class: "label", text: `${label}:` }),
+      el("span", { class: "value", text: display }),
+    ]);
+    meta.appendChild(span);
+    metaCount++;
+  }
+  if (metaCount > 0) detail.appendChild(meta);
+
+  if (task.description && task.description.trim()) {
+    detail.appendChild(el("h4", { text: "description" }));
+    detail.appendChild(el("div", { class: "description", text: task.description }));
+  }
+
+  if (Array.isArray(task.acceptance_criteria) && task.acceptance_criteria.length > 0) {
+    detail.appendChild(el("h4", { text: "acceptance criteria" }));
+    const ul = el("ul", { class: "ac-list" });
+    for (const ac of task.acceptance_criteria) {
+      ul.appendChild(el("li", { text: ac }));
+    }
+    detail.appendChild(ul);
+  }
+
+  if (task.plan && task.plan.trim()) {
+    detail.appendChild(el("h4", { text: "plan" }));
+    const pre = el("pre");
+    pre.textContent = task.plan;
+    detail.appendChild(pre);
+  }
+
+  if (task.execution_summary && task.execution_summary.trim()) {
+    detail.appendChild(el("h4", { text: "execution summary" }));
+    const pre = el("pre");
+    pre.textContent = task.execution_summary;
+    detail.appendChild(pre);
+  }
+
+  if (Array.isArray(task.comments) && task.comments.length > 0) {
+    detail.appendChild(el("h4", { text: "comments" }));
+    for (const c of task.comments) {
+      const line = el("div", { class: "comment-line" }, [
+        document.createTextNode(`[${fmtAbsTime(c.at)}] `),
+        el("span", { class: "author", text: c.by || "?" }),
+        document.createTextNode(`: ${c.message || ""}`),
+      ]);
+      detail.appendChild(line);
+    }
+  }
+
+  if (Array.isArray(task.context_files) && task.context_files.length > 0) {
+    detail.appendChild(el("h4", { text: "context" }));
+    const ul = el("ul", { class: "file-list" });
+    for (const path of task.context_files) {
+      ul.appendChild(el("li", { text: path }));
+    }
+    detail.appendChild(ul);
+  }
+
+  if (Array.isArray(task.history) && task.history.length > 0) {
+    detail.appendChild(el("h4", { text: "recent history" }));
+    const recent = task.history.slice(-5).reverse();
+    for (const h of recent) {
+      const note = h.note ? ` (${h.note})` : "";
+      const line = el("div", { class: "history-line" }, [
+        document.createTextNode(`[${fmtAbsTime(h.at)}] `),
+        el("span", { class: "actor", text: h.by || "?" }),
+        document.createTextNode(`: ${h.event}${note}`),
+      ]);
+      detail.appendChild(line);
+    }
+  }
+
+  return detail;
+}
+
 function renderTasks(tasks) {
   const body = $("tasks-body");
   body.innerHTML = "";
@@ -112,7 +214,20 @@ function renderTasks(tasks) {
         priorityCell(t.priority),
         el("span", { class: "type mono", text: t.type }),
       ]);
+      row.dataset.taskId = t.id;
+      row.addEventListener("click", () => {
+        if (expandedTaskIds.has(t.id)) {
+          expandedTaskIds.delete(t.id);
+        } else {
+          expandedTaskIds.add(t.id);
+        }
+        renderTasks(lastTasks);
+      });
+      if (expandedTaskIds.has(t.id)) row.classList.add("expanded");
       body.appendChild(row);
+      if (expandedTaskIds.has(t.id)) {
+        body.appendChild(buildTaskDetail(t));
+      }
     }
   }
 }
@@ -127,6 +242,14 @@ function fmtTimestamp(iso) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   return `${Math.floor(diff / 86400)}d`;
+}
+
+function fmtAbsTime(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function fmtDuration(ms) {
@@ -290,29 +413,150 @@ function wireSearch() {
   });
 }
 
-const TABS = ["tasks", "scoreboard"];
+const TABS = ["tasks", "scoreboard", "diagnostics"];
+const DIAG_SUBTABS = ["metrics", "friction"];
 
-function setActiveTab(name) {
-  if (!TABS.includes(name)) name = "tasks";
+function setActiveTab(raw) {
+  const [topRaw, subRaw] = String(raw || "").split("/");
+  const top = TABS.includes(topRaw) ? topRaw : "tasks";
   for (const tab of document.querySelectorAll(".tab")) {
-    tab.classList.toggle("active", tab.dataset.tab === name);
+    tab.classList.toggle("active", tab.dataset.tab === top);
   }
   for (const pane of document.querySelectorAll(".tab-pane")) {
-    pane.classList.toggle("active", pane.dataset.tab === name);
+    pane.classList.toggle("active", pane.dataset.tab === top);
   }
-  if (window.location.hash !== `#${name}`) {
-    window.location.hash = `#${name}`;
+  let hash = `#${top}`;
+  if (top === "diagnostics") {
+    const sub = DIAG_SUBTABS.includes(subRaw) ? subRaw : activeDiagSubtab;
+    setDiagSubtab(sub);
+    hash = `#diagnostics/${sub}`;
   }
+  if (window.location.hash !== hash) {
+    window.location.hash = hash;
+  }
+}
+
+function setDiagSubtab(name) {
+  if (!DIAG_SUBTABS.includes(name)) name = "metrics";
+  activeDiagSubtab = name;
+  for (const btn of document.querySelectorAll("#diag-subtabs .subtab")) {
+    btn.classList.toggle("active", btn.dataset.subtab === name);
+  }
+  $("diag-title").textContent = name;
+  renderDiagnostics();
 }
 
 function initTabs() {
   for (const tab of document.querySelectorAll(".tab")) {
     tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
   }
+  for (const btn of document.querySelectorAll("#diag-subtabs .subtab")) {
+    btn.addEventListener("click", () => setActiveTab(`diagnostics/${btn.dataset.subtab}`));
+  }
   window.addEventListener("hashchange", () => {
     setActiveTab(window.location.hash.replace(/^#/, ""));
   });
   setActiveTab(window.location.hash.replace(/^#/, "") || "tasks");
+}
+
+function fmtRelative(iso) {
+  return fmtTimestamp(iso);
+}
+
+function truncate(text, max) {
+  if (text == null) return "";
+  if (text.length <= max) return text;
+  return text.slice(0, max) + "\u2026";
+}
+
+const DIAG_METRICS_COLUMNS = [
+  { key: "ts", label: "time", num: false, render: (v) => fmtRelative(v) },
+  { key: "step", label: "step", num: false },
+  { key: "actor_identity", label: "actor", num: false, render: (v) => v || "-" },
+  {
+    key: "token_usage",
+    label: "tokens",
+    num: true,
+    render: (v) => (v == null ? "-" : String(v)),
+  },
+  { key: "tool_invocations", label: "tools", num: true },
+  {
+    key: "step_duration_ms",
+    label: "duration",
+    num: true,
+    render: (v) => (v == null ? "-" : fmtDuration(v)),
+  },
+  { key: "retry_count", label: "retries", num: true },
+];
+
+const DIAG_FRICTION_COLUMNS = [
+  { key: "ts", label: "time", num: false, render: (v) => fmtRelative(v) },
+  { key: "step", label: "step", num: false },
+  { key: "command", label: "command", num: false },
+  {
+    key: "exit_code",
+    label: "exit",
+    num: true,
+    render: (v, _row, td) => {
+      if (v == null) return "-";
+      if (v !== 0) td.classList.add("exit-fail");
+      return String(v);
+    },
+  },
+  {
+    key: "stderr",
+    label: "stderr",
+    num: false,
+    cellClass: "stderr",
+    render: (v, _row, td) => {
+      const full = v || "";
+      td.title = full;
+      return truncate(full, 160);
+    },
+  },
+];
+
+function renderDiagnosticsTable(rows, columns) {
+  const body = $("diag-body");
+  body.innerHTML = "";
+  if (!rows || rows.length === 0) {
+    body.appendChild(el("div", { class: "empty", text: "no entries this month." }));
+    return;
+  }
+  const table = el("table", { class: "scoreboard-table" });
+  const thead = el("thead");
+  const headRow = el("tr");
+  for (const col of columns) {
+    headRow.appendChild(el("th", { class: col.num ? "num" : "", text: col.label }));
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  for (const row of rows) {
+    const tr = el("tr");
+    for (const col of columns) {
+      const baseClass =
+        (col.num ? "num" : "") + (col.cellClass ? ` ${col.cellClass}` : "");
+      const td = el("td", { class: baseClass });
+      const v = row[col.key];
+      const text = col.render ? col.render(v, row, td) : v == null ? "" : String(v);
+      td.textContent = text;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  body.appendChild(table);
+}
+
+function renderDiagnostics() {
+  const sub = activeDiagSubtab;
+  const rows = lastDiagnostics[sub] || [];
+  $("diag-count").textContent = `${rows.length}`;
+  renderDiagnosticsTable(
+    rows,
+    sub === "metrics" ? DIAG_METRICS_COLUMNS : DIAG_FRICTION_COLUMNS,
+  );
 }
 
 async function tick() {
@@ -326,9 +570,27 @@ async function tick() {
       })
       .catch((e) => showError("tasks-body", e)),
     fetchJson("/api/job-runs").then(renderRuns).catch((e) => showError("runs-body", e)),
-    fetchJson("/api/scoreboard").then(renderScoreboard).catch((e) => showError("scoreboard-body", e)),
+    fetchJson("/api/scoreboard")
+      .then(renderScoreboard)
+      .catch((e) => showError("scoreboard-body", e)),
+    fetchJson("/api/diagnostics/metrics")
+      .then((rows) => {
+        lastDiagnostics.metrics = rows;
+        if (activeDiagSubtab === "metrics") renderDiagnostics();
+      })
+      .catch((e) => {
+        if (activeDiagSubtab === "metrics") showError("diag-body", e);
+      }),
+    fetchJson("/api/diagnostics/friction")
+      .then((rows) => {
+        lastDiagnostics.friction = rows;
+        if (activeDiagSubtab === "friction") renderDiagnostics();
+      })
+      .catch((e) => {
+        if (activeDiagSubtab === "friction") showError("diag-body", e);
+      }),
   ]);
-  $("footer").textContent = `orbit dashboard · GET /api/{tasks,jobs,job-runs,audit,scoreboard}`;
+  $("footer").textContent = `orbit dashboard · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
 }
 
 initTabs();

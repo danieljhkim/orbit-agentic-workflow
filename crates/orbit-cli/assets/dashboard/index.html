@@ -186,11 +186,89 @@
         gap: 10px;
         padding: 4px 14px;
         align-items: baseline;
+        cursor: pointer;
       }
       .row:hover { background: rgba(88, 166, 255, 0.05); }
+      .row.expanded {
+        background: rgba(88, 166, 255, 0.08);
+        border-left: 2px solid var(--accent);
+        padding-left: 12px;
+      }
       .row .id { color: var(--fg-dim); }
       .row .title { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .row .priority, .row .type { font-size: 12px; color: var(--fg-dim); text-align: right; }
+      .row-detail {
+        padding: 10px 14px 14px 14px;
+        background: rgba(88, 166, 255, 0.03);
+        border-left: 2px solid var(--accent);
+        display: grid;
+        gap: 10px;
+        font-size: 13px;
+      }
+      .row-detail .meta-line {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: var(--fg-dim);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+      }
+      .row-detail .meta-line .label {
+        color: var(--fg-dim);
+        margin-right: 4px;
+        text-transform: lowercase;
+        letter-spacing: 0.04em;
+      }
+      .row-detail .meta-line .value {
+        color: var(--fg);
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      .row-detail h4 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--fg-dim);
+        margin: 4px 0 2px;
+        font-weight: 500;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      .row-detail .description {
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--fg);
+        font-size: 13px;
+      }
+      .row-detail pre {
+        margin: 0;
+        padding: 8px 10px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        max-height: 300px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--fg);
+      }
+      .row-detail .ac-list,
+      .row-detail .file-list {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .row-detail .ac-list li { margin-bottom: 2px; }
+      .row-detail .history-line,
+      .row-detail .comment-line {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: var(--fg-dim);
+        line-height: 1.5;
+      }
+      .row-detail .history-line .actor,
+      .row-detail .comment-line .author { color: var(--fg); }
       .pill {
         display: inline-block;
         padding: 1px 6px;
@@ -285,6 +363,40 @@
       table.scoreboard-table td.zero { color: var(--fg-dim); }
       table.scoreboard-table tbody tr:hover { background: rgba(88, 166, 255, 0.04); }
       table.scoreboard-table td.agent { font-weight: 500; }
+      .subtabs {
+        display: flex;
+        gap: 2px;
+        padding: 6px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-elev);
+      }
+      .subtab {
+        background: transparent;
+        color: var(--fg-dim);
+        border: none;
+        padding: 4px 10px;
+        cursor: pointer;
+        font: inherit;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -7px;
+        text-transform: lowercase;
+      }
+      .subtab:hover { color: var(--fg); }
+      .subtab.active {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+      }
+      .exit-fail { color: var(--state-failed); font-weight: 600; }
+      td.stderr {
+        max-width: 600px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        color: var(--fg-dim);
+      }
       footer {
         padding: 12px 20px 24px;
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -302,6 +414,7 @@
     <nav class="tabs" id="tabs">
       <button class="tab" data-tab="tasks" type="button">tasks</button>
       <button class="tab" data-tab="scoreboard" type="button">scoreboard</button>
+      <button class="tab" data-tab="diagnostics" type="button">diagnostics</button>
     </nav>
     <section class="tab-pane" data-tab="tasks">
       <main>
@@ -326,6 +439,21 @@
         <section class="panel" id="scoreboard-panel">
           <header><span>scoreboard</span><span class="count" id="scoreboard-count"></span></header>
           <div class="body scoreboard-table-wrap" id="scoreboard-body"><div class="empty">loading&hellip;</div></div>
+        </section>
+      </main>
+    </section>
+    <section class="tab-pane" data-tab="diagnostics">
+      <main style="grid-template-columns: 1fr;">
+        <section class="panel" id="diagnostics-panel">
+          <header>
+            <span id="diag-title">metrics</span>
+            <span class="count" id="diag-count"></span>
+          </header>
+          <nav class="subtabs" id="diag-subtabs">
+            <button class="subtab" data-subtab="metrics" type="button">metrics</button>
+            <button class="subtab" data-subtab="friction" type="button">friction</button>
+          </nav>
+          <div class="body scoreboard-table-wrap" id="diag-body"><div class="empty">loading&hellip;</div></div>
         </section>
       </main>
     </section>
