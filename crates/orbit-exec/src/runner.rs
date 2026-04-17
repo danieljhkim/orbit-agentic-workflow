@@ -73,7 +73,7 @@ pub fn run_process(
             ));
         }
     }
-    let result = crate::timeout::wait_with_optional_timeout(child, req.timeout_ms, req.debug)?;
+    let result = crate::supervision::wait_with_optional_timeout(child, req.timeout_ms, req.debug)?;
 
     Ok(ExecutionResult {
         success: result.exit_success,
