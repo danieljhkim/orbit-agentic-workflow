@@ -71,10 +71,7 @@ pub use job::{
 };
 pub use metrics::MetricsEntry;
 pub use policy_decision::PolicyDecision;
-pub use policy_def::{
-    ApprovalPolicy, FilesystemPolicy, NetworkMode, NetworkPolicy, PolicyDef, ProcessPolicy,
-    ToolPolicy,
-};
+pub use policy_def::{FilesystemPolicy, PolicyDef, ProcessPolicy, ToolPolicy};
 pub use redaction::{
     is_sensitive_env_name, redact_sensitive_env_error, redact_sensitive_env_json,
     redact_sensitive_env_option, redact_sensitive_env_text,

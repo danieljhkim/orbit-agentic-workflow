@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use orbit_policy::PolicyContext;
 use orbit_tools::ToolContext;
@@ -69,11 +69,7 @@ impl OrbitRuntime {
             )));
         }
 
-        let decision = self.policy_engine().evaluate(&PolicyContext {
-            entrypoint: "cli".to_string(),
-            tool_name: Some(name.to_string()),
-            role,
-        });
+        let decision = self.evaluate_tool_invocation_policy(name, &input, role, &tool_context);
 
         match decision {
             PolicyDecision::Deny { reason } => {
@@ -116,11 +112,16 @@ impl OrbitRuntime {
             .get_schema(name)
             .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
 
-        let decision = self.policy_engine().evaluate(&PolicyContext {
-            entrypoint: "cli".to_string(),
-            tool_name: Some(name.to_string()),
-            role: Role::Admin,
-        });
+        let mut tool_context = ToolContext {
+            cwd: std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        tool_context.workspace_root = resolve_workspace_root_from_context(self, &tool_context)?;
+
+        let decision =
+            self.evaluate_tool_invocation_policy(name, input, Role::Admin, &tool_context);
 
         let policy_allowed = matches!(decision, PolicyDecision::Allow);
 
@@ -156,6 +157,22 @@ impl OrbitRuntime {
             )));
         }
         Ok(())
+    }
+
+    fn evaluate_tool_invocation_policy(
+        &self,
+        name: &str,
+        input: &Value,
+        role: Role,
+        tool_context: &ToolContext,
+    ) -> PolicyDecision {
+        for ctx in tool_policy_contexts(name, input, role, tool_context) {
+            let decision = self.policy_engine().evaluate(&ctx);
+            if !matches!(decision, PolicyDecision::Allow) {
+                return decision;
+            }
+        }
+        PolicyDecision::Allow
     }
 }
 
@@ -245,6 +262,139 @@ fn resolve_task_workspace_root(runtime: &OrbitRuntime, task_id: &str) -> Option<
 
 fn task_workspace_matches(canonical_workspace: &Path, canonical_cwd: &Path) -> bool {
     canonical_cwd.starts_with(canonical_workspace)
+}
+
+fn tool_policy_contexts(
+    name: &str,
+    input: &Value,
+    role: Role,
+    tool_context: &ToolContext,
+) -> Vec<PolicyContext> {
+    let mut contexts = vec![PolicyContext::tool(role, name)];
+
+    match name {
+        "proc.spawn" => {
+            if let Some(command) = command_from_proc_spawn_input(input) {
+                contexts.push(PolicyContext::process(role, command));
+            }
+        }
+        "fs.copy" => {
+            if let Some(path) = normalized_policy_path(input, "destination", tool_context) {
+                contexts.push(PolicyContext::filesystem_write(role, path));
+            }
+        }
+        "fs.delete" | "fs.mkdir" | "fs.patch" | "fs.write" => {
+            if let Some(path) = normalized_policy_path(input, "path", tool_context) {
+                contexts.push(PolicyContext::filesystem_write(role, path));
+            }
+        }
+        "fs.move" => {
+            if let Some(path) = normalized_policy_path(input, "source", tool_context) {
+                contexts.push(PolicyContext::filesystem_write(role, path));
+            }
+            if let Some(path) = normalized_policy_path(input, "destination", tool_context) {
+                contexts.push(PolicyContext::filesystem_write(role, path));
+            }
+        }
+        _ => {}
+    }
+
+    contexts
+}
+
+fn command_from_proc_spawn_input(input: &Value) -> Option<String> {
+    let program = input.get("program")?.as_str()?.trim();
+    if program.is_empty() {
+        return None;
+    }
+
+    let args = input
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if args.is_empty() {
+        Some(program.to_string())
+    } else {
+        Some(format!("{program} {}", args.join(" ")))
+    }
+}
+
+fn normalized_policy_path(
+    input: &Value,
+    field: &str,
+    tool_context: &ToolContext,
+) -> Option<String> {
+    let raw = input.get(field)?.as_str()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(normalize_policy_path(raw, tool_context))
+}
+
+fn normalize_policy_path(path: &str, tool_context: &ToolContext) -> String {
+    let path = Path::new(path);
+
+    if path.is_absolute() {
+        if let Some(workspace_root) = tool_context.workspace_root.as_deref()
+            && let Ok(relative) = path.strip_prefix(workspace_root)
+            && let Some(formatted) = format_workspace_relative_path(relative)
+        {
+            return formatted;
+        }
+        return path.to_string_lossy().into_owned();
+    }
+
+    let base_relative = tool_context
+        .cwd
+        .as_deref()
+        .and_then(|cwd| {
+            tool_context
+                .workspace_root
+                .as_deref()
+                .and_then(|workspace_root| Path::new(cwd).strip_prefix(workspace_root).ok())
+        })
+        .map(PathBuf::from)
+        .unwrap_or_default();
+
+    let relative = base_relative.join(path);
+    format_workspace_relative_path(&relative).unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+fn format_workspace_relative_path(path: &Path) -> Option<String> {
+    let normalized = normalize_relative_path(path)?;
+    if normalized.as_os_str().is_empty() {
+        Some("./".to_string())
+    } else {
+        Some(format!("./{}", normalized.to_string_lossy()))
+    }
+}
+
+fn normalize_relative_path(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(segment) => normalized.push(segment),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+
+    Some(normalized)
 }
 
 #[derive(Debug, Clone)]

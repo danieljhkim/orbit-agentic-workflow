@@ -96,9 +96,7 @@ fn apply_policy(
         name: name.to_string(),
         description: doc.spec.description,
         filesystem: doc.spec.filesystem,
-        network: doc.spec.network,
         process: doc.spec.process,
-        approval: doc.spec.approval,
         tools: doc.spec.tools,
         created_at: existing
             .as_ref()

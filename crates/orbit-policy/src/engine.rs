@@ -4,22 +4,45 @@ use orbit_types::{PolicyDef, Role};
 
 use crate::{PolicyDecision, evaluator};
 
-#[derive(Debug, Clone, Default)]
-pub struct PolicyContext {
-    pub entrypoint: String,
-    pub tool_name: Option<String>,
-    pub role: Role,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyContext {
+    Tool { name: String, role: Role },
+    Process { command: String, role: Role },
+    FilesystemWrite { path: String, role: Role },
+}
+
+impl PolicyContext {
+    pub fn tool(role: Role, name: impl Into<String>) -> Self {
+        Self::Tool {
+            name: name.into(),
+            role,
+        }
+    }
+
+    pub fn process(role: Role, command: impl Into<String>) -> Self {
+        Self::Process {
+            command: command.into(),
+            role,
+        }
+    }
+
+    pub fn filesystem_write(role: Role, path: impl Into<String>) -> Self {
+        Self::FilesystemWrite {
+            path: path.into(),
+            role,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct PolicyEngine {
-    default_allow: bool,
-    denied_tools: HashSet<String>,
-    allowed_tools: HashSet<String>,
-    allowed_commands: HashSet<String>,
-    denied_commands: HashSet<String>,
-    allow_write_paths: Vec<String>,
-    deny_write_paths: Vec<String>,
+    pub(crate) default_allow: bool,
+    pub(crate) denied_tools: HashSet<String>,
+    pub(crate) allowed_tools: HashSet<String>,
+    pub(crate) allowed_commands: HashSet<String>,
+    pub(crate) denied_commands: HashSet<String>,
+    pub(crate) allow_write_paths: Vec<String>,
+    pub(crate) deny_write_paths: Vec<String>,
 }
 
 impl PolicyEngine {
@@ -62,70 +85,6 @@ impl PolicyEngine {
     }
 
     pub fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
-        evaluator::evaluate(ctx, &self.denied_tools, self.default_allow)
-    }
-
-    /// Checks whether a tool is allowed by the ToolPolicy allow/deny lists.
-    pub fn evaluate_tool(&self, tool_name: &str) -> PolicyDecision {
-        if self.denied_tools.contains(tool_name) {
-            return PolicyDecision::Deny {
-                reason: format!("tool `{tool_name}` denied by policy"),
-            };
-        }
-        if !self.allowed_tools.is_empty() && !self.allowed_tools.contains(tool_name) {
-            return PolicyDecision::Deny {
-                reason: format!("tool `{tool_name}` not in allow list"),
-            };
-        }
-        PolicyDecision::Allow
-    }
-
-    /// Checks whether a command is allowed by the ProcessPolicy allow/deny lists.
-    pub fn evaluate_process(&self, command: &str) -> PolicyDecision {
-        let base_command = command.split_whitespace().next().unwrap_or(command);
-
-        if self.denied_commands.contains(base_command) || self.denied_commands.contains(command) {
-            return PolicyDecision::Deny {
-                reason: format!("command `{command}` denied by policy"),
-            };
-        }
-        if !self.allowed_commands.is_empty()
-            && !self.allowed_commands.contains(base_command)
-            && !self.allowed_commands.contains(command)
-        {
-            return PolicyDecision::Deny {
-                reason: format!("command `{command}` not in allow list"),
-            };
-        }
-        PolicyDecision::Allow
-    }
-
-    /// Checks whether a filesystem path is allowed for read or write access.
-    /// Uses simple prefix/contains matching against configured paths.
-    pub fn evaluate_filesystem(&self, path: &str, write: bool) -> PolicyDecision {
-        if !write {
-            return PolicyDecision::Allow;
-        }
-
-        for denied in &self.deny_write_paths {
-            if path.starts_with(denied) || path.contains(denied) {
-                return PolicyDecision::Deny {
-                    reason: format!("write to `{path}` denied by policy (matches `{denied}`)"),
-                };
-            }
-        }
-
-        if !self.allow_write_paths.is_empty() {
-            for allowed in &self.allow_write_paths {
-                if path.starts_with(allowed) || path.contains(allowed) {
-                    return PolicyDecision::Allow;
-                }
-            }
-            return PolicyDecision::Deny {
-                reason: format!("write to `{path}` not in allow list"),
-            };
-        }
-
-        PolicyDecision::Allow
+        evaluator::evaluate(self, ctx)
     }
 }

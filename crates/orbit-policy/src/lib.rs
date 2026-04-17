@@ -1,9 +1,10 @@
-//! RBAC policy evaluation engine for Orbit tool and command authorization.
+//! RBAC policy evaluation engine for Orbit tool, process, and filesystem-write authorization.
 //!
 //! Evaluates whether a given actor (identified by [`orbit_types::Role`]) is
-//! permitted to invoke a specific tool or CLI entrypoint. Admin callers bypass
-//! explicit tool deny rules, while agent callers are subject to them; both
-//! roles still respect the engine's default allow or default deny mode.
+//! permitted to invoke a specific tool, spawn a specific command, or write to a
+//! specific filesystem path. Admin callers bypass explicit tool deny rules,
+//! while agent callers are subject to them; all policy contexts still respect
+//! the engine's default allow or default deny mode.
 //!
 //! # Role
 //! Sits directly above `orbit-types` in the dependency graph. Consumed by
@@ -12,7 +13,7 @@
 //!
 //! # Key exports
 //! - [`PolicyEngine`] — stateful evaluator; constructed with allow/deny rule sets
-//! - [`PolicyContext`] — per-call context (entrypoint, tool name, role)
+//! - [`PolicyContext`] — per-call context for tool, process, or filesystem-write checks
 //! - [`PolicyDecision`] — `Allow` or `Deny { reason }` result
 //!
 //! # Dependency direction

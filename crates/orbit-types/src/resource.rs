@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
-    ApprovalPolicy, FilesystemPolicy, JobScheduleState, JobStep, NetworkPolicy, ProcessPolicy,
-    ToolPolicy, default_job_max_active_runs, default_max_iterations,
+    FilesystemPolicy, JobScheduleState, JobStep, ProcessPolicy, ToolPolicy,
+    default_job_max_active_runs, default_max_iterations,
 };
 
 pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
@@ -134,17 +134,14 @@ pub struct ActivityResourceSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyResourceSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filesystem: Option<FilesystemPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub network: Option<NetworkPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process: Option<ProcessPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval: Option<ApprovalPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<ToolPolicy>,
     #[serde(default = "Utc::now")]

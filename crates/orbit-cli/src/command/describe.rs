@@ -133,17 +133,6 @@ fn describe_policy(runtime: &OrbitRuntime, name: &str) -> Result<(), OrbitError>
             println!("  deny_write:  {}", fs.deny_write.join(", "));
         }
     }
-    if let Some(ref net) = def.network {
-        println!();
-        println!("Network:");
-        println!("  mode: {:?}", net.mode);
-        if !net.allow_hosts.is_empty() {
-            println!("  allow_hosts: {}", net.allow_hosts.join(", "));
-        }
-        if !net.deny_hosts.is_empty() {
-            println!("  deny_hosts:  {}", net.deny_hosts.join(", "));
-        }
-    }
     if let Some(ref proc) = def.process {
         println!();
         println!("Process:");
@@ -152,13 +141,6 @@ fn describe_policy(runtime: &OrbitRuntime, name: &str) -> Result<(), OrbitError>
         }
         if !proc.deny_commands.is_empty() {
             println!("  deny_commands:  {}", proc.deny_commands.join(", "));
-        }
-    }
-    if let Some(ref approval) = def.approval {
-        println!();
-        println!("Approval:");
-        if !approval.require_for.is_empty() {
-            println!("  require_for: {}", approval.require_for.join(", "));
         }
     }
     if let Some(ref tools) = def.tools {

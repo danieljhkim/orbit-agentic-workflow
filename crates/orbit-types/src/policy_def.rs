@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyDef {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -9,11 +10,7 @@ pub struct PolicyDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filesystem: Option<FilesystemPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub network: Option<NetworkPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process: Option<ProcessPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval: Option<ApprovalPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<ToolPolicy>,
     #[serde(default = "chrono::Utc::now")]
@@ -23,6 +20,7 @@ pub struct PolicyDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct FilesystemPolicy {
     #[serde(default)]
     pub allow_write: Vec<String>,
@@ -31,22 +29,7 @@ pub struct FilesystemPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct NetworkPolicy {
-    pub mode: NetworkMode,
-    #[serde(default)]
-    pub allow_hosts: Vec<String>,
-    #[serde(default)]
-    pub deny_hosts: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkMode {
-    AllowByDefault,
-    DenyByDefault,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessPolicy {
     #[serde(default)]
     pub allow_commands: Vec<String>,
@@ -55,12 +38,7 @@ pub struct ProcessPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ApprovalPolicy {
-    #[serde(default)]
-    pub require_for: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ToolPolicy {
     #[serde(default)]
     pub allow: Vec<String>,

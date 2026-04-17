@@ -109,16 +109,6 @@ impl Execute for PolicyShowArgs {
                     println!("  deny_write:  {}", fs.deny_write.join(", "));
                 }
             }
-            if let Some(net) = &def.network {
-                println!("\nNetwork:");
-                println!("  mode: {:?}", net.mode);
-                if !net.allow_hosts.is_empty() {
-                    println!("  allow_hosts: {}", net.allow_hosts.join(", "));
-                }
-                if !net.deny_hosts.is_empty() {
-                    println!("  deny_hosts:  {}", net.deny_hosts.join(", "));
-                }
-            }
             if let Some(proc) = &def.process {
                 println!("\nProcess:");
                 if !proc.allow_commands.is_empty() {
@@ -126,12 +116,6 @@ impl Execute for PolicyShowArgs {
                 }
                 if !proc.deny_commands.is_empty() {
                     println!("  deny_commands:  {}", proc.deny_commands.join(", "));
-                }
-            }
-            if let Some(approval) = &def.approval {
-                println!("\nApproval:");
-                if !approval.require_for.is_empty() {
-                    println!("  require_for: {}", approval.require_for.join(", "));
                 }
             }
             if let Some(tools) = &def.tools {
