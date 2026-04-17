@@ -104,6 +104,59 @@
       .panel > .body {
         padding: 6px 0;
       }
+      #tasks-panel > .body {
+        max-height: calc(100vh - 220px);
+        overflow-y: auto;
+      }
+      .controls {
+        display: flex;
+        gap: 6px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      #task-search {
+        flex: 1 1 200px;
+        min-width: 160px;
+        background: var(--bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 4px 8px;
+        font: inherit;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
+        outline: none;
+      }
+      #task-search:focus {
+        border-color: var(--accent);
+      }
+      #task-filter {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        font: inherit;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 11px;
+        padding: 2px 8px;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--fg-dim);
+        cursor: pointer;
+        text-transform: lowercase;
+      }
+      .chip:hover {
+        color: var(--fg);
+      }
+      .chip.active {
+        color: var(--fg);
+        border-color: var(--accent);
+        background: rgba(88, 166, 255, 0.1);
+      }
       .empty {
         padding: 14px;
         color: var(--fg-dim);
@@ -187,6 +240,10 @@
     <main>
       <section class="panel" id="tasks-panel">
         <header><span>tasks</span><span class="count" id="tasks-count"></span></header>
+        <div class="controls">
+          <input type="search" id="task-search" placeholder="search id or title" autocomplete="off" spellcheck="false" />
+          <div id="task-filter"></div>
+        </div>
         <div class="body" id="tasks-body"><div class="empty">loading&hellip;</div></div>
       </section>
       <div class="col-side">
