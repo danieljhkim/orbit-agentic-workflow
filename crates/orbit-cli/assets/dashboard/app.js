@@ -18,6 +18,10 @@ const POLL_MS = Math.max(1000, parseInt(params.get("poll") || "5000", 10));
 
 const $ = (id) => document.getElementById(id);
 
+let searchQuery = "";
+let activeStatuses = new Set(STATUS_ORDER);
+let lastTasks = [];
+
 function el(tag, opts = {}, children = []) {
   const node = document.createElement(tag);
   if (opts.class) node.className = opts.class;
@@ -57,16 +61,37 @@ async function fetchJson(path) {
   return res.json();
 }
 
+function filterTasks(tasks) {
+  const q = searchQuery;
+  return tasks.filter((t) => {
+    if (!activeStatuses.has(t.status)) return false;
+    if (!q) return true;
+    return (
+      (t.id && t.id.toLowerCase().includes(q)) ||
+      (t.title && t.title.toLowerCase().includes(q))
+    );
+  });
+}
+
 function renderTasks(tasks) {
   const body = $("tasks-body");
   body.innerHTML = "";
-  $("tasks-count").textContent = `${tasks.length}`;
-  if (tasks.length === 0) {
-    body.appendChild(el("div", { class: "empty", text: "no tasks." }));
+  const filtered = filterTasks(tasks);
+  $("tasks-count").textContent =
+    filtered.length === tasks.length
+      ? `${tasks.length}`
+      : `${filtered.length}/${tasks.length}`;
+  if (filtered.length === 0) {
+    body.appendChild(
+      el("div", {
+        class: "empty",
+        text: tasks.length === 0 ? "no tasks." : "no tasks match.",
+      }),
+    );
     return;
   }
   const groups = new Map();
-  for (const t of tasks) {
+  for (const t of filtered) {
     if (!groups.has(t.status)) groups.set(t.status, []);
     groups.get(t.status).push(t);
   }
@@ -173,16 +198,69 @@ function showError(panelId, err) {
   body.appendChild(el("div", { class: "err", text: String(err) }));
 }
 
+function refreshChips() {
+  for (const chip of document.querySelectorAll("#task-filter .chip")) {
+    const status = chip.dataset.status;
+    const isAll = chip.dataset.role === "all";
+    const allOn = activeStatuses.size === STATUS_ORDER.length;
+    const on = isAll ? allOn : activeStatuses.has(status);
+    chip.classList.toggle("active", on);
+  }
+}
+
+function buildChips() {
+  const container = $("task-filter");
+  container.innerHTML = "";
+  const allChip = el("button", { class: "chip", text: "all" });
+  allChip.dataset.role = "all";
+  allChip.addEventListener("click", () => {
+    activeStatuses = new Set(STATUS_ORDER);
+    refreshChips();
+    renderTasks(lastTasks);
+  });
+  container.appendChild(allChip);
+  for (const status of STATUS_ORDER) {
+    const chip = el("button", { class: "chip", text: status });
+    chip.dataset.status = status;
+    chip.style.borderLeft = `2px solid var(--status-${status}, var(--border))`;
+    chip.addEventListener("click", () => {
+      if (activeStatuses.has(status)) {
+        activeStatuses.delete(status);
+      } else {
+        activeStatuses.add(status);
+      }
+      refreshChips();
+      renderTasks(lastTasks);
+    });
+    container.appendChild(chip);
+  }
+  refreshChips();
+}
+
+function wireSearch() {
+  $("task-search").addEventListener("input", (e) => {
+    searchQuery = e.target.value.trim().toLowerCase();
+    renderTasks(lastTasks);
+  });
+}
+
 async function tick() {
   const now = new Date();
   $("meta").textContent = `polled ${now.toLocaleTimeString()} · ${POLL_MS}ms`;
   await Promise.all([
-    fetchJson("/api/tasks").then(renderTasks).catch((e) => showError("tasks-body", e)),
+    fetchJson("/api/tasks")
+      .then((tasks) => {
+        lastTasks = tasks;
+        renderTasks(tasks);
+      })
+      .catch((e) => showError("tasks-body", e)),
     fetchJson("/api/job-runs").then(renderRuns).catch((e) => showError("runs-body", e)),
     fetchJson("/api/scoreboard").then(renderScoreboard).catch((e) => showError("scoreboard-body", e)),
   ]);
   $("footer").textContent = `orbit dashboard · GET /api/{tasks,jobs,job-runs,audit,scoreboard}`;
 }
 
+buildChips();
+wireSearch();
 tick();
 setInterval(tick, POLL_MS);
