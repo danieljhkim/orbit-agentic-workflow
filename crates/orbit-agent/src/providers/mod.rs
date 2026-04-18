@@ -5,7 +5,7 @@
 //! - **CLI transports** (`claude`, `codex`, `gemini`, `ollama`, `mock_agent`):
 //!   translate an [`AgentRequest`] into a CLI command invocation and stdin
 //!   envelope that the engine runs via `orbit-exec`.
-//! - **HTTP transports** (`anthropic`, `openai_compat`): implement the sibling
+//! - **HTTP transports** (`anthropic`, `openai_compat`, `gemini_http`): implement the sibling
 //!   [`LoopTransport`](crate::loop_engine::LoopTransport) trait against a
 //!   provider's HTTP API. Used by [`AgentLoop`](crate::loop_engine::AgentLoop)
 //!   with explicit guardrails, allowlist enforcement, and audit wiring.
@@ -18,6 +18,7 @@ pub(crate) mod claude;
 pub(crate) mod codex;
 mod common;
 pub(crate) mod gemini;
+pub mod gemini_http;
 pub(crate) mod mock_agent;
 pub(crate) mod ollama;
 pub mod openai_compat;

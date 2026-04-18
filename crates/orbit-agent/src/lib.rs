@@ -32,6 +32,8 @@
 //!   transport
 //! - [`providers::openai_compat::OpenAiCompatTransport`] — OpenAI-compatible
 //!   chat-completions HTTP transport for hosted and local endpoints
+//! - [`providers::gemini_http::GeminiHttpTransport`] — Google Gemini HTTP
+//!   transport with cachedContents caching
 //!
 //! # Dependency direction
 //! `orbit-types` / `orbit-tools` → `orbit-agent` → `orbit-engine`

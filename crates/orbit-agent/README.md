@@ -56,9 +56,12 @@ crates/orbit-agent/src/loop_engine/
   a different route. Tool calls use the OpenAI `tools` / `tool_calls`
   schema and cached prompt tokens are surfaced from
   `usage.prompt_tokens_details.cached_tokens` when present.
-
-One follow-up task still covers the remaining provider surface in the
-parent task: Google Gemini `generateContent`.
+- `providers::gemini_http::GeminiHttpTransport` — `POST
+  https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
+  via blocking `reqwest`. Supports Gemini's distinct `functionCall`/`functionResponse`
+  tooling. Includes native `cachedContents` support: when history length exceeds
+  `cache_content_threshold_turns`, automatically issues a `POST .../cachedContents`
+  before generation to cache the multi-turn session.
 
 ### OpenAI-compatible config surface
 
@@ -165,6 +168,7 @@ Six runnable examples under `crates/orbit-agent/examples/`:
 |---|---|---|
 | `anthropic_messages` | yes (skips cleanly if unset) | Single-turn prompt, usage + terminate reason printed |
 | `openai_compat` | hosted: yes; local localhost path: no | Hosted OpenAI 1-turn prompt, or clean skip when `OPENAI_BASE_URL` points at an unreachable localhost-compatible endpoint |
+| `google_gemini` | yes (skips cleanly) | Single-turn prompt, usage + terminate reason printed using Gemini `generateContent` API |
 | `session_continuation` | yes (skips cleanly) | 3 consecutive `send()` calls; asserts history replayed + `cache_read_input_tokens > 0` on turn 2+ |
 | `tool_allowlist` | yes (skips cleanly) | Allowlist `["fs.read"]` + prompt pressuring `fs.write`; asserts `PolicyDenied` error and target file absent |
 | `guardrails_smoke` | no | All three guardrails trip via an in-process scripted transport; verifies distinct error variants |
@@ -181,8 +185,6 @@ without provider credentials or a local model server.
 
 These are split to follow-up tasks that build on the primitives here:
 
-- **Gemini `generateContent` transport** and its `google_gemini.rs`
-  example.
 - **`orbit.audit.loop.*` query tools** (`list`, `show`, `blob.get`) so
   agents can programmatically inspect the JSONL + blob layout.
 
