@@ -225,7 +225,7 @@ function buildActionsRow(task, detail) {
     const btn = el("button", { class: "action approve", text: "approve" });
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      runAction(task, "approve", detail);
+      runAction(task, "approve", detail, null, btn);
     });
     actions.appendChild(btn);
   }
@@ -242,7 +242,7 @@ function buildActionsRow(task, detail) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (window.confirm(`Archive task ${task.id}?`)) {
-        runAction(task, "archive", detail);
+        runAction(task, "archive", detail, null, btn);
       }
     });
     actions.appendChild(btn);
@@ -265,7 +265,7 @@ function showRejectForm(task, detail, actions) {
       ta.focus();
       return;
     }
-    runAction(task, "reject", detail, { note });
+    runAction(task, "reject", detail, { note }, submit);
   });
   cancel.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -279,9 +279,14 @@ function showRejectForm(task, detail, actions) {
   ta.focus();
 }
 
-async function runAction(task, kind, detail, body) {
+async function runAction(task, kind, detail, body, btnNode) {
   // Disable buttons while in flight to prevent double-clicks
   for (const b of detail.querySelectorAll("button.action")) b.disabled = true;
+  let oldText = "";
+  if (btnNode) {
+    oldText = btnNode.textContent;
+    btnNode.innerHTML = `<span class="spinner"></span>wait`;
+  }
   // Clear any prior error
   const prior = detail.querySelector(".action-error");
   if (prior) prior.remove();
@@ -305,6 +310,7 @@ async function runAction(task, kind, detail, body) {
     await tick();
   } catch (err) {
     for (const b of detail.querySelectorAll("button.action")) b.disabled = false;
+    if (btnNode) btnNode.textContent = oldText;
     const errEl = el("div", { class: "action-error", text: String(err.message || err) });
     detail.prepend(errEl);
   }
@@ -369,12 +375,19 @@ function renderTasks(tasks) {
       // Basic hash based on row presentation parameters + expanded state
       row.dataset.hash = `${t.id}-${t.title}-${t.priority}-${t.type}-${expandedTaskIds.has(t.id)}`;
       row.addEventListener("click", () => {
-        if (expandedTaskIds.has(t.id)) {
-          expandedTaskIds.delete(t.id);
+        const toggle = () => {
+          if (expandedTaskIds.has(t.id)) expandedTaskIds.delete(t.id);
+          else expandedTaskIds.add(t.id);
+          renderTasks(lastTasks);
+        };
+        if (document.startViewTransition) {
+          row.style.viewTransitionName = `task-row-${t.id}`;
+          document.startViewTransition(toggle).finished.then(() => {
+            row.style.viewTransitionName = "";
+          });
         } else {
-          expandedTaskIds.add(t.id);
+          toggle();
         }
-        renderTasks(lastTasks);
       });
       if (expandedTaskIds.has(t.id)) row.classList.add("expanded");
       frag.appendChild(row);
