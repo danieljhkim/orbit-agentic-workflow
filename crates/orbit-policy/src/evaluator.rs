@@ -1,3 +1,5 @@
+use std::path::{Component, Path, PathBuf};
+
 use crate::PolicyDecision;
 use crate::engine::{PolicyContext, PolicyEngine};
 use orbit_types::Role;
@@ -77,5 +79,31 @@ fn default_decision(default_allow: bool) -> PolicyDecision {
 }
 
 fn path_matches_rule(path: &str, rule: &str) -> bool {
-    path.starts_with(rule) || path.contains(rule)
+    let Some(path) = normalize_policy_path(path) else {
+        return false;
+    };
+    let Some(rule) = normalize_policy_path(rule) else {
+        return false;
+    };
+
+    !rule.as_os_str().is_empty() && path.starts_with(&rule)
+}
+
+fn normalize_policy_path(path: &str) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+
+    for component in Path::new(path).components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(segment) => normalized.push(segment),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => normalized.push(component.as_os_str()),
+        }
+    }
+
+    Some(normalized)
 }

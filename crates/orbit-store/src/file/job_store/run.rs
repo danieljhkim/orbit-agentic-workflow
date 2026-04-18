@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,6 +9,7 @@ use orbit_types::{
 
 use crate::backend::JobRunStepParams;
 use crate::file::fs_utils::write_atomic;
+use crate::file::layout::validate_path_stem;
 
 use super::{
     JobFileStore,
@@ -242,6 +244,7 @@ impl JobFileStore {
         &self,
         run_id: &str,
     ) -> Result<Option<(String, PathBuf)>, OrbitError> {
+        validate_run_id(run_id)?;
         let runs_root = self.runs_dir();
         if !runs_root.exists() {
             return Ok(None);
@@ -271,6 +274,7 @@ impl JobFileStore {
         &self,
         run_id: &str,
     ) -> Result<Option<(String, PathBuf)>, OrbitError> {
+        validate_run_id(run_id)?;
         let runs_root = self.archived_runs_dir();
         if !runs_root.exists() {
             return Ok(None);
@@ -333,6 +337,7 @@ impl JobFileStore {
     /// Write the run-level `jrun.yaml` inside the run bundle directory.
     pub(crate) fn write_run(&self, job_id: &str, run: &JobRun) -> Result<(), OrbitError> {
         self.ensure_layout()?;
+        validate_run_id(&run.run_id)?;
         let run_dir = self.run_bundle_dir(job_id, &run.run_id);
         fs::create_dir_all(&run_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         let doc = JobRunFileDocument {
@@ -352,10 +357,15 @@ impl JobFileStore {
         target_id: &str,
         step: &JobRunStep,
     ) -> Result<(), OrbitError> {
+        validate_run_id(run_id)?;
         let steps_dir = self.run_bundle_dir(job_id, run_id).join("steps");
         fs::create_dir_all(&steps_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         // Index-prefixed filename preserves order and avoids collisions.
-        let filename = format!("{:02}-{target_id}.yaml", step_index + 1);
+        let filename = format!(
+            "{:02}-{}.yaml",
+            step_index + 1,
+            encode_step_target_id_for_filename(target_id)
+        );
         let doc = JobRunStepFileDocument {
             schema_version: 1,
             step: step.clone(),
@@ -425,4 +435,24 @@ fn is_yaml(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+fn encode_step_target_id_for_filename(target_id: &str) -> String {
+    let mut encoded = String::with_capacity(target_id.len());
+    for byte in target_id.bytes() {
+        if matches!(byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.') {
+            encoded.push(byte as char);
+        } else {
+            write!(&mut encoded, "%{byte:02X}").expect("writing to String cannot fail");
+        }
+    }
+    if encoded.is_empty() {
+        String::from("_")
+    } else {
+        encoded
+    }
+}
+
+fn validate_run_id(run_id: &str) -> Result<(), OrbitError> {
+    validate_path_stem(run_id, "job run")
 }

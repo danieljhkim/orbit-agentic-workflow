@@ -8,7 +8,7 @@ use orbit_types::{
 };
 
 use crate::backend::{ActivityCreateParams, ActivityUpdateParams};
-use crate::file::layout::{DualLayout, file_timestamps};
+use crate::file::layout::{DualLayout, file_timestamps, validate_path_stem};
 use crate::file::sort::sort_by_created_desc_id_asc;
 use crate::file::yaml_doc::{enumerate_yaml, read_yaml, write_yaml_atomic};
 use serde::{Deserialize, Serialize};
@@ -57,6 +57,7 @@ impl ActivityFileStore {
         &self,
         params: &ActivityCreateParams,
     ) -> Result<Activity, OrbitError> {
+        validate_path_stem(&params.id, "activity")?;
         self.ensure_layout()?;
         if self.get_activity(&params.id)?.is_some() {
             return Err(OrbitError::InvalidInput(format!(
@@ -107,6 +108,7 @@ impl ActivityFileStore {
     }
 
     pub(crate) fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError> {
+        validate_path_stem(id, "activity")?;
         if let Some((path, is_active)) = self.doc_layout().locate(id, "yaml") {
             return Ok(Some(self.read_activity_at(&path, is_active)?));
         }
@@ -118,6 +120,7 @@ impl ActivityFileStore {
         id: &str,
         params: &ActivityUpdateParams,
     ) -> Result<Activity, OrbitError> {
+        validate_path_stem(id, "activity")?;
         self.ensure_layout()?;
         let layout = self.doc_layout();
         let Some((path, current_active)) = layout.locate(id, "yaml") else {
@@ -163,6 +166,7 @@ impl ActivityFileStore {
     }
 
     pub(crate) fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {
+        validate_path_stem(id, "activity")?;
         self.ensure_layout()?;
         let layout = self.doc_layout();
         let active = layout.primary_file(id, "yaml");

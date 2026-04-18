@@ -4,6 +4,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::error::KnowledgeError;
+use crate::graph::object_store::validate_graph_index_ref;
 use crate::selector::SelectorLookupKey;
 
 use super::KnowledgeStore;
@@ -35,7 +36,7 @@ impl KnowledgeStore {
             ))
         })?;
 
-        let graph_index_path = knowledge_dir.join(&current_ref.index);
+        let graph_index_path = knowledge_dir.join(validate_graph_index_ref(&current_ref.index)?);
         let graph_index = read_json_file(&graph_index_path).map_err(|error| {
             KnowledgeError::knowledge_unavailable(format!(
                 "graph index is unavailable or invalid at {}: {error}",

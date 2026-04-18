@@ -6,6 +6,7 @@ use orbit_types::{Job, JobRun, JobRunState, JobScheduleState, OrbitError};
 
 use super::resource::{job_to_resource, validate_max_active_runs};
 use crate::backend::{JobCreateParams, JobUpdateParams};
+use crate::file::layout::validate_path_stem;
 use crate::file::sort::sort_by_created_desc_id_asc;
 use crate::file::yaml_doc::write_yaml_atomic;
 
@@ -32,6 +33,7 @@ impl JobFileStore {
         validate_max_active_runs(params.max_active_runs)?;
         let resolved_id = match params.job_id {
             Some(id) => {
+                validate_path_stem(&id, "job")?;
                 if self.job_path(&id).exists() {
                     return Err(OrbitError::JobValidation(format!(
                         "job id already exists: {id}"
@@ -67,6 +69,7 @@ impl JobFileStore {
     }
 
     pub(crate) fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
+        validate_path_stem(job_id, "job")?;
         let path = self.job_path(job_id);
         if path.exists() {
             return Ok(Some(self.read_activity_at(&path)?));
@@ -83,6 +86,7 @@ impl JobFileStore {
         job_id: &str,
         params: &JobUpdateParams,
     ) -> Result<Job, OrbitError> {
+        validate_path_stem(job_id, "job")?;
         self.ensure_layout()?;
         let Some(mut job) = self.get_job(job_id)? else {
             return Err(OrbitError::JobNotFound(job_id.to_string()));
@@ -129,6 +133,7 @@ impl JobFileStore {
     }
 
     pub(crate) fn list_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
+        validate_path_stem(job_id, "job")?;
         let mut runs = self.read_runs_for_activity(job_id)?;
         sort_by_created_desc_id_asc(&mut runs, |run| &run.created_at, |run| &run.run_id);
         Ok(runs)
@@ -139,6 +144,7 @@ impl JobFileStore {
         query: &crate::backend::JobRunQuery,
     ) -> Result<Vec<JobRun>, OrbitError> {
         let mut runs = if let Some(job_id) = query.job_id.as_deref() {
+            validate_path_stem(job_id, "job")?;
             self.read_runs_for_activity(job_id)?
         } else {
             self.read_all_runs()?
@@ -171,6 +177,7 @@ impl JobFileStore {
         &self,
         job_id: &str,
     ) -> Result<Vec<JobRun>, OrbitError> {
+        validate_path_stem(job_id, "job")?;
         let mut runs = self
             .read_runs_for_activity(job_id)?
             .into_iter()
@@ -195,6 +202,7 @@ impl JobFileStore {
         job_id: &str,
         state: JobScheduleState,
     ) -> Result<bool, OrbitError> {
+        validate_path_stem(job_id, "job")?;
         let Some(mut job) = self.get_job(job_id)? else {
             return Ok(false);
         };
@@ -213,6 +221,7 @@ impl JobFileStore {
     }
 
     pub(crate) fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
+        validate_path_stem(job_id, "job")?;
         let Some(mut job) = self.get_job(job_id)? else {
             return Ok(false);
         };

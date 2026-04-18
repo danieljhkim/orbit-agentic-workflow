@@ -105,21 +105,7 @@ impl GraphObjectStore {
         Ok(self.blobs_dir().join(prefix).join(format!("{hash}.txt")))
     }
     fn resolve_index_path(&self, index_ref: &str) -> Result<PathBuf, KnowledgeError> {
-        let index_rel = index_ref.strip_prefix("graph/").unwrap_or(index_ref);
-        let rel_path = Path::new(index_rel);
-        if rel_path.is_absolute()
-            || rel_path.components().any(|component| {
-                matches!(
-                    component,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
-                )
-            })
-        {
-            return Err(KnowledgeError::invalid_data(format!(
-                "invalid graph index path `{index_ref}`"
-            )));
-        }
-        Ok(self.graph_dir.join(rel_path))
+        Ok(self.graph_dir.join(validate_graph_index_ref(index_ref)?))
     }
 
     // -----------------------------------------------------------------------
@@ -488,6 +474,24 @@ fn read_json_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Know
     })?;
     serde_json::from_str(&content)
         .map_err(|e| KnowledgeError::invalid_data(format!("parse {}: {e}", path.display())))
+}
+
+pub(crate) fn validate_graph_index_ref(index_ref: &str) -> Result<PathBuf, KnowledgeError> {
+    let index_rel = index_ref.strip_prefix("graph/").unwrap_or(index_ref);
+    let rel_path = Path::new(index_rel);
+    if rel_path.is_absolute()
+        || rel_path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(KnowledgeError::invalid_data(format!(
+            "invalid graph index path `{index_ref}`"
+        )));
+    }
+    Ok(rel_path.to_path_buf())
 }
 
 fn write_json_file(path: &Path, payload: &Value) -> Result<(), KnowledgeError> {

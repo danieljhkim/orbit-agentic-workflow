@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-
 use orbit_knowledge::service::deps::crate_dependencies;
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
+
+use super::knowledge_write::resolve_workspace_root_with_override;
 
 pub struct OrbitKnowledgeDepsTool;
 
@@ -33,7 +33,7 @@ impl Tool for OrbitKnowledgeDepsTool {
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let crate_filter = super::optional_string(&input, "crate")?;
-        let workspace_root = resolve_workspace_root(ctx, &input)?;
+        let workspace_root = resolve_workspace_root_with_override(ctx, &input)?;
 
         let deps = crate_dependencies(&workspace_root, crate_filter.as_deref())
             .map_err(|e| OrbitError::Execution(format!("crate_dependencies: {e}")))?;
@@ -43,15 +43,4 @@ impl Tool for OrbitKnowledgeDepsTool {
             "crates": deps,
         }))
     }
-}
-
-fn resolve_workspace_root(ctx: &ToolContext, input: &Value) -> Result<PathBuf, OrbitError> {
-    if let Some(ws) = input.get("workspace_path").and_then(Value::as_str)
-        && !ws.trim().is_empty()
-    {
-        return Ok(PathBuf::from(ws));
-    }
-    ctx.workspace_root
-        .clone()
-        .ok_or_else(|| OrbitError::InvalidInput("workspace_root is required".to_string()))
 }

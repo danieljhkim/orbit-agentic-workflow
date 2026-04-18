@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 use orbit_types::OrbitError;
 use serde_json::Value;
 
-use crate::ToolRegistry;
+use crate::{ToolContext, ToolRegistry};
 
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(stage_paths::GitStagePathsTool);
@@ -43,6 +43,29 @@ fn require_repo_root(input: &Value) -> Result<PathBuf, OrbitError> {
         )));
     }
     Ok(canonical)
+}
+
+pub(super) fn require_workspace_repo_root(
+    ctx: &ToolContext,
+    input: &Value,
+) -> Result<PathBuf, OrbitError> {
+    let repo_root = require_repo_root(input)?;
+    let workspace_root = ctx.workspace_root.as_ref().ok_or_else(|| {
+        OrbitError::InvalidInput("workspace_root is required for git tools".to_string())
+    })?;
+    let canonical_workspace_root = workspace_root.canonicalize().map_err(|e| {
+        OrbitError::InvalidInput(format!("failed to canonicalize workspace_root: {e}"))
+    })?;
+
+    if !repo_root.starts_with(&canonical_workspace_root) {
+        return Err(OrbitError::InvalidInput(format!(
+            "repo_root is outside workspace_root: repo_root={}, workspace_root={}",
+            repo_root.display(),
+            canonical_workspace_root.display()
+        )));
+    }
+
+    Ok(repo_root)
 }
 
 fn require_relative_file_paths(input: &Value, repo_root: &Path) -> Result<Vec<String>, OrbitError> {

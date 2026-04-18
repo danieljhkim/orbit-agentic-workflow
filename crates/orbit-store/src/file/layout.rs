@@ -1,5 +1,6 @@
+use std::borrow::Cow;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_types::OrbitError;
@@ -41,6 +42,16 @@ pub(crate) fn is_yaml(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+pub(crate) fn validate_path_stem(stem: &str, kind: &str) -> Result<(), OrbitError> {
+    if is_safe_path_stem(stem) {
+        return Ok(());
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "{kind} id must be a single path component without separators or traversal: {stem}"
+    )))
 }
 
 pub(crate) fn file_timestamps(path: &Path) -> Result<(DateTime<Utc>, DateTime<Utc>), OrbitError> {
@@ -89,9 +100,34 @@ impl DualLayout {
 }
 
 fn file_name(stem: &str, ext: &str) -> String {
+    let stem = normalized_path_stem(stem);
     if ext.is_empty() {
         stem.to_string()
     } else {
         format!("{stem}.{ext}")
     }
 }
+
+fn normalized_path_stem(stem: &str) -> Cow<'_, str> {
+    if is_safe_path_stem(stem) {
+        return Cow::Borrowed(stem);
+    }
+
+    let mut normalized = String::with_capacity("__orbit_id_".len() + stem.len() * 2);
+    normalized.push_str("__orbit_id_");
+    for byte in stem.as_bytes() {
+        normalized.push(HEX_DIGITS[(byte >> 4) as usize] as char);
+        normalized.push(HEX_DIGITS[(byte & 0x0f) as usize] as char);
+    }
+    Cow::Owned(normalized)
+}
+
+fn is_safe_path_stem(stem: &str) -> bool {
+    let mut components = Path::new(stem).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(part)), None) if part.to_str() == Some(stem)
+    )
+}
+
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";

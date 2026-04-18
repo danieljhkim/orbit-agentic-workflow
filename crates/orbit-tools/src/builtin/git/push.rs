@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::builtin::git::require_repo_root;
+use crate::builtin::git::require_workspace_repo_root;
 use crate::{TIMEOUT_LONG_MS, Tool, ToolContext};
 
 pub struct GitPushTool;
@@ -44,8 +44,8 @@ impl Tool for GitPushTool {
         }
     }
 
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let repo_root = require_repo_root(&input)?;
+    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let repo_root = require_workspace_repo_root(ctx, &input)?;
         let branch = input
             .get("branch")
             .and_then(Value::as_str)

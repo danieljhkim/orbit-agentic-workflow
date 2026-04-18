@@ -2,7 +2,7 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
-use crate::builtin::git::{require_relative_file_paths, require_repo_root};
+use crate::builtin::git::{require_relative_file_paths, require_workspace_repo_root};
 use crate::{TIMEOUT_SLOW_MS, Tool, ToolContext};
 
 pub struct GitStagePathsTool;
@@ -30,8 +30,8 @@ impl Tool for GitStagePathsTool {
         }
     }
 
-    fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let repo_root = require_repo_root(&input)?;
+    fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        let repo_root = require_workspace_repo_root(ctx, &input)?;
         let files = require_relative_file_paths(&input, &repo_root)?;
 
         let mut args = vec![
