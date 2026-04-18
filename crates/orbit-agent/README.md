@@ -43,16 +43,35 @@ crates/orbit-agent/src/loop_engine/
   (Anthropic content blocks and `cache_control` markers) so collapsing
   other providers into it does not lose fidelity.
 
-## HTTP transports landed in this phase
+## HTTP transports
 
 - `providers::anthropic::AnthropicMessagesTransport` — `POST
   https://api.anthropic.com/v1/messages` via blocking `reqwest`. Applies
   `cache_control: ephemeral` to the last system block and, per the loop's
   cache hint, to the last message in the replayed history.
+- `providers::openai_compat::OpenAiCompatTransport` — `POST
+  {base_url}/v1/chat/completions` via blocking `reqwest`, with
+  configurable `base_url`, optional custom headers, optional bearer auth,
+  and an override for the endpoint path when a compatible deployment uses
+  a different route. Tool calls use the OpenAI `tools` / `tool_calls`
+  schema and cached prompt tokens are surfaced from
+  `usage.prompt_tokens_details.cached_tokens` when present.
 
-Two follow-up tasks cover the remaining surfaces in the parent task:
-OpenAI-compatible endpoints (hosted OpenAI, Codex, and local
-Ollama/LM Studio via `base_url`) and Google Gemini `generateContent`.
+One follow-up task still covers the remaining provider surface in the
+parent task: Google Gemini `generateContent`.
+
+### OpenAI-compatible config surface
+
+- `OpenAiCompatTransport::hosted(api_key, model)` targets the default
+  hosted OpenAI base URL: `https://api.openai.com`.
+- `OpenAiCompatTransport::new(base_url, api_key, model, custom_headers)`
+  lets callers point the same transport at hosted OpenAI, Codex, or local
+  servers such as Ollama, LM Studio, llama.cpp server, or vLLM.
+- `with_bearer_auth(false)` disables the default `Authorization: Bearer
+  ...` header for local deployments that reject it.
+- `with_endpoint_path(...)` overrides `/v1/chat/completions` for
+  compatible gateways that expose the same wire contract on a different
+  route.
 
 ## Tool-allowlist contract
 
@@ -140,11 +159,12 @@ to re-apply it.
 
 ## Running the examples
 
-Five runnable examples under `crates/orbit-agent/examples/`:
+Six runnable examples under `crates/orbit-agent/examples/`:
 
-| Example | Needs `ANTHROPIC_API_KEY` | Demonstrates |
+| Example | Needs credentials | Demonstrates |
 |---|---|---|
 | `anthropic_messages` | yes (skips cleanly if unset) | Single-turn prompt, usage + terminate reason printed |
+| `openai_compat` | hosted: yes; local localhost path: no | Hosted OpenAI 1-turn prompt, or clean skip when `OPENAI_BASE_URL` points at an unreachable localhost-compatible endpoint |
 | `session_continuation` | yes (skips cleanly) | 3 consecutive `send()` calls; asserts history replayed + `cache_read_input_tokens > 0` on turn 2+ |
 | `tool_allowlist` | yes (skips cleanly) | Allowlist `["fs.read"]` + prompt pressuring `fs.write`; asserts `PolicyDenied` error and target file absent |
 | `guardrails_smoke` | no | All three guardrails trip via an in-process scripted transport; verifies distinct error variants |
@@ -152,15 +172,15 @@ Five runnable examples under `crates/orbit-agent/examples/`:
 
 Run any example with `cargo run -p orbit-agent --example <name>`. The
 API-key-backed examples skip with exit 0 and a printed notice when the
-key is unset, so `cargo build --examples -p orbit-agent` works in CI
-without credentials.
+key is unset, and `openai_compat` also skips cleanly when
+`OPENAI_BASE_URL` points at localhost with no server listening. This
+keeps `cargo build --examples -p orbit-agent` safe in CI and on laptops
+without provider credentials or a local model server.
 
 ## What didn't land in this task
 
 These are split to follow-up tasks that build on the primitives here:
 
-- **OpenAI-compatible transport** (hosted OpenAI, Codex, local
-  Ollama/LM Studio via `base_url`) and its `openai_compat.rs` example.
 - **Gemini `generateContent` transport** and its `google_gemini.rs`
   example.
 - **`orbit.audit.loop.*` query tools** (`list`, `show`, `blob.get`) so

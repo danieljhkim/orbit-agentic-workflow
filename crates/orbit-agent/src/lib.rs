@@ -29,8 +29,9 @@
 //!   [`loop_engine::LoopTransport`], [`loop_engine::LoopAuditEvent`],
 //!   [`loop_engine::AuditSink`] for the HTTP path
 //! - [`providers::anthropic::AnthropicMessagesTransport`] — Anthropic HTTP
-//!   transport (Phase 1). OpenAI-compat and Gemini HTTP transports land in
-//!   follow-up tasks.
+//!   transport
+//! - [`providers::openai_compat::OpenAiCompatTransport`] — OpenAI-compatible
+//!   chat-completions HTTP transport for hosted and local endpoints
 //!
 //! # Dependency direction
 //! `orbit-types` / `orbit-tools` → `orbit-agent` → `orbit-engine`
