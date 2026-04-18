@@ -30,9 +30,10 @@ pub struct V2AuditEvent {
 }
 
 /// Event-type discriminator (§7). The v2 layer emits run.*, step.*,
-/// activity.*, and tool.denied events. Loop-level http.* and tool.call.*
-/// events continue to be emitted by the loop engine and are referenced via
-/// `parent_event_id` from Activity events.
+/// activity.*, construct-level (parallel / fan_out / loop), and tool.denied
+/// events. Loop-engine http.* and tool.call.* events continue to be emitted
+/// by the loop engine and are referenced via `parent_event_id` from Activity
+/// events.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "body_kind", rename_all = "snake_case")]
 pub enum V2AuditEventKind {
@@ -49,6 +50,51 @@ pub enum V2AuditEventKind {
         step_id: String,
         outcome: String,
     },
+    StepSkipped {
+        step_id: String,
+        reason: String,
+    },
+    StepRetry {
+        step_id: String,
+        attempt: u32,
+        next_backoff_ms: u64,
+    },
+    StepDenied {
+        step_id: String,
+        reason: String,
+    },
+    StepJoin {
+        step_id: String,
+        mode: String,
+        branch_outcomes: Vec<BranchOutcome>,
+    },
+    FanoutDispatched {
+        step_id: String,
+        worker_count: u32,
+    },
+    WorkerState {
+        step_id: String,
+        worker_index: u32,
+        state: String,
+    },
+    FaninJoined {
+        step_id: String,
+        collected: u32,
+        failed: u32,
+    },
+    LoopIterationStart {
+        step_id: String,
+        iteration: u32,
+    },
+    LoopIterationEnd {
+        step_id: String,
+        iteration: u32,
+        broke: bool,
+    },
+    LoopDidNotConverge {
+        step_id: String,
+        max_iterations: u32,
+    },
     ActivityStarted {
         activity_name: String,
         activity_type: String,
@@ -61,4 +107,10 @@ pub enum V2AuditEventKind {
         tool_name: String,
         reason: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BranchOutcome {
+    pub branch_id: String,
+    pub outcome: String,
 }

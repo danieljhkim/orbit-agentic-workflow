@@ -1,21 +1,25 @@
 //! Free-function driver for v2 agent_loop dispatch.
 //!
-//! Owns the transport / session / `AgentLoop::run` construction that used to
-//! live in `orbit-core::runtime::v2_host` (Phase 2b/2c). Moving this code
-//! down into orbit-engine — where the orbit-agent dependency already exists —
-//! means orbit-core no longer needs to name orbit-agent types, and the
-//! `agent_reexports` workaround (Phase 2c) can be deleted.
+//! Owns the transport / session / `AgentLoop::run` construction so orbit-core
+//! never names orbit-agent types. Phase 3 adds a session-reuse sibling
+//! (`drive_agent_loop_with_session`) for loop-body steps that need a `Session`
+//! to persist across iterations, and surfaces `ToolDenied` as a structural
+//! `DispatchError` so the DAG retry wrapper can classify denials as
+//! non-retryable.
 //!
-//! The one piece orbit-core still owns is credential sourcing: we accept an
-//! `api_key: &str` here and let the `V2RuntimeHost::api_key_for` trait method
-//! pull it from env/config wherever is appropriate.
+//! Offline replay: `ORBIT_V2_REPLAY=tool_denial` replays a single canned
+//! tool_use on turn 1 (Phase 2 denial smoke). `ORBIT_V2_REPLAY_FIXTURE=<path>`
+//! reads a JSON array of `ReplayTurn`-shaped objects and scripts an arbitrary
+//! multi-turn sequence — used by the Phase 3 loop sample to drive convergence
+//! across iterations without credentials.
 
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use orbit_agent::loop_engine::{
     AgentLoop, AgentLoopConfig, AgentLoopError, ContentBlock, LoopOutcome, LoopTransport,
-    ReplayTransport, ReplayTurn, Session, StopReason, TerminateReason, TurnUsage,
+    ReplayTransport, ReplayTurn, Session, StopReason,
 };
 use orbit_agent::providers::anthropic::AnthropicMessagesTransport;
 use orbit_types::v2::AgentLoopSpec;
@@ -27,84 +31,223 @@ use super::tool_enforcement::EnforcedAuditSink;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 
-/// Drive a v2 agent_loop activity end-to-end: build transport/session, wrap
-/// the audit sink with tool-allowlist enforcement, and call `AgentLoop::run`.
+/// Drive a v2 agent_loop activity end-to-end with a fresh `Session`.
 ///
-/// When `ORBIT_V2_REPLAY=tool_denial` is set the transport swaps to a
-/// `ReplayTransport` that returns a scripted `fs.write` tool_use on turn 1,
-/// exercising the denial path without network or credentials. In that mode
-/// `api_key` is ignored and may be `None` — useful for offline smokes where
-/// the caller knows no credential is needed.
+/// Compatibility signature preserved from Phase 2b — callers that don't need
+/// session persistence use this entry. Construct a `Session`, dispatch, drop.
 pub fn drive_agent_loop(
     spec: &AgentLoopSpec,
     api_key: Option<&str>,
     run_id: &str,
     audit: Arc<V2AuditWriter>,
+    input: &Value,
+) -> Result<LoopOutcome, DispatchError> {
+    let model = resolve_model(spec);
+    let provider = expected_provider();
+    let mut session = Session::new(provider, model.clone(), &spec.instruction, None);
+    drive_inner(spec, api_key, run_id, audit, &mut session, input)
+}
+
+/// Drive a v2 agent_loop activity reusing an existing `Session`.
+///
+/// Phase 3 loop bodies pass the same `Session` across iterations so the
+/// provider conversation history persists (§2: named `session:` bindings).
+/// The caller owns the `Session`'s lifetime; this function never drops it.
+pub fn drive_agent_loop_with_session(
+    spec: &AgentLoopSpec,
+    api_key: Option<&str>,
+    run_id: &str,
+    audit: Arc<V2AuditWriter>,
+    session: &mut Session,
+    input: &Value,
+) -> Result<LoopOutcome, DispatchError> {
+    drive_inner(spec, api_key, run_id, audit, session, input)
+}
+
+fn drive_inner(
+    spec: &AgentLoopSpec,
+    api_key: Option<&str>,
+    run_id: &str,
+    audit: Arc<V2AuditWriter>,
+    session: &mut Session,
     _input: &Value,
 ) -> Result<LoopOutcome, DispatchError> {
-    let model = spec
-        .model
-        .clone()
-        .unwrap_or_else(|| DEFAULT_ANTHROPIC_MODEL.to_string());
+    let model = resolve_model(spec);
 
-    if std::env::var("ORBIT_V2_REPLAY").ok().as_deref() == Some("tool_denial") {
-        drive_with_replay(spec, run_id, audit, model)
+    if replay_active() {
+        // Reuse the same ReplayTransport across calls so the cursor advances
+        // through the scripted turns. Loop-body steps reuse the Session and
+        // need the transport's state to persist too, else every iteration
+        // would replay the same first turn.
+        let transport = acquire_replay_transport(&model)?;
+        run_loop(spec, run_id, audit, session, &*transport)
     } else {
         let key = api_key.ok_or_else(|| {
             DispatchError::AgentLoopFailed(
                 "no provider credential available — host.api_key_for returned an error".to_string(),
             )
         })?;
-        drive_with_anthropic(spec, key, run_id, audit, model)
+        if key.is_empty() {
+            return Err(DispatchError::AgentLoopFailed(
+                "api_key is empty".to_string(),
+            ));
+        }
+        let transport = AnthropicMessagesTransport::new(key.to_string(), model.clone())
+            .map_err(|err| DispatchError::AgentLoopFailed(format!("transport: {err}")))?;
+        run_loop(spec, run_id, audit, session, &transport)
     }
 }
 
-fn drive_with_anthropic(
-    spec: &AgentLoopSpec,
-    api_key: &str,
-    run_id: &str,
-    audit: Arc<V2AuditWriter>,
-    model: String,
-) -> Result<LoopOutcome, DispatchError> {
-    if api_key.is_empty() {
-        return Err(DispatchError::AgentLoopFailed(
-            "api_key is empty".to_string(),
-        ));
-    }
-    let transport = AnthropicMessagesTransport::new(api_key.to_string(), model.clone())
-        .map_err(|err| DispatchError::AgentLoopFailed(format!("transport: {err}")))?;
-    run_loop(spec, run_id, audit, model, &transport)
+fn resolve_model(spec: &AgentLoopSpec) -> String {
+    spec.model
+        .clone()
+        .unwrap_or_else(|| DEFAULT_ANTHROPIC_MODEL.to_string())
 }
 
-fn drive_with_replay(
-    spec: &AgentLoopSpec,
-    run_id: &str,
-    audit: Arc<V2AuditWriter>,
-    model: String,
-) -> Result<LoopOutcome, DispatchError> {
-    let transport = ReplayTransport::new(
-        "replay",
-        model.clone(),
-        vec![ReplayTurn {
+fn expected_provider() -> &'static str {
+    if replay_active() {
+        "replay"
+    } else {
+        "anthropic"
+    }
+}
+
+fn replay_active() -> bool {
+    std::env::var("ORBIT_V2_REPLAY").is_ok() || std::env::var("ORBIT_V2_REPLAY_FIXTURE").is_ok()
+}
+
+/// Process-global replay transport. Constructed lazily from env on first
+/// use so turn cursor persists across multiple `drive_*` calls from the
+/// same job run (required by loop-body steps scripted over multi-turn
+/// fixtures). Cleared by `reset_replay_transport` in tests.
+static REPLAY_TRANSPORT: OnceLock<Mutex<Option<Arc<ReplayTransport>>>> = OnceLock::new();
+
+fn acquire_replay_transport(model: &str) -> Result<Arc<ReplayTransport>, DispatchError> {
+    let cell = REPLAY_TRANSPORT.get_or_init(|| Mutex::new(None));
+    let mut guard = cell.lock().expect("replay mutex poisoned");
+    if let Some(t) = guard.as_ref() {
+        return Ok(Arc::clone(t));
+    }
+    let t = Arc::new(build_replay_transport(model)?);
+    *guard = Some(Arc::clone(&t));
+    Ok(t)
+}
+
+/// Clear the cached replay transport. Call from smokes that run multiple
+/// fixture-backed jobs back-to-back under the same process.
+pub fn reset_replay_transport() {
+    if let Some(cell) = REPLAY_TRANSPORT.get() {
+        *cell.lock().expect("replay mutex poisoned") = None;
+    }
+}
+
+fn build_replay_transport(model: &str) -> Result<ReplayTransport, DispatchError> {
+    if let Ok(path) = std::env::var("ORBIT_V2_REPLAY_FIXTURE") {
+        let turns = load_replay_fixture(Path::new(&path))?;
+        return Ok(ReplayTransport::new("replay", model.to_string(), turns));
+    }
+    if std::env::var("ORBIT_V2_REPLAY").ok().as_deref() == Some("tool_denial") {
+        let turns = vec![ReplayTurn {
             content: vec![ContentBlock::ToolUse {
                 id: "toolu_orbit_v2_replay".to_string(),
                 name: "fs.write".to_string(),
                 input: serde_json::json!({"path": "/tmp/blocked.txt", "content": "x"}),
             }],
             stop_reason: StopReason::ToolUse,
-        }],
-    );
-    run_loop(spec, run_id, audit, model, &transport)
+        }];
+        return Ok(ReplayTransport::new("replay", model.to_string(), turns));
+    }
+    Err(DispatchError::AgentLoopFailed(
+        "replay env vars not set".into(),
+    ))
+}
+
+fn load_replay_fixture(path: &Path) -> Result<Vec<ReplayTurn>, DispatchError> {
+    let bytes = std::fs::read(path).map_err(|err| {
+        DispatchError::AgentLoopFailed(format!("read replay fixture {}: {err}", path.display()))
+    })?;
+    // Fixture shape: { "turns": [ { "content": [...], "stop_reason": "..." }, ... ] }
+    let raw: FixtureFile = serde_json::from_slice(&bytes)
+        .map_err(|err| DispatchError::AgentLoopFailed(format!("parse replay fixture: {err}")))?;
+    raw.turns
+        .into_iter()
+        .map(|t| t.into_replay_turn())
+        .collect()
+}
+
+#[derive(serde::Deserialize)]
+struct FixtureFile {
+    turns: Vec<FixtureTurn>,
+}
+
+#[derive(serde::Deserialize)]
+struct FixtureTurn {
+    /// List of content blocks. Each must be one of:
+    ///   { "kind": "text", "text": "..." }
+    ///   { "kind": "tool_use", "id": "...", "name": "...", "input": {...} }
+    content: Vec<FixtureBlock>,
+    /// "end_turn" | "tool_use" | "max_tokens".
+    stop_reason: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum FixtureBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+}
+
+impl FixtureTurn {
+    fn into_replay_turn(self) -> Result<ReplayTurn, DispatchError> {
+        let stop_reason = match self.stop_reason.as_str() {
+            "end_turn" => StopReason::EndTurn,
+            "tool_use" => StopReason::ToolUse,
+            "max_tokens" => StopReason::MaxTokens,
+            other => {
+                return Err(DispatchError::AgentLoopFailed(format!(
+                    "unknown replay stop_reason: {other}"
+                )));
+            }
+        };
+        let content = self
+            .content
+            .into_iter()
+            .map(|b| match b {
+                FixtureBlock::Text { text } => ContentBlock::Text { text },
+                FixtureBlock::ToolUse { id, name, input } => {
+                    ContentBlock::ToolUse { id, name, input }
+                }
+            })
+            .collect();
+        Ok(ReplayTurn {
+            content,
+            stop_reason,
+        })
+    }
 }
 
 fn run_loop<T: LoopTransport>(
     spec: &AgentLoopSpec,
     run_id: &str,
     audit: Arc<V2AuditWriter>,
-    model: String,
+    session: &mut Session,
     transport: &T,
 ) -> Result<LoopOutcome, DispatchError> {
-    let registry = orbit_tools::ToolRegistry::new();
+    let mut registry = orbit_tools::ToolRegistry::new();
+    // In replay mode, make side-effect-free builtins available so scripted
+    // tool_use blocks (e.g. `time.now`) execute without network — required by
+    // Phase 3 loop smokes that inspect `tool.call.*` events for session_id
+    // persistence. Live mode stays empty; orbit-core's real runtime injects
+    // a fully-populated registry at its own layer.
+    if replay_active() {
+        registry.register_builtins();
+    }
     let tool_ctx = orbit_tools::ToolContext::default();
 
     let cfg = AgentLoopConfig::new_for_run(run_id)
@@ -114,7 +257,6 @@ fn run_loop<T: LoopTransport>(
         .with_max_total_tokens(u64::MAX)
         .with_wall_clock_timeout(Duration::from_secs(300));
 
-    let mut session = Session::new(transport.provider(), model, &spec.instruction, None);
     let session_id = session.id().to_string();
 
     let inner = audit.inner_sink();
@@ -122,7 +264,7 @@ fn run_loop<T: LoopTransport>(
         EnforcedAuditSink::new(inner, spec.tools.clone(), audit.clone(), run_id, session_id);
 
     let res = AgentLoop::run(
-        &mut session,
+        session,
         &cfg,
         transport,
         &registry,
@@ -132,17 +274,15 @@ fn run_loop<T: LoopTransport>(
     );
     match res {
         Ok(outcome) => Ok(outcome),
-        // Under `on_denial: terminate` the PolicyDenied error IS the expected
-        // outcome for a tool-denial smoke. Translate to Ok so the dispatcher
-        // reports success; the audit trail preserves the denial event.
+        // §4.3 classifies denial as non-retryable. Surface structurally so the
+        // Phase 3 retry wrapper can skip retry. The §7 `tool.denied` audit
+        // event was already emitted by `EnforcedAuditSink` before this point.
         Err(AgentLoopError::PolicyDenied {
             tool_name,
             iteration,
-        }) => Ok(LoopOutcome {
-            final_message: format!("terminated: tool `{tool_name}` denied at iter {iteration}"),
-            usage: TurnUsage::default(),
-            terminate_reason: TerminateReason::Other,
-            trace: Vec::new(),
+        }) => Err(DispatchError::ToolDenied {
+            tool_name,
+            iteration,
         }),
         Err(err) => Err(DispatchError::AgentLoopFailed(format!("{err:?}"))),
     }

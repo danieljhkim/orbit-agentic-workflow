@@ -79,8 +79,40 @@ pub enum DispatchError {
     #[error("agent_loop run failed: {0}")]
     AgentLoopFailed(String),
 
+    /// Tool-allowlist denial (§6). Non-retryable — the retry wrapper must not
+    /// re-attempt a denied call. Phase 2 formerly translated this to
+    /// `Ok(terminated)`; Phase 3 surfaces it structurally so the DAG executor
+    /// can classify it.
+    #[error("tool `{tool_name}` denied at iteration {iteration}")]
+    ToolDenied { tool_name: String, iteration: u32 },
+
+    /// Job validation rejected the spec at load time.
+    #[error("job validation failed: {0}")]
+    JobValidation(String),
+
+    /// Generic job-executor error — distinct from per-activity failures.
+    #[error("job executor: {0}")]
+    JobExecution(String),
+
     #[error("audit write failed: {0}")]
     AuditFailed(String),
+}
+
+impl DispatchError {
+    /// Whether this error should bypass the retry wrapper. Tool denials,
+    /// unknown deterministic actions, shell allowlist violations, and
+    /// validation errors are non-retryable (§4.3: "Non-retryable errors —
+    /// schema violations, allowlist denials, cancellation — skip retry").
+    pub fn is_non_retryable(&self) -> bool {
+        matches!(
+            self,
+            DispatchError::ToolDenied { .. }
+                | DispatchError::DeterministicActionNotRegistered(_)
+                | DispatchError::ShellProgramNotAllowed(_)
+                | DispatchError::JobValidation(_)
+                | DispatchError::HostRequired(_)
+        )
+    }
 }
 
 /// Dispatch a v2 activity by type. Emits §7 activity.started/finished

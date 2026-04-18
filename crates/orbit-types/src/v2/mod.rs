@@ -21,9 +21,12 @@ pub use asset_loader::{
     load_job_asset,
 };
 pub use audit_envelope::{
-    AUDIT_ENVELOPE_SCHEMA_VERSION, V2AuditEnvelope, V2AuditEvent, V2AuditEventKind,
+    AUDIT_ENVELOPE_SCHEMA_VERSION, BranchOutcome, V2AuditEnvelope, V2AuditEvent, V2AuditEventKind,
 };
-pub use job_v2::{JobV2, JobV2Step, PipelineRef};
+pub use job_v2::{
+    BackoffStrategy, FanInSpec, FanOutBlock, JobV2, JobV2Step, JobV2StepBody, JoinMode, LoopBlock,
+    ParallelBlock, PipelineRef, RetrySpec, TargetStep,
+};
 pub use schema_header::SchemaHeader;
 pub use tool_allowlist::{
     ToolAllowlistError, V2_TOOL_WILDCARD_ROOTS, tool_allowed, validate_tool_allowlist,

@@ -1,9 +1,11 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use crate::{JobScheduleState, JobTargetType, OrbitId};
+use crate::JobScheduleState;
 
-/// v2 Job definition. See §5.2 for block-form pipeline refs.
+use super::activity_v2::ActivityV2Spec;
+
+/// v2 Job definition. Phase 3 adds first-class DAG constructs on each step.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JobV2 {
     pub state: JobScheduleState,
@@ -16,40 +18,216 @@ pub struct JobV2 {
     pub policy: Option<String>,
 }
 
-/// A step in a v2 job. Sequential by default (Phase 3 adds parallel/DAG).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// A step in a v2 job. Carries `id`, optional `when` / `retry` modifiers,
+/// and exactly one body (target / parallel / fan_out / loop).
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct JobV2Step {
     pub id: String,
-    pub target_type: JobTargetType,
-    pub target_id: OrbitId,
-    /// Optional structured or literal input for this step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<RetrySpec>,
+    #[serde(flatten)]
+    pub body: JobV2StepBody,
+}
+
+/// One-of body for a v2 step. Picked by presence of the `parallel` / `fan_out`
+/// / `loop` keys; otherwise falls back to the flat target shape.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum JobV2StepBody {
+    Parallel {
+        parallel: ParallelBlock,
+    },
+    FanOut {
+        fan_out: FanOutBlock,
+        fan_in: FanInSpec,
+    },
+    Loop {
+        #[serde(rename = "loop")]
+        loop_: LoopBlock,
+    },
+    Target(TargetStep),
+}
+
+impl<'de> Deserialize<'de> for JobV2Step {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let mut v = Value::deserialize(deserializer)?;
+        let obj = v
+            .as_object_mut()
+            .ok_or_else(|| D::Error::custom("step must be a mapping"))?;
+
+        let id = obj
+            .remove("id")
+            .and_then(|x| x.as_str().map(String::from))
+            .ok_or_else(|| D::Error::custom("step missing `id`"))?;
+        let when = obj
+            .remove("when")
+            .and_then(|x| x.as_str().map(String::from));
+        let retry = match obj.remove("retry") {
+            Some(rv) => Some(
+                serde_json::from_value::<RetrySpec>(rv)
+                    .map_err(|e| D::Error::custom(format!("retry: {e}")))?,
+            ),
+            None => None,
+        };
+
+        let has_parallel = obj.contains_key("parallel");
+        let has_fan_out = obj.contains_key("fan_out");
+        let has_loop = obj.contains_key("loop");
+
+        let body = match (has_parallel, has_fan_out, has_loop) {
+            (true, false, false) => {
+                let block = obj.remove("parallel").unwrap();
+                JobV2StepBody::Parallel {
+                    parallel: serde_json::from_value(block)
+                        .map_err(|e| D::Error::custom(format!("parallel: {e}")))?,
+                }
+            }
+            (false, true, false) => {
+                let fan_out_block = obj.remove("fan_out").unwrap();
+                let fan_in_block = obj
+                    .remove("fan_in")
+                    .ok_or_else(|| D::Error::custom("fan_out step missing matching `fan_in`"))?;
+                JobV2StepBody::FanOut {
+                    fan_out: serde_json::from_value(fan_out_block)
+                        .map_err(|e| D::Error::custom(format!("fan_out: {e}")))?,
+                    fan_in: serde_json::from_value(fan_in_block)
+                        .map_err(|e| D::Error::custom(format!("fan_in: {e}")))?,
+                }
+            }
+            (false, false, true) => {
+                let block = obj.remove("loop").unwrap();
+                JobV2StepBody::Loop {
+                    loop_: serde_json::from_value(block)
+                        .map_err(|e| D::Error::custom(format!("loop: {e}")))?,
+                }
+            }
+            (false, false, false) => JobV2StepBody::Target(
+                serde_json::from_value(Value::Object(std::mem::take(obj)))
+                    .map_err(|e| D::Error::custom(format!("target step: {e}")))?,
+            ),
+            _ => {
+                return Err(D::Error::custom(
+                    "step may set exactly one of `parallel`, `fan_out`, or `loop`",
+                ));
+            }
+        };
+
+        Ok(JobV2Step {
+            id,
+            when,
+            retry,
+            body,
+        })
+    }
+}
+
+/// Flat target step: inlines an `ActivityV2Spec` directly on the step.
+///
+/// Phase 3 inlines the activity body rather than referencing it by id. Name-
+/// based resolution (`target: activity:<name>`) lands in Phase 4 alongside
+/// real asset migration; keeping Phase 3 samples self-contained avoids a
+/// new asset-discovery surface that would have to be rewritten anyway when
+/// Phase 4 decides scope resolution (§9 MergeByKey).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TargetStep {
+    pub spec: ActivityV2Spec,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_input: Option<Value>,
     #[serde(default)]
     pub timeout_seconds: u64,
+    /// Named Session binding. When set and present in the executor's session
+    /// map (loop body only), conversation history persists across iterations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+/// Retry modifier (§4.1). Applied per-step wrapper; counts re-runs of the
+/// step body. Non-retryable errors (tool denial, unknown deterministic action,
+/// shell allowlist violation) bypass retry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RetrySpec {
+    pub max_attempts: u32,
+    #[serde(default = "default_initial_backoff_ms")]
+    pub initial_backoff_ms: u64,
+    #[serde(default = "default_backoff_cap_ms")]
+    pub backoff_cap_ms: u64,
+    #[serde(default)]
+    pub backoff_strategy: BackoffStrategy,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BackoffStrategy {
+    #[default]
+    Exponential,
+    Linear,
+}
+
+/// Parallel block (§4.2). Branches run concurrently; join policy decides the
+/// block's success.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParallelBlock {
+    pub join: JoinMode,
+    pub branches: Vec<JobV2Step>,
+}
+
+/// Explicit-form join selector (§12 Q4). YAML form:
+/// ```yaml
+/// join: { mode: all }
+/// join: { mode: any }
+/// join: { mode: quorum, n: 2 }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum JoinMode {
+    All,
+    Any,
+    Quorum { n: u32 },
+}
+
+/// Fan-out block (§4.2). Dispatches a worker template against items with
+/// bounded concurrency. Always paired with a `FanInSpec` on the same step.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FanOutBlock {
+    /// Handlebars expression producing an iterable array (e.g.
+    /// `{{ input.items }}` or `{{ steps.dispatch.output.tasks }}`).
+    pub items: String,
+    #[serde(default = "default_max_workers")]
+    pub max_workers: u32,
+    pub worker: Box<JobV2Step>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FanInSpec {
+    pub join: JoinMode,
+    /// Optional pipeline-context key to store the collected per-worker outputs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collect: Option<String>,
+}
+
+/// Loop block (§4.2). Bounded iteration with optional value-break and a shared
+/// Session map across iterations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LoopBlock {
+    pub max_iterations: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub break_when: Option<String>,
+    pub steps: Vec<JobV2Step>,
 }
 
 /// Structured pipeline-context reference (§5.2, §12 Q8).
-///
-/// Accepts either a block form
-/// ```yaml
-/// default_input:
-///   from: steps.dispatch.output.task_id
-/// ```
-/// or a literal string (treated as a Handlebars template scalar, compatible
-/// with v1 `{{ steps.<id>.output.<field> }}` syntax).
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum PipelineRef {
-    /// Structured reference into the pipeline context.
     Block { from: String },
-    /// Literal / template string (v1-compatible).
     Literal(String),
 }
 
 impl<'de> Deserialize<'de> for PipelineRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Peek as a generic Value; then decide the shape.
         let v = Value::deserialize(deserializer)?;
         if let Some(s) = v.as_str() {
             return Ok(PipelineRef::Literal(s.to_string()));
@@ -69,4 +247,16 @@ impl<'de> Deserialize<'de> for PipelineRef {
 
 const fn default_max_active_runs() -> u32 {
     1
+}
+
+const fn default_initial_backoff_ms() -> u64 {
+    1_000
+}
+
+const fn default_backoff_cap_ms() -> u64 {
+    60_000
+}
+
+const fn default_max_workers() -> u32 {
+    4
 }
