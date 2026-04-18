@@ -85,12 +85,6 @@ impl TaskFileStore {
         bundle: &TaskBundle,
         task_dir: Option<&Path>,
     ) -> Result<(), OrbitError> {
-        if bundle.doc.schema_version != TASK_SCHEMA_VERSION {
-            return Err(OrbitError::InvalidInput(format!(
-                "unsupported task schema version: {}",
-                bundle.doc.schema_version
-            )));
-        }
         if bundle.doc.id.trim().is_empty() {
             return Err(OrbitError::InvalidInput(
                 "task id must not be empty".to_string(),

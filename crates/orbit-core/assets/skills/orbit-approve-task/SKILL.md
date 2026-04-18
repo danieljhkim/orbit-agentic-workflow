@@ -38,12 +38,15 @@ orbit tool run orbit.task.start --input '{"id": "<id>", "note": "<note>", "comme
 ## Verification
 
 Prefer the returned payload from `approve`, `reject`, or `start` as your
-default verification. If you need to confirm the canonical stored task
-record, run `orbit tool run orbit.task.show --input '{"id": "<id>"}'` and
-confirm:
+default verification. If you need to confirm the canonical stored task record:
+
+- Check status (all cases): `orbit tool run orbit.task.show --input '{"id": "<id>"}'`
+- Check history (started case): `orbit tool run orbit.task.show --input '{"id": "<id>", "field": "history"}'`
+
+Expected outcomes:
 
 - After proposal approval: status is `backlog`
-- After immediate proposal start: status is `in-progress` and history includes both `proposal_approved` and `started`
+- After immediate proposal start: status is `in-progress`; history includes both `proposal_approved` and `started`
 - After proposal rejection: status is `rejected`
 - After review approval: status is `done`
 - After review rejection: status is `rejected`

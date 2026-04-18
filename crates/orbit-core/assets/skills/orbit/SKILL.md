@@ -15,7 +15,7 @@ This skill orients agents working with Orbit. Orbit operations should go through
 
 **Inside `agent_implement` or any activity that injects `task` into the execution envelope:** use the injected `task.*` fields directly. Do not call `orbit.task.show` unless the activity instructions explicitly require it and the tool appears in the activity allowlist.
 
-1. If the activity did not preload `task`, load the task: `orbit tool run orbit.task.show --input '{"id": "<task-id>"}'`
+1. If the activity did not preload `task`, load the task: `orbit tool run orbit.task.show --full --input '{"id": "<task-id>"}'`
 2. Read the `description` and `acceptance_criteria` first — they define the required outcome.
 3. If the `plan` field is blank or placeholder text, author a fresh plan with `orbit.task.update`.
 4. Read each file listed in `context_files` before making changes.
@@ -83,7 +83,7 @@ If an activity already injected `task` into the execution envelope, use that sna
 
 ```bash
 # Task commands
-orbit tool run orbit.task.show --input '{"id": "<id>"}'                          # Load full task
+orbit tool run orbit.task.show --full --input '{"id": "<id>"}'                    # Load full task
 orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments"}'     # Load only comments
 orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan"}'         # Load only plan
 # Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
@@ -115,7 +115,7 @@ orbit tool run orbit.state.set --input '{"data": {"threads": [], "summary": "Loo
 | Mistake | Why it fails | Correct form |
 |---------|-------------|--------------|
 | `cargo run -- tool run ...` | Agents must use the installed `orbit` binary, not rebuild from source | `orbit tool run ...` |
-| `orbit task show <id>` | Direct CLI subcommands skip agent provenance tracking | `orbit tool run orbit.task.show --input '{"id":"<id>"}'` |
+| `orbit task show <id>` | Direct CLI subcommands skip agent provenance tracking | `orbit tool run orbit.task.show --full --input '{"id":"<id>"}'` |
 
 **Rule:** The command reference above is intentionally common, not exhaustive. Never guess. Run `orbit tool list` to see the full registered tool surface.
 

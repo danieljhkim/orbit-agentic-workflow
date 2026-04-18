@@ -14,8 +14,8 @@ Handle a human-requested engineering task or existing Orbit task from intent to 
 All agent Orbit interactions go through `orbit tool run`. Never use `orbit task ...` directly — it skips agent provenance. Never guess tool names — run `orbit tool list` to see all registered tools.
 
 ```bash
-# Load a task
-orbit tool run orbit.task.show --input '{"id": "<task-id>"}'
+# Load a full task
+orbit tool run orbit.task.show --full --input '{"id": "<task-id>"}'
 
 # Load a specific field only
 orbit tool run orbit.task.show --input '{"id": "<task-id>", "field": "plan"}'

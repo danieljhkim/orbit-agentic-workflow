@@ -297,7 +297,9 @@ fn should_project_minimal_task_output(tool_name: &str, input: &Value) -> bool {
         return false;
     }
 
-    if tool_name == "orbit.task.show" && input.get("field").is_some() {
+    if tool_name == "orbit.task.show"
+        && (input.get("field").is_some() || input.get("fields").is_some())
+    {
         return false;
     }
 
