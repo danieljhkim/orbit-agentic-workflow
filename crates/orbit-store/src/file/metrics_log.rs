@@ -4,21 +4,25 @@ use std::path::{Path, PathBuf};
 
 use orbit_types::{MetricsEntry, OrbitError};
 
+use super::fs_utils::with_exclusive_file_lock;
+
 pub fn append_metrics_entry(root: &Path, entry: &MetricsEntry) -> Result<(), OrbitError> {
     let file_path = metrics_day_path(root, entry);
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| OrbitError::Io(error.to_string()))?;
-    }
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
-        .map_err(|error| OrbitError::Io(error.to_string()))?;
     let line =
         serde_json::to_string(entry).map_err(|error| OrbitError::Store(error.to_string()))?;
-    writeln!(file, "{line}").map_err(|error| OrbitError::Io(error.to_string()))?;
-    Ok(())
+    let payload = format!("{line}\n");
+
+    // Serialize appends per day-partitioned file so concurrent steps cannot
+    // interleave their JSON object and newline writes into malformed JSONL.
+    with_exclusive_file_lock(&file_path, "metrics log", || {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)
+            .map_err(|error| OrbitError::Io(error.to_string()))?;
+        file.write_all(payload.as_bytes())
+            .map_err(|error| OrbitError::Io(error.to_string()))
+    })
 }
 
 pub fn read_metrics_entries_for_month(

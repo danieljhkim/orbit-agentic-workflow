@@ -4,21 +4,25 @@ use std::path::{Path, PathBuf};
 
 use orbit_types::{FrictionEntry, OrbitError};
 
+use super::fs_utils::with_exclusive_file_lock;
+
 pub fn append_friction_entry(root: &Path, entry: &FrictionEntry) -> Result<(), OrbitError> {
     let file_path = friction_day_path(root, entry);
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| OrbitError::Io(error.to_string()))?;
-    }
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
-        .map_err(|error| OrbitError::Io(error.to_string()))?;
     let line =
         serde_json::to_string(entry).map_err(|error| OrbitError::Store(error.to_string()))?;
-    writeln!(file, "{line}").map_err(|error| OrbitError::Io(error.to_string()))?;
-    Ok(())
+    let payload = format!("{line}\n");
+
+    // Use the per-file lock helper so concurrent diagnostics writers keep each
+    // JSON object + newline pair together in the append-only stream.
+    with_exclusive_file_lock(&file_path, "friction log", || {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)
+            .map_err(|error| OrbitError::Io(error.to_string()))?;
+        file.write_all(payload.as_bytes())
+            .map_err(|error| OrbitError::Io(error.to_string()))
+    })
 }
 
 pub fn read_friction_entries_for_month(
