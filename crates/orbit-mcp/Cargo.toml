@@ -1,0 +1,13 @@
+[package]
+name = "orbit-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+orbit-tools = { path = "../orbit-tools" }
+orbit-types = { path = "../orbit-types" }
+rmcp = { version = "1.5", default-features = false, features = ["server", "transport-io"] }
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true

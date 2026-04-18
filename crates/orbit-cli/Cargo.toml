@@ -17,6 +17,7 @@ comfy-table = "7"
 csv = "1"
 orbit-core = { path = "../orbit-core", features = ["clap"] }
 orbit-knowledge = { path = "../orbit-knowledge" }
+orbit-mcp = { path = "../orbit-mcp" }
 orbit-types = { path = "../orbit-types" }
 regex.workspace = true
 serde.workspace = true

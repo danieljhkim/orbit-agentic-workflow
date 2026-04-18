@@ -493,6 +493,21 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
+        Commands::Mcp(cmd) => {
+            use crate::command::mcp::McpSubcommand;
+            let sub = match &cmd.command {
+                McpSubcommand::Serve(_) => "serve",
+            };
+            CommandMeta {
+                command: "mcp".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("mcp".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;

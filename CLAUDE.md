@@ -27,6 +27,7 @@ All must pass before a task moves to `review`.
 
 ```
 orbit-types → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → orbit-store, orbit-agent → orbit-engine → orbit-core → orbit-cli
+                                                        ↘ orbit-mcp ↗
 ```
 
 - **orbit-types**: leaf — no internal deps. Shared types, `OrbitError`, ID generation.
@@ -34,6 +35,7 @@ orbit-types → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → or
 - **orbit-store**: layered store pattern (YAML + SQLite). Match existing modules when adding new ones.
 - **orbit-agent**: `AgentRuntime` trait. New agent families go here, not elsewhere.
 - **orbit-engine**: activity/job execution, template rendering, retry logic.
+- **orbit-mcp**: Model Context Protocol adapter over `orbit-tools::ToolRegistry`. Depends only on `orbit-types`, `orbit-tools`, and `rmcp`; consumed by `orbit-cli` via `orbit mcp serve`.
 - **orbit-core**: runtime bootstrap, config layering, command dispatch, default asset seeding.
 - **orbit-cli**: clap-based CLI entry point.
 

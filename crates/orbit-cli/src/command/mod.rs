@@ -12,6 +12,7 @@ pub mod init;
 pub mod job;
 pub(crate) mod job_run_support;
 pub mod logs;
+pub mod mcp;
 pub mod metrics;
 pub mod policy;
 pub mod reconcile;
@@ -61,6 +62,7 @@ Inspect:
   metrics    Inspect token, tool-call, and knowledge-pack metrics
   scoreboard Generate read-only scoreboard summaries
   serve      Serve a local read-only web dashboard
+  mcp        Serve the Orbit tool registry over Model Context Protocol
 
 Options:
 {options}"
@@ -95,6 +97,7 @@ pub enum Commands {
     Executor(executor::ExecutorCommand),
     Policy(policy::PolicyCommand),
     Graph(graph::GraphCommand),
+    Mcp(mcp::McpCommand),
 
     // ── resource management ──
     Apply(apply::ApplyCommand),
@@ -131,6 +134,7 @@ impl Execute for Commands {
             Commands::Executor(cmd) => cmd.execute(runtime),
             Commands::Policy(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
+            Commands::Mcp(cmd) => cmd.execute(runtime),
             Commands::Apply(cmd) => cmd.execute(runtime),
             Commands::Get(cmd) => cmd.execute(runtime),
             Commands::Describe(cmd) => cmd.execute(runtime),
