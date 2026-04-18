@@ -62,10 +62,35 @@ function stateCell(state) {
   return node;
 }
 
-async function fetchJson(path) {
-  const res = await fetch(path, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
-  return res.json();
+function fetchJson(path) {
+  return fetch(path, { headers: { accept: "application/json" } })
+    .then(res => {
+      if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+      return res.json();
+    });
+}
+
+function syncNodes(container, newNodesArr) {
+  const oldNodes = Array.from(container.children);
+  const oldMap = new Map();
+  for (const node of oldNodes) {
+    if (node.dataset.key) oldMap.set(node.dataset.key, node);
+  }
+
+  container.innerHTML = "";
+  for (const newNode of newNodesArr) {
+    const key = newNode.dataset.key;
+    if (key && oldMap.has(key)) {
+      const oldNode = oldMap.get(key);
+      if (oldNode.dataset.hash === newNode.dataset.hash) {
+        container.appendChild(oldNode);
+      } else {
+        container.appendChild(newNode);
+      }
+    } else {
+      container.appendChild(newNode);
+    }
+  }
 }
 
 function filterTasks(tasks) {
@@ -273,7 +298,8 @@ async function runAction(task, kind, detail, body) {
 
 function renderTasks(tasks) {
   const body = $("tasks-body");
-  body.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  
   const filtered = filterTasks(tasks);
   $("tasks-count").textContent =
     filtered.length === tasks.length
@@ -283,9 +309,10 @@ function renderTasks(tasks) {
     body.appendChild(
       el("div", {
         class: "empty",
-        text: tasks.length === 0 ? "no tasks." : "no tasks match.",
+        text: tasks.length === 0 ? "No tasks." : "No tasks match.",
       }),
     );
+    syncNodes(body, Array.from(frag.children));
     return;
   }
   const groups = new Map();
@@ -302,7 +329,9 @@ function renderTasks(tasks) {
       statusPill(status),
       el("span", { class: "group-count", text: `${group.length}` }),
     ]);
-    body.appendChild(header);
+    header.dataset.key = `header-${status}`;
+    header.dataset.hash = `${status}-${group.length}`;
+    frag.appendChild(header);
     for (const t of group) {
       const row = el("div", { class: "row", title: t.title }, [
         el("span", { class: "id mono", text: t.id }),
@@ -310,7 +339,9 @@ function renderTasks(tasks) {
         priorityCell(t.priority),
         el("span", { class: "type mono", text: t.type }),
       ]);
-      row.dataset.taskId = t.id;
+      row.dataset.key = `task-${t.id}`;
+      // Basic hash based on row presentation parameters + expanded state
+      row.dataset.hash = `${t.id}-${t.title}-${t.priority}-${t.type}-${expandedTaskIds.has(t.id)}`;
       row.addEventListener("click", () => {
         if (expandedTaskIds.has(t.id)) {
           expandedTaskIds.delete(t.id);
@@ -320,12 +351,17 @@ function renderTasks(tasks) {
         renderTasks(lastTasks);
       });
       if (expandedTaskIds.has(t.id)) row.classList.add("expanded");
-      body.appendChild(row);
+      frag.appendChild(row);
       if (expandedTaskIds.has(t.id)) {
-        body.appendChild(buildTaskDetail(t));
+        const detail = buildTaskDetail(t);
+        detail.dataset.key = `detail-${t.id}`;
+        // Diff by full task object stringified
+        detail.dataset.hash = JSON.stringify(t);
+        frag.appendChild(detail);
       }
     }
   }
+  syncNodes(body, Array.from(frag.children));
 }
 
 function fmtTimestamp(iso) {
@@ -357,11 +393,13 @@ function fmtDuration(ms) {
 
 function renderRuns(runs) {
   const body = $("runs-body");
-  body.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  
   const top = runs.slice(0, 20);
   $("runs-count").textContent = `${top.length}/${runs.length}`;
   if (top.length === 0) {
-    body.appendChild(el("div", { class: "empty", text: "no job runs yet." }));
+    frag.appendChild(el("div", { class: "empty", text: "No job runs yet." }));
+    syncNodes(body, Array.from(frag.children));
     return;
   }
   for (const r of top) {
@@ -372,8 +410,11 @@ function renderRuns(runs) {
       el("span", { class: "duration", text: fmtDuration(r.duration_ms) }),
       el("span", { class: "state" }, [stateCell(r.state)]),
     ]);
-    body.appendChild(row);
+    row.dataset.key = `run-${r.run_id}`;
+    row.dataset.hash = `${r.run_id}-${ts}-${r.duration_ms}-${r.state}`;
+    frag.appendChild(row);
   }
+  syncNodes(body, Array.from(frag.children));
 }
 
 const SCOREBOARD_COLUMNS = [
@@ -403,12 +444,14 @@ function readPath(obj, path) {
 
 function renderScoreboard(summary) {
   const body = $("scoreboard-body");
-  body.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  
   const agentsMap = (summary && summary.agents) || {};
   const entries = Object.entries(agentsMap);
   $("scoreboard-count").textContent = `${entries.length}`;
   if (entries.length === 0) {
-    body.appendChild(el("div", { class: "empty", text: "no scoreboard data yet." }));
+    frag.appendChild(el("div", { class: "empty", text: "No scoreboard data yet." }));
+    syncNodes(body, Array.from(frag.children));
     return;
   }
   entries.sort(([, a], [, b]) => (b.tasks_completed || 0) - (a.tasks_completed || 0));
@@ -451,10 +494,13 @@ function renderScoreboard(summary) {
         }),
       );
     }
+    row.dataset.key = `agent-${name}`;
+    row.dataset.hash = JSON.stringify(agent);
     tbody.appendChild(row);
   }
   table.appendChild(tbody);
-  body.appendChild(table);
+  frag.appendChild(table);
+  syncNodes(body, Array.from(frag.children));
 }
 
 function showError(panelId, err) {
@@ -614,9 +660,11 @@ const DIAG_FRICTION_COLUMNS = [
 
 function renderDiagnosticsTable(rows, columns) {
   const body = $("diag-body");
-  body.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  
   if (!rows || rows.length === 0) {
-    body.appendChild(el("div", { class: "empty", text: "no entries this month." }));
+    frag.appendChild(el("div", { class: "empty", text: "No entries this month." }));
+    syncNodes(body, Array.from(frag.children));
     return;
   }
   const table = el("table", { class: "scoreboard-table" });
@@ -639,10 +687,14 @@ function renderDiagnosticsTable(rows, columns) {
       td.textContent = text;
       tr.appendChild(td);
     }
+    // Hash based on stringification of the row minus dynamic timestamps if we wanted to be perfectly strict
+    tr.dataset.key = `diag-${Math.random()}`; // Without a unique ID in diagnostic rows, we just allow replacement, OR hash row content
+    tr.dataset.hash = JSON.stringify(row);
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  body.appendChild(table);
+  frag.appendChild(table);
+  syncNodes(body, Array.from(frag.children));
 }
 
 function renderDiagnostics() {
