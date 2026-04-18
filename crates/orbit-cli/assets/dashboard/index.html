@@ -279,7 +279,8 @@
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       }
       
-      .row .id { color: var(--fg-dim); font-size: 12px; }
+      .row .id { color: var(--fg-dim); font-size: 12px; transition: color 0.1s ease; }
+      .row .id:hover { color: var(--accent); cursor: copy; }
       .row .title { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
       .row .priority, .row .type { font-size: 12px; color: var(--fg-dim); text-align: right; }
       

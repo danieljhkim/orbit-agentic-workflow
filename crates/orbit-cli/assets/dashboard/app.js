@@ -333,8 +333,20 @@ function renderTasks(tasks) {
     header.dataset.hash = `${status}-${group.length}`;
     frag.appendChild(header);
     for (const t of group) {
+      const idSpan = el("span", { class: "id mono", text: t.id, title: "Click to copy ID" });
+      idSpan.addEventListener("click", (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(t.id).catch(() => {});
+        const oldText = idSpan.textContent;
+        idSpan.textContent = "copied!";
+        idSpan.style.color = "var(--state-success)";
+        setTimeout(() => {
+          idSpan.textContent = oldText;
+          idSpan.style.color = "";
+        }, 1000);
+      });
       const row = el("div", { class: "row", title: t.title }, [
-        el("span", { class: "id mono", text: t.id }),
+        idSpan,
         el("span", { class: "title", text: t.title }),
         priorityCell(t.priority),
         el("span", { class: "type mono", text: t.type }),
