@@ -18,6 +18,7 @@ pub mod executor;
 pub mod init;
 pub mod job;
 pub mod job_run;
+pub mod job_v2;
 pub mod policy;
 pub mod reconcile;
 pub mod skill;

@@ -35,6 +35,15 @@ pub(crate) fn evaluate_condition(
     }
 }
 
+/// Render a boolean expression through the template engine and evaluate the
+/// result. Shared between v1's `StepCondition::Expr` and v2's `when:` / loop
+/// `break_when:` constructs (§4.2). The expression grammar is documented on
+/// `evaluate_expr`.
+pub fn evaluate_bool_expr(expr: &str, ctx: &TemplateContext) -> Result<bool, OrbitError> {
+    let resolved = template::render(expr, ctx)?;
+    evaluate_expr(&resolved)
+}
+
 /// Parse and evaluate a resolved boolean expression.
 ///
 /// Grammar (informal):

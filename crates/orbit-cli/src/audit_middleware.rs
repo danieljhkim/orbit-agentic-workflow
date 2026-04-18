@@ -270,6 +270,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
                 JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
                 JobSubcommand::RunState(args) => ("run-state", Some(args.run_id.as_str())),
+                JobSubcommand::RunV2(_) => ("run-v2", None),
             };
             CommandMeta {
                 command: "job".to_string(),

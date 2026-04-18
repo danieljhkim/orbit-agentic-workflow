@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Subcommand};
 use orbit_core::command::job::JobAddParams;
 use orbit_core::{Job, JobRun, JobStep, OrbitError, OrbitRuntime};
@@ -34,6 +36,9 @@ pub enum JobSubcommand {
     Delete(JobDeleteArgs),
     /// Inspect the pipeline state (state.json) of a job run
     RunState(JobRunStateArgs),
+    /// Execute a v2 Job (schemaVersion:2) directly from a YAML path
+    #[command(name = "run-v2")]
+    RunV2(JobRunV2Args),
 }
 
 impl Execute for JobSubcommand {
@@ -46,6 +51,7 @@ impl Execute for JobSubcommand {
             JobSubcommand::History(args) => args.execute(runtime),
             JobSubcommand::Delete(args) => args.execute(runtime),
             JobSubcommand::RunState(args) => args.execute(runtime),
+            JobSubcommand::RunV2(args) => args.execute(runtime),
         }
     }
 }
@@ -489,4 +495,51 @@ fn build_job_run_input(pairs: &[String]) -> Result<Value, OrbitError> {
         map.insert(key.to_string(), Value::String(value.to_string()));
     }
     Ok(Value::Object(map))
+}
+
+#[derive(Args)]
+pub struct JobRunV2Args {
+    /// Path to a v2 (schemaVersion:2, kind:Job) YAML file.
+    pub path: PathBuf,
+    /// Optional JSON input passed to the v2 job executor.
+    #[arg(long, default_value = "null")]
+    pub input: String,
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for JobRunV2Args {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let input: Value = serde_json::from_str(&self.input)
+            .map_err(|e| OrbitError::InvalidInput(format!("--input must be valid JSON: {e}")))?;
+        let result = runtime.run_job_v2_from_yaml(&self.path, input)?;
+        let audit_jsonl_str = result
+            .audit_jsonl
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        if self.json {
+            crate::output::json::print_pretty(&json!({
+                "job_name": result.job_name,
+                "success": result.success,
+                "message": result.message,
+                "pipeline": result.pipeline,
+                "audit_jsonl": audit_jsonl_str,
+                "events_emitted": result.events_emitted,
+            }))
+        } else {
+            println!(
+                "job={};success={};events={};audit_jsonl={}",
+                result.job_name, result.success, result.events_emitted, audit_jsonl_str,
+            );
+            if let Some(msg) = &result.message {
+                println!("message: {msg}");
+            }
+            println!(
+                "pipeline: {}",
+                serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
+            );
+            Ok(())
+        }
+    }
 }

@@ -7,15 +7,19 @@
 pub mod agent_loop_driver;
 pub mod audit_writer;
 pub mod dispatcher;
+pub mod job_executor;
 pub mod jsonl_sink;
 pub mod orbit_tool_executor;
 pub mod tool_enforcement;
 
-pub use agent_loop_driver::drive_agent_loop;
+pub use agent_loop_driver::{
+    drive_agent_loop, drive_agent_loop_with_session, reset_replay_transport,
+};
 pub use audit_writer::{V2AuditWriter, WriteError};
 pub use dispatcher::{
     DispatchError, DispatchOutcome, V2DispatchInput, V2RuntimeHost, dispatch_v2_activity,
 };
+pub use job_executor::{JobOutcome, execute_job, validate_job};
 pub use jsonl_sink::V2JsonlSink;
 pub use orbit_tool_executor::OrbitToolCallExecutor;
 pub use tool_enforcement::{EnforcedAuditSink, EnforcementDecision};
