@@ -1,4 +1,5 @@
 use std::process::Child;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use orbit_types::OrbitError;
@@ -9,7 +10,7 @@ use super::cleanup::terminate_orphaned_process_group;
 use super::cleanup::{kill_process_group, terminate_process_group, termination_signal};
 #[cfg(unix)]
 use super::signal::{SignalHandlerGuard, signal_message};
-use super::tee::{spawn_stderr_drain, spawn_stdout_drain};
+use super::tee::{spawn_stderr_drain, spawn_stdin_write, spawn_stdout_drain};
 
 pub(crate) const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -26,25 +27,42 @@ pub(crate) fn wait_with_optional_timeout(
     mut child: Child,
     timeout_ms: Option<u64>,
     debug: bool,
+    stdin_payload: Option<Vec<u8>>,
 ) -> Result<WaitResult, OrbitError> {
     // Drain stdout/stderr in background threads so the child never blocks on a
     // full pipe buffer (which would prevent it from exiting).
     //
-    // In debug mode, stdout is tee'd to stderr so the user sees agent output
-    // live while we still accumulate it for JSON parsing. Stderr is inherited
-    // directly by the child process (set in process::spawn), so no thread is
-    // needed for it.
+    // In debug mode, both stdout and stderr are tee'd through redaction-aware
+    // drains so the user sees live output without bypassing capture/redaction.
+    let (stdin_result_rx, stdin_thread) = spawn_stdin_thread(&mut child, stdin_payload)?;
     let stdout_thread = child
         .stdout
         .take()
         .map(|out| spawn_stdout_drain(out, debug));
-    let stderr_thread = child.stderr.take().map(spawn_stderr_drain);
+    let stderr_thread = child
+        .stderr
+        .take()
+        .map(|err| spawn_stderr_drain(err, debug));
 
     #[cfg(unix)]
     let signal_guard = SignalHandlerGuard::install()?;
 
     let deadline = timeout_ms.map(|ms| Instant::now() + Duration::from_millis(ms));
+    let mut stdin_write_error = None;
     let (timed_out, interrupted_signal, exit_success, exit_code) = loop {
+        if let Some(rx) = stdin_result_rx.as_ref() {
+            match rx.try_recv() {
+                Ok(Ok(())) => {}
+                Ok(Err(message)) => {
+                    terminate_process_group(&mut child, termination_signal(), WAIT_POLL_INTERVAL)?;
+                    stdin_write_error = Some(OrbitError::Execution(message));
+                    break (false, None, false, None);
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {}
+            }
+        }
+
         let wait_slice = deadline
             .map(|end| {
                 end.saturating_duration_since(Instant::now())
@@ -89,6 +107,22 @@ pub(crate) fn wait_with_optional_timeout(
     let mut stderr = stderr_thread
         .map(|h| h.join().unwrap_or_default())
         .unwrap_or_default();
+    let stdin_thread_panicked = stdin_thread.map(|h| h.join().is_err()).unwrap_or(false);
+
+    if stdin_thread_panicked {
+        return Err(OrbitError::Execution(
+            "stdin writer thread panicked".to_string(),
+        ));
+    }
+    if let Some(error) = stdin_write_error {
+        return Err(error);
+    }
+    if !timed_out
+        && interrupted_signal.is_none()
+        && let Some(result) = receive_stdin_result(stdin_result_rx)
+    {
+        result.map_err(OrbitError::Execution)?;
+    }
 
     if timed_out {
         if !stderr.is_empty() {
@@ -115,4 +149,33 @@ pub(crate) fn wait_with_optional_timeout(
         stdout,
         stderr,
     })
+}
+
+fn spawn_stdin_thread(
+    child: &mut Child,
+    stdin_payload: Option<Vec<u8>>,
+) -> Result<
+    (
+        Option<Receiver<Result<(), String>>>,
+        Option<std::thread::JoinHandle<()>>,
+    ),
+    OrbitError,
+> {
+    match stdin_payload {
+        Some(bytes) => {
+            let stdin = child.stdin.take().ok_or_else(|| {
+                OrbitError::Execution("stdin requested but no stdin pipe available".to_string())
+            })?;
+            let (tx, rx) = mpsc::channel();
+            let handle = spawn_stdin_write(stdin, bytes, tx);
+            Ok((Some(rx), Some(handle)))
+        }
+        None => Ok((None, None)),
+    }
+}
+
+fn receive_stdin_result(
+    stdin_result_rx: Option<Receiver<Result<(), String>>>,
+) -> Option<Result<(), String>> {
+    stdin_result_rx.and_then(|rx| rx.recv().ok())
 }

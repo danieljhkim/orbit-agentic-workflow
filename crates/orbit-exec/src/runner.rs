@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::time::Instant;
 
 use orbit_types::{ExecutionResult, OrbitError, is_sensitive_env_name};
@@ -49,8 +48,8 @@ pub struct ExecRequest {
     pub timeout_ms: Option<u64>,
     pub stdin_mode: StdinMode,
     pub environment_mode: EnvironmentMode,
-    /// When `true`, stream agent stderr directly to the terminal and tee
-    /// stdout to stderr while accumulating it for JSON parsing.
+    /// When `true`, tee redaction-aware child stdout/stderr to the terminal
+    /// while preserving captured stdout for downstream parsing.
     pub debug: bool,
 }
 
@@ -61,19 +60,17 @@ pub fn run_process(
     sandbox.validate(req)?;
 
     let started = Instant::now();
-    let mut child = crate::process::spawn(req)?;
-    if let StdinMode::Bytes(bytes) = &req.stdin_mode {
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(bytes).map_err(|e| {
-                OrbitError::Execution(format!("failed to write process stdin: {e}"))
-            })?;
-        } else {
-            return Err(OrbitError::Execution(
-                "stdin requested but no stdin pipe available".to_string(),
-            ));
-        }
-    }
-    let result = crate::supervision::wait_with_optional_timeout(child, req.timeout_ms, req.debug)?;
+    let child = crate::process::spawn(req)?;
+    let stdin_payload = match &req.stdin_mode {
+        StdinMode::Bytes(bytes) => Some(bytes.clone()),
+        StdinMode::Inherit | StdinMode::Null => None,
+    };
+    let result = crate::supervision::wait_with_optional_timeout(
+        child,
+        req.timeout_ms,
+        req.debug,
+        stdin_payload,
+    )?;
 
     Ok(ExecutionResult {
         success: result.exit_success,

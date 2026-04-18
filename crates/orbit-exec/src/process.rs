@@ -7,11 +7,7 @@ use crate::runner::{EnvironmentMode, ExecRequest, StdinMode};
 pub(crate) fn spawn(req: &ExecRequest) -> Result<Child, OrbitError> {
     let mut command = Command::new(&req.program);
     command.args(&req.args).stdout(Stdio::piped());
-    if req.debug {
-        command.stderr(Stdio::inherit());
-    } else {
-        command.stderr(Stdio::piped());
-    }
+    command.stderr(Stdio::piped());
     if let Some(current_dir) = &req.current_dir {
         command.current_dir(current_dir);
     }
