@@ -348,15 +348,27 @@
         border-radius: 4px;
       }
       
-      .row-detail h4 {
+      .field-block {
+        margin-bottom: 20px;
+        padding: 16px 20px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      .field-block:last-child {
+        margin-bottom: 0;
+      }
+      
+      .field-block h4 {
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         color: var(--fg-dim);
-        margin: 0;
+        margin: 0 0 12px 0;
         font-weight: 600;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 4px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        padding-bottom: 8px;
       }
       
       .markdown-body {

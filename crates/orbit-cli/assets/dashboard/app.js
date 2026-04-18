@@ -148,19 +148,24 @@ function buildTaskDetail(task) {
   }
   if (metaCount > 0) detail.appendChild(meta);
 
+  const addField = (title, child) => {
+    const block = el("div", { class: "field-block" });
+    block.appendChild(el("h4", { text: title }));
+    block.appendChild(child);
+    detail.appendChild(block);
+  };
+
   if (task.description && task.description.trim()) {
-    detail.appendChild(el("h4", { text: "description" }));
     const view = el("div", { class: "markdown-body" });
     if (typeof marked !== "undefined") {
       view.innerHTML = marked.parse(task.description);
     } else {
       view.textContent = task.description;
     }
-    detail.appendChild(view);
+    addField("description", view);
   }
 
   if (Array.isArray(task.acceptance_criteria) && task.acceptance_criteria.length > 0) {
-    detail.appendChild(el("h4", { text: "acceptance criteria" }));
     const ul = el("ul", { class: "ac-list" });
     for (const ac of task.acceptance_criteria) {
       if (typeof marked !== "undefined") {
@@ -171,54 +176,52 @@ function buildTaskDetail(task) {
         ul.appendChild(el("li", { text: ac }));
       }
     }
-    detail.appendChild(ul);
+    addField("acceptance criteria", ul);
   }
 
   if (task.plan && task.plan.trim()) {
-    detail.appendChild(el("h4", { text: "plan" }));
     const view = el("div", { class: "markdown-body" });
     if (typeof marked !== "undefined") {
       view.innerHTML = marked.parse(task.plan);
     } else {
       view.textContent = task.plan;
     }
-    detail.appendChild(view);
+    addField("plan", view);
   }
 
   if (task.execution_summary && task.execution_summary.trim()) {
-    detail.appendChild(el("h4", { text: "execution summary" }));
     const view = el("div", { class: "markdown-body" });
     if (typeof marked !== "undefined") {
       view.innerHTML = marked.parse(task.execution_summary);
     } else {
       view.textContent = task.execution_summary;
     }
-    detail.appendChild(view);
+    addField("execution summary", view);
   }
 
   if (Array.isArray(task.comments) && task.comments.length > 0) {
-    detail.appendChild(el("h4", { text: "comments" }));
+    const wrap = el("div");
     for (const c of task.comments) {
       const line = el("div", { class: "comment-line" }, [
         document.createTextNode(`[${fmtAbsTime(c.at)}] `),
         el("span", { class: "author", text: c.by || "?" }),
         document.createTextNode(`: ${c.message || ""}`),
       ]);
-      detail.appendChild(line);
+      wrap.appendChild(line);
     }
+    addField("comments", wrap);
   }
 
   if (Array.isArray(task.context_files) && task.context_files.length > 0) {
-    detail.appendChild(el("h4", { text: "context" }));
     const ul = el("ul", { class: "file-list" });
     for (const path of task.context_files) {
       ul.appendChild(el("li", { text: path }));
     }
-    detail.appendChild(ul);
+    addField("context", ul);
   }
 
   if (Array.isArray(task.history) && task.history.length > 0) {
-    detail.appendChild(el("h4", { text: "recent history" }));
+    const wrap = el("div");
     const recent = task.history.slice(-5).reverse();
     for (const h of recent) {
       const note = h.note ? ` (${h.note})` : "";
@@ -227,8 +230,9 @@ function buildTaskDetail(task) {
         el("span", { class: "actor", text: h.by || "?" }),
         document.createTextNode(`: ${h.event}${note}`),
       ]);
-      detail.appendChild(line);
+      wrap.appendChild(line);
     }
+    addField("recent history", wrap);
   }
 
   detail.appendChild(buildActionsRow(task, detail));
