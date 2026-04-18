@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{Request, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use chrono::Utc;
@@ -55,6 +57,22 @@ fn validate_year_month(raw: &str) -> Result<(), orbit_core::OrbitError> {
     Ok(())
 }
 
+async fn require_localhost_origin(request: Request<Body>, next: Next) -> Response {
+    if !request.method().is_safe() {
+        if let Some(origin) = request.headers().get(header::ORIGIN) {
+            let origin = origin.to_str().unwrap_or("");
+            if !origin.starts_with("http://localhost") && !origin.starts_with("http://127.0.0.1") {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({"error": "cross-origin requests not allowed"})),
+                )
+                    .into_response();
+            }
+        }
+    }
+    next.run(request).await
+}
+
 pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
     Router::new()
         .route("/tasks", get(list_tasks))
@@ -68,6 +86,7 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
         .route("/scoreboard", get(scoreboard))
         .route("/diagnostics/metrics", get(list_diagnostics_metrics))
         .route("/diagnostics/friction", get(list_diagnostics_friction))
+        .layer(middleware::from_fn(require_localhost_origin))
 }
 
 #[derive(Deserialize, Default)]
