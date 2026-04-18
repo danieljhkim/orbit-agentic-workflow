@@ -225,26 +225,20 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
 
 /// Parse an `AgentResponseEnvelope` from the process stdout.
 ///
-/// The TS agent writes the envelope as a single JSON document to stdout.
-/// We also handle the case where stdout is empty and exit code is 0 (success
-/// with no output — valid for side-effect-only agents).
+/// Direct agents must emit a single protocol envelope. The only synthesized
+/// fallback we keep is a plain failure when the child exits non-zero without
+/// producing any stdout at all.
 fn parse_response_envelope(
     exec_result: &orbit_types::ExecutionResult,
 ) -> Result<AgentResponseEnvelope, OrbitError> {
     let stdout = exec_result.stdout.trim();
 
-    // Empty stdout with exit 0 is a side-effect success.
     if stdout.is_empty() {
         if exec_result.exit_code == Some(0) {
-            return Ok(AgentResponseEnvelope {
-                schema_version: 1,
-                status: "success".to_string(),
-                result: None,
-                error: None,
-                duration_ms: Some(exec_result.duration_ms),
-            });
+            return Err(OrbitError::AgentProtocolViolation(
+                "stdout does not contain an Orbit response envelope".to_string(),
+            ));
         }
-        // Non-zero exit with no stdout — synthesize a failure envelope.
         return Ok(AgentResponseEnvelope {
             schema_version: 1,
             status: "failed".to_string(),
@@ -276,31 +270,13 @@ fn parse_response_envelope(
                 envelope.schema_version
             )));
         }
+        validate_exit_alignment(exec_result, &envelope)?;
         return Ok(envelope);
     }
 
-    // stdout is valid JSON but not an envelope — wrap it.
-    if exec_result.exit_code == Some(0) {
-        Ok(AgentResponseEnvelope {
-            schema_version: 1,
-            status: "success".to_string(),
-            result: Some(value),
-            error: None,
-            duration_ms: Some(exec_result.duration_ms),
-        })
-    } else {
-        Ok(AgentResponseEnvelope {
-            schema_version: 1,
-            status: "failed".to_string(),
-            result: Some(value),
-            error: Some(AgentRunError {
-                code: AGENT_INVOCATION_FAILED.to_string(),
-                message: synthetic_error_message(exec_result),
-                details: Value::Null,
-            }),
-            duration_ms: Some(exec_result.duration_ms),
-        })
-    }
+    Err(OrbitError::AgentProtocolViolation(
+        "stdout does not contain an Orbit response envelope".to_string(),
+    ))
 }
 
 fn synthetic_error_message(exec_result: &orbit_types::ExecutionResult) -> String {
@@ -313,6 +289,34 @@ fn synthetic_error_message(exec_result: &orbit_types::ExecutionResult) -> String
         return stdout.to_string();
     }
     "agent execution failed".to_string()
+}
+
+fn validate_exit_alignment(
+    exec_result: &orbit_types::ExecutionResult,
+    envelope: &AgentResponseEnvelope,
+) -> Result<(), OrbitError> {
+    let timed_out = is_timeout(exec_result);
+    if timed_out && envelope.status != "timeout" {
+        return Err(OrbitError::AgentProtocolViolation(
+            "timeout process must report status=timeout".to_string(),
+        ));
+    }
+    if timed_out {
+        return Ok(());
+    }
+
+    let exit_code = exec_result.exit_code.unwrap_or(1);
+    if exit_code == 0 && envelope.status != "success" {
+        return Err(OrbitError::AgentProtocolViolation(
+            "exit_code=0 must report status=success".to_string(),
+        ));
+    }
+    if exit_code != 0 && envelope.status == "success" {
+        return Err(OrbitError::AgentProtocolViolation(
+            "non-zero exit code cannot report status=success".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

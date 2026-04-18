@@ -8,7 +8,7 @@ use super::{AgentResponseStatus, ResponseParseResult, trace::extract_invocation_
 pub fn parse_and_validate_response(exec_result: &ExecutionResult) -> ResponseParseResult {
     match parse_json_envelope(exec_result) {
         Ok(parsed) => Ok(parsed),
-        Err(_) => Ok(synthesize_response(exec_result)),
+        Err(err) => synthesize_response(exec_result).ok_or(err),
     }
 }
 
@@ -112,9 +112,9 @@ fn parse_json_envelope(exec_result: &ExecutionResult) -> ResponseParseResult {
 
 fn synthesize_response(
     exec_result: &ExecutionResult,
-) -> (AgentResponseEnvelope, AgentResponseStatus, InvocationTrace) {
+) -> Option<(AgentResponseEnvelope, AgentResponseStatus, InvocationTrace)> {
     if is_timeout(exec_result) {
-        return (
+        return Some((
             AgentResponseEnvelope {
                 schema_version: 1,
                 status: "timeout".to_string(),
@@ -131,27 +131,14 @@ fn synthesize_response(
                 duration_ms: exec_result.duration_ms,
                 ..InvocationTrace::default()
             },
-        );
+        ));
     }
 
-    if exec_result.exit_code.unwrap_or(1) == 0 {
-        return (
-            AgentResponseEnvelope {
-                schema_version: 1,
-                status: "success".to_string(),
-                result: None,
-                error: None,
-                duration_ms: Some(exec_result.duration_ms),
-            },
-            AgentResponseStatus::Success,
-            InvocationTrace {
-                duration_ms: exec_result.duration_ms,
-                ..InvocationTrace::default()
-            },
-        );
+    if exec_result.exit_code.unwrap_or(1) == 0 || !exec_result.stdout.trim().is_empty() {
+        return None;
     }
 
-    (
+    Some((
         AgentResponseEnvelope {
             schema_version: 1,
             status: "failed".to_string(),
@@ -168,7 +155,7 @@ fn synthesize_response(
             duration_ms: exec_result.duration_ms,
             ..InvocationTrace::default()
         },
-    )
+    ))
 }
 
 fn synthetic_error_message(exec_result: &ExecutionResult) -> String {

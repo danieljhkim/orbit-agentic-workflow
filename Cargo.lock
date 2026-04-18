@@ -1487,6 +1487,7 @@ name = "orbit-store"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "fs2",
  "jsonschema",
  "orbit-types",
  "rusqlite",

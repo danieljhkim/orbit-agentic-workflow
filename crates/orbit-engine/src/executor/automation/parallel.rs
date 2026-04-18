@@ -80,7 +80,7 @@ pub(super) fn require_run_id<'a>(input: &'a Value, activity: &str) -> Result<&'a
 struct PendingTask {
     task_id: String,
     context_files: Vec<String>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    original_status: TaskStatus,
     original_workspace_path: Option<String>,
 }
 
@@ -138,17 +138,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     };
     validate_selected_group(&selected_tasks)?;
 
-    // Move all selected tasks to in-progress before spawning workers. FIXME: decouple this
-    for task in &selected_tasks {
-        host.apply_task_automation_update(
-            &task.task_id,
-            TaskAutomationUpdate {
-                status: Some(TaskStatus::InProgress),
-                ..TaskAutomationUpdate::default()
-            },
-        )?;
-    }
-
     // Set up the shared worktree before spawning workers.
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
@@ -156,7 +145,7 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     let shared_worktree = resolve_shared_worktree_path(repo_root, &run_id)?;
     ensure_shared_worktree(repo_root, &shared_worktree, &base, &run_id)?;
     let shared_worktree_str = shared_worktree.to_string_lossy().to_string();
-    set_worker_workspace_path(host, &selected_tasks, &shared_worktree_str)?;
+    prepare_tasks_for_worker_launch(host, &selected_tasks, &shared_worktree_str)?;
 
     let mut pending = VecDeque::from(selected_tasks.clone());
 
@@ -408,43 +397,75 @@ impl From<Task> for PendingTask {
         Self {
             task_id: task.id,
             context_files: task.context_files,
+            original_status: task.status,
             original_workspace_path: task.workspace_path,
         }
     }
 }
 
-fn set_worker_workspace_path<H: TaskHost + ?Sized>(
+fn prepare_tasks_for_worker_launch<H: TaskHost + ?Sized>(
     host: &H,
     tasks: &[PendingTask],
     workspace_path: &str,
 ) -> Result<(), OrbitError> {
+    let mut updated = Vec::with_capacity(tasks.len());
     for task in tasks {
-        host.apply_task_automation_update(
+        let update_result = host.apply_task_automation_update(
             &task.task_id,
             TaskAutomationUpdate {
+                status: Some(TaskStatus::InProgress),
                 workspace_path: Some(Some(workspace_path.to_string())),
                 ..TaskAutomationUpdate::default()
             },
-        )?;
+        );
+        if let Err(err) = update_result {
+            return match rollback_prelaunch_task_updates(host, &updated) {
+                Ok(()) => Err(err),
+                Err(rollback_err) => Err(OrbitError::Execution(format!(
+                    "failed to prepare task '{}' for parallel launch: {err}; rollback failed: {rollback_err}",
+                    task.task_id
+                ))),
+            };
+        }
+        updated.push(task.clone());
     }
     Ok(())
+}
+
+fn rollback_prelaunch_task_updates<H: TaskHost + ?Sized>(
+    host: &H,
+    tasks: &[PendingTask],
+) -> Result<(), OrbitError> {
+    let mut failures = Vec::new();
+    for task in tasks.iter().rev() {
+        if let Err(err) = host.apply_task_automation_update(
+            &task.task_id,
+            TaskAutomationUpdate {
+                status: Some(task.original_status),
+                workspace_path: Some(task.original_workspace_path.clone()),
+                ..TaskAutomationUpdate::default()
+            },
+        ) {
+            failures.push(format!("{}: {err}", task.task_id));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(OrbitError::Execution(format!(
+            "failed to roll back pre-launch task updates ({})",
+            failures.join("; ")
+        )))
+    }
 }
 
 fn load_selected_tasks<H: TaskHost + ?Sized>(
     host: &H,
     batch_id: &str,
 ) -> Result<Option<Vec<PendingTask>>, OrbitError> {
-    let tasks =
-        host.list_tasks_filtered(Some(TaskStatus::InProgress), None, None, Some(batch_id))?;
-
+    let tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
     if tasks.is_empty() {
-        let remaining_batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
-        if remaining_batch_tasks.is_empty() {
-            return Ok(None);
-        }
-        return Err(OrbitError::InvalidInput(format!(
-            "no in-progress tasks found for batch_id '{batch_id}'"
-        )));
+        return Ok(None);
     }
 
     let mut seen = HashSet::new();
@@ -452,6 +473,12 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
     for task in tasks {
         if !seen.insert(task.id.clone()) {
             continue;
+        }
+        if !matches!(task.status, TaskStatus::Backlog | TaskStatus::InProgress) {
+            return Err(OrbitError::InvalidInput(format!(
+                "parallel dispatch batch '{batch_id}' contains task '{}' in unsupported status '{}'",
+                task.id, task.status
+            )));
         }
         selected.push(PendingTask::from(task));
     }

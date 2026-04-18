@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use orbit_types::{
@@ -26,6 +26,7 @@ impl TaskFileStore {
     }
 
     pub(crate) fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
+        let _allocation_lock = self.acquire_task_allocation_lock()?;
         self.ensure_layout()?;
         if params.title.trim().is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -84,7 +85,15 @@ impl TaskFileStore {
             execution_summary: params.execution_summary,
         };
 
-        self.write_bundle_for_state(initial_state, &bundle)?;
+        let task_dir = self.task_dir(initial_state, &bundle.doc.id);
+        if let Err(err) = self.write_bundle_for_state(initial_state, &bundle) {
+            if let Err(cleanup_err) = cleanup_partial_task_dir(&task_dir) {
+                return Err(OrbitError::Store(format!(
+                    "failed to create task bundle: {err}; cleanup failed: {cleanup_err}"
+                )));
+            }
+            return Err(err);
+        }
         Ok(bundle_to_task(initial_state, bundle))
     }
 
@@ -158,10 +167,12 @@ impl TaskFileStore {
                 "task actor must not be empty".to_string(),
             ));
         }
+        let _task_lock = self.acquire_task_lock(id)?;
         let Some((current_state, current_dir)) = self.locate_task(id)? else {
             return Err(OrbitError::TaskNotFound(id.to_string()));
         };
         let mut bundle = self.read_bundle_at(&current_dir)?;
+        let previous_bundle = bundle.clone();
 
         let title_changed = if let Some(value) = &fields.title {
             let changed = *value != bundle.doc.title;
@@ -240,7 +251,13 @@ impl TaskFileStore {
             });
         }
 
-        self.persist_bundle_update(current_state, &current_dir, current_state, &bundle)?;
+        self.persist_bundle_update(
+            current_state,
+            &current_dir,
+            current_state,
+            &previous_bundle,
+            &bundle,
+        )?;
         Ok(())
     }
 
@@ -254,10 +271,12 @@ impl TaskFileStore {
                 "task actor must not be empty".to_string(),
             ));
         }
+        let _task_lock = self.acquire_task_lock(id)?;
         let Some((current_state, current_dir)) = self.locate_task(id)? else {
             return Err(OrbitError::TaskNotFound(id.to_string()));
         };
         let mut bundle = self.read_bundle_at(&current_dir)?;
+        let previous_bundle = bundle.clone();
 
         if !fields.append_history.is_empty() {
             bundle.doc.history.extend(fields.append_history.clone());
@@ -293,7 +312,13 @@ impl TaskFileStore {
             });
         }
 
-        self.persist_bundle_update(current_state, &current_dir, target_state, &bundle)?;
+        self.persist_bundle_update(
+            current_state,
+            &current_dir,
+            target_state,
+            &previous_bundle,
+            &bundle,
+        )?;
         Ok(())
     }
 
@@ -302,10 +327,12 @@ impl TaskFileStore {
         id: &str,
         fields: &TaskReviewUpdateParams,
     ) -> Result<(), OrbitError> {
+        let _task_lock = self.acquire_task_lock(id)?;
         let Some((current_state, current_dir)) = self.locate_task(id)? else {
             return Err(OrbitError::TaskNotFound(id.to_string()));
         };
         let mut bundle = self.read_bundle_at(&current_dir)?;
+        let previous_bundle = bundle.clone();
 
         if let Some(ref threads) = fields.replace_review_threads {
             bundle.doc.review_threads = threads.clone();
@@ -317,7 +344,13 @@ impl TaskFileStore {
         }
 
         bundle.doc.updated_at = Utc::now();
-        self.persist_bundle_update(current_state, &current_dir, current_state, &bundle)?;
+        self.persist_bundle_update(
+            current_state,
+            &current_dir,
+            current_state,
+            &previous_bundle,
+            &bundle,
+        )?;
         Ok(())
     }
 
@@ -326,6 +359,7 @@ impl TaskFileStore {
         id: &str,
         fields: &TaskArtifactUpdateParams,
     ) -> Result<(), OrbitError> {
+        let _task_lock = self.acquire_task_lock(id)?;
         let Some((_, task_dir)) = self.locate_task(id)? else {
             return Err(OrbitError::TaskNotFound(id.to_string()));
         };
@@ -338,26 +372,53 @@ impl TaskFileStore {
     fn persist_bundle_update(
         &self,
         current_state: TaskStateDir,
-        current_dir: &PathBuf,
+        current_dir: &Path,
         target_state: TaskStateDir,
+        previous_bundle: &TaskBundle,
         bundle: &TaskBundle,
     ) -> Result<(), OrbitError> {
-        if target_state == current_state {
-            self.write_bundle_at(current_dir, bundle)?;
-        } else {
-            self.write_bundle_at(current_dir, bundle)?;
+        if let Err(err) = self.write_bundle_at(current_dir, bundle) {
+            return self.rollback_bundle_update(current_dir, previous_bundle, err);
+        }
+
+        if target_state != current_state {
             let target_dir = self.task_dir(target_state, &bundle.doc.id);
-            self.move_task_dir(current_dir, &target_dir)?;
+            if let Err(err) = self.move_task_dir(current_dir, &target_dir) {
+                return self.rollback_bundle_update(current_dir, previous_bundle, err);
+            }
         }
 
         Ok(())
     }
 
     pub(crate) fn delete_task(&self, id: &str) -> Result<bool, OrbitError> {
+        let _task_lock = self.acquire_task_lock(id)?;
         let Some((_, task_dir)) = self.locate_task(id)? else {
             return Ok(false);
         };
         fs::remove_dir_all(task_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         Ok(true)
+    }
+
+    fn rollback_bundle_update(
+        &self,
+        task_dir: &Path,
+        previous_bundle: &TaskBundle,
+        original_error: OrbitError,
+    ) -> Result<(), OrbitError> {
+        match self.write_bundle_at(task_dir, previous_bundle) {
+            Ok(()) => Err(original_error),
+            Err(rollback_error) => Err(OrbitError::Store(format!(
+                "failed to persist task bundle update: {original_error}; rollback failed: {rollback_error}"
+            ))),
+        }
+    }
+}
+
+fn cleanup_partial_task_dir(task_dir: &Path) -> Result<(), OrbitError> {
+    match fs::remove_dir_all(task_dir) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(OrbitError::Io(err.to_string())),
     }
 }
