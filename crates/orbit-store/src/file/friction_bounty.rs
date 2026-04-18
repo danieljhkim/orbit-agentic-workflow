@@ -12,6 +12,8 @@ use std::path::Path;
 
 use orbit_types::{OrbitError, normalize_attribution_label};
 
+use super::fs_utils::{with_exclusive_file_lock, write_atomic};
+
 type ModelScores = HashMap<String, u64>;
 type Scoreboard = HashMap<String, ModelScores>;
 
@@ -33,33 +35,22 @@ pub fn record_friction_rejected(scoreboard_dir: &Path, model: &str) -> Result<()
 fn increment(scoreboard_dir: &Path, metric: &str, model: &str) -> Result<(), OrbitError> {
     let path = scoreboard_dir.join("friction_bounty.json");
     let normalized_model = normalize_attribution_label(model, None);
-    let mut scoreboard: Scoreboard = if path.exists() {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| OrbitError::Io(format!("read friction_bounty.json: {e}")))?;
-        serde_json::from_str(&content)
-            .map_err(|e| OrbitError::Io(format!("parse friction_bounty.json: {e}")))?
-    } else {
-        HashMap::new()
-    };
+    with_exclusive_file_lock(&path, "friction bounty scoreboard", || {
+        let mut scoreboard: Scoreboard = if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| OrbitError::Io(format!("read friction_bounty.json: {e}")))?;
+            serde_json::from_str(&content)
+                .map_err(|e| OrbitError::Io(format!("parse friction_bounty.json: {e}")))?
+        } else {
+            HashMap::new()
+        };
 
-    let model_map = scoreboard.entry(metric.to_string()).or_default();
-    let counter = model_map.entry(normalized_model).or_insert(0);
-    *counter += 1;
+        let model_map = scoreboard.entry(metric.to_string()).or_default();
+        let counter = model_map.entry(normalized_model.clone()).or_insert(0);
+        *counter += 1;
 
-    let json = serde_json::to_string_pretty(&scoreboard)
-        .map_err(|e| OrbitError::Io(format!("serialize friction_bounty.json: {e}")))?;
-
-    // Write atomically via temp file + rename
-    let dir = path
-        .parent()
-        .ok_or_else(|| OrbitError::Io("no parent dir for friction_bounty.json".to_string()))?;
-    fs::create_dir_all(dir).map_err(|e| OrbitError::Io(format!("create scoreboard dir: {e}")))?;
-
-    let tmp = dir.join(".friction_bounty.json.tmp");
-    fs::write(&tmp, format!("{json}\n"))
-        .map_err(|e| OrbitError::Io(format!("write friction_bounty tmp: {e}")))?;
-    fs::rename(&tmp, &path)
-        .map_err(|e| OrbitError::Io(format!("rename friction_bounty tmp: {e}")))?;
-
-    Ok(())
+        let json = serde_json::to_string_pretty(&scoreboard)
+            .map_err(|e| OrbitError::Io(format!("serialize friction_bounty.json: {e}")))?;
+        write_atomic(&path, &format!("{json}\n"))
+    })
 }
