@@ -543,6 +543,16 @@
         z-index: 90;
       }
       
+      .tab-indicator {
+        position: absolute;
+        bottom: -1px;
+        height: 2px;
+        background: var(--accent);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 2px 2px 0 0;
+        pointer-events: none;
+      }
+      
       .tab {
         background: transparent;
         color: var(--fg-dim);
@@ -554,14 +564,13 @@
         font-size: 13px;
         border-bottom: 2px solid transparent;
         margin-bottom: -1px;
-        transition: all 0.2s ease;
+        transition: color 0.2s ease;
       }
       
       .tab:hover { color: var(--fg); }
       
       .tab.active {
         color: var(--fg);
-        border-bottom-color: var(--accent);
       }
       
       .tab-pane { display: none; animation: fadeIn 0.3s ease; }
@@ -621,6 +630,7 @@
         padding: 8px 16px;
         border-bottom: 1px solid var(--border);
         background: rgba(24, 24, 27, 0.5);
+        position: relative;
       }
       
       .subtab {

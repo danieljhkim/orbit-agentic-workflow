@@ -605,7 +605,7 @@ function wireSearch() {
 const TABS = ["tasks", "scoreboard", "diagnostics"];
 const DIAG_SUBTABS = ["metrics", "friction"];
 
-function setActiveTab(raw) {
+      function setActiveTab(raw) {
   const [topRaw, subRaw] = String(raw || "").split("/");
   const top = TABS.includes(topRaw) ? topRaw : "tasks";
   for (const tab of document.querySelectorAll(".tab")) {
@@ -614,6 +614,15 @@ function setActiveTab(raw) {
   for (const pane of document.querySelectorAll(".tab-pane")) {
     pane.classList.toggle("active", pane.dataset.tab === top);
   }
+  
+  const indicator = $("tab-indicator") || el("div", {id: "tab-indicator", class: "tab-indicator"});
+  if (!indicator.parentNode) document.querySelector(".tabs").appendChild(indicator);
+  const activeTab = document.querySelector(`.tab[data-tab="${top}"]`);
+  if (activeTab) {
+    indicator.style.width = `${activeTab.offsetWidth}px`;
+    indicator.style.left = `${activeTab.offsetLeft}px`;
+  }
+
   let hash = `#${top}`;
   if (top === "diagnostics") {
     const sub = DIAG_SUBTABS.includes(subRaw) ? subRaw : activeDiagSubtab;
@@ -631,6 +640,15 @@ function setDiagSubtab(name) {
   for (const btn of document.querySelectorAll("#diag-subtabs .subtab")) {
     btn.classList.toggle("active", btn.dataset.subtab === name);
   }
+
+  const subIndicator = $("subtab-indicator") || el("div", {id: "subtab-indicator", class: "tab-indicator"});
+  if (!subIndicator.parentNode) document.querySelector("#diag-subtabs").appendChild(subIndicator);
+  const activeBtn = document.querySelector(`.subtab[data-subtab="${name}"]`);
+  if (activeBtn) {
+    subIndicator.style.width = `${activeBtn.offsetWidth}px`;
+    subIndicator.style.left = `${activeBtn.offsetLeft}px`;
+  }
+
   $("diag-title").textContent = name;
   renderDiagnostics();
 }
