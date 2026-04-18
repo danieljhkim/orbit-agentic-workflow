@@ -643,6 +643,24 @@
         font-size: 12px;
       }
       
+      @keyframes highlight-changed {
+        0% { background-color: rgba(16, 185, 129, 0.4); }
+        100% { background-color: transparent; }
+      }
+      
+      @keyframes highlight-new {
+        0% { background-color: rgba(59, 130, 246, 0.4); }
+        100% { background-color: transparent; }
+      }
+      
+      .data-changed {
+        animation: highlight-changed 1.5s ease-out;
+      }
+      
+      .data-new {
+        animation: highlight-new 1.5s ease-out;
+      }
+      
       footer {
         padding: 24px;
         font-family: var(--font-mono);

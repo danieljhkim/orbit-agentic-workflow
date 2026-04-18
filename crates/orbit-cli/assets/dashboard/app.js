@@ -77,19 +77,33 @@ function syncNodes(container, newNodesArr) {
     if (node.dataset.key) oldMap.set(node.dataset.key, node);
   }
 
-  container.innerHTML = "";
-  for (const newNode of newNodesArr) {
+  for (let i = 0; i < newNodesArr.length; i++) {
+    const newNode = newNodesArr[i];
     const key = newNode.dataset.key;
+    let nodeToPlace = newNode;
+
     if (key && oldMap.has(key)) {
       const oldNode = oldMap.get(key);
       if (oldNode.dataset.hash === newNode.dataset.hash) {
-        container.appendChild(oldNode);
+        nodeToPlace = oldNode;
       } else {
-        container.appendChild(newNode);
+        nodeToPlace.classList.add("data-changed");
       }
-    } else {
-      container.appendChild(newNode);
+    } else if (key) {
+      nodeToPlace.classList.add("data-new");
     }
+
+    if (container.children[i] !== nodeToPlace) {
+      if (container.children[i]) {
+        container.insertBefore(nodeToPlace, container.children[i]);
+      } else {
+        container.appendChild(nodeToPlace);
+      }
+    }
+  }
+
+  while (container.children.length > newNodesArr.length) {
+    container.removeChild(container.lastElementChild);
   }
 }
 
@@ -456,33 +470,42 @@ function readPath(obj, path) {
 
 function renderScoreboard(summary) {
   const body = $("scoreboard-body");
-  const frag = document.createDocumentFragment();
   
   const agentsMap = (summary && summary.agents) || {};
   const entries = Object.entries(agentsMap);
   $("scoreboard-count").textContent = `${entries.length}`;
+  
   if (entries.length === 0) {
-    frag.appendChild(el("div", { class: "empty", text: "No scoreboard data yet." }));
-    syncNodes(body, Array.from(frag.children));
+    syncNodes(body, [el("div", { class: "empty", text: "No scoreboard data yet." })]);
     return;
   }
+  
   entries.sort(([, a], [, b]) => (b.tasks_completed || 0) - (a.tasks_completed || 0));
 
-  const table = el("table", { class: "scoreboard-table" });
-  const thead = el("thead");
-  const headRow = el("tr");
-  for (const col of SCOREBOARD_COLUMNS) {
-    headRow.appendChild(
-      el(col === SCOREBOARD_COLUMNS[0] ? "th" : "th", {
-        class: col.num ? "num" : "",
-        text: col.label,
-      }),
-    );
+  let table = body.querySelector("table.scoreboard-table");
+  let tbody;
+  if (!table) {
+    table = el("table", { class: "scoreboard-table" });
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const col of SCOREBOARD_COLUMNS) {
+      headRow.appendChild(
+        el(col === SCOREBOARD_COLUMNS[0] ? "th" : "th", {
+          class: col.num ? "num" : "",
+          text: col.label,
+        }),
+      );
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    tbody = el("tbody");
+    table.appendChild(tbody);
+    syncNodes(body, [table]);
+  } else {
+    tbody = table.querySelector("tbody");
   }
-  thead.appendChild(headRow);
-  table.appendChild(thead);
 
-  const tbody = el("tbody");
+  const frag = document.createDocumentFragment();
   for (const [name, agent] of entries) {
     const row = el("tr");
     for (const col of SCOREBOARD_COLUMNS) {
@@ -508,11 +531,10 @@ function renderScoreboard(summary) {
     }
     row.dataset.key = `agent-${name}`;
     row.dataset.hash = JSON.stringify(agent);
-    tbody.appendChild(row);
+    frag.appendChild(row);
   }
-  table.appendChild(tbody);
-  frag.appendChild(table);
-  syncNodes(body, Array.from(frag.children));
+  
+  syncNodes(tbody, Array.from(frag.children));
 }
 
 function showError(panelId, err) {
@@ -672,23 +694,35 @@ const DIAG_FRICTION_COLUMNS = [
 
 function renderDiagnosticsTable(rows, columns) {
   const body = $("diag-body");
-  const frag = document.createDocumentFragment();
   
   if (!rows || rows.length === 0) {
-    frag.appendChild(el("div", { class: "empty", text: "No entries this month." }));
-    syncNodes(body, Array.from(frag.children));
+    syncNodes(body, [el("div", { class: "empty", text: "No entries this month." })]);
     return;
   }
-  const table = el("table", { class: "scoreboard-table" });
-  const thead = el("thead");
-  const headRow = el("tr");
-  for (const col of columns) {
-    headRow.appendChild(el("th", { class: col.num ? "num" : "", text: col.label }));
+  
+  let table = body.querySelector("table.scoreboard-table");
+  let tbody;
+  const tableSig = columns.map(c => c.key).join("-");
+  if (!table || table.dataset.sig !== tableSig) {
+    table = el("table", { class: "scoreboard-table" });
+    table.dataset.sig = tableSig;
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const col of columns) {
+      headRow.appendChild(el("th", { class: col.num ? "num" : "", text: col.label }));
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    tbody = el("tbody");
+    table.appendChild(tbody);
+    syncNodes(body, [table]);
+  } else {
+    tbody = table.querySelector("tbody");
   }
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-  const tbody = el("tbody");
-  for (const row of rows) {
+
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const tr = el("tr");
     for (const col of columns) {
       const baseClass =
@@ -699,14 +733,12 @@ function renderDiagnosticsTable(rows, columns) {
       td.textContent = text;
       tr.appendChild(td);
     }
-    // Hash based on stringification of the row minus dynamic timestamps if we wanted to be perfectly strict
-    tr.dataset.key = `diag-${Math.random()}`; // Without a unique ID in diagnostic rows, we just allow replacement, OR hash row content
+    tr.dataset.key = `diag-${row.ts || ''}-${row.step || i}-${row.command || row.actor_identity || ''}`;
     tr.dataset.hash = JSON.stringify(row);
-    tbody.appendChild(tr);
+    frag.appendChild(tr);
   }
-  table.appendChild(tbody);
-  frag.appendChild(table);
-  syncNodes(body, Array.from(frag.children));
+  
+  syncNodes(tbody, Array.from(frag.children));
 }
 
 function renderDiagnostics() {
