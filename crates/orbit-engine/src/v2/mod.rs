@@ -4,12 +4,14 @@
 //! shapes, tool-allowlist helpers). This module wires those types to the
 //! engine's executor infrastructure and to the loop-engine audit pipeline.
 
+pub mod agent_loop_driver;
 pub mod audit_writer;
 pub mod dispatcher;
 pub mod jsonl_sink;
 pub mod orbit_tool_executor;
 pub mod tool_enforcement;
 
+pub use agent_loop_driver::drive_agent_loop;
 pub use audit_writer::{V2AuditWriter, WriteError};
 pub use dispatcher::{
     DispatchError, DispatchOutcome, V2DispatchInput, V2RuntimeHost, dispatch_v2_activity,
