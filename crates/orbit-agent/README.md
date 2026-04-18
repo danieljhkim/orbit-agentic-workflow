@@ -1,0 +1,174 @@
+# orbit-agent
+
+Agent provider abstraction for Orbit. Two transport families coexist:
+
+- **CLI transports** drive `claude`, `codex`, `gemini`, `ollama`, and `mock`
+  as subprocesses via the existing `AgentRuntime` trait. An invocation
+  builds an `AgentInvocationSpec` (program, args, stdin envelope) that the
+  engine runs through `orbit-exec`.
+- **HTTP transports** drive providers directly through the sibling
+  `LoopTransport` trait. The provider-agnostic `AgentLoop` runs the
+  send/parse/dispatch cycle, enforcing guardrails and tool-allowlist rules
+  and emitting a complete structured audit trail.
+
+The two trait shapes diverge enough — one-shot command descriptor vs.
+iterative conversation driver — that they are kept as siblings. The CLI
+path is unchanged by the HTTP layer's introduction.
+
+## HTTP loop primitives
+
+```
+crates/orbit-agent/src/loop_engine/
+  agent_loop.rs     AgentLoop::run, guardrails, iteration bookkeeping
+  session.rs        Session (id, provider, model, system_prompt, history)
+  transport.rs      LoopTransport trait + Message/ContentBlock/TurnRequest/TurnResponse
+  tool_dispatch.rs  Thin adapter around orbit_tools::ToolRegistry::execute
+  audit/            LoopAuditEvent, AuditSink, JsonlFileSink, BlobStore, redaction
+```
+
+- `AgentLoop::run(session, cfg, transport, registry, ctx, sink, prompt)`
+  runs a conversation turn: builds a `TurnRequest` from replayed history,
+  hands it to the transport, parses `tool_use` blocks out of the response,
+  dispatches each through the shared `ToolRegistry`, and appends tool
+  results as the next user turn until the provider returns `end_turn` or a
+  guardrail fires.
+- `Session::new(provider, model, system_prompt, audit_tag)` creates an
+  in-process conversation handle with a stable opaque identifier.
+  `Session::send(cfg, transport, registry, ctx, sink, prompt)` is a thin
+  wrapper that delegates to `AgentLoop::run`. Sessions are not persisted
+  to disk; `close(run_id, sink)` records a `SessionClose` event.
+- `LoopTransport` has one hot method — `send_turn(&TurnRequest) ->
+  Result<TurnResponse, TransportError>` — plus `provider()` and `model()`
+  identifiers. The trait is shaped around the most expressive wire format
+  (Anthropic content blocks and `cache_control` markers) so collapsing
+  other providers into it does not lose fidelity.
+
+## HTTP transports landed in this phase
+
+- `providers::anthropic::AnthropicMessagesTransport` — `POST
+  https://api.anthropic.com/v1/messages` via blocking `reqwest`. Applies
+  `cache_control: ephemeral` to the last system block and, per the loop's
+  cache hint, to the last message in the replayed history.
+
+Two follow-up tasks cover the remaining surfaces in the parent task:
+OpenAI-compatible endpoints (hosted OpenAI, Codex, and local
+Ollama/LM Studio via `base_url`) and Google Gemini `generateContent`.
+
+## Tool-allowlist contract
+
+Two independent knobs on `AgentLoopConfig`:
+
+- `tool_allowlist: Vec<String>` — the **dispatch** allowlist. The only
+  tools the loop will actually execute. Empty = **no tools**, not "all
+  tools".
+- `advertised_tools: Option<Vec<String>>` — the set advertised to the
+  model in the request payload. When `None`, this equals
+  `tool_allowlist` (the common case: the model only knows about tools
+  it's allowed to call). When `Some`, the advertised set can be a
+  superset of the allowlist — useful when exercising the enforcement
+  path end-to-end, since a model won't emit a `tool_use` block for a
+  tool it was never told exists.
+
+When the model returns a `tool_use` block whose `name` is not in
+`tool_allowlist`, the loop emits a `PolicyDenial` audit event naming the
+tool and returns `AgentLoopError::PolicyDenied`. The tool is never
+dispatched through `ToolRegistry::execute`.
+
+All tool dispatch runs through `orbit_tools::ToolRegistry::execute` —
+there is no parallel tool path. Tool attribution, workspace boundaries,
+process allowlists, and `OrbitToolHost` routing flow from the same
+`ToolContext` used elsewhere in Orbit.
+
+## Guardrails
+
+Three distinct structured errors, each configurable on
+`AgentLoopConfig`:
+
+| Guardrail | Field | Error |
+|---|---|---|
+| Iteration cap | `max_iterations: u32` | `AgentLoopError::MaxIterations { limit, observed }` |
+| Token budget | `max_total_tokens: u64` | `AgentLoopError::TokenBudget { limit, observed }` |
+| Wall-clock deadline | `wall_clock_timeout: Duration` | `AgentLoopError::Timeout { limit_ms, observed_ms }` |
+
+Each check runs at iteration start and after every HTTP response. The
+first to trip wins.
+
+## Audit model
+
+Every operation emits a structured event. Events carry sha256 pointers
+to verbatim payloads; full bodies live in a separate content-addressed
+store. Event kinds:
+
+- `session_spawn`, `session_close`
+- `http_request`, `http_response`
+- `tool_call_requested`, `tool_call_result`
+- `iteration_boundary`
+- `policy_denial`
+
+Every event carries `run_id`, `session_id`, optional `task_id`, and
+`iteration` (when applicable) so downstream querying can scope results.
+
+### Default sink layout
+
+`JsonlFileSink::open(audit_root, run_id)` writes:
+
+```
+{audit_root}/
+  loop/{run_id}.jsonl              one JSON object per line, append-only
+  blobs/{hash[..2]}/{hash}         content-addressed verbatim payloads
+```
+
+The JSONL file and blob store are designed to be read by a later
+`orbit.audit.loop.*` query tool family (split to its own follow-up
+task). Humans can inspect them today via the existing `orbit audit`
+CLI surface.
+
+## Redaction
+
+Blob writes run through `RedactionMiddleware::default_redaction()`
+before the bytes reach disk. The default ruleset scrubs:
+
+- `"authorization": "..."`, `"x-api-key": "..."`, `"api_key": "..."`
+  (JSON-shaped)
+- `Authorization: ...`, `x-api-key: ...`, `api_key: ...` (raw header
+  lines)
+- `Bearer <token>` anywhere in the payload
+
+Redaction runs at **write time**, not read time — the stored bytes are
+already safe, so a future `orbit.audit.loop.blob.get` tool does not need
+to re-apply it.
+
+## Running the examples
+
+Five runnable examples under `crates/orbit-agent/examples/`:
+
+| Example | Needs `ANTHROPIC_API_KEY` | Demonstrates |
+|---|---|---|
+| `anthropic_messages` | yes (skips cleanly if unset) | Single-turn prompt, usage + terminate reason printed |
+| `session_continuation` | yes (skips cleanly) | 3 consecutive `send()` calls; asserts history replayed + `cache_read_input_tokens > 0` on turn 2+ |
+| `tool_allowlist` | yes (skips cleanly) | Allowlist `["fs.read"]` + prompt pressuring `fs.write`; asserts `PolicyDenied` error and target file absent |
+| `guardrails_smoke` | no | All three guardrails trip via an in-process scripted transport; verifies distinct error variants |
+| `redaction_smoke` | no | Writes a payload containing `Bearer secret-xyz` and asserts the stored blob does not contain `secret-xyz` |
+
+Run any example with `cargo run -p orbit-agent --example <name>`. The
+API-key-backed examples skip with exit 0 and a printed notice when the
+key is unset, so `cargo build --examples -p orbit-agent` works in CI
+without credentials.
+
+## What didn't land in this task
+
+These are split to follow-up tasks that build on the primitives here:
+
+- **OpenAI-compatible transport** (hosted OpenAI, Codex, local
+  Ollama/LM Studio via `base_url`) and its `openai_compat.rs` example.
+- **Gemini `generateContent` transport** and its `google_gemini.rs`
+  example.
+- **`orbit.audit.loop.*` query tools** (`list`, `show`, `blob.get`) so
+  agents can programmatically inspect the JSONL + blob layout.
+
+## Dependency direction
+
+`orbit-types`, `orbit-tools` → `orbit-agent` → `orbit-engine`. Adding
+the HTTP loop does not introduce any new edge on `orbit-engine`,
+`orbit-core`, or `orbit-cli`. The CLI providers and `AgentRuntime` trait
+are unchanged.

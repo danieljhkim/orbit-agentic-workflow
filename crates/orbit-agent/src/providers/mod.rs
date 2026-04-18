@@ -1,15 +1,19 @@
-//! Concrete agent provider implementations and CLI transport helpers.
+//! Concrete agent provider implementations.
 //!
-//! Each provider (`claude`, `codex`, `gemini`, `ollama`, `mock_agent`) translates an [`AgentRequest`]
-//! into a CLI command invocation: a program path, argument list, and stdin bytes
-//! that the engine will pass to `orbit-exec`. Provider selection is handled by
-//! the runtime registry, while each provider module owns the key/env metadata
-//! needed to build its invocation spec.
+//! Two families live here:
 //!
-//! The `common` module contains the shared invocation helper used by all
-//! providers so that the CLI transport shape stays consistent regardless of
-//! which AI backend is selected.
+//! - **CLI transports** (`claude`, `codex`, `gemini`, `ollama`, `mock_agent`):
+//!   translate an [`AgentRequest`] into a CLI command invocation and stdin
+//!   envelope that the engine runs via `orbit-exec`.
+//! - **HTTP transports** (`anthropic`): implement the sibling
+//!   [`LoopTransport`](crate::loop_engine::LoopTransport) trait against a
+//!   provider's HTTP API. Used by [`AgentLoop`](crate::loop_engine::AgentLoop)
+//!   with explicit guardrails, allowlist enforcement, and audit wiring.
+//!
+//! The two families coexist: adding an HTTP transport does not remove the
+//! existing CLI path, and the shared `AgentRuntime` trait is unchanged.
 
+pub mod anthropic;
 pub(crate) mod claude;
 pub(crate) mod codex;
 mod common;

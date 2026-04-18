@@ -1418,8 +1418,14 @@ dependencies = [
 name = "orbit-agent"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "orbit-tools",
  "orbit-types",
+ "regex",
+ "reqwest",
+ "serde",
  "serde_json",
+ "sha2",
  "tracing",
 ]
 

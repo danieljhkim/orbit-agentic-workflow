@@ -1,27 +1,43 @@
-//! Agent provider abstraction for driving AI agents (Claude, Codex, Gemini, Ollama, mock) via CLI.
+//! Agent provider abstraction for Orbit. Two transport families coexist:
 //!
-//! Defines the [`AgentRuntime`] trait and provider implementations that translate
-//! an [`AgentRequest`] (skill, input, tools) into a concrete CLI command and stdin
-//! payload. The engine spawns the resulting command via `orbit-exec` and parses
-//! the agent's JSON envelope response.
+//! - **CLI transports** — drive `claude`, `codex`, `gemini`, `ollama`, or
+//!   `mock` as subprocesses through [`AgentRuntime`]. Each runtime builds an
+//!   [`AgentInvocationSpec`] (program, args, stdin envelope) that the engine
+//!   executes through `orbit-exec`; responses are parsed via
+//!   [`parse_and_validate_response`].
+//! - **HTTP transports** — drive providers directly through the
+//!   [`LoopTransport`](loop_engine::LoopTransport) sibling trait. The
+//!   provider-agnostic [`AgentLoop`](loop_engine::AgentLoop) runs the
+//!   send/parse/dispatch cycle, enforcing guardrails and tool-allowlist rules
+//!   and emitting the full structured audit trail via
+//!   [`AuditSink`](loop_engine::AuditSink).
+//!
+//! The two trait shapes differ intentionally — one-shot command descriptor
+//! vs. iterative conversation driver — so they coexist instead of being
+//! forcibly unified. The CLI path is unchanged by this module's introduction;
+//! existing activities keep working.
 //!
 //! # Role
-//! Depends on `orbit-types` and is consumed by `orbit-engine`, which calls
-//! `AgentRuntime::build_response` to obtain a runnable command descriptor and
-//! then executes it through `orbit-exec`.
+//! Depends on `orbit-types` (shared domain types) and `orbit-tools`
+//! (`ToolRegistry` dispatch for HTTP-loop tool calls). Consumed by
+//! `orbit-engine`.
 //!
 //! # Key exports
-//! - [`AgentRuntime`] trait — implement to add a new agent provider
-//! - [`Agent`] / [`AgentConfig`] — high-level agent configuration
-//! - [`AgentRequest`] / [`AgentInvocationSpec`] — request and CLI-command invocation types
-//! - [`AgentOperation`] / [`AgentResponseStatus`] — operation kinds and status variants
-//! - [`parse_and_validate_response`] — parses the agent's JSON envelope, usage, and tool traces
+//! - [`AgentRuntime`] trait and CLI [`Agent`] / [`AgentConfig`] wrappers
+//! - [`parse_and_validate_response`] for CLI response envelopes
+//! - [`loop_engine::AgentLoop`], [`loop_engine::Session`],
+//!   [`loop_engine::LoopTransport`], [`loop_engine::LoopAuditEvent`],
+//!   [`loop_engine::AuditSink`] for the HTTP path
+//! - [`providers::anthropic::AnthropicMessagesTransport`] — Anthropic HTTP
+//!   transport (Phase 1). OpenAI-compat and Gemini HTTP transports land in
+//!   follow-up tasks.
 //!
 //! # Dependency direction
-//! `orbit-types` → `orbit-agent` → orbit-engine
+//! `orbit-types` / `orbit-tools` → `orbit-agent` → `orbit-engine`
 
 mod agent;
-mod providers;
+pub mod loop_engine;
+pub mod providers;
 mod runtime;
 mod types;
 
