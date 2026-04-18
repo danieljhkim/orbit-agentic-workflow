@@ -226,10 +226,8 @@ fn smoke_retry(samples: &Path, audit_root: &Path) -> Result<(), String> {
     // And the observed timestamp delta between the two step.retry events must
     // be at least the first declared backoff (100ms) — tolerates scheduling
     // jitter, rejects "didn't sleep at all".
-    if let (
-        V2AuditEventKind::StepRetry { .. },
-        V2AuditEventKind::StepRetry { .. },
-    ) = (&retries[0].kind, &retries[1].kind)
+    if let (V2AuditEventKind::StepRetry { .. }, V2AuditEventKind::StepRetry { .. }) =
+        (&retries[0].kind, &retries[1].kind)
     {
         let t0 = retries[0].envelope.ts;
         let t1 = retries[1].envelope.ts;

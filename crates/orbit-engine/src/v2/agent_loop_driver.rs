@@ -70,9 +70,10 @@ fn drive_inner(
     run_id: &str,
     audit: Arc<V2AuditWriter>,
     session: &mut Session,
-    _input: &Value,
+    input: &Value,
 ) -> Result<LoopOutcome, DispatchError> {
     let model = resolve_model(spec);
+    let user_prompt = user_prompt_from_input(input)?;
 
     if replay_active() {
         // Reuse the same ReplayTransport across calls so the cursor advances
@@ -80,7 +81,7 @@ fn drive_inner(
         // need the transport's state to persist too, else every iteration
         // would replay the same first turn.
         let transport = acquire_replay_transport(&model)?;
-        run_loop(spec, run_id, audit, session, &*transport)
+        run_loop(spec, run_id, audit, session, &*transport, &user_prompt)
     } else {
         let key = api_key.ok_or_else(|| {
             DispatchError::AgentLoopFailed(
@@ -94,7 +95,26 @@ fn drive_inner(
         }
         let transport = AnthropicMessagesTransport::new(key.to_string(), model.clone())
             .map_err(|err| DispatchError::AgentLoopFailed(format!("transport: {err}")))?;
-        run_loop(spec, run_id, audit, session, &transport)
+        run_loop(spec, run_id, audit, session, &transport, &user_prompt)
+    }
+}
+
+fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
+    match input {
+        Value::Object(map) => match map.get("prompt") {
+            Some(prompt) => prompt_text(prompt),
+            None => prompt_text(input),
+        },
+        _ => prompt_text(input),
+    }
+}
+
+fn prompt_text(value: &Value) -> Result<String, DispatchError> {
+    match value {
+        Value::Null => Ok(String::new()),
+        Value::String(text) => Ok(text.clone()),
+        other => serde_json::to_string(other)
+            .map_err(|err| DispatchError::AgentLoopFailed(format!("serialize prompt: {err}"))),
     }
 }
 
@@ -238,6 +258,7 @@ fn run_loop<T: LoopTransport>(
     audit: Arc<V2AuditWriter>,
     session: &mut Session,
     transport: &T,
+    user_prompt: &str,
 ) -> Result<LoopOutcome, DispatchError> {
     let mut registry = orbit_tools::ToolRegistry::new();
     // In replay mode, make side-effect-free builtins available so scripted
@@ -270,7 +291,7 @@ fn run_loop<T: LoopTransport>(
         &registry,
         &tool_ctx,
         &enforced,
-        &spec.instruction,
+        user_prompt,
     );
     match res {
         Ok(outcome) => Ok(outcome),

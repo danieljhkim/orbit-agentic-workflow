@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::thread::ThreadId;
 
 use chrono::Utc;
 use orbit_agent::loop_engine::InMemorySink;
@@ -26,7 +28,14 @@ pub struct V2AuditWriter {
     envelope_sink: Option<Arc<V2JsonlSink>>,
     events: Mutex<Vec<V2AuditEvent>>,
     event_counter: Mutex<u64>,
-    parent_stack: Mutex<Vec<String>>,
+    parent_stacks: Mutex<HashMap<ThreadId, Vec<String>>>,
+}
+
+/// Restores the calling thread's previous parent stack on drop.
+pub(crate) struct ParentStackGuard<'a> {
+    writer: &'a V2AuditWriter,
+    thread_id: ThreadId,
+    previous: Option<Vec<String>>,
 }
 
 #[derive(Debug, Error)]
@@ -48,7 +57,7 @@ impl V2AuditWriter {
             envelope_sink: None,
             events: Mutex::new(Vec::new()),
             event_counter: Mutex::new(0),
-            parent_stack: Mutex::new(Vec::new()),
+            parent_stacks: Mutex::new(HashMap::new()),
         }
     }
 
@@ -94,12 +103,7 @@ impl V2AuditWriter {
     /// callers can use it as a parent for nested events.
     pub fn emit(&self, kind: V2AuditEventKind) -> Result<String, WriteError> {
         let event_id = self.next_event_id()?;
-        let parent_event_id = self
-            .parent_stack
-            .lock()
-            .map_err(|_| WriteError::Poisoned)?
-            .last()
-            .cloned();
+        let parent_event_id = self.current_parent_event_id()?;
         let event_type = event_type_of(&kind).to_string();
         let envelope = V2AuditEnvelope {
             schema_version: AUDIT_ENVELOPE_SCHEMA_VERSION,
@@ -126,20 +130,63 @@ impl V2AuditWriter {
 
     /// Push a parent context so subsequent events nest beneath it.
     pub fn push_parent(&self, event_id: String) -> Result<(), WriteError> {
-        self.parent_stack
+        let thread_id = std::thread::current().id();
+        self.parent_stacks
             .lock()
             .map_err(|_| WriteError::Poisoned)?
+            .entry(thread_id)
+            .or_default()
             .push(event_id);
         Ok(())
     }
 
     /// Pop the most recent parent context.
     pub fn pop_parent(&self) -> Result<Option<String>, WriteError> {
+        let thread_id = std::thread::current().id();
+        let mut stacks = self
+            .parent_stacks
+            .lock()
+            .map_err(|_| WriteError::Poisoned)?;
+        let popped = {
+            let stack = stacks.entry(thread_id).or_default();
+            stack.pop()
+        };
+        if stacks.get(&thread_id).is_some_and(Vec::is_empty) {
+            stacks.remove(&thread_id);
+        }
+        Ok(popped)
+    }
+
+    /// Snapshot the current thread's parent stack so callers can propagate
+    /// parentage into spawned worker threads.
+    pub(crate) fn parent_stack_snapshot(&self) -> Result<Vec<String>, WriteError> {
+        let thread_id = std::thread::current().id();
         Ok(self
-            .parent_stack
+            .parent_stacks
             .lock()
             .map_err(|_| WriteError::Poisoned)?
-            .pop())
+            .get(&thread_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// Install a parent stack for the current thread and restore the previous
+    /// value when the returned guard is dropped.
+    pub(crate) fn install_parent_stack(
+        &self,
+        stack: Vec<String>,
+    ) -> Result<ParentStackGuard<'_>, WriteError> {
+        let thread_id = std::thread::current().id();
+        let previous = self
+            .parent_stacks
+            .lock()
+            .map_err(|_| WriteError::Poisoned)?
+            .insert(thread_id, stack);
+        Ok(ParentStackGuard {
+            writer: self,
+            thread_id,
+            previous,
+        })
     }
 
     /// Snapshot of emitted events (for smoke verification).
@@ -176,6 +223,31 @@ impl V2AuditWriter {
             .map_err(|_| WriteError::Poisoned)?;
         *counter += 1;
         Ok(format!("v2evt-{}-{:08x}", self.run_id, *counter))
+    }
+
+    fn current_parent_event_id(&self) -> Result<Option<String>, WriteError> {
+        let thread_id = std::thread::current().id();
+        Ok(self
+            .parent_stacks
+            .lock()
+            .map_err(|_| WriteError::Poisoned)?
+            .get(&thread_id)
+            .and_then(|stack| stack.last().cloned()))
+    }
+}
+
+impl Drop for ParentStackGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut stacks) = self.writer.parent_stacks.lock() {
+            match self.previous.take() {
+                Some(previous) if !previous.is_empty() => {
+                    stacks.insert(self.thread_id, previous);
+                }
+                _ => {
+                    stacks.remove(&self.thread_id);
+                }
+            }
+        }
     }
 }
 

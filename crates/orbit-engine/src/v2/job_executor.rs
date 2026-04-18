@@ -468,6 +468,10 @@ fn run_parallel(
             skipped: false,
         });
     }
+    let inherited_parent_stack = ctx
+        .audit
+        .parent_stack_snapshot()
+        .map_err(|err| DispatchError::AuditFailed(format!("{err:?}")))?;
 
     let results: Vec<(String, Result<StepOutcome, DispatchError>)> = thread::scope(|scope| {
         let handles: Vec<_> = branches
@@ -475,7 +479,20 @@ fn run_parallel(
             .map(|branch| {
                 let branch_id = branch.id.clone();
                 let ctx_ref = ctx;
-                scope.spawn(move || (branch_id, run_step(branch, ctx_ref)))
+                let audit = ctx.audit.clone();
+                let inherited_parent_stack = inherited_parent_stack.clone();
+                scope.spawn(move || {
+                    let _parent_guard = match audit.install_parent_stack(inherited_parent_stack) {
+                        Ok(guard) => guard,
+                        Err(err) => {
+                            return (
+                                branch_id,
+                                Err(DispatchError::AuditFailed(format!("{err:?}"))),
+                            );
+                        }
+                    };
+                    (branch_id, run_step(branch, ctx_ref))
+                })
             })
             .collect();
         handles
@@ -500,7 +517,7 @@ fn run_parallel(
             Err(e) => {
                 failures += 1;
                 if first_error.is_none() {
-                    first_error = Some(clone_err(e));
+                    first_error = Some(e.clone());
                 }
             }
         }
@@ -547,11 +564,6 @@ fn run_parallel(
     })
 }
 
-fn clone_err(e: &DispatchError) -> DispatchError {
-    // DispatchError is not Clone; string-copy into a JobExecution wrapper.
-    DispatchError::JobExecution(e.to_string())
-}
-
 // ---------------------------------------------------------------------------
 // Fan-out / fan-in
 // ---------------------------------------------------------------------------
@@ -594,6 +606,10 @@ fn run_fan_out(
         });
     }
 
+    let inherited_parent_stack = ctx
+        .audit
+        .parent_stack_snapshot()
+        .map_err(|err| DispatchError::AuditFailed(format!("{err:?}")))?;
     let semaphore = Arc::new(Semaphore::new(block.max_workers.max(1) as usize));
     let results: Mutex<Vec<(u32, Result<StepOutcome, DispatchError>)>> =
         Mutex::new(Vec::with_capacity(items.len()));
@@ -611,8 +627,19 @@ fn run_fan_out(
             let base_input = ctx.input.clone();
             let pipeline_snapshot = ctx.pipeline.lock().expect("pipeline poisoned").clone();
             let results_ref = &results;
+            let inherited_parent_stack = inherited_parent_stack.clone();
 
             handles.push(scope.spawn(move || {
+                let _parent_guard = match audit.install_parent_stack(inherited_parent_stack) {
+                    Ok(guard) => guard,
+                    Err(err) => {
+                        results_ref
+                            .lock()
+                            .expect("results poisoned")
+                            .push((idx, Err(DispatchError::AuditFailed(format!("{err:?}")))));
+                        return;
+                    }
+                };
                 let _permit = sem.acquire();
                 let _ = audit.emit(V2AuditEventKind::WorkerState {
                     step_id: worker_step.id.clone(),
@@ -724,7 +751,14 @@ fn run_loop(
         });
 
         for body in &block.steps {
-            run_step(body, ctx)?;
+            let outcome = run_step(body, ctx)?;
+            if !outcome.success {
+                return Ok(StepOutcome {
+                    success: false,
+                    output: outcome.output,
+                    skipped: false,
+                });
+            }
         }
 
         // Evaluate break_when after the body runs so the body can populate

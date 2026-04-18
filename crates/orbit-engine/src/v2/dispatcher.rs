@@ -56,7 +56,7 @@ pub struct DispatchOutcome {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum DispatchError {
     #[error("runtime host required for activity type `{0}` but none provided")]
     HostRequired(&'static str),
