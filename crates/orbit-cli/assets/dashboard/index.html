@@ -222,12 +222,36 @@
         background: rgba(59, 130, 246, 0.1);
       }
       
-      .empty {
-        padding: 24px;
-        color: var(--fg-dim);
-        font-style: italic;
-        text-align: center;
+      .empty-state {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 48px 24px; color: var(--fg-dim); font-family: var(--font-mono); font-size: 13px;
       }
+      .empty-state .icon { font-size: 24px; margin-bottom: 12px; filter: grayscale(100%) opacity(50%); }
+
+      @keyframes pulse-skeleton {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      .skeleton {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+        animation: pulse-skeleton 1.5s infinite ease-in-out;
+      }
+      .skeleton-row {
+        height: 24px;
+        margin: 12px 16px;
+      }
+      .skeleton-state {
+        padding: 8px 0;
+      }
+      
+      .status-dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+        transition: all 0.3s ease;
+      }
+      .status-dot.green { background: var(--state-success); box-shadow: 0 0 8px var(--state-success); }
+      .status-dot.red { background: var(--state-failed); box-shadow: 0 0 8px var(--state-failed); }
+      .status-dot.orange { background: var(--state-pending); box-shadow: 0 0 8px var(--state-pending); }
       
       .err {
         padding: 16px;
@@ -707,7 +731,10 @@
   <body>
     <header>
       <div class="brand"><span class="prompt">$</span>orbit</div>
-      <div class="meta" id="meta">connecting&hellip;</div>
+      <div class="meta" id="meta">
+        <span id="conn-status" class="status-dot orange"></span>
+        <span id="meta-text">connecting&hellip;</span>
+      </div>
     </header>
     <nav class="tabs" id="tabs">
       <button class="tab" data-tab="tasks" type="button">Tasks</button>
@@ -722,12 +749,23 @@
             <input type="search" id="task-search" placeholder="Search ID or title..." autocomplete="off" spellcheck="false" />
             <div id="task-filter"></div>
           </div>
-          <div class="body" id="tasks-body"><div class="empty">Loading...</div></div>
+          <div class="body" id="tasks-body">
+            <div class="skeleton-state">
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row" style="width: 80%"></div>
+              <div class="skeleton skeleton-row" style="width: 90%"></div>
+            </div>
+          </div>
         </section>
         <div class="col-side">
           <section class="panel" id="runs-panel">
             <header><span>Recent Job Runs</span><span class="count" id="runs-count">-</span></header>
-            <div class="body" id="runs-body"><div class="empty">Loading...</div></div>
+            <div class="body" id="runs-body">
+              <div class="skeleton-state">
+                <div class="skeleton skeleton-row"></div>
+                <div class="skeleton skeleton-row" style="width: 80%"></div>
+              </div>
+            </div>
           </section>
         </div>
       </main>
@@ -736,7 +774,12 @@
       <main style="grid-template-columns: 1fr;">
         <section class="panel" id="scoreboard-panel">
           <header><span>Scoreboard</span><span class="count" id="scoreboard-count">-</span></header>
-          <div class="body scoreboard-table-wrap" id="scoreboard-body"><div class="empty">Loading...</div></div>
+          <div class="body scoreboard-table-wrap" id="scoreboard-body">
+            <div class="skeleton-state">
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row" style="width: 70%"></div>
+            </div>
+          </div>
         </section>
       </main>
     </section>
@@ -751,7 +794,12 @@
             <button class="subtab" data-subtab="metrics" type="button">Metrics</button>
             <button class="subtab" data-subtab="friction" type="button">Friction</button>
           </nav>
-          <div class="body scoreboard-table-wrap" id="diag-body"><div class="empty">Loading...</div></div>
+          <div class="body scoreboard-table-wrap" id="diag-body">
+            <div class="skeleton-state">
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row" style="width: 75%"></div>
+            </div>
+          </div>
         </section>
       </main>
     </section>

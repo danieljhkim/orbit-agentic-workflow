@@ -326,13 +326,11 @@ function renderTasks(tasks) {
       ? `${tasks.length}`
       : `${filtered.length}/${tasks.length}`;
   if (filtered.length === 0) {
-    body.appendChild(
-      el("div", {
-        class: "empty",
-        text: tasks.length === 0 ? "No tasks." : "No tasks match.",
-      }),
-    );
-    syncNodes(body, Array.from(frag.children));
+    const defaultText = tasks.length === 0 ? "No tasks available." : "No tasks match filter.";
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: defaultText })
+    ])]);
     return;
   }
   const groups = new Map();
@@ -437,8 +435,10 @@ function renderRuns(runs) {
   const top = runs.slice(0, 20);
   $("runs-count").textContent = `${top.length}/${runs.length}`;
   if (top.length === 0) {
-    frag.appendChild(el("div", { class: "empty", text: "No job runs yet." }));
-    syncNodes(body, Array.from(frag.children));
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No job runs yet." })
+    ])]);
     return;
   }
   for (const r of top) {
@@ -489,7 +489,10 @@ function renderScoreboard(summary) {
   $("scoreboard-count").textContent = `${entries.length}`;
   
   if (entries.length === 0) {
-    syncNodes(body, [el("div", { class: "empty", text: "No scoreboard data yet." })]);
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No scoreboard data yet." })
+    ])]);
     return;
   }
   
@@ -548,12 +551,6 @@ function renderScoreboard(summary) {
   }
   
   syncNodes(tbody, Array.from(frag.children));
-}
-
-function showError(panelId, err) {
-  const body = $(panelId);
-  body.innerHTML = "";
-  body.appendChild(el("div", { class: "err", text: String(err) }));
 }
 
 function refreshChips() {
@@ -727,7 +724,10 @@ function renderDiagnosticsTable(rows, columns) {
   const body = $("diag-body");
   
   if (!rows || rows.length === 0) {
-    syncNodes(body, [el("div", { class: "empty", text: "No entries this month." })]);
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No entries this month." })
+    ])]);
     return;
   }
   
@@ -784,35 +784,44 @@ function renderDiagnostics() {
 
 async function tick() {
   const now = new Date();
-  $("meta").textContent = `polled ${now.toLocaleTimeString()} · ${POLL_MS}ms`;
+  $("meta-text").textContent = `fetching...`;
+  $("conn-status").className = "status-dot orange";
+  
+  let hasErrors = false;
+  
   await Promise.all([
     fetchJson("/api/tasks")
       .then((tasks) => {
         lastTasks = tasks;
         renderTasks(tasks);
       })
-      .catch((e) => showError("tasks-body", e)),
-    fetchJson("/api/job-runs").then(renderRuns).catch((e) => showError("runs-body", e)),
+      .catch((e) => { hasErrors = true; console.error(e); }),
+    fetchJson("/api/job-runs").then(renderRuns).catch((e) => { hasErrors = true; console.error(e); }),
     fetchJson("/api/scoreboard")
       .then(renderScoreboard)
-      .catch((e) => showError("scoreboard-body", e)),
+      .catch((e) => { hasErrors = true; console.error(e); }),
     fetchJson("/api/diagnostics/metrics")
       .then((rows) => {
         lastDiagnostics.metrics = rows;
         if (activeDiagSubtab === "metrics") renderDiagnostics();
       })
-      .catch((e) => {
-        if (activeDiagSubtab === "metrics") showError("diag-body", e);
-      }),
+      .catch((e) => { hasErrors = true; console.error(e); }),
     fetchJson("/api/diagnostics/friction")
       .then((rows) => {
         lastDiagnostics.friction = rows;
         if (activeDiagSubtab === "friction") renderDiagnostics();
       })
-      .catch((e) => {
-        if (activeDiagSubtab === "friction") showError("diag-body", e);
-      }),
+      .catch((e) => { hasErrors = true; console.error(e); }),
   ]);
+  
+  if (hasErrors) {
+    $("conn-status").className = "status-dot red";
+    $("meta-text").textContent = `offline · ${now.toLocaleTimeString()}`;
+  } else {
+    $("conn-status").className = "status-dot green";
+    $("meta-text").textContent = `polled ${now.toLocaleTimeString()} · ${POLL_MS}ms`;
+  }
+  
   $("footer").textContent = `orbit dashboard · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
 }
 
