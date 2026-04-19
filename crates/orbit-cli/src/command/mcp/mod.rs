@@ -1,15 +1,14 @@
-//! `orbit mcp` — Model Context Protocol server subcommand.
+//! Support for `orbit serve mcp`.
 //!
-//! Serves the Orbit tool surface over MCP so external clients (Claude Code,
-//! Cursor, Zed, custom agents) can discover and invoke Orbit operations with
-//! typed JSON schemas. Each `tools/call` is routed through
-//! [`OrbitRuntime::execute_tool_command`], so MCP invocations honor the same
-//! policy chain, disabled-tool flag, and audit log as the CLI path. Only
-//! stdio transport is supported in this first cut.
+//! Serves the Orbit tool surface over MCP so external clients can discover and
+//! invoke Orbit operations with typed JSON schemas. Each `tools/call` is
+//! routed through [`OrbitRuntime::execute_tool_command`], so MCP invocations
+//! honor the same policy chain, disabled-tool flag, and audit log as the CLI
+//! path. Only stdio transport is supported in this first cut.
 
 use std::sync::Arc;
 
-use clap::{Args, Subcommand};
+use clap::Args;
 use orbit_core::{OrbitError, OrbitRuntime};
 use orbit_mcp::McpHost;
 use orbit_types::ToolSchema;
@@ -19,34 +18,6 @@ use crate::command::Execute;
 
 #[derive(Args)]
 #[command(about = "Serve the Orbit tool registry over Model Context Protocol")]
-pub struct McpCommand {
-    #[command(subcommand)]
-    pub command: McpSubcommand,
-}
-
-impl Execute for McpCommand {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        self.command.execute(runtime)
-    }
-}
-
-#[derive(Subcommand)]
-pub enum McpSubcommand {
-    /// Serve MCP over stdio (the process reads JSON-RPC from stdin and writes
-    /// responses to stdout until the client disconnects).
-    Serve(ServeArgs),
-}
-
-impl Execute for McpSubcommand {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        match self {
-            McpSubcommand::Serve(args) => args.execute(runtime),
-        }
-    }
-}
-
-#[derive(Args)]
-#[command(about = "Serve MCP over stdio")]
 pub struct ServeArgs {}
 
 impl Execute for ServeArgs {

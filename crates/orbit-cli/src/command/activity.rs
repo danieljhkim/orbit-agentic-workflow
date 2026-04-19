@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
-#[command(about = "Manage activity definitions")]
+#[command(about = "Define, list, and run v2 activities")]
 pub struct ActivityCommand {
     #[command(subcommand)]
     pub command: ActivitySubcommand,

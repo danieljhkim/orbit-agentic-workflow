@@ -1,78 +1,110 @@
-use clap::Args;
+use clap::{Args, Subcommand};
 use orbit_core::{OrbitError, OrbitRuntime};
-use serde_json::{Value, json};
 
 use crate::command::Execute;
-use crate::command::job_run_support::warn_legacy_job_runtime_usage;
+use crate::command::{duel, job, ship};
+
+const RUN_AFTER_HELP: &str = "\
+Workflow entrypoints:
+  orbit run ship <task_id> ...
+  orbit run duel <args>
+  orbit run job <job_id> [--input key=value] [--json] [--debug]
+
+Direct form:
+  orbit run <job_id> [--input key=value] [--json] [--debug]
+    Equivalent to `orbit run job <job_id>`.
+";
 
 #[derive(Args)]
 #[command(
-    about = "Execute a legacy v1 job by ID (deprecated compatibility path)",
-    after_help = "Use `orbit job run-v2 <yaml-path>` for schemaVersion: 2 YAML jobs."
+    about = "Run a job workflow (supports run ship / run duel / run job / run <id>)",
+    arg_required_else_help = true,
+    args_conflicts_with_subcommands = true,
+    override_usage = "orbit run <COMMAND>\n       orbit run <JOB_ID> [OPTIONS]",
+    after_help = RUN_AFTER_HELP
 )]
 pub struct RunCommand {
-    /// Job ID to execute
-    pub job_id: String,
+    #[command(subcommand)]
+    pub command: Option<RunSubcommand>,
 
-    /// Input key=value pairs (repeatable)
-    #[arg(long)]
-    pub input: Vec<String>,
-
-    /// Policy name to apply during execution
-    #[arg(long)]
-    pub policy: Option<String>,
-
-    /// Stream agent stderr to terminal for debugging
-    #[arg(long)]
-    pub debug: bool,
-
-    /// Output as JSON
-    #[arg(long)]
-    pub json: bool,
+    #[command(flatten)]
+    pub positional: PositionalJobArgs,
 }
 
 impl Execute for RunCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input = build_input(&self.input)?;
-        warn_legacy_job_runtime_usage(&self.job_id);
-        let result = runtime.run_job_now_with_input_debug(&self.job_id, input, self.debug)?;
-
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "job_id": result.job_id,
-                "run_id": result.run_id,
-                "state": result.state.to_string(),
-                "attempt": result.attempt,
-            }))
-        } else {
-            use crate::output::color::{bold, job_state_color};
-            println!(
-                "{} {} {} {} {} {}",
-                bold("run_id:"),
-                result.run_id,
-                bold("state:"),
-                job_state_color(&result.state.to_string()),
-                bold("attempt:"),
-                result.attempt,
-            );
-            Ok(())
+        match self.command {
+            Some(command) => command.execute(runtime),
+            None => execute_positional_job(self.positional, runtime),
         }
     }
 }
 
-fn build_input(pairs: &[String]) -> Result<Value, OrbitError> {
-    let mut map = serde_json::Map::new();
-    for pair in pairs {
-        let (key, value) = pair.split_once('=').ok_or_else(|| {
-            OrbitError::InvalidInput(format!("invalid --input \"{pair}\": expected key=value"))
-        })?;
-        let key = key.trim();
-        if key.is_empty() {
-            return Err(OrbitError::InvalidInput(format!(
-                "invalid --input \"{pair}\": key must not be empty"
-            )));
+#[derive(Subcommand)]
+pub enum RunSubcommand {
+    /// Ship tasks through the pipeline
+    Ship(ship::ShipCommand),
+    /// Run cross-agent scoring and planning workflows
+    Duel(duel::DuelCommand),
+    /// Run an arbitrary job by ID
+    Job(job::JobRunArgs),
+}
+
+impl Execute for RunSubcommand {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        match self {
+            RunSubcommand::Ship(command) => command.execute(runtime),
+            RunSubcommand::Duel(command) => command.execute(runtime),
+            RunSubcommand::Job(command) => command.execute(runtime),
         }
-        map.insert(key.to_string(), Value::String(value.to_string()));
     }
-    Ok(Value::Object(map))
+}
+
+#[derive(Args, Default)]
+pub struct PositionalJobArgs {
+    /// Run the named job directly (equivalent to `orbit run job <JOB_ID>`)
+    pub job_id: Option<String>,
+
+    /// Input key=value pairs passed to all job steps (repeatable)
+    #[arg(long)]
+    pub input: Vec<String>,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+
+    /// Stream agent stderr to the terminal and tee stdout live for debugging
+    #[arg(long)]
+    pub debug: bool,
+}
+
+fn execute_positional_job(
+    args: PositionalJobArgs,
+    runtime: &OrbitRuntime,
+) -> Result<(), OrbitError> {
+    let Some(job_id) = args.job_id else {
+        return Err(OrbitError::InvalidInput(
+            "`orbit run` expects a workflow subcommand or job ID".to_string(),
+        ));
+    };
+
+    ensure_positional_job_exists(runtime, &job_id)?;
+
+    job::JobRunArgs {
+        job_id,
+        input: args.input,
+        json: args.json,
+        debug: args.debug,
+    }
+    .execute(runtime)
+}
+
+fn ensure_positional_job_exists(runtime: &OrbitRuntime, job_id: &str) -> Result<(), OrbitError> {
+    match runtime.show_job_catalog_entry(job_id) {
+        Ok(_) => Ok(()),
+        Err(OrbitError::JobNotFound(_)) => Err(OrbitError::InvalidInput(format!(
+            "unknown `orbit run` target `{job_id}`\navailable subcommands: ship, duel, job\ntip: use `orbit job list` to discover valid job ids"
+        ))),
+        Err(error) => Err(error),
+    }
 }

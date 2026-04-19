@@ -462,7 +462,7 @@ impl Execute for ToolScaffoldArgs {
         println!("\nNext steps:");
         println!("  orbit tool add {}", script_path.display());
         println!("  orbit tool show {}", tool_name);
-        println!("  orbit mcp serve");
+        println!("  orbit serve mcp");
         Ok(())
     }
 }

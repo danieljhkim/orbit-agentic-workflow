@@ -1,8 +1,9 @@
-//! `orbit serve` — local read-only HTTP dashboard.
+//! `orbit serve` — outward-facing servers for Orbit.
 //!
-//! Exposes the existing CLI JSON output via a small axum server bound to
-//! loopback by default, plus a static SPA embedded into the binary. Mutations
-//! and authentication are intentionally out of scope for v1.
+//! `orbit serve web` exposes the existing CLI JSON output via a small axum
+//! server bound to loopback by default, plus a static SPA embedded into the
+//! binary. `orbit serve mcp` reuses the MCP host to expose the Orbit tool
+//! registry over stdio.
 
 mod api;
 
@@ -13,17 +14,52 @@ use axum::Router;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use clap::Args;
+use clap::{Args, Subcommand};
 use orbit_core::{OrbitError, OrbitRuntime};
 
 use crate::command::Execute;
+use crate::command::mcp;
 
 const INDEX_HTML: &str = include_str!("../../../assets/dashboard/index.html");
 const APP_JS: &str = include_str!("../../../assets/dashboard/app.js");
 
 #[derive(Args)]
-#[command(about = "Serve a local read-only web dashboard for Orbit")]
+#[command(
+    about = "Serve Orbit outward (serve web / serve mcp)",
+    arg_required_else_help = true,
+    subcommand_required = true
+)]
 pub struct ServeCommand {
+    #[command(subcommand)]
+    pub command: ServeSubcommand,
+}
+
+impl Execute for ServeCommand {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        self.command.execute(runtime)
+    }
+}
+
+#[derive(Subcommand)]
+pub enum ServeSubcommand {
+    /// Serve the Orbit web dashboard
+    Web(WebServeArgs),
+    /// Serve the Orbit tool registry over Model Context Protocol
+    Mcp(mcp::ServeArgs),
+}
+
+impl Execute for ServeSubcommand {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        match self {
+            ServeSubcommand::Web(command) => command.execute(runtime),
+            ServeSubcommand::Mcp(command) => command.execute(runtime),
+        }
+    }
+}
+
+#[derive(Args)]
+#[command(about = "Serve the Orbit web dashboard")]
+pub struct WebServeArgs {
     /// Host or IP to bind to. Defaults to loopback for safety.
     #[arg(long, default_value = "127.0.0.1")]
     pub host: IpAddr,
@@ -37,7 +73,7 @@ pub struct ServeCommand {
     pub no_open: bool,
 }
 
-impl Execute for ServeCommand {
+impl Execute for WebServeArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let addr = SocketAddr::new(self.host, self.port);
         let url = format!("http://{addr}");

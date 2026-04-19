@@ -1,4 +1,4 @@
-//! `orbit duel` CLI subcommand tree.
+//! `orbit run duel` CLI subcommand tree.
 //!
 //! Thin presentation layer over `orbit_core::duel_scoreboard::aggregate`.
 //! All math lives in the store crate (re-exported via orbit-core) so tests
@@ -31,23 +31,29 @@ const DUEL_JOB_IDS: &[&str] = &["job_duel_pipeline", "job_duel_plan_pipeline"];
 #[derive(Args)]
 #[command(
     about = "Cross-agent scoring and planning",
-    arg_required_else_help = true,
-    subcommand_required = true
+    override_usage = "orbit run duel [TASK_ID] [OPTIONS]\n       orbit run duel <COMMAND>"
 )]
 pub struct DuelCommand {
     #[command(subcommand)]
-    pub command: DuelSubcommand,
+    pub command: Option<DuelSubcommand>,
+
+    #[command(flatten)]
+    pub direct: DuelPrArgs,
 }
 
 impl Execute for DuelCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        self.command.execute(runtime)
+        match self.command {
+            Some(command) => command.execute(runtime),
+            None => self.direct.execute(runtime),
+        }
     }
 }
 
 #[derive(Subcommand)]
 pub enum DuelSubcommand {
     /// Run a single-task PR duel through the legacy v1 job runtime
+    #[command(hide = true)]
     Pr(DuelPrArgs),
     /// Run a single-task planning duel through the legacy v1 job runtime
     Plan(DuelPlanArgs),
@@ -74,7 +80,7 @@ impl Execute for DuelSubcommand {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit duel pr\n  orbit duel pr --loop 3\n  orbit duel pr T20260409-0310\n  orbit duel pr T20260409-0310 --base main --json"
+    after_help = "Examples:\n  orbit run duel\n  orbit run duel --loop 3\n  orbit run duel T20260409-0310\n  orbit run duel T20260409-0310 --base main --json"
 )]
 pub struct DuelPrArgs {
     /// Optional task ID. Omit to auto-select the first available duel-eligible task.
@@ -96,7 +102,7 @@ pub struct DuelPrArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit duel plan T20260409-0310\n  orbit duel plan T20260409-0310 --base main --json"
+    after_help = "Examples:\n  orbit run duel plan T20260409-0310\n  orbit run duel plan T20260409-0310 --base main --json"
 )]
 pub struct DuelPlanArgs {
     /// Task ID for the planning duel.

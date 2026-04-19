@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
-#[command(about = "Manage declarative policy definitions")]
+#[command(about = "Manage execution policies")]
 pub struct PolicyCommand {
     #[command(subcommand)]
     pub command: PolicySubcommand,

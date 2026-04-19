@@ -323,43 +323,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Ship(cmd) => {
-            use crate::command::ship::ShipSubcommand;
-            let (sub, target_id) = match &cmd.command {
-                ShipSubcommand::Pr(_) => ("pr", Some("ship")),
-                ShipSubcommand::Local(_) => ("local", Some("ship-local")),
-                ShipSubcommand::List(_) => ("list", Some("ship")),
-                ShipSubcommand::Show(args) => ("show", args.run_id.as_deref()),
-            };
-            CommandMeta {
-                command: "ship".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("workflow".to_string()),
-                target_id: target_id.map(String::from),
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
-        Commands::Duel(cmd) => {
-            use crate::command::duel::DuelSubcommand;
-            let (sub, target_id) = match &cmd.command {
-                DuelSubcommand::Pr(args) => ("pr", args.task_id.as_deref()),
-                DuelSubcommand::Plan(args) => ("plan", Some(args.task_id.as_str())),
-                DuelSubcommand::Score(_) => ("score", None),
-                DuelSubcommand::List(_) => ("list", None),
-                DuelSubcommand::Show(args) => ("show", args.run_id.as_deref()),
-            };
-            CommandMeta {
-                command: "duel".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("duel".to_string()),
-                target_id: target_id.map(String::from),
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
         Commands::Metrics(cmd) => {
             use crate::command::metrics::MetricsSubcommand;
             let (sub, target_id) = match &cmd.command {
@@ -429,42 +392,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Apply(_) => CommandMeta {
-            command: "apply".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: None,
-            target_id: None,
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
-        Commands::Get(cmd) => CommandMeta {
-            command: "get".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: None,
-            target_id: Some(cmd.resource.clone()),
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
-        Commands::Describe(cmd) => CommandMeta {
-            command: "describe".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: None,
-            target_id: Some(cmd.resource.clone()),
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
-        Commands::Run(cmd) => CommandMeta {
-            command: "run".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: Some("job".to_string()),
-            target_id: Some(cmd.job_id.clone()),
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
+        Commands::Run(cmd) => run_command_meta(cmd),
         Commands::Logs(cmd) => CommandMeta {
             command: "logs".to_string(),
             subcommand: None,
@@ -492,30 +420,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             role: "admin".to_string(),
             arguments_json: None,
         },
-        Commands::Serve(_) => CommandMeta {
-            command: "serve".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: Some("dashboard".to_string()),
-            target_id: None,
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
-        Commands::Mcp(cmd) => {
-            use crate::command::mcp::McpSubcommand;
-            let sub = match &cmd.command {
-                McpSubcommand::Serve(_) => "serve",
-            };
-            CommandMeta {
-                command: "mcp".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("mcp".to_string()),
-                target_id: None,
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
+        Commands::Serve(cmd) => serve_command_meta(cmd),
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;
@@ -536,5 +441,66 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+    }
+}
+
+fn run_command_meta(cmd: &crate::command::run::RunCommand) -> CommandMeta {
+    use crate::command::duel::DuelSubcommand;
+    use crate::command::run::RunSubcommand;
+    use crate::command::ship::ShipSubcommand;
+
+    let (subcommand, target_type, target_id) = match &cmd.command {
+        Some(RunSubcommand::Ship(command)) => {
+            let (sub, target_id) = match command.command.as_ref() {
+                Some(ShipSubcommand::Pr(_)) => ("ship/pr", Some("ship")),
+                Some(ShipSubcommand::Local(_)) => ("ship/local", Some("ship-local")),
+                Some(ShipSubcommand::List(_)) => ("ship/list", Some("ship")),
+                Some(ShipSubcommand::Show(args)) => ("ship/show", args.run_id.as_deref()),
+                None => ("ship", Some("ship")),
+            };
+            (sub, Some("workflow"), target_id)
+        }
+        Some(RunSubcommand::Duel(command)) => {
+            let (sub, target_id) = match command.command.as_ref() {
+                Some(DuelSubcommand::Pr(args)) => ("duel/pr", args.task_id.as_deref()),
+                Some(DuelSubcommand::Plan(args)) => ("duel/plan", Some(args.task_id.as_str())),
+                Some(DuelSubcommand::Score(_)) => ("duel/score", None),
+                Some(DuelSubcommand::List(_)) => ("duel/list", None),
+                Some(DuelSubcommand::Show(args)) => ("duel/show", args.run_id.as_deref()),
+                None => ("duel", command.direct.task_id.as_deref()),
+            };
+            (sub, Some("duel"), target_id)
+        }
+        Some(RunSubcommand::Job(args)) => ("job", Some("job"), Some(args.job_id.as_str())),
+        None => ("job", Some("job"), cmd.positional.job_id.as_deref()),
+    };
+
+    CommandMeta {
+        command: "run".to_string(),
+        subcommand: Some(subcommand.to_string()),
+        tool_name: None,
+        target_type: target_type.map(String::from),
+        target_id: target_id.map(String::from),
+        role: "admin".to_string(),
+        arguments_json: None,
+    }
+}
+
+fn serve_command_meta(cmd: &crate::command::serve::ServeCommand) -> CommandMeta {
+    use crate::command::serve::ServeSubcommand;
+
+    let (subcommand, target_type) = match &cmd.command {
+        ServeSubcommand::Web(_) => ("web", "dashboard"),
+        ServeSubcommand::Mcp(_) => ("mcp", "mcp"),
+    };
+
+    CommandMeta {
+        command: "serve".to_string(),
+        subcommand: Some(subcommand.to_string()),
+        tool_name: None,
+        target_type: Some(target_type.to_string()),
+        target_id: None,
+        role: "admin".to_string(),
+        arguments_json: None,
     }
 }

@@ -49,31 +49,26 @@ Setup:
   workspace  Initialize and manage workspaces
   config     Show or update Orbit configuration
 
-Run:
-  reconcile  Reconcile pending/running job runs
-  ship       Ship tasks through the pipeline
-  duel       Cross-agent scoring and planning
-  job        Run job workflows
-  run        Run a job workflow
-
-Manage work:
+Resources:
   task       Create, update, and manage tasks
-  graph      graph
-  executor   executor
-  policy     policy
-  activity   activity
+  activity   Define, list, and run v2 activities
+  job        Define, list, and manage job workflows
+  policy     Manage execution policies
+  executor   Manage executors
+  tool       Manage tools and external MCP plugins
 
-Resource Management:
-  apply      apply
-  get        get
-  describe   describe
-  
+Workflows:
+  run        Run a job workflow (supports run ship / run duel / run job / run <id>)
+  reconcile  Reconcile pending/running job runs
+
 Inspect:
   audit      Query the audit event log
   metrics    Inspect token, tool-call, and knowledge-pack metrics
   scoreboard Generate read-only scoreboard summaries
-  serve      Serve a local read-only web dashboard
-  mcp        Serve the Orbit tool registry over Model Context Protocol
+  graph      Query the knowledge graph
+
+Serve:
+  serve      Serve Orbit outward (serve web / serve mcp)
 
 Options:
 {options}"
@@ -94,37 +89,34 @@ pub enum Commands {
     Workspace(workspace::WorkspaceCommand),
     Config(config::ConfigCommand),
 
-    // ── run ──
-    Run(run::RunCommand),
-    Ship(ship::ShipCommand),
-    Duel(duel::DuelCommand),
-
-    // ── manage work ──
+    // ── resources ──
     Task(task::TaskCommand),
     Activity(activity::ActivityCommand),
     Job(job::JobCommand),
     Tool(tool::ToolCommand),
-    Skill(skill::SkillCommand),
     Executor(executor::ExecutorCommand),
     Policy(policy::PolicyCommand),
-    Graph(graph::GraphCommand),
-    Mcp(mcp::McpCommand),
 
-    // ── resource management ──
-    Apply(apply::ApplyCommand),
-    Get(get::GetCommand),
-    Describe(describe::DescribeCommand),
-
-    // ── operate ──
+    // ── workflows ──
+    Run(run::RunCommand),
     Reconcile(reconcile::ReconcileCommand),
 
     // ── inspect ──
-    Logs(logs::LogsCommand),
-    Artifacts(artifacts::ArtifactsCommand),
     Audit(audit::AuditCommand),
     Metrics(metrics::MetricsCommand),
     Scoreboard(scoreboard::ScoreboardCommand),
+    Graph(graph::GraphCommand),
+
+    // ── serve ──
     Serve(serve::ServeCommand),
+
+    // ── hidden compatibility commands ──
+    #[command(hide = true)]
+    Skill(skill::SkillCommand),
+    #[command(hide = true)]
+    Logs(logs::LogsCommand),
+    #[command(hide = true)]
+    Artifacts(artifacts::ArtifactsCommand),
 }
 
 impl Execute for Commands {
@@ -133,28 +125,22 @@ impl Execute for Commands {
             Commands::Init(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
             Commands::Config(cmd) => cmd.execute(runtime),
-            Commands::Run(cmd) => cmd.execute(runtime),
-            Commands::Ship(cmd) => cmd.execute(runtime),
-            Commands::Duel(cmd) => cmd.execute(runtime),
             Commands::Reconcile(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Activity(cmd) => cmd.execute(runtime),
             Commands::Job(cmd) => cmd.execute(runtime),
             Commands::Tool(cmd) => cmd.execute(runtime),
-            Commands::Skill(cmd) => cmd.execute(runtime),
             Commands::Executor(cmd) => cmd.execute(runtime),
             Commands::Policy(cmd) => cmd.execute(runtime),
-            Commands::Graph(cmd) => cmd.execute(runtime),
-            Commands::Mcp(cmd) => cmd.execute(runtime),
-            Commands::Apply(cmd) => cmd.execute(runtime),
-            Commands::Get(cmd) => cmd.execute(runtime),
-            Commands::Describe(cmd) => cmd.execute(runtime),
-            Commands::Logs(cmd) => cmd.execute(runtime),
-            Commands::Artifacts(cmd) => cmd.execute(runtime),
+            Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
             Commands::Scoreboard(cmd) => cmd.execute(runtime),
+            Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Serve(cmd) => cmd.execute(runtime),
+            Commands::Skill(cmd) => cmd.execute(runtime),
+            Commands::Logs(cmd) => cmd.execute(runtime),
+            Commands::Artifacts(cmd) => cmd.execute(runtime),
         }
     }
 }

@@ -12,7 +12,7 @@ use crate::command::Execute;
 use crate::command::job_run_support::warn_legacy_job_runtime_usage;
 
 #[derive(Args)]
-#[command(about = "Define and run automation jobs")]
+#[command(about = "Define, list, and manage job workflows")]
 pub struct JobCommand {
     #[command(subcommand)]
     pub command: JobSubcommand,

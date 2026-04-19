@@ -35,7 +35,7 @@ orbit-types → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → or
 - **orbit-store**: layered store pattern (YAML + SQLite). Match existing modules when adding new ones.
 - **orbit-agent**: HTTP `LoopTransport` primitives **and** the retained `AgentRuntime` + `providers/*_cli.rs` CLI runtimes. Per the 2026-04-18 amendment to `docs/design/activity-job-v2.md` (§10.1 retention table), the CLI provider files are **kept** through Phase 5 as the implementation of v2 `backend: cli`. Phase 5 deletes the v1 asset format and v1 dispatch path; it does NOT delete `providers/*_cli.rs` or the `AgentRuntime` trait.
 - **orbit-engine**: activity/job execution, template rendering, retry logic. Also owns the v2 `backend: cli` subprocess runner (`v2::cli_runner`), which names `orbit-agent::{Agent, AgentConfig}` directly — orbit-core stays clean of orbit-agent types per the T20260418-2210 boundary.
-- **orbit-mcp**: Model Context Protocol adapter over `orbit-tools::ToolRegistry`. Depends only on `orbit-types`, `orbit-tools`, and `rmcp`; consumed by `orbit-cli` via `orbit mcp serve`.
+- **orbit-mcp**: Model Context Protocol adapter over `orbit-tools::ToolRegistry`. Depends only on `orbit-types`, `orbit-tools`, and `rmcp`; consumed by `orbit-cli` via `orbit serve mcp`.
 - **orbit-core**: runtime bootstrap, config layering, command dispatch, default asset seeding. Exposes `V2RuntimeHost` via `impl` for `OrbitRuntime`; the trait surface is primitive (deterministic dispatch, API-key sourcing, CLI command resolution) so no orbit-agent type leaks through it.
 - **orbit-cli**: clap-based CLI entry point.
 

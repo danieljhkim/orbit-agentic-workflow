@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use crate::command::Execute;
 
 #[derive(Args)]
-#[command(about = "Manage executor definitions")]
+#[command(about = "Manage executors")]
 pub struct ExecutorCommand {
     #[command(subcommand)]
     pub command: ExecutorSubcommand,

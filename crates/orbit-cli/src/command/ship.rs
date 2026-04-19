@@ -1,3 +1,7 @@
+//! `orbit run ship` CLI subcommand tree.
+//!
+//! Thin wrapper over the existing ship workflow dispatch helpers.
+
 use clap::{Args, Subcommand};
 use orbit_core::{
     OrbitError, OrbitRuntime, WorkflowInput, build_workflow_input_for, find_workflow,
@@ -22,23 +26,29 @@ const SHIP_JOB_IDS: &[&str] = &[SHIP_JOB_ID, SHIP_LOCAL_JOB_ID];
 #[derive(Args)]
 #[command(
     about = "Ship tasks through the pipeline",
-    arg_required_else_help = true,
-    subcommand_required = true
+    override_usage = "orbit run ship [TASK_IDS]... [OPTIONS]\n       orbit run ship <COMMAND>"
 )]
 pub struct ShipCommand {
     #[command(subcommand)]
-    pub command: ShipSubcommand,
+    pub command: Option<ShipSubcommand>,
+
+    #[command(flatten)]
+    pub direct: ShipWorkflowArgs,
 }
 
 impl Execute for ShipCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        self.command.execute(runtime)
+        match self.command {
+            Some(command) => command.execute(runtime),
+            None => execute_ship_workflow(runtime, SHIP_WORKFLOW, self.direct),
+        }
     }
 }
 
 #[derive(Subcommand)]
 pub enum ShipSubcommand {
     /// Execute the PR-based legacy v1 ship pipeline
+    #[command(hide = true)]
     Pr(ShipPrArgs),
     /// Execute the local-only legacy v1 ship pipeline
     Local(ShipLocalArgs),
@@ -61,7 +71,7 @@ impl Execute for ShipSubcommand {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit ship pr\n  orbit ship pr T123 T456 --parallelism 2\n  orbit ship pr --base main\n  orbit ship pr --loop 3"
+    after_help = "Examples:\n  orbit run ship\n  orbit run ship T123 T456 --parallelism 2\n  orbit run ship --base main\n  orbit run ship --loop 3"
 )]
 pub struct ShipPrArgs {
     #[command(flatten)]
@@ -70,7 +80,7 @@ pub struct ShipPrArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit ship local\n  orbit ship local T123 --parallelism 1\n  orbit ship local --base main\n  orbit ship local --loop 3"
+    after_help = "Examples:\n  orbit run ship local\n  orbit run ship local T123 --parallelism 1\n  orbit run ship local --base main\n  orbit run ship local --loop 3"
 )]
 pub struct ShipLocalArgs {
     #[command(flatten)]
