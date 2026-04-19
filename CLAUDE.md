@@ -88,9 +88,9 @@ profile (`read: [./**]`, `modify: [./**]`) before applying the global denies.
 
 Follow the `## Task Quality Standards` section in `orbit-create-task` skill: explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.
 
-**Commits**:
+**Commits & Tasks**:
 
-- Use the agent commit identity (e.g. `claude`) as author/committer when the agent made the change.
+- Use the agent commit identity (e.g. `claude`, `codex`, `gemini`) as author/committer when the agent made the change.
 - Include the task ID in the commit message when the commit is associated with an Orbit task (e.g. `[T20260320-001234]`).
 
 ## Scoreboards
