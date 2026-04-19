@@ -8,8 +8,8 @@ use orbit_core::command::activity::{
 use orbit_core::command::job::JobAddParams;
 use orbit_core::{OrbitError, OrbitRuntime};
 use orbit_types::{
-    ActivityResource, ExecutorDef, ExecutorResource, JobResource, PolicyDef, PolicyResource,
-    RESOURCE_SCHEMA_VERSION, ResourceHeader, ResourceKind,
+    ActivityResource, ExecutorDef, ExecutorResource, JobResource, POLICY_RESOURCE_SCHEMA_VERSION,
+    PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader, ResourceKind, parse_policy_resource,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -90,14 +90,14 @@ fn apply_policy(
     path: &PathBuf,
     name: &str,
 ) -> Result<(), OrbitError> {
-    let doc: PolicyResource = parse_resource(content, path, "Policy resource")?;
+    let doc = parse_policy_resource(content, &format!("{}: Policy resource", path.display()))?;
     let existing = runtime.get_policy_def(name)?;
     let mut def = PolicyDef {
         name: name.to_string(),
         description: doc.spec.description,
-        filesystem: doc.spec.filesystem,
-        process: doc.spec.process,
-        tools: doc.spec.tools,
+        deny_read: doc.spec.deny_read,
+        deny_modify: doc.spec.deny_modify,
+        fs_profiles: doc.spec.fs_profiles,
         created_at: existing
             .as_ref()
             .map(|policy| policy.created_at)
@@ -231,12 +231,16 @@ fn apply_activity(
 }
 
 fn validate_header(header: &ResourceHeader, path: &PathBuf) -> Result<(), OrbitError> {
-    if header.schema_version != RESOURCE_SCHEMA_VERSION {
+    let expected = match header.kind {
+        ResourceKind::Policy => POLICY_RESOURCE_SCHEMA_VERSION,
+        _ => RESOURCE_SCHEMA_VERSION,
+    };
+    if header.schema_version != expected {
         return Err(OrbitError::InvalidInput(format!(
             "{}: unsupported schemaVersion '{}' (expected '{}')",
             path.display(),
             header.schema_version,
-            RESOURCE_SCHEMA_VERSION,
+            expected,
         )));
     }
     Ok(())

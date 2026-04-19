@@ -43,9 +43,6 @@ fn describe_job(runtime: &OrbitRuntime, job_id: &str) -> Result<(), OrbitError> 
     println!("State:           {}", job.state);
     println!("Max Active Runs: {}", job.max_active_runs);
     println!("Max Iterations:  {}", job.max_iterations);
-    if let Some(ref policy) = job.policy {
-        println!("Policy:          {policy}");
-    }
     if let Some(ref input) = job.default_input {
         println!(
             "Default Input:   {}",
@@ -123,35 +120,55 @@ fn describe_policy(runtime: &OrbitRuntime, name: &str) -> Result<(), OrbitError>
     println!("Created:     {}", def.created_at.to_rfc3339());
     println!("Updated:     {}", def.updated_at.to_rfc3339());
 
-    if let Some(ref fs) = def.filesystem {
-        println!();
-        println!("Filesystem:");
-        if !fs.allow_write.is_empty() {
-            println!("  allow_write: {}", fs.allow_write.join(", "));
+    println!();
+    println!("Global Denies:");
+    println!(
+        "  denyRead:   {}",
+        if def.deny_read.is_empty() {
+            "[]".to_string()
+        } else {
+            def.deny_read.join(", ")
         }
-        if !fs.deny_write.is_empty() {
-            println!("  deny_write:  {}", fs.deny_write.join(", "));
+    );
+    println!(
+        "  denyModify: {}",
+        if def.deny_modify.is_empty() {
+            "[]".to_string()
+        } else {
+            def.deny_modify.join(", ")
         }
+    );
+
+    println!();
+    println!("fsProfiles:");
+    let mut names: Vec<String> = def.fs_profiles.keys().cloned().collect();
+    names.sort();
+    if !names
+        .iter()
+        .any(|name| name == orbit_types::UNRESTRICTED_FS_PROFILE)
+    {
+        names.push(orbit_types::UNRESTRICTED_FS_PROFILE.to_string());
     }
-    if let Some(ref proc) = def.process {
-        println!();
-        println!("Process:");
-        if !proc.allow_commands.is_empty() {
-            println!("  allow_commands: {}", proc.allow_commands.join(", "));
-        }
-        if !proc.deny_commands.is_empty() {
-            println!("  deny_commands:  {}", proc.deny_commands.join(", "));
-        }
-    }
-    if let Some(ref tools) = def.tools {
-        println!();
-        println!("Tools:");
-        if !tools.allow.is_empty() {
-            println!("  allow: {}", tools.allow.join(", "));
-        }
-        if !tools.deny.is_empty() {
-            println!("  deny:  {}", tools.deny.join(", "));
-        }
+
+    for profile_name in names {
+        let profile = def.effective_profile(&profile_name)?;
+        println!("  {}:", profile_name);
+        println!(
+            "    read:   {}",
+            if profile.read.is_empty() {
+                "[]".to_string()
+            } else {
+                profile.read.join(", ")
+            }
+        );
+        println!(
+            "    modify: {}",
+            if profile.modify.is_empty() {
+                "[]".to_string()
+            } else {
+                profile.modify.join(", ")
+            }
+        );
     }
     Ok(())
 }

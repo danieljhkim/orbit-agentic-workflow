@@ -7,6 +7,7 @@ use super::contracts::{
     TaskDocumentStoreBackend, TaskHistoryStoreBackend, TaskReviewStoreBackend, TaskStoreBackend,
     ToolStoreBackend,
 };
+use super::layered_policy_def::LayeredPolicyDefStore;
 use super::sqlite_backends::{SqliteAuditEventStoreBackend, SqliteToolStoreBackend};
 use crate::Store;
 use crate::file::activity_store::ActivityFileStore;
@@ -64,4 +65,15 @@ pub fn audit_event_store_sqlite(store: Store) -> Arc<dyn AuditEventStoreBackend>
 
 pub fn global_policy_def_store(root: PathBuf) -> Arc<dyn PolicyDefStoreBackend> {
     Arc::new(PolicyDefFileStore::new(root))
+}
+
+pub fn workspace_policy_def_store(root: PathBuf) -> Arc<dyn PolicyDefStoreBackend> {
+    Arc::new(PolicyDefFileStore::new(root))
+}
+
+pub fn layered_policy_def_store(
+    workspace: Arc<dyn PolicyDefStoreBackend>,
+    global: Arc<dyn PolicyDefStoreBackend>,
+) -> Arc<dyn PolicyDefStoreBackend> {
+    Arc::new(LayeredPolicyDefStore::new(workspace, global))
 }

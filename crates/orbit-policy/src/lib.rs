@@ -1,20 +1,12 @@
-//! RBAC policy evaluation engine for Orbit tool, process, and filesystem-write authorization.
-//!
-//! Evaluates whether a given actor (identified by [`orbit_types::Role`]) is
-//! permitted to invoke a specific tool, spawn a specific command, or write to a
-//! specific filesystem path. Admin callers bypass explicit tool deny rules,
-//! while agent callers are subject to them; all policy contexts still respect
-//! the engine's default allow or default deny mode.
+//! Filesystem-profile policy evaluation for Orbit runtime activities.
 //!
 //! # Role
-//! Sits directly above `orbit-types` in the dependency graph. Consumed by
-//! `orbit-core`, which wires the [`PolicyEngine`] into the runtime so that
-//! every tool call passes through policy evaluation before execution.
+//! Consumed by `orbit-core` and `orbit-tools` to interpret the fsProfile-only
+//! `PolicyDef` schema and answer "may this profile read/modify this path?"
 //!
 //! # Key exports
-//! - [`PolicyEngine`] — stateful evaluator; constructed with allow/deny rule sets
-//! - [`PolicyContext`] — per-call context for tool, process, or filesystem-write checks
-//! - [`PolicyDecision`] — `Allow` or `Deny { reason }` result
+//! - [`PolicyEngine`] — wraps a validated [`orbit_types::PolicyDef`]
+//! - [`FsPolicyEvaluation`] — structured allow/deny outcome with matched rule
 //!
 //! # Dependency direction
 //! `orbit-types` → `orbit-policy` → orbit-core
@@ -24,4 +16,4 @@ pub mod engine;
 mod evaluator;
 
 pub use decision::PolicyDecision;
-pub use engine::{PolicyContext, PolicyEngine};
+pub use engine::{FsPolicyEvaluation, PolicyEngine};

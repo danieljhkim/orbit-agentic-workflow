@@ -87,6 +87,7 @@ fn smoke_dispatch_shell(
     let outcome = dispatch_v2_activity(V2DispatchInput {
         activity_name: &asset.name,
         spec: &asset.spec.spec,
+        fs_profile: asset.spec.fs_profile.as_deref(),
         input: Value::Null,
         audit: writer.clone(),
         run_id,
@@ -119,6 +120,7 @@ fn smoke_dispatch_deterministic(
     let outcome = dispatch_v2_activity(V2DispatchInput {
         activity_name: &asset.name,
         spec: &asset.spec.spec,
+        fs_profile: asset.spec.fs_profile.as_deref(),
         input: Value::Null,
         audit: writer.clone(),
         run_id,
@@ -146,13 +148,22 @@ fn smoke_dispatch_agent_loop(
     let ActivityV2Spec::AgentLoop(agent_spec) = &asset.spec.spec else {
         return Err("not an agent_loop spec".into());
     };
+    let host = EchoHost;
 
     // Phase 3: ToolDenied is structural — setting the env triggers the replay
     // path, which scripts fs.write → loop denies → driver returns Err(ToolDenied).
     unsafe {
         env::set_var("ORBIT_V2_REPLAY", "tool_denial");
     }
-    let result = drive_agent_loop(agent_spec, None, run_id, writer.clone(), &Value::Null);
+    let result = drive_agent_loop(
+        agent_spec,
+        None,
+        run_id,
+        writer.clone(),
+        &Value::Null,
+        &host,
+        asset.spec.fs_profile.as_deref(),
+    );
     unsafe {
         env::remove_var("ORBIT_V2_REPLAY");
     }
@@ -220,6 +231,7 @@ impl V2RuntimeHost for EchoHost {
         action: &str,
         config: &Value,
         input: &Value,
+        _tool_context: orbit_tools::ToolContext,
     ) -> Result<Value, DispatchError> {
         Ok(serde_json::json!({
             "action": action,
@@ -239,6 +251,14 @@ impl V2RuntimeHost for EchoHost {
         Err(DispatchError::CliInvocationFailed(
             "EchoHost has no CLI provider mapping".into(),
         ))
+    }
+
+    fn tool_context_for_activity(
+        &self,
+        _fs_profile: Option<&str>,
+        _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
+    ) -> orbit_tools::ToolContext {
+        orbit_tools::ToolContext::default()
     }
 }
 

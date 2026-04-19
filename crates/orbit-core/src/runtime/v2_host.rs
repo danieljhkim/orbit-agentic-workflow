@@ -8,8 +8,11 @@
 //! HTTP agent-loop transport and CLI subprocess execution both live in
 //! `orbit-engine`, so this module never names orbit-agent types.
 
+use std::sync::Arc;
+
 use orbit_engine::v2::{DispatchError, V2RuntimeHost};
-use orbit_types::Role;
+use orbit_tools::{FsAuditLogger, ToolContext};
+use orbit_types::{Role, UNRESTRICTED_FS_PROFILE};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -20,6 +23,7 @@ impl V2RuntimeHost for OrbitRuntime {
         action: &str,
         config: &Value,
         input: &Value,
+        tool_context: ToolContext,
     ) -> Result<Value, DispatchError> {
         match action {
             "orbit_tool_call" => {
@@ -40,7 +44,7 @@ impl V2RuntimeHost for OrbitRuntime {
                     .cloned()
                     .unwrap_or(Value::Null);
 
-                self.run_tool_with_role(tool_name, args, Role::Admin)
+                self.run_tool_with_context_and_role(tool_name, args, Role::Admin, tool_context)
                     .map_err(|err| DispatchError::DeterministicActionFailed {
                         action: action.to_string(),
                         message: format!("{err}"),
@@ -90,6 +94,29 @@ impl V2RuntimeHost for OrbitRuntime {
 
     fn resolve_cli_command(&self, provider: &str) -> Result<String, DispatchError> {
         resolve_cli_command(provider)
+    }
+
+    fn tool_context_for_activity(
+        &self,
+        fs_profile: Option<&str>,
+        fs_audit: Option<Arc<dyn FsAuditLogger>>,
+    ) -> ToolContext {
+        let workspace_root = self
+            .paths()
+            .repo_root
+            .canonicalize()
+            .unwrap_or_else(|_| self.paths().repo_root.clone());
+
+        ToolContext {
+            cwd: std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.to_string_lossy().into_owned()),
+            workspace_root: Some(workspace_root),
+            policy_engine: Some(Arc::new(self.policy_engine().clone())),
+            fs_profile: Some(fs_profile.unwrap_or(UNRESTRICTED_FS_PROFILE).to_string()),
+            fs_audit,
+            ..Default::default()
+        }
     }
 
     fn api_key_for(&self, provider: &str) -> Result<String, DispatchError> {

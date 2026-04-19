@@ -1,4 +1,5 @@
 pub mod copy;
+pub mod create;
 pub mod delete;
 pub mod ls;
 pub mod mkdir;
@@ -9,12 +10,21 @@ pub mod write;
 
 use std::path::{Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_types::{FsOperation, OrbitError};
 
-use crate::{ToolContext, ToolRegistry};
+use crate::{FsCallEvent, FsCallEventKind, ToolContext, ToolRegistry};
+
+#[derive(Debug, Clone)]
+pub(crate) struct FsPolicyAllowance {
+    pub(crate) profile: String,
+    pub(crate) op: FsOperation,
+    pub(crate) path: String,
+    pub(crate) matched_rule: String,
+}
 
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(copy::FsCopyTool);
+    registry.register(create::FsCreateTool);
     registry.register(read::FsReadTool);
     registry.register(ls::FsLsTool);
     registry.register(write::FsWriteTool);
@@ -100,4 +110,106 @@ pub(crate) fn check_file_lock(
     // File-level locking removed; graph-level locking is handled by
     // the shared lock store at .orbit/knowledge/graph_locks.json.
     Ok(())
+}
+
+pub(crate) fn check_read_policy(
+    ctx: &ToolContext,
+    canonical_path: &Path,
+) -> Result<Option<FsPolicyAllowance>, OrbitError> {
+    enforce_fs_policy(ctx, canonical_path, FsOperation::Read)
+}
+
+pub(crate) fn check_modify_policy(
+    ctx: &ToolContext,
+    canonical_path: &Path,
+) -> Result<Option<FsPolicyAllowance>, OrbitError> {
+    enforce_fs_policy(ctx, canonical_path, FsOperation::Modify)
+}
+
+pub(crate) fn emit_success(
+    ctx: &ToolContext,
+    allowance: Option<&FsPolicyAllowance>,
+) -> Result<(), OrbitError> {
+    let Some(allowance) = allowance else {
+        return Ok(());
+    };
+    emit_fs_event(ctx, FsCallEventKind::Result, allowance, true)
+}
+
+fn enforce_fs_policy(
+    ctx: &ToolContext,
+    canonical_path: &Path,
+    op: FsOperation,
+) -> Result<Option<FsPolicyAllowance>, OrbitError> {
+    let Some(profile) = ctx.fs_profile.as_deref() else {
+        return Ok(None);
+    };
+    let Some(policy_engine) = ctx.policy_engine.as_ref() else {
+        return Ok(None);
+    };
+
+    let path = workspace_relative_path(ctx, canonical_path)?;
+    let evaluation = policy_engine.check(profile.to_string(), op, path.clone())?;
+    let allowance = FsPolicyAllowance {
+        profile: evaluation.profile,
+        op: evaluation.operation,
+        path,
+        matched_rule: evaluation.matched_rule,
+    };
+
+    if evaluation.allowed {
+        emit_fs_event(ctx, FsCallEventKind::Request, &allowance, true)?;
+        return Ok(Some(allowance));
+    }
+
+    emit_fs_event(ctx, FsCallEventKind::Denied, &allowance, false)?;
+    Err(OrbitError::PolicyDenied(format!(
+        "fs.{} denied for `{}` under fsProfile `{}` (matched rule `{}`)",
+        allowance.op.as_str(),
+        allowance.path,
+        allowance.profile,
+        allowance.matched_rule,
+    )))
+}
+
+fn emit_fs_event(
+    ctx: &ToolContext,
+    kind: FsCallEventKind,
+    allowance: &FsPolicyAllowance,
+    allowed: bool,
+) -> Result<(), OrbitError> {
+    let Some(logger) = ctx.fs_audit.as_ref() else {
+        return Ok(());
+    };
+
+    logger.emit(FsCallEvent {
+        kind,
+        profile: allowance.profile.clone(),
+        op: allowance.op.as_str().to_string(),
+        path: allowance.path.clone(),
+        allowed,
+        matched_rule: allowance.matched_rule.clone(),
+    })
+}
+
+fn workspace_relative_path(ctx: &ToolContext, canonical_path: &Path) -> Result<String, OrbitError> {
+    let workspace_root = ctx.workspace_root.as_ref().ok_or_else(|| {
+        OrbitError::PolicyDenied("workspace_root is not set; filesystem access denied".to_string())
+    })?;
+    let canonical_root = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.clone());
+    let relative = canonical_path.strip_prefix(&canonical_root).map_err(|_| {
+        OrbitError::PolicyDenied(format!(
+            "path is outside workspace: {}",
+            canonical_path.display()
+        ))
+    })?;
+
+    let rendered = relative.to_string_lossy().replace('\\', "/");
+    if rendered.is_empty() {
+        Ok(".".to_string())
+    } else {
+        Ok(format!("./{rendered}"))
+    }
 }

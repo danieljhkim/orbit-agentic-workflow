@@ -1,7 +1,9 @@
 use std::process::Command;
 use std::sync::Arc;
 
+use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, ToolContext};
 use orbit_types::v2::{ActivityV2Spec, AgentLoopSpec, Backend, DeterministicSpec, ShellSpec};
+use orbit_types::{OrbitError, v2::V2AuditEventKind};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -27,6 +29,7 @@ pub trait V2RuntimeHost: Send + Sync {
         action: &str,
         config: &Value,
         input: &Value,
+        tool_context: ToolContext,
     ) -> Result<Value, DispatchError>;
 
     /// Source the API key for a given provider (e.g. `"anthropic"`). Returns
@@ -40,12 +43,19 @@ pub trait V2RuntimeHost: Send + Sync {
     /// the structured failure path when a provider has no CLI mapping (e.g.
     /// `openai_compat` which is HTTP-only).
     fn resolve_cli_command(&self, provider: &str) -> Result<String, DispatchError>;
+
+    fn tool_context_for_activity(
+        &self,
+        fs_profile: Option<&str>,
+        fs_audit: Option<Arc<dyn FsAuditLogger>>,
+    ) -> ToolContext;
 }
 
 /// Input bundle for a single v2 activity dispatch.
 pub struct V2DispatchInput<'a> {
     pub activity_name: &'a str,
     pub spec: &'a ActivityV2Spec,
+    pub fs_profile: Option<&'a str>,
     pub input: Value,
     pub audit: Arc<V2AuditWriter>,
     pub run_id: &'a str,
@@ -171,11 +181,18 @@ pub fn dispatch_v2_activity(input: V2DispatchInput<'_>) -> Result<DispatchOutcom
                 input.run_id,
                 input.audit.clone(),
                 &input.input,
+                input.fs_profile,
             ),
             None => Err(DispatchError::HostRequired("agent_loop")),
         },
         ActivityV2Spec::Deterministic(spec) => match input.host {
-            Some(host) => run_deterministic(host, spec, &input.input),
+            Some(host) => run_deterministic(
+                host,
+                spec,
+                input.fs_profile,
+                input.audit.clone(),
+                &input.input,
+            ),
             None => Err(DispatchError::HostRequired("deterministic")),
         },
         ActivityV2Spec::Shell(spec) => run_shell(spec),
@@ -200,9 +217,13 @@ pub fn dispatch_v2_activity(input: V2DispatchInput<'_>) -> Result<DispatchOutcom
 fn run_deterministic(
     host: &dyn V2RuntimeHost,
     spec: &DeterministicSpec,
+    fs_profile: Option<&str>,
+    audit: Arc<V2AuditWriter>,
     input: &Value,
 ) -> Result<DispatchOutcome, DispatchError> {
-    let output = host.run_deterministic(&spec.action, &spec.config, input)?;
+    let tool_context =
+        host.tool_context_for_activity(fs_profile, Some(v2_fs_audit_logger(audit.clone())));
+    let output = host.run_deterministic(&spec.action, &spec.config, input, tool_context)?;
     Ok(DispatchOutcome {
         success: true,
         output,
@@ -217,6 +238,7 @@ fn run_agent_loop_activity(
     run_id: &str,
     audit: Arc<V2AuditWriter>,
     input: &Value,
+    fs_profile: Option<&str>,
 ) -> Result<DispatchOutcome, DispatchError> {
     match spec.backend {
         Backend::Auto => Err(DispatchError::UnresolvedAutoBackend {
@@ -228,7 +250,7 @@ fn run_agent_loop_activity(
                     provider: spec.provider.as_str().to_string(),
                 });
             }
-            run_agent_loop_via_driver(host, spec, run_id, audit, input)
+            run_agent_loop_via_driver(host, spec, run_id, audit, input, fs_profile)
         }
         Backend::Cli => run_cli_backend(host, spec, run_id, audit, input),
     }
@@ -240,6 +262,7 @@ fn run_agent_loop_via_driver(
     run_id: &str,
     audit: Arc<V2AuditWriter>,
     input: &Value,
+    fs_profile: Option<&str>,
 ) -> Result<DispatchOutcome, DispatchError> {
     // Sourcing only: orbit-core pulls the provider credential from wherever
     // makes sense (env var, config, secrets manager). We treat a sourcing
@@ -247,7 +270,15 @@ fn run_agent_loop_via_driver(
     // replay path (ORBIT_V2_REPLAY) without credentials. When the driver
     // actually needs a key and none is present, it errors structurally.
     let api_key = host.api_key_for("anthropic").ok();
-    let outcome = drive_agent_loop(spec, api_key.as_deref(), run_id, audit, input)?;
+    let outcome = drive_agent_loop(
+        spec,
+        api_key.as_deref(),
+        run_id,
+        audit,
+        input,
+        host,
+        fs_profile,
+    )?;
     Ok(DispatchOutcome {
         success: true,
         output: serde_json::json!({
@@ -260,6 +291,47 @@ fn run_agent_loop_via_driver(
         }),
         message: None,
     })
+}
+
+struct V2FsAuditLogger {
+    audit: Arc<V2AuditWriter>,
+}
+
+impl FsAuditLogger for V2FsAuditLogger {
+    fn emit(&self, event: FsCallEvent) -> Result<(), OrbitError> {
+        let kind = match event.kind {
+            FsCallEventKind::Request => V2AuditEventKind::FsCallRequest {
+                profile: event.profile,
+                op: event.op,
+                path: event.path,
+                allowed: event.allowed,
+                matched_rule: event.matched_rule,
+            },
+            FsCallEventKind::Result => V2AuditEventKind::FsCallResult {
+                profile: event.profile,
+                op: event.op,
+                path: event.path,
+                allowed: event.allowed,
+                matched_rule: event.matched_rule,
+            },
+            FsCallEventKind::Denied => V2AuditEventKind::FsCallDenied {
+                profile: event.profile,
+                op: event.op,
+                path: event.path,
+                allowed: event.allowed,
+                matched_rule: event.matched_rule,
+            },
+        };
+
+        self.audit
+            .emit(kind)
+            .map(|_| ())
+            .map_err(|error| OrbitError::Execution(format!("audit write failed: {error}")))
+    }
+}
+
+pub(crate) fn v2_fs_audit_logger(audit: Arc<V2AuditWriter>) -> Arc<dyn FsAuditLogger> {
+    Arc::new(V2FsAuditLogger { audit })
 }
 
 fn run_shell(spec: &ShellSpec) -> Result<DispatchOutcome, DispatchError> {

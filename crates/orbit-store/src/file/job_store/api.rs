@@ -51,7 +51,6 @@ impl JobFileStore {
             max_active_runs: params.max_active_runs,
             max_iterations: params.max_iterations,
             steps: params.steps,
-            policy: params.policy,
             created_at: now,
             updated_at: now,
         };
@@ -104,9 +103,6 @@ impl JobFileStore {
         }
         if let Some(steps) = params.steps.clone() {
             job.steps = steps;
-        }
-        if let Some(policy) = params.policy.clone() {
-            job.policy = policy;
         }
         if let Some(state) = params.state {
             job.state = state;

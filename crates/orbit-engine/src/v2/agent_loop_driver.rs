@@ -22,11 +22,12 @@ use orbit_agent::loop_engine::{
     ReplayTransport, ReplayTurn, Session, StopReason,
 };
 use orbit_agent::providers::anthropic::AnthropicMessagesTransport;
+use orbit_tools::ToolContext;
 use orbit_types::v2::AgentLoopSpec;
 use serde_json::Value;
 
 use super::audit_writer::V2AuditWriter;
-use super::dispatcher::DispatchError;
+use super::dispatcher::{DispatchError, V2RuntimeHost, v2_fs_audit_logger};
 use super::tool_enforcement::EnforcedAuditSink;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
@@ -41,11 +42,22 @@ pub fn drive_agent_loop(
     run_id: &str,
     audit: Arc<V2AuditWriter>,
     input: &Value,
+    host: &dyn V2RuntimeHost,
+    fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
     let model = resolve_model(spec);
     let provider = expected_provider();
     let mut session = Session::new(provider, model.clone(), &spec.instruction, None);
-    drive_inner(spec, api_key, run_id, audit, &mut session, input)
+    drive_inner(
+        spec,
+        api_key,
+        run_id,
+        audit,
+        &mut session,
+        input,
+        host,
+        fs_profile,
+    )
 }
 
 /// Drive a v2 agent_loop activity reusing an existing `Session`.
@@ -60,8 +72,12 @@ pub fn drive_agent_loop_with_session(
     audit: Arc<V2AuditWriter>,
     session: &mut Session,
     input: &Value,
+    host: &dyn V2RuntimeHost,
+    fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
-    drive_inner(spec, api_key, run_id, audit, session, input)
+    drive_inner(
+        spec, api_key, run_id, audit, session, input, host, fs_profile,
+    )
 }
 
 fn drive_inner(
@@ -71,6 +87,8 @@ fn drive_inner(
     audit: Arc<V2AuditWriter>,
     session: &mut Session,
     input: &Value,
+    host: &dyn V2RuntimeHost,
+    fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
     let model = resolve_model(spec);
     let user_prompt = user_prompt_from_input(input)?;
@@ -81,7 +99,16 @@ fn drive_inner(
         // need the transport's state to persist too, else every iteration
         // would replay the same first turn.
         let transport = acquire_replay_transport(&model)?;
-        run_loop(spec, run_id, audit, session, &*transport, &user_prompt)
+        run_loop(
+            spec,
+            run_id,
+            audit,
+            session,
+            &*transport,
+            &user_prompt,
+            host,
+            fs_profile,
+        )
     } else {
         let key = api_key.ok_or_else(|| {
             DispatchError::AgentLoopFailed(
@@ -95,7 +122,16 @@ fn drive_inner(
         }
         let transport = AnthropicMessagesTransport::new(key.to_string(), model.clone())
             .map_err(|err| DispatchError::AgentLoopFailed(format!("transport: {err}")))?;
-        run_loop(spec, run_id, audit, session, &transport, &user_prompt)
+        run_loop(
+            spec,
+            run_id,
+            audit,
+            session,
+            &transport,
+            &user_prompt,
+            host,
+            fs_profile,
+        )
     }
 }
 
@@ -259,21 +295,17 @@ fn run_loop<T: LoopTransport>(
     session: &mut Session,
     transport: &T,
     user_prompt: &str,
+    host: &dyn V2RuntimeHost,
+    fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
     let mut registry = orbit_tools::ToolRegistry::new();
-    // In replay mode, make side-effect-free builtins available so scripted
-    // tool_use blocks (e.g. `time.now`) execute without network — required by
-    // Phase 3 loop smokes that inspect `tool.call.*` events for session_id
-    // persistence. Live mode stays empty; orbit-core's real runtime injects
-    // a fully-populated registry at its own layer.
-    if replay_active() {
-        registry.register_builtins();
-    }
-    let tool_ctx = orbit_tools::ToolContext::default();
+    registry.register_builtins();
+    let tool_ctx: ToolContext =
+        host.tool_context_for_activity(fs_profile, Some(v2_fs_audit_logger(audit.clone())));
 
     let cfg = AgentLoopConfig::new_for_run(run_id)
         .with_allowlist(spec.tools.clone())
-        .with_advertised_tools(vec!["fs.read".into(), "fs.write".into()])
+        .with_advertised_tools(spec.tools.clone())
         .with_max_iterations(spec.max_iterations.max(1))
         .with_max_total_tokens(u64::MAX)
         .with_wall_clock_timeout(Duration::from_secs(300));

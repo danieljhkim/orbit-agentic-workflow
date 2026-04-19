@@ -23,6 +23,8 @@ pub struct ActivityV2 {
     pub input_schema_json: Value,
     #[serde(default)]
     pub output_schema_json: Value,
+    #[serde(rename = "fsProfile", default, skip_serializing_if = "Option::is_none")]
+    pub fs_profile: Option<String>,
     #[serde(flatten)]
     pub spec: ActivityV2Spec,
 }

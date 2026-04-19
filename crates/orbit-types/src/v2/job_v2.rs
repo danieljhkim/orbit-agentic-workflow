@@ -34,8 +34,6 @@ pub struct JobV2 {
     #[serde(default)]
     pub kind: JobKind,
     pub steps: Vec<JobV2Step>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub policy: Option<String>,
 }
 
 /// A step in a v2 job. Carries `id`, optional `when` / `retry` modifiers,
@@ -163,6 +161,8 @@ impl<'de> Deserialize<'de> for JobV2Step {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TargetStep {
     pub spec: ActivityV2Spec,
+    #[serde(rename = "fsProfile", default, skip_serializing_if = "Option::is_none")]
+    pub fs_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_input: Option<Value>,
     #[serde(default)]

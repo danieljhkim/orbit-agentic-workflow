@@ -30,6 +30,7 @@ impl Tool for FsLsTool {
             .ok_or_else(|| OrbitError::InvalidInput("missing `path`".to_string()))?;
 
         let canonical = super::check_workspace_boundary(ctx, Path::new(path_str))?;
+        let policy = super::check_read_policy(ctx, &canonical)?;
         let metadata = fs::metadata(&canonical).map_err(|e| OrbitError::Io(e.to_string()))?;
         if !metadata.is_dir() {
             return Err(OrbitError::InvalidInput(format!(
@@ -68,6 +69,7 @@ impl Tool for FsLsTool {
                 .unwrap_or_default();
             left_name.cmp(right_name)
         });
+        super::emit_success(ctx, policy.as_ref())?;
 
         Ok(json!({
             "path": canonical.display().to_string(),

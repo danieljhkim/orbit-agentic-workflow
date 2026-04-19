@@ -45,9 +45,13 @@ impl Tool for FsMoveTool {
         let canonical_destination = super::check_workspace_boundary(ctx, Path::new(destination))?;
         super::check_file_lock(ctx, &canonical_source)?;
         super::check_file_lock(ctx, &canonical_destination)?;
+        let source_policy = super::check_modify_policy(ctx, &canonical_source)?;
+        let destination_policy = super::check_modify_policy(ctx, &canonical_destination)?;
 
         fs::rename(&canonical_source, &canonical_destination)
             .map_err(|e| OrbitError::Io(e.to_string()))?;
+        super::emit_success(ctx, source_policy.as_ref())?;
+        super::emit_success(ctx, destination_policy.as_ref())?;
 
         Ok(json!({
             "source": canonical_source.display().to_string(),

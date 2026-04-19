@@ -99,8 +99,8 @@ pub use backend::{
     TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
     TaskHistoryUpdateParams, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
     ToolStoreBackend, WorkspaceTaskBackends, audit_event_store_sqlite, global_activity_store,
-    global_executor_def_store, global_policy_def_store, scoped_job_backends, tool_store_sqlite,
-    workspace_task_backends,
+    global_executor_def_store, global_policy_def_store, layered_policy_def_store,
+    scoped_job_backends, tool_store_sqlite, workspace_policy_def_store, workspace_task_backends,
 };
 pub use invocation_store_impl::{
     ActivityInvocationMetrics, AgentInvocationMetrics, InvocationInsertParams, InvocationQuery,

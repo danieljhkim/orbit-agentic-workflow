@@ -354,6 +354,7 @@ fn run_target(
                 api_key.as_deref(),
                 entry,
                 &rendered_input,
+                t.fs_profile.as_deref(),
                 ctx,
             )
         }
@@ -364,6 +365,7 @@ fn run_target(
             let dispatch = dispatch_v2_activity(V2DispatchInput {
                 activity_name: &step.id,
                 spec: &t.spec,
+                fs_profile: t.fs_profile.as_deref(),
                 input: rendered_input,
                 audit: ctx.audit.clone(),
                 run_id: &ctx.run_id,
@@ -382,6 +384,7 @@ fn run_target(
             let dispatch = dispatch_v2_activity(V2DispatchInput {
                 activity_name: &step.id,
                 spec: &t.spec,
+                fs_profile: t.fs_profile.as_deref(),
                 input: rendered_input,
                 audit: ctx.audit.clone(),
                 run_id: &ctx.run_id,
@@ -404,6 +407,7 @@ fn run_agent_loop_outcome(
     api_key: Option<&str>,
     session: &mut Session,
     input: &Value,
+    fs_profile: Option<&str>,
     ctx: &ExecCtx<'_>,
 ) -> Result<StepOutcome, DispatchError> {
     let outcome = drive_agent_loop_with_session(
@@ -413,6 +417,8 @@ fn run_agent_loop_outcome(
         ctx.audit.clone(),
         session,
         input,
+        ctx.host,
+        fs_profile,
     )?;
     let out_json = serde_json::json!({
         "final_message": outcome.final_message,

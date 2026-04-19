@@ -131,7 +131,7 @@ Resources:
   task       Create, update, and manage tasks
   activity   Define, list, and run v2 activities
   job        Define, list, and manage job workflows
-  policy     Manage execution policies
+  policy     Manage filesystem profile policies and runtime scoping
   executor   Manage executors
   tool       Manage tools and external MCP plugins
 
@@ -148,6 +148,10 @@ Inspect:
 Serve:
   serve      Serve Orbit outward (serve web / serve mcp)
 ```
+
+The `policy` command group stays in `Resources` because policies now define the
+named filesystem profiles and global deny rules that activities consult at
+runtime.
 
 ---
 
@@ -176,8 +180,49 @@ Scoping rules matter:
 
 - Tasks, job runs, and scoreboards are workspace-local
 - Activities and jobs merge from global defaults with workspace overrides
+- Policies merge by profile name across global and workspace layers; global
+  `denyRead` / `denyModify` rails stay additive
 - Skills are fully controlled by the workspace
 - Audit is global
+
+## Filesystem Profiles
+
+Policies are now focused on filesystem runtime scoping. A v2 activity can opt
+into a named filesystem profile with `fsProfile`; if it omits the field, Orbit
+resolves an implicit `unrestricted` profile (`read: [./**]`, `modify: [./**]`)
+and still applies the policy's global deny rules.
+
+Short example:
+
+```yaml
+# activity
+schemaVersion: 2
+kind: Activity
+metadata:
+  name: agent_review_diff
+spec:
+  type: agent_loop
+  fsProfile: reviewer
+  instruction: Review the diff without modifying workspace files.
+```
+
+```yaml
+# policy
+schemaVersion: 2
+kind: Policy
+metadata:
+  name: default
+spec:
+  denyRead:
+    - "**/*.env"
+  denyModify:
+    - .orbit/**
+    - "**/*.env"
+  fsProfiles:
+    reviewer:
+      read: [./**]
+      modify: []
+```
 
 ---
 

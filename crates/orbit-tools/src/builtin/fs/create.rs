@@ -1,4 +1,5 @@
-use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 
 use orbit_types::{OrbitError, ToolParam, ToolSchema};
@@ -6,25 +7,26 @@ use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
 
-pub struct FsWriteTool;
+pub struct FsCreateTool;
 
-impl Tool for FsWriteTool {
+impl Tool for FsCreateTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
-            name: "fs.write".to_string(),
-            description: "Write UTF-8 text content to disk".to_string(),
+            name: "fs.create".to_string(),
+            description: "Create a new UTF-8 text file; fails if the file already exists"
+                .to_string(),
             parameters: vec![
                 ToolParam {
                     name: "path".to_string(),
-                    description: "Path to the file to write".to_string(),
+                    description: "Path to the file to create".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "content".to_string(),
-                    description: "UTF-8 text content to write".to_string(),
+                    description: "Optional UTF-8 text content to write".to_string(),
                     param_type: "string".to_string(),
-                    required: true,
+                    required: false,
                 },
             ],
             builtin: true,
@@ -39,18 +41,25 @@ impl Tool for FsWriteTool {
         let content = input
             .get("content")
             .and_then(Value::as_str)
-            .ok_or_else(|| OrbitError::InvalidInput("missing `content`".to_string()))?;
+            .unwrap_or_default();
 
         let canonical = super::check_workspace_boundary(ctx, Path::new(path_str))?;
         super::check_file_lock(ctx, &canonical)?;
         let policy = super::check_modify_policy(ctx, &canonical)?;
 
-        fs::write(&canonical, content).map_err(|e| OrbitError::Io(e.to_string()))?;
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&canonical)
+            .map_err(|e| OrbitError::Io(e.to_string()))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| OrbitError::Io(e.to_string()))?;
         super::emit_success(ctx, policy.as_ref())?;
 
         Ok(json!({
             "path": canonical.display().to_string(),
             "bytes_written": content.len(),
+            "created": true,
         }))
     }
 }

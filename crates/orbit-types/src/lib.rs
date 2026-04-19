@@ -73,15 +73,19 @@ pub use job::{
 };
 pub use metrics::MetricsEntry;
 pub use policy_decision::PolicyDecision;
-pub use policy_def::{FilesystemPolicy, PolicyDef, ProcessPolicy, ToolPolicy};
+pub use policy_def::{
+    DEFAULT_POLICY_NAME, FsCheckResult, FsOperation, FsProfile, PolicyDef, ResolvedFsProfile,
+    UNRESTRICTED_FS_PROFILE,
+};
 pub use redaction::{
     is_sensitive_env_name, redact_sensitive_env_error, redact_sensitive_env_json,
     redact_sensitive_env_option, redact_sensitive_env_text,
 };
 pub use resource::{
     ActivityResource, ActivityResourceSpec, ExecutorResource, ExecutorResourceSpec, JobResource,
-    JobResourceSpec, PolicyResource, PolicyResourceSpec, RESOURCE_SCHEMA_VERSION, ResourceEnvelope,
-    ResourceHeader, ResourceKind, ResourceMetadata,
+    JobResourceSpec, POLICY_RESOURCE_SCHEMA_VERSION, PolicyResource, PolicyResourceSpec,
+    RESOURCE_SCHEMA_VERSION, ResourceEnvelope, ResourceHeader, ResourceKind, ResourceMetadata,
+    parse_policy_resource,
 };
 pub use role::Role;
 pub use run_state::PipelineState;

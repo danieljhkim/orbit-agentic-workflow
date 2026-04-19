@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
-    ExecutorType, FilesystemPolicy, JobScheduleState, JobStep, ProcessPolicy, StdoutFormat,
-    ToolPolicy, default_job_max_active_runs, default_max_iterations,
+    ExecutorType, FsProfile, JobScheduleState, JobStep, OrbitError, StdoutFormat,
+    default_job_max_active_runs, default_max_iterations,
 };
 
 pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
+pub const POLICY_RESOURCE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ResourceKind {
@@ -138,12 +139,16 @@ pub struct ActivityResourceSpec {
 pub struct PolicyResourceSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub filesystem: Option<FilesystemPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub process: Option<ProcessPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<ToolPolicy>,
+    #[serde(rename = "denyRead", default, skip_serializing_if = "Vec::is_empty")]
+    pub deny_read: Vec<String>,
+    #[serde(rename = "denyModify", default, skip_serializing_if = "Vec::is_empty")]
+    pub deny_modify: Vec<String>,
+    #[serde(
+        rename = "fsProfiles",
+        default,
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub fs_profiles: HashMap<String, FsProfile>,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
@@ -175,6 +180,34 @@ pub type JobResource = ResourceEnvelope<JobResourceSpec>;
 pub type ActivityResource = ResourceEnvelope<ActivityResourceSpec>;
 pub type PolicyResource = ResourceEnvelope<PolicyResourceSpec>;
 pub type ExecutorResource = ResourceEnvelope<ExecutorResourceSpec>;
+
+pub fn parse_policy_resource(yaml: &str, label: &str) -> Result<PolicyResource, OrbitError> {
+    let header: ResourceHeader = serde_yaml::from_str(yaml)
+        .map_err(|error| OrbitError::InvalidInput(format!("failed to parse {label}: {error}")))?;
+
+    if header.kind != ResourceKind::Policy {
+        return Err(OrbitError::InvalidInput(format!(
+            "failed to parse {label}: expected kind Policy, found {}",
+            header.kind
+        )));
+    }
+
+    if header.schema_version == 1 {
+        return Err(OrbitError::InvalidInput(format!(
+            "failed to parse {label}: policy schemaVersion 1 is no longer supported; migrate to schemaVersion 2 with `spec.denyRead`, `spec.denyModify`, and `spec.fsProfiles`"
+        )));
+    }
+
+    if header.schema_version != POLICY_RESOURCE_SCHEMA_VERSION {
+        return Err(OrbitError::InvalidInput(format!(
+            "failed to parse {label}: unsupported policy schemaVersion {}",
+            header.schema_version
+        )));
+    }
+
+    serde_yaml::from_str(yaml)
+        .map_err(|error| OrbitError::InvalidInput(format!("failed to parse {label}: {error}")))
+}
 
 fn default_true() -> bool {
     true

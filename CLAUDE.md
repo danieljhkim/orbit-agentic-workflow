@@ -45,6 +45,7 @@ orbit-types → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → or
 |-----------------|--------------------|--------------------------------------------------|
 | Tasks           | WorkspaceOnly      | Per-repo backlog, no cross-project leaking       |
 | Activities/Jobs | MergeByKey         | Global defaults + workspace overrides            |
+| Policies        | MergeByKey         | Workspace overrides profiles by name; global `denyRead` / `denyModify` rules accumulate |
 | Job Runs        | WorkspaceOnly      | Execution artifacts are workspace-local          |
 | Skills          | WorkspaceReplaces  | Workspace has full control over available skills |
 | Audit           | GlobalOnly         | Single authoritative event trail                 |
@@ -76,6 +77,12 @@ Current coexistence note: v1 compatibility is still live for the remaining legac
 ### Activity YAML reference
 
 v2 activity and job YAMLs declare `schemaVersion: 2`. Job steps reference activities by name via `target: activity:<name>` (Phase 4 name resolution) or inline the full spec via `spec:` (Phase 3 style, still supported for tests). `agent_loop` activities declare `backend:`, `provider:`, `wall_clock_timeout_seconds:` (§3.1). A step inside a `loop:` body with a `session:` binding must resolve to `backend: http` — enforced at load time (§3.2 item 1).
+
+Policy is now a filesystem-scoping surface only. Activities can declare
+`fsProfile: <name>` to select a named profile from the active policy, and the
+policy layer contributes the global `denyRead` / `denyModify` safety rails. If
+an activity omits `fsProfile:`, runtime resolves an implicit `unrestricted`
+profile (`read: [./**]`, `modify: [./**]`) before applying the global denies.
 
 ## Task Authoring Quality
 

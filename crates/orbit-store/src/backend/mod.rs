@@ -6,6 +6,7 @@
 mod contracts;
 mod factory;
 mod file_backends;
+mod layered_policy_def;
 mod sqlite_backends;
 
 pub use contracts::*;

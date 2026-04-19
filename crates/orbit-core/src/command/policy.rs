@@ -1,10 +1,12 @@
 use chrono::Utc;
 use orbit_store::PolicyDefStoreBackend;
-use orbit_types::{OrbitError, PolicyDef, PolicyResource, RESOURCE_SCHEMA_VERSION, ResourceKind};
+use orbit_types::{
+    DEFAULT_POLICY_NAME, OrbitError, PolicyDef, ResourceKind, parse_policy_resource,
+};
 
 const DEFAULT_POLICY_FILES: &[(&str, &str)] = &[(
-    "safe-local-dev",
-    include_str!("../../assets/policies/safe-local-dev.yaml"),
+    DEFAULT_POLICY_NAME,
+    include_str!("../../assets/policies/default.yaml"),
 )];
 
 pub(crate) fn seed_default_policies(
@@ -30,14 +32,7 @@ fn parse_default_policy(
     raw: &str,
     now: chrono::DateTime<Utc>,
 ) -> Result<PolicyDef, OrbitError> {
-    let resource: PolicyResource = serde_yaml::from_str(raw)
-        .map_err(|e| OrbitError::InvalidInput(format!("invalid default policy '{name}': {e}")))?;
-    if resource.schema_version != RESOURCE_SCHEMA_VERSION {
-        return Err(OrbitError::InvalidInput(format!(
-            "invalid default policy '{name}': unsupported schemaVersion {}",
-            resource.schema_version
-        )));
-    }
+    let resource = parse_policy_resource(raw, &format!("default policy '{name}'"))?;
     if resource.kind != ResourceKind::Policy {
         return Err(OrbitError::InvalidInput(format!(
             "invalid default policy '{name}': expected kind Policy, found {}",
@@ -51,13 +46,15 @@ fn parse_default_policy(
         )));
     }
 
-    Ok(PolicyDef {
+    let def = PolicyDef {
         name: resource.metadata.name,
         description: resource.spec.description,
-        filesystem: resource.spec.filesystem,
-        process: resource.spec.process,
-        tools: resource.spec.tools,
+        deny_read: resource.spec.deny_read,
+        deny_modify: resource.spec.deny_modify,
+        fs_profiles: resource.spec.fs_profiles,
         created_at: now,
         updated_at: now,
-    })
+    };
+    def.validate()?;
+    Ok(def)
 }

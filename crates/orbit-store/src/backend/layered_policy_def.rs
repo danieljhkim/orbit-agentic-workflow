@@ -21,15 +21,15 @@ impl LayeredPolicyDefStore {
 
 impl PolicyDefStoreBackend for LayeredPolicyDefStore {
     fn list_policy_defs(&self) -> Result<Vec<PolicyDef>, OrbitError> {
-        let workspace_defs = self.workspace.list_policy_defs()?;
         let global_defs = self.global.list_policy_defs()?;
-
-        let workspace_names: std::collections::HashSet<String> =
-            workspace_defs.iter().map(|def| def.name.clone()).collect();
-
-        let mut merged = workspace_defs;
+        let mut merged = self.workspace.list_policy_defs()?;
         for def in global_defs {
-            if !workspace_names.contains(&def.name) {
+            if let Some(existing) = merged
+                .iter_mut()
+                .find(|candidate| candidate.name == def.name)
+            {
+                *existing = PolicyDef::merged(&def, existing)?;
+            } else {
                 merged.push(def);
             }
         }
@@ -38,10 +38,14 @@ impl PolicyDefStoreBackend for LayeredPolicyDefStore {
     }
 
     fn get_policy_def(&self, name: &str) -> Result<Option<PolicyDef>, OrbitError> {
-        if let Some(def) = self.workspace.get_policy_def(name)? {
-            return Ok(Some(def));
+        let workspace = self.workspace.get_policy_def(name)?;
+        let global = self.global.get_policy_def(name)?;
+        match (global, workspace) {
+            (Some(global), Some(workspace)) => Ok(Some(PolicyDef::merged(&global, &workspace)?)),
+            (None, Some(workspace)) => Ok(Some(workspace)),
+            (Some(global), None) => Ok(Some(global)),
+            (None, None) => Ok(None),
         }
-        self.global.get_policy_def(name)
     }
 
     fn upsert_policy_def(&self, def: &PolicyDef) -> Result<(), OrbitError> {

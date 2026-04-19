@@ -381,6 +381,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             let (sub, target_id) = match &cmd.command {
                 PolicySubcommand::List(_) => ("list", None),
                 PolicySubcommand::Show(args) => ("show", Some(args.name.as_str())),
+                PolicySubcommand::Check(args) => ("check", Some(args.profile_name.as_str())),
             };
             CommandMeta {
                 command: "policy".to_string(),

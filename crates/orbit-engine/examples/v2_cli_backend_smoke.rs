@@ -25,7 +25,7 @@ use orbit_engine::v2::{
 };
 use orbit_types::JobScheduleState;
 use orbit_types::v2::{
-    ActivityAsset, ActivityV2Spec, AgentLoopSpec, Backend, BackendConstraintError, JobV2,
+    ActivityAsset, ActivityV2Spec, AgentLoopSpec, Backend, BackendConstraintError, JobKind, JobV2,
     JobV2Step, JobV2StepBody, LoopBlock, OnDenial, Provider, TargetStep, load_activity_asset,
     resolve_job_backends, validate_job_loop_session_backends,
 };
@@ -68,6 +68,7 @@ fn scenario_a_cli_dispatch_emits_envelope_events() -> Result<(), Box<dyn std::er
     let outcome = dispatch_v2_activity(V2DispatchInput {
         activity_name: "cli_smoke_a",
         spec: &ActivityV2Spec::AgentLoop(spec),
+        fs_profile: None,
         input: serde_json::json!({ "prompt": "hello" }),
         audit: writer.clone(),
         run_id: "smoke-cli-a",
@@ -106,6 +107,7 @@ fn scenario_b_argv_redaction() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dispatch_v2_activity(V2DispatchInput {
         activity_name: "cli_smoke_b",
         spec: &ActivityV2Spec::AgentLoop(spec),
+        fs_profile: None,
         input: serde_json::json!({ "prompt": "redact me" }),
         audit: writer.clone(),
         run_id: "smoke-cli-b",
@@ -148,6 +150,7 @@ fn scenario_c_wall_clock_timeout() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dispatch_v2_activity(V2DispatchInput {
         activity_name: "cli_smoke_c",
         spec: &ActivityV2Spec::AgentLoop(spec),
+        fs_profile: None,
         input: serde_json::json!({ "prompt": "ignored" }),
         audit: writer.clone(),
         run_id: "smoke-cli-c",
@@ -187,6 +190,7 @@ fn scenario_d_no_silent_fallback_unwired_http() -> Result<(), Box<dyn std::error
     let err = dispatch_v2_activity(V2DispatchInput {
         activity_name: "cli_smoke_d",
         spec: &ActivityV2Spec::AgentLoop(spec),
+        fs_profile: None,
         input: serde_json::json!({ "prompt": "ignored" }),
         audit: writer.clone(),
         run_id: "smoke-cli-d",
@@ -254,6 +258,7 @@ fn scenario_g_auto_backend_unresolved_is_structural_error() -> Result<(), Box<dy
     let err = dispatch_v2_activity(V2DispatchInput {
         activity_name: "cli_smoke_g",
         spec: &ActivityV2Spec::AgentLoop(spec),
+        fs_profile: None,
         input: serde_json::json!({ "prompt": "ignored" }),
         audit: writer.clone(),
         run_id: "smoke-cli-g",
@@ -305,6 +310,7 @@ fn scenario_h_cli_reference_asset_round_trip() -> Result<(), Box<dyn std::error:
     let outcome = dispatch_v2_activity(V2DispatchInput {
         activity_name: &asset.name,
         spec: &asset.spec.spec,
+        fs_profile: asset.spec.fs_profile.as_deref(),
         input: serde_json::json!({ "prompt": "hello from the yaml round-trip" }),
         audit: writer.clone(),
         run_id: "smoke-cli-h",
@@ -438,6 +444,7 @@ fn synthetic_loop_session_cli_job() -> JobV2 {
                 provider: Provider::Claude,
                 wall_clock_timeout_seconds: 30,
             }),
+            fs_profile: None,
             default_input: None,
             timeout_seconds: 0,
             session: Some("reviewer".to_string()),
@@ -459,8 +466,8 @@ fn synthetic_loop_session_cli_job() -> JobV2 {
         state: JobScheduleState::Enabled,
         default_input: None,
         max_active_runs: 1,
+        kind: JobKind::Workflow,
         steps: vec![loop_step],
-        policy: None,
     }
 }
 
@@ -494,6 +501,7 @@ impl V2RuntimeHost for ScriptHost {
         _action: &str,
         _config: &Value,
         _input: &Value,
+        _tool_context: orbit_tools::ToolContext,
     ) -> Result<Value, DispatchError> {
         Err(DispatchError::DeterministicActionNotRegistered(
             "unused".to_string(),
@@ -505,6 +513,14 @@ impl V2RuntimeHost for ScriptHost {
     fn resolve_cli_command(&self, _provider: &str) -> Result<String, DispatchError> {
         Ok(self.command.clone())
     }
+
+    fn tool_context_for_activity(
+        &self,
+        _fs_profile: Option<&str>,
+        _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
+    ) -> orbit_tools::ToolContext {
+        orbit_tools::ToolContext::default()
+    }
 }
 
 struct NullCliHost;
@@ -514,6 +530,7 @@ impl V2RuntimeHost for NullCliHost {
         _action: &str,
         _config: &Value,
         _input: &Value,
+        _tool_context: orbit_tools::ToolContext,
     ) -> Result<Value, DispatchError> {
         Err(DispatchError::DeterministicActionNotRegistered(
             "unused".to_string(),
@@ -526,5 +543,13 @@ impl V2RuntimeHost for NullCliHost {
         Err(DispatchError::CliInvocationFailed(
             "NullCliHost has no CLI mapping".into(),
         ))
+    }
+
+    fn tool_context_for_activity(
+        &self,
+        _fs_profile: Option<&str>,
+        _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
+    ) -> orbit_tools::ToolContext {
+        orbit_tools::ToolContext::default()
     }
 }

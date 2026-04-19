@@ -31,8 +31,10 @@ impl Tool for FsDeleteTool {
 
         let canonical = super::check_workspace_boundary(ctx, Path::new(path_str))?;
         super::check_file_lock(ctx, &canonical)?;
+        let policy = super::check_modify_policy(ctx, &canonical)?;
 
         fs::remove_file(&canonical).map_err(|e| OrbitError::Io(e.to_string()))?;
+        super::emit_success(ctx, policy.as_ref())?;
 
         Ok(json!({"path": canonical.display().to_string(), "deleted": true}))
     }

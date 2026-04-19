@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use orbit_types::{
-    OrbitError, PolicyDef, PolicyResource, PolicyResourceSpec, RESOURCE_SCHEMA_VERSION,
-    ResourceKind,
+    OrbitError, POLICY_RESOURCE_SCHEMA_VERSION, PolicyDef, PolicyResource, PolicyResourceSpec,
+    ResourceKind, ResourceMetadata, parse_policy_resource,
 };
 
 use crate::file::fs_utils::write_atomic;
@@ -62,19 +62,21 @@ impl PolicyDefFileStore {
 
     pub(crate) fn upsert_policy_def(&self, def: &PolicyDef) -> Result<(), OrbitError> {
         self.ensure_layout()?;
+        def.validate()?;
         let path = self.policies_dir().join(format!("{}.yaml", def.name));
-        let content = serde_yaml::to_string(&PolicyResource::new(
-            ResourceKind::Policy,
-            def.name.clone(),
-            PolicyResourceSpec {
+        let content = serde_yaml::to_string(&PolicyResource {
+            schema_version: POLICY_RESOURCE_SCHEMA_VERSION,
+            kind: ResourceKind::Policy,
+            metadata: ResourceMetadata::named(def.name.clone()),
+            spec: PolicyResourceSpec {
                 description: def.description.clone(),
-                filesystem: def.filesystem.clone(),
-                process: def.process.clone(),
-                tools: def.tools.clone(),
+                deny_read: def.deny_read.clone(),
+                deny_modify: def.deny_modify.clone(),
+                fs_profiles: def.fs_profiles.clone(),
                 created_at: def.created_at,
                 updated_at: def.updated_at,
             },
-        ))
+        })
         .map_err(|e| {
             OrbitError::InvalidInput(format!("failed to serialize policy {}: {e}", def.name))
         })?;
@@ -83,27 +85,16 @@ impl PolicyDefFileStore {
 }
 
 fn parse_policy_def(content: &str, label: String) -> Result<PolicyDef, OrbitError> {
-    let doc: PolicyResource = serde_yaml::from_str(content)
-        .map_err(|e| OrbitError::InvalidInput(format!("failed to parse {}: {e}", label)))?;
-    if doc.kind != ResourceKind::Policy {
-        return Err(OrbitError::InvalidInput(format!(
-            "failed to parse {}: expected kind Policy, found {}",
-            label, doc.kind
-        )));
-    }
-    if doc.schema_version != RESOURCE_SCHEMA_VERSION {
-        return Err(OrbitError::InvalidInput(format!(
-            "failed to parse {}: unsupported schemaVersion {}",
-            label, doc.schema_version
-        )));
-    }
-    Ok(PolicyDef {
+    let doc = parse_policy_resource(content, &label)?;
+    let def = PolicyDef {
         name: doc.metadata.name,
         description: doc.spec.description,
-        filesystem: doc.spec.filesystem,
-        process: doc.spec.process,
-        tools: doc.spec.tools,
+        deny_read: doc.spec.deny_read,
+        deny_modify: doc.spec.deny_modify,
+        fs_profiles: doc.spec.fs_profiles,
         created_at: doc.spec.created_at,
         updated_at: doc.spec.updated_at,
-    })
+    };
+    def.validate()?;
+    Ok(def)
 }

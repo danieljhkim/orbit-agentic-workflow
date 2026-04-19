@@ -3,7 +3,7 @@ kind: Policy
 metadata:
   name: safe-local-dev
 spec:
-  description: Safe defaults for local development
+  description: Legacy v1 policy fixture preserved for schema bump smoke checks
   filesystem:
     allow_write:
       - ./

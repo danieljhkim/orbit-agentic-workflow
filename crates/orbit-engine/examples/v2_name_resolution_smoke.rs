@@ -25,9 +25,10 @@ use orbit_engine::v2::{
 };
 use orbit_types::JobScheduleState;
 use orbit_types::v2::{
-    ActivityV2, ActivityV2Spec, AgentLoopSpec, Backend, JobAsset, JobV2, JobV2Step, JobV2StepBody,
-    LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog, load_job_asset,
-    resolve_job_backends, resolve_job_target_refs, validate_job_loop_session_backends,
+    ActivityV2, ActivityV2Spec, AgentLoopSpec, Backend, JobAsset, JobKind, JobV2, JobV2Step,
+    JobV2StepBody, LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog,
+    load_job_asset, resolve_job_backends, resolve_job_target_refs,
+    validate_job_loop_session_backends,
 };
 use serde_json::Value;
 
@@ -256,6 +257,7 @@ fn scenario_f_deterministic_activities_dispatch() -> Result<(), Box<dyn std::err
         let outcome = dispatch_v2_activity(V2DispatchInput {
             activity_name: name,
             spec: &activity.spec,
+            fs_profile: activity.fs_profile.as_deref(),
             input,
             audit: writer.clone(),
             run_id: &format!("smoke-f-{name}"),
@@ -312,6 +314,7 @@ impl V2RuntimeHost for PipelineHost {
         action: &str,
         _config: &Value,
         input: &Value,
+        _tool_context: orbit_tools::ToolContext,
     ) -> Result<Value, DispatchError> {
         match action {
             "promote_agent_main" => {
@@ -356,6 +359,14 @@ impl V2RuntimeHost for PipelineHost {
             "PipelineHost has no CLI mapping".into(),
         ))
     }
+
+    fn tool_context_for_activity(
+        &self,
+        _fs_profile: Option<&str>,
+        _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
+    ) -> orbit_tools::ToolContext {
+        orbit_tools::ToolContext::default()
+    }
 }
 
 fn repo_root() -> PathBuf {
@@ -379,6 +390,7 @@ fn synthetic_job_using_ref(target_name: &str) -> JobV2 {
         state: JobScheduleState::Enabled,
         default_input: None,
         max_active_runs: 1,
+        kind: JobKind::Workflow,
         steps: vec![JobV2Step {
             id: "the_step".to_string(),
             when: None,
@@ -390,7 +402,6 @@ fn synthetic_job_using_ref(target_name: &str) -> JobV2 {
                 session: Some("reviewer".to_string()),
             }),
         }],
-        policy: None,
     }
 }
 
@@ -410,6 +421,7 @@ fn pipeline_with_reviewer_loop() -> JobV2 {
         state: JobScheduleState::Enabled,
         default_input: None,
         max_active_runs: 1,
+        kind: JobKind::Workflow,
         steps: vec![JobV2Step {
             id: "review_fix".to_string(),
             when: None,
@@ -422,7 +434,6 @@ fn pipeline_with_reviewer_loop() -> JobV2 {
                 },
             },
         }],
-        policy: None,
     }
 }
 
@@ -431,6 +442,7 @@ fn stub_deterministic_activity(name: &str) -> ActivityV2 {
         description: format!("stub for `{name}` — pending v1 port"),
         input_schema_json: serde_json::Value::Null,
         output_schema_json: serde_json::Value::Null,
+        fs_profile: None,
         spec: ActivityV2Spec::Deterministic(orbit_types::v2::DeterministicSpec {
             action: "noop".to_string(),
             config: serde_json::Value::Null,

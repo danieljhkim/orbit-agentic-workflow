@@ -526,6 +526,7 @@ impl V2RuntimeHost for StubHost {
         action: &str,
         _config: &Value,
         _input: &Value,
+        _tool_context: orbit_tools::ToolContext,
     ) -> Result<Value, DispatchError> {
         Err(DispatchError::DeterministicActionNotRegistered(
             action.into(),
@@ -542,6 +543,14 @@ impl V2RuntimeHost for StubHost {
         Err(DispatchError::CliInvocationFailed(
             "smoke host: no CLI mapping".into(),
         ))
+    }
+
+    fn tool_context_for_activity(
+        &self,
+        _fs_profile: Option<&str>,
+        _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
+    ) -> orbit_tools::ToolContext {
+        orbit_tools::ToolContext::default()
     }
 }
 

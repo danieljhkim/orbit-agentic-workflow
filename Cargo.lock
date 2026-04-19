@@ -1571,6 +1571,7 @@ dependencies = [
  "chrono",
  "orbit-exec",
  "orbit-knowledge",
+ "orbit-policy",
  "orbit-store",
  "orbit-types",
  "regex",
@@ -1588,6 +1589,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -5,14 +5,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use orbit_policy::PolicyEngine;
 use orbit_store::{
     Store, audit_event_store_sqlite, global_activity_store, global_executor_def_store,
-    global_policy_def_store, scoped_job_backends, tool_store_sqlite, workspace_task_backends,
+    global_policy_def_store, layered_policy_def_store, scoped_job_backends, tool_store_sqlite,
+    workspace_policy_def_store, workspace_task_backends,
 };
 
 use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
-use orbit_types::{OrbitError, WorkspacePaths};
+use orbit_types::{DEFAULT_POLICY_NAME, OrbitError, WorkspacePaths};
 
 use crate::OrbitContext;
+use crate::command::policy::seed_default_policies;
 use crate::config::RuntimeConfig;
 use crate::context::{
     ActorIdentity, OrbitExecutionAssets, OrbitPolicyContext, OrbitRuntimeSettings, OrbitStores,
@@ -55,7 +57,17 @@ pub(crate) fn build_context_from_roots(
     let tool_store = tool_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
     let executor_def_store = global_executor_def_store(persistence.executor_dir.clone());
-    let policy_def_store = global_policy_def_store(persistence.policy_dir.clone());
+    let global_policy_store = global_policy_def_store(persistence.policy_dir.clone());
+    seed_default_policies(global_policy_store.as_ref(), false)?;
+    let workspace_policy_store = workspace_policy_def_store(paths.policies_dir.clone());
+    let policy_def_store = layered_policy_def_store(workspace_policy_store, global_policy_store);
+    let active_policy = policy_def_store
+        .get_policy_def(DEFAULT_POLICY_NAME)?
+        .ok_or_else(|| {
+            OrbitError::Execution(format!(
+                "default policy `{DEFAULT_POLICY_NAME}` was not found after seeding"
+            ))
+        })?;
 
     let skill_catalog = SkillCatalog::new(persistence.skill_dir.clone());
     skill_catalog.ensure_layout()?;
@@ -92,7 +104,7 @@ pub(crate) fn build_context_from_roots(
         ),
         OrbitExecutionAssets::new(Arc::new(registry), skill_catalog),
         OrbitPolicyContext::new(
-            PolicyEngine::new_local_default_allow(),
+            PolicyEngine::from_def(&active_policy)?,
             execution_env_policy,
             codex_execution_policy,
         ),

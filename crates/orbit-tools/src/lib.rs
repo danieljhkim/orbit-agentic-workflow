@@ -34,6 +34,7 @@ pub mod registry;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use orbit_policy::PolicyEngine;
 use serde_json::{Map, Value};
 
 use orbit_types::{OrbitError, ToolSchema};
@@ -94,6 +95,27 @@ pub trait OrbitToolHost: Send + Sync {
     fn task_scope(&self) -> OrbitTaskScope;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FsCallEventKind {
+    Request,
+    Result,
+    Denied,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FsCallEvent {
+    pub kind: FsCallEventKind,
+    pub profile: String,
+    pub op: String,
+    pub path: String,
+    pub allowed: bool,
+    pub matched_rule: String,
+}
+
+pub trait FsAuditLogger: Send + Sync {
+    fn emit(&self, event: FsCallEvent) -> Result<(), OrbitError>;
+}
+
 #[derive(Clone, Default)]
 pub struct ToolContext {
     pub cwd: Option<String>,
@@ -113,6 +135,12 @@ pub struct ToolContext {
     /// Program allowlist for `proc.spawn`. When non-empty, `proc.spawn` rejects
     /// any program not in this list. Empty means unrestricted.
     pub proc_allowed_programs: Vec<String>,
+    /// Filesystem policy engine used by Orbit-managed agent runtimes.
+    pub policy_engine: Option<Arc<PolicyEngine>>,
+    /// Active activity fsProfile name. `None` bypasses fsProfile checks.
+    pub fs_profile: Option<String>,
+    /// Optional audit hook for emitting per-fs-call envelope events.
+    pub fs_audit: Option<Arc<dyn FsAuditLogger>>,
     /// Narrow Orbit application host used by Orbit builtins instead of respawning
     /// the Orbit CLI or carrying task-specific state in the generic tool context.
     pub orbit_host: Option<Arc<dyn OrbitToolHost>>,
@@ -127,6 +155,8 @@ impl std::fmt::Debug for ToolContext {
             .field("agent_name", &self.agent_name)
             .field("model_name", &self.model_name)
             .field("proc_allowed_programs", &self.proc_allowed_programs)
+            .field("has_policy_engine", &self.policy_engine.is_some())
+            .field("fs_profile", &self.fs_profile)
             .finish()
     }
 }

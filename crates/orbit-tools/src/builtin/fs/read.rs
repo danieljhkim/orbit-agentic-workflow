@@ -30,7 +30,9 @@ impl Tool for FsReadTool {
             .ok_or_else(|| OrbitError::InvalidInput("missing `path`".to_string()))?;
 
         let canonical = super::check_workspace_boundary(ctx, Path::new(path_str))?;
+        let policy = super::check_read_policy(ctx, &canonical)?;
         let content = fs::read_to_string(&canonical).map_err(|e| OrbitError::Io(e.to_string()))?;
+        super::emit_success(ctx, policy.as_ref())?;
 
         Ok(json!({
             "path": canonical.display().to_string(),

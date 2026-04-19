@@ -60,7 +60,6 @@ fn job_from_resource(doc: JobResource, path: &Path) -> Result<Job, OrbitError> {
         max_active_runs: validate_max_active_runs(doc.spec.max_active_runs)?,
         max_iterations: doc.spec.max_iterations,
         steps: doc.spec.steps,
-        policy: doc.spec.policy,
         created_at,
         updated_at: created_at,
     })
@@ -76,7 +75,7 @@ pub(super) fn job_to_resource(job: &Job) -> JobResource {
             max_active_runs: job.max_active_runs,
             max_iterations: job.max_iterations,
             steps: job.steps.clone(),
-            policy: job.policy.clone(),
+            policy: None,
         },
     )
 }

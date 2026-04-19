@@ -108,6 +108,7 @@ impl OrbitRuntime {
         let dispatch = dispatch_v2_activity(V2DispatchInput {
             activity_name: &asset.name,
             spec: &asset.spec.spec,
+            fs_profile: asset.spec.fs_profile.as_deref(),
             input,
             audit: writer.clone(),
             run_id: &run_id,

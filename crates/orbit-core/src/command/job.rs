@@ -64,6 +64,8 @@ pub struct JobAddParams {
     pub max_active_runs: Option<u32>,
     pub max_iterations: Option<u32>,
     pub steps: Vec<JobStep>,
+    // Legacy compatibility shim for callers that still deserialize job resources
+    // with a per-job policy field. This input is intentionally ignored.
     pub policy: Option<String>,
     pub initial_state_override: Option<JobScheduleState>,
 }
@@ -197,11 +199,6 @@ impl OrbitRuntime {
         }
         let max_active_runs = validate_job_max_active_runs(params.max_active_runs)?;
         let default_input = normalize_job_default_input(params.default_input)?;
-        if let Some(ref policy_name) = params.policy {
-            self.stores().policies().get(policy_name)?.ok_or_else(|| {
-                OrbitError::JobValidation(format!("policy '{}' does not exist", policy_name))
-            })?;
-        }
         self.validate_job_steps(params.job_id.as_deref(), &params.steps, true)?;
 
         let initial_state = params
@@ -217,7 +214,7 @@ impl OrbitRuntime {
             max_active_runs,
             max_iterations,
             steps,
-            policy: params.policy,
+            policy: None,
             initial_state,
         })?;
         self.record_event(OrbitEvent::JobAdded {
@@ -314,14 +311,9 @@ impl OrbitRuntime {
         max_active_runs: u32,
         max_iterations: u32,
         steps: Vec<JobStep>,
-        policy: Option<String>,
+        _policy: Option<String>,
         state: JobScheduleState,
     ) -> Result<Job, OrbitError> {
-        if let Some(ref policy_name) = policy {
-            self.stores().policies().get(policy_name)?.ok_or_else(|| {
-                OrbitError::JobValidation(format!("policy '{}' does not exist", policy_name))
-            })?;
-        }
         let steps = normalize_job_steps(steps)?;
         let job = self.stores().jobs().update(
             job_id,
@@ -330,7 +322,7 @@ impl OrbitRuntime {
                 max_active_runs: Some(validate_job_max_active_runs(Some(max_active_runs))?),
                 max_iterations: Some(max_iterations),
                 steps: Some(steps),
-                policy: Some(policy),
+                policy: None,
                 state: Some(state),
             },
         )?;
@@ -747,15 +739,6 @@ pub(crate) fn seed_default_jobs(
             created += 1;
             continue;
         }
-        if let Some(ref policy_name) = spec.policy {
-            runtime
-                .stores()
-                .policies()
-                .get(policy_name)?
-                .ok_or_else(|| {
-                    OrbitError::JobValidation(format!("policy '{}' does not exist", policy_name))
-                })?;
-        }
         runtime.validate_job_steps(Some(&job_id), &spec.steps, false)?;
         let default_input = normalize_job_default_input(spec.default_input)?;
         let max_active_runs = validate_job_max_active_runs(Some(spec.max_active_runs))?;
@@ -766,7 +749,7 @@ pub(crate) fn seed_default_jobs(
             max_active_runs,
             max_iterations: spec.max_iterations,
             steps,
-            policy: spec.policy,
+            policy: None,
             initial_state: spec.state,
         })?;
         created += 1;

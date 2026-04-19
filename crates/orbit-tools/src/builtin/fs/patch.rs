@@ -59,6 +59,8 @@ impl Tool for FsPatchTool {
 
         let canonical = super::check_workspace_boundary(ctx, Path::new(path))?;
         super::check_file_lock(ctx, &canonical)?;
+        let read_policy = super::check_read_policy(ctx, &canonical)?;
+        let modify_policy = super::check_modify_policy(ctx, &canonical)?;
 
         let content = fs::read_to_string(&canonical).map_err(|e| OrbitError::Io(e.to_string()))?;
         if !content.contains(old_string) {
@@ -70,6 +72,8 @@ impl Tool for FsPatchTool {
 
         let updated = content.replacen(old_string, new_string, 1);
         fs::write(&canonical, updated).map_err(|e| OrbitError::Io(e.to_string()))?;
+        super::emit_success(ctx, read_policy.as_ref())?;
+        super::emit_success(ctx, modify_policy.as_ref())?;
 
         Ok(json!({
             "path": canonical.display().to_string(),

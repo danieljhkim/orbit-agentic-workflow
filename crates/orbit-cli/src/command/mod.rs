@@ -53,7 +53,7 @@ Resources:
   task       Create, update, and manage tasks
   activity   Define, list, and run v2 activities
   job        Define, list, and manage job workflows
-  policy     Manage execution policies
+  policy     Manage filesystem profile policies and runtime scoping
   executor   Manage executors
   tool       Manage tools and external MCP plugins
 

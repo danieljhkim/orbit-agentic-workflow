@@ -110,6 +110,27 @@ pub enum V2AuditEventKind {
         activity_name: String,
         outcome: String,
     },
+    FsCallRequest {
+        profile: String,
+        op: String,
+        path: String,
+        allowed: bool,
+        matched_rule: String,
+    },
+    FsCallResult {
+        profile: String,
+        op: String,
+        path: String,
+        allowed: bool,
+        matched_rule: String,
+    },
+    FsCallDenied {
+        profile: String,
+        op: String,
+        path: String,
+        allowed: bool,
+        matched_rule: String,
+    },
     ToolDenied {
         tool_name: String,
         reason: String,

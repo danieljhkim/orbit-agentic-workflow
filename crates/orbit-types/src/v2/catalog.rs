@@ -230,6 +230,7 @@ fn resolve_ref(
         })?;
     Ok(TargetStep {
         spec: activity.spec.clone(),
+        fs_profile: activity.fs_profile.clone(),
         default_input: r.default_input,
         timeout_seconds: r.timeout_seconds,
         session: r.session,

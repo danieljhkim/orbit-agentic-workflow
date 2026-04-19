@@ -372,9 +372,6 @@ pub struct Job {
     #[serde(default = "default_max_iterations")]
     pub max_iterations: u32,
     pub steps: Vec<JobStep>,
-    /// Optional policy name. When set, the named policy is loaded and enforced during execution.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub policy: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

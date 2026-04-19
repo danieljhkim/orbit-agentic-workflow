@@ -30,7 +30,9 @@ impl Tool for FsMkdirTool {
             .ok_or_else(|| OrbitError::InvalidInput("missing `path`".to_string()))?;
 
         let canonical = super::check_workspace_boundary(ctx, Path::new(path))?;
+        let policy = super::check_modify_policy(ctx, &canonical)?;
         fs::create_dir_all(&canonical).map_err(|e| OrbitError::Io(e.to_string()))?;
+        super::emit_success(ctx, policy.as_ref())?;
 
         Ok(json!({
             "path": canonical.display().to_string(),
