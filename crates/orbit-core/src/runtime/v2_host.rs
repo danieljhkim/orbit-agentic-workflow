@@ -11,10 +11,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use orbit_common::types::{AuditEventStatus, Role, TaskStatus, UNRESTRICTED_FS_PROFILE};
 use orbit_engine::v2::{DispatchError, V2RuntimeHost};
 use orbit_store::AuditEventInsertParams;
 use orbit_tools::{FsAuditLogger, ToolContext};
-use orbit_types::{AuditEventStatus, Role, TaskStatus, UNRESTRICTED_FS_PROFILE};
 use serde_json::Value;
 
 use super::orbit_tool_host::{
@@ -173,11 +173,11 @@ impl V2RuntimeHost for OrbitRuntime {
                     })?;
                 tasks.retain(|t| !t.task_type.is_friction());
                 tasks.sort_by(|a, b| {
-                    let rank = |p: orbit_types::TaskPriority| match p {
-                        orbit_types::TaskPriority::Critical => 0,
-                        orbit_types::TaskPriority::High => 1,
-                        orbit_types::TaskPriority::Medium => 2,
-                        orbit_types::TaskPriority::Low => 3,
+                    let rank = |p: orbit_common::types::TaskPriority| match p {
+                        orbit_common::types::TaskPriority::Critical => 0,
+                        orbit_common::types::TaskPriority::High => 1,
+                        orbit_common::types::TaskPriority::Medium => 2,
+                        orbit_common::types::TaskPriority::Low => 3,
                     };
                     rank(a.priority)
                         .cmp(&rank(b.priority))

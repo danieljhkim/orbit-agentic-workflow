@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::{InvocationTrace, OrbitError};
+use orbit_common::types::{InvocationTrace, OrbitError};
 
 use crate::agent::{AgentConfig, ProviderOptions};
 use crate::providers::gemini::gemini_cli::GeminiCliTransport;

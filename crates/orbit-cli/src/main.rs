@@ -32,7 +32,7 @@ use crate::command::workspace::{WorkspaceCommand, WorkspaceSubcommand};
 use crate::command::{Commands, Execute, init::InitCommand};
 
 fn main() {
-    orbit_common::logging::init_default_subscriber("warn");
+    orbit_common::utility::logging::init_default_subscriber("warn");
 
     let cli = command::Cli::parse();
     let root_override = cli.root.clone();

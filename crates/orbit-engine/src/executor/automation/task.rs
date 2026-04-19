@@ -1,4 +1,4 @@
-use orbit_types::{OrbitError, TaskStatus};
+use orbit_common::types::{OrbitError, TaskStatus};
 use serde_json::{Value, json};
 
 use crate::context::TaskHost;

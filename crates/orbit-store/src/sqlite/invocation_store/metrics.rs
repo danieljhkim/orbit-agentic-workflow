@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use rusqlite::params;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use crate::Store;
 

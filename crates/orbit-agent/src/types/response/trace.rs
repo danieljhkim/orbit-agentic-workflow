@@ -1,4 +1,4 @@
-use orbit_types::InvocationTrace;
+use orbit_common::types::InvocationTrace;
 use serde_json::Value;
 
 use super::{tool_calls::extract_tool_calls, usage::sum_usage};

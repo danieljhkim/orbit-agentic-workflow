@@ -10,7 +10,7 @@
 //! pipeline patch flow. We read the top-level `decision` field and emit
 //! `loop_exit: true` iff it is `APPROVED`.
 
-use orbit_types::{Decision, OrbitError};
+use orbit_common::types::{Decision, OrbitError};
 use serde_json::{Value, json};
 
 use super::input::required_input_string;

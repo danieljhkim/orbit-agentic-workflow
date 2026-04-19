@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use orbit_engine::{ExecutionContext, TaskHost, activity_skill_refs_from_spec_config};
-use orbit_types::{
+use orbit_common::types::{
     Activity, AgentCommitRequest, AgentModelPair, OrbitError, Task, agent_family_from_cli,
     prune_missing_context_files, resolve_agent_model_pair,
 };
+use orbit_engine::{ExecutionContext, TaskHost, activity_skill_refs_from_spec_config};
 use serde::Serialize;
 use serde_json::{Value, json};
 

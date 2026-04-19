@@ -3,11 +3,13 @@ use std::path::Path;
 
 use serde_json::json;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use crate::Store;
 
-use orbit_common::fs::{atomic_write_text_volatile as write_atomic, with_exclusive_file_lock};
+use orbit_common::utility::fs::{
+    atomic_write_text_volatile as write_atomic, with_exclusive_file_lock,
+};
 
 pub fn write_token_scoreboard(scoreboard_dir: &Path, store: &Store) -> Result<(), OrbitError> {
     let path = scoreboard_dir.join("tokens.json");

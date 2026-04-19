@@ -1,5 +1,5 @@
 use chrono::Utc;
-use orbit_types::{Job, JobRun, OrbitError, OrbitEvent};
+use orbit_common::types::{Job, JobRun, OrbitError, OrbitEvent};
 use serde_json::Value;
 use std::path::Path;
 use tracing::{info, info_span, warn};

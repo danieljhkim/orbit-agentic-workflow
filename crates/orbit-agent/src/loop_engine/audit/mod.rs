@@ -24,8 +24,8 @@ use serde_json::Value;
 // directly from `orbit_common` — these aliases preserve the public surface
 // for the `redaction_smoke` example and downstream crates that already
 // import via `orbit_agent::loop_engine::audit`.
-pub use orbit_common::blob_store::BlobStore;
-pub use orbit_common::redaction::PatternRedactor as RedactionMiddleware;
+pub use orbit_common::utility::blob_store::BlobStore;
+pub use orbit_common::utility::redaction::PatternRedactor as RedactionMiddleware;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UsageSnapshot {

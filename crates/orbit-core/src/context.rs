@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use orbit_common::types::WorkspacePaths;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
     ActivityStoreBackend, AuditEventStoreBackend, ExecutorDefStoreBackend,
@@ -9,7 +10,6 @@ use orbit_store::{
     TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use orbit_tools::ToolRegistry;
-use orbit_types::WorkspacePaths;
 
 use crate::config::{CodexExecutionPolicy, ExecutionEnvPolicy, PersistenceConfig};
 use crate::skill_catalog::SkillCatalog;

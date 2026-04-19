@@ -1,4 +1,4 @@
-use orbit_types::{Job, JobRunState, OrbitError, OrbitEvent, PipelineState};
+use orbit_common::types::{Job, JobRunState, OrbitError, OrbitEvent, PipelineState};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 

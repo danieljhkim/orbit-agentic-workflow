@@ -1,4 +1,4 @@
-use orbit_types::{FsCheckResult, FsOperation, OrbitError, PolicyDef};
+use orbit_common::types::{FsCheckResult, FsOperation, OrbitError, PolicyDef};
 
 pub(crate) fn evaluate(
     def: &PolicyDef,

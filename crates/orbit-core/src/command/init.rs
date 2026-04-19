@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use orbit_common::types::{OrbitError, WorkspacePaths};
 use orbit_store::{global_executor_def_store, global_policy_def_store};
-use orbit_types::{OrbitError, WorkspacePaths};
 
 use crate::OrbitRuntime;
 use crate::command::activity::seed_default_activities;
@@ -10,7 +10,7 @@ use crate::command::executor::seed_default_executors;
 use crate::command::job::seed_default_jobs;
 use crate::command::policy::seed_default_policies;
 use crate::command::skill::{default_skill_ids, seed_default_skills};
-use orbit_common::fs::{create_dir_symlink, remove_path_if_exists};
+use orbit_common::utility::fs::{create_dir_symlink, remove_path_if_exists};
 
 use crate::config::{RuntimeConfig, seed_default_config};
 use crate::runtime::resolve_global_root;

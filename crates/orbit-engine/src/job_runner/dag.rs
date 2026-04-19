@@ -8,8 +8,10 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use chrono::Utc;
+use orbit_common::types::{
+    Job, JobRun, JobRunState, JobStep, OrbitError, OrbitEvent, PipelineState,
+};
 use orbit_store::JobRunStepParams;
-use orbit_types::{Job, JobRun, JobRunState, JobStep, OrbitError, OrbitEvent, PipelineState};
 use serde_json::Value;
 
 use crate::activity_runner::{build_execution_context_for_step, execute_with_retry};
@@ -164,11 +166,11 @@ pub(super) fn topological_order(steps: &[JobStep]) -> Result<Vec<usize>, OrbitEr
 /// Unlike the sequential model (which uses `previous_step_state`), DAG steps
 /// evaluate conditions against ALL their upstream dependencies.
 pub(super) fn should_run_dag_step(
-    condition: &orbit_types::StepCondition,
+    condition: &orbit_common::types::StepCondition,
     upstream_ids: &[String],
-    completed: &HashMap<String, orbit_types::JobRunState>,
+    completed: &HashMap<String, orbit_common::types::JobRunState>,
 ) -> bool {
-    use orbit_types::{JobRunState, StepCondition};
+    use orbit_common::types::{JobRunState, StepCondition};
 
     if upstream_ids.is_empty() {
         return matches!(condition, StepCondition::Always | StepCondition::OnSuccess);
@@ -344,7 +346,7 @@ pub(super) fn execute_dag<H: EngineHost + ExecutorLookupHost + Sync>(
                                 .map(|(id, (state, _))| (id.clone(), *state))
                                 .collect();
                             match &step.condition {
-                                orbit_types::StepCondition::Expr(_) => {
+                                orbit_common::types::StepCondition::Expr(_) => {
                                     let current_steps = steps_outputs.lock().unwrap().clone();
                                     let cond_ctx = crate::template::TemplateContext {
                                         input: base_input.clone(),

@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use orbit_types::OrbitEvent;
+use orbit_common::types::OrbitEvent;
 
 /// In-process, session-scoped event log.
 ///

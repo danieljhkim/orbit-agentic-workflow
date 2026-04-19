@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orbit_types::{Activity, OrbitError};
+use orbit_common::types::{Activity, OrbitError};
 
 use super::contracts::{ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams};
 use crate::scope::{resolve, ScopeStrategy, ScopedStore};

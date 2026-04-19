@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use orbit_store::pr_scoreboard;
-use orbit_tools::ToolContext;
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, ReviewThreadStatus, Role, Task, TaskStatus, normalize_optional_attribution_label,
 };
+use orbit_store::pr_scoreboard;
+use orbit_tools::ToolContext;
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};

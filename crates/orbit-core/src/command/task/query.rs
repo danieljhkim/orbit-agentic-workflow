@@ -1,4 +1,4 @@
-use orbit_types::{OrbitError, Task, TaskArtifact, prune_missing_context_files};
+use orbit_common::types::{OrbitError, Task, TaskArtifact, prune_missing_context_files};
 
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams;
@@ -51,8 +51,8 @@ impl OrbitRuntime {
 
     pub fn list_tasks_filtered(
         &self,
-        status: Option<orbit_types::TaskStatus>,
-        priority: Option<orbit_types::TaskPriority>,
+        status: Option<orbit_common::types::TaskStatus>,
+        priority: Option<orbit_common::types::TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {

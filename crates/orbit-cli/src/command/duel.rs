@@ -6,6 +6,7 @@
 //! reimplementing anything.
 
 use clap::{Args, Subcommand, ValueEnum};
+use orbit_common::types::DuelRun;
 use orbit_core::duel_scoreboard::{
     AggregateFilter, AggregateRow, Aggregates, RoleAxis, SegmentBy, aggregate,
 };
@@ -13,7 +14,6 @@ use orbit_core::{
     OrbitError, OrbitRuntime, WorkflowInput, build_workflow_input_for, find_workflow,
     validate_workflow_flags,
 };
-use orbit_types::DuelRun;
 use serde_json::{Value, json};
 
 use crate::command::Execute;

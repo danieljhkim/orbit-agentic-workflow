@@ -1,6 +1,7 @@
 use std::time::Instant;
 
-use orbit_types::{ExecutionResult, OrbitError, is_sensitive_env_name};
+use orbit_common::types::{ExecutionResult, OrbitError};
+use orbit_common::utility::redaction::is_sensitive_env_name;
 
 use crate::sandbox::Sandbox;
 

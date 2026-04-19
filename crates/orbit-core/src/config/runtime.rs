@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use orbit_types::OrbitError;
-use orbit_types::redaction::redact_home_dir;
+use orbit_common::types::OrbitError;
+use orbit_common::utility::redaction::redact_home_dir;
 
 use crate::paths;
 

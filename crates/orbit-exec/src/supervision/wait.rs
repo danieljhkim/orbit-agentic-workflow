@@ -2,7 +2,7 @@ use std::process::Child;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use wait_timeout::ChildExt;
 
 #[cfg(unix)]

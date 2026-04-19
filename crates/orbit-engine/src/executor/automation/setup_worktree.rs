@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use orbit_types::{OrbitError, TaskStatus};
+use orbit_common::types::{OrbitError, TaskStatus};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 

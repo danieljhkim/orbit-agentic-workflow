@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use super::JobFileStore;
 use crate::file::layout::DualLayout;

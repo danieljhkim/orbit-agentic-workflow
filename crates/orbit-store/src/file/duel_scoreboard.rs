@@ -27,10 +27,10 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use orbit_types::{Ambiguity, Decision, DuelRun, OrbitError, TaskScope, Verdict};
+use orbit_common::types::{Ambiguity, Decision, DuelRun, OrbitError, TaskScope, Verdict};
 use serde::{Deserialize, Serialize};
 
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 const SCOREBOARD_FILENAME: &str = "duel.json";
 const CURRENT_SCHEMA_VERSION: u32 = 1;
@@ -422,10 +422,10 @@ pub struct ReviewerTally {
 // ============================================================================
 // Intentional re-export: the candidate agent family set, so downstream
 // callers can reach it via `orbit_store::duel_scoreboard` without a second
-// `orbit-types` import. This is cosmetic — `orbit_types::all_agent_families`
+// `orbit-types` import. This is cosmetic — `orbit_common::types::all_agent_families`
 // is still the source of truth.
 // ============================================================================
-pub use orbit_types::all_agent_families as known_agent_families;
+pub use orbit_common::types::all_agent_families as known_agent_families;
 
 // Silence an unused-import lint when the module is consumed by callers that
 // do not need the Decision re-export directly.

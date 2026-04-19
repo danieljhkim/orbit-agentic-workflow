@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
+use orbit_common::types::{JobRun, JobRunState, OrbitError, OrbitEvent};
 use orbit_store::JobRunQuery;
-use orbit_types::{JobRun, JobRunState, OrbitError, OrbitEvent};
 #[cfg(unix)]
 use std::process::Command;
 
@@ -18,7 +18,7 @@ impl OrbitRuntime {
     pub fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
         let run = self.show_job_run(run_id)?;
         run.state
-            .try_transition(orbit_types::RunEvent::Cancel)
+            .try_transition(orbit_common::types::RunEvent::Cancel)
             .map_err(|msg| {
                 OrbitError::JobValidation(format!("cannot cancel job run '{}': {}", run_id, msg))
             })?;
@@ -108,7 +108,7 @@ impl OrbitRuntime {
     pub fn read_run_state(
         &self,
         run_id: &str,
-    ) -> Result<Option<orbit_types::PipelineState>, OrbitError> {
+    ) -> Result<Option<orbit_common::types::PipelineState>, OrbitError> {
         self.stores().jobs().read_run_state(run_id)
     }
 

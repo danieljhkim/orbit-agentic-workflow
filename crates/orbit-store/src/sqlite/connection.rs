@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use crate::sqlite::migration;

@@ -9,9 +9,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use orbit_types::{OrbitError, normalize_attribution_label};
+use orbit_common::types::{OrbitError, normalize_attribution_label};
 
-use orbit_common::fs::{atomic_write_text_volatile as write_atomic, with_exclusive_file_lock};
+use orbit_common::utility::fs::{
+    atomic_write_text_volatile as write_atomic, with_exclusive_file_lock,
+};
 
 type ModelScores = HashMap<String, u64>;
 type Scoreboard = HashMap<String, ModelScores>;

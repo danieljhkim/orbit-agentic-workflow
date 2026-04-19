@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
+use orbit_common::types::{OrbitError, ReviewThread};
 use orbit_store::pr_scoreboard;
-use orbit_types::{OrbitError, ReviewThread};
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 

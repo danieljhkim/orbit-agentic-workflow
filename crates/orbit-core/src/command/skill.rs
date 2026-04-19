@@ -2,9 +2,9 @@ use std::path::Path;
 
 use std::collections::HashSet;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
-use orbit_common::fs::write_text_with_parent;
+use orbit_common::utility::fs::write_text_with_parent;
 
 use crate::OrbitRuntime;
 use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};

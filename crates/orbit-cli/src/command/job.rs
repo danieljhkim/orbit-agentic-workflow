@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
+use orbit_common::types::{ActivityV2Spec, JobKind, JobV2Step, JobV2StepBody};
 use orbit_core::command::job::{
     JobAddParams, JobCatalogDefinition, JobCatalogEntry, JobCatalogFilter,
 };
 use orbit_core::{Job, JobRun, JobStep, OrbitError, OrbitRuntime};
-use orbit_types::{ActivityV2Spec, JobKind, JobV2Step, JobV2StepBody};
 use serde_json::{Value, json};
 
 use crate::command::Execute;

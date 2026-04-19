@@ -34,14 +34,14 @@ pub mod task_show;
 pub mod task_start;
 pub mod task_update;
 
+use orbit_common::types::{OrbitError, ToolParam, normalize_optional_attribution_label};
 use orbit_knowledge::TaskGraphService;
 use orbit_knowledge::graph::nodes::CodebaseGraphV1;
-use orbit_types::{OrbitError, ToolParam, normalize_optional_attribution_label};
 use serde_json::Value;
 
 use crate::{OrbitBuiltinAction, OrbitTaskScope, ToolContext, ToolRegistry};
 
-pub(super) use orbit_types::{optional_string, optional_string_alias, required_string};
+pub(super) use orbit_common::types::{optional_string, optional_string_alias, required_string};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct OrbitIdentity {

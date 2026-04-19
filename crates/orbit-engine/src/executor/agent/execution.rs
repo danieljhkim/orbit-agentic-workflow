@@ -1,10 +1,10 @@
 use std::io::Write;
 
 use orbit_agent::{Agent, AgentRequest, AgentResponseStatus};
-use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{
+use orbit_common::types::{
     ExecutorDef, InvocationTrace, JobRunState, OrbitError, StdoutFormat, resolve_agent_model_pair,
 };
+use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
 use serde_json::Value;
 use tempfile::NamedTempFile;
 
@@ -188,7 +188,7 @@ pub(super) fn resolve_agent_execution<H: EnvironmentHost + ExecutorLookupHost + 
     })
 }
 
-fn agent_process_was_interrupted(exec_result: &orbit_types::ExecutionResult) -> bool {
+fn agent_process_was_interrupted(exec_result: &orbit_common::types::ExecutionResult) -> bool {
     !exec_result.success && exec_result.stderr.contains("process interrupted by signal")
 }
 
@@ -241,7 +241,7 @@ fn execute_agent_process<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     invocation: orbit_agent::AgentInvocationSpec,
     working_dir: Option<String>,
     resolved: &ResolvedAgentExecution,
-) -> Result<orbit_types::ExecutionResult, Box<AttemptOutcome>> {
+) -> Result<orbit_common::types::ExecutionResult, Box<AttemptOutcome>> {
     let (args, _stdout_schema_file) = prepare_exec_args(&invocation, &resolved.args)
         .map_err(|error| Box::new(invocation_failed_outcome(error)))?;
 

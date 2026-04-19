@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 chrono.workspace = true
 fs2.workspace = true
-orbit-types = { path = "../orbit-types" }
+orbit-common = { path = "../orbit-common" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

@@ -1,5 +1,7 @@
 use orbit_agent::{AgentResponseStatus, parse_and_validate_response};
-use orbit_types::{AgentResponseEnvelope, InvocationTrace, JobRunState, OrbitError, StdoutFormat};
+use orbit_common::types::{
+    AgentResponseEnvelope, InvocationTrace, JobRunState, OrbitError, StdoutFormat,
+};
 use serde_json::Value;
 
 use crate::context::{
@@ -11,7 +13,7 @@ use crate::context::{
 pub(super) fn process_agent_response<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     execution: &ExecutionContext,
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
     envelope: AgentResponseEnvelope,
     state: AgentResponseStatus,
     invocation_trace: InvocationTrace,
@@ -55,7 +57,7 @@ pub(super) fn invocation_failed_outcome(err: OrbitError) -> AttemptOutcome {
 }
 
 pub(super) fn parse_agent_output(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
     stdout_format: Option<StdoutFormat>,
 ) -> Result<(AgentResponseEnvelope, AgentResponseStatus, InvocationTrace), OrbitError> {
     match stdout_format.unwrap_or(StdoutFormat::Envelope) {
@@ -65,7 +67,9 @@ pub(super) fn parse_agent_output(
     }
 }
 
-pub(super) fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> String {
+pub(super) fn format_timeout_error_message(
+    exec_result: &orbit_common::types::ExecutionResult,
+) -> String {
     let stderr = exec_result.stderr.trim();
     if stderr.is_empty() {
         return "agent timed out before producing JSON stdout".to_string();
@@ -76,7 +80,7 @@ pub(super) fn format_timeout_error_message(exec_result: &orbit_types::ExecutionR
 fn validate_agent_success<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     _execution: &ExecutionContext,
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
     envelope: &AgentResponseEnvelope,
     run_state: JobRunState,
     invocation_trace: InvocationTrace,
@@ -159,7 +163,7 @@ fn classify_invocation_error(message: &str) -> String {
 }
 
 fn synthesize_json_response(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
 ) -> Result<(AgentResponseEnvelope, AgentResponseStatus, InvocationTrace), OrbitError> {
     let trace = InvocationTrace {
         duration_ms: exec_result.duration_ms,
@@ -195,7 +199,7 @@ fn synthesize_json_response(
 }
 
 fn synthesize_text_response(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
 ) -> Result<(AgentResponseEnvelope, AgentResponseStatus, InvocationTrace), OrbitError> {
     let trace = InvocationTrace {
         duration_ms: exec_result.duration_ms,
@@ -223,14 +227,14 @@ fn synthesize_text_response(
 }
 
 fn timeout_response(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
 ) -> (AgentResponseEnvelope, AgentResponseStatus, InvocationTrace) {
     (
         AgentResponseEnvelope {
             schema_version: 1,
             status: "timeout".to_string(),
             result: None,
-            error: Some(orbit_types::AgentRunError {
+            error: Some(orbit_common::types::AgentRunError {
                 code: AGENT_TIMEOUT.to_string(),
                 message: "agent timed out".to_string(),
                 details: Value::Null,
@@ -246,7 +250,7 @@ fn timeout_response(
 }
 
 fn failed_response(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
     result: Option<Value>,
 ) -> (AgentResponseEnvelope, AgentResponseStatus, InvocationTrace) {
     (
@@ -254,7 +258,7 @@ fn failed_response(
             schema_version: 1,
             status: "failed".to_string(),
             result,
-            error: Some(orbit_types::AgentRunError {
+            error: Some(orbit_common::types::AgentRunError {
                 code: AGENT_INVOCATION_FAILED.to_string(),
                 message: synthetic_error_message(exec_result),
                 details: Value::Null,
@@ -269,7 +273,7 @@ fn failed_response(
     )
 }
 
-fn synthetic_error_message(exec_result: &orbit_types::ExecutionResult) -> String {
+fn synthetic_error_message(exec_result: &orbit_common::types::ExecutionResult) -> String {
     let stderr = exec_result.stderr.trim();
     if !stderr.is_empty() {
         return stderr.to_string();

@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand, ValueEnum};
+use orbit_common::types::ToolParam;
 use orbit_core::{OrbitError, OrbitRuntime};
-use orbit_types::ToolParam;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 

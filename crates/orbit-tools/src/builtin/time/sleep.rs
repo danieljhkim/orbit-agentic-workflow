@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};

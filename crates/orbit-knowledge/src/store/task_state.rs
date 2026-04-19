@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use crate::io::write_text_atomic_durable;
 use crate::selector::Selector;

@@ -5,7 +5,7 @@ pub mod stage_paths;
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::Value;
 
 use crate::{ToolContext, ToolRegistry};

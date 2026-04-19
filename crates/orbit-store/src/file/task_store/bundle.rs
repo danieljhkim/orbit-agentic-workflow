@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::Path;
 
-use orbit_types::{
+use orbit_common::types::{
     ActorIdentity, OrbitError, ReviewThread, Task, TaskStatus, normalize_optional_attribution_label,
 };
 
 use crate::file::yaml_doc::{read_yaml_with, write_yaml_atomic_with};
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 use super::{
     TaskFileStore,

@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use orbit_types::{OrbitError, Workspace, WorkspaceRegistry, WorkspaceStatus};
+use orbit_common::types::{OrbitError, Workspace, WorkspaceRegistry, WorkspaceStatus};
 
-use orbit_common::fs::atomic_write_text;
+use orbit_common::utility::fs::atomic_write_text;
 
 /// Returns the global Orbit directory: `~/.orbit/`.
 pub fn global_orbit_dir() -> Result<PathBuf, OrbitError> {

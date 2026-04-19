@@ -1,4 +1,4 @@
-use orbit_types::TokenUsage;
+use orbit_common::types::TokenUsage;
 use serde_json::Value;
 
 use super::JsonMap;

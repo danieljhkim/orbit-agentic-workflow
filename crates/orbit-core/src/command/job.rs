@@ -2,14 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_engine::EnvironmentHost;
-use orbit_store::JobCreateParams as StoreActivityCreateParams;
-use orbit_store::JobUpdateParams as StoreJobUpdateParams;
-use orbit_types::{
+use orbit_common::types::{
     Job, JobAsset, JobKind, JobResource, JobRun, JobScheduleState, JobStep, JobTargetType, JobV2,
     OrbitError, OrbitEvent, RESOURCE_SCHEMA_VERSION, ResourceKind, default_job_max_active_runs,
     load_job_asset, resolve_agent_model_pair,
 };
+use orbit_engine::EnvironmentHost;
+use orbit_store::JobCreateParams as StoreActivityCreateParams;
+use orbit_store::JobUpdateParams as StoreJobUpdateParams;
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -547,7 +547,7 @@ impl OrbitRuntime {
 
 fn resolve_executor_tier_model(
     agent_cli: &str,
-    executor_def: &orbit_types::ExecutorDef,
+    executor_def: &orbit_common::types::ExecutorDef,
     step: &JobStep,
 ) -> Option<String> {
     let tier = step

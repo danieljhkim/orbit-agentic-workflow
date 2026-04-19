@@ -1,5 +1,5 @@
 use jsonschema::JSONSchema;
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::Value;
 
 pub fn validate_schema_document(schema: &Value, context: &str) -> Result<JSONSchema, OrbitError> {

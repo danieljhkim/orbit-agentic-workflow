@@ -37,7 +37,7 @@ use std::sync::Arc;
 use orbit_policy::PolicyEngine;
 use serde_json::{Map, Value};
 
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_common::types::{OrbitError, ToolSchema};
 
 /// Fast operation timeout (1 s). Used for local command resolution (e.g. `which`).
 pub const TIMEOUT_FAST_MS: u64 = 1_000;
@@ -197,7 +197,7 @@ pub fn require_str(input: &Value, key: &str) -> Result<String, OrbitError> {
 /// The `label` should be the command name (e.g. `"gh pr comment"`) and is included
 /// in the error message for diagnostics.
 pub fn check_exec_result(
-    result: &orbit_types::ExecutionResult,
+    result: &orbit_common::types::ExecutionResult,
     label: &str,
 ) -> Result<(), OrbitError> {
     if result.success {

@@ -1,5 +1,5 @@
+use orbit_common::types::OrbitError;
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::OrbitError;
 use serde_json::Value;
 
 const TIMEOUT_MS: u64 = 15_000;

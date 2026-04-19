@@ -9,9 +9,9 @@
 use std::sync::Arc;
 
 use clap::Args;
+use orbit_common::types::ToolSchema;
 use orbit_core::{OrbitError, OrbitRuntime};
 use orbit_mcp::McpHost;
-use orbit_types::ToolSchema;
 use serde_json::Value;
 
 use crate::command::Execute;

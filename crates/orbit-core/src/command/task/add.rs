@@ -1,5 +1,5 @@
+use orbit_common::types::{OrbitError, OrbitEvent, Task, prune_missing_context_files};
 use orbit_store::{TaskCreateParams as StoreTaskCreateParams, friction_bounty};
-use orbit_types::{OrbitError, OrbitEvent, Task, prune_missing_context_files};
 
 use crate::OrbitRuntime;
 use crate::context::ActorKind;
@@ -32,9 +32,9 @@ impl OrbitRuntime {
         );
         let initial_status =
             if actor.kind == ActorKind::Agent && self.task_approval_required_for_agent() {
-                orbit_types::TaskStatus::Proposed
+                orbit_common::types::TaskStatus::Proposed
             } else {
-                orbit_types::TaskStatus::Backlog
+                orbit_common::types::TaskStatus::Backlog
             };
         let uses_system_identity = params.system_created;
         let create_label = if uses_system_identity {

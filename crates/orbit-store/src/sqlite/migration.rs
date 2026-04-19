@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use rusqlite::Connection;
 
 pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {

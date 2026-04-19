@@ -4,10 +4,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use orbit_store::AuditEventInsertParams;
-use orbit_types::{
+use orbit_common::types::{
     AuditEventStatus, JobRun, JobRunState, JobScheduleState, OrbitError, OrbitEvent, PipelineState,
 };
+use orbit_store::AuditEventInsertParams;
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

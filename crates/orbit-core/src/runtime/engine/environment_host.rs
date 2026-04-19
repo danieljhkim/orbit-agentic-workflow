@@ -1,5 +1,5 @@
+use orbit_common::types::OrbitError;
 use orbit_engine::{EnvironmentHost, ExecutorLookupHost};
-use orbit_types::OrbitError;
 
 use super::paths::codex_workspace_write_writable_dirs;
 use crate::OrbitRuntime;
@@ -53,7 +53,10 @@ impl EnvironmentHost for OrbitRuntime {
 }
 
 impl ExecutorLookupHost for OrbitRuntime {
-    fn get_executor_def(&self, name: &str) -> Result<Option<orbit_types::ExecutorDef>, OrbitError> {
+    fn get_executor_def(
+        &self,
+        name: &str,
+    ) -> Result<Option<orbit_common::types::ExecutorDef>, OrbitError> {
         self.stores().executors().get(name)
     }
 }

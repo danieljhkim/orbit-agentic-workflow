@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::json_schema::validate_schema_document;
 use crate::scope::{ScopeStrategy, ScopedStore, resolve};
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};

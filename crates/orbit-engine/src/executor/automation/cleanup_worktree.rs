@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::{Map, Value, json};
 
 use crate::context::RuntimeHost;

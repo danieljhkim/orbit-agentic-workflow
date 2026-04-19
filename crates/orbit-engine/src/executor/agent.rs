@@ -5,7 +5,7 @@ mod execution;
 #[path = "agent/response.rs"]
 mod response;
 
-use orbit_types::ExecutorDef;
+use orbit_common::types::ExecutorDef;
 
 use super::ActivityExecutor;
 use crate::context::{

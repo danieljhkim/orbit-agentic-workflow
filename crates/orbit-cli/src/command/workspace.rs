@@ -1,9 +1,9 @@
 use chrono::Utc;
 use clap::{Args, Subcommand};
+use orbit_common::types::{Workspace, WorkspaceStatus};
 use orbit_core::command::init::{InitOptions, init_workspace_at_root};
 use orbit_core::workspace_registry;
 use orbit_core::{OrbitError, OrbitRuntime};
-use orbit_types::{Workspace, WorkspaceStatus};
 
 use crate::command::Execute;
 

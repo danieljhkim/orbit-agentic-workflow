@@ -14,12 +14,12 @@
 //! - [`OrbitRuntime`] — fully initialized runtime; wraps stores, policy, tools, and event bus
 //! - [`OrbitContext`] — runtime context: stores, config, policy, tool registry
 //! - [`ActorIdentity`] / [`ActorKind`] — actor identity for audit trail attribution
-//! - [`OrbitError`] — re-exported from `orbit-types` for CLI-layer convenience
+//! - [`OrbitError`] — re-exported from `orbit-common::types` for CLI-layer convenience
 //! - `command::*` — command implementations (task, job, activity, skill, audit, tool, init)
 //! - `skill_catalog` — re-exported skill store for CLI skill lookup
 //!
 //! # Dependency direction
-//! orbit-types, orbit-policy, orbit-exec, orbit-tools, orbit-store, orbit-agent, orbit-engine
+//! orbit-common, orbit-policy, orbit-exec, orbit-tools, orbit-store, orbit-agent, orbit-engine
 //! → `orbit-core` → orbit-cli
 
 pub mod command;
@@ -46,16 +46,16 @@ pub use command::workflow::{
     find_workflow, validate_workflow_flags,
 };
 pub use context::{ActorIdentity, ActorKind, OrbitContext};
-pub use orbit_store::AuditEventInsertParams;
-pub use orbit_types::OrbitError;
-pub use orbit_types::{
+pub use orbit_common::types::OrbitError;
+pub use orbit_common::types::{
     Activity, AuditEvent, AuditEventStatus, AuditStats, ExecutorDef, Job, JobRun, JobRunState,
     JobRunStep, JobScheduleState, JobStep, JobTargetType, ReviewMessage, ReviewThread,
     ReviewThreadStatus, Role, Skill, Task, TaskComment, TaskComplexity, TaskPriority, TaskStatus,
     TaskType,
 };
-pub use orbit_types::{
+pub use orbit_common::utility::redaction::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
     redact_sensitive_env_text,
 };
+pub use orbit_store::AuditEventInsertParams;
 pub use runtime::OrbitRuntime;

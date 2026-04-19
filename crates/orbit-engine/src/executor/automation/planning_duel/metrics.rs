@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use orbit_store::{InvocationRecord, planning_duel_scoreboard};
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, PlanningDuelRun, PlanningEfficiency, PlanningOutcome, PlanningRoleAssignment,
     PlanningRoles,
 };
+use orbit_store::{InvocationRecord, planning_duel_scoreboard};
 use serde_json::{Value, json};
 
 use crate::context::{ActivityInvocationResult, RuntimeHost, TaskHost};

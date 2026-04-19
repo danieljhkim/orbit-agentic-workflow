@@ -1,5 +1,5 @@
 use chrono::Utc;
-use orbit_types::{OrbitError, TaskHistoryEntry};
+use orbit_common::types::{OrbitError, TaskHistoryEntry};
 use std::path::{Path, PathBuf};
 
 pub(super) fn normalize_workspace_path(

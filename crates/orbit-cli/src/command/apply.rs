@@ -2,15 +2,15 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use clap::Args;
+use orbit_common::types::{
+    ActivityResource, ExecutorDef, ExecutorResource, JobResource, POLICY_RESOURCE_SCHEMA_VERSION,
+    PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader, ResourceKind, parse_policy_resource,
+};
 use orbit_core::command::activity::{
     ActivityAddParams, ActivityUpdateParams as RuntimeActivityUpdateParams,
 };
 use orbit_core::command::job::JobAddParams;
 use orbit_core::{OrbitError, OrbitRuntime};
-use orbit_types::{
-    ActivityResource, ExecutorDef, ExecutorResource, JobResource, POLICY_RESOURCE_SCHEMA_VERSION,
-    PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader, ResourceKind, parse_policy_resource,
-};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 

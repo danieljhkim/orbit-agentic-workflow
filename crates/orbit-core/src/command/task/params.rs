@@ -1,4 +1,4 @@
-use orbit_types::{
+use orbit_common::types::{
     OrbitId, ReviewThread, TaskArtifact, TaskComplexity, TaskPriority, TaskStatus, TaskType,
 };
 

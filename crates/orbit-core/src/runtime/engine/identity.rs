@@ -1,4 +1,4 @@
-use orbit_types::{AgentModelPair, agent_family_from_cli, resolve_agent_model_pair};
+use orbit_common::types::{AgentModelPair, agent_family_from_cli, resolve_agent_model_pair};
 
 use crate::OrbitRuntime;
 

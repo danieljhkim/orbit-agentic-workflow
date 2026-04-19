@@ -10,9 +10,9 @@ use orbit_store::{
     workspace_task_backends,
 };
 
+use orbit_common::types::{DEFAULT_POLICY_NAME, OrbitError, WorkspacePaths};
 use orbit_tools::ToolRegistry;
 use orbit_tools::external::ExternalTool;
-use orbit_types::{DEFAULT_POLICY_NAME, OrbitError, WorkspacePaths};
 
 use crate::OrbitContext;
 use crate::command::policy::seed_default_policies;

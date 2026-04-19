@@ -5,17 +5,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orbit_store::{
-    ExpiredTaskReservation, TaskLockConflict, TaskLockHolder, TaskReservationCheckParams,
-    TaskReservationReleaseParams, TaskReservationReserveParams, state_io,
-};
-use orbit_tools::{OrbitBuiltinAction, OrbitTaskScope, OrbitToolHost};
-use orbit_types::{
+use orbit_common::types::{
     AuditEventStatus, OrbitError, ReviewThreadStatus, Task, TaskPriority, TaskStatus, TaskType,
     normalize_optional_attribution_label, optional_csv_or_string_list_alias, optional_raw_string,
     optional_string, optional_string_alias, optional_string_list_alias, optional_u32_alias,
     required_string, split_csv,
 };
+use orbit_store::{
+    ExpiredTaskReservation, TaskLockConflict, TaskLockHolder, TaskReservationCheckParams,
+    TaskReservationReleaseParams, TaskReservationReserveParams, state_io,
+};
+use orbit_tools::{OrbitBuiltinAction, OrbitTaskScope, OrbitToolHost};
 use serde_json::{Value, json};
 
 use self::input::{

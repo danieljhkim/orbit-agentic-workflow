@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orbit_types::{ExecutorDef, OrbitError};
+use orbit_common::types::{ExecutorDef, OrbitError};
 
 use super::contracts::ExecutorDefStoreBackend;
 

@@ -15,7 +15,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use orbit_types::v2::V2AuditEvent;
+use orbit_common::types::v2::V2AuditEvent;
 
 pub struct V2JsonlSink {
     run_id: String,

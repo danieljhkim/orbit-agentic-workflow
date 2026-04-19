@@ -21,7 +21,7 @@ use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use orbit_types::{OrbitError, all_agent_families};
+use orbit_common::types::{OrbitError, all_agent_families};
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
@@ -121,7 +121,7 @@ fn orchestrator_model_for<H: RuntimeHost + ?Sized>(
         .ok_or_else(|| {
             OrbitError::Execution(format!(
                 "no registered model pair for agent family '{family}' — \
-                 update orbit_types::agent_pair::resolve_agent_model_pair"
+                 update orbit_common::types::agent_pair::resolve_agent_model_pair"
             ))
         })
 }

@@ -1,4 +1,4 @@
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus, prune_missing_context_files,
 };
 

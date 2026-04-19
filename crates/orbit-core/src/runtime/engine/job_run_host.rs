@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
+use orbit_common::types::{JobRun, JobRunState, KnowledgeRunMetrics, OrbitError};
 use orbit_engine::JobRunHost;
 use orbit_store::JobRunStepParams;
-use orbit_types::{JobRun, JobRunState, KnowledgeRunMetrics, OrbitError};
 
 use crate::OrbitRuntime;
 
@@ -100,14 +100,14 @@ impl JobRunHost for OrbitRuntime {
     fn read_run_state(
         &self,
         run_id: &str,
-    ) -> Result<Option<orbit_types::PipelineState>, OrbitError> {
+    ) -> Result<Option<orbit_common::types::PipelineState>, OrbitError> {
         self.stores().jobs().read_run_state(run_id)
     }
 
     fn write_run_state(
         &self,
         run_id: &str,
-        state: &orbit_types::PipelineState,
+        state: &orbit_common::types::PipelineState,
     ) -> Result<(), OrbitError> {
         self.stores().jobs().write_run_state(run_id, state)
     }

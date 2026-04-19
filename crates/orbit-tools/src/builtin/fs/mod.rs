@@ -10,7 +10,7 @@ pub mod write;
 
 use std::path::{Path, PathBuf};
 
-use orbit_types::{FsOperation, OrbitError};
+use orbit_common::types::{FsOperation, OrbitError};
 
 use crate::{FsCallEvent, FsCallEventKind, ToolContext, ToolRegistry};
 

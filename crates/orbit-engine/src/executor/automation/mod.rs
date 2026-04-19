@@ -23,8 +23,8 @@ mod task;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use orbit_common::types::{Activity, InvocationTrace, JobRunState, OrbitError};
 use orbit_store::state_io;
-use orbit_types::{Activity, InvocationTrace, JobRunState, OrbitError};
 use serde::Deserialize;
 use serde_json::Value;
 

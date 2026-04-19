@@ -8,8 +8,8 @@
 
 use std::time::Instant;
 
+use orbit_common::types::{OrbitError, ToolSchema};
 use orbit_tools::{ToolContext, ToolRegistry};
-use orbit_types::{OrbitError, ToolSchema};
 use serde_json::{Value, json};
 
 use super::transport::ToolSpec;

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{
+use orbit_common::types::{
     ActorIdentity, OrbitError, OrbitId, ReviewThread, TaskComment, TaskComplexity, TaskPriority,
     TaskType,
 };
@@ -60,7 +60,7 @@ pub(super) struct TaskFileDocument {
     pub(super) created_at: DateTime<Utc>,
     pub(super) updated_at: DateTime<Utc>,
     #[serde(default)]
-    pub(super) history: Vec<orbit_types::TaskHistoryEntry>,
+    pub(super) history: Vec<orbit_common::types::TaskHistoryEntry>,
     #[serde(default)]
     pub(super) comments: Vec<TaskComment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

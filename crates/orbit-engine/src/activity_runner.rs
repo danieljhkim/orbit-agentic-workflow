@@ -1,4 +1,4 @@
-use orbit_types::{Activity, Job, JobStep, OrbitError};
+use orbit_common::types::{Activity, Job, JobStep, OrbitError};
 use serde_json::{Value, json};
 use tracing::{debug, info, trace};
 

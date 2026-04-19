@@ -1,5 +1,5 @@
+use orbit_common::types::OrbitError;
 use orbit_engine::{AgentProtocolHost, ExecutionContext};
-use orbit_types::OrbitError;
 use serde_json::Value;
 
 use super::envelope::{build_agent_stdin_envelope_payload, execute_commit_request_if_present};

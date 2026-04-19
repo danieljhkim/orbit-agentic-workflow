@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::Sender;
 use std::thread::{self, JoinHandle};
 
-use orbit_types::redact_sensitive_env_text;
+use orbit_common::utility::redaction::redact_sensitive_env_text;
 
 pub(super) fn spawn_stdout_drain<R>(mut out: R, debug: bool) -> JoinHandle<Vec<u8>>
 where

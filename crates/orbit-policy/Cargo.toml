@@ -5,5 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-orbit-types = { path = "../orbit-types" }
+orbit-common = { path = "../orbit-common" }
 serde.workspace = true

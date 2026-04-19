@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use orbit_agent::loop_engine::audit::{AuditSink, LoopAuditEvent};
-use orbit_types::v2::{V2AuditEventKind, tool_allowed};
+use orbit_common::types::v2::{V2AuditEventKind, tool_allowed};
 
 use super::audit_writer::V2AuditWriter;
 

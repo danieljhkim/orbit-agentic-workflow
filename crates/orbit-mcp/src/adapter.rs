@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
+use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use rmcp::ErrorData as McpError;
 use rmcp::ServerHandler;
 use rmcp::model::{

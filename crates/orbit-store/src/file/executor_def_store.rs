@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use orbit_types::{
+use orbit_common::types::{
     ExecutorDef, ExecutorResource, ExecutorResourceSpec, OrbitError, RESOURCE_SCHEMA_VERSION,
     ResourceKind,
 };
 
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 pub struct ExecutorDefFileStore {
     root: PathBuf,

@@ -1,7 +1,7 @@
 use std::path::Path;
 
+use orbit_common::types::OrbitError;
 use orbit_exec::ExecRequest;
-use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
 use crate::builtin::fs::check_workspace_boundary;

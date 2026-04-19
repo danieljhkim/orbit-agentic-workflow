@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use orbit_agent::Agent;
-use orbit_types::{
+use orbit_common::types::{
     InvocationTrace, JobRunState, JobStep, KnowledgeRunMetrics, OrbitError, StepCondition,
     infer_agent_family_from_model,
 };

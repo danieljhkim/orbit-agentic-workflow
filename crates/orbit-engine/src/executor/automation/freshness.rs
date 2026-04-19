@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use super::git::{
     fetch_remote_base, git_command_success, git_output, resolve_worktree_start_point,

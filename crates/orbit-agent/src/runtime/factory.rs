@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use crate::agent::{AgentConfig, ProviderOptions};
 use crate::runtime::{AgentRuntime, ProviderRegistry};
