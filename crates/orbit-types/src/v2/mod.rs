@@ -10,6 +10,7 @@ pub mod activity_v2;
 pub mod asset_loader;
 pub mod audit_envelope;
 pub mod backend;
+pub mod catalog;
 pub mod job_v2;
 pub mod schema_header;
 pub mod tool_allowlist;
@@ -29,9 +30,12 @@ pub use backend::{
     BackendConstraintError, HttpOnlyFeature, resolve_activity_backends, resolve_job_backends,
     validate_job_loop_session_backends,
 };
+pub use catalog::{
+    ACTIVITY_REF_PREFIX, CatalogError, ResolveError, V2ActivityCatalog, resolve_job_target_refs,
+};
 pub use job_v2::{
     BackoffStrategy, FanInSpec, FanOutBlock, JobV2, JobV2Step, JobV2StepBody, JoinMode, LoopBlock,
-    ParallelBlock, PipelineRef, RetrySpec, TargetStep,
+    ParallelBlock, PipelineRef, RetrySpec, TargetRef, TargetStep,
 };
 pub use schema_header::SchemaHeader;
 pub use tool_allowlist::{

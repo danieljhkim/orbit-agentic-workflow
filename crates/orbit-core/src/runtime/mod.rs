@@ -181,6 +181,45 @@ impl OrbitRuntime {
         self.context.v2_backend()
     }
 
+    /// Build the v2 activity catalog for `target: activity:<name>` resolution
+    /// (Phase 4). Loads from the layered Orbit data dirs using §9.1
+    /// `MergeByKey` semantics — global provides defaults, workspace overrides.
+    ///
+    /// The lookup order:
+    /// 1. `ORBIT_V2_CATALOG_DIR` env var (colon-separated list of dirs,
+    ///    highest precedence for smokes / tests).
+    /// 2. `<workspace_root>/.orbit/activities/v2/` — workspace-local.
+    /// 3. `<global_root>/activities/v2/` — global defaults.
+    ///
+    /// Missing directories are skipped silently; duplicate names across
+    /// directories are a hard error (`CatalogError::DuplicateName`).
+    pub fn v2_activity_catalog(
+        &self,
+    ) -> Result<orbit_types::v2::V2ActivityCatalog, orbit_types::v2::CatalogError> {
+        let mut catalog = orbit_types::v2::V2ActivityCatalog::new();
+
+        if let Ok(raw) = std::env::var("ORBIT_V2_CATALOG_DIR") {
+            for entry in raw.split(':').filter(|s| !s.is_empty()) {
+                let path = std::path::Path::new(entry);
+                if path.is_dir() {
+                    catalog.load_dir(path)?;
+                }
+            }
+        }
+
+        let ws_dir = self.context.paths().orbit_dir.join("activities/v2");
+        if ws_dir.is_dir() {
+            catalog.load_dir(&ws_dir)?;
+        }
+
+        let global_dir = self.context.paths().global_dir.join("activities/v2");
+        if global_dir.is_dir() && global_dir != ws_dir {
+            catalog.load_dir(&global_dir)?;
+        }
+
+        Ok(catalog)
+    }
+
     pub(crate) fn actor(&self) -> &ActorIdentity {
         self.context.actor()
     }

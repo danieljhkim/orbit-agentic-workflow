@@ -290,6 +290,11 @@ fn emit_denied_if_applicable(err: &DispatchError, step_id: &str, audit: &Arc<V2A
 fn run_step_body(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcome, DispatchError> {
     match &step.body {
         JobV2StepBody::Target(t) => run_target(step, t, ctx),
+        JobV2StepBody::TargetRef(r) => Err(DispatchError::JobValidation(format!(
+            "step `{}`: target ref `{}` was not resolved — caller must run \
+             `resolve_job_target_refs` at load time before dispatch",
+            step.id, r.target
+        ))),
         JobV2StepBody::Parallel { parallel } => run_parallel(step, parallel, ctx),
         JobV2StepBody::FanOut { fan_out, fan_in } => run_fan_out(step, fan_out, fan_in, ctx),
         JobV2StepBody::Loop { loop_ } => run_loop(step, loop_, ctx),
@@ -861,6 +866,10 @@ fn validate_step(step: &JobV2Step) -> Result<(), DispatchError> {
             }
         }
         JobV2StepBody::Target(_) => {}
+        JobV2StepBody::TargetRef(_) => {
+            // Surfaces as a structural error in `run_step_body`; no session
+            // binding to validate here.
+        }
     }
     Ok(())
 }
@@ -894,6 +903,10 @@ fn collect_session_bindings<'a>(
             for b in &loop_.steps {
                 collect_session_bindings(b, seen, parent_id)?;
             }
+        }
+        JobV2StepBody::TargetRef(_) => {
+            // Can't collect bindings from an unresolved ref; dispatcher
+            // surfaces the structural error.
         }
     }
     Ok(())

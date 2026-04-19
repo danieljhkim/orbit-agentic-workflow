@@ -32,7 +32,13 @@ pub struct JobV2Step {
 }
 
 /// One-of body for a v2 step. Picked by presence of the `parallel` / `fan_out`
-/// / `loop` keys; otherwise falls back to the flat target shape.
+/// / `loop` / `target` keys; otherwise falls back to the flat target shape
+/// (inline `spec:`).
+///
+/// `TargetRef` and `Target` are distinct variants so the executor only ever
+/// sees `Target` after [`super::catalog::resolve_job_target_refs`] runs at
+/// load time. A `TargetRef` that survives into dispatch is a caller bug —
+/// the job executor should never have to look up an activity by name.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum JobV2StepBody {
@@ -47,6 +53,7 @@ pub enum JobV2StepBody {
         #[serde(rename = "loop")]
         loop_: LoopBlock,
     },
+    TargetRef(TargetRef),
     Target(TargetStep),
 }
 
@@ -76,6 +83,7 @@ impl<'de> Deserialize<'de> for JobV2Step {
         let has_parallel = obj.contains_key("parallel");
         let has_fan_out = obj.contains_key("fan_out");
         let has_loop = obj.contains_key("loop");
+        let has_target = obj.contains_key("target");
 
         let body = match (has_parallel, has_fan_out, has_loop) {
             (true, false, false) => {
@@ -104,6 +112,10 @@ impl<'de> Deserialize<'de> for JobV2Step {
                         .map_err(|e| D::Error::custom(format!("loop: {e}")))?,
                 }
             }
+            (false, false, false) if has_target => JobV2StepBody::TargetRef(
+                serde_json::from_value(Value::Object(std::mem::take(obj)))
+                    .map_err(|e| D::Error::custom(format!("target ref: {e}")))?,
+            ),
             (false, false, false) => JobV2StepBody::Target(
                 serde_json::from_value(Value::Object(std::mem::take(obj)))
                     .map_err(|e| D::Error::custom(format!("target step: {e}")))?,
@@ -124,13 +136,10 @@ impl<'de> Deserialize<'de> for JobV2Step {
     }
 }
 
-/// Flat target step: inlines an `ActivityV2Spec` directly on the step.
-///
-/// Phase 3 inlines the activity body rather than referencing it by id. Name-
-/// based resolution (`target: activity:<name>`) lands in Phase 4 alongside
-/// real asset migration; keeping Phase 3 samples self-contained avoids a
-/// new asset-discovery surface that would have to be rewritten anyway when
-/// Phase 4 decides scope resolution (§9 MergeByKey).
+/// Flat target step: inlines an `ActivityV2Spec` directly on the step. This
+/// is the shape the executor operates on — [`TargetRef`] is rewritten to
+/// `TargetStep` by [`super::catalog::resolve_job_target_refs`] before
+/// dispatch.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TargetStep {
     pub spec: ActivityV2Spec,
@@ -140,6 +149,27 @@ pub struct TargetStep {
     pub timeout_seconds: u64,
     /// Named Session binding. When set and present in the executor's session
     /// map (loop body only), conversation history persists across iterations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+/// Named target reference — `target: activity:<name>` in YAML. Phase 4
+/// introduces this so job YAMLs can reference activities by name instead of
+/// inlining the full spec. The resolver in
+/// [`super::catalog::resolve_job_target_refs`] looks the name up in the
+/// workspace catalog and rewrites this variant to [`TargetStep`] with the
+/// named `ActivityV2Spec` inlined. All other fields (`default_input`,
+/// `timeout_seconds`, `session`) carry through unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TargetRef {
+    /// Reference string — currently `activity:<name>`. Namespace-prefixed so
+    /// future kinds (`job:<name>` for nested-job refs, etc.) land without a
+    /// breaking shape change.
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_input: Option<Value>,
+    #[serde(default)]
+    pub timeout_seconds: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
 }

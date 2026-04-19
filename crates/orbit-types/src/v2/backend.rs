@@ -81,6 +81,11 @@ fn resolve_step_backends(step: &mut JobV2Step, resolved: Backend) {
                 }
             }
         }
+        JobV2StepBody::TargetRef(_) => {
+            // A surviving TargetRef means `resolve_job_target_refs` wasn't
+            // run first. Leave it alone here; the dispatcher surfaces the
+            // structural error.
+        }
         JobV2StepBody::Parallel { parallel } => {
             for branch in &mut parallel.branches {
                 resolve_step_backends(branch, resolved);
@@ -133,6 +138,12 @@ fn validate_step(
                     }
                 }
             }
+            Ok(())
+        }
+        JobV2StepBody::TargetRef(_) => {
+            // See `resolve_step_backends` — a surviving ref is structural
+            // breakage, not a §3.2 concern. Skip silently; the dispatcher's
+            // `UnresolvedTargetRef` surfaces it.
             Ok(())
         }
         JobV2StepBody::Parallel { parallel } => {

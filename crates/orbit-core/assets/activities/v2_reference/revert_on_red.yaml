@@ -1,0 +1,40 @@
+schemaVersion: 2
+kind: Activity
+metadata:
+  name: revert_on_red
+spec:
+  type: deterministic
+  description: >
+    Revert a merged commit on `agent-main` when CI goes red for that commit.
+    Safety valve for the T20260418-0421 pipeline: if a per-unit PR merges
+    but the integration build fails, this activity reverts the offending
+    commit and opens a follow-up issue. Emits §7 audit events on every
+    invocation — a red build is an operational signal and the revert trail
+    must be queryable after the fact.
+
+    No LLM — deterministic git + API actions only.
+  input_schema_json:
+    type: object
+    required: [commit_sha, branch]
+    properties:
+      commit_sha:
+        type: string
+      branch:
+        type: string
+      ci_run_id:
+        type: string
+      reason:
+        type: string
+  output_schema_json:
+    type: object
+    required: [reverted]
+    properties:
+      reverted:
+        type: boolean
+      revert_sha:
+        type: string
+      follow_up_issue:
+        type: string
+  action: revert_on_red
+  config:
+    follow_up_issue_label: "incident/ci-revert"

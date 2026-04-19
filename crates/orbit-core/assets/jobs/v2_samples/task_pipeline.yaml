@@ -1,0 +1,87 @@
+schemaVersion: 2
+kind: Job
+metadata:
+  name: task_pipeline
+spec:
+  state: enabled
+  max_active_runs: 1
+  default_input:
+    auto_merge: false
+  # Sequential pipeline — v2 top-level `steps:` execute in order, each
+  # waiting for the previous to complete. One worktree + one branch + one
+  # PR per invocation. Callers running multiple units invoke this job once
+  # per unit; no fan-out inside the pipeline itself.
+  steps:
+    - id: worktree
+      target: activity:worktree_setup
+      default_input:
+        task_id: "{{ input.task_id }}"
+        base_branch: agent-main
+
+    - id: implement
+      target: activity:agent_implement
+      default_input:
+        task_id: "{{ input.task_id }}"
+        branch: "{{ steps.worktree.output.branch }}"
+
+    # Review↔fix collapsed into one loop: per §4.2. Reviewer holds the
+    # Session across iterations; fixer does not. §3.2 item 1 pins the
+    # reviewer to `backend: http` — agent_review_diff declares that
+    # explicitly. The fixer is `backend: auto`.
+    - id: review_fix
+      loop:
+        max_iterations: 5
+        break_when: "{{ steps.review.output.decision == 'approved' }}"
+        steps:
+          - id: review
+            target: activity:agent_review_diff
+            session: reviewer
+            default_input:
+              diff: "{{ steps.implement.output.diff }}"
+              branch: "{{ steps.worktree.output.branch }}"
+              iteration: "{{ iteration }}"
+
+          - id: fix
+            when: "{{ steps.review.output.blocking_count > 0 }}"
+            target: activity:agent_apply_fixes
+            default_input:
+              findings: "{{ steps.review.output.findings }}"
+              branch: "{{ steps.worktree.output.branch }}"
+              iteration: "{{ iteration }}"
+
+    - id: push
+      target: activity:git_push
+      default_input:
+        branch: "{{ steps.worktree.output.branch }}"
+
+    - id: pr_open
+      target: activity:pr_open
+      default_input:
+        head: "{{ steps.worktree.output.branch }}"
+        base: agent-main
+        title: "{{ input.title }}"
+
+    # auto_merge is opt-in per AC — default `false` at the job level keeps
+    # PRs open for human review.
+    - id: merge
+      when: "{{ input.auto_merge == true }}"
+      target: activity:pr_merge
+      default_input:
+        pr_number: "{{ steps.pr_open.output.pr_number }}"
+
+    # Success terminal: promote agent-main once the merge lands cleanly.
+    - id: promote
+      when: "{{ input.auto_merge == true }}"
+      target: activity:promote_agent_main
+      default_input:
+        target_branch: main
+        source_branch: agent-main
+
+    # Failure safety valve. Guarded off by default — dispatched by the CI
+    # observer when a merged commit subsequently turns agent-main red.
+    - id: revert_on_failure
+      when: "false"
+      target: activity:revert_on_red
+      default_input:
+        commit_sha: "{{ input.failure_commit }}"
+        branch: agent-main

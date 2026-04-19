@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use orbit_engine::v2::{JobOutcome, V2AuditWriter, execute_job};
 use orbit_types::v2::{
     Backend, JobAsset, V2AuditEventKind, load_job_asset, resolve_job_backends,
-    validate_job_loop_session_backends,
+    resolve_job_target_refs, validate_job_loop_session_backends,
 };
 use orbit_types::{OrbitError, OrbitEvent};
 use serde_json::Value;
@@ -53,6 +53,14 @@ impl OrbitRuntime {
                 )));
             }
         };
+
+        // Phase 4: resolve `target: activity:<name>` refs before any other
+        // pass, so backend-resolution + loader-rejection see concrete specs.
+        let catalog = self
+            .v2_activity_catalog()
+            .map_err(|err| OrbitError::InvalidInput(format!("build v2 catalog: {err}")))?;
+        resolve_job_target_refs(&mut asset.spec, &catalog)
+            .map_err(|err| OrbitError::InvalidInput(format!("{err}")))?;
 
         // §3.1 resolution: replace every `Auto` with a concrete backend.
         let resolution = self.resolve_v2_backend(backend_flag);

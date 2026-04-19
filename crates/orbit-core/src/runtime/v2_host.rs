@@ -46,6 +46,42 @@ impl V2RuntimeHost for OrbitRuntime {
                         message: format!("{err}"),
                     })
             }
+            // Phase 4 stub handlers. Real git/API logic lands in a follow-up
+            // task once the per-asset migration ports the rest of the
+            // pipeline dependencies (worktree_setup, pr_open, pr_merge, …).
+            // Returning a structured result keeps the activities dispatchable
+            // so the §7 `activity.started` / `activity.finished` envelope is
+            // emitted end-to-end — an operator running the pipeline today
+            // sees the intent even while the implementation is stubbed.
+            "promote_agent_main" => {
+                let target = input
+                    .get("target_branch")
+                    .and_then(Value::as_str)
+                    .unwrap_or("main");
+                let source = input
+                    .get("source_branch")
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent-main");
+                Ok(serde_json::json!({
+                    "promoted": false,
+                    "target_sha": null,
+                    "skipped_reason":
+                        format!("stub: real promotion from `{source}` to `{target}` lands in a follow-up"),
+                }))
+            }
+            "revert_on_red" => {
+                let sha = input
+                    .get("commit_sha")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                Ok(serde_json::json!({
+                    "reverted": false,
+                    "revert_sha": null,
+                    "follow_up_issue": null,
+                    "skipped_reason":
+                        format!("stub: real revert of `{sha}` lands in a follow-up"),
+                }))
+            }
             other => Err(DispatchError::DeterministicActionNotRegistered(
                 other.to_string(),
             )),
