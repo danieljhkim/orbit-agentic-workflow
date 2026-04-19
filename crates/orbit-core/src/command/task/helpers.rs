@@ -1,6 +1,6 @@
 use chrono::Utc;
 use orbit_types::{
-    OrbitError, Task, TaskComment, normalize_attribution_label,
+    OrbitError, Task, TaskComment, TaskHistoryEntry, normalize_attribution_label,
     normalize_optional_attribution_label,
 };
 
@@ -29,6 +29,20 @@ pub(super) fn build_task_comments(
         by: by.to_string(),
         message: message.to_string(),
     }])
+}
+
+pub(super) fn task_comment_history_entries(comments: &[TaskComment]) -> Vec<TaskHistoryEntry> {
+    comments
+        .iter()
+        .map(|comment| TaskHistoryEntry {
+            at: comment.at,
+            by: comment.by.clone(),
+            event: "commented".to_string(),
+            note: None,
+            from_status: None,
+            to_status: None,
+        })
+        .collect()
 }
 
 pub(super) fn effective_actor_label(
