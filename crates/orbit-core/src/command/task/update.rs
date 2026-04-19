@@ -5,7 +5,9 @@ use orbit_types::{
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams;
 
-use super::helpers::{build_task_comments, effective_actor_label, implementation_label};
+use super::helpers::{
+    build_task_comments, effective_actor_label, implementation_label, task_comment_history_entries,
+};
 use super::params::TaskUpdateParams;
 use super::paths::{context_files_pruned_history_entry, context_workspace_root};
 use super::transitions::{ensure_task_has_execution_plan, in_progress_transition_requires_plan};
@@ -76,15 +78,13 @@ impl OrbitRuntime {
             } else {
                 Vec::new()
             };
-        let locked_field_update = params.plan.is_some()
-            || params.execution_summary.is_some()
-            || params.comment.is_some()
-            || params.pr_number.is_some()
-            || params.pr_status.is_some()
-            || params.batch_id.is_some()
-            || !params.upsert_artifacts.is_empty();
-
-        if locked_field_update && matches!(task.status, TaskStatus::Done | TaskStatus::Archived) {
+        if params.has_any_mutation() && task.status == TaskStatus::Archived {
+            return Err(OrbitError::InvalidInput(format!(
+                "task {id} is {} and cannot be modified; unarchive or reopen it first",
+                task.status
+            )));
+        }
+        if params.has_non_comment_mutation() && task.status == TaskStatus::Done {
             return Err(OrbitError::InvalidInput(format!(
                 "task {id} is {} and cannot be modified; unarchive or reopen it first",
                 task.status
@@ -148,7 +148,7 @@ impl OrbitRuntime {
 
         let old_status = task.status;
         let target_status = params.status;
-        let append_history: Vec<TaskHistoryEntry> = if dropped_context_files.is_empty() {
+        let mut append_history: Vec<TaskHistoryEntry> = if dropped_context_files.is_empty() {
             Vec::new()
         } else {
             vec![context_files_pruned_history_entry(
@@ -156,6 +156,7 @@ impl OrbitRuntime {
                 &dropped_context_files,
             )]
         };
+        append_history.extend(task_comment_history_entries(&append_comments));
         let updated = self.with_mutation(|| {
             let task = self.stores().tasks().update(
                 id,

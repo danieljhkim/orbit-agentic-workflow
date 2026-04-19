@@ -53,7 +53,7 @@ Expected outcomes:
 
 ## Persisting Results
 
-Include the brief audit summary in the same `approve`, `reject`, or `start` command via its `comment` field. Do not try to append a follow-up comment after `review -> done`; done tasks reject further mutation.
+Include the brief audit summary in the same `approve`, `reject`, or `start` command via its `comment` field. That keeps the approval trail self-contained, even though `done` tasks can now accept follow-up comments later when you need to add cross-task notes.
 
 ```bash
 orbit tool run orbit.task.approve --input '{

@@ -60,6 +60,31 @@ pub struct TaskUpdateParams {
     pub append_review_threads: Vec<ReviewThread>,
 }
 
+impl TaskUpdateParams {
+    pub(crate) fn has_comment_update(&self) -> bool {
+        self.comment.is_some()
+    }
+
+    pub(crate) fn has_non_comment_mutation(&self) -> bool {
+        self.title.is_some()
+            || self.description.is_some()
+            || self.acceptance_criteria.is_some()
+            || self.plan.is_some()
+            || self.execution_summary.is_some()
+            || self.status.is_some()
+            || self.pr_number.is_some()
+            || self.pr_status.is_some()
+            || self.batch_id.is_some()
+            || self.context_files.is_some()
+            || !self.upsert_artifacts.is_empty()
+            || !self.append_review_threads.is_empty()
+    }
+
+    pub(crate) fn has_any_mutation(&self) -> bool {
+        self.has_comment_update() || self.has_non_comment_mutation()
+    }
+}
+
 impl From<TaskUpdateParams> for TaskRecordUpdateParams {
     fn from(p: TaskUpdateParams) -> Self {
         Self {
