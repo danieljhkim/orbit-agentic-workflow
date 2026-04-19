@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 
 use chrono::{Duration, Utc};
 use orbit_common::types::OrbitError;
+use orbit_common::utility::path::{
+    normalize_workspace_relative_path, workspace_relative_paths_overlap,
+};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::{
@@ -253,10 +256,16 @@ fn find_reservation_conflicts(
         let (reservation_id, files_json) =
             row.map_err(|error| OrbitError::Store(error.to_string()))?;
         let reserved_files = parse_string_list(&files_json)?;
-        for file in reserved_files {
-            if requested_files.contains(&file) {
+        for requested_file in &requested_files {
+            let Some(requested_file) = normalize_workspace_relative_path(requested_file) else {
+                continue;
+            };
+            if reserved_files
+                .iter()
+                .any(|held_file| workspace_relative_paths_overlap(requested_file, held_file))
+            {
                 conflicts.push(TaskLockConflict {
-                    file,
+                    file: requested_file.to_string(),
                     held_by: TaskLockHolder::Reservation,
                     held_by_id: reservation_id.clone(),
                 });

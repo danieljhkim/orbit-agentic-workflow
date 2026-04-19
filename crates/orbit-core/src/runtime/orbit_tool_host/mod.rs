@@ -11,6 +11,9 @@ use orbit_common::types::{
     optional_string, optional_string_alias, optional_string_list_alias, optional_u32_alias,
     required_string, split_csv,
 };
+use orbit_common::utility::path::{
+    normalize_workspace_relative_path, workspace_relative_paths_overlap,
+};
 use orbit_store::{
     ExpiredTaskReservation, TaskLockConflict, TaskLockHolder, TaskReservationCheckParams,
     TaskReservationReleaseParams, TaskReservationReserveParams, state_io,
@@ -610,10 +613,17 @@ pub(crate) fn task_lock_conflicts(
 
     let mut conflicts = Vec::new();
     for task in tasks {
-        for file in &task.context_files {
-            if requested_files.contains(file) {
+        for requested_file in &requested_files {
+            let Some(requested_file) = normalize_workspace_relative_path(requested_file) else {
+                continue;
+            };
+            if task
+                .context_files
+                .iter()
+                .any(|held_file| workspace_relative_paths_overlap(requested_file, held_file))
+            {
                 conflicts.push(TaskLockConflict {
-                    file: file.clone(),
+                    file: requested_file.to_string(),
                     held_by: TaskLockHolder::Task,
                     held_by_id: task.id.clone(),
                 });
