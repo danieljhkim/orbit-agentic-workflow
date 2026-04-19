@@ -171,6 +171,12 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                     Some("tool".to_string()),
                     args.name.clone(),
                 ),
+                ToolSubcommand::Scaffold(args) => (
+                    "scaffold",
+                    args.name.clone(),
+                    Some("tool".to_string()),
+                    args.name.clone().or_else(|| Some(args.path.clone())),
+                ),
                 ToolSubcommand::Remove(args) => (
                     "remove",
                     Some(args.name.clone()),

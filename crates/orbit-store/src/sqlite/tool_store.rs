@@ -11,17 +11,21 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         let mut stmt = conn
-            .prepare("SELECT name, path, description, enabled, builtin FROM tools ORDER BY name")
+            .prepare(
+                "SELECT name, path, description, parameters_json, enabled, builtin FROM tools ORDER BY name",
+            )
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
         let rows = stmt
             .query_map([], |row| {
+                let parameters_json: String = row.get(3)?;
                 Ok(StoredTool {
                     name: row.get(0)?,
                     path: row.get(1)?,
                     description: row.get(2)?,
-                    enabled: row.get::<_, i32>(3)? != 0,
-                    builtin: row.get::<_, i32>(4)? != 0,
+                    parameters: parse_tool_parameters(&parameters_json)?,
+                    enabled: row.get::<_, i32>(4)? != 0,
+                    builtin: row.get::<_, i32>(5)? != 0,
                 })
             })
             .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -37,17 +41,21 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
 
         let mut stmt = conn
-            .prepare("SELECT name, path, description, enabled, builtin FROM tools WHERE name = ?1")
+            .prepare(
+                "SELECT name, path, description, parameters_json, enabled, builtin FROM tools WHERE name = ?1",
+            )
             .map_err(|e| OrbitError::Store(e.to_string()))?;
 
         let result = stmt
             .query_row(params![name], |row| {
+                let parameters_json: String = row.get(3)?;
                 Ok(StoredTool {
                     name: row.get(0)?,
                     path: row.get(1)?,
                     description: row.get(2)?,
-                    enabled: row.get::<_, i32>(3)? != 0,
-                    builtin: row.get::<_, i32>(4)? != 0,
+                    parameters: parse_tool_parameters(&parameters_json)?,
+                    enabled: row.get::<_, i32>(4)? != 0,
+                    builtin: row.get::<_, i32>(5)? != 0,
                 })
             })
             .optional()
@@ -59,14 +67,16 @@ impl Store {
 
 impl<'a> StoreTx<'a> {
     pub fn insert_tool(&mut self, tool: &StoredTool) -> Result<(), OrbitError> {
+        let parameters_json = serialize_tool_parameters(tool)?;
         self.tx
             .execute(
-                "INSERT INTO tools(name, path, description, enabled, builtin, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO tools(name, path, description, parameters_json, enabled, builtin, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     tool.name,
                     tool.path,
                     tool.description,
+                    parameters_json,
                     tool.enabled as i32,
                     tool.builtin as i32,
                     now_string(),
@@ -98,4 +108,19 @@ impl<'a> StoreTx<'a> {
 
         Ok(affected > 0)
     }
+}
+
+fn parse_tool_parameters(raw: &str) -> rusqlite::Result<Vec<orbit_types::ToolParam>> {
+    serde_json::from_str(raw).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            raw.len(),
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
+fn serialize_tool_parameters(tool: &StoredTool) -> Result<String, OrbitError> {
+    serde_json::to_string(&tool.parameters)
+        .map_err(|error| OrbitError::Store(format!("serialize tool parameters: {error}")))
 }

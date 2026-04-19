@@ -24,6 +24,8 @@ pub struct StoredTool {
     pub description: String,
     pub enabled: bool,
     pub builtin: bool,
+    #[serde(default)]
+    pub parameters: Vec<ToolParam>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

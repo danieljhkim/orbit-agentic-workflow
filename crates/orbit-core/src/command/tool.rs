@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use orbit_tools::ToolContext;
-use orbit_types::{OrbitError, OrbitEvent, Role, StoredTool};
+use orbit_types::{OrbitError, OrbitEvent, Role, StoredTool, ToolParam};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -136,7 +136,7 @@ impl OrbitRuntime {
                     description: stored.description.clone(),
                     enabled: stored.enabled,
                     builtin: false,
-                    parameters: vec![],
+                    parameters: stored.parameters.clone(),
                 });
             }
         }
@@ -163,7 +163,13 @@ impl OrbitRuntime {
         })
     }
 
-    pub fn add_tool(&self, name: &str, path: &str, description: &str) -> Result<(), OrbitError> {
+    pub fn add_tool(
+        &self,
+        name: &str,
+        path: &str,
+        description: &str,
+        parameters: Vec<ToolParam>,
+    ) -> Result<(), OrbitError> {
         let p = Path::new(path);
         if !p.exists() {
             return Err(OrbitError::InvalidInput(format!(
@@ -185,6 +191,7 @@ impl OrbitRuntime {
             description: description.to_string(),
             enabled: true,
             builtin: false,
+            parameters,
         };
 
         self.with_mutation(|| {
@@ -294,6 +301,7 @@ impl OrbitRuntime {
                 description: schema.description.clone(),
                 enabled,
                 builtin: schema.builtin,
+                parameters: schema.parameters.clone(),
             };
             return self.with_mutation(|| {
                 self.stores().tools().insert(&tool)?;

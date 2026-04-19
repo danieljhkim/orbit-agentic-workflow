@@ -1,7 +1,7 @@
 use std::env;
 
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::Value;
 
 use crate::{TIMEOUT_DEFAULT_MS, Tool, ToolContext};
@@ -19,6 +19,7 @@ pub struct ExternalTool {
     pub name: String,
     pub path: String,
     pub description: String,
+    pub parameters: Vec<ToolParam>,
 }
 
 impl Tool for ExternalTool {
@@ -26,7 +27,7 @@ impl Tool for ExternalTool {
         ToolSchema {
             name: self.name.clone(),
             description: external_tool_description(&self.description),
-            parameters: vec![],
+            parameters: self.parameters.clone(),
             builtin: false,
         }
     }

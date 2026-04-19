@@ -8,6 +8,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 name TEXT PRIMARY KEY,
                 path TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
+                parameters_json TEXT NOT NULL DEFAULT '[]',
                 enabled INTEGER NOT NULL DEFAULT 1,
                 builtin INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -167,6 +168,10 @@ fn add_column_if_missing(conn: &Connection, sql: &str) -> Result<(), OrbitError>
 fn ensure_tools_schema(conn: &Connection) -> Result<(), OrbitError> {
     add_column_if_missing(
         conn,
+        "ALTER TABLE tools ADD COLUMN parameters_json TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    add_column_if_missing(
+        conn,
         "ALTER TABLE tools ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
     )?;
     add_column_if_missing(
@@ -210,6 +215,11 @@ fn ensure_tools_schema(conn: &Connection) -> Result<(), OrbitError> {
         .map_err(|e| OrbitError::Store(e.to_string()))?;
     }
 
+    conn.execute(
+        "UPDATE tools SET parameters_json = '[]' WHERE parameters_json = ''",
+        [],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
     conn.execute(
         "UPDATE tools SET created_at = datetime('now') WHERE created_at = ''",
         [],

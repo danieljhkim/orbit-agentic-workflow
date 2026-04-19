@@ -140,6 +140,7 @@ fn load_external_tools(store: &Store, registry: &mut ToolRegistry) -> Result<(),
                 name: tool.name,
                 path: tool.path,
                 description: tool.description,
+                parameters: tool.parameters,
             });
         }
     }

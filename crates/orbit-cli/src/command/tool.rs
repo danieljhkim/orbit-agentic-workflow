@@ -1,13 +1,30 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_core::{OrbitError, OrbitRuntime};
+use orbit_types::ToolParam;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::command::Execute;
 
+const TOOL_COMMAND_AFTER_HELP: &str = "\
+Examples:
+  orbit tool scaffold ./plugins/hello_orbit.py --name demo.hello
+  orbit tool add ./plugins/hello_orbit.py
+  orbit tool show demo.hello
+";
+const EXTERNAL_TOOL_TEMPLATE: &str =
+    include_str!("../../assets/tool_templates/external_tool.py.tmpl");
+const SCAFFOLD_DEFAULT_DESCRIPTION: &str =
+    "Return a greeting and optionally echo Orbit tool context.";
+
 #[derive(Args)]
-#[command(about = "Manage and run Orbit tools")]
+#[command(
+    about = "Manage and run Orbit tools, including external MCP plugins",
+    after_help = TOOL_COMMAND_AFTER_HELP
+)]
 pub struct ToolCommand {
     #[command(subcommand)]
     pub command: ToolSubcommand,
@@ -27,8 +44,10 @@ pub enum ToolSubcommand {
     Show(ToolShowArgs),
     /// Execute a tool
     Run(ToolRunArgs),
-    /// Register an external tool
+    /// Register an external tool or MCP plugin
     Add(ToolAddArgs),
+    /// Generate a starter external tool plugin
+    Scaffold(ToolScaffoldArgs),
     /// Remove an external tool
     Remove(ToolRemoveArgs),
     /// Enable a disabled tool
@@ -46,6 +65,7 @@ impl Execute for ToolSubcommand {
             ToolSubcommand::Show(args) => args.execute(runtime),
             ToolSubcommand::Run(args) => args.execute(runtime),
             ToolSubcommand::Add(args) => args.execute(runtime),
+            ToolSubcommand::Scaffold(args) => args.execute(runtime),
             ToolSubcommand::Remove(args) => args.execute(runtime),
             ToolSubcommand::Enable(args) => args.execute(runtime),
             ToolSubcommand::Disable(args) => args.execute(runtime),
@@ -338,26 +358,111 @@ fn select_fields(map: Map<String, Value>, fields: &[String]) -> Map<String, Valu
 pub struct ToolAddArgs {
     /// Path to the external tool executable
     pub path: String,
-    /// Tool name (inferred from filename if omitted)
+    /// Tool name (overrides the manifest or filename-derived default)
     #[arg(long)]
     pub name: Option<String>,
-    /// Tool description
+    /// Tool description (overrides the manifest description)
     #[arg(long, default_value = "")]
     pub description: String,
+    /// Path to a sidecar plugin manifest (`*.orbit-tool.yaml`, `*.yml`, or `*.json`)
+    #[arg(long)]
+    pub manifest: Option<String>,
 }
 
 impl Execute for ToolAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let name = self.name.unwrap_or_else(|| {
-            Path::new(&self.path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string()
-        });
+        let manifest_path = resolve_manifest_path(Path::new(&self.path), self.manifest.as_deref());
+        let manifest = manifest_path
+            .as_deref()
+            .map(load_external_tool_manifest)
+            .transpose()?;
 
-        runtime.add_tool(&name, &self.path, &self.description)?;
+        let name = self
+            .name
+            .or_else(|| manifest.as_ref().map(|entry| entry.name.clone()))
+            .unwrap_or_else(|| infer_tool_name(Path::new(&self.path)));
+        if name.trim().is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "tool name must not be empty".to_string(),
+            ));
+        }
+
+        let description = if self.description.trim().is_empty() {
+            manifest
+                .as_ref()
+                .map(|entry| entry.description.clone())
+                .unwrap_or_default()
+        } else {
+            self.description.trim().to_string()
+        };
+        let parameters = manifest.map(|entry| entry.parameters).unwrap_or_default();
+
+        runtime.add_tool(&name, &self.path, &description, parameters)?;
         println!("Added tool '{name}' from {}", self.path);
+        if let Some(path) = manifest_path {
+            println!("Loaded plugin manifest from {}", path.display());
+        }
+        Ok(())
+    }
+}
+
+// --- Scaffold ---
+
+#[derive(Args)]
+pub struct ToolScaffoldArgs {
+    /// Path to the starter executable to create
+    pub path: String,
+    /// Tool name to place in the generated manifest
+    #[arg(long)]
+    pub name: Option<String>,
+    /// Tool description to place in the generated manifest
+    #[arg(long, default_value = SCAFFOLD_DEFAULT_DESCRIPTION)]
+    pub description: String,
+    /// Overwrite existing files
+    #[arg(long)]
+    pub force: bool,
+}
+
+impl Execute for ToolScaffoldArgs {
+    fn execute(self, _runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let script_path = PathBuf::from(&self.path);
+        let manifest_path = sidecar_manifest_path(&script_path);
+        let tool_name = self
+            .name
+            .unwrap_or_else(|| infer_tool_name(script_path.as_path()));
+        let description = self.description.trim().to_string();
+
+        ensure_scaffold_targets_clear(&script_path, &manifest_path, self.force)?;
+
+        if let Some(parent) = script_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| OrbitError::Io(format!("create {}: {error}", parent.display())))?;
+        }
+
+        let script = EXTERNAL_TOOL_TEMPLATE.replace("__ORBIT_TOOL_NAME__", &tool_name);
+        fs::write(&script_path, script)
+            .map_err(|error| OrbitError::Io(format!("write {}: {error}", script_path.display())))?;
+        make_executable(&script_path)?;
+
+        let manifest = ExternalToolManifest {
+            schema_version: 1,
+            name: tool_name.clone(),
+            description,
+            parameters: scaffold_parameters(),
+        };
+        let manifest_yaml = serde_yaml::to_string(&manifest)
+            .map_err(|error| OrbitError::InvalidInput(format!("serialize manifest: {error}")))?;
+        fs::write(&manifest_path, manifest_yaml).map_err(|error| {
+            OrbitError::Io(format!("write {}: {error}", manifest_path.display()))
+        })?;
+
+        println!("Created starter plugin:");
+        println!("  executable: {}", script_path.display());
+        println!("  manifest:   {}", manifest_path.display());
+        println!("\nNext steps:");
+        println!("  orbit tool add {}", script_path.display());
+        println!("  orbit tool show {}", tool_name);
+        println!("  orbit mcp serve");
         Ok(())
     }
 }
@@ -444,6 +549,170 @@ fn execute_doctor(runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         );
     } else {
         eprintln!("\n{} issue(s) found.", issues);
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExternalToolManifest {
+    #[serde(rename = "schemaVersion", default = "default_manifest_schema_version")]
+    schema_version: u32,
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    parameters: Vec<ToolParam>,
+}
+
+fn default_manifest_schema_version() -> u32 {
+    1
+}
+
+fn resolve_manifest_path(tool_path: &Path, explicit: Option<&str>) -> Option<PathBuf> {
+    if let Some(path) = explicit {
+        return Some(PathBuf::from(path));
+    }
+
+    manifest_candidates(tool_path)
+        .into_iter()
+        .find(|candidate| candidate.exists())
+}
+
+fn manifest_candidates(tool_path: &Path) -> Vec<PathBuf> {
+    vec![
+        sidecar_manifest_path_with_extension(tool_path, "yaml"),
+        sidecar_manifest_path_with_extension(tool_path, "yml"),
+        sidecar_manifest_path_with_extension(tool_path, "json"),
+    ]
+}
+
+fn sidecar_manifest_path(tool_path: &Path) -> PathBuf {
+    sidecar_manifest_path_with_extension(tool_path, "yaml")
+}
+
+fn sidecar_manifest_path_with_extension(tool_path: &Path, extension: &str) -> PathBuf {
+    let parent = tool_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = tool_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("external-tool");
+    parent.join(format!("{stem}.orbit-tool.{extension}"))
+}
+
+fn infer_tool_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("external-tool")
+        .to_string()
+}
+
+fn load_external_tool_manifest(path: &Path) -> Result<ExternalToolManifest, OrbitError> {
+    let raw = fs::read_to_string(path).map_err(|error| {
+        OrbitError::InvalidInput(format!("cannot read {}: {error}", path.display()))
+    })?;
+    let manifest = match path.extension().and_then(|value| value.to_str()) {
+        Some("json") => serde_json::from_str::<ExternalToolManifest>(&raw).map_err(|error| {
+            OrbitError::InvalidInput(format!(
+                "invalid manifest JSON '{}': {error}",
+                path.display()
+            ))
+        })?,
+        _ => serde_yaml::from_str::<ExternalToolManifest>(&raw).map_err(|error| {
+            OrbitError::InvalidInput(format!(
+                "invalid manifest YAML '{}': {error}",
+                path.display()
+            ))
+        })?,
+    };
+    validate_manifest(path, manifest)
+}
+
+fn validate_manifest(
+    path: &Path,
+    manifest: ExternalToolManifest,
+) -> Result<ExternalToolManifest, OrbitError> {
+    if manifest.schema_version != 1 {
+        return Err(OrbitError::InvalidInput(format!(
+            "unsupported plugin manifest schemaVersion {} in '{}'",
+            manifest.schema_version,
+            path.display()
+        )));
+    }
+    if manifest.name.trim().is_empty() {
+        return Err(OrbitError::InvalidInput(format!(
+            "plugin manifest '{}' must define a non-empty name",
+            path.display()
+        )));
+    }
+    if manifest
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name.trim().is_empty())
+    {
+        return Err(OrbitError::InvalidInput(format!(
+            "plugin manifest '{}' contains a parameter with an empty name",
+            path.display()
+        )));
+    }
+    Ok(manifest)
+}
+
+fn scaffold_parameters() -> Vec<ToolParam> {
+    vec![
+        ToolParam {
+            name: "name".to_string(),
+            description: "Greeting target echoed back by the example plugin.".to_string(),
+            param_type: "string".to_string(),
+            required: false,
+        },
+        ToolParam {
+            name: "include_context".to_string(),
+            description: "When true, include ORBIT_TOOL_* context values in the response."
+                .to_string(),
+            param_type: "boolean".to_string(),
+            required: false,
+        },
+    ]
+}
+
+fn ensure_scaffold_targets_clear(
+    script_path: &Path,
+    manifest_path: &Path,
+    force: bool,
+) -> Result<(), OrbitError> {
+    if force {
+        return Ok(());
+    }
+
+    for path in [script_path, manifest_path] {
+        if path.exists() {
+            return Err(OrbitError::InvalidInput(format!(
+                "refusing to overwrite existing file '{}'; rerun with --force",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn make_executable(path: &Path) -> Result<(), OrbitError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let metadata = fs::metadata(path)
+            .map_err(|error| OrbitError::Io(format!("stat {}: {error}", path.display())))?;
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions)
+            .map_err(|error| OrbitError::Io(format!("chmod {}: {error}", path.display())))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = path;
     }
 
     Ok(())

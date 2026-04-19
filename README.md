@@ -239,6 +239,36 @@ Orbit state is local by default.
 
 ---
 
+## MCP Plugins
+
+Orbit can expose enabled external tools through `orbit mcp serve`, which makes them effectively MCP plugins alongside the built-in Orbit tool surface.
+
+The easiest path is to scaffold a starter plugin and register it:
+
+```bash
+orbit tool scaffold ./plugins/hello_orbit.py --name demo.hello
+orbit tool add ./plugins/hello_orbit.py
+orbit tool show demo.hello
+orbit mcp serve
+```
+
+`orbit tool scaffold` creates:
+
+- an executable script that reads JSON input from stdin, writes JSON output to stdout, and demonstrates the `ORBIT_TOOL_*` environment variables
+- a sidecar manifest named `*.orbit-tool.yaml` that declares the MCP-visible tool name, description, and parameters
+
+When you run `orbit tool add`, Orbit automatically loads the adjacent manifest if present. On the next `orbit mcp serve`, the external tool is exposed with the manifest-defined parameter metadata, so MCP clients can discover it through `tools/list`.
+
+You can inspect or troubleshoot registered plugins with:
+
+```bash
+orbit tool list
+orbit tool show demo.hello
+orbit tool doctor
+```
+
+---
+
 ## Current Status
 
 Orbit is still a work in progress.
