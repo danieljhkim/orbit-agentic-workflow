@@ -25,8 +25,9 @@ let activeStatuses = new Set(
   STATUS_ORDER.filter((s) => !DEFAULT_INACTIVE_STATUSES.has(s)),
 );
 let lastTasks = [];
+let lastRuns = [];
 let lastDiagnostics = { metrics: [], friction: [] };
-let activeDiagSubtab = "metrics";
+let activeDiagSubtab = "runs";
 let expandedTaskIds = new Set();
 
 function el(tag, opts = {}, children = []) {
@@ -457,7 +458,9 @@ function renderRuns(runs) {
   const frag = document.createDocumentFragment();
   
   const top = runs.slice(0, 20);
-  $("runs-count").textContent = `${top.length}/${runs.length}`;
+  if ($("diag-count") && activeDiagSubtab === "runs") {
+    $("diag-count").textContent = `${top.length}/${runs.length}`;
+  }
   if (top.length === 0) {
     syncNodes(body, [el("div", { class: "empty-state" }, [
       el("div", { class: "icon", text: "✧" }),
@@ -624,7 +627,7 @@ function wireSearch() {
 }
 
 const TABS = ["tasks", "scoreboard", "diagnostics"];
-const DIAG_SUBTABS = ["metrics", "friction"];
+const DIAG_SUBTABS = ["runs", "metrics", "friction"];
 
       function setActiveTab(raw) {
   const [topRaw, subRaw] = String(raw || "").split("/");
@@ -656,7 +659,7 @@ const DIAG_SUBTABS = ["metrics", "friction"];
 }
 
 function setDiagSubtab(name) {
-  if (!DIAG_SUBTABS.includes(name)) name = "metrics";
+  if (!DIAG_SUBTABS.includes(name)) name = "runs";
   activeDiagSubtab = name;
   for (const btn of document.querySelectorAll("#diag-subtabs .subtab")) {
     btn.classList.toggle("active", btn.dataset.subtab === name);
@@ -670,8 +673,15 @@ function setDiagSubtab(name) {
     subIndicator.style.left = `${activeBtn.offsetLeft}px`;
   }
 
-  $("diag-title").textContent = name;
-  renderDiagnostics();
+  if (name === "runs") {
+    $("diag-body").style.display = "none";
+    $("runs-body").style.display = "block";
+    renderRuns(lastRuns);
+  } else {
+    $("diag-body").style.display = "block";
+    $("runs-body").style.display = "none";
+    renderDiagnostics();
+  }
 }
 
 function initTabs() {
@@ -820,7 +830,12 @@ async function tick() {
         renderTasks(tasks);
       })
       .catch((e) => { hasErrors = true; console.error(e); }),
-    fetchJson("/api/job-runs").then(renderRuns).catch((e) => { hasErrors = true; console.error(e); }),
+    fetchJson("/api/job-runs")
+      .then((runs) => {
+        lastRuns = runs;
+        if (activeDiagSubtab === "runs") renderRuns(runs);
+      })
+      .catch((e) => { hasErrors = true; console.error(e); }),
     fetchJson("/api/scoreboard")
       .then(renderScoreboard)
       .catch((e) => { hasErrors = true; console.error(e); }),
