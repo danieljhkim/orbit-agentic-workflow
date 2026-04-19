@@ -4,6 +4,7 @@ metadata:
   name: loop_review_fix
 spec:
   state: enabled
+  kind: subroutine
   max_active_runs: 1
   steps:
     - id: review_fix

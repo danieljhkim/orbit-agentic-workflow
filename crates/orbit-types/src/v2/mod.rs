@@ -34,8 +34,8 @@ pub use catalog::{
     ACTIVITY_REF_PREFIX, CatalogError, ResolveError, V2ActivityCatalog, resolve_job_target_refs,
 };
 pub use job_v2::{
-    BackoffStrategy, FanInSpec, FanOutBlock, JobV2, JobV2Step, JobV2StepBody, JoinMode, LoopBlock,
-    ParallelBlock, PipelineRef, RetrySpec, TargetRef, TargetStep,
+    BackoffStrategy, FanInSpec, FanOutBlock, JobKind, JobV2, JobV2Step, JobV2StepBody, JoinMode,
+    LoopBlock, ParallelBlock, PipelineRef, RetrySpec, TargetRef, TargetStep,
 };
 pub use schema_header::SchemaHeader;
 pub use tool_allowlist::{

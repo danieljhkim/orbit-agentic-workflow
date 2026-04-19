@@ -4,6 +4,7 @@ metadata:
   name: task_pipeline
 spec:
   state: enabled
+  kind: workflow
   max_active_runs: 1
   default_input:
     auto_merge: false

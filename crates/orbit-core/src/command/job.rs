@@ -1,10 +1,14 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
 use chrono::{DateTime, Utc};
 use orbit_engine::EnvironmentHost;
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobUpdateParams as StoreJobUpdateParams;
 use orbit_types::{
-    Job, JobResource, JobRun, JobScheduleState, JobStep, JobTargetType, OrbitError, OrbitEvent,
-    RESOURCE_SCHEMA_VERSION, ResourceKind, default_job_max_active_runs, resolve_agent_model_pair,
+    Job, JobAsset, JobKind, JobResource, JobRun, JobScheduleState, JobStep, JobTargetType, JobV2,
+    OrbitError, OrbitEvent, RESOURCE_SCHEMA_VERSION, ResourceKind, default_job_max_active_runs,
+    load_job_asset, resolve_agent_model_pair,
 };
 use serde_json::Value;
 
@@ -13,6 +17,7 @@ use crate::command::activity::activity_requires_agent_cli;
 
 const JOB_PARALLEL_TASK_PIPELINE: &str = "job_parallel_task_pipeline";
 const JOB_LOCAL_TASK_PIPELINE: &str = "job_local_task_pipeline";
+const REPO_V2_SAMPLE_JOBS_DIR: &str = "crates/orbit-core/assets/jobs/v2_samples";
 const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
     (
         "job_parallel_task_worker",
@@ -61,6 +66,85 @@ pub struct JobAddParams {
     pub steps: Vec<JobStep>,
     pub policy: Option<String>,
     pub initial_state_override: Option<JobScheduleState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobCatalogFilter {
+    WorkflowsOnly,
+    All,
+    Kind(JobKind),
+}
+
+#[derive(Debug, Clone)]
+pub enum JobCatalogDefinition {
+    Legacy(Job),
+    V2 { path: PathBuf, spec: JobV2 },
+}
+
+#[derive(Debug, Clone)]
+pub struct JobCatalogEntry {
+    pub job_id: String,
+    pub kind: JobKind,
+    pub callers: Vec<String>,
+    pub orphaned_subroutine: bool,
+    pub definition: JobCatalogDefinition,
+}
+
+impl JobCatalogEntry {
+    pub fn schema_version(&self) -> u32 {
+        match self.definition {
+            JobCatalogDefinition::Legacy(_) => 1,
+            JobCatalogDefinition::V2 { .. } => 2,
+        }
+    }
+
+    pub fn state(&self) -> JobScheduleState {
+        match &self.definition {
+            JobCatalogDefinition::Legacy(job) => job.state,
+            JobCatalogDefinition::V2 { spec, .. } => spec.state,
+        }
+    }
+
+    pub fn max_active_runs(&self) -> u32 {
+        match &self.definition {
+            JobCatalogDefinition::Legacy(job) => job.max_active_runs,
+            JobCatalogDefinition::V2 { spec, .. } => spec.max_active_runs,
+        }
+    }
+
+    pub fn default_input(&self) -> Option<&Value> {
+        match &self.definition {
+            JobCatalogDefinition::Legacy(job) => job.default_input.as_ref(),
+            JobCatalogDefinition::V2 { spec, .. } => spec.default_input.as_ref(),
+        }
+    }
+
+    pub fn legacy_job(&self) -> Option<&Job> {
+        match &self.definition {
+            JobCatalogDefinition::Legacy(job) => Some(job),
+            JobCatalogDefinition::V2 { .. } => None,
+        }
+    }
+
+    pub fn v2_job(&self) -> Option<&JobV2> {
+        match &self.definition {
+            JobCatalogDefinition::Legacy(_) => None,
+            JobCatalogDefinition::V2 { spec, .. } => Some(spec),
+        }
+    }
+
+    pub fn v2_job_path(&self) -> Option<&Path> {
+        match &self.definition {
+            JobCatalogDefinition::Legacy(_) => None,
+            JobCatalogDefinition::V2 { path, .. } => Some(path.as_path()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct V2JobAssetEntry {
+    path: PathBuf,
+    spec: JobV2,
 }
 
 impl OrbitRuntime {
@@ -287,6 +371,114 @@ impl OrbitRuntime {
         Ok(result)
     }
 
+    pub fn list_job_catalog_with_last_run(
+        &self,
+        include_disabled: bool,
+        filter: JobCatalogFilter,
+    ) -> Result<Vec<(JobCatalogEntry, Option<JobRun>)>, OrbitError> {
+        use orbit_store::JobRunQuery;
+
+        let legacy_jobs = self.list_jobs_backend(true)?;
+        let v2_jobs = self.load_v2_job_assets()?;
+        let callers = build_job_callers(&legacy_jobs);
+        emit_orphan_subroutine_warnings(&v2_jobs, &callers);
+
+        let now = Utc::now();
+        let mut result = Vec::new();
+
+        for (job_id, asset) in &v2_jobs {
+            if !include_disabled && asset.spec.state == JobScheduleState::Disabled {
+                continue;
+            }
+            if !matches_job_filter(asset.spec.kind, filter) {
+                continue;
+            }
+            result.push((
+                JobCatalogEntry {
+                    job_id: job_id.clone(),
+                    kind: asset.spec.kind,
+                    callers: callers_for(&callers, job_id),
+                    orphaned_subroutine: is_orphaned_subroutine(job_id, &asset.spec, &callers),
+                    definition: JobCatalogDefinition::V2 {
+                        path: asset.path.clone(),
+                        spec: asset.spec.clone(),
+                    },
+                },
+                None,
+            ));
+        }
+
+        for job in legacy_jobs {
+            if v2_jobs.contains_key(&job.job_id) {
+                continue;
+            }
+            if !include_disabled && job.state == JobScheduleState::Disabled {
+                continue;
+            }
+            if !matches_job_filter(JobKind::Workflow, filter) {
+                continue;
+            }
+            let _ = self.recover_stale_active_run_for_job(&job, now);
+            let last_run = self
+                .stores()
+                .jobs()
+                .list_runs_filtered(&JobRunQuery {
+                    job_id: Some(job.job_id.clone()),
+                    state: None,
+                    created_since: None,
+                    limit: Some(1),
+                })
+                .ok()
+                .and_then(|runs| runs.into_iter().next());
+            result.push((
+                JobCatalogEntry {
+                    job_id: job.job_id.clone(),
+                    kind: JobKind::Workflow,
+                    callers: callers_for(&callers, &job.job_id),
+                    orphaned_subroutine: false,
+                    definition: JobCatalogDefinition::Legacy(job),
+                },
+                last_run,
+            ));
+        }
+
+        result.sort_by(|left, right| left.0.job_id.cmp(&right.0.job_id));
+        Ok(result)
+    }
+
+    pub fn show_job_catalog_entry(&self, job_id: &str) -> Result<JobCatalogEntry, OrbitError> {
+        let legacy_jobs = self.list_jobs_backend(true)?;
+        let v2_jobs = self.load_v2_job_assets()?;
+        let callers = build_job_callers(&legacy_jobs);
+        emit_orphan_subroutine_warnings(&v2_jobs, &callers);
+
+        if let Some(asset) = v2_jobs.get(job_id) {
+            return Ok(JobCatalogEntry {
+                job_id: job_id.to_string(),
+                kind: asset.spec.kind,
+                callers: callers_for(&callers, job_id),
+                orphaned_subroutine: is_orphaned_subroutine(job_id, &asset.spec, &callers),
+                definition: JobCatalogDefinition::V2 {
+                    path: asset.path.clone(),
+                    spec: asset.spec.clone(),
+                },
+            });
+        }
+
+        let job = legacy_jobs
+            .into_iter()
+            .find(|candidate| candidate.job_id == job_id)
+            .ok_or_else(|| OrbitError::JobNotFound(job_id.to_string()))?;
+
+        Ok(JobCatalogEntry {
+            job_id: job_id.to_string(),
+            kind: JobKind::Workflow,
+            callers: callers_for(&callers, job_id),
+            orphaned_subroutine: false,
+            definition: JobCatalogDefinition::Legacy(job),
+        })
+    }
+
     pub fn show_job(&self, job_id: &str) -> Result<Job, OrbitError> {
         self.get_job_backend(job_id)?
             .ok_or_else(|| OrbitError::JobNotFound(job_id.to_string()))
@@ -308,6 +500,32 @@ impl OrbitRuntime {
 
     fn get_job_backend(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
         self.stores().jobs().get(job_id)
+    }
+
+    fn load_v2_job_assets(&self) -> Result<BTreeMap<String, V2JobAssetEntry>, OrbitError> {
+        let mut entries = BTreeMap::new();
+        let mut sources = BTreeMap::new();
+        for dir in self.v2_job_asset_dirs() {
+            if dir.is_dir() {
+                load_v2_job_assets_from_dir(&dir, &mut entries, &mut sources)?;
+            }
+        }
+        Ok(entries)
+    }
+
+    fn v2_job_asset_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = Vec::new();
+
+        if let Ok(raw) = std::env::var("ORBIT_V2_JOB_DIR") {
+            for entry in raw.split(':').filter(|value| !value.is_empty()) {
+                dirs.push(PathBuf::from(entry));
+            }
+        }
+
+        dirs.push(self.paths().orbit_dir.join("jobs/v2"));
+        dirs.push(self.paths().global_dir.join("jobs/v2"));
+        dirs.push(self.paths().repo_root.join(REPO_V2_SAMPLE_JOBS_DIR));
+        dirs
     }
 }
 
@@ -367,6 +585,110 @@ fn json_value_type_name(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     }
+}
+
+fn matches_job_filter(kind: JobKind, filter: JobCatalogFilter) -> bool {
+    match filter {
+        JobCatalogFilter::WorkflowsOnly => kind == JobKind::Workflow,
+        JobCatalogFilter::All => true,
+        JobCatalogFilter::Kind(expected) => kind == expected,
+    }
+}
+
+fn build_job_callers(legacy_jobs: &[Job]) -> BTreeMap<String, BTreeSet<String>> {
+    let mut callers = BTreeMap::new();
+    for job in legacy_jobs {
+        for step in &job.steps {
+            if step.target_type == JobTargetType::Job {
+                callers
+                    .entry(step.target_id.clone())
+                    .or_insert_with(BTreeSet::new)
+                    .insert(job.job_id.clone());
+            }
+        }
+    }
+    callers
+}
+
+fn callers_for(callers: &BTreeMap<String, BTreeSet<String>>, job_id: &str) -> Vec<String> {
+    callers
+        .get(job_id)
+        .map(|items| items.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn is_orphaned_subroutine(
+    job_id: &str,
+    spec: &JobV2,
+    callers: &BTreeMap<String, BTreeSet<String>>,
+) -> bool {
+    spec.kind == JobKind::Subroutine && callers.get(job_id).is_none_or(BTreeSet::is_empty)
+}
+
+fn emit_orphan_subroutine_warnings(
+    v2_jobs: &BTreeMap<String, V2JobAssetEntry>,
+    callers: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for (job_id, asset) in v2_jobs {
+        if is_orphaned_subroutine(job_id, &asset.spec, callers) {
+            eprintln!(
+                "orbit: warning: subroutine job '{}' at {} has no callers in the loaded job corpus",
+                job_id,
+                asset.path.display()
+            );
+        }
+    }
+}
+
+fn load_v2_job_assets_from_dir(
+    dir: &Path,
+    entries: &mut BTreeMap<String, V2JobAssetEntry>,
+    sources: &mut BTreeMap<String, PathBuf>,
+) -> Result<(), OrbitError> {
+    let iter = std::fs::read_dir(dir)
+        .map_err(|err| OrbitError::InvalidInput(format!("read dir {}: {err}", dir.display())))?;
+    for entry in iter {
+        let entry = entry.map_err(|err| {
+            OrbitError::InvalidInput(format!("read dir {}: {err}", dir.display()))
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            load_v2_job_assets_from_dir(&path, entries, sources)?;
+            continue;
+        }
+        let is_yaml = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext == "yaml" || ext == "yml");
+        if !is_yaml {
+            continue;
+        }
+        let yaml = std::fs::read_to_string(&path).map_err(|err| {
+            OrbitError::InvalidInput(format!("read file {}: {err}", path.display()))
+        })?;
+        let asset = load_job_asset(&yaml)
+            .map_err(|err| OrbitError::InvalidInput(format!("parse {}: {err}", path.display())))?;
+        let JobAsset::V2(asset) = asset else {
+            continue;
+        };
+        if let Some(first) = sources.get(&asset.name) {
+            return Err(OrbitError::InvalidInput(format!(
+                "duplicate v2 job name '{}' — defined in both {} and {}",
+                asset.name,
+                first.display(),
+                path.display()
+            )));
+        }
+        sources.insert(asset.name.clone(), path.clone());
+        entries.insert(
+            asset.name,
+            V2JobAssetEntry {
+                path,
+                spec: asset.spec,
+            },
+        );
+    }
+    Ok(())
 }
 
 fn load_default_job_specs(raw_specs: &[(&str, &str)]) -> Result<Vec<JobResource>, OrbitError> {

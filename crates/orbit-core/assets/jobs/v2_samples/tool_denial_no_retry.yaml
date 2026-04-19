@@ -4,6 +4,7 @@ metadata:
   name: tool_denial_no_retry
 spec:
   state: enabled
+  kind: subroutine
   max_active_runs: 1
   steps:
     - id: denied_call

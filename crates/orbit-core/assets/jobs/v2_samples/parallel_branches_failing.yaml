@@ -4,6 +4,7 @@ metadata:
   name: parallel_branches_failing
 spec:
   state: enabled
+  kind: subroutine
   max_active_runs: 1
   steps:
     - id: fanned_with_failure

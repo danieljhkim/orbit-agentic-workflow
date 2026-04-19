@@ -4,6 +4,7 @@ metadata:
   name: retry_backoff
 spec:
   state: enabled
+  kind: subroutine
   max_active_runs: 1
   steps:
     - id: flake_twice
