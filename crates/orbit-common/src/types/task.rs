@@ -214,6 +214,8 @@ impl FromStr for TaskComplexity {
 pub enum TaskType {
     Task,
     Feature,
+    #[serde(alias = "epic")]
+    Epic,
     /// Agent-reported friction, DX issues, or system problems.
     /// Self-reported friction path — triggers system attribution and scoreboard hooks.
     Friction,
@@ -234,6 +236,7 @@ impl Display for TaskType {
         let s = match self {
             TaskType::Task => "task",
             TaskType::Feature => "feature",
+            TaskType::Epic => "epic",
             TaskType::Friction => "friction",
             TaskType::Issue => "issue",
             TaskType::Bug => "bug",
@@ -251,6 +254,7 @@ impl FromStr for TaskType {
         match s {
             "task" => Ok(TaskType::Task),
             "feature" => Ok(TaskType::Feature),
+            "epic" => Ok(TaskType::Epic),
             "friction" => Ok(TaskType::Friction),
             "issue" => Ok(TaskType::Issue),
             "bug" => Ok(TaskType::Bug),
@@ -264,6 +268,11 @@ impl FromStr for TaskType {
 }
 
 impl TaskType {
+    /// Returns true for epic tasks used by the epic pipeline.
+    pub fn is_epic(&self) -> bool {
+        matches!(self, TaskType::Epic)
+    }
+
     /// Returns true for self-reported friction tasks.
     pub fn is_friction(&self) -> bool {
         matches!(self, TaskType::Friction)

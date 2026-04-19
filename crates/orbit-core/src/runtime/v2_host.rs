@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use orbit_common::types::{AuditEventStatus, Role, TaskStatus, UNRESTRICTED_FS_PROFILE};
+use orbit_common::types::{AuditEventStatus, Role, TaskStatus, TaskType, UNRESTRICTED_FS_PROFILE};
 use orbit_engine::activity_job::{DispatchError, V2RuntimeHost};
 use orbit_engine::{StateExecutionContext, execute_deterministic_action};
 use orbit_store::AuditEventInsertParams;
@@ -263,6 +263,15 @@ impl V2RuntimeHost for OrbitRuntime {
                         message: format!("load epic {epic_id}: {err}"),
                     }
                 })?;
+                if epic.task_type != TaskType::Epic {
+                    return Err(DispatchError::DeterministicActionFailed {
+                        action: action.to_string(),
+                        message: format!(
+                            "task `{epic_id}` has type `{}`; expected `epic`",
+                            epic.task_type
+                        ),
+                    });
+                }
                 let subtasks = self
                     .list_tasks_filtered(None, None, Some(epic_id), None)
                     .map_err(|err| DispatchError::DeterministicActionFailed {

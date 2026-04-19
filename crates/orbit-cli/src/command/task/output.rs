@@ -79,7 +79,7 @@ pub(super) fn print_task_table(tasks: &[orbit_core::Task], full: bool) {
             Cell::new(&task.title),
             crate::output::color::status_color_cell(&task.status.to_string()),
             crate::output::color::priority_color_cell(&task.priority.to_string()),
-            Cell::new(task.task_type.to_string()),
+            crate::output::color::task_type_color_cell(&task.task_type.to_string()),
         ];
         if full {
             row.extend([

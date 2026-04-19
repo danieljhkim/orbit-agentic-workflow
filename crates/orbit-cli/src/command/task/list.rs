@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use clap::Args;
-use orbit_core::{OrbitError, OrbitRuntime, TaskPriority, TaskStatus};
+use orbit_core::{OrbitError, OrbitRuntime, TaskPriority, TaskStatus, TaskType};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -12,7 +12,7 @@ use super::output::{
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit task list\n  orbit task list --all\n  orbit task list --status backlog\n  orbit task list --status in-progress,review\n  orbit task list --priority high\n  orbit task list --parent T12345678-123456\n  orbit task list --json"
+    after_help = "Examples:\n  orbit task list\n  orbit task list --all\n  orbit task list --status backlog\n  orbit task list --status in-progress,review\n  orbit task list --type epic\n  orbit task list --priority high\n  orbit task list --parent T12345678-123456\n  orbit task list --json"
 )]
 pub struct TaskListArgs {
     /// Filter by one or more statuses (comma-separated). Defaults to backlog,in-progress.
@@ -24,6 +24,9 @@ pub struct TaskListArgs {
     /// Filter by priority level (low, medium, high)
     #[arg(long, value_enum)]
     pub priority: Option<TaskPriority>,
+    /// Filter by task type (task, feature, epic, issue, bug, chore, refactor)
+    #[arg(long = "type", value_enum)]
+    pub task_type: Option<TaskType>,
     /// Filter to subtasks belonging to a parent task
     #[arg(long = "parent")]
     pub parent_id: Option<String>,
@@ -46,6 +49,7 @@ impl Execute for TaskListArgs {
         let all = self.all;
         let status = self.status;
         let priority = self.priority;
+        let task_type = self.task_type;
         let parent_id = self.parent_id;
         let batch_id = self.batch_id;
 
@@ -58,6 +62,7 @@ impl Execute for TaskListArgs {
             .into_iter()
             .filter(|t| status_filter.is_empty() || status_filter.contains(&t.status))
             .filter(|t| priority.is_none_or(|p| t.priority == p))
+            .filter(|t| task_type.is_none_or(|kind| t.task_type == kind))
             .filter(|t| {
                 parent_id
                     .as_deref()

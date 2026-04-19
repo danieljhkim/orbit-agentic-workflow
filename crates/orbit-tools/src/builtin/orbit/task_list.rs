@@ -21,6 +21,12 @@ impl Tool for OrbitTaskListTool {
                 required: false,
             },
             ToolParam {
+                name: "type".to_string(),
+                description: "Optional task type filter".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "batch_id".to_string(),
                 description: "Filter by batch ID".to_string(),
                 param_type: "string".to_string(),
@@ -30,7 +36,8 @@ impl Tool for OrbitTaskListTool {
         parameters.extend(super::identity_params());
         ToolSchema {
             name: "orbit.task.list".to_string(),
-            description: "List Orbit tasks, optionally filtered by status or parent".to_string(),
+            description: "List Orbit tasks, optionally filtered by status, parent, or type"
+                .to_string(),
             parameters,
             builtin: true,
         }

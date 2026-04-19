@@ -24,6 +24,14 @@ pub fn priority_color_cell(priority: &str) -> Cell {
     }
 }
 
+pub fn task_type_color_cell(task_type: &str) -> Cell {
+    let cell = Cell::new(task_type);
+    match task_type {
+        "epic" => cell.fg(Color::Blue).add_attribute(Attribute::Bold),
+        _ => cell,
+    }
+}
+
 pub fn job_state_color_cell(state: &str) -> Cell {
     let cell = Cell::new(state);
     match state {
