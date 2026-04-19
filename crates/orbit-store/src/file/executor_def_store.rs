@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use orbit_common::types::{
-    ExecutorDef, ExecutorResource, ExecutorResourceSpec, OrbitError, RESOURCE_SCHEMA_VERSION,
-    ResourceKind,
+    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, ExecutorResourceSpec,
+    OrbitError, RESOURCE_SCHEMA_VERSION, ResourceKind, ResourceMetadata,
 };
 
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
@@ -56,21 +56,22 @@ impl ExecutorDefFileStore {
         let dir = self.executors_dir();
         fs::create_dir_all(&dir).map_err(|e| OrbitError::Io(e.to_string()))?;
         let path = dir.join(format!("{}.yaml", def.name));
-        let content = serde_yaml::to_string(&ExecutorResource::new(
-            ResourceKind::Executor,
-            def.name.clone(),
-            ExecutorResourceSpec {
-                executor_type: def.executor_type.clone(),
+        let content = serde_yaml::to_string(&ExecutorResource {
+            schema_version: EXECUTOR_RESOURCE_SCHEMA_VERSION,
+            kind: ResourceKind::Executor,
+            metadata: ResourceMetadata::named(def.name.clone()),
+            spec: ExecutorResourceSpec {
+                executor_type: def.executor_type,
                 command: def.command.clone(),
                 args: def.args.clone(),
-                stdout_format: def.stdout_format.clone(),
+                stdout_format: def.stdout_format,
                 models: def.models.clone(),
                 timeout_seconds: def.timeout_seconds,
                 env: def.env.clone(),
                 created_at: def.created_at,
                 updated_at: def.updated_at,
             },
-        ))
+        })
         .map_err(|e| OrbitError::Execution(format!("failed to serialize executor def: {e}")))?;
         write_atomic(&path, &content).map_err(Into::into)
     }
@@ -85,7 +86,9 @@ fn parse_executor_def(content: &str, label: String) -> Result<ExecutorDef, Orbit
             label, doc.kind
         )));
     }
-    if doc.schema_version != RESOURCE_SCHEMA_VERSION {
+    if doc.schema_version != RESOURCE_SCHEMA_VERSION
+        && doc.schema_version != EXECUTOR_RESOURCE_SCHEMA_VERSION
+    {
         return Err(OrbitError::InvalidInput(format!(
             "invalid executor def at {}: unsupported schemaVersion {}",
             label, doc.schema_version

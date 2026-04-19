@@ -7,12 +7,12 @@
 //!   3. `[runtime] backend = "<value>"` in `config.toml`.
 //!   4. Hard-coded fallback: `Http`.
 //!
-//! Called once per Run at load time by the `orbit activity run-v2` /
-//! `orbit job run-v2` entry points. The resolved value is then applied to the
-//! parsed asset via `orbit_common::types::v2::resolve_*_backends` and the §3.2
+//! Called once per Run at load time by the `orbit activity run` /
+//! `orbit job run` entry points. The resolved value is then applied to the
+//! parsed asset via `orbit_common::types::activity_job::resolve_*_backends` and the §3.2
 //! loader-rejection validator runs against the concrete backends.
 
-use orbit_common::types::v2::Backend;
+use orbit_common::types::activity_job::Backend;
 
 use crate::OrbitRuntime;
 

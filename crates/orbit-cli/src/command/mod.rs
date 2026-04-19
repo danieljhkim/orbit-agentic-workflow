@@ -51,7 +51,7 @@ Setup:
 
 Resources:
   task       Create, update, and manage tasks
-  activity   Define, list, and run v2 activities
+  activity   Define, list, and run activities
   job        Define, list, and manage job workflows
   policy     Manage filesystem profile policies and runtime scoping
   executor   Manage executors

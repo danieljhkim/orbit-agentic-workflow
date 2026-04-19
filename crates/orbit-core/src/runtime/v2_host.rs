@@ -8,11 +8,13 @@
 //! HTTP agent-loop transport and CLI subprocess execution both live in
 //! `orbit-engine`, so this module never names orbit-agent types.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use orbit_common::types::{AuditEventStatus, Role, TaskStatus, UNRESTRICTED_FS_PROFILE};
-use orbit_engine::v2::{DispatchError, V2RuntimeHost};
+use orbit_engine::activity_job::{DispatchError, V2RuntimeHost};
+use orbit_engine::{StateExecutionContext, execute_deterministic_action};
 use orbit_store::AuditEventInsertParams;
 use orbit_tools::{FsAuditLogger, ToolContext};
 use serde_json::Value;
@@ -33,7 +35,7 @@ impl V2RuntimeHost for OrbitRuntime {
     ) -> Result<Value, DispatchError> {
         match action {
             "orbit_tool_call" => {
-                // The `config` block shape (see v2_deterministic_reference.yaml):
+                // The `config` block shape (see deterministic_reference.yaml):
                 //   config: { tool_name: <name>, args: <object> }
                 // Input overrides config when both are present.
                 let tool_name = input
@@ -55,6 +57,20 @@ impl V2RuntimeHost for OrbitRuntime {
                         action: action.to_string(),
                         message: format!("{err}"),
                     })
+            }
+            "git_merge" | "git_push" | "pr_open" | "update_task" | "worktree_setup" => {
+                execute_deterministic_action(
+                    self,
+                    action,
+                    input,
+                    false,
+                    &HashMap::new(),
+                    Option::<&StateExecutionContext>::None,
+                )
+                .map_err(|err| DispatchError::DeterministicActionFailed {
+                    action: action.to_string(),
+                    message: format!("{err}"),
+                })
             }
             // Phase 4 stub handlers. Real git/API logic lands in a follow-up
             // task once the per-asset migration ports the rest of the
@@ -165,24 +181,48 @@ impl V2RuntimeHost for OrbitRuntime {
                     .and_then(Value::as_u64)
                     .unwrap_or(50)
                     .min(500) as usize;
-                let mut tasks = self
-                    .list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None)
-                    .map_err(|err| DispatchError::DeterministicActionFailed {
-                        action: action.to_string(),
-                        message: format!("list backlog: {err}"),
-                    })?;
-                tasks.retain(|t| !t.task_type.is_friction());
-                tasks.sort_by(|a, b| {
-                    let rank = |p: orbit_common::types::TaskPriority| match p {
-                        orbit_common::types::TaskPriority::Critical => 0,
-                        orbit_common::types::TaskPriority::High => 1,
-                        orbit_common::types::TaskPriority::Medium => 2,
-                        orbit_common::types::TaskPriority::Low => 3,
-                    };
-                    rank(a.priority)
-                        .cmp(&rank(b.priority))
-                        .then(a.created_at.cmp(&b.created_at))
-                });
+                let explicit_task_ids: Vec<String> = input
+                    .get("task_ids")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let mut tasks = if explicit_task_ids.is_empty() {
+                    let mut backlog = self
+                        .list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None)
+                        .map_err(|err| DispatchError::DeterministicActionFailed {
+                            action: action.to_string(),
+                            message: format!("list backlog: {err}"),
+                        })?;
+                    backlog.retain(|t| !t.task_type.is_friction());
+                    backlog.sort_by(|a, b| {
+                        let rank = |p: orbit_common::types::TaskPriority| match p {
+                            orbit_common::types::TaskPriority::Critical => 0,
+                            orbit_common::types::TaskPriority::High => 1,
+                            orbit_common::types::TaskPriority::Medium => 2,
+                            orbit_common::types::TaskPriority::Low => 3,
+                        };
+                        rank(a.priority)
+                            .cmp(&rank(b.priority))
+                            .then(a.created_at.cmp(&b.created_at))
+                    });
+                    backlog
+                } else {
+                    explicit_task_ids
+                        .iter()
+                        .map(|task_id| {
+                            self.get_task(task_id).map_err(|err| {
+                                DispatchError::DeterministicActionFailed {
+                                    action: action.to_string(),
+                                    message: format!("load task {task_id}: {err}"),
+                                }
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                };
                 tasks.truncate(max_tasks);
                 let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
                 let task_objs: Vec<Value> = tasks

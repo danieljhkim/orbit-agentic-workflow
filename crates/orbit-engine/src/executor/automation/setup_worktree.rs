@@ -26,8 +26,12 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let task_ids = task_ids_from_input(input)?;
-    let run_id = super::parallel::require_run_id(input, "setup_worktree")?;
-    let base = input_string_field(input, "base").unwrap_or_else(|| DEFAULT_BASE.to_string());
+    let run_id = input_string_field(input, "run_id")
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| fallback_run_id_for_tasks(&task_ids));
+    let base = input_string_field(input, "base")
+        .or_else(|| input_string_field(input, "base_branch"))
+        .unwrap_or_else(|| DEFAULT_BASE.to_string());
     let base_sync_mode = base_sync_mode_from_input(input)?;
     let branch_prefix = input_string_field(input, "branch_prefix")
         .unwrap_or_else(|| DEFAULT_BRANCH_PREFIX.to_string());
@@ -39,7 +43,7 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
 
     let branch_name = branch_name_for_tasks(&branch_prefix, &task_ids);
 
-    let worktree_path = resolve_worktree_path_from_prefix(repo_root, &branch_prefix, run_id)?;
+    let worktree_path = resolve_worktree_path_from_prefix(repo_root, &branch_prefix, &run_id)?;
 
     ensure_worktree(repo_root, &worktree_path, &base, &branch_name)?;
 
@@ -49,7 +53,7 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
         host.apply_task_automation_update(
             task_id,
             TaskAutomationUpdate {
-                batch_id: Some(run_id.to_string()),
+                batch_id: Some(run_id.clone()),
                 workspace_path: Some(Some(workspace_path_str.clone())),
                 status: Some(TaskStatus::InProgress),
                 ..TaskAutomationUpdate::default()
@@ -58,6 +62,7 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     }
 
     Ok(json!({
+        "batch_id": run_id,
         "workspace_path": workspace_path_str,
         "head_ref": branch_name,
         "base_ref": base,
@@ -146,4 +151,15 @@ fn branch_name_for_tasks(branch_prefix: &str, task_ids: &[String]) -> String {
     let digest = Sha256::digest(sorted_ids.join(","));
     let bundle_hash = format!("{digest:x}");
     format!("{branch_prefix}/bundle-{}", &bundle_hash[..8])
+}
+
+fn fallback_run_id_for_tasks(task_ids: &[String]) -> String {
+    if task_ids.len() == 1 {
+        return format!("task-{}", task_ids[0]);
+    }
+
+    let mut sorted_ids = task_ids.to_vec();
+    sorted_ids.sort();
+    let digest = Sha256::digest(sorted_ids.join(","));
+    format!("bundle-{}", &format!("{digest:x}")[..8])
 }

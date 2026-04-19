@@ -181,41 +181,65 @@ impl OrbitRuntime {
         self.context.v2_backend()
     }
 
-    /// Build the v2 activity catalog for `target: activity:<name>` resolution
+    /// Build the activity catalog for `target: activity:<name>` resolution
     /// (Phase 4). Loads from the layered Orbit data dirs using §9.1
     /// `MergeByKey` semantics — global provides defaults, workspace overrides.
     ///
     /// The lookup order:
-    /// 1. `ORBIT_V2_CATALOG_DIR` env var (colon-separated list of dirs,
-    ///    highest precedence for smokes / tests).
-    /// 2. `<workspace_root>/.orbit/activities/v2/` — workspace-local.
-    /// 3. `<global_root>/activities/v2/` — global defaults.
+    /// 1. `ORBIT_ACTIVITY_DIR` env var (or legacy `ORBIT_V2_CATALOG_DIR`) as
+    ///    a colon-separated list of dirs, highest precedence for smokes/tests.
+    /// 2. `<workspace_root>/.orbit/activities/` — workspace-local.
+    /// 3. `<global_root>/activities/` — global defaults.
+    /// 4. `crates/orbit-core/assets/activities/` under the repo root.
     ///
     /// Missing directories are skipped silently; duplicate names across
     /// directories are a hard error (`CatalogError::DuplicateName`).
     pub fn v2_activity_catalog(
         &self,
-    ) -> Result<orbit_common::types::v2::V2ActivityCatalog, orbit_common::types::v2::CatalogError>
-    {
-        let mut catalog = orbit_common::types::v2::V2ActivityCatalog::new();
+    ) -> Result<
+        orbit_common::types::activity_job::V2ActivityCatalog,
+        orbit_common::types::activity_job::CatalogError,
+    > {
+        let mut catalog = orbit_common::types::activity_job::V2ActivityCatalog::new();
 
-        if let Ok(raw) = std::env::var("ORBIT_V2_CATALOG_DIR") {
+        let env_dirs = std::env::var("ORBIT_ACTIVITY_DIR")
+            .ok()
+            .or_else(|| std::env::var("ORBIT_V2_CATALOG_DIR").ok());
+        if let Some(raw) = env_dirs {
             for entry in raw.split(':').filter(|s| !s.is_empty()) {
                 let path = std::path::Path::new(entry);
                 if path.is_dir() {
-                    catalog.load_dir(path)?;
+                    warn_skipped_retired_activity_assets(
+                        path,
+                        catalog.load_dir_skipping_retired(path)?,
+                    );
                 }
             }
         }
 
-        let ws_dir = self.context.paths().orbit_dir.join("activities/v2");
+        let ws_dir = self.context.paths().activities_dir.clone();
         if ws_dir.is_dir() {
-            catalog.load_dir(&ws_dir)?;
+            warn_skipped_retired_activity_assets(
+                &ws_dir,
+                catalog.load_dir_skipping_retired(&ws_dir)?,
+            );
         }
 
-        let global_dir = self.context.paths().global_dir.join("activities/v2");
+        let global_dir = self.context.paths().global_dir.join("resources/activities");
         if global_dir.is_dir() && global_dir != ws_dir {
-            catalog.load_dir(&global_dir)?;
+            warn_skipped_retired_activity_assets(
+                &global_dir,
+                catalog.load_dir_skipping_retired(&global_dir)?,
+            );
+        }
+
+        let repo_dir = self
+            .context
+            .paths()
+            .repo_root
+            .join("crates/orbit-core/assets/activities");
+        if repo_dir.is_dir() && repo_dir != ws_dir && repo_dir != global_dir {
+            catalog.load_dir(&repo_dir)?;
         }
 
         Ok(catalog)
@@ -309,6 +333,17 @@ fn build_activity_executor_registry(
     let defs = context.stores().executors().list()?;
     registry.load_from_defs(&defs);
     Ok(Arc::new(registry))
+}
+
+fn warn_skipped_retired_activity_assets(dir: &Path, skipped: Vec<PathBuf>) {
+    if skipped.is_empty() {
+        return;
+    }
+    eprintln!(
+        "orbit: warning: skipped {} retired schemaVersion 1 activity asset(s) while loading {}",
+        skipped.len(),
+        dir.display()
+    );
 }
 
 fn orbit_event_to_audit(id: i64, event: OrbitEvent) -> Audit {

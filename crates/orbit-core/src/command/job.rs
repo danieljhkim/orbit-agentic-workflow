@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Job, JobAsset, JobKind, JobResource, JobRun, JobScheduleState, JobStep, JobTargetType, JobV2,
-    OrbitError, OrbitEvent, RESOURCE_SCHEMA_VERSION, ResourceKind, default_job_max_active_runs,
-    load_job_asset, resolve_agent_model_pair,
+    Job, JobKind, JobResource, JobRun, JobScheduleState, JobStep, JobTargetType, JobV2, OrbitError,
+    OrbitEvent, RESOURCE_SCHEMA_VERSION, ResourceKind, default_job_max_active_runs, load_job_asset,
+    resolve_agent_model_pair,
 };
 use orbit_engine::EnvironmentHost;
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
@@ -17,45 +17,8 @@ use crate::command::activity::activity_requires_agent_cli;
 
 const JOB_PARALLEL_TASK_PIPELINE: &str = "job_parallel_task_pipeline";
 const JOB_LOCAL_TASK_PIPELINE: &str = "job_local_task_pipeline";
-const REPO_V2_SAMPLE_JOBS_DIR: &str = "crates/orbit-core/assets/jobs/v2_samples";
-const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
-    (
-        "job_parallel_task_worker",
-        include_str!("../../assets/jobs/job_parallel_task_worker.yaml"),
-    ),
-    (
-        "job_batch_review_loop",
-        include_str!("../../assets/jobs/job_batch_review_loop.yaml"),
-    ),
-    (
-        "job_batch_review_cycle",
-        include_str!("../../assets/jobs/job_batch_review_cycle.yaml"),
-    ),
-    (
-        "job_duel_review_loop",
-        include_str!("../../assets/jobs/job_duel_review_loop.yaml"),
-    ),
-    (
-        "job_duel_review_cycle",
-        include_str!("../../assets/jobs/job_duel_review_cycle.yaml"),
-    ),
-    (
-        "job_duel_pipeline",
-        include_str!("../../assets/jobs/job_duel_pipeline.yaml"),
-    ),
-    (
-        "job_duel_plan_pipeline",
-        include_str!("../../assets/jobs/job_duel_plan_pipeline.yaml"),
-    ),
-    (
-        "job_parallel_task_pipeline",
-        include_str!("../../assets/jobs/job_parallel_task_pipeline.yaml"),
-    ),
-    (
-        "job_local_task_pipeline",
-        include_str!("../../assets/jobs/job_local_task_pipeline.yaml"),
-    ),
-];
+const REPO_V2_SAMPLE_JOBS_DIR: &str = "crates/orbit-core/assets/jobs";
+const DEFAULT_JOB_FILES: &[(&str, &str)] = &[];
 
 #[derive(Debug, Clone)]
 pub struct JobAddParams {
@@ -519,14 +482,17 @@ impl OrbitRuntime {
     fn v2_job_asset_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = Vec::new();
 
-        if let Ok(raw) = std::env::var("ORBIT_V2_JOB_DIR") {
+        let env_dirs = std::env::var("ORBIT_JOB_DIR")
+            .ok()
+            .or_else(|| std::env::var("ORBIT_V2_JOB_DIR").ok());
+        if let Some(raw) = env_dirs {
             for entry in raw.split(':').filter(|value| !value.is_empty()) {
                 dirs.push(PathBuf::from(entry));
             }
         }
 
-        dirs.push(self.paths().orbit_dir.join("jobs/v2"));
-        dirs.push(self.paths().global_dir.join("jobs/v2"));
+        dirs.push(self.paths().jobs_dir.clone());
+        dirs.push(self.paths().global_dir.join("resources/jobs"));
         dirs.push(self.paths().repo_root.join(REPO_V2_SAMPLE_JOBS_DIR));
         dirs
     }
@@ -684,9 +650,6 @@ fn load_v2_job_assets_from_dir(
         })?;
         let asset = load_job_asset(&yaml)
             .map_err(|err| OrbitError::InvalidInput(format!("parse {}: {err}", path.display())))?;
-        let JobAsset::V2(asset) = asset else {
-            continue;
-        };
         if let Some(first) = sources.get(&asset.name) {
             return Err(OrbitError::InvalidInput(format!(
                 "duplicate v2 job name '{}' — defined in both {} and {}",
@@ -736,8 +699,8 @@ fn find_v2_job_asset_in_dir(
             Err(_) => continue,
         };
         let asset = match load_job_asset(&yaml) {
-            Ok(JobAsset::V2(asset)) => asset,
-            _ => continue,
+            Ok(asset) => asset,
+            Err(_) => continue,
         };
         if asset.name != expected_job_id {
             continue;

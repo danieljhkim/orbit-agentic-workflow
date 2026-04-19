@@ -179,7 +179,8 @@ pub fn execute_single_attempt<H: EngineHost + ExecutorLookupHost>(
         executor_key = dispatch_key,
         "activity attempt started"
     );
-    if spec_type == "agent_invoke" {
+    let agent_request_logging = should_log_agent_request(execution);
+    if agent_request_logging {
         debug!(
             activity_id = %execution.activity.id,
             spec_type,
@@ -210,7 +211,7 @@ pub fn execute_single_attempt<H: EngineHost + ExecutorLookupHost>(
         error_code = ?outcome.error_code,
         "activity attempt completed"
     );
-    if spec_type == "agent_invoke" {
+    if agent_request_logging {
         debug!(
             activity_id = %execution.activity.id,
             spec_type,
@@ -235,6 +236,14 @@ fn unsupported_spec_type_outcome(spec_type: &str, supported_spec_types: &str) ->
         ACTIVITY_EXECUTION_FAILED,
         format!("unsupported activity spec_type '{spec_type}' (supported: {supported_spec_types})"),
     )
+}
+
+fn should_log_agent_request(execution: &ExecutionContext) -> bool {
+    !execution.agent_cli.trim().is_empty()
+        || execution
+            .model
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
 }
 
 pub(crate) fn execution_template_context_with_env(

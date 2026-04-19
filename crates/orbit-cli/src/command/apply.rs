@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use chrono::Utc;
 use clap::Args;
 use orbit_common::types::{
-    ActivityResource, ExecutorDef, ExecutorResource, JobResource, POLICY_RESOURCE_SCHEMA_VERSION,
-    PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader, ResourceKind, parse_policy_resource,
+    ActivityResource, EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, JobResource,
+    POLICY_RESOURCE_SCHEMA_VERSION, PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader,
+    ResourceKind, parse_policy_resource,
 };
 use orbit_core::command::activity::{
     ActivityAddParams, ActivityUpdateParams as RuntimeActivityUpdateParams,
@@ -231,13 +232,19 @@ fn apply_activity(
 }
 
 fn validate_header(header: &ResourceHeader, path: &PathBuf) -> Result<(), OrbitError> {
-    let expected = match header.kind {
-        ResourceKind::Policy => POLICY_RESOURCE_SCHEMA_VERSION,
-        _ => RESOURCE_SCHEMA_VERSION,
+    let supported = match header.kind {
+        ResourceKind::Policy => vec![POLICY_RESOURCE_SCHEMA_VERSION],
+        ResourceKind::Executor => vec![RESOURCE_SCHEMA_VERSION, EXECUTOR_RESOURCE_SCHEMA_VERSION],
+        _ => vec![RESOURCE_SCHEMA_VERSION],
     };
-    if header.schema_version != expected {
+    if !supported.contains(&header.schema_version) {
+        let expected = supported
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(" or ");
         return Err(OrbitError::InvalidInput(format!(
-            "{}: unsupported schemaVersion '{}' (expected '{}')",
+            "{}: unsupported schemaVersion '{}' (expected {})",
             path.display(),
             header.schema_version,
             expected,

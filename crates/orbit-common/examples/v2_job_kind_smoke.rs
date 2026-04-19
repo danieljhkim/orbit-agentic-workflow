@@ -10,9 +10,6 @@ fn main() -> Result<(), String> {
 
 fn run_case(name: &str, yaml: &str, expected_kind: JobKind) -> Result<(), String> {
     let asset = load_job_asset(yaml).map_err(|err| format!("{name}: load failed: {err}"))?;
-    let JobAsset::V2(asset) = asset else {
-        return Err(format!("{name}: expected schemaVersion: 2 asset"));
-    };
     if asset.spec.kind != expected_kind {
         return Err(format!(
             "{name}: expected kind {}, got {}",

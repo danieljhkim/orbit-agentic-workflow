@@ -1,5 +1,5 @@
 use orbit_common::types::{
-    ExecutorDef, ExecutorResource, OrbitError, RESOURCE_SCHEMA_VERSION, ResourceKind,
+    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, OrbitError, ResourceKind,
 };
 use orbit_store::ExecutorDefStoreBackend;
 
@@ -33,7 +33,7 @@ fn parse_default_executor(name: &str, yaml: &str) -> Result<ExecutorDef, OrbitEr
     let resource: ExecutorResource = serde_yaml::from_str(yaml).map_err(|e| {
         OrbitError::InvalidInput(format!("invalid embedded executor def '{name}': {e}"))
     })?;
-    if resource.schema_version != RESOURCE_SCHEMA_VERSION {
+    if resource.schema_version != EXECUTOR_RESOURCE_SCHEMA_VERSION {
         return Err(OrbitError::InvalidInput(format!(
             "invalid embedded executor def '{name}': unsupported schemaVersion {}",
             resource.schema_version

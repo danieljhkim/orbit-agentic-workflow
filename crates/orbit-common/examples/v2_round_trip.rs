@@ -1,6 +1,6 @@
 //! Round-trip smoke for v2 reference YAMLs (closes T20260418-2010 AC1).
 //!
-//! For each v2 reference under `crates/orbit-core/assets/activities/v2_reference/`:
+//! For each v2 reference under `crates/orbit-core/assets/activities/`:
 //!   1. Load the YAML through `load_activity_asset` → `ActivityV2`.
 //!   2. Re-serialize via `ResourceEnvelope<ActivityV2>` back to YAML.
 //!   3. Parse both the source YAML and the re-serialized YAML as `serde_yaml::Value`s.
@@ -20,7 +20,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use orbit_common::types::v2::{ActivityAsset, load_activity_asset};
+use orbit_common::types::activity_job::{ActivityAsset, load_activity_asset};
 use orbit_common::types::{ActivityV2, ResourceEnvelope, ResourceKind, ResourceMetadata};
 
 fn main() -> ExitCode {
@@ -35,11 +35,7 @@ fn main() -> ExitCode {
             }
         };
         let asset = match load_activity_asset(&source) {
-            Ok(ActivityAsset::V2(a)) => a,
-            Ok(ActivityAsset::V1(_)) => {
-                failures.push(format!("{}: parsed as v1, expected v2", path.display()));
-                continue;
-            }
+            Ok(asset) => asset,
             Err(err) => {
                 failures.push(format!("{}: load: {err}", path.display()));
                 continue;
@@ -100,7 +96,10 @@ spec:
   allowed_programs: [echo]
 "#;
     match load_activity_asset(mismatch_yaml) {
-        Err(orbit_common::types::v2::AssetLoadError::KindMismatch { expected, actual }) => {
+        Err(orbit_common::types::activity_job::AssetLoadError::KindMismatch {
+            expected,
+            actual,
+        }) => {
             println!(
                 "kind-mismatch smoke OK: expected={} actual={}",
                 expected, actual
@@ -128,7 +127,7 @@ fn v2_reference_paths() -> Vec<PathBuf> {
         .parent()
         .and_then(std::path::Path::parent)
         .expect("workspace root");
-    let dir = root.join("crates/orbit-core/assets/activities/v2_reference");
+    let dir = root.join("crates/orbit-core/assets/activities");
     let mut out = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {

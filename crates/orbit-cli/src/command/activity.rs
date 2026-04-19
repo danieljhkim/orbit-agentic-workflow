@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use orbit_core::command::activity::{ActivityAddParams, ActivityRunParams, ActivityUpdateParams};
+use orbit_core::command::activity::{ActivityAddParams, ActivityUpdateParams};
 use orbit_core::{Activity, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
 
 #[derive(Args)]
-#[command(about = "Define, list, and run v2 activities")]
+#[command(about = "Define, list, and run activities")]
 pub struct ActivityCommand {
     #[command(subcommand)]
     pub command: ActivitySubcommand,
@@ -30,11 +30,8 @@ pub enum ActivitySubcommand {
     Show(ActivityShowArgs),
     /// Update an existing activity
     Update(ActivityUpdateArgs),
-    /// Execute a legacy v1 activity immediately (deprecated compatibility path)
+    /// Execute an activity from a YAML path
     Run(ActivityRunArgs),
-    /// Execute a v2 activity from a YAML path (schemaVersion: 2)
-    #[command(name = "run-v2")]
-    RunV2(ActivityRunV2Args),
     /// Delete an activity definition
     Delete(ActivityDeleteArgs),
 }
@@ -47,7 +44,6 @@ impl Execute for ActivitySubcommand {
             ActivitySubcommand::Show(args) => args.execute(runtime),
             ActivitySubcommand::Update(args) => args.execute(runtime),
             ActivitySubcommand::Run(args) => args.execute(runtime),
-            ActivitySubcommand::RunV2(args) => args.execute(runtime),
             ActivitySubcommand::Delete(args) => args.execute(runtime),
         }
     }
@@ -269,63 +265,10 @@ impl Execute for ActivityUpdateArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Use `orbit activity run-v2 <yaml-path>` for schemaVersion: 2 YAML assets, including the references under `crates/orbit-core/assets/activities/v2_reference/`."
+    after_help = "Examples:\n  orbit activity run crates/orbit-core/assets/activities/agent_loop_reference.yaml\n  orbit activity run crates/orbit-core/assets/activities/worktree_setup.yaml --input '{\"task_id\":\"T123\"}'\n"
 )]
 pub struct ActivityRunArgs {
-    pub id: String,
-    #[arg(long)]
-    pub agent_cli: Option<String>,
-    #[arg(long, default_value = "5m")]
-    pub timeout: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for ActivityRunArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        warn_legacy_activity_runtime_usage(&self.id);
-        let result = runtime.run_activity_now(ActivityRunParams {
-            activity_id: self.id,
-            agent_cli: self.agent_cli.unwrap_or_default(),
-            timeout_seconds: crate::parse::parse_duration_seconds(&self.timeout)?,
-        })?;
-
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "activity_id": result.activity_id,
-                "state": result.state.to_string(),
-                "duration_ms": result.duration_ms,
-                "error_code": result.error_code,
-                "error_message": result.error_message,
-            }))
-        } else {
-            let error_code = result.error_code.unwrap_or_else(|| "-".to_string());
-            let error_message = result
-                .error_message
-                .unwrap_or_else(|| "-".to_string())
-                .replace('\n', " ");
-            println!(
-                "activity_id={};state={};duration_ms={};error_code={};error_message={}",
-                result.activity_id,
-                result.state,
-                result.duration_ms.unwrap_or_default(),
-                error_code,
-                error_message
-            );
-            Ok(())
-        }
-    }
-}
-
-fn warn_legacy_activity_runtime_usage(activity_id: &str) {
-    eprintln!(
-        "orbit: warning: `orbit activity run {activity_id}` uses the deprecated v1 activity runtime; prefer `orbit activity run-v2 <yaml-path>` for schemaVersion: 2 assets."
-    );
-}
-
-#[derive(Args)]
-pub struct ActivityRunV2Args {
-    /// Path to a v2 (schemaVersion:2) activity YAML file.
+    /// Path to a schemaVersion 2 activity YAML file.
     pub path: PathBuf,
     /// Optional JSON input passed to the dispatcher.
     #[arg(long, default_value = "null")]
@@ -339,7 +282,7 @@ pub struct ActivityRunV2Args {
     pub json: bool,
 }
 
-impl Execute for ActivityRunV2Args {
+impl Execute for ActivityRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let input: Value = serde_json::from_str(&self.input)
             .map_err(|e| OrbitError::InvalidInput(format!("--input must be valid JSON: {e}")))?;

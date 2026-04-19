@@ -9,7 +9,6 @@ use orbit_core::{Job, JobRun, JobStep, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
-use crate::command::job_run_support::warn_legacy_job_runtime_usage;
 
 #[derive(Args)]
 #[command(about = "Define, list, and manage job workflows")]
@@ -32,7 +31,7 @@ pub enum JobSubcommand {
     List(JobListArgs),
     /// Show details of a specific job
     Show(JobShowArgs),
-    /// Execute a job immediately by ID (legacy v1 or discovered v2 workflow)
+    /// Execute a schemaVersion 2 job by ID or YAML path
     Run(JobRunArgs),
     /// Show run history for a job
     History(JobHistoryArgs),
@@ -40,9 +39,6 @@ pub enum JobSubcommand {
     Delete(JobDeleteArgs),
     /// Inspect the pipeline state (state.json) of a job run
     RunState(JobRunStateArgs),
-    /// Execute a v2 Job (schemaVersion:2) directly from a YAML path
-    #[command(name = "run-v2")]
-    RunV2(JobRunV2Args),
     /// Internal worker entrypoint for persisted pipeline runs
     #[command(name = "run-pipeline-worker", hide = true)]
     RunPipelineWorker(JobRunPipelineWorkerArgs),
@@ -58,7 +54,6 @@ impl Execute for JobSubcommand {
             JobSubcommand::History(args) => args.execute(runtime),
             JobSubcommand::Delete(args) => args.execute(runtime),
             JobSubcommand::RunState(args) => args.execute(runtime),
-            JobSubcommand::RunV2(args) => args.execute(runtime),
             JobSubcommand::RunPipelineWorker(args) => args.execute(runtime),
         }
     }
@@ -251,14 +246,20 @@ impl Execute for JobShowArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit job run my_job\n  orbit job run my_job --input base=main --input pr_number=42\n  orbit job run conditional_on_value --input decision=approved\n\nDirect runs of v2 `kind: subroutine` jobs are rejected. Use `orbit job run-v2 <yaml-path>` for direct schemaVersion: 2 YAML execution by path."
+    after_help = "Examples:\n  orbit job run task_auto_pipeline\n  orbit job run task_auto_pipeline --input mode=local\n  orbit job run crates/orbit-core/assets/jobs/task_pipeline.yaml --input task_id=T123\n"
 )]
 pub struct JobRunArgs {
+    /// Job ID from the catalog, or a direct path to a schemaVersion 2 job YAML.
     pub job_id: String,
     /// Input key=value pairs passed to all job steps (repeatable).
     /// Example: --input task_id=T123 --input base=main
     #[arg(long)]
     pub input: Vec<String>,
+    /// Explicit execution backend override for `agent_loop` steps (§3.1).
+    /// Precedence: this flag > `ORBIT_BACKEND` > `[runtime] backend` > `http`.
+    /// Accepted values: `http`, `cli`, `auto`.
+    #[arg(long)]
+    pub backend: Option<String>,
     #[arg(long)]
     pub json: bool,
     /// Stream agent stderr to the terminal and tee stdout live for debugging.
@@ -269,53 +270,70 @@ pub struct JobRunArgs {
 impl Execute for JobRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let input = build_job_run_input(&self.input)?;
+        let backend_flag =
+            orbit_core::command::backend_resolver::parse_backend_flag(self.backend.as_deref())
+                .map_err(OrbitError::InvalidInput)?;
+        let direct_path = PathBuf::from(&self.job_id);
+        if direct_path.exists() {
+            if self.debug {
+                return Err(OrbitError::InvalidInput(
+                    "`orbit job run --debug` is not supported for schemaVersion 2 jobs; use the audit output instead.".to_string(),
+                ));
+            }
+            let result = runtime.run_job_v2_from_yaml(&direct_path, input, backend_flag)?;
+            let audit_jsonl_str = result
+                .audit_jsonl
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let backend_str = result.resolved_backend.as_str();
+            if self.json {
+                return crate::output::json::print_pretty(&json!({
+                    "run_id": result.run_id,
+                    "job_name": result.job_name,
+                    "resolved_backend": backend_str,
+                    "success": result.success,
+                    "message": result.message,
+                    "pipeline": result.pipeline,
+                    "audit_jsonl": audit_jsonl_str,
+                    "events_emitted": result.events_emitted,
+                }));
+            }
+            println!(
+                "run_id={};job={};backend={};success={};events={};audit_jsonl={}",
+                result.run_id,
+                result.job_name,
+                backend_str,
+                result.success,
+                result.events_emitted,
+                audit_jsonl_str,
+            );
+            if let Some(msg) = &result.message {
+                println!("message: {msg}");
+            }
+            println!(
+                "pipeline: {}",
+                serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
+            );
+            return Ok(());
+        }
+
         let job = runtime.show_job_catalog_entry(&self.job_id)?;
         match &job.definition {
-            JobCatalogDefinition::Legacy(_) => {
-                warn_legacy_job_runtime_usage(&self.job_id);
-                let run = runtime.run_job_now_with_input_debug(&self.job_id, input, self.debug)?;
-                let run_details = runtime
-                    .job_history(&self.job_id)?
-                    .into_iter()
-                    .find(|entry| entry.run_id == run.run_id);
-                if self.json {
-                    crate::output::json::print_pretty(&json!({
-                        "job_id": run.job_id,
-                        "run_id": run.run_id,
-                        "state": run.state.to_string(),
-                        "attempt": run.attempt,
-                        "error_code": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|s| s.error_code.clone()),
-                        "error_message": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|s| s.error_message.clone()),
-                    }))
-                } else {
-                    let error_code = run_details
-                        .as_ref()
-                        .and_then(|entry| entry.steps.last())
-                        .and_then(|s| s.error_code.clone())
-                        .unwrap_or_else(|| "-".to_string());
-                    let error_message = run_details
-                        .as_ref()
-                        .and_then(|entry| entry.steps.last())
-                        .and_then(|s| s.error_message.clone())
-                        .unwrap_or_else(|| "-".to_string())
-                        .replace('\n', " ");
-                    println!(
-                        "job_id={};run_id={};state={};attempt={};error_code={};error_message={}",
-                        run.job_id, run.run_id, run.state, run.attempt, error_code, error_message
-                    );
-                    Ok(())
-                }
-            }
+            JobCatalogDefinition::Legacy(_) => Err(OrbitError::InvalidInput(format!(
+                "job '{}' still uses the retired schemaVersion 1 runtime; migrate it to a schemaVersion 2 job asset before running it",
+                self.job_id
+            ))),
             JobCatalogDefinition::V2 { path, .. } => {
                 if self.debug {
                     return Err(OrbitError::InvalidInput(
-                        "`orbit job run --debug` is only supported for legacy v1 jobs; use `orbit job run-v2 <path>` for direct schemaVersion: 2 execution.".to_string(),
+                        "`orbit job run --debug` is not supported for schemaVersion 2 jobs; use the audit output instead.".to_string(),
                     ));
                 }
                 if job.kind == JobKind::Subroutine {
                     return Err(OrbitError::InvalidInput(build_subroutine_run_error(&job)));
                 }
-                let result = runtime.run_job_v2_from_yaml(path, input, None)?;
+                let result = runtime.run_job_v2_from_yaml(path, input, backend_flag)?;
                 let audit_jsonl_str = result
                     .audit_jsonl
                     .as_ref()
@@ -824,67 +842,4 @@ fn build_job_run_input(pairs: &[String]) -> Result<Value, OrbitError> {
         map.insert(key.to_string(), Value::String(value.to_string()));
     }
     Ok(Value::Object(map))
-}
-
-#[derive(Args)]
-pub struct JobRunV2Args {
-    /// Path to a v2 (schemaVersion:2, kind:Job) YAML file.
-    pub path: PathBuf,
-    /// Optional JSON input passed to the v2 job executor.
-    #[arg(long, default_value = "null")]
-    pub input: String,
-    /// Explicit execution backend override for `agent_loop` steps (§3.1).
-    /// Precedence: this flag > `ORBIT_BACKEND` > `[runtime] backend` > `http`.
-    /// Accepted values: `http`, `cli`, `auto`.
-    #[arg(long)]
-    pub backend: Option<String>,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobRunV2Args {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input: Value = serde_json::from_str(&self.input)
-            .map_err(|e| OrbitError::InvalidInput(format!("--input must be valid JSON: {e}")))?;
-        let backend_flag =
-            orbit_core::command::backend_resolver::parse_backend_flag(self.backend.as_deref())
-                .map_err(OrbitError::InvalidInput)?;
-        let result = runtime.run_job_v2_from_yaml(&self.path, input, backend_flag)?;
-        let audit_jsonl_str = result
-            .audit_jsonl
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let backend_str = result.resolved_backend.as_str();
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "run_id": result.run_id,
-                "job_name": result.job_name,
-                "resolved_backend": backend_str,
-                "success": result.success,
-                "message": result.message,
-                "pipeline": result.pipeline,
-                "audit_jsonl": audit_jsonl_str,
-                "events_emitted": result.events_emitted,
-            }))
-        } else {
-            println!(
-                "run_id={};job={};backend={};success={};events={};audit_jsonl={}",
-                result.run_id,
-                result.job_name,
-                backend_str,
-                result.success,
-                result.events_emitted,
-                audit_jsonl_str,
-            );
-            if let Some(msg) = &result.message {
-                println!("message: {msg}");
-            }
-            println!(
-                "pipeline: {}",
-                serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
-            );
-            Ok(())
-        }
-    }
 }

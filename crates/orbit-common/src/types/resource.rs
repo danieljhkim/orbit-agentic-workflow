@@ -10,6 +10,7 @@ use crate::types::{
 };
 
 pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
+pub const EXECUTOR_RESOURCE_SCHEMA_VERSION: u32 = 2;
 pub const POLICY_RESOURCE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

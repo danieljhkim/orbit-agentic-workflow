@@ -1,7 +1,7 @@
 //! Phase 3 end-to-end smoke for the v2 job DAG executor.
 //!
-//! Runs each sample under `crates/orbit-core/assets/jobs/v2_samples/` through
-//! `orbit_engine::v2::execute_job` and asserts the expected §7 envelope
+//! Runs each sample under `crates/orbit-core/assets/jobs/` through
+//! `orbit_engine::activity_job::execute_job` and asserts the expected §7 envelope
 //! events appear (or — for the denial sample — don't appear).
 //!
 //! No credentials needed: shell samples exec real `sh`; the loop + denial
@@ -16,14 +16,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
-use orbit_common::types::v2::{JobAsset, V2AuditEventKind, load_job_asset};
-use orbit_engine::v2::{
+use orbit_common::types::activity_job::{JobAsset, V2AuditEventKind, load_job_asset};
+use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2JsonlSink, V2RuntimeHost, execute_job, reset_replay_transport,
 };
 use serde_json::Value;
 
 fn main() -> ExitCode {
-    let samples_dir = workspace_root().join("crates/orbit-core/assets/jobs/v2_samples");
+    let samples_dir = workspace_root().join("crates/orbit-core/assets/jobs");
     let fixtures_dir = samples_dir.join("fixtures");
     let tmp_audit_root = std::env::temp_dir().join("orbit-v2-job-smoke");
     let _ = std::fs::create_dir_all(&tmp_audit_root);
@@ -438,12 +438,11 @@ fn run_sample(
     input: Value,
     expect_success: bool,
     _filters: &[&str],
-) -> Result<Vec<orbit_common::types::v2::V2AuditEvent>, String> {
+) -> Result<Vec<orbit_common::types::activity_job::V2AuditEvent>, String> {
     let yaml = std::fs::read_to_string(&path).map_err(|e| format!("read {path:?}: {e}"))?;
-    let spec = match load_job_asset(&yaml).map_err(|e| format!("load {path:?}: {e}"))? {
-        JobAsset::V2(a) => a.spec,
-        JobAsset::V1(_) => return Err("parsed as v1, expected v2".into()),
-    };
+    let spec = load_job_asset(&yaml)
+        .map_err(|e| format!("load {path:?}: {e}"))?
+        .spec;
 
     let blob_dir = audit_root.join("blobs");
     let _ = std::fs::create_dir_all(&blob_dir);
@@ -480,14 +479,14 @@ fn run_sample(
 }
 
 fn find_event<'a>(
-    events: &'a [orbit_common::types::v2::V2AuditEvent],
+    events: &'a [orbit_common::types::activity_job::V2AuditEvent],
     event_type: &str,
-) -> Option<&'a orbit_common::types::v2::V2AuditEvent> {
+) -> Option<&'a orbit_common::types::activity_job::V2AuditEvent> {
     events.iter().find(|e| e.envelope.event_type == event_type)
 }
 
 fn require_event_type(
-    events: &[orbit_common::types::v2::V2AuditEvent],
+    events: &[orbit_common::types::activity_job::V2AuditEvent],
     event_type: &str,
 ) -> Result<(), String> {
     if find_event(events, event_type).is_none() {
@@ -499,14 +498,15 @@ fn require_event_type(
 // Last-seen-buffers so the denial smoke can inspect events after a failed
 // `execute_job` call bubbles up as Err().
 use std::sync::Mutex;
-static LAST_ENVELOPE: Mutex<Vec<orbit_common::types::v2::V2AuditEvent>> = Mutex::new(Vec::new());
+static LAST_ENVELOPE: Mutex<Vec<orbit_common::types::activity_job::V2AuditEvent>> =
+    Mutex::new(Vec::new());
 static LAST_LOOP: Mutex<Vec<LoopAuditEvent>> = Mutex::new(Vec::new());
 
-fn stash_envelope_events(events: Vec<orbit_common::types::v2::V2AuditEvent>) {
+fn stash_envelope_events(events: Vec<orbit_common::types::activity_job::V2AuditEvent>) {
     *LAST_ENVELOPE.lock().unwrap() = events;
 }
 
-fn take_last_events() -> Vec<orbit_common::types::v2::V2AuditEvent> {
+fn take_last_events() -> Vec<orbit_common::types::activity_job::V2AuditEvent> {
     LAST_ENVELOPE.lock().unwrap().clone()
 }
 

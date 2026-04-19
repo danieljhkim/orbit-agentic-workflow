@@ -22,13 +22,13 @@
 //! `orbit-types`, `orbit-agent`, `orbit-exec`, `orbit-store`, `orbit-tools`
 //! → `orbit-engine` → orbit-core
 
+pub mod activity_job;
 mod activity_runner;
 mod context;
 mod executor;
 mod job_runner;
 pub mod reconciler;
 mod template;
-pub mod v2;
 
 pub use activity_runner::{
     activity_skill_refs_from_spec_config, execute_single_attempt, run_activity_direct,
@@ -41,6 +41,9 @@ pub use context::{
     ExecutorLookupHost, JobRunHost, JobRunResult, RuntimeHost, STALE_RUN_GRACE_SECONDS,
     TaskAutomationUpdate, TaskHost, TaskReadHost, TaskWriteHost, execution_working_directory,
     execution_working_directory_with_task, input_workspace_path, redact_attempt_outcome,
+};
+pub use executor::automation::{
+    StateExecutionContext, execute_action as execute_deterministic_action,
 };
 pub use executor::registry::ActivityExecutorRegistry;
 pub use job_runner::{

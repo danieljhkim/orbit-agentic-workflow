@@ -564,7 +564,10 @@ pub(crate) fn execute_activity_with_retries<H: EngineHost + ExecutorLookupHost>(
                     return Err(OrbitError::JobRunNotFound(run.run_id.clone()));
                 }
 
-                if execution.activity.spec_type == "agent_invoke" {
+                if outcome.invocation_trace.duration_ms > 0
+                    || outcome.invocation_trace.usage.prompt_response_total() > 0
+                    || !outcome.invocation_trace.tool_calls.is_empty()
+                {
                     host.persist_invocation_trace(
                         &run.run_id,
                         &execution,

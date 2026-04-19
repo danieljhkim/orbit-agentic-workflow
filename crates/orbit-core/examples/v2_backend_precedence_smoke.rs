@@ -5,7 +5,7 @@
 //! `resolve_backend_precedence` function so no OrbitRuntime / workspace
 //! scaffolding is required.
 
-use orbit_common::types::v2::Backend;
+use orbit_common::types::activity_job::Backend;
 use orbit_core::command::backend_resolver::{BackendSource, resolve_backend_precedence};
 
 fn main() {

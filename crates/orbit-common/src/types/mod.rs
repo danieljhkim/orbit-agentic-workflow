@@ -21,6 +21,7 @@
 //!                         orbit-core, orbit-cli
 
 pub mod activity;
+pub mod activity_job;
 pub mod actor;
 pub mod agent_pair;
 pub mod audit;
@@ -43,10 +44,17 @@ pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod tool_input;
-pub mod v2;
 pub mod workspace;
 
 pub use activity::Activity;
+pub use activity_job::{
+    AUDIT_ENVELOPE_SCHEMA_VERSION, ActivityAsset, ActivityV2, ActivityV2Spec, AgentLoopSpec,
+    AssetLoadError, BackoffStrategy, BranchOutcome, DeterministicSpec, FanInSpec, FanOutBlock,
+    JobAsset, JobKind, JobV2, JobV2Step, JobV2StepBody, JoinMode, LoopBlock, OnDenial,
+    ParallelBlock, PipelineRef, RetrySpec, SchemaHeader, ShellSpec, TargetStep, ToolAllowlistError,
+    V2_TOOL_WILDCARD_ROOTS, V2AuditEnvelope, V2AuditEvent, V2AuditEventKind, load_activity_asset,
+    load_job_asset, tool_allowed, validate_tool_allowlist,
+};
 pub use actor::{ActorIdentity, normalize_attribution_label, normalize_optional_attribution_label};
 pub use agent_pair::{
     AgentModelPair, agent_family_from_cli, all_agent_families, infer_agent_family_from_model,
@@ -78,10 +86,10 @@ pub use policy_def::{
     UNRESTRICTED_FS_PROFILE,
 };
 pub use resource::{
-    ActivityResource, ActivityResourceSpec, ExecutorResource, ExecutorResourceSpec, JobResource,
-    JobResourceSpec, POLICY_RESOURCE_SCHEMA_VERSION, PolicyResource, PolicyResourceSpec,
-    RESOURCE_SCHEMA_VERSION, ResourceEnvelope, ResourceHeader, ResourceKind, ResourceMetadata,
-    parse_policy_resource,
+    ActivityResource, ActivityResourceSpec, EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorResource,
+    ExecutorResourceSpec, JobResource, JobResourceSpec, POLICY_RESOURCE_SCHEMA_VERSION,
+    PolicyResource, PolicyResourceSpec, RESOURCE_SCHEMA_VERSION, ResourceEnvelope, ResourceHeader,
+    ResourceKind, ResourceMetadata, parse_policy_resource,
 };
 pub use role::Role;
 pub use run_state::PipelineState;
@@ -95,14 +103,5 @@ pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
 pub use tool_input::{
     optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
     optional_string_list_alias, optional_u32_alias, required_string, split_csv,
-};
-pub use v2::{
-    AUDIT_ENVELOPE_SCHEMA_VERSION, ActivityAsset, ActivityV2, ActivityV2Asset, ActivityV2Spec,
-    AgentLoopSpec, AssetLoadError, BackoffStrategy, BranchOutcome, DeterministicSpec, FanInSpec,
-    FanOutBlock, JobAsset, JobKind, JobV2, JobV2Asset, JobV2Step, JobV2StepBody, JoinMode,
-    LegacyActivity, LegacyJob, LoopBlock, OnDenial, ParallelBlock, PipelineRef, RetrySpec,
-    SchemaHeader, ShellSpec, TargetStep, ToolAllowlistError, V2_TOOL_WILDCARD_ROOTS,
-    V2AuditEnvelope, V2AuditEvent, V2AuditEventKind, load_activity_asset, load_job_asset,
-    tool_allowed, validate_tool_allowlist,
 };
 pub use workspace::{Workspace, WorkspacePaths, WorkspaceRegistry, WorkspaceStatus};

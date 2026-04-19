@@ -1,7 +1,7 @@
-//! `orbit activity run-v2 <yaml-path>` command — v2 entrypoint.
+//! `orbit activity run <yaml-path>` command.
 //!
 //! Reads a YAML file from disk, parses it through the two-pass loader at
-//! `orbit_common::types::v2::load_activity_asset`, and invokes the dispatcher with
+//! `orbit_common::types::activity_job::load_activity_asset`, and invokes the dispatcher with
 //! `OrbitRuntime` as the `V2RuntimeHost` (impl lives in
 //! `crate::runtime::v2_host`).
 //!
@@ -13,11 +13,11 @@
 
 use std::path::{Path, PathBuf};
 
-use orbit_common::types::v2::{
-    ActivityAsset, Backend, V2AuditEventKind, load_activity_asset, resolve_activity_backends,
+use orbit_common::types::activity_job::{
+    Backend, V2AuditEventKind, load_activity_asset, resolve_activity_backends,
 };
 use orbit_common::types::{OrbitError, OrbitEvent};
-use orbit_engine::v2::{V2AuditWriter, V2DispatchInput, dispatch_v2_activity};
+use orbit_engine::activity_job::{V2AuditWriter, V2DispatchInput, dispatch_v2_activity};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -51,29 +51,23 @@ impl OrbitRuntime {
         let yaml = std::fs::read_to_string(yaml_path).map_err(|err| {
             OrbitError::InvalidInput(format!("read {}: {err}", yaml_path.display()))
         })?;
-        let mut asset = match load_activity_asset(&yaml).map_err(|err| {
+        let mut asset = load_activity_asset(&yaml).map_err(|err| {
             OrbitError::InvalidInput(format!("load {}: {err}", yaml_path.display()))
-        })? {
-            ActivityAsset::V2(a) => a,
-            ActivityAsset::V1(_) => {
-                return Err(OrbitError::InvalidInput(format!(
-                    "{} is a deprecated schemaVersion: 1 asset; migrate it to schemaVersion: 2. Temporary compatibility remains via `orbit activity run <id>`.",
-                    yaml_path.display()
-                )));
-            }
-        };
+        })?;
 
         // §3.1 resolution: replace `Auto` with a concrete backend per
         // precedence (flag → env → config → http).
         let resolution = self.resolve_v2_backend(backend_flag);
         resolve_activity_backends(&mut asset.spec, resolution.backend);
         let resolved_backend = match &asset.spec.spec {
-            orbit_common::types::v2::ActivityV2Spec::AgentLoop(spec) => Some(spec.backend),
+            orbit_common::types::activity_job::ActivityV2Spec::AgentLoop(spec) => {
+                Some(spec.backend)
+            }
             _ => None,
         };
 
         let run_id = format!(
-            "v2-{}-{}",
+            "activity-{}-{}",
             asset.name,
             chrono::Utc::now().format("%Y%m%dT%H%M%S%.3f")
         );
@@ -96,13 +90,13 @@ impl OrbitRuntime {
             id: asset.name.clone(),
         })?;
         let _ = writer.emit(V2AuditEventKind::RunStarted {
-            job_name: format!("cli-v2:{}", asset.name),
+            job_name: format!("cli:{}", asset.name),
         });
 
         let activity_type = match &asset.spec.spec {
-            orbit_common::types::v2::ActivityV2Spec::AgentLoop(_) => "agent_loop",
-            orbit_common::types::v2::ActivityV2Spec::Deterministic(_) => "deterministic",
-            orbit_common::types::v2::ActivityV2Spec::Shell(_) => "shell",
+            orbit_common::types::activity_job::ActivityV2Spec::AgentLoop(_) => "agent_loop",
+            orbit_common::types::activity_job::ActivityV2Spec::Deterministic(_) => "deterministic",
+            orbit_common::types::activity_job::ActivityV2Spec::Shell(_) => "shell",
         };
 
         let dispatch = dispatch_v2_activity(V2DispatchInput {

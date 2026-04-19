@@ -252,8 +252,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 ActivitySubcommand::List(_) => ("list", None),
                 ActivitySubcommand::Show(args) => ("show", Some(args.id.as_str())),
                 ActivitySubcommand::Update(args) => ("update", Some(args.id.as_str())),
-                ActivitySubcommand::Run(args) => ("run", Some(args.id.as_str())),
-                ActivitySubcommand::RunV2(_) => ("run-v2", None),
+                ActivitySubcommand::Run(_) => ("run", None),
                 ActivitySubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
             };
             CommandMeta {
@@ -276,7 +275,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
                 JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
                 JobSubcommand::RunState(args) => ("run-state", Some(args.run_id.as_str())),
-                JobSubcommand::RunV2(_) => ("run-v2", None),
                 JobSubcommand::RunPipelineWorker(args) => {
                     ("run-pipeline-worker", Some(args.run_id.as_str()))
                 }

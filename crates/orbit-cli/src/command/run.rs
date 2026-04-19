@@ -93,6 +93,7 @@ fn execute_positional_job(
     job::JobRunArgs {
         job_id,
         input: args.input,
+        backend: None,
         json: args.json,
         debug: args.debug,
     }
