@@ -1421,7 +1421,6 @@ dependencies = [
  "chrono",
  "orbit-common",
  "orbit-tools",
- "orbit-types",
  "regex",
  "reqwest",
  "serde",
@@ -1445,7 +1444,6 @@ dependencies = [
  "orbit-core",
  "orbit-knowledge",
  "orbit-mcp",
- "orbit-types",
  "predicates",
  "regex",
  "serde",
@@ -1459,10 +1457,16 @@ dependencies = [
 name = "orbit-common"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "clap",
  "fs2",
  "regex",
+ "serde",
  "serde_json",
+ "serde_yaml",
  "sha2",
+ "tempfile",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1479,7 +1483,6 @@ dependencies = [
  "orbit-policy",
  "orbit-store",
  "orbit-tools",
- "orbit-types",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1502,7 +1505,6 @@ dependencies = [
  "orbit-exec",
  "orbit-store",
  "orbit-tools",
- "orbit-types",
  "regex",
  "serde",
  "serde_json",
@@ -1518,7 +1520,7 @@ name = "orbit-exec"
 version = "0.1.0"
 dependencies = [
  "libc",
- "orbit-types",
+ "orbit-common",
  "wait-timeout",
 ]
 
@@ -1528,7 +1530,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fs2",
- "orbit-types",
+ "orbit-common",
  "serde",
  "serde_json",
  "sha2",
@@ -1547,7 +1549,7 @@ dependencies = [
 name = "orbit-mcp"
 version = "0.1.0"
 dependencies = [
- "orbit-types",
+ "orbit-common",
  "rmcp",
  "serde_json",
  "tokio",
@@ -1558,7 +1560,7 @@ dependencies = [
 name = "orbit-policy"
 version = "0.1.0"
 dependencies = [
- "orbit-types",
+ "orbit-common",
  "serde",
 ]
 
@@ -1570,7 +1572,6 @@ dependencies = [
  "fs2",
  "jsonschema",
  "orbit-common",
- "orbit-types",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1584,30 +1585,15 @@ name = "orbit-tools"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "orbit-common",
  "orbit-exec",
  "orbit-knowledge",
  "orbit-policy",
- "orbit-types",
  "regex",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "orbit-types"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "orbit-common",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
  "tempfile",
  "thiserror",
 ]

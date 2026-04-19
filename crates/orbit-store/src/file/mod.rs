@@ -3,7 +3,7 @@
 //! Each sub-module (`task_store`, `job_store`, `activity_store`, `skill_store`)
 //! serializes domain objects to YAML files under a predictable directory layout
 //! (e.g., `.orbit/tasks/<id>.yaml`). All writes use
-//! [`orbit_common::fs::atomic_write_text_volatile`] to prevent partial writes
+//! [`orbit_common::utility::fs::atomic_write_text_volatile`] to prevent partial writes
 //! from corrupting state.
 
 pub(crate) mod activity_store;

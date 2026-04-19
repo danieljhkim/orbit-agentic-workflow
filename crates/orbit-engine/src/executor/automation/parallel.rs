@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use orbit_types::{JobRunState, OrbitError, Task, TaskStatus};
+use orbit_common::types::{JobRunState, OrbitError, Task, TaskStatus};
 use serde_json::{Value, json};
 
 use super::git::{

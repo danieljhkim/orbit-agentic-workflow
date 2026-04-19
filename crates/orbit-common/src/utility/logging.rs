@@ -14,12 +14,12 @@
 //! for manual pre-emission scrubbing. A proper `tracing::Layer` that applies
 //! redaction to recorded fields is a TODO — the right shape is a
 //! `tracing_subscriber::Layer` with a `Visit`-implementing formatter that
-//! routes each value through [`crate::redaction::redact_all`]. Landing that
+//! routes each value through [`super::redaction::redact_all`]. Landing that
 //! layer is the follow-up after migrating call sites off `eprintln!`.
 
 use tracing_subscriber::EnvFilter;
 
-use crate::redaction;
+use super::redaction;
 
 /// Install the default fmt + env-filter subscriber. Safe to call multiple
 /// times — subsequent calls are no-ops (mirrors the current behaviour in

@@ -1,4 +1,4 @@
-use orbit_types::{
+use orbit_common::types::{
     AgentResponseEnvelope, AgentRunError, ExecutionResult, InvocationTrace, OrbitError,
 };
 use serde_json::{Deserializer, Value};

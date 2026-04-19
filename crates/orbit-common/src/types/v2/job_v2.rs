@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use crate::JobScheduleState;
+use crate::types::JobScheduleState;
 
 use super::activity_v2::ActivityV2Spec;
 

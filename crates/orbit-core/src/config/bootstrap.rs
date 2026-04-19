@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
-use orbit_common::fs::write_text_with_parent;
+use orbit_common::utility::fs::write_text_with_parent;
 
 const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../../assets/config/default-config.toml");
 

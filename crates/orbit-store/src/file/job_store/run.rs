@@ -3,13 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{
+use orbit_common::types::{
     JobRun, JobRunState, JobRunStep, KnowledgeRunMetrics, OrbitError, PipelineState,
 };
 
 use crate::backend::JobRunStepParams;
 use crate::file::layout::validate_path_stem;
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 use super::{
     JobFileStore,
@@ -59,7 +59,7 @@ impl JobFileStore {
         let mut run = self.read_run_at(&run_dir)?;
         run.state = run
             .state
-            .try_transition(orbit_types::RunEvent::Start)
+            .try_transition(orbit_common::types::RunEvent::Start)
             .map_err(OrbitError::JobRunStateTransition)?;
         run.started_at = Some(started_at);
         run.pid = Some(pid);
@@ -107,7 +107,7 @@ impl JobFileStore {
         }
         run.state = run
             .state
-            .try_transition(orbit_types::RunEvent::Abandon)
+            .try_transition(orbit_common::types::RunEvent::Abandon)
             .map_err(OrbitError::JobRunStateTransition)?;
         run.finished_at = Some(finished_at);
         self.write_run(&job_id, &run)?;
@@ -173,10 +173,10 @@ impl JobFileStore {
             return Ok(true);
         }
         let event = match state {
-            JobRunState::Success => orbit_types::RunEvent::Complete,
-            JobRunState::Failed => orbit_types::RunEvent::Fail,
-            JobRunState::Timeout => orbit_types::RunEvent::Timeout,
-            JobRunState::Cancelled => orbit_types::RunEvent::Cancel,
+            JobRunState::Success => orbit_common::types::RunEvent::Complete,
+            JobRunState::Failed => orbit_common::types::RunEvent::Fail,
+            JobRunState::Timeout => orbit_common::types::RunEvent::Timeout,
+            JobRunState::Cancelled => orbit_common::types::RunEvent::Cancel,
             other => {
                 return Err(OrbitError::JobRunStateTransition(format!(
                     "cannot finalize to non-terminal state: {}",

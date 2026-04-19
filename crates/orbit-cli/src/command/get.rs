@@ -1,6 +1,6 @@
 use clap::Args;
+use orbit_common::types::ResourceKind;
 use orbit_core::{OrbitError, OrbitRuntime};
-use orbit_types::ResourceKind;
 use serde_json::{Value, json};
 
 use crate::command::Execute;

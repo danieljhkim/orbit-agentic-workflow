@@ -1,4 +1,4 @@
-use orbit_types::{OrbitError, TaskPriority, TaskType};
+use orbit_common::types::{OrbitError, TaskPriority, TaskType};
 use serde::Deserialize;
 
 use crate::OrbitRuntime;

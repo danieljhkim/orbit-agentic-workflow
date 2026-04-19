@@ -2,7 +2,9 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use chrono::Utc;
-use orbit_types::{OrbitError, Task, TaskComment, TaskComplexity, TaskPriority, TaskStatus};
+use orbit_common::types::{
+    OrbitError, Task, TaskComment, TaskComplexity, TaskPriority, TaskStatus,
+};
 use serde_json::{Value, json};
 
 use crate::context::{TaskAutomationUpdate, TaskHost};

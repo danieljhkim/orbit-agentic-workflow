@@ -1,4 +1,4 @@
-use orbit_types::{JobRun, JobRunStep};
+use orbit_common::types::{JobRun, JobRunStep};
 use serde::{Deserialize, Serialize};
 
 /// Serialized to jrun.yaml — contains run-level fields only.

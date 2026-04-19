@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, POLICY_RESOURCE_SCHEMA_VERSION, PolicyDef, PolicyResource, PolicyResourceSpec,
     ResourceKind, ResourceMetadata, parse_policy_resource,
 };
 
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 pub(crate) struct PolicyDefFileStore {
     root: PathBuf,

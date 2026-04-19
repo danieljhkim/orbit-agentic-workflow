@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::{
+use crate::types::{
     ExecutorType, FsProfile, JobScheduleState, JobStep, OrbitError, StdoutFormat,
     default_job_max_active_runs, default_max_iterations,
 };

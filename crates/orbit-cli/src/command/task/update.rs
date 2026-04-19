@@ -1,7 +1,7 @@
 use clap::Args;
+use orbit_common::types::TaskArtifact;
 use orbit_core::command::task::TaskUpdateParams;
 use orbit_core::{OrbitError, OrbitRuntime, TaskStatus};
-use orbit_types::TaskArtifact;
 
 use crate::command::Execute;
 

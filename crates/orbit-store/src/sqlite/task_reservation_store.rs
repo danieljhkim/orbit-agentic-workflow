@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use chrono::{Duration, Utc};
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::{

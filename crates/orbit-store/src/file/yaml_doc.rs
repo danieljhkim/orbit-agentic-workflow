@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::layout::list_yaml_files;
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 pub(crate) fn read_yaml<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, OrbitError> {
     read_yaml_with(path, |path, err| {

@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::Utc;
+use orbit_common::types::{Audit, OrbitError, OrbitEvent, WorkspacePaths};
 use orbit_engine::ActivityExecutorRegistry;
-use orbit_types::{Audit, OrbitError, OrbitEvent, WorkspacePaths};
 use serde_json::Value;
 
 use crate::OrbitContext;
@@ -115,7 +115,7 @@ impl OrbitRuntime {
         Ok(audits)
     }
 
-    pub fn get_job(&self, job_id: &str) -> Result<Option<orbit_types::Job>, OrbitError> {
+    pub fn get_job(&self, job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
         self.stores().jobs().get(job_id)
     }
 
@@ -195,8 +195,9 @@ impl OrbitRuntime {
     /// directories are a hard error (`CatalogError::DuplicateName`).
     pub fn v2_activity_catalog(
         &self,
-    ) -> Result<orbit_types::v2::V2ActivityCatalog, orbit_types::v2::CatalogError> {
-        let mut catalog = orbit_types::v2::V2ActivityCatalog::new();
+    ) -> Result<orbit_common::types::v2::V2ActivityCatalog, orbit_common::types::v2::CatalogError>
+    {
+        let mut catalog = orbit_common::types::v2::V2ActivityCatalog::new();
 
         if let Ok(raw) = std::env::var("ORBIT_V2_CATALOG_DIR") {
             for entry in raw.split(':').filter(|s| !s.is_empty()) {
@@ -264,30 +265,39 @@ impl OrbitRuntime {
         self.activity_executors.as_ref()
     }
 
-    pub fn list_executor_defs(&self) -> Result<Vec<orbit_types::ExecutorDef>, OrbitError> {
+    pub fn list_executor_defs(&self) -> Result<Vec<orbit_common::types::ExecutorDef>, OrbitError> {
         self.stores().executors().list()
     }
 
     pub fn get_executor_def(
         &self,
         name: &str,
-    ) -> Result<Option<orbit_types::ExecutorDef>, OrbitError> {
+    ) -> Result<Option<orbit_common::types::ExecutorDef>, OrbitError> {
         self.stores().executors().get(name)
     }
 
-    pub fn upsert_executor_def(&self, def: &orbit_types::ExecutorDef) -> Result<(), OrbitError> {
+    pub fn upsert_executor_def(
+        &self,
+        def: &orbit_common::types::ExecutorDef,
+    ) -> Result<(), OrbitError> {
         self.stores().executors().upsert(def)
     }
 
-    pub fn list_policy_defs(&self) -> Result<Vec<orbit_types::PolicyDef>, OrbitError> {
+    pub fn list_policy_defs(&self) -> Result<Vec<orbit_common::types::PolicyDef>, OrbitError> {
         self.stores().policies().list()
     }
 
-    pub fn get_policy_def(&self, name: &str) -> Result<Option<orbit_types::PolicyDef>, OrbitError> {
+    pub fn get_policy_def(
+        &self,
+        name: &str,
+    ) -> Result<Option<orbit_common::types::PolicyDef>, OrbitError> {
         self.stores().policies().get(name)
     }
 
-    pub fn upsert_policy_def(&self, def: &orbit_types::PolicyDef) -> Result<(), OrbitError> {
+    pub fn upsert_policy_def(
+        &self,
+        def: &orbit_common::types::PolicyDef,
+    ) -> Result<(), OrbitError> {
         self.stores().policies().upsert(def)
     }
 }

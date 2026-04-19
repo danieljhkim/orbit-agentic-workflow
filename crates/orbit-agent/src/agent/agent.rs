@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::{InvocationTrace, OrbitError};
+use orbit_common::types::{InvocationTrace, OrbitError};
 
 use crate::runtime::{AgentRuntime, ProviderRegistry, resolve_runtime};
 use crate::types::{AgentInvocationSpec, AgentRequest};

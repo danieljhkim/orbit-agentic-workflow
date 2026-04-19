@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{
+use orbit_common::types::{
     Activity, AuditEvent, ExecutorDef, Job, JobRun, JobRunState, JobScheduleState, JobStep,
     KnowledgeRunMetrics, OrbitError, OrbitId, PipelineState, PolicyDef, ReviewThread, StoredTool,
     Task, TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
@@ -361,7 +361,7 @@ pub trait JobRunStoreBackend: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct JobRunStepParams {
     pub step_index: usize,
-    pub target_type: orbit_types::JobTargetType,
+    pub target_type: orbit_common::types::JobTargetType,
     pub target_id: String,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,

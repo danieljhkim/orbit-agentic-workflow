@@ -1,7 +1,7 @@
+use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use orbit_knowledge::service::{
     GraphContextService, GraphOverview, GraphOverviewSummary, compact_from_overview,
 };
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};

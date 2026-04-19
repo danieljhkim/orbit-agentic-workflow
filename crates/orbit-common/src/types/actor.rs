@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::agent_pair::{agent_family_from_cli, all_agent_families};
+use crate::types::agent_pair::{agent_family_from_cli, all_agent_families};
 
 /// Typed identity for attribution across all Orbit artifacts.
 ///

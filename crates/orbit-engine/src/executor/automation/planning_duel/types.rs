@@ -1,4 +1,4 @@
-use orbit_types::EfficiencyMetrics;
+use orbit_common::types::EfficiencyMetrics;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,11 +36,11 @@ pub(super) struct PlanningDuelWinnerArtifact {
 pub(super) struct PlanningDuelPlanArtifact {
     pub path: String,
     pub content: String,
-    pub author: orbit_types::PlanningRoleAssignment,
+    pub author: orbit_common::types::PlanningRoleAssignment,
 }
 
 pub(super) fn into_efficiency_metrics(value: PlanningDuelEfficiency) -> EfficiencyMetrics {
-    let token_usage = orbit_types::TokenUsage {
+    let token_usage = orbit_common::types::TokenUsage {
         input: value.input_tokens,
         cache_read: value.cache_read_tokens,
         cache_create: value.cache_create_tokens,

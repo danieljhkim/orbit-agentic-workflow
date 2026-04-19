@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use orbit_types::{
+use orbit_common::types::{
     Job, JobRun, JobRunState, JobScheduleState, KnowledgeRunMetrics, OrbitError, PipelineState,
 };
 

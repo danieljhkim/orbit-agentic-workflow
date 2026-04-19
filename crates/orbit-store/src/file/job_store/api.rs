@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use orbit_types::{Job, JobRun, JobRunState, JobScheduleState, OrbitError};
+use orbit_common::types::{Job, JobRun, JobRunState, JobScheduleState, OrbitError};
 
 use super::resource::{job_to_resource, validate_max_active_runs};
 use crate::backend::{JobCreateParams, JobUpdateParams};

@@ -3,10 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use orbit_types::{OrbitError, PipelineState};
+use orbit_common::types::{OrbitError, PipelineState};
 use serde_json::Value;
 
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 pub fn resolve_active_run_state_dir(
     orbit_root: &Path,

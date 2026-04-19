@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::redaction::PatternRedactor;
+use super::redaction::PatternRedactor;
 
 pub struct BlobStore {
     root: PathBuf,

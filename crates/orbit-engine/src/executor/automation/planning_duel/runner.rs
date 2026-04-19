@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::{Value, json};
 
 use super::{artifacts, metrics, roles};

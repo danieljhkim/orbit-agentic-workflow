@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::{OrbitError, TaskStatus};
+use orbit_common::types::{OrbitError, TaskStatus};
 
 use super::TaskFileStore;
 use crate::file::layout::{ensure_dirs, read_child_dirs as list_child_dirs};

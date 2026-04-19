@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use orbit_common::types::OrbitError;
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::OrbitError;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tempfile::tempdir;

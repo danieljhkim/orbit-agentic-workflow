@@ -1,6 +1,6 @@
 use orbit_agent::Agent;
+use orbit_common::types::OrbitError;
 use orbit_exec::EnvironmentMode;
-use orbit_types::OrbitError;
 
 use crate::context::EnvironmentHost;
 

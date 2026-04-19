@@ -1,8 +1,8 @@
+use orbit_common::types::OrbitError;
 use orbit_store::{
     ActivityInvocationMetrics, AgentInvocationMetrics, InvocationQuery, InvocationRecord, Store,
     TaskInvocationMetrics, ToolInvocationMetrics,
 };
-use orbit_types::OrbitError;
 use serde_json::Value;
 
 use crate::OrbitRuntime;

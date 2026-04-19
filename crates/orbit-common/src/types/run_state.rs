@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::JobRunState;
+use crate::types::JobRunState;
 
 /// Persistent pipeline state for a job run.
 ///

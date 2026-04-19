@@ -16,10 +16,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
+use orbit_common::types::v2::{JobAsset, V2AuditEventKind, load_job_asset};
 use orbit_engine::v2::{
     DispatchError, V2AuditWriter, V2JsonlSink, V2RuntimeHost, execute_job, reset_replay_transport,
 };
-use orbit_types::v2::{JobAsset, V2AuditEventKind, load_job_asset};
 use serde_json::Value;
 
 fn main() -> ExitCode {
@@ -438,7 +438,7 @@ fn run_sample(
     input: Value,
     expect_success: bool,
     _filters: &[&str],
-) -> Result<Vec<orbit_types::v2::V2AuditEvent>, String> {
+) -> Result<Vec<orbit_common::types::v2::V2AuditEvent>, String> {
     let yaml = std::fs::read_to_string(&path).map_err(|e| format!("read {path:?}: {e}"))?;
     let spec = match load_job_asset(&yaml).map_err(|e| format!("load {path:?}: {e}"))? {
         JobAsset::V2(a) => a.spec,
@@ -480,14 +480,14 @@ fn run_sample(
 }
 
 fn find_event<'a>(
-    events: &'a [orbit_types::v2::V2AuditEvent],
+    events: &'a [orbit_common::types::v2::V2AuditEvent],
     event_type: &str,
-) -> Option<&'a orbit_types::v2::V2AuditEvent> {
+) -> Option<&'a orbit_common::types::v2::V2AuditEvent> {
     events.iter().find(|e| e.envelope.event_type == event_type)
 }
 
 fn require_event_type(
-    events: &[orbit_types::v2::V2AuditEvent],
+    events: &[orbit_common::types::v2::V2AuditEvent],
     event_type: &str,
 ) -> Result<(), String> {
     if find_event(events, event_type).is_none() {
@@ -499,14 +499,14 @@ fn require_event_type(
 // Last-seen-buffers so the denial smoke can inspect events after a failed
 // `execute_job` call bubbles up as Err().
 use std::sync::Mutex;
-static LAST_ENVELOPE: Mutex<Vec<orbit_types::v2::V2AuditEvent>> = Mutex::new(Vec::new());
+static LAST_ENVELOPE: Mutex<Vec<orbit_common::types::v2::V2AuditEvent>> = Mutex::new(Vec::new());
 static LAST_LOOP: Mutex<Vec<LoopAuditEvent>> = Mutex::new(Vec::new());
 
-fn stash_envelope_events(events: Vec<orbit_types::v2::V2AuditEvent>) {
+fn stash_envelope_events(events: Vec<orbit_common::types::v2::V2AuditEvent>) {
     *LAST_ENVELOPE.lock().unwrap() = events;
 }
 
-fn take_last_events() -> Vec<orbit_types::v2::V2AuditEvent> {
+fn take_last_events() -> Vec<orbit_common::types::v2::V2AuditEvent> {
     LAST_ENVELOPE.lock().unwrap().clone()
 }
 

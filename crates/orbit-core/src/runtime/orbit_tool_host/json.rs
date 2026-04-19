@@ -1,4 +1,4 @@
-use orbit_types::{OrbitError, Task, TaskComment, TaskHistoryEntry, TaskStatus};
+use orbit_common::types::{OrbitError, Task, TaskComment, TaskHistoryEntry, TaskStatus};
 use serde_json::{Map, Value, json};
 
 use crate::OrbitRuntime;

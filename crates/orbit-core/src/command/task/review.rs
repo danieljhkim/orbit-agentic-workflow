@@ -1,5 +1,5 @@
 use chrono::Utc;
-use orbit_types::{OrbitError, ReviewMessage, ReviewThread, ReviewThreadStatus};
+use orbit_common::types::{OrbitError, ReviewMessage, ReviewThread, ReviewThreadStatus};
 
 use crate::OrbitRuntime;
 

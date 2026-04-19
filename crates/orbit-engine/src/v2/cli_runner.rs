@@ -16,7 +16,7 @@
 //!      exit code, duration, and the timeout flag.
 //!
 //! Argv redaction is applied here via
-//! `orbit_common::redaction::PatternRedactor::with_argv_secrets()`, which
+//! `orbit_common::utility::redaction::PatternRedactor::with_argv_secrets()`, which
 //! bundles the HTTP header/JSON patterns with a raw `sk-[A-Za-z0-9_\-]+`
 //! pattern covering provider keys that may appear in argv when a user
 //! mis-configures a provider.
@@ -29,8 +29,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest};
-use orbit_common::redaction::PatternRedactor;
-use orbit_types::v2::{AgentLoopSpec, V2AuditEventKind};
+use orbit_common::types::v2::{AgentLoopSpec, V2AuditEventKind};
+use orbit_common::utility::redaction::PatternRedactor;
 use serde_json::Value;
 
 use super::audit_writer::V2AuditWriter;

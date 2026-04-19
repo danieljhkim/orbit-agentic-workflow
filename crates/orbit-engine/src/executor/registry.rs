@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::{ExecutorDef, ExecutorType};
+use orbit_common::types::{ExecutorDef, ExecutorType};
 use tracing::warn;
 
 use super::agent::AgentExecutor;

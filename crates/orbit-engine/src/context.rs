@@ -1,15 +1,15 @@
 use crate::executor::registry::ActivityExecutorRegistry;
 use orbit_agent::AgentConfig;
+use orbit_common::types::{
+    Activity, AgentModelPair, ExecutorDef, InvocationTrace, Job, JobRun, JobRunState,
+    JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, PipelineState, ReviewThread, Role,
+    Task, TaskArtifact, TaskComment, TaskPriority, TaskStatus, resolve_agent_model_pair,
+};
+use orbit_common::utility::redaction::{redact_sensitive_env_json, redact_sensitive_env_option};
 use orbit_exec::EnvironmentMode;
 use orbit_store::JobRunStepParams;
 use orbit_store::{InvocationQuery, InvocationRecord};
 use orbit_tools::ToolContext;
-use orbit_types::{
-    Activity, AgentModelPair, ExecutorDef, InvocationTrace, Job, JobRun, JobRunState,
-    JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, PipelineState, ReviewThread, Role,
-    Task, TaskArtifact, TaskComment, TaskPriority, TaskStatus, redact_sensitive_env_json,
-    redact_sensitive_env_option, resolve_agent_model_pair,
-};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

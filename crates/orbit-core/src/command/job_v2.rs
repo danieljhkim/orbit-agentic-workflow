@@ -7,12 +7,12 @@
 
 use std::path::{Path, PathBuf};
 
-use orbit_engine::v2::{JobOutcome, V2AuditWriter, execute_job};
-use orbit_types::v2::{
+use orbit_common::types::v2::{
     Backend, JobAsset, V2AuditEventKind, load_job_asset, resolve_job_backends,
     resolve_job_target_refs, validate_job_loop_session_backends,
 };
-use orbit_types::{OrbitError, OrbitEvent};
+use orbit_common::types::{OrbitError, OrbitEvent};
+use orbit_engine::v2::{JobOutcome, V2AuditWriter, execute_job};
 use serde_json::Value;
 
 use crate::OrbitRuntime;

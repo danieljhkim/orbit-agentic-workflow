@@ -9,7 +9,7 @@
 //! policy chain, disabled-tool flag, and audit events as the CLI path.
 //!
 //! # Role
-//! Depends on `orbit-types` and `orbit-tools` only (for [`orbit_types::ToolSchema`]
+//! Depends on `orbit-types` and `orbit-tools` only (for [`orbit_common::types::ToolSchema`]
 //! and MCP-shape helpers). The CLI constructs a runtime-backed [`McpHost`] and
 //! hands it to [`serve_stdio`]. No dependency on `orbit-core` is introduced.
 //!
@@ -22,7 +22,7 @@ mod error;
 
 use std::sync::Arc;
 
-use orbit_types::{OrbitError, ToolSchema};
+use orbit_common::types::{OrbitError, ToolSchema};
 use rmcp::ServiceExt;
 use rmcp::transport::io::stdio;
 use serde_json::Value;

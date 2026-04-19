@@ -6,7 +6,7 @@ use std::thread::ThreadId;
 use chrono::Utc;
 use orbit_agent::loop_engine::InMemorySink;
 use orbit_agent::loop_engine::audit::{AuditSink, LoopAuditEvent};
-use orbit_types::v2::{
+use orbit_common::types::v2::{
     AUDIT_ENVELOPE_SCHEMA_VERSION, V2AuditEnvelope, V2AuditEvent, V2AuditEventKind,
 };
 use thiserror::Error;

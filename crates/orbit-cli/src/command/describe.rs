@@ -1,6 +1,6 @@
 use clap::Args;
+use orbit_common::types::ResourceKind;
 use orbit_core::{OrbitError, OrbitRuntime};
-use orbit_types::ResourceKind;
 
 use crate::command::Execute;
 
@@ -145,9 +145,9 @@ fn describe_policy(runtime: &OrbitRuntime, name: &str) -> Result<(), OrbitError>
     names.sort();
     if !names
         .iter()
-        .any(|name| name == orbit_types::UNRESTRICTED_FS_PROFILE)
+        .any(|name| name == orbit_common::types::UNRESTRICTED_FS_PROFILE)
     {
-        names.push(orbit_types::UNRESTRICTED_FS_PROFILE.to_string());
+        names.push(orbit_common::types::UNRESTRICTED_FS_PROFILE.to_string());
     }
 
     for profile_name in names {

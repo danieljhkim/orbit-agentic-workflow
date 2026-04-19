@@ -1,7 +1,7 @@
-use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, normalize_optional_attribution_label,
 };
+use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
 
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams as StoreTaskUpdateParams;
@@ -14,7 +14,7 @@ impl TaskReadHost for OrbitRuntime {
     fn get_task_artifacts(
         &self,
         task_id: &str,
-    ) -> Result<Vec<orbit_types::TaskArtifact>, OrbitError> {
+    ) -> Result<Vec<orbit_common::types::TaskArtifact>, OrbitError> {
         OrbitRuntime::get_task_artifacts(self, task_id)
     }
 

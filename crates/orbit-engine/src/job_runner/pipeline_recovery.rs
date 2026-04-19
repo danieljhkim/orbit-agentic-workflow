@@ -1,4 +1,4 @@
-use orbit_types::{Job, JobRunState, JobStep, PipelineState};
+use orbit_common::types::{Job, JobRunState, JobStep, PipelineState};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 

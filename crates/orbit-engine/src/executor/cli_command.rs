@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use orbit_common::types::JobRunState;
+use orbit_common::types::OrbitError;
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::JobRunState;
-use orbit_types::OrbitError;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,7 +17,7 @@ use crate::context::{
     TaskReadHost, state_env_vars,
 };
 use crate::template::{TemplateContext, render};
-use orbit_types::InvocationTrace;
+use orbit_common::types::InvocationTrace;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CliCommandSpec {

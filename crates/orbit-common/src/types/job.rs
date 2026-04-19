@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::OrbitId;
+use crate::types::OrbitId;
 
 pub const fn default_job_max_active_runs() -> u32 {
     1

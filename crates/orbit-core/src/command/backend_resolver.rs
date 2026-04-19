@@ -9,10 +9,10 @@
 //!
 //! Called once per Run at load time by the `orbit activity run-v2` /
 //! `orbit job run-v2` entry points. The resolved value is then applied to the
-//! parsed asset via `orbit_types::v2::resolve_*_backends` and the §3.2
+//! parsed asset via `orbit_common::types::v2::resolve_*_backends` and the §3.2
 //! loader-rejection validator runs against the concrete backends.
 
-use orbit_types::v2::Backend;
+use orbit_common::types::v2::Backend;
 
 use crate::OrbitRuntime;
 

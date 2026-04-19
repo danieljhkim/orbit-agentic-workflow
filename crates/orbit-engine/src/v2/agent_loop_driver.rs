@@ -22,8 +22,8 @@ use orbit_agent::loop_engine::{
     ReplayTransport, ReplayTurn, Session, StopReason,
 };
 use orbit_agent::providers::anthropic::AnthropicMessagesTransport;
+use orbit_common::types::v2::AgentLoopSpec;
 use orbit_tools::ToolContext;
-use orbit_types::v2::AgentLoopSpec;
 use serde_json::Value;
 
 use super::audit_writer::V2AuditWriter;

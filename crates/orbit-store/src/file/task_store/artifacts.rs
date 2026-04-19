@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Component, Path};
 
-use orbit_types::{OrbitError, TaskArtifact};
+use orbit_common::types::{OrbitError, TaskArtifact};
 
 use super::{TaskFileStore, bundle::bundle_read_error};
 
@@ -40,7 +40,7 @@ impl TaskFileStore {
     }
 }
 
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 fn normalize_artifact_path(raw: &str) -> Result<String, OrbitError> {
     let trimmed = raw.trim();

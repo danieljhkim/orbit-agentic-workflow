@@ -1,4 +1,4 @@
-use orbit_types::{InvocationTrace, OrbitError};
+use orbit_common::types::{InvocationTrace, OrbitError};
 
 use crate::types::{AgentInvocationSpec, AgentRequest};
 

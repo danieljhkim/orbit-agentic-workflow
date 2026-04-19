@@ -1,7 +1,7 @@
 //! `orbit activity run-v2 <yaml-path>` command — v2 entrypoint.
 //!
 //! Reads a YAML file from disk, parses it through the two-pass loader at
-//! `orbit_types::v2::load_activity_asset`, and invokes the dispatcher with
+//! `orbit_common::types::v2::load_activity_asset`, and invokes the dispatcher with
 //! `OrbitRuntime` as the `V2RuntimeHost` (impl lives in
 //! `crate::runtime::v2_host`).
 //!
@@ -13,11 +13,11 @@
 
 use std::path::{Path, PathBuf};
 
-use orbit_engine::v2::{V2AuditWriter, V2DispatchInput, dispatch_v2_activity};
-use orbit_types::v2::{
+use orbit_common::types::v2::{
     ActivityAsset, Backend, V2AuditEventKind, load_activity_asset, resolve_activity_backends,
 };
-use orbit_types::{OrbitError, OrbitEvent};
+use orbit_common::types::{OrbitError, OrbitEvent};
+use orbit_engine::v2::{V2AuditWriter, V2DispatchInput, dispatch_v2_activity};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -68,7 +68,7 @@ impl OrbitRuntime {
         let resolution = self.resolve_v2_backend(backend_flag);
         resolve_activity_backends(&mut asset.spec, resolution.backend);
         let resolved_backend = match &asset.spec.spec {
-            orbit_types::v2::ActivityV2Spec::AgentLoop(spec) => Some(spec.backend),
+            orbit_common::types::v2::ActivityV2Spec::AgentLoop(spec) => Some(spec.backend),
             _ => None,
         };
 
@@ -100,9 +100,9 @@ impl OrbitRuntime {
         });
 
         let activity_type = match &asset.spec.spec {
-            orbit_types::v2::ActivityV2Spec::AgentLoop(_) => "agent_loop",
-            orbit_types::v2::ActivityV2Spec::Deterministic(_) => "deterministic",
-            orbit_types::v2::ActivityV2Spec::Shell(_) => "shell",
+            orbit_common::types::v2::ActivityV2Spec::AgentLoop(_) => "agent_loop",
+            orbit_common::types::v2::ActivityV2Spec::Deterministic(_) => "deterministic",
+            orbit_common::types::v2::ActivityV2Spec::Shell(_) => "shell",
         };
 
         let dispatch = dispatch_v2_activity(V2DispatchInput {

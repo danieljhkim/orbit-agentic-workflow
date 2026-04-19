@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use crate::runner::ExecRequest;
 

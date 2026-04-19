@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use chrono::Utc;
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, PlannerSlot, Task, TaskStatus, normalize_attribution_label,
     normalize_optional_attribution_label,
 };
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::planning_duel_scoreboard;
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 const SUMMARY_FILENAME: &str = "summary.json";
 const CURRENT_SCHEMA_VERSION: u32 = 1;

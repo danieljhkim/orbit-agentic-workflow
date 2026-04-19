@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-use orbit_types::{OrbitError, Task};
+use orbit_common::types::{OrbitError, Task};
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskHost};

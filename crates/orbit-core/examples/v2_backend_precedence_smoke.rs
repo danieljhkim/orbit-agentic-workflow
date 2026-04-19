@@ -5,8 +5,8 @@
 //! `resolve_backend_precedence` function so no OrbitRuntime / workspace
 //! scaffolding is required.
 
+use orbit_common::types::v2::Backend;
 use orbit_core::command::backend_resolver::{BackendSource, resolve_backend_precedence};
-use orbit_types::v2::Backend;
 
 fn main() {
     println!("v2 backend precedence smoke — T20260419-0104 AC #2");

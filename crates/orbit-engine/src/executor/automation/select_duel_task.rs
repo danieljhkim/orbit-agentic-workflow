@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 
-use orbit_types::{OrbitError, Task, TaskPriority, TaskStatus};
+use orbit_common::types::{OrbitError, Task, TaskPriority, TaskStatus};
 use serde_json::{Value, json};
 
 use crate::context::TaskReadHost;

@@ -6,7 +6,6 @@ members = [
   "crates/orbit-core",
   "crates/orbit-engine",
   "crates/orbit-knowledge",
-  "crates/orbit-types",
   "crates/orbit-store",
   "crates/orbit-policy",
   "crates/orbit-exec",

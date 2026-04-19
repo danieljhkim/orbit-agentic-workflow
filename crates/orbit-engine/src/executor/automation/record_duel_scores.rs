@@ -18,13 +18,13 @@
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use orbit_store::duel_scoreboard::{self, ReviewerTally};
-use orbit_types::OrbitError;
-use orbit_types::{
+use orbit_common::types::OrbitError;
+use orbit_common::types::{
     Ambiguity, Cost, Decision, DuelRun, ImplementerStats, Outcome, PerCommentVerdict,
     ReviewerStats, RoleAssignment, Roles, Scores, Severity, TaskClass, TaskScope,
     ValidIssuesBySeverity, Verdict,
 };
+use orbit_store::duel_scoreboard::{self, ReviewerTally};
 use serde_json::Value;
 
 use crate::context::{RuntimeHost, TaskHost};

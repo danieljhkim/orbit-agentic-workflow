@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::OrbitError;
+use crate::types::OrbitError;
 
 pub const DEFAULT_POLICY_NAME: &str = "default";
 pub const UNRESTRICTED_FS_PROFILE: &str = "unrestricted";

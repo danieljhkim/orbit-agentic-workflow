@@ -16,8 +16,9 @@
 //! - [`Role`], [`PolicyDecision`] — RBAC primitives consumed by orbit-policy
 //!
 //! # Dependency direction
-//! `orbit-types` ← orbit-policy, orbit-exec, orbit-tools, orbit-store,
-//!                  orbit-agent, orbit-engine, orbit-core, orbit-cli
+//! `orbit-common::types` ← orbit-policy, orbit-exec, orbit-tools,
+//!                         orbit-store, orbit-agent, orbit-engine,
+//!                         orbit-core, orbit-cli
 
 pub mod activity;
 pub mod actor;
@@ -35,7 +36,6 @@ pub mod job;
 pub mod metrics;
 pub mod policy_decision;
 pub mod policy_def;
-pub mod redaction;
 pub mod resource;
 pub mod role;
 pub mod run_state;
@@ -76,10 +76,6 @@ pub use policy_decision::PolicyDecision;
 pub use policy_def::{
     DEFAULT_POLICY_NAME, FsCheckResult, FsOperation, FsProfile, PolicyDef, ResolvedFsProfile,
     UNRESTRICTED_FS_PROFILE,
-};
-pub use redaction::{
-    is_sensitive_env_name, redact_sensitive_env_error, redact_sensitive_env_json,
-    redact_sensitive_env_option, redact_sensitive_env_text,
 };
 pub use resource::{
     ActivityResource, ActivityResourceSpec, ExecutorResource, ExecutorResourceSpec, JobResource,

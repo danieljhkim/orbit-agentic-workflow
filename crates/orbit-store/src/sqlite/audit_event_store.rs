@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{AuditEvent, AuditEventStatus, OrbitError};
+use orbit_common::types::{AuditEvent, AuditEventStatus, OrbitError};
 use rusqlite::params;
 
 use crate::{Store, now_string, parse_timestamp};

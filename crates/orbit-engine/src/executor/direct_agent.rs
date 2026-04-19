@@ -1,7 +1,7 @@
-use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::{
+use orbit_common::types::{
     AgentResponseEnvelope, AgentRunError, ExecutorDef, InvocationTrace, JobRunState, OrbitError,
 };
+use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
 use serde_json::Value;
 
 use super::ActivityExecutor;
@@ -207,11 +207,11 @@ fn resolve_executor_model(
 // Timeout detection (standalone — does not depend on orbit-agent)
 // ---------------------------------------------------------------------------
 
-fn is_timeout(exec_result: &orbit_types::ExecutionResult) -> bool {
+fn is_timeout(exec_result: &orbit_common::types::ExecutionResult) -> bool {
     !exec_result.success && exec_result.stderr.contains("process timed out")
 }
 
-fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> String {
+fn format_timeout_error_message(exec_result: &orbit_common::types::ExecutionResult) -> String {
     let stderr = exec_result.stderr.trim();
     if stderr.is_empty() {
         return "agent timed out before producing JSON stdout".to_string();
@@ -229,7 +229,7 @@ fn format_timeout_error_message(exec_result: &orbit_types::ExecutionResult) -> S
 /// fallback we keep is a plain failure when the child exits non-zero without
 /// producing any stdout at all.
 fn parse_response_envelope(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
 ) -> Result<AgentResponseEnvelope, OrbitError> {
     let stdout = exec_result.stdout.trim();
 
@@ -279,7 +279,7 @@ fn parse_response_envelope(
     ))
 }
 
-fn synthetic_error_message(exec_result: &orbit_types::ExecutionResult) -> String {
+fn synthetic_error_message(exec_result: &orbit_common::types::ExecutionResult) -> String {
     let stderr = exec_result.stderr.trim();
     if !stderr.is_empty() {
         return stderr.to_string();
@@ -292,7 +292,7 @@ fn synthetic_error_message(exec_result: &orbit_types::ExecutionResult) -> String
 }
 
 fn validate_exit_alignment(
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
     envelope: &AgentResponseEnvelope,
 ) -> Result<(), OrbitError> {
     let timed_out = is_timeout(exec_result);
@@ -326,7 +326,7 @@ fn validate_exit_alignment(
 fn map_envelope_to_outcome<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     host: &H,
     _execution: &ExecutionContext,
-    exec_result: &orbit_types::ExecutionResult,
+    exec_result: &orbit_common::types::ExecutionResult,
     envelope: AgentResponseEnvelope,
 ) -> AttemptOutcome {
     let trace = InvocationTrace {

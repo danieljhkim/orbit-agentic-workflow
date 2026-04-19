@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use orbit_types::{
+use orbit_common::types::{
     Activity, OrbitError, PlanningRoleAssignment, PlanningRoles, all_agent_families,
 };
 use serde_json::{Value, json};

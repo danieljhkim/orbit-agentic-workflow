@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{AuditEvent, OrbitError, StoredTool};
+use orbit_common::types::{AuditEvent, OrbitError, StoredTool};
 
 use super::contracts::{
     AuditEventStoreBackend, TaskReservationCheckParams, TaskReservationCheckResult,

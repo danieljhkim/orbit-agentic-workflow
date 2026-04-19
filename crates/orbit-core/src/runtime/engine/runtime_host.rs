@@ -1,13 +1,13 @@
+use orbit_common::types::{
+    Activity, AgentModelPair, InvocationTrace, JobRunState, JobTargetType, OrbitError, OrbitEvent,
+    Role, TaskPriority, TaskStatus, TaskType,
+};
 use orbit_engine::{
     ActivityInvocationResult, ExecutionContext, RuntimeHost, execute_single_attempt,
     validate_activity_input_schema,
 };
 use orbit_store::{InvocationInsertParams, InvocationQuery, InvocationRecord, token_scoreboard};
 use orbit_tools::ToolContext;
-use orbit_types::{
-    Activity, AgentModelPair, InvocationTrace, JobRunState, JobTargetType, OrbitError, OrbitEvent,
-    Role, TaskPriority, TaskStatus, TaskType,
-};
 use serde_json::Value;
 
 use super::identity::normalize_agent_name;
@@ -49,7 +49,7 @@ impl RuntimeHost for OrbitRuntime {
         OrbitRuntime::validate_activity_target_exists(self, target_type, target_id)
     }
 
-    fn get_job(&self, job_id: &str) -> Result<Option<orbit_types::Job>, OrbitError> {
+    fn get_job(&self, job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
         self.stores().jobs().get(job_id)
     }
 

@@ -1,5 +1,5 @@
+use orbit_common::types::OrbitError;
 use orbit_engine::{ReconcileOutcome, reconcile_once};
-use orbit_types::OrbitError;
 
 use crate::OrbitRuntime;
 

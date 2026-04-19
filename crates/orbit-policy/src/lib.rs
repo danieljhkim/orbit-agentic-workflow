@@ -5,7 +5,7 @@
 //! `PolicyDef` schema and answer "may this profile read/modify this path?"
 //!
 //! # Key exports
-//! - [`PolicyEngine`] — wraps a validated [`orbit_types::PolicyDef`]
+//! - [`PolicyEngine`] — wraps a validated [`orbit_common::types::PolicyDef`]
 //! - [`FsPolicyEvaluation`] — structured allow/deny outcome with matched rule
 //!
 //! # Dependency direction

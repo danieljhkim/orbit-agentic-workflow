@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use chrono::{DateTime, Utc};
-use orbit_types::{
+use orbit_common::types::{
     Job, JobResource, JobResourceSpec, OrbitError, RESOURCE_SCHEMA_VERSION, ResourceKind,
 };
 

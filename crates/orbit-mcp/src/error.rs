@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use rmcp::model::CallToolResult;
 use serde_json::{Value, json};
 

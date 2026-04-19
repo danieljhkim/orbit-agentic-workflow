@@ -44,8 +44,8 @@ pub use tool_allowlist::{
 
 /// Type alias for the v1 `Activity` struct to clarify intent at call sites that
 /// explicitly handle the legacy (v1) shape during v2 coexistence.
-pub type LegacyActivity = crate::Activity;
+pub type LegacyActivity = crate::types::Activity;
 
 /// Type alias for the v1 `Job` struct to clarify intent at call sites that
 /// explicitly handle the legacy (v1) shape during v2 coexistence.
-pub type LegacyJob = crate::Job;
+pub type LegacyJob = crate::types::Job;

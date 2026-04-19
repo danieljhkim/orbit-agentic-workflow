@@ -7,7 +7,7 @@ mod trace;
 #[path = "response/usage.rs"]
 mod usage;
 
-use orbit_types::{OrbitError, ToolCallTrace};
+use orbit_common::types::{OrbitError, ToolCallTrace};
 use serde_json::Value;
 
 pub use envelope::{is_timeout, parse_and_validate_response};
@@ -31,9 +31,9 @@ pub enum AgentResponseStatus {
 
 type ResponseParseResult = Result<
     (
-        orbit_types::AgentResponseEnvelope,
+        orbit_common::types::AgentResponseEnvelope,
         AgentResponseStatus,
-        orbit_types::InvocationTrace,
+        orbit_common::types::InvocationTrace,
     ),
     OrbitError,
 >;

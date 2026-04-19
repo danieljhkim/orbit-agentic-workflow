@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use orbit_types::JobRun;
+use orbit_common::types::JobRun;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

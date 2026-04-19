@@ -1,6 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 pub(crate) const ORBIT_ROOT_TOKEN: &str = "{{ORBIT_ROOT}}";
 

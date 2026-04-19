@@ -1,3 +1,8 @@
+use orbit_common::types::{
+    Activity, AuditEvent, ExecutorDef, Job, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError,
+    PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+};
 use orbit_store::{
     ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AuditEventFilter,
     AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend, JobCreateParams,
@@ -8,11 +13,6 @@ use orbit_store::{
     TaskReservationReleaseParams, TaskReservationReleaseResult, TaskReservationReserveParams,
     TaskReservationReserveResult, TaskReservationStoreBackend, TaskReviewStoreBackend,
     TaskReviewUpdateParams, TaskStoreBackend, ToolStoreBackend,
-};
-use orbit_types::{
-    Activity, AuditEvent, ExecutorDef, Job, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError,
-    PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity,
-    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 
 use crate::context::OrbitStores;
@@ -440,14 +440,14 @@ impl JobRecords<'_> {
     pub(crate) fn read_run_state(
         &self,
         run_id: &str,
-    ) -> Result<Option<orbit_types::PipelineState>, OrbitError> {
+    ) -> Result<Option<orbit_common::types::PipelineState>, OrbitError> {
         self.run.read_run_state(run_id)
     }
 
     pub(crate) fn write_run_state(
         &self,
         run_id: &str,
-        state: &orbit_types::PipelineState,
+        state: &orbit_common::types::PipelineState,
     ) -> Result<(), OrbitError> {
         self.run.write_run_state(run_id, state)
     }

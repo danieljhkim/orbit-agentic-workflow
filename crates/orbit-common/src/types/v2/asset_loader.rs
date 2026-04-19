@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{ActivityResource, JobResource, ResourceKind};
+use crate::types::{ActivityResource, JobResource, ResourceKind};
 
 use super::activity_v2::ActivityV2;
 use super::job_v2::JobV2;
@@ -108,6 +108,6 @@ struct V2EnvelopeYaml<T> {
     #[serde(rename = "schemaVersion")]
     _schema_version: u32,
     kind: ResourceKind,
-    metadata: crate::ResourceMetadata,
+    metadata: crate::types::ResourceMetadata,
     spec: T,
 }

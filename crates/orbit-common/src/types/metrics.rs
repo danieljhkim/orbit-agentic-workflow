@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ActorIdentity;
+use crate::types::ActorIdentity;
 
 /// A single metrics record captured at step completion.
 ///

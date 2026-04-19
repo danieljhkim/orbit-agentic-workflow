@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
+use orbit_common::types::{AuditEvent, AuditEventStatus, AuditStats, OrbitError};
 use orbit_store::{AuditEventFilter, AuditEventInsertParams};
-use orbit_types::{AuditEvent, AuditEventStatus, AuditStats, OrbitError};
 
 use crate::OrbitRuntime;
 

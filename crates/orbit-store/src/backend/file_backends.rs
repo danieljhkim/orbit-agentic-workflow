@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orbit_types::{
+use orbit_common::types::{
     Activity, ExecutorDef, Job, JobRun, JobScheduleState, KnowledgeRunMetrics, OrbitError,
     PipelineState, PolicyDef, Task, TaskArtifact, TaskPriority, TaskStatus,
 };
@@ -244,7 +244,7 @@ impl JobRunStoreBackend for JobFileStore {
     fn finalize_job_run(
         &self,
         run_id: &str,
-        state: orbit_types::JobRunState,
+        state: orbit_common::types::JobRunState,
         finished_at: chrono::DateTime<chrono::Utc>,
         duration_ms: Option<u64>,
     ) -> Result<bool, OrbitError> {

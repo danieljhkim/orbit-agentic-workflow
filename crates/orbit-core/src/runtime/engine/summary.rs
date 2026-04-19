@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use crate::OrbitRuntime;
 
@@ -25,7 +25,7 @@ impl OrbitRuntime {
     /// memory via `orbit_store::duel_scoreboard::aggregate`. Returns an
     /// empty vector when the file does not yet exist — an unrun
     /// scoreboard is not an error condition.
-    pub fn load_duel_runs(&self) -> Result<Vec<orbit_types::DuelRun>, OrbitError> {
+    pub fn load_duel_runs(&self) -> Result<Vec<orbit_common::types::DuelRun>, OrbitError> {
         orbit_store::duel_scoreboard::load_runs(&self.paths().scoreboard_dir)
     }
 }

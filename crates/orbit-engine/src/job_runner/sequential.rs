@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use orbit_common::types::{
+    Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, PipelineState,
+};
 use orbit_store::JobRunStepParams;
-use orbit_types::{Job, JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, PipelineState};
 use serde_json::Value;
 use std::path::Path;
 use tracing::{error, info, info_span, warn};
@@ -40,7 +42,7 @@ pub(crate) struct ActivityExecutionRequest<'a> {
     // replayed data from the source run. Execution starts from this index.
     pub skip_to_step: usize,
     // Source run steps used to replay data when `skip_to_step > 0`.
-    pub replayed_steps: &'a [orbit_types::JobRunStep],
+    pub replayed_steps: &'a [orbit_common::types::JobRunStep],
     // When `true`, skipped steps before `skip_to_step` are treated as already
     // completed in this same run and must not be rewritten as `Skipped`.
     pub preserve_existing_step_records: bool,
@@ -314,7 +316,7 @@ pub(crate) fn execute_activity_with_retries<H: EngineHost + ExecutorLookupHost>(
                 failure_step = (global_step_index, step.clone());
 
                 let should_run = match &step.condition {
-                    orbit_types::StepCondition::Expr(_) => {
+                    orbit_common::types::StepCondition::Expr(_) => {
                         let cond_ctx = crate::template::TemplateContext {
                             input: current_input.clone(),
                             steps: steps_outputs.clone(),

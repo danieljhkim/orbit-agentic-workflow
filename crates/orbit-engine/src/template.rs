@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Default)]

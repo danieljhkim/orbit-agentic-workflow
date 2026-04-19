@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::OrbitError;
+use crate::types::OrbitError;
 
 pub fn required_string(
     input: &Value,

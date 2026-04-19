@@ -1,5 +1,5 @@
+use orbit_common::types::OrbitError;
 use orbit_exec::ExecRequest;
-use orbit_types::OrbitError;
 use serde_json::{Value, json};
 
 use crate::{TIMEOUT_LONG_MS, check_exec_result};

@@ -1,4 +1,4 @@
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::{Value, json};
 
 use super::input::required_batch_id;
@@ -46,7 +46,7 @@ pub(super) fn check_task_value<H: TaskHost + ?Sized>(
                     "no tasks found for batch_id '{batch_id}'"
                 )));
             }
-            let check_fn = |task: &orbit_types::Task| -> bool {
+            let check_fn = |task: &orbit_common::types::Task| -> bool {
                 let raw = get_task_field_value(task, field);
                 let value = if normalize {
                     normalize_review_decision(&raw)
@@ -80,7 +80,7 @@ pub(super) fn check_task_value<H: TaskHost + ?Sized>(
     }))
 }
 
-fn get_task_field_value(task: &orbit_types::Task, field: &str) -> String {
+fn get_task_field_value(task: &orbit_common::types::Task, field: &str) -> String {
     match field {
         "pr_status" => task.pr_status.as_deref().unwrap_or("").to_string(),
         "status" => format!("{:?}", task.status),

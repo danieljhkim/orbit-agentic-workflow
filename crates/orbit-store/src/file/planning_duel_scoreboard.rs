@@ -9,10 +9,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use orbit_types::{OrbitError, PlannerSlot, PlanningDuelRun};
+use orbit_common::types::{OrbitError, PlannerSlot, PlanningDuelRun};
 use serde::{Deserialize, Serialize};
 
-use orbit_common::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 const SCOREBOARD_FILENAME: &str = "duel_plan.json";
 const CURRENT_SCHEMA_VERSION: u32 = 1;

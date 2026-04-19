@@ -1,6 +1,6 @@
 //! v2 activity runtime. Phase 2 coexistence layer — the v1 runtime is untouched.
 //!
-//! Depends on `orbit_types::v2` for the type surface (activity/spec/audit
+//! Depends on `orbit_common::types::v2` for the type surface (activity/spec/audit
 //! shapes, tool-allowlist helpers). This module wires those types to the
 //! engine's executor infrastructure and to the loop-engine audit pipeline.
 

@@ -1,9 +1,11 @@
 use std::process::Command;
 use std::sync::Arc;
 
+use orbit_common::types::v2::{
+    ActivityV2Spec, AgentLoopSpec, Backend, DeterministicSpec, ShellSpec,
+};
+use orbit_common::types::{OrbitError, v2::V2AuditEventKind};
 use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, ToolContext};
-use orbit_types::v2::{ActivityV2Spec, AgentLoopSpec, Backend, DeterministicSpec, ShellSpec};
-use orbit_types::{OrbitError, v2::V2AuditEventKind};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -166,7 +168,7 @@ pub fn dispatch_v2_activity(input: V2DispatchInput<'_>) -> Result<DispatchOutcom
 
     let activity_event_id = input
         .audit
-        .emit(orbit_types::v2::V2AuditEventKind::ActivityStarted {
+        .emit(orbit_common::types::v2::V2AuditEventKind::ActivityStarted {
             activity_name: input.activity_name.to_string(),
             activity_type: activity_type.to_string(),
         })
@@ -205,12 +207,12 @@ pub fn dispatch_v2_activity(input: V2DispatchInput<'_>) -> Result<DispatchOutcom
         Ok(_) => "failed",
         Err(_) => "error",
     };
-    let _ = input
-        .audit
-        .emit(orbit_types::v2::V2AuditEventKind::ActivityFinished {
+    let _ = input.audit.emit(
+        orbit_common::types::v2::V2AuditEventKind::ActivityFinished {
             activity_name: input.activity_name.to_string(),
             outcome: outcome_str.to_string(),
-        });
+        },
+    );
 
     result
 }

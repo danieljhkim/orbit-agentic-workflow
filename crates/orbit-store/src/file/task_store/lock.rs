@@ -2,7 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::path::PathBuf;
 
 use fs2::FileExt;
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 use super::TaskFileStore;
 

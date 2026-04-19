@@ -1,6 +1,6 @@
+use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use orbit_knowledge::Selector;
 use orbit_knowledge::service::GraphContextService;
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};

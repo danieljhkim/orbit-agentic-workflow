@@ -12,7 +12,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use orbit_types::{FrictionEntry, MetricsEntry, OrbitError};
+use orbit_common::types::{FrictionEntry, MetricsEntry, OrbitError};
 use serde::de::DeserializeOwned;
 
 use crate::OrbitRuntime;

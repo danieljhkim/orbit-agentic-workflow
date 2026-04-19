@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 
 pub(crate) fn ensure_dirs(dirs: &[&Path]) -> Result<(), OrbitError> {
     for dir in dirs {

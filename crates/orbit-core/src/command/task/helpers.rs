@@ -1,5 +1,5 @@
 use chrono::Utc;
-use orbit_types::{
+use orbit_common::types::{
     OrbitError, Task, TaskComment, TaskHistoryEntry, normalize_attribution_label,
     normalize_optional_attribution_label,
 };

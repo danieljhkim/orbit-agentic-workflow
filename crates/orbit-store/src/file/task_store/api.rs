@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use orbit_types::{
+use orbit_common::types::{
     ActorIdentity, OrbitError, Task, TaskArtifact, TaskHistoryEntry, TaskPriority, TaskStatus,
 };
 

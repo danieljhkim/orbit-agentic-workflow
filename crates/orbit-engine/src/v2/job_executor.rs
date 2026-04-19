@@ -29,7 +29,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use orbit_agent::loop_engine::Session;
-use orbit_types::v2::{
+use orbit_common::types::v2::{
     ActivityV2Spec, AgentLoopSpec, BackoffStrategy, BranchOutcome, FanInSpec, FanOutBlock, JobV2,
     JobV2Step, JobV2StepBody, JoinMode, LoopBlock, ParallelBlock, RetrySpec, TargetStep,
     V2AuditEventKind,
@@ -328,7 +328,7 @@ fn run_target(
             // session + cli` via `validate_job_loop_session_backends`, but we
             // also guard structurally here in case a flat (non-loop) target
             // declares session + cli.
-            if agent_spec.backend != orbit_types::v2::Backend::Http {
+            if agent_spec.backend != orbit_common::types::v2::Backend::Http {
                 return Err(DispatchError::JobValidation(format!(
                     "step `{}`: `session:` binding requires backend: http (got {})",
                     step.id,

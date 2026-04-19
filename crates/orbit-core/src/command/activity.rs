@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use orbit_store::ActivityCreateParams as StoreWorkCreateParams;
-use orbit_store::ActivityUpdateParams as StoreActivityUpdateParams;
-use orbit_types::{
+use orbit_common::types::{
     Activity, ActivityResource, ExecutorType, JobRunState, OrbitError, OrbitEvent,
     RESOURCE_SCHEMA_VERSION, ResourceKind,
 };
+use orbit_store::ActivityCreateParams as StoreWorkCreateParams;
+use orbit_store::ActivityUpdateParams as StoreActivityUpdateParams;
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -191,7 +191,7 @@ pub struct ActivityRunResult {
 impl OrbitRuntime {
     pub(crate) fn validate_activity_target_exists(
         &self,
-        target_type: orbit_types::JobTargetType,
+        target_type: orbit_common::types::JobTargetType,
         target_id: &str,
     ) -> Result<Activity, OrbitError> {
         let _ = target_type;

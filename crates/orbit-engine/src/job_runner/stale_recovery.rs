@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
+use orbit_common::types::{Job, JobRun, JobRunState, OrbitError, OrbitEvent};
 use orbit_store::JobRunStepParams;
-use orbit_types::{Job, JobRun, JobRunState, OrbitError, OrbitEvent};
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
@@ -246,7 +246,7 @@ pub(super) fn finalize_failed_started_run<H: JobRunHost + RuntimeHost>(
     job: &Job,
     run: &JobRun,
     step_index: usize,
-    step: &orbit_types::JobStep,
+    step: &orbit_common::types::JobStep,
     started_at: DateTime<Utc>,
     err: &OrbitError,
 ) -> Result<(), OrbitError> {

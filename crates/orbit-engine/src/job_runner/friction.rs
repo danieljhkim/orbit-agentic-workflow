@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
+use orbit_common::types::{ActorIdentity, FrictionEntry, MetricsEntry};
 use orbit_store::friction_log::append_friction_entry;
 use orbit_store::metrics_log::append_metrics_entry;
-use orbit_types::{ActorIdentity, FrictionEntry, MetricsEntry};
 use serde_json::Value;
 use std::path::Path;
 

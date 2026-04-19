@@ -1,7 +1,7 @@
 use std::path::Path;
 
+use orbit_common::types::{OrbitError, OrbitEvent, Role, StoredTool, ToolParam};
 use orbit_tools::ToolContext;
-use orbit_types::{OrbitError, OrbitEvent, Role, StoredTool, ToolParam};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -14,7 +14,7 @@ pub struct ToolInfo {
     pub description: String,
     pub enabled: bool,
     pub builtin: bool,
-    pub parameters: Vec<orbit_types::ToolParam>,
+    pub parameters: Vec<orbit_common::types::ToolParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

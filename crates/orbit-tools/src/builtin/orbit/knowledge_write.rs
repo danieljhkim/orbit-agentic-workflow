@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use orbit_knowledge::{Selector, TaskGraphScope, TaskGraphService, default_knowledge_dir};
-use orbit_types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::Value;
 
 use crate::{Tool, ToolContext};

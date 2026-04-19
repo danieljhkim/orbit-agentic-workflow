@@ -1,5 +1,5 @@
 use orbit_exec::{ExecRequest, NoSandbox, StdinMode, run_process};
-use orbit_types::OrbitError;
+use orbit_common::types::OrbitError;
 use serde_json::{Value, json};
 
 use crate::context::RuntimeHost;
