@@ -1,0 +1,53 @@
+# Task(s) local pipeline with single review-fix loop
+
+schemaVersion: 2
+kind: Job
+metadata:
+  name: task_pipeline
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 10
+  default_input:
+    auto_push: false
+    base_branch: agent-main
+  
+  steps:
+    - id: worktree
+      target: activity:worktree_setup
+      default_input:
+        task_id: "{{ input.task_id }}"
+        base_branch: "{{ input.base_branch }}"
+
+    - id: implement
+      target: activity:agent_implement
+      default_input:
+        task_id: "{{ input.task_id }}"
+        branch: "{{ steps.worktree.output.branch }}"
+
+    - id: review
+      target: activity:agent_review_diff
+      session: reviewer
+      default_input:
+        diff: "{{ steps.implement.output.diff }}"
+        branch: "{{ steps.worktree.output.branch }}"
+        iteration: "{{ iteration }}"
+
+    - id: fix
+      when: "{{ steps.review.output.blocking_count > 0 }}"
+      target: activity:agent_apply_fixes
+      default_input:
+        findings: "{{ steps.review.output.findings }}"
+        branch: "{{ steps.worktree.output.branch }}"
+
+    - id: merge
+      target: activity:git_merge
+      default_input:
+        branch: "{{ steps.worktree.output.branch }}"
+        base: "{{ input.base_branch }}"
+  
+    - id: push
+      when: "{{ input.auto_push == true }}"
+      target: activity:git_push
+      default_input:
+        branch: "{{ input.base_branch }}"
