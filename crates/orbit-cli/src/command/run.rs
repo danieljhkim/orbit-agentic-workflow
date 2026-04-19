@@ -3,9 +3,13 @@ use orbit_core::{OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
+use crate::command::job_run_support::warn_legacy_job_runtime_usage;
 
 #[derive(Args)]
-#[command(about = "Execute a job by ID")]
+#[command(
+    about = "Execute a legacy v1 job by ID (deprecated compatibility path)",
+    after_help = "Use `orbit job run-v2 <yaml-path>` for schemaVersion: 2 YAML jobs."
+)]
 pub struct RunCommand {
     /// Job ID to execute
     pub job_id: String,
@@ -30,6 +34,7 @@ pub struct RunCommand {
 impl Execute for RunCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let input = build_input(&self.input)?;
+        warn_legacy_job_runtime_usage(&self.job_id);
         let result = runtime.run_job_now_with_input_debug(&self.job_id, input, self.debug)?;
 
         if self.json {

@@ -38,9 +38,9 @@ impl Execute for ShipCommand {
 
 #[derive(Subcommand)]
 pub enum ShipSubcommand {
-    /// Execute the PR-based ship pipeline
+    /// Execute the PR-based legacy v1 ship pipeline
     Pr(ShipPrArgs),
-    /// Execute the local-only ship pipeline
+    /// Execute the local-only legacy v1 ship pipeline
     Local(ShipLocalArgs),
     /// List job runs for ship pipelines
     List(ShipListArgs),

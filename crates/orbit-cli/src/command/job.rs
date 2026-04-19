@@ -6,6 +6,7 @@ use orbit_core::{Job, JobRun, JobStep, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
+use crate::command::job_run_support::warn_legacy_job_runtime_usage;
 
 #[derive(Args)]
 #[command(about = "Define and run automation jobs")]
@@ -28,7 +29,7 @@ pub enum JobSubcommand {
     List(JobListArgs),
     /// Show details of a specific job
     Show(JobShowArgs),
-    /// Execute a job immediately
+    /// Execute a legacy v1 job immediately (deprecated compatibility path)
     Run(JobRunArgs),
     /// Show run history for a job
     History(JobHistoryArgs),
@@ -221,7 +222,7 @@ impl Execute for JobShowArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit job run my_job\n  orbit job run my_job --input base=main --input pr_number=42"
+    after_help = "Examples:\n  orbit job run my_job\n  orbit job run my_job --input base=main --input pr_number=42\n\nUse `orbit job run-v2 <yaml-path>` for schemaVersion: 2 YAML jobs."
 )]
 pub struct JobRunArgs {
     pub job_id: String,
@@ -238,6 +239,7 @@ pub struct JobRunArgs {
 
 impl Execute for JobRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        warn_legacy_job_runtime_usage(&self.job_id);
         let run = runtime.run_job_now_with_input_debug(
             &self.job_id,
             build_job_run_input(&self.input)?,

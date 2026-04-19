@@ -57,7 +57,7 @@ impl OrbitRuntime {
             ActivityAsset::V2(a) => a,
             ActivityAsset::V1(_) => {
                 return Err(OrbitError::InvalidInput(format!(
-                    "{} is a v1 asset; use `orbit activity run <id>` instead",
+                    "{} is a deprecated schemaVersion: 1 asset; migrate it to schemaVersion: 2. Temporary compatibility remains via `orbit activity run <id>`.",
                     yaml_path.display()
                 )));
             }

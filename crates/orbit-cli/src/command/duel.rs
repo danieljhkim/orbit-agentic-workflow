@@ -20,7 +20,8 @@ use crate::command::Execute;
 use crate::command::job_run_support::{
     RunHistoryFilter, dispatch_workflow, job_run_step_to_json, job_run_to_json_with_workflow,
     load_filtered_job_runs, load_latest_job_run, print_job_run_list_with_workflow,
-    print_job_run_with_workflow, print_step_detail, summary_step, workflow_dispatch_result_to_json,
+    print_job_run_with_workflow, print_step_detail, summary_step, warn_legacy_job_runtime_usage,
+    workflow_dispatch_result_to_json,
 };
 
 const DUEL_PR_WORKFLOW: &str = "duel";
@@ -46,9 +47,9 @@ impl Execute for DuelCommand {
 
 #[derive(Subcommand)]
 pub enum DuelSubcommand {
-    /// Run a single-task PR duel
+    /// Run a single-task PR duel through the legacy v1 job runtime
     Pr(DuelPrArgs),
-    /// Run a single-task planning duel
+    /// Run a single-task planning duel through the legacy v1 job runtime
     Plan(DuelPlanArgs),
     /// Show scoreboard aggregates computed from `.orbit/state/scoreboard/duel.json`.
     #[command(alias = "scoreboard")]
@@ -190,6 +191,7 @@ fn execute_duel_workflow(
     };
     validate_workflow_flags(workflow, &input)?;
     let built_input = build_workflow_input_for(Some(workflow), &input)?;
+    warn_legacy_job_runtime_usage(workflow.job_id);
     let run = runtime.run_job_now_with_input_debug(workflow.job_id, built_input, debug)?;
     let run_details = runtime
         .job_history(workflow.job_id)?

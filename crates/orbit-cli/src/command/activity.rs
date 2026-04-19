@@ -30,7 +30,7 @@ pub enum ActivitySubcommand {
     Show(ActivityShowArgs),
     /// Update an existing activity
     Update(ActivityUpdateArgs),
-    /// Execute an activity immediately
+    /// Execute a legacy v1 activity immediately (deprecated compatibility path)
     Run(ActivityRunArgs),
     /// Execute a v2 activity from a YAML path (schemaVersion: 2)
     #[command(name = "run-v2")]
@@ -268,6 +268,9 @@ impl Execute for ActivityUpdateArgs {
 }
 
 #[derive(Args)]
+#[command(
+    after_help = "Use `orbit activity run-v2 <yaml-path>` for schemaVersion: 2 YAML assets, including the references under `crates/orbit-core/assets/activities/v2_reference/`."
+)]
 pub struct ActivityRunArgs {
     pub id: String,
     #[arg(long)]
@@ -280,6 +283,7 @@ pub struct ActivityRunArgs {
 
 impl Execute for ActivityRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        warn_legacy_activity_runtime_usage(&self.id);
         let result = runtime.run_activity_now(ActivityRunParams {
             activity_id: self.id,
             agent_cli: self.agent_cli.unwrap_or_default(),
@@ -311,6 +315,12 @@ impl Execute for ActivityRunArgs {
             Ok(())
         }
     }
+}
+
+fn warn_legacy_activity_runtime_usage(activity_id: &str) {
+    eprintln!(
+        "orbit: warning: `orbit activity run {activity_id}` uses the deprecated v1 activity runtime; prefer `orbit activity run-v2 <yaml-path>` for schemaVersion: 2 assets."
+    );
 }
 
 #[derive(Args)]

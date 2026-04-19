@@ -57,6 +57,8 @@ For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs)
 
 The full design lives at [`docs/design/activity-job-v2.md`](docs/design/activity-job-v2.md). The v1 → v2 concept mapping (§10.4) in short:
 
+Current coexistence note: v1 compatibility is still live for the remaining legacy jobs and activities, but those runtime surfaces are deprecated. Today the high-signal v2 references are the activities under `crates/orbit-core/assets/activities/v2_reference/` and the sample job `crates/orbit-core/assets/jobs/v2_samples/task_pipeline.yaml`. Prefer `orbit activity run-v2` / `orbit job run-v2` for `schemaVersion: 2` YAML while the rest of the migration remains in flight.
+
 | v1 | v2 |
 |---|---|
 | `spec_type: agent_invoke` + HTTP/SDK provider | `type: agent_loop` + `backend: http` |

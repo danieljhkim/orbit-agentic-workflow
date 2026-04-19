@@ -20,6 +20,12 @@ pub(crate) struct WorkflowDispatchResult {
     pub error_message: Option<String>,
 }
 
+pub(crate) fn warn_legacy_job_runtime_usage(job_id: &str) {
+    eprintln!(
+        "orbit: warning: job '{job_id}' is running through the deprecated v1 job runtime; prefer `orbit job run-v2 <yaml-path>` for schemaVersion: 2 YAML jobs such as `crates/orbit-core/assets/jobs/v2_samples/task_pipeline.yaml`."
+    );
+}
+
 pub(crate) fn load_filtered_job_runs(
     runtime: &OrbitRuntime,
     job_ids: &[&str],
@@ -138,6 +144,8 @@ pub(crate) fn dispatch_workflow(
 ) -> Result<Vec<WorkflowDispatchResult>, OrbitError> {
     let workflow = find_workflow(workflow_alias)
         .ok_or_else(|| OrbitError::InvalidInput(format!("unknown workflow '{workflow_alias}'")))?;
+
+    warn_legacy_job_runtime_usage(workflow.job_id);
 
     let mut results = Vec::with_capacity(loop_count as usize);
     for _ in 0..loop_count {
