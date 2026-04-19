@@ -1533,7 +1533,6 @@ dependencies = [
 name = "orbit-mcp"
 version = "0.1.0"
 dependencies = [
- "orbit-tools",
  "orbit-types",
  "rmcp",
  "serde_json",
@@ -1573,7 +1572,6 @@ dependencies = [
  "orbit-exec",
  "orbit-knowledge",
  "orbit-policy",
- "orbit-store",
  "orbit-types",
  "regex",
  "rusqlite",

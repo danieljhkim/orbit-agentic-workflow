@@ -9,7 +9,6 @@ chrono.workspace = true
 orbit-exec = { path = "../orbit-exec" }
 orbit-knowledge = { path = "../orbit-knowledge" }
 orbit-policy = { path = "../orbit-policy" }
-orbit-store = { path = "../orbit-store" }
 orbit-types = { path = "../orbit-types" }
 regex.workspace = true
 serde.workspace = true
