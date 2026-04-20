@@ -3,7 +3,7 @@ mod cleanup_worktree;
 mod commit;
 mod dispatch_batch;
 mod freshness;
-mod git;
+pub(crate) mod git;
 mod input;
 mod merge_worktree;
 mod parallel;
