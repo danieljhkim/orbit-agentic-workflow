@@ -5,24 +5,18 @@
 //! and future programmatic callers can reach the same numbers without
 //! reimplementing anything.
 
+use crate::command::Execute;
+use crate::command::job_run_support::{
+    RunHistoryFilter, job_run_step_to_json, job_run_to_json_with_workflow, load_filtered_job_runs,
+    load_latest_job_run, print_job_run_list_with_workflow, print_job_run_with_workflow,
+    print_step_detail,
+};
 use clap::{Args, Subcommand, ValueEnum};
 use orbit_common::types::DuelRun;
 use orbit_core::duel_scoreboard::{
     AggregateFilter, AggregateRow, Aggregates, RoleAxis, SegmentBy, aggregate,
 };
-use orbit_core::{
-    OrbitError, OrbitRuntime, WorkflowInput, build_workflow_input_for, find_workflow,
-    validate_workflow_flags,
-};
-use serde_json::{Value, json};
-
-use crate::command::Execute;
-use crate::command::job_run_support::{
-    RunHistoryFilter, dispatch_workflow, job_run_step_to_json, job_run_to_json_with_workflow,
-    load_filtered_job_runs, load_latest_job_run, print_job_run_list_with_workflow,
-    print_job_run_with_workflow, print_step_detail, summary_step, warn_legacy_job_runtime_usage,
-    workflow_dispatch_result_to_json,
-};
+use orbit_core::{OrbitError, OrbitRuntime};
 
 const DUEL_PR_WORKFLOW: &str = "duel";
 const DUEL_PLAN_WORKFLOW: &str = "duel-plan";
@@ -120,155 +114,20 @@ pub struct DuelPlanArgs {
 
 impl Execute for DuelPrArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let plan = build_duel_pr_run_plan(&self)?;
-        let runs = dispatch_workflow(
-            runtime,
-            plan.workflow_alias,
-            &plan.input,
-            self.debug,
-            plan.loop_count,
-        )?;
-
-        if self.json {
-            if runs.len() == 1 {
-                return crate::output::json::print_pretty(&workflow_dispatch_result_to_json(
-                    &runs[0],
-                ));
-            }
-            return crate::output::json::print_pretty(&json!({
-                "workflow": plan.workflow_alias,
-                "runs": runs
-                    .iter()
-                    .map(workflow_dispatch_result_to_json)
-                    .collect::<Vec<_>>(),
-            }));
-        }
-
-        for run in &runs {
-            let error_code = run.error_code.clone().unwrap_or_else(|| "-".to_string());
-            let error_message = run
-                .error_message
-                .clone()
-                .unwrap_or_else(|| "-".to_string())
-                .replace('\n', " ");
-            println!(
-                "workflow={};job_id={};run_id={};state={};attempt={};error_code={};error_message={}",
-                run.workflow_alias,
-                run.job_id,
-                run.run_id,
-                run.state,
-                run.attempt,
-                error_code,
-                error_message
-            );
-        }
-        Ok(())
+        let _ = runtime;
+        Err(OrbitError::InvalidInput(
+            "the legacy duel execution workflows were retired in T20260419-2156; use the preserved scoreboard/list/show surfaces for historical results, or reopen duel support as a new feature task".to_string(),
+        ))
     }
 }
 
 impl Execute for DuelPlanArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        execute_duel_workflow(
-            runtime,
-            DUEL_PLAN_WORKFLOW,
-            Some(self.task_id),
-            self.base,
-            self.debug,
-            self.json,
-        )
+        let _ = (self, runtime);
+        Err(OrbitError::InvalidInput(
+            "the legacy planning duel workflow was retired in T20260419-2156; reopen planning-duel support as a new feature task if it is still needed".to_string(),
+        ))
     }
-}
-
-fn execute_duel_workflow(
-    runtime: &OrbitRuntime,
-    workflow_alias: &str,
-    task_id: Option<String>,
-    base: Option<String>,
-    debug: bool,
-    json: bool,
-) -> Result<(), OrbitError> {
-    let workflow = find_workflow(workflow_alias)
-        .ok_or_else(|| OrbitError::InvalidInput(format!("unknown workflow '{workflow_alias}'")))?;
-    let input = WorkflowInput {
-        tasks: task_id,
-        parallelism: None,
-        base,
-        pr_number: None,
-    };
-    validate_workflow_flags(workflow, &input)?;
-    let built_input = build_workflow_input_for(Some(workflow), &input)?;
-    warn_legacy_job_runtime_usage(workflow.job_id);
-    let run = runtime.run_job_now_with_input_debug(workflow.job_id, built_input, debug)?;
-    let run_details = runtime
-        .job_history(workflow.job_id)?
-        .into_iter()
-        .find(|entry| entry.run_id == run.run_id);
-
-    if json {
-        return crate::output::json::print_pretty(&json!({
-            "workflow": workflow.alias,
-            "job_id": run.job_id,
-            "run_id": run.run_id,
-            "state": run.state.to_string(),
-            "attempt": run.attempt,
-            "error_code": run_details.as_ref().and_then(summary_step).and_then(|step| step.error_code.clone()),
-            "error_message": run_details.as_ref().and_then(summary_step).and_then(|step| step.error_message.clone()),
-        }));
-    }
-
-    let error_code = run_details
-        .as_ref()
-        .and_then(summary_step)
-        .and_then(|step| step.error_code.clone())
-        .unwrap_or_else(|| "-".to_string());
-    let error_message = run_details
-        .as_ref()
-        .and_then(summary_step)
-        .and_then(|step| step.error_message.clone())
-        .unwrap_or_else(|| "-".to_string())
-        .replace('\n', " ");
-    println!(
-        "workflow={};job_id={};run_id={};state={};attempt={};error_code={};error_message={}",
-        workflow.alias, run.job_id, run.run_id, run.state, run.attempt, error_code, error_message
-    );
-    Ok(())
-}
-
-struct DuelRunPlan {
-    workflow_alias: &'static str,
-    input: Value,
-    loop_count: u32,
-}
-
-fn build_duel_pr_run_plan(args: &DuelPrArgs) -> Result<DuelRunPlan, OrbitError> {
-    let loop_count = args.loop_count.unwrap_or(1);
-    if loop_count == 0 {
-        return Err(OrbitError::InvalidInput(
-            "--loop must be greater than 0".to_string(),
-        ));
-    }
-    if args.loop_count.is_some() && args.task_id.is_some() {
-        return Err(OrbitError::InvalidInput(
-            "--loop cannot be combined with an explicit task id; omit [TASK_ID] to auto-select each iteration".to_string(),
-        ));
-    }
-
-    let workflow = find_workflow(DUEL_PR_WORKFLOW).ok_or_else(|| {
-        OrbitError::InvalidInput(format!("unknown workflow '{DUEL_PR_WORKFLOW}'"))
-    })?;
-    let input = WorkflowInput {
-        tasks: args.task_id.clone(),
-        parallelism: None,
-        base: args.base.clone(),
-        pr_number: None,
-    };
-    validate_workflow_flags(workflow, &input)?;
-
-    Ok(DuelRunPlan {
-        workflow_alias: DUEL_PR_WORKFLOW,
-        input: build_workflow_input_for(Some(workflow), &input)?,
-        loop_count,
-    })
 }
 
 /// How the flat table should be sliced before display.

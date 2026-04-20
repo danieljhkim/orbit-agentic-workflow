@@ -6,7 +6,7 @@
 //! - `orbit_agent::loop_engine::audit::redaction::RedactionMiddleware` —
 //!   regex-based patterns for `Authorization` / `x-api-key` / `Bearer` in
 //!   HTTP-shaped payloads (headers, JSON)
-//! - `orbit_engine::v2::cli_runner::ArgvRedactor` — the above plus a raw
+//! - `orbit_engine::activity_job::cli_runner::ArgvRedactor` — the above plus a raw
 //!   `sk-…` pattern for argv that leaks provider keys
 //!
 //! This module is the single source of truth for generic, domain-free

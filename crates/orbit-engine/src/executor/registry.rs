@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use orbit_common::types::{ExecutorDef, ExecutorType};
 use tracing::warn;
 
-use super::agent::AgentExecutor;
 use super::automation::AutomationExecutor;
 use super::cli_command::CliCommandExecutor;
 use super::direct_agent::DirectAgentExecutor;
@@ -44,10 +43,9 @@ impl ActivityExecutorRegistry {
     }
 
     pub fn register_builtins(&mut self) {
-        let _ = self.register(AgentExecutor::new());
         let _ = self.register(CliCommandExecutor);
         let _ = self.register(AutomationExecutor);
-        let _ = self.register(crate::v2::OrbitToolCallExecutor);
+        let _ = self.register(crate::activity_job::OrbitToolCallExecutor);
     }
 
     /// Load executor definitions from YAML resources. Entries override builtins by name.
@@ -55,15 +53,10 @@ impl ActivityExecutorRegistry {
         for def in defs {
             match def.executor_type {
                 ExecutorType::AgentCli => {
-                    if def.command.is_some() {
-                        let executor = AgentExecutor::from_executor_def(def.clone());
-                        self.register_named(def.name.clone(), Box::new(executor));
-                    } else {
-                        warn!(
-                            executor_name = %def.name,
-                            "agent_cli executor def missing 'command' field, skipping"
-                        );
-                    }
+                    warn!(
+                        executor_name = %def.name,
+                        "agent_cli executors are retired; skipping v1 definition"
+                    );
                 }
                 ExecutorType::DirectAgent => {
                     if def.command.is_some() {

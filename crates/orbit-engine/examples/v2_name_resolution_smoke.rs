@@ -21,13 +21,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use orbit_common::types::JobScheduleState;
-use orbit_common::types::v2::{
+use orbit_common::types::activity_job::{
     ActivityV2, ActivityV2Spec, AgentLoopSpec, Backend, JobAsset, JobKind, JobV2, JobV2Step,
     JobV2StepBody, LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog,
     load_job_asset, resolve_job_backends, resolve_job_target_refs,
     validate_job_loop_session_backends,
 };
-use orbit_engine::v2::{
+use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2DispatchInput, V2RuntimeHost, dispatch_v2_activity,
 };
 use serde_json::Value;
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn scenario_a_catalog_loads_new_activities() -> Result<(), Box<dyn std::error::Error>> {
     println!("  A) catalog loads 4 new v2 activities from v2_reference/");
     let mut catalog = V2ActivityCatalog::new();
-    let dir = repo_root().join("crates/orbit-core/assets/activities/v2_reference");
+    let dir = repo_root().join("crates/orbit-core/assets/activities");
     catalog.load_dir(&dir)?;
 
     // Must contain the 4 new Phase 4 activities.
@@ -136,12 +136,9 @@ fn scenario_c_unknown_ref_is_structural_error() -> Result<(), Box<dyn std::error
 
 fn scenario_d_pipeline_yaml_partial_resolution() -> Result<(), Box<dyn std::error::Error>> {
     println!("  D) task_pipeline.yaml partial-resolves (4 new refs)");
-    let yaml_path = repo_root().join("crates/orbit-core/assets/jobs/v2_samples/task_pipeline.yaml");
+    let yaml_path = repo_root().join("crates/orbit-core/assets/jobs/task_pipeline.yaml");
     let yaml = std::fs::read_to_string(&yaml_path)?;
-    let asset = match load_job_asset(&yaml)? {
-        JobAsset::V2(a) => a,
-        JobAsset::V1(_) => panic!("expected v2"),
-    };
+    let asset = load_job_asset(&yaml)?;
 
     // Confirm the parse produced TargetRefs (not inline specs) throughout.
     let ref_count = count_target_refs(&asset.spec);
@@ -380,7 +377,7 @@ fn repo_root() -> PathBuf {
 
 fn load_reference_catalog() -> Result<V2ActivityCatalog, Box<dyn std::error::Error>> {
     let mut catalog = V2ActivityCatalog::new();
-    let dir = repo_root().join("crates/orbit-core/assets/activities/v2_reference");
+    let dir = repo_root().join("crates/orbit-core/assets/activities");
     catalog.load_dir(&dir)?;
     Ok(catalog)
 }
@@ -444,7 +441,7 @@ fn stub_deterministic_activity(name: &str) -> ActivityV2 {
         input_schema_json: serde_json::Value::Null,
         output_schema_json: serde_json::Value::Null,
         fs_profile: None,
-        spec: ActivityV2Spec::Deterministic(orbit_common::types::v2::DeterministicSpec {
+        spec: ActivityV2Spec::Deterministic(orbit_common::types::activity_job::DeterministicSpec {
             action: "noop".to_string(),
             config: serde_json::Value::Null,
         }),

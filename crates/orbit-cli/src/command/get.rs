@@ -49,30 +49,33 @@ fn parse_resource_ref(s: &str) -> Result<(ResourceKind, Option<String>), OrbitEr
 // ── Jobs ──
 
 fn list_jobs(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitError> {
-    let jobs = runtime.list_jobs(false)?;
+    use orbit_core::command::job::JobCatalogFilter;
+    let entries = runtime.list_job_catalog_with_last_run(false, JobCatalogFilter::All)?;
     if as_json {
-        let values: Vec<Value> = jobs
+        let values: Vec<Value> = entries
             .iter()
-            .map(|j| {
+            .map(|(entry, _)| {
                 json!({
-                    "job_id": j.job_id,
-                    "state": j.state.to_string(),
-                    "steps": j.steps.len(),
+                    "job_id": entry.job_id,
+                    "kind": entry.kind().to_string(),
+                    "state": entry.state().to_string(),
+                    "steps": entry.spec.steps.len(),
                 })
             })
             .collect();
         crate::output::json::print_pretty(&Value::Array(values))
     } else {
-        if jobs.is_empty() {
+        if entries.is_empty() {
             println!("No jobs found.");
             return Ok(());
         }
-        let mut table = crate::output::table::build_table(&["JOB ID", "STATE", "STEPS"]);
-        for j in &jobs {
+        let mut table = crate::output::table::build_table(&["JOB ID", "KIND", "STATE", "STEPS"]);
+        for (entry, _) in &entries {
             table.add_row(vec![
-                j.job_id.to_string(),
-                j.state.to_string(),
-                j.steps.len().to_string(),
+                entry.job_id.clone(),
+                entry.kind().to_string(),
+                entry.state().to_string(),
+                entry.spec.steps.len().to_string(),
             ]);
         }
         println!("{table}");
@@ -81,47 +84,60 @@ fn list_jobs(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitError> {
 }
 
 fn show_job(runtime: &OrbitRuntime, job_id: &str, as_json: bool) -> Result<(), OrbitError> {
-    let job = runtime
-        .get_job(job_id)?
-        .ok_or_else(|| OrbitError::JobNotFound(job_id.to_string()))?;
+    let entry = runtime.show_job_catalog_entry(job_id)?;
     if as_json {
-        let value = serde_json::to_value(&job).map_err(|e| OrbitError::Execution(e.to_string()))?;
+        let value = json!({
+            "job_id": entry.job_id,
+            "kind": entry.kind().to_string(),
+            "state": entry.state().to_string(),
+            "path": entry.path.display().to_string(),
+            "spec": entry.spec,
+        });
         crate::output::json::print_pretty(&value)
     } else {
-        println!("Job ID:  {}", job.job_id);
-        println!("State:   {}", job.state);
-        println!("Steps:   {}", job.steps.len());
+        println!("Job ID:  {}", entry.job_id);
+        println!("Kind:    {}", entry.kind());
+        println!("State:   {}", entry.state());
+        println!("Steps:   {}", entry.spec.steps.len());
         Ok(())
     }
 }
 
-// ── Activities ──
+// ── Activities (v2 catalog) ──
 
 fn list_activities(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitError> {
-    let activities = runtime.list_activities(false)?;
+    let catalog = runtime
+        .v2_activity_catalog()
+        .map_err(|err| OrbitError::Store(format!("v2 activity catalog: {err}")))?;
+    let names: Vec<&str> = catalog.names().collect();
     if as_json {
-        let values: Vec<Value> = activities
+        let values: Vec<Value> = names
             .iter()
-            .map(|a| {
-                json!({
-                    "id": a.id,
-                    "description": a.description,
-                    "is_active": a.is_active,
+            .filter_map(|name| {
+                catalog.get(name).map(|spec| {
+                    json!({
+                        "id": name,
+                        "type": activity_v2_type_label(spec),
+                        "description": spec.description,
+                    })
                 })
             })
             .collect();
         crate::output::json::print_pretty(&Value::Array(values))
     } else {
-        if activities.is_empty() {
+        if names.is_empty() {
             println!("No activities found.");
             return Ok(());
         }
-        let mut table = crate::output::table::build_table(&["ID", "DESCRIPTION", "ACTIVE"]);
-        for a in &activities {
+        let mut table = crate::output::table::build_table(&["ID", "TYPE", "DESCRIPTION"]);
+        for name in &names {
+            let Some(spec) = catalog.get(name) else {
+                continue;
+            };
             table.add_row(vec![
-                a.id.to_string(),
-                a.description.clone(),
-                if a.is_active { "yes" } else { "no" }.to_string(),
+                name.to_string(),
+                activity_v2_type_label(spec).to_string(),
+                spec.description.clone(),
             ]);
         }
         println!("{table}");
@@ -130,17 +146,37 @@ fn list_activities(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitErr
 }
 
 fn show_activity(runtime: &OrbitRuntime, id: &str, as_json: bool) -> Result<(), OrbitError> {
-    let activity = runtime.show_activity(id)?;
+    let catalog = runtime
+        .v2_activity_catalog()
+        .map_err(|err| OrbitError::Store(format!("v2 activity catalog: {err}")))?;
+    let activity = catalog
+        .get(id)
+        .ok_or_else(|| OrbitError::ActivityNotFound(id.to_string()))?;
     if as_json {
-        let value =
-            serde_json::to_value(&activity).map_err(|e| OrbitError::Execution(e.to_string()))?;
+        let value = json!({
+            "id": id,
+            "type": activity_v2_type_label(activity),
+            "description": activity.description,
+            "input_schema_json": activity.input_schema_json,
+            "output_schema_json": activity.output_schema_json,
+            "fsProfile": activity.fs_profile,
+            "schemaVersion": 2,
+        });
         crate::output::json::print_pretty(&value)
     } else {
-        println!("ID:          {}", activity.id);
+        println!("ID:          {id}");
+        println!("Type:        {}", activity_v2_type_label(activity));
         println!("Description: {}", activity.description);
-        println!("Active:      {}", activity.is_active);
-        println!("Spec type:   {}", activity.spec_type);
         Ok(())
+    }
+}
+
+fn activity_v2_type_label(spec: &orbit_common::types::activity_job::ActivityV2) -> &'static str {
+    use orbit_common::types::activity_job::ActivityV2Spec;
+    match &spec.spec {
+        ActivityV2Spec::AgentLoop(_) => "agent_loop",
+        ActivityV2Spec::Deterministic(_) => "deterministic",
+        ActivityV2Spec::Shell(_) => "shell",
     }
 }
 

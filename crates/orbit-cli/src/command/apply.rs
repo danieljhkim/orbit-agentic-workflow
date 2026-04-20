@@ -3,16 +3,11 @@ use std::path::PathBuf;
 use chrono::Utc;
 use clap::Args;
 use orbit_common::types::{
-    ActivityResource, ExecutorDef, ExecutorResource, JobResource, POLICY_RESOURCE_SCHEMA_VERSION,
-    PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader, ResourceKind, parse_policy_resource,
+    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource,
+    POLICY_RESOURCE_SCHEMA_VERSION, PolicyDef, ResourceHeader, ResourceKind, parse_policy_resource,
 };
-use orbit_core::command::activity::{
-    ActivityAddParams, ActivityUpdateParams as RuntimeActivityUpdateParams,
-};
-use orbit_core::command::job::JobAddParams;
 use orbit_core::{OrbitError, OrbitRuntime};
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use crate::command::Execute;
 
@@ -79,8 +74,12 @@ fn apply_one(runtime: &OrbitRuntime, content: &str, path: &PathBuf) -> Result<()
     match header.kind {
         ResourceKind::Policy => apply_policy(runtime, content, path, &header.metadata.name),
         ResourceKind::Executor => apply_executor(runtime, content, path, &header.metadata.name),
-        ResourceKind::Job => apply_job(runtime, content, path, &header.metadata.name),
-        ResourceKind::Activity => apply_activity(runtime, content, path, &header.metadata.name),
+        ResourceKind::Job | ResourceKind::Activity => Err(OrbitError::InvalidInput(format!(
+            "{}: `orbit apply` no longer supports kind `{}`. Activities and workflows ship \
+             as default YAMLs on `orbit init` and resolve via the v2 catalog.",
+            path.display(),
+            header.kind,
+        ))),
     }
 }
 
@@ -143,101 +142,20 @@ fn apply_executor(
     Ok(())
 }
 
-fn apply_job(
-    runtime: &OrbitRuntime,
-    content: &str,
-    path: &PathBuf,
-    name: &str,
-) -> Result<(), OrbitError> {
-    let doc: JobResource = parse_resource(content, path, "Job resource")?;
-    let spec = doc.spec;
-
-    if runtime.get_job(name)?.is_some() {
-        runtime.update_job_definition(
-            name,
-            spec.default_input,
-            spec.max_active_runs,
-            spec.max_iterations,
-            spec.steps,
-            spec.policy,
-            spec.state,
-        )?;
-    } else {
-        runtime.add_job(JobAddParams {
-            job_id: Some(name.to_string()),
-            default_input: spec.default_input,
-            max_active_runs: Some(spec.max_active_runs),
-            max_iterations: Some(spec.max_iterations),
-            steps: spec.steps,
-            policy: spec.policy,
-            initial_state_override: Some(spec.state),
-        })?;
-    }
-
-    println!("job/{name} applied");
-    Ok(())
-}
-
-fn apply_activity(
-    runtime: &OrbitRuntime,
-    content: &str,
-    path: &PathBuf,
-    name: &str,
-) -> Result<(), OrbitError> {
-    let doc: ActivityResource = parse_resource(content, path, "Activity resource")?;
-    let spec_config = Value::Object(doc.spec.spec_config.clone());
-    let update_params = RuntimeActivityUpdateParams {
-        description: Some(doc.spec.description.clone()),
-        input_schema_json: Some(doc.spec.input_schema_json.clone()),
-        output_schema_json: Some(doc.spec.output_schema_json.clone()),
-        spec_config: Some(spec_config.clone()),
-        executor: Some(doc.spec.executor.clone()),
-        workspace_path: Some(doc.spec.workspace_path.clone()),
-        created_by: Some(doc.spec.created_by.clone()),
-        is_active: Some(doc.spec.is_active),
-    };
-
-    match runtime.show_activity(name) {
-        Ok(_) => {
-            runtime.update_activity(name, update_params)?;
-        }
-        Err(OrbitError::ActivityNotFound(_)) => {
-            runtime.add_activity(ActivityAddParams {
-                id: name.to_string(),
-                spec_type: doc.spec.spec_type,
-                description: doc.spec.description,
-                input_schema_json: doc.spec.input_schema_json,
-                output_schema_json: doc.spec.output_schema_json,
-                spec_config,
-                executor: doc.spec.executor,
-                workspace_path: doc.spec.workspace_path,
-                created_by: doc.spec.created_by,
-            })?;
-            if !doc.spec.is_active {
-                runtime.update_activity(
-                    name,
-                    RuntimeActivityUpdateParams {
-                        is_active: Some(false),
-                        ..Default::default()
-                    },
-                )?;
-            }
-        }
-        Err(error) => return Err(error),
-    }
-
-    println!("activity/{name} applied");
-    Ok(())
-}
-
 fn validate_header(header: &ResourceHeader, path: &PathBuf) -> Result<(), OrbitError> {
-    let expected = match header.kind {
-        ResourceKind::Policy => POLICY_RESOURCE_SCHEMA_VERSION,
-        _ => RESOURCE_SCHEMA_VERSION,
+    let supported: Vec<u32> = match header.kind {
+        ResourceKind::Policy => vec![POLICY_RESOURCE_SCHEMA_VERSION],
+        ResourceKind::Executor => vec![EXECUTOR_RESOURCE_SCHEMA_VERSION],
+        ResourceKind::Job | ResourceKind::Activity => Vec::new(),
     };
-    if header.schema_version != expected {
+    if !supported.contains(&header.schema_version) {
+        let expected = supported
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(" or ");
         return Err(OrbitError::InvalidInput(format!(
-            "{}: unsupported schemaVersion '{}' (expected '{}')",
+            "{}: unsupported schemaVersion '{}' (expected {})",
             path.display(),
             header.schema_version,
             expected,

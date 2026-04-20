@@ -247,14 +247,9 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
         }
         Commands::Activity(cmd) => {
             use crate::command::activity::ActivitySubcommand;
-            let (sub, target_id) = match &cmd.command {
-                ActivitySubcommand::Add(args) => ("add", Some(args.id.as_str())),
+            let (sub, target_id): (&str, Option<&str>) = match &cmd.command {
                 ActivitySubcommand::List(_) => ("list", None),
-                ActivitySubcommand::Show(args) => ("show", Some(args.id.as_str())),
-                ActivitySubcommand::Update(args) => ("update", Some(args.id.as_str())),
-                ActivitySubcommand::Run(args) => ("run", Some(args.id.as_str())),
-                ActivitySubcommand::RunV2(_) => ("run-v2", None),
-                ActivitySubcommand::Delete(args) => ("delete", Some(args.id.as_str())),
+                ActivitySubcommand::Run(_) => ("run", None),
             };
             CommandMeta {
                 command: "activity".to_string(),
@@ -269,14 +264,11 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
         Commands::Job(job_cmd) => {
             use crate::command::job::JobSubcommand;
             let (sub, target_id) = match &job_cmd.command {
-                JobSubcommand::Add(_) => ("add", None),
                 JobSubcommand::List(_) => ("list", None),
                 JobSubcommand::Show(args) => ("show", Some(args.job_id.as_str())),
                 JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
                 JobSubcommand::History(args) => ("history", Some(args.job_id.as_str())),
-                JobSubcommand::Delete(args) => ("delete", Some(args.job_id.as_str())),
                 JobSubcommand::RunState(args) => ("run-state", Some(args.run_id.as_str())),
-                JobSubcommand::RunV2(_) => ("run-v2", None),
                 JobSubcommand::RunPipelineWorker(args) => {
                     ("run-pipeline-worker", Some(args.run_id.as_str()))
                 }
@@ -416,15 +408,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             tool_name: None,
             target_type: Some(if cmd.task { "task" } else { "job_run" }.to_string()),
             target_id: Some(cmd.id.clone()),
-            role: "admin".to_string(),
-            arguments_json: None,
-        },
-        Commands::Reconcile(_) => CommandMeta {
-            command: "reconcile".to_string(),
-            subcommand: None,
-            tool_name: None,
-            target_type: Some("reconcile".to_string()),
-            target_id: None,
             role: "admin".to_string(),
             arguments_json: None,
         },

@@ -1,18 +1,18 @@
-//! `orbit job run-v2 <yaml-path>` — v2 job entrypoint.
+//! `orbit job run <yaml-path>` — schemaVersion 2 job entrypoint.
 //!
 //! Mirrors `activity_v2::run_activity_v2_from_yaml`: reads the YAML, routes
 //! through the two-pass loader, and dispatches via the Phase 3 DAG executor.
 //! orbit-core never names orbit-agent types — transport/session construction
-//! lives below the boundary in `orbit_engine::v2::job_executor`.
+//! lives below the boundary in `orbit_engine::activity_job::job_executor`.
 
 use std::path::{Path, PathBuf};
 
-use orbit_common::types::v2::{
-    Backend, JobAsset, V2AuditEventKind, load_job_asset, resolve_job_backends,
-    resolve_job_target_refs, validate_job_loop_session_backends,
+use orbit_common::types::activity_job::{
+    Backend, V2AuditEventKind, load_job_asset, resolve_job_backends, resolve_job_target_refs,
+    validate_job_loop_session_backends,
 };
 use orbit_common::types::{OrbitError, OrbitEvent};
-use orbit_engine::v2::{JobOutcome, V2AuditWriter, execute_job};
+use orbit_engine::activity_job::{JobOutcome, V2AuditWriter, execute_job};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -53,23 +53,15 @@ impl OrbitRuntime {
         let yaml = std::fs::read_to_string(yaml_path).map_err(|err| {
             OrbitError::InvalidInput(format!("read {}: {err}", yaml_path.display()))
         })?;
-        let mut asset = match load_job_asset(&yaml).map_err(|err| {
+        let mut asset = load_job_asset(&yaml).map_err(|err| {
             OrbitError::InvalidInput(format!("load {}: {err}", yaml_path.display()))
-        })? {
-            JobAsset::V2(a) => a,
-            JobAsset::V1(_) => {
-                return Err(OrbitError::InvalidInput(format!(
-                    "{} is a deprecated schemaVersion: 1 asset; migrate it to schemaVersion: 2. Temporary compatibility remains via `orbit job run <id>`.",
-                    yaml_path.display()
-                )));
-            }
-        };
+        })?;
 
         // Phase 4: resolve `target: activity:<name>` refs before any other
         // pass, so backend-resolution + loader-rejection see concrete specs.
         let catalog = self
             .v2_activity_catalog()
-            .map_err(|err| OrbitError::InvalidInput(format!("build v2 catalog: {err}")))?;
+            .map_err(|err| OrbitError::InvalidInput(format!("build activity catalog: {err}")))?;
         resolve_job_target_refs(&mut asset.spec, &catalog)
             .map_err(|err| OrbitError::InvalidInput(format!("{err}")))?;
 
@@ -84,7 +76,7 @@ impl OrbitRuntime {
             .map_err(|err| OrbitError::InvalidInput(format!("{err}")))?;
         let run_id = run_id_override.unwrap_or_else(|| {
             format!(
-                "v2job-{}-{}",
+                "job-{}-{}",
                 asset.name,
                 chrono::Utc::now().format("%Y%m%dT%H%M%S%.3f")
             )
@@ -106,7 +98,7 @@ impl OrbitRuntime {
             id: asset.name.clone(),
         })?;
         let _ = writer.emit(V2AuditEventKind::RunStarted {
-            job_name: format!("cli-v2:{}", asset.name),
+            job_name: format!("cli:{}", asset.name),
         });
 
         let outcome_res: Result<JobOutcome, OrbitError> =

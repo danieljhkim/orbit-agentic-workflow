@@ -2,17 +2,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::contracts::{
-    ActivityStoreBackend, AuditEventStoreBackend, ExecutorDefStoreBackend,
-    JobDefinitionStoreBackend, JobRunStoreBackend, PolicyDefStoreBackend, TaskArtifactStoreBackend,
-    TaskDocumentStoreBackend, TaskHistoryStoreBackend, TaskReservationStoreBackend,
-    TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
+    AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunStoreBackend, PolicyDefStoreBackend,
+    TaskArtifactStoreBackend, TaskDocumentStoreBackend, TaskHistoryStoreBackend,
+    TaskReservationStoreBackend, TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use super::layered_policy_def::LayeredPolicyDefStore;
 use super::sqlite_backends::{
     SqliteAuditEventStoreBackend, SqliteTaskReservationStoreBackend, SqliteToolStoreBackend,
 };
 use crate::Store;
-use crate::file::activity_store::ActivityFileStore;
 use crate::file::executor_def_store::ExecutorDefFileStore;
 use crate::file::job_store::JobFileStore;
 use crate::file::policy_def_store::PolicyDefFileStore;
@@ -37,20 +35,8 @@ pub fn workspace_task_backends(root: PathBuf) -> WorkspaceTaskBackends {
     }
 }
 
-pub fn global_activity_store(root: PathBuf) -> Arc<dyn ActivityStoreBackend> {
-    Arc::new(ActivityFileStore::new(root))
-}
-
-pub struct ScopedJobBackends {
-    pub definition: Arc<dyn JobDefinitionStoreBackend>,
-    pub run: Arc<dyn JobRunStoreBackend>,
-}
-
-pub fn scoped_job_backends(global_root: PathBuf, workspace_root: PathBuf) -> ScopedJobBackends {
-    ScopedJobBackends {
-        definition: Arc::new(JobFileStore::new(global_root)),
-        run: Arc::new(JobFileStore::new(workspace_root)),
-    }
+pub fn workspace_job_run_store(root: PathBuf) -> Arc<dyn JobRunStoreBackend> {
+    Arc::new(JobFileStore::new(root))
 }
 
 pub fn global_executor_def_store(root: PathBuf) -> Arc<dyn ExecutorDefStoreBackend> {

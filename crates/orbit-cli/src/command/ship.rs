@@ -3,10 +3,7 @@
 //! Thin wrapper over the existing ship workflow dispatch helpers.
 
 use clap::{Args, Subcommand};
-use orbit_core::{
-    OrbitError, OrbitRuntime, WorkflowInput, build_workflow_input_for, find_workflow,
-    validate_workflow_flags,
-};
+use orbit_core::{OrbitError, OrbitRuntime, find_workflow};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
@@ -19,9 +16,8 @@ use crate::command::job_run_support::{
 
 const SHIP_WORKFLOW: &str = "ship";
 const SHIP_LOCAL_WORKFLOW: &str = "ship-local";
-const SHIP_JOB_ID: &str = "job_parallel_task_pipeline";
-const SHIP_LOCAL_JOB_ID: &str = "job_local_task_pipeline";
-const SHIP_JOB_IDS: &[&str] = &[SHIP_JOB_ID, SHIP_LOCAL_JOB_ID];
+const SHIP_JOB_ID: &str = "task_auto_pipeline";
+const SHIP_JOB_IDS: &[&str] = &[SHIP_JOB_ID];
 
 #[derive(Args)]
 #[command(
@@ -47,10 +43,10 @@ impl Execute for ShipCommand {
 
 #[derive(Subcommand)]
 pub enum ShipSubcommand {
-    /// Execute the PR-based legacy v1 ship pipeline
+    /// Execute the PR-based ship pipeline
     #[command(hide = true)]
     Pr(ShipPrArgs),
-    /// Execute the local-only legacy v1 ship pipeline
+    /// Execute the local-only ship pipeline
     Local(ShipLocalArgs),
     /// List job runs for ship pipelines
     List(ShipListArgs),
@@ -281,20 +277,37 @@ fn build_ship_run_plan(
 
     validate_explicit_task_selection(&args.task_ids, args.parallelism)?;
 
-    let workflow = find_workflow(workflow_alias)
+    find_workflow(workflow_alias)
         .ok_or_else(|| OrbitError::InvalidInput(format!("unknown workflow '{workflow_alias}'")))?;
-
-    let input = WorkflowInput {
-        tasks: (!args.task_ids.is_empty()).then(|| args.task_ids.join(",")),
-        parallelism: args.parallelism,
-        base: args.base.clone(),
-        pr_number: None,
+    let mode = if workflow_alias == SHIP_LOCAL_WORKFLOW {
+        "local"
+    } else {
+        "pr"
     };
-    validate_workflow_flags(workflow, &input)?;
+    let mut map = serde_json::Map::new();
+    map.insert("mode".to_string(), Value::String(mode.to_string()));
+    if !args.task_ids.is_empty() {
+        map.insert(
+            "task_ids".to_string(),
+            Value::Array(
+                args.task_ids
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+    }
+    if let Some(parallelism) = args.parallelism {
+        map.insert("concurrency".to_string(), Value::Number(parallelism.into()));
+    }
+    if let Some(base) = &args.base {
+        map.insert("base_branch".to_string(), Value::String(base.clone()));
+    }
 
     Ok(ShipRunPlan {
         workflow_alias,
-        input: build_workflow_input_for(Some(workflow), &input)?,
+        input: Value::Object(map),
         loop_count: args.loop_count,
     })
 }
@@ -342,7 +355,6 @@ fn ensure_ship_run(run: &orbit_core::JobRun) -> Result<(), OrbitError> {
 fn ship_workflow_name(job_id: &str) -> Option<&'static str> {
     match job_id {
         SHIP_JOB_ID => Some(SHIP_WORKFLOW),
-        SHIP_LOCAL_JOB_ID => Some(SHIP_LOCAL_WORKFLOW),
         _ => None,
     }
 }

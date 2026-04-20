@@ -1,6 +1,6 @@
-//! Smoke: load every v1 activity + job YAML through the v2 asset loader and
-//! parse every v2 reference activity YAML. Used as the AC2 / AC1 validation
-//! path per the Phase 2 plan in T20260418-2010.
+//! Smoke: load every schemaVersion 2 activity + job YAML through the asset
+//! loader. Used as the AC2 / AC1 validation path per the Phase 2 plan in
+//! T20260418-2010.
 //!
 //! Usage:
 //!     cargo run -p orbit-common --example v2_asset_smoke
@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use orbit_common::types::v2::{ActivityAsset, JobAsset, load_activity_asset, load_job_asset};
+use orbit_common::types::activity_job::{load_activity_asset, load_job_asset};
 
 fn main() -> ExitCode {
     let root = workspace_root();
@@ -24,8 +24,7 @@ fn main() -> ExitCode {
     for path in walk_yaml(&activities_dir) {
         match fs::read_to_string(&path).and_then(|s| Ok((path.clone(), s))) {
             Ok((path, yaml)) => match load_activity_asset(&yaml) {
-                Ok(ActivityAsset::V1(_)) => counts.activity_v1 += 1,
-                Ok(ActivityAsset::V2(_)) => counts.activity_v2 += 1,
+                Ok(_) => counts.activities += 1,
                 Err(err) => failures.push(format!("{}: {}", path.display(), err)),
             },
             Err(err) => failures.push(format!("{}: {}", path.display(), err)),
@@ -35,18 +34,15 @@ fn main() -> ExitCode {
     for path in walk_yaml(&jobs_dir) {
         match fs::read_to_string(&path).and_then(|s| Ok((path.clone(), s))) {
             Ok((path, yaml)) => match load_job_asset(&yaml) {
-                Ok(JobAsset::V1(_)) => counts.job_v1 += 1,
-                Ok(JobAsset::V2(_)) => counts.job_v2 += 1,
+                Ok(_) => counts.jobs += 1,
                 Err(err) => failures.push(format!("{}: {}", path.display(), err)),
             },
             Err(err) => failures.push(format!("{}: {}", path.display(), err)),
         }
     }
 
-    println!("v1 activities loaded: {}", counts.activity_v1);
-    println!("v2 activities loaded: {}", counts.activity_v2);
-    println!("v1 jobs loaded:       {}", counts.job_v1);
-    println!("v2 jobs loaded:       {}", counts.job_v2);
+    println!("activities loaded: {}", counts.activities);
+    println!("jobs loaded:       {}", counts.jobs);
 
     if failures.is_empty() {
         println!("all assets loaded without error");
@@ -62,10 +58,8 @@ fn main() -> ExitCode {
 
 #[derive(Default)]
 struct Counts {
-    activity_v1: usize,
-    activity_v2: usize,
-    job_v1: usize,
-    job_v2: usize,
+    activities: usize,
+    jobs: usize,
 }
 
 fn walk_yaml(dir: &Path) -> Vec<PathBuf> {

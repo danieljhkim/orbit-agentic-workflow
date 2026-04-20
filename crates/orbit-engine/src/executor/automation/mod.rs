@@ -29,7 +29,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::ActivityExecutor;
-use crate::activity_runner::validate_activity_output_schema;
+use super::helpers::validate_activity_output_schema;
 use crate::context::{ACTIVITY_EXECUTION_FAILED, AttemptOutcome, ExecutionContext, ExecutorHost};
 
 // ---- retained internal actions (still referenced by duel/worker jobs) ----
@@ -61,7 +61,7 @@ struct AutomationSpec {
 pub struct AutomationExecutor;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct StateExecutionContext {
+pub struct StateExecutionContext {
     pub run_id: Option<String>,
     pub step_index: Option<u32>,
     pub state_dir: Option<PathBuf>,
@@ -146,7 +146,31 @@ pub fn execute<
             OrbitError::InvalidInput(format!("invalid automation spec_config: {error}"))
         })?;
 
-    match spec.action.as_str() {
+    execute_action(
+        host,
+        &spec.action,
+        input,
+        debug,
+        steps_outputs,
+        state_context,
+    )
+}
+
+pub fn execute_action<
+    H: crate::context::RuntimeHost
+        + crate::context::TaskHost
+        + crate::context::EnvironmentHost
+        + Sync
+        + ?Sized,
+>(
+    host: &H,
+    action: &str,
+    input: &Value,
+    debug: bool,
+    steps_outputs: &HashMap<String, Value>,
+    state_context: Option<&StateExecutionContext>,
+) -> Result<Value, OrbitError> {
+    match action {
         // ---- retained internal actions ----
         UPDATE_TASK_ACTION => task::update_task(host, input),
         RUN_PARALLEL_TASK_PIPELINE_ACTION => {

@@ -21,8 +21,8 @@ pub struct Workflow {
 pub const WORKFLOWS: &[Workflow] = &[
     Workflow {
         alias: "ship",
-        job_id: "job_parallel_task_pipeline",
-        description: "Dispatch, implement, open PR, and run review cycle",
+        job_id: "task_auto_pipeline",
+        description: "Bundle backlog tasks, gate them, and ship through the PR pipeline",
         supports_tasks: true,
         supports_parallelism: true,
         supports_base: true,
@@ -32,8 +32,8 @@ pub const WORKFLOWS: &[Workflow] = &[
     },
     Workflow {
         alias: "ship-local",
-        job_id: "job_local_task_pipeline",
-        description: "Dispatch, implement, and commit locally (no PR)",
+        job_id: "task_auto_pipeline",
+        description: "Bundle backlog tasks, gate them, and ship locally",
         supports_tasks: true,
         supports_parallelism: true,
         supports_base: true,

@@ -62,11 +62,6 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
         model: Option<String>,
     ) -> Result<Value, OrbitError> {
         match action {
-            OrbitBuiltinAction::ActivityShow => {
-                let id = required_string(&input, &["id"], "id")?;
-                serde_json::to_value(self.runtime.show_activity(&id)?)
-                    .map_err(serialize_error("serialize activity"))
-            }
             OrbitBuiltinAction::PipelineInvoke => {
                 let job_name = required_string(&input, &["job_name"], "job_name")?;
                 let payload = require_object_field(&input, "input")?.clone();
@@ -263,6 +258,9 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                 let status = optional_string(&input, "status")?
                     .map(|value| parse_task_status("status", &value))
                     .transpose()?;
+                let task_type = optional_string_alias(&input, &["type", "task_type", "taskType"])?
+                    .map(|value| parse_task_type("type", &value))
+                    .transpose()?;
                 let parent_id =
                     optional_string_alias(&input, &["parent_id", "parent", "parentId"])?;
                 let batch_id = optional_string(&input, "batch_id")?;
@@ -273,7 +271,11 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     batch_id.as_deref(),
                 )?;
                 Ok(Value::Array(
-                    tasks.into_iter().map(task_to_json).collect::<Vec<_>>(),
+                    tasks
+                        .into_iter()
+                        .filter(|task| task_type.is_none_or(|kind| task.task_type == kind))
+                        .map(task_to_json)
+                        .collect::<Vec<_>>(),
                 ))
             }
             OrbitBuiltinAction::TaskLocks => {

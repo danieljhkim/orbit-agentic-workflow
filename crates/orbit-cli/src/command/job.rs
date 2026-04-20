@@ -2,14 +2,11 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 use orbit_common::types::{ActivityV2Spec, JobKind, JobV2Step, JobV2StepBody};
-use orbit_core::command::job::{
-    JobAddParams, JobCatalogDefinition, JobCatalogEntry, JobCatalogFilter,
-};
-use orbit_core::{Job, JobRun, JobStep, OrbitError, OrbitRuntime};
+use orbit_core::command::job::{JobCatalogEntry, JobCatalogFilter};
+use orbit_core::{JobRun, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
-use crate::command::job_run_support::warn_legacy_job_runtime_usage;
 
 #[derive(Args)]
 #[command(about = "Define, list, and manage job workflows")]
@@ -26,23 +23,16 @@ impl Execute for JobCommand {
 
 #[derive(Subcommand)]
 pub enum JobSubcommand {
-    /// Register a new job definition
-    Add(JobAddArgs),
     /// List all registered jobs
     List(JobListArgs),
     /// Show details of a specific job
     Show(JobShowArgs),
-    /// Execute a job immediately by ID (legacy v1 or discovered v2 workflow)
+    /// Execute a schemaVersion 2 job by ID or YAML path
     Run(JobRunArgs),
     /// Show run history for a job
     History(JobHistoryArgs),
-    /// Delete a job definition
-    Delete(JobDeleteArgs),
     /// Inspect the pipeline state (state.json) of a job run
     RunState(JobRunStateArgs),
-    /// Execute a v2 Job (schemaVersion:2) directly from a YAML path
-    #[command(name = "run-v2")]
-    RunV2(JobRunV2Args),
     /// Internal worker entrypoint for persisted pipeline runs
     #[command(name = "run-pipeline-worker", hide = true)]
     RunPipelineWorker(JobRunPipelineWorkerArgs),
@@ -51,66 +41,12 @@ pub enum JobSubcommand {
 impl Execute for JobSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            JobSubcommand::Add(args) => args.execute(runtime),
             JobSubcommand::List(args) => args.execute(runtime),
             JobSubcommand::Show(args) => args.execute(runtime),
             JobSubcommand::Run(args) => args.execute(runtime),
             JobSubcommand::History(args) => args.execute(runtime),
-            JobSubcommand::Delete(args) => args.execute(runtime),
             JobSubcommand::RunState(args) => args.execute(runtime),
-            JobSubcommand::RunV2(args) => args.execute(runtime),
             JobSubcommand::RunPipelineWorker(args) => args.execute(runtime),
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct JobAddArgs {
-    #[arg(long)]
-    pub job_id: Option<String>,
-    #[arg(long, default_value_t = 1)]
-    pub max_active_runs: u32,
-    #[arg(long)]
-    pub target_id: String,
-    #[arg(long)]
-    pub agent_cli: String,
-    #[arg(long)]
-    pub model: Option<String>,
-    #[arg(long, default_value = "20m")]
-    pub timeout: String,
-    /// Comma-separated list of extra env var names to pass through in hermetic mode for this job.
-    #[arg(long, default_value = "")]
-    pub env_extra: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobAddArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let timeout_seconds = crate::parse::parse_duration_seconds(&self.timeout)?;
-
-        let job = runtime.add_job(JobAddParams {
-            job_id: self.job_id,
-            default_input: None,
-            max_active_runs: Some(self.max_active_runs),
-            max_iterations: None,
-            steps: vec![JobStep {
-                target_id: self.target_id,
-                agent_cli: self.agent_cli,
-                model: self.model,
-                timeout_seconds,
-                env_extra: crate::parse::csv_to_vec(&self.env_extra),
-                ..Default::default()
-            }],
-            policy: None,
-            initial_state_override: None,
-        })?;
-
-        if self.json {
-            crate::output::json::print_pretty(&job_to_json(&job))
-        } else {
-            println!("{}", job.job_id);
-            Ok(())
         }
     }
 }
@@ -123,7 +59,7 @@ pub struct JobListArgs {
     /// Include disabled jobs
     #[arg(long)]
     pub all: bool,
-    /// Filter to one v2 job kind. v1 jobs are treated as `workflow` during coexistence.
+    /// Filter to one v2 job kind.
     #[arg(long, value_enum)]
     pub kind: Option<JobKind>,
     /// Output full job objects as JSON
@@ -167,7 +103,7 @@ impl Execute for JobListArgs {
                 let (target_type, target_id) = job_catalog_target_summary(job);
                 table.add_row(vec![
                     Cell::new(&job.job_id),
-                    Cell::new(job.kind.to_string()),
+                    Cell::new(job.kind().to_string()),
                     Cell::new(target_type),
                     Cell::new(target_id),
                     crate::output::color::job_state_color_cell(&job.state().to_string()),
@@ -193,56 +129,25 @@ impl Execute for JobShowArgs {
         if self.json {
             crate::output::json::print_pretty(&job_catalog_to_json_with_last_run(&job, None))
         } else {
-            use crate::output::color::{bold, dimmed, job_state_color};
+            use crate::output::color::{bold, job_state_color};
             println!("{} {}", bold("Job ID:"), job.job_id.as_str());
-            println!("{} {}", bold("Schema Version:"), job.schema_version());
-            println!("{} {}", bold("Kind:"), job.kind);
+            println!("{} {}", bold("Kind:"), job.kind());
             println!(
                 "{} {}",
                 bold("State:"),
                 job_state_color(&job.state().to_string())
             );
             println!("{} {}", bold("Max Active Runs:"), job.max_active_runs());
-            if let Some(path) = job.v2_job_path() {
-                println!("{} {}", bold("Path:"), path.display());
-            }
+            println!("{} {}", bold("Path:"), job.path.display());
             if let Some(default_input) = job.default_input() {
                 let rendered = serde_json::to_string(default_input)
                     .unwrap_or_else(|_| "<invalid-json>".to_string());
                 println!("{} {}", bold("Default Input:"), rendered);
             }
-            print_called_by(&job);
-            match &job.definition {
-                JobCatalogDefinition::Legacy(job) => {
-                    println!("{} {}", bold("Steps:"), job.steps.len());
-                    for (i, step) in job.steps.iter().enumerate() {
-                        println!("  {}:", bold(&format!("Step {}", i + 1)));
-                        println!("    {} {}", bold("Target Type:"), step.target_type);
-                        println!("    {} {}", bold("Target ID:"), step.target_id);
-                        println!("    {} {}", bold("Agent CLI:"), step.agent_cli);
-                        if let Some(model) = &step.model {
-                            println!("    {} {}", bold("Model:"), model);
-                        }
-                        println!("    {} {}", bold("Timeout (s):"), step.timeout_seconds);
-                    }
-                    println!(
-                        "{} {}",
-                        bold("Created:"),
-                        dimmed(&job.created_at.to_rfc3339())
-                    );
-                    println!(
-                        "{} {}",
-                        bold("Updated:"),
-                        dimmed(&job.updated_at.to_rfc3339())
-                    );
-                }
-                JobCatalogDefinition::V2 { spec, .. } => {
-                    println!("{} {}", bold("Steps:"), spec.steps.len());
-                    for (i, step) in spec.steps.iter().enumerate() {
-                        println!("  {}:", bold(&format!("Step {}", i + 1)));
-                        print_v2_step(step, 4);
-                    }
-                }
+            println!("{} {}", bold("Steps:"), job.spec.steps.len());
+            for (i, step) in job.spec.steps.iter().enumerate() {
+                println!("  {}:", bold(&format!("Step {}", i + 1)));
+                print_v2_step(step, 4);
             }
             Ok(())
         }
@@ -251,14 +156,20 @@ impl Execute for JobShowArgs {
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit job run my_job\n  orbit job run my_job --input base=main --input pr_number=42\n  orbit job run conditional_on_value --input decision=approved\n\nDirect runs of v2 `kind: subroutine` jobs are rejected. Use `orbit job run-v2 <yaml-path>` for direct schemaVersion: 2 YAML execution by path."
+    after_help = "Examples:\n  orbit job run task_auto_pipeline\n  orbit job run task_auto_pipeline --input mode=local\n  orbit job run crates/orbit-core/assets/jobs/task_pipeline.yaml --input task_id=T123\n"
 )]
 pub struct JobRunArgs {
+    /// Job ID from the catalog, or a direct path to a schemaVersion 2 job YAML.
     pub job_id: String,
     /// Input key=value pairs passed to all job steps (repeatable).
     /// Example: --input task_id=T123 --input base=main
     #[arg(long)]
     pub input: Vec<String>,
+    /// Explicit execution backend override for `agent_loop` steps (§3.1).
+    /// Precedence: this flag > `ORBIT_BACKEND` > `[runtime] backend` > `http`.
+    /// Accepted values: `http`, `cli`, `auto`.
+    #[arg(long)]
+    pub backend: Option<String>,
     #[arg(long)]
     pub json: bool,
     /// Stream agent stderr to the terminal and tee stdout live for debugging.
@@ -269,90 +180,99 @@ pub struct JobRunArgs {
 impl Execute for JobRunArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let input = build_job_run_input(&self.input)?;
+        let backend_flag =
+            orbit_core::command::backend_resolver::parse_backend_flag(self.backend.as_deref())
+                .map_err(OrbitError::InvalidInput)?;
+        let direct_path = PathBuf::from(&self.job_id);
+        if direct_path.exists() {
+            if self.debug {
+                return Err(OrbitError::InvalidInput(
+                    "`orbit job run --debug` is not supported for schemaVersion 2 jobs; use the audit output instead.".to_string(),
+                ));
+            }
+            let result = runtime.run_job_v2_from_yaml(&direct_path, input, backend_flag)?;
+            let audit_jsonl_str = result
+                .audit_jsonl
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let backend_str = result.resolved_backend.as_str();
+            if self.json {
+                return crate::output::json::print_pretty(&json!({
+                    "run_id": result.run_id,
+                    "job_name": result.job_name,
+                    "resolved_backend": backend_str,
+                    "success": result.success,
+                    "message": result.message,
+                    "pipeline": result.pipeline,
+                    "audit_jsonl": audit_jsonl_str,
+                    "events_emitted": result.events_emitted,
+                }));
+            }
+            println!(
+                "run_id={};job={};backend={};success={};events={};audit_jsonl={}",
+                result.run_id,
+                result.job_name,
+                backend_str,
+                result.success,
+                result.events_emitted,
+                audit_jsonl_str,
+            );
+            if let Some(msg) = &result.message {
+                println!("message: {msg}");
+            }
+            println!(
+                "pipeline: {}",
+                serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
+            );
+            return Ok(());
+        }
+
         let job = runtime.show_job_catalog_entry(&self.job_id)?;
-        match &job.definition {
-            JobCatalogDefinition::Legacy(_) => {
-                warn_legacy_job_runtime_usage(&self.job_id);
-                let run = runtime.run_job_now_with_input_debug(&self.job_id, input, self.debug)?;
-                let run_details = runtime
-                    .job_history(&self.job_id)?
-                    .into_iter()
-                    .find(|entry| entry.run_id == run.run_id);
-                if self.json {
-                    crate::output::json::print_pretty(&json!({
-                        "job_id": run.job_id,
-                        "run_id": run.run_id,
-                        "state": run.state.to_string(),
-                        "attempt": run.attempt,
-                        "error_code": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|s| s.error_code.clone()),
-                        "error_message": run_details.as_ref().and_then(|entry| entry.steps.last()).and_then(|s| s.error_message.clone()),
-                    }))
-                } else {
-                    let error_code = run_details
-                        .as_ref()
-                        .and_then(|entry| entry.steps.last())
-                        .and_then(|s| s.error_code.clone())
-                        .unwrap_or_else(|| "-".to_string());
-                    let error_message = run_details
-                        .as_ref()
-                        .and_then(|entry| entry.steps.last())
-                        .and_then(|s| s.error_message.clone())
-                        .unwrap_or_else(|| "-".to_string())
-                        .replace('\n', " ");
-                    println!(
-                        "job_id={};run_id={};state={};attempt={};error_code={};error_message={}",
-                        run.job_id, run.run_id, run.state, run.attempt, error_code, error_message
-                    );
-                    Ok(())
-                }
+        if self.debug {
+            return Err(OrbitError::InvalidInput(
+                "`orbit job run --debug` is not supported for schemaVersion 2 jobs; use the audit output instead.".to_string(),
+            ));
+        }
+        if job.kind() == JobKind::Subroutine {
+            return Err(OrbitError::InvalidInput(build_subroutine_run_error(&job)));
+        }
+        let result = runtime.run_job_v2_from_yaml(&job.path, input, backend_flag)?;
+        let audit_jsonl_str = result
+            .audit_jsonl
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let backend_str = result.resolved_backend.as_str();
+        if self.json {
+            crate::output::json::print_pretty(&json!({
+                "job_id": job.job_id.clone(),
+                "kind": job.kind().to_string(),
+                "resolved_backend": backend_str,
+                "success": result.success,
+                "message": result.message,
+                "pipeline": result.pipeline,
+                "audit_jsonl": audit_jsonl_str,
+                "events_emitted": result.events_emitted,
+            }))
+        } else {
+            println!(
+                "job_id={};kind={};backend={};success={};events={};audit_jsonl={}",
+                job.job_id.as_str(),
+                job.kind(),
+                backend_str,
+                result.success,
+                result.events_emitted,
+                audit_jsonl_str,
+            );
+            if let Some(msg) = &result.message {
+                println!("message: {msg}");
             }
-            JobCatalogDefinition::V2 { path, .. } => {
-                if self.debug {
-                    return Err(OrbitError::InvalidInput(
-                        "`orbit job run --debug` is only supported for legacy v1 jobs; use `orbit job run-v2 <path>` for direct schemaVersion: 2 execution.".to_string(),
-                    ));
-                }
-                if job.kind == JobKind::Subroutine {
-                    return Err(OrbitError::InvalidInput(build_subroutine_run_error(&job)));
-                }
-                let result = runtime.run_job_v2_from_yaml(path, input, None)?;
-                let audit_jsonl_str = result
-                    .audit_jsonl
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "-".to_string());
-                let backend_str = result.resolved_backend.as_str();
-                if self.json {
-                    crate::output::json::print_pretty(&json!({
-                        "job_id": job.job_id.clone(),
-                        "kind": job.kind.to_string(),
-                        "resolved_backend": backend_str,
-                        "success": result.success,
-                        "message": result.message,
-                        "pipeline": result.pipeline,
-                        "audit_jsonl": audit_jsonl_str,
-                        "events_emitted": result.events_emitted,
-                    }))
-                } else {
-                    println!(
-                        "job_id={};kind={};backend={};success={};events={};audit_jsonl={}",
-                        job.job_id.as_str(),
-                        job.kind,
-                        backend_str,
-                        result.success,
-                        result.events_emitted,
-                        audit_jsonl_str,
-                    );
-                    if let Some(msg) = &result.message {
-                        println!("message: {msg}");
-                    }
-                    println!(
-                        "pipeline: {}",
-                        serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
-                    );
-                    Ok(())
-                }
-            }
+            println!(
+                "pipeline: {}",
+                serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
+            );
+            Ok(())
         }
     }
 }
@@ -413,28 +333,6 @@ impl Execute for JobHistoryArgs {
     }
 }
 
-#[derive(Args)]
-pub struct JobDeleteArgs {
-    pub job_id: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobDeleteArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.delete_job(&self.job_id)?;
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "id": self.job_id,
-                "deleted": true,
-            }))
-        } else {
-            println!("Deleted job '{}'", self.job_id);
-            Ok(())
-        }
-    }
-}
-
 fn format_last_run(last_run: Option<&JobRun>) -> String {
     match last_run {
         None => "never".to_string(),
@@ -457,71 +355,26 @@ fn job_catalog_filter(include_disabled: bool, kind: Option<JobKind>) -> JobCatal
 }
 
 fn job_catalog_target_summary(job: &JobCatalogEntry) -> (String, String) {
-    match &job.definition {
-        JobCatalogDefinition::Legacy(job) => {
-            let first = job.steps.first();
-            (
-                first
-                    .map(|step| step.target_type.to_string())
-                    .unwrap_or_else(|| "-".to_string()),
-                first
-                    .map(|step| step.target_id.clone())
-                    .unwrap_or_else(|| "-".to_string()),
-            )
-        }
-        JobCatalogDefinition::V2 { spec, .. } => spec
-            .steps
-            .first()
-            .map(v2_step_target_summary)
-            .unwrap_or_else(|| ("-".to_string(), "-".to_string())),
-    }
+    job.spec
+        .steps
+        .first()
+        .map(v2_step_target_summary)
+        .unwrap_or_else(|| ("-".to_string(), "-".to_string()))
 }
 
-fn print_called_by(job: &JobCatalogEntry) {
-    use crate::output::color::bold;
-
-    if job.callers.is_empty() {
-        if job.kind == JobKind::Subroutine {
-            println!(
-                "{} {}",
-                bold("Called By:"),
-                "(orphan) — see the load-time warning for the asset path"
-            );
-        }
-        return;
-    }
-
-    println!("{} {}", bold("Called By:"), job.callers.join(", "));
-}
-
-pub(crate) fn job_to_json_with_last_run(job: &Job, last_run: Option<&JobRun>) -> Value {
-    let mut obj = job_to_json(job);
-    obj["last_run_state"] = last_run
-        .map(|r| serde_json::Value::String(r.state.to_string()))
-        .unwrap_or(serde_json::Value::Null);
-    obj["last_run_at"] = last_run
-        .and_then(|r| r.finished_at.or(r.started_at).or(Some(r.scheduled_at)))
-        .map(|ts| serde_json::Value::String(ts.to_rfc3339()))
-        .unwrap_or(serde_json::Value::Null);
-    obj
-}
-
-fn job_catalog_to_json_with_last_run(job: &JobCatalogEntry, last_run: Option<&JobRun>) -> Value {
-    let mut value = match &job.definition {
-        JobCatalogDefinition::Legacy(legacy) => job_to_json(legacy),
-        JobCatalogDefinition::V2 { path, spec } => json!({
-            "job_id": job.job_id.clone(),
-            "state": spec.state.to_string(),
-            "default_input": spec.default_input,
-            "max_active_runs": spec.max_active_runs,
-            "steps": spec.steps.iter().map(job_v2_step_to_json).collect::<Vec<_>>(),
-            "path": path.display().to_string(),
-        }),
-    };
-    value["schema_version"] = json!(job.schema_version());
-    value["kind"] = json!(job.kind.to_string());
-    value["called_by"] = json!(job.callers);
-    value["orphaned_subroutine"] = json!(job.orphaned_subroutine);
+pub(crate) fn job_catalog_to_json_with_last_run(
+    job: &JobCatalogEntry,
+    last_run: Option<&JobRun>,
+) -> Value {
+    let mut value = json!({
+        "job_id": job.job_id.clone(),
+        "kind": job.kind().to_string(),
+        "state": job.state().to_string(),
+        "default_input": job.spec.default_input,
+        "max_active_runs": job.spec.max_active_runs,
+        "steps": job.spec.steps.iter().map(job_v2_step_to_json).collect::<Vec<_>>(),
+        "path": job.path.display().to_string(),
+    });
     value["last_run_state"] = last_run
         .map(|r| serde_json::Value::String(r.state.to_string()))
         .unwrap_or(serde_json::Value::Null);
@@ -539,33 +392,6 @@ fn job_catalog_to_signal_json(job: &JobCatalogEntry) -> Value {
         "target_id": target_id,
         "state": job.state().to_string(),
     })
-}
-
-pub(crate) fn job_to_json(job: &Job) -> Value {
-    json!({
-        "job_id": job.job_id,
-        "state": job.state.to_string(),
-        "default_input": job.default_input,
-        "max_active_runs": job.max_active_runs,
-        "created_at": job.created_at.to_rfc3339(),
-        "updated_at": job.updated_at.to_rfc3339(),
-        "steps": job.steps.iter().map(job_step_to_json).collect::<Vec<_>>(),
-    })
-}
-
-fn job_step_to_json(step: &JobStep) -> Value {
-    let mut value = json!({
-        "target_type": step.target_type.to_string(),
-        "target_id": step.target_id,
-        "agent_cli": step.agent_cli,
-        "timeout_seconds": step.timeout_seconds,
-        "env_extra": step.env_extra,
-        "env_set": step.env_set,
-    });
-    if let Some(model) = &step.model {
-        value["model"] = Value::String(model.clone());
-    }
-    value
 }
 
 fn job_v2_step_to_json(step: &JobV2Step) -> Value {
@@ -664,22 +490,10 @@ pub(crate) fn summarize_error_message(raw: Option<&str>) -> String {
 }
 
 fn build_subroutine_run_error(job: &JobCatalogEntry) -> String {
-    if job.callers.is_empty() {
-        let path = job
-            .v2_job_path()
-            .map(|value| value.display().to_string())
-            .unwrap_or_else(|| "-".to_string());
-        return format!(
-            "job '{}' declares `kind: subroutine` and cannot be run directly. No workflow references it in the loaded corpus; it appears orphaned. The load-time warning should have named the orphan asset path: {}",
-            job.job_id.as_str(),
-            path
-        );
-    }
-
     format!(
-        "job '{}' declares `kind: subroutine` and cannot be run directly. Referencing workflows: {}",
+        "job '{}' declares `kind: subroutine` and cannot be run directly (asset: {}).",
         job.job_id.as_str(),
-        job.callers.join(", ")
+        job.path.display()
     )
 }
 
@@ -824,67 +638,4 @@ fn build_job_run_input(pairs: &[String]) -> Result<Value, OrbitError> {
         map.insert(key.to_string(), Value::String(value.to_string()));
     }
     Ok(Value::Object(map))
-}
-
-#[derive(Args)]
-pub struct JobRunV2Args {
-    /// Path to a v2 (schemaVersion:2, kind:Job) YAML file.
-    pub path: PathBuf,
-    /// Optional JSON input passed to the v2 job executor.
-    #[arg(long, default_value = "null")]
-    pub input: String,
-    /// Explicit execution backend override for `agent_loop` steps (§3.1).
-    /// Precedence: this flag > `ORBIT_BACKEND` > `[runtime] backend` > `http`.
-    /// Accepted values: `http`, `cli`, `auto`.
-    #[arg(long)]
-    pub backend: Option<String>,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobRunV2Args {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input: Value = serde_json::from_str(&self.input)
-            .map_err(|e| OrbitError::InvalidInput(format!("--input must be valid JSON: {e}")))?;
-        let backend_flag =
-            orbit_core::command::backend_resolver::parse_backend_flag(self.backend.as_deref())
-                .map_err(OrbitError::InvalidInput)?;
-        let result = runtime.run_job_v2_from_yaml(&self.path, input, backend_flag)?;
-        let audit_jsonl_str = result
-            .audit_jsonl
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let backend_str = result.resolved_backend.as_str();
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "run_id": result.run_id,
-                "job_name": result.job_name,
-                "resolved_backend": backend_str,
-                "success": result.success,
-                "message": result.message,
-                "pipeline": result.pipeline,
-                "audit_jsonl": audit_jsonl_str,
-                "events_emitted": result.events_emitted,
-            }))
-        } else {
-            println!(
-                "run_id={};job={};backend={};success={};events={};audit_jsonl={}",
-                result.run_id,
-                result.job_name,
-                backend_str,
-                result.success,
-                result.events_emitted,
-                audit_jsonl_str,
-            );
-            if let Some(msg) = &result.message {
-                println!("message: {msg}");
-            }
-            println!(
-                "pipeline: {}",
-                serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
-            );
-            Ok(())
-        }
-    }
 }

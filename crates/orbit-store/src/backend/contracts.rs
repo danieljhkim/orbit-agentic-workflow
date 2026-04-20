@@ -1,9 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Activity, AuditEvent, ExecutorDef, Job, JobRun, JobRunState, JobScheduleState, JobStep,
-    KnowledgeRunMetrics, OrbitError, OrbitId, PipelineState, PolicyDef, ReviewThread, StoredTool,
-    Task, TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
-    TaskType,
+    AuditEvent, ExecutorDef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError, OrbitId,
+    PipelineState, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
+    TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -165,52 +164,6 @@ pub struct TaskReservationReleaseResult {
     pub expired_reservations: Vec<ExpiredTaskReservation>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ActivityCreateParams {
-    pub id: String,
-    pub spec_type: String,
-    pub description: String,
-    pub input_schema_json: Value,
-    pub output_schema_json: Value,
-    pub spec_config: Value,
-    pub executor: Option<String>,
-    pub workspace_path: Option<String>,
-    pub created_by: Option<String>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct ActivityUpdateParams {
-    pub description: Option<String>,
-    pub input_schema_json: Option<Value>,
-    pub output_schema_json: Option<Value>,
-    pub spec_config: Option<Value>,
-    pub executor: Option<Option<String>>,
-    pub workspace_path: Option<Option<String>>,
-    pub created_by: Option<Option<String>>,
-    pub is_active: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
-pub struct JobCreateParams {
-    pub job_id: Option<String>,
-    pub default_input: Option<Value>,
-    pub max_active_runs: u32,
-    pub max_iterations: u32,
-    pub steps: Vec<JobStep>,
-    pub policy: Option<String>,
-    pub initial_state: JobScheduleState,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct JobUpdateParams {
-    pub default_input: Option<Option<Value>>,
-    pub max_active_runs: Option<u32>,
-    pub max_iterations: Option<u32>,
-    pub steps: Option<Vec<JobStep>>,
-    pub policy: Option<Option<String>>,
-    pub state: Option<JobScheduleState>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct JobRunQuery {
     pub job_id: Option<String>,
@@ -282,27 +235,6 @@ pub trait TaskReservationStoreBackend: Send + Sync {
         &self,
         params: TaskReservationReleaseParams,
     ) -> Result<TaskReservationReleaseResult, OrbitError>;
-}
-
-pub trait ActivityStoreBackend: Send + Sync {
-    fn add_activity(&self, params: ActivityCreateParams) -> Result<Activity, OrbitError>;
-    fn list_activities(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError>;
-    fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError>;
-    fn update_activity(
-        &self,
-        id: &str,
-        params: ActivityUpdateParams,
-    ) -> Result<Activity, OrbitError>;
-    fn disable_activity(&self, id: &str) -> Result<bool, OrbitError>;
-}
-
-pub trait JobDefinitionStoreBackend: Send + Sync {
-    fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError>;
-    fn update_job(&self, job_id: &str, params: JobUpdateParams) -> Result<Job, OrbitError>;
-    fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError>;
-    fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError>;
-    fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError>;
-    fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError>;
 }
 
 pub trait JobRunStoreBackend: Send + Sync {

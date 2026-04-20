@@ -67,6 +67,7 @@ struct RawTemplate {
 enum RawTaskType {
     Task,
     Feature,
+    Epic,
     Issue,
     Bug,
     Chore,
@@ -87,6 +88,7 @@ impl From<RawTaskType> for TaskType {
         match v {
             RawTaskType::Task => TaskType::Task,
             RawTaskType::Feature => TaskType::Feature,
+            RawTaskType::Epic => TaskType::Epic,
             RawTaskType::Issue => TaskType::Issue,
             RawTaskType::Bug => TaskType::Bug,
             RawTaskType::Chore => TaskType::Chore,

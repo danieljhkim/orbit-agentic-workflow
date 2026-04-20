@@ -146,15 +146,14 @@ pub fn init_workspace_at_root(
         refreshed_default_policies,
         scoring_enabled,
     ) = if options.global_only {
-        let init_runtime = OrbitRuntime::from_data_root(&orbit_root)?;
         let executor_store = global_executor_def_store(layout.executors_dir.clone());
         let policy_store = global_policy_def_store(layout.policies_dir.clone());
         let refreshed_default_executors =
             seed_default_executors(executor_store.as_ref(), overwrite)?;
         let refreshed_default_policies = seed_default_policies(policy_store.as_ref(), overwrite)?;
         let refreshed_default_activities =
-            seed_default_activities(&init_runtime, &orbit_root, overwrite)?;
-        let refreshed_default_jobs = seed_default_jobs(&init_runtime, overwrite)?;
+            seed_default_activities(&layout.activities_dir, overwrite)?;
+        let refreshed_default_jobs = seed_default_jobs(&layout.jobs_dir, overwrite)?;
         (
             refreshed_default_activities,
             refreshed_default_jobs,

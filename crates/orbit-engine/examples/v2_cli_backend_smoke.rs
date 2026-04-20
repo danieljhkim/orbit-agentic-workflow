@@ -21,12 +21,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use orbit_common::types::JobScheduleState;
-use orbit_common::types::v2::{
+use orbit_common::types::activity_job::{
     ActivityAsset, ActivityV2Spec, AgentLoopSpec, Backend, BackendConstraintError, JobKind, JobV2,
     JobV2Step, JobV2StepBody, LoopBlock, OnDenial, Provider, TargetStep, load_activity_asset,
     resolve_job_backends, validate_job_loop_session_backends,
 };
-use orbit_engine::v2::{
+use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2DispatchInput, V2RuntimeHost, dispatch_v2_activity,
 };
 use serde_json::Value;
@@ -275,21 +275,17 @@ fn scenario_g_auto_backend_unresolved_is_structural_error() -> Result<(), Box<dy
     Ok(())
 }
 
-/// H: load `v2_agent_loop_cli_reference.yaml` from disk and execute it
+/// H: load `agent_loop_cli_reference.yaml` from disk and execute it
 /// end-to-end through the CLI runner using a substitutable `claude` script.
 /// Proves the YAML parses with the new `backend:` / `provider:` /
 /// `wall_clock_timeout_seconds:` fields and routes correctly to the CLI
 /// runner.
 fn scenario_h_cli_reference_asset_round_trip() -> Result<(), Box<dyn std::error::Error>> {
-    println!("  H) v2_agent_loop_cli_reference.yaml round-trips + dispatches");
+    println!("  H) agent_loop_cli_reference.yaml round-trips + dispatches");
     let repo_root = repo_root();
-    let path = repo_root
-        .join("crates/orbit-core/assets/activities/v2_reference/v2_agent_loop_cli_reference.yaml");
+    let path = repo_root.join("crates/orbit-core/assets/activities/agent_loop_cli_reference.yaml");
     let yaml = fs::read_to_string(&path)?;
-    let asset = match load_activity_asset(&yaml)? {
-        ActivityAsset::V2(a) => a,
-        ActivityAsset::V1(_) => panic!("expected v2 asset at {}", path.display()),
-    };
+    let asset = load_activity_asset(&yaml)?;
     match &asset.spec.spec {
         ActivityV2Spec::AgentLoop(spec) => {
             assert_eq!(
@@ -331,13 +327,10 @@ fn scenario_i_existing_agent_loop_assets_still_deserialize()
 -> Result<(), Box<dyn std::error::Error>> {
     println!("  I) existing v2 agent_loop assets deserialize unchanged");
     let repo_root = repo_root();
-    let asset_path = repo_root
-        .join("crates/orbit-core/assets/activities/v2_reference/v2_agent_loop_reference.yaml");
+    let asset_path =
+        repo_root.join("crates/orbit-core/assets/activities/agent_loop_reference.yaml");
     let yaml = fs::read_to_string(&asset_path)?;
-    let asset = match load_activity_asset(&yaml)? {
-        ActivityAsset::V2(a) => a,
-        ActivityAsset::V1(_) => panic!("expected v2 asset"),
-    };
+    let asset = load_activity_asset(&yaml)?;
     if let ActivityV2Spec::AgentLoop(spec) = &asset.spec.spec {
         // Defaults should produce `Http` + `Claude` when the YAML omits them.
         assert_eq!(spec.backend, Backend::Http, "default backend must be Http");

@@ -4,10 +4,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use orbit_policy::PolicyEngine;
 use orbit_store::{
-    Store, audit_event_store_sqlite, global_activity_store, global_executor_def_store,
-    global_policy_def_store, layered_policy_def_store, scoped_job_backends,
-    task_reservation_store_sqlite, tool_store_sqlite, workspace_policy_def_store,
-    workspace_task_backends,
+    Store, audit_event_store_sqlite, global_executor_def_store, global_policy_def_store,
+    layered_policy_def_store, task_reservation_store_sqlite, tool_store_sqlite,
+    workspace_job_run_store, workspace_policy_def_store, workspace_task_backends,
 };
 
 use orbit_common::types::{DEFAULT_POLICY_NAME, OrbitError, WorkspacePaths};
@@ -50,11 +49,10 @@ pub(crate) fn build_context_from_roots(
     );
 
     let task_backends = workspace_task_backends(persistence.task_dir.clone());
-    let job_backends = scoped_job_backends(persistence.job_dir.clone(), paths.jobs_dir.clone());
+    let job_run_store = workspace_job_run_store(paths.jobs_dir.clone());
 
-    // Activities, executors, and policies are global-only. Jobs always read
-    // definitions from the global store and write run state to the workspace.
-    let activity_store = global_activity_store(persistence.activity_dir.clone());
+    // Executors and policies are global-only. Jobs always persist run state
+    // under the workspace state directory.
     let tool_store = tool_store_sqlite(store.clone());
     let audit_event_store = audit_event_store_sqlite(store.clone());
     let task_reservation_store = task_reservation_store_sqlite(store.clone());
@@ -97,9 +95,7 @@ pub(crate) fn build_context_from_roots(
             task_backends.review,
             task_backends.artifact,
             task_reservation_store,
-            activity_store,
-            job_backends.definition,
-            job_backends.run,
+            job_run_store,
             tool_store,
             audit_event_store,
             executor_def_store,

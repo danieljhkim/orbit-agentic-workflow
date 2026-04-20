@@ -20,12 +20,6 @@ pub(crate) struct WorkflowDispatchResult {
     pub error_message: Option<String>,
 }
 
-pub(crate) fn warn_legacy_job_runtime_usage(job_id: &str) {
-    eprintln!(
-        "orbit: warning: job '{job_id}' is running through the deprecated v1 job runtime; prefer `orbit job run-v2 <yaml-path>` for schemaVersion: 2 YAML jobs such as `crates/orbit-core/assets/jobs/v2_samples/task_pipeline.yaml`."
-    );
-}
-
 pub(crate) fn load_filtered_job_runs(
     runtime: &OrbitRuntime,
     job_ids: &[&str],
@@ -144,30 +138,52 @@ pub(crate) fn dispatch_workflow(
 ) -> Result<Vec<WorkflowDispatchResult>, OrbitError> {
     let workflow = find_workflow(workflow_alias)
         .ok_or_else(|| OrbitError::InvalidInput(format!("unknown workflow '{workflow_alias}'")))?;
+    if debug {
+        return Err(OrbitError::InvalidInput(
+            "`orbit run ship --debug` is not supported for persisted workflow runs; use `orbit job run <path>` for direct schemaVersion 2 job debugging.".to_string(),
+        ));
+    }
 
-    warn_legacy_job_runtime_usage(workflow.job_id);
+    let timeout_seconds = OrbitRuntime::normalize_pipeline_wait_timeout(None)?;
+    let poll_interval_seconds = OrbitRuntime::normalize_pipeline_wait_poll_interval(None);
 
     let mut results = Vec::with_capacity(loop_count as usize);
     for _ in 0..loop_count {
-        let run = runtime.run_job_now_with_input_debug(workflow.job_id, input.clone(), debug)?;
+        let invoke = runtime.submit_pipeline_run(workflow.job_id, input.clone(), None, None)?;
+        let wait = runtime.wait_pipeline_runs(
+            std::slice::from_ref(&invoke.run_id),
+            timeout_seconds,
+            poll_interval_seconds,
+            None,
+        )?;
+        let run = runtime.show_job_run(&invoke.run_id)?;
         let run_details = runtime
             .job_history(workflow.job_id)?
+            .into_iter()
+            .find(|entry| entry.run_id == run.run_id);
+        let wait_entry = wait
+            .results
             .into_iter()
             .find(|entry| entry.run_id == run.run_id);
         results.push(WorkflowDispatchResult {
             workflow_alias,
             job_id: run.job_id,
             run_id: run.run_id,
-            state: run.state.to_string(),
+            state: wait_entry
+                .as_ref()
+                .map(|entry| entry.status.clone())
+                .unwrap_or_else(|| run.state.to_string()),
             attempt: run.attempt,
             error_code: run_details
                 .as_ref()
                 .and_then(summary_step)
                 .and_then(|step| step.error_code.clone()),
-            error_message: run_details
-                .as_ref()
-                .and_then(summary_step)
-                .and_then(|step| step.error_message.clone()),
+            error_message: wait_entry.and_then(|entry| entry.error).or_else(|| {
+                run_details
+                    .as_ref()
+                    .and_then(summary_step)
+                    .and_then(|step| step.error_message.clone())
+            }),
         });
     }
 

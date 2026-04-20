@@ -15,10 +15,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
-use orbit_common::types::v2::{
+use orbit_common::types::activity_job::{
     ActivityAsset, ActivityV2, ActivityV2Spec, V2AuditEventKind, load_activity_asset,
 };
-use orbit_engine::v2::{
+use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2DispatchInput, V2JsonlSink, V2RuntimeHost,
     agent_loop_driver::drive_agent_loop, dispatch_v2_activity,
 };
@@ -28,12 +28,12 @@ use std::env;
 fn main() -> ExitCode {
     let mut failures: Vec<String> = Vec::new();
 
-    let references_dir = workspace_root().join("crates/orbit-core/assets/activities/v2_reference");
+    let references_dir = workspace_root().join("crates/orbit-core/assets/activities");
     let tmp_audit_root = std::env::temp_dir().join("orbit-v2-smoke");
     let _ = std::fs::create_dir_all(&tmp_audit_root);
 
     {
-        let path = references_dir.join("v2_shell_reference.yaml");
+        let path = references_dir.join("shell_reference.yaml");
         match smoke_dispatch_shell(&path, &tmp_audit_root) {
             Ok(()) => println!("shell reference: OK"),
             Err(err) => failures.push(format!("shell reference: {err}")),
@@ -41,7 +41,7 @@ fn main() -> ExitCode {
     }
 
     {
-        let path = references_dir.join("v2_deterministic_reference.yaml");
+        let path = references_dir.join("deterministic_reference.yaml");
         match smoke_dispatch_deterministic(&path, &tmp_audit_root) {
             Ok(()) => println!("deterministic reference: OK"),
             Err(err) => failures.push(format!("deterministic reference: {err}")),
@@ -49,7 +49,7 @@ fn main() -> ExitCode {
     }
 
     {
-        let path = references_dir.join("v2_agent_loop_reference.yaml");
+        let path = references_dir.join("agent_loop_reference.yaml");
         match smoke_dispatch_agent_loop(&path, &tmp_audit_root) {
             Ok(()) => println!("agent_loop reference (tool-denial): OK"),
             Err(err) => failures.push(format!("agent_loop reference: {err}")),
@@ -279,11 +279,10 @@ fn build_writer_and_sinks(
 
 fn load_v2(yaml: &str) -> Result<V2ReferenceAsset, String> {
     match load_activity_asset(yaml) {
-        Ok(ActivityAsset::V2(a)) => Ok(V2ReferenceAsset {
+        Ok(a) => Ok(V2ReferenceAsset {
             name: a.name,
             spec: a.spec,
         }),
-        Ok(ActivityAsset::V1(_)) => Err("parsed as v1, expected v2".into()),
         Err(err) => Err(format!("load: {err}")),
     }
 }
