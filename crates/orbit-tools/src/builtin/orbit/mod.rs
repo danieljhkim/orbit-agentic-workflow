@@ -1,5 +1,9 @@
 pub mod duel_plan_add;
 pub mod duel_plan_winner;
+pub mod groundhog_checkpoint_deviate;
+pub mod groundhog_checkpoint_failure;
+pub mod groundhog_checkpoint_success;
+pub mod groundhog_side_effect;
 pub mod knowledge_add;
 pub mod knowledge_callers;
 pub mod knowledge_delete;
@@ -36,9 +40,12 @@ pub mod task_update;
 use orbit_common::types::{OrbitError, ToolParam, normalize_optional_attribution_label};
 use orbit_knowledge::TaskGraphService;
 use orbit_knowledge::graph::nodes::CodebaseGraphV1;
+use serde::Serialize;
 use serde_json::Value;
 
-use crate::{OrbitBuiltinAction, OrbitTaskScope, ToolContext, ToolRegistry};
+use crate::{
+    GroundhogBuiltinAction, OrbitBuiltinAction, OrbitTaskScope, ToolContext, ToolRegistry,
+};
 
 pub(super) use orbit_common::types::{optional_string, optional_string_alias, required_string};
 
@@ -50,6 +57,10 @@ pub(super) struct OrbitIdentity {
 }
 
 pub fn register(registry: &mut ToolRegistry) {
+    registry.register(groundhog_checkpoint_success::OrbitGroundhogCheckpointSuccessTool);
+    registry.register(groundhog_checkpoint_failure::OrbitGroundhogCheckpointFailureTool);
+    registry.register(groundhog_checkpoint_deviate::OrbitGroundhogCheckpointDeviateTool);
+    registry.register(groundhog_side_effect::OrbitGroundhogSideEffectTool);
     registry.register(task_add::OrbitTaskAddTool);
     registry.register(task_approve::OrbitTaskApproveTool);
     registry.register(task_delete::OrbitTaskDeleteTool);
@@ -152,6 +163,59 @@ fn require_orbit_host(ctx: &ToolContext) -> Result<&dyn crate::OrbitToolHost, Or
             "orbit builtin requires an Orbit runtime host in ToolContext".to_string(),
         )
     })
+}
+
+fn require_groundhog_host(ctx: &ToolContext) -> Result<&dyn crate::GroundhogToolHost, OrbitError> {
+    ctx.groundhog_host.as_deref().ok_or_else(|| {
+        OrbitError::Execution(
+            "groundhog verb tools require an active groundhog runner context".to_string(),
+        )
+    })
+}
+
+pub(super) fn execute_groundhog_action<T: Serialize>(
+    ctx: &ToolContext,
+    action: GroundhogBuiltinAction,
+    label: &str,
+    input: &T,
+) -> Result<Value, OrbitError> {
+    let host = require_groundhog_host(ctx)?;
+    let scope = host.scope();
+    if !scope.active_day {
+        return Err(OrbitError::Execution(format!(
+            "groundhog {label} requires an active groundhog day context"
+        )));
+    }
+
+    let input = serde_json::to_value(input)
+        .map_err(|error| OrbitError::Execution(format!("groundhog {label} serialize: {error}")))?;
+    host.execute(action, input)
+}
+
+pub(super) fn require_groundhog_fields(
+    input: &Value,
+    label: &str,
+    fields: &[&str],
+) -> Result<(), OrbitError> {
+    let missing = input
+        .as_object()
+        .map(|obj| {
+            fields
+                .iter()
+                .filter(|field| !obj.contains_key(**field))
+                .copied()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| fields.to_vec());
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "groundhog {label} input validation failed: missing required fields: {}",
+        missing.join(", ")
+    )))
 }
 
 pub(super) fn has_explicit_knowledge_dir(input: &Value) -> bool {

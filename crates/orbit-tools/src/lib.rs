@@ -80,10 +80,25 @@ pub enum OrbitBuiltinAction {
     TaskUpdate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroundhogBuiltinAction {
+    CheckpointSuccess,
+    CheckpointFailure,
+    CheckpointDeviate,
+    SideEffect,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrbitTaskScope {
     pub orbit_root: Option<PathBuf>,
     pub task_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GroundhogScope {
+    pub active_day: bool,
+    pub task_id: Option<String>,
+    pub checkpoint_id: Option<String>,
 }
 
 pub trait OrbitToolHost: Send + Sync {
@@ -96,6 +111,12 @@ pub trait OrbitToolHost: Send + Sync {
     ) -> Result<Value, OrbitError>;
 
     fn task_scope(&self) -> OrbitTaskScope;
+}
+
+pub trait GroundhogToolHost: Send + Sync {
+    fn execute(&self, action: GroundhogBuiltinAction, input: Value) -> Result<Value, OrbitError>;
+
+    fn scope(&self) -> GroundhogScope;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +168,8 @@ pub struct ToolContext {
     /// Narrow Orbit application host used by Orbit builtins instead of respawning
     /// the Orbit CLI or carrying task-specific state in the generic tool context.
     pub orbit_host: Option<Arc<dyn OrbitToolHost>>,
+    /// Optional Groundhog runner host used by the Groundhog verb tools.
+    pub groundhog_host: Option<Arc<dyn GroundhogToolHost>>,
 }
 
 impl std::fmt::Debug for ToolContext {
@@ -160,6 +183,8 @@ impl std::fmt::Debug for ToolContext {
             .field("proc_allowed_programs", &self.proc_allowed_programs)
             .field("has_policy_engine", &self.policy_engine.is_some())
             .field("fs_profile", &self.fs_profile)
+            .field("has_orbit_host", &self.orbit_host.is_some())
+            .field("has_groundhog_host", &self.groundhog_host.is_some())
             .finish()
     }
 }
