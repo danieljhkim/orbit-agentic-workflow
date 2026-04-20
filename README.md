@@ -1,20 +1,41 @@
-# Orbit: Local-First Agentic Workflow Engine
+# Orbit: Graph-Aware Parallel Execution For Coding Agents
 
-Orbit is a local-first workflow engine for agent-driven software delivery. It helps humans and coding agents coordinate around structured tasks, reusable activities, and repeatable job pipelines directly inside a repository.
+Orbit is a local-first control plane for running multiple coding agents safely in parallel inside a repository.
 
-Orbit runs on top of agent CLIs such as Codex and Claude Code. No provider API keys are required by Orbit itself.
+It sits on top of agent CLIs such as Codex, Claude Code, and Gemini CLI. Orbit does not try to be the model layer, and it does not need provider API keys of its own.
+
+The core idea is simple:
+
+1. Take a goal.
+2. Understand the code graph.
+3. Partition the work into safe shards.
+4. Launch agent sessions with explicit claims.
+5. Reconcile the results.
+
+Existing workflow engines are good at durable control flow. They are not, by themselves, a complete answer to graph-aware parallel agent execution in a live codebase. Orbit is focused on that gap.
+
+---
+
+## What Orbit Is
+
+Orbit should be understood through four public concepts:
+
+- **Goal**: the change you want in the repository.
+- **Graph**: the code-aware structure Orbit uses to reason about dependencies and boundaries.
+- **Session**: an agent worker running against an isolated workspace or worktree.
+- **Locks**: explicit claims that prevent overlapping or unsafe parallel edits.
+
+Today, some of this model is still expressed through lower-level implementation surfaces such as tasks, jobs, and activities. Those remain in the repository because Orbit still needs durable execution state and scheduling primitives. They are the substrate, not the product story.
 
 ---
 
 ## Quick Start
 
-**Prerequisites**: Codex CLI, Gemini CLI, or Claude Code
+**Prerequisites**: Codex CLI, Claude Code, or Gemini CLI
 
 Orbit itself can be installed without Rust. Only source builds require a Rust toolchain.
 
-Suggestion: Get cheapest tier subscriptions for above 3, and milk every dollar out of it.
-
-For the default PR-based ship workflow (`orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship local` instead.
+For the default PR-based execution path (`orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship local` instead.
 
 ```bash
 # install via curl | sh (macOS and Linux)
@@ -31,26 +52,30 @@ make install
 # initialize global Orbit state (~/.orbit)
 orbit init
 
-# enter a repository and initialize workspace-local Orbit state
+# initialize workspace-local Orbit state inside a repository
 cd <repo>
 orbit workspace init
 
-# ask an agent to create one or more Orbit tasks
-"Create an orbit task for <task_description>"
+# build the code graph
+orbit graph build
 
-# review and approve the proposed task as a human
+# today, goals are still represented internally as Orbit tasks
+# one easy path is to ask an agent to draft them for you
+"Create an orbit task for <goal>"
+
+# review and approve the proposed execution shard(s)
 orbit task list
 orbit task show <task_id>
 orbit task approve <task_id> --note "LGTM"
 
-# run the default PR-based workflow (this requires gh)
+# run the default PR-based execution path
 orbit run ship
 
-# or run a local-only workflow with no PR/review loop
+# or run a local-only execution path
 orbit run ship local
 ```
 
-If you already know which tasks you want to run, pin them explicitly:
+If you already know which shard(s) you want to run, pin them explicitly:
 
 ```bash
 orbit run ship T123 T456 --parallelism 2 --base main
@@ -65,110 +90,141 @@ curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | 
 
 ---
 
-## Human vs Agent Surfaces
+## Why Orbit Exists
 
-Humans use the direct CLI surface such as `orbit task add`, `orbit task approve`, and `orbit run ...`.
-Agents use `orbit tool run ...`.
+The hard problem is not "how do I run steps in order?" We already have strong tools for that.
 
-When an agent invokes `orbit tool run ...` directly, pass `agent` and `model` in the input JSON:
+The hard problem is:
 
-```bash
-orbit tool run orbit.task.show --input '{
-  "id": "<task-id>",
-  "agent": "<claude|codex|gemini>",
-  "model": "<model_name>"
-}'
-```
+- how to split a code change into parallelizable shards
+- how to decide which shards can safely run at the same time
+- how to keep agent sessions from colliding on files or code regions
+- how to recover when parallel work conflicts anyway
+- how to do all of that with durable local state instead of hidden SaaS state
+
+Orbit is aimed at that problem.
 
 ---
 
-## First-Class Workflows
+## Current Mental Model vs Current CLI
 
-Orbit exposes workflow entrypoints under `orbit run`:
+Orbit's long-term public model is:
 
-| Workflow | Command | Description |
-| :--- | :--- | :--- |
-| **ship** | `orbit run ship [task_id ...]` | Select tasks, dispatch agents, verify results, open a PR, review, and merge; requires `gh` auth |
-| **ship-local** | `orbit run ship local [task_id ...]` | Select tasks, dispatch agents, and commit locally without a PR |
-| **duel** | `orbit run duel [task_id]` | Single-task cross-agent evaluation: a random permutation of implementer/reviewer/arbiter across agent families, scored into `.orbit/scoreboard/duel.json` |
-| **duel-plan** | `orbit run duel plan <task_id>` | Single-task planning duel between planners with arbiter scoring |
-| **job** | `orbit run job <job_id>` or `orbit run <job_id>` | Run an arbitrary job by ID |
+- `goal`
+- `graph`
+- `session`
+- `locks`
 
-Each duel run appends an entry to `.orbit/scoreboard/duel.json`. Inspect aggregates with `orbit run duel score` (add `--by scope` or `--by ambiguity` to segment, `--role implementer` to filter, `--json` for raw output). The numbers feed back into agent selection for `ship`.
+Orbit's current CLI still exposes lower-level surfaces because the implementation is not fully collapsed into that model yet:
 
-Optional flags:
+- `task`: today's durable goal or shard representation
+- `job` / `activity`: execution substrate
+- `policy`: filesystem guardrails for agent execution
+- `tool`: Orbit-native and MCP-facing integration surface
 
-- `orbit run ship T1 T2` and `orbit run ship local T1 T2` pin a specific ship batch instead of auto-selecting from backlog
-- `orbit run ship --parallelism N` and `orbit run ship local --parallelism N` control the number of parallel workers
-- `orbit run ship --base BRANCH`, `orbit run ship local --base BRANCH`, `orbit run duel <task_id> --base BRANCH`, and `orbit run duel plan <task_id> --base BRANCH` override the base branch
+Use the public model to understand Orbit. Use the current CLI to operate it.
 
-Examples:
+---
+
+## Core Flow Today
+
+The current high-level path is:
+
+1. Build or update the repository graph with `orbit graph ...`.
+2. Represent a goal as one or more Orbit tasks.
+3. Let Orbit dispatch agent work through `orbit run ship` or `orbit run ship local`.
+4. Let Orbit manage worktrees, claims, and reconciliation internally.
+
+The user-visible task surface exists today because Orbit still needs a durable unit for distributing work across agent sessions. Treat tasks as execution shards, not as the main reason Orbit exists.
+
+---
+
+## Graph-Aware Scheduling
+
+Orbit already contains the pieces that matter most to its thesis:
+
+- code graph build and query via `orbit graph`
+- automatic task bundling and fan-out dispatch
+- gate pipelines that wait for safe execution windows
+- explicit task lock reservation before dispatch
+- isolated worktree-based execution for bundles
+
+This is the direction of the product: not generic workflow authoring, but graph-aware scheduling and conflict management for parallel coding agents.
+
+---
+
+## Primary Commands
+
+These are the most important surfaces today:
+
+### Graph
 
 ```bash
-# auto-select tasks from backlog
+orbit graph build
+orbit graph update
+orbit graph search <query>
+orbit graph show <selector>
+```
+
+Use these to build and inspect the code-aware structure Orbit uses for partitioning and scheduling.
+
+### Execution
+
+```bash
 orbit run ship
-
-# pin specific tasks
-orbit run ship T20260402-0352 T20260402-0406 --parallelism 2
-
-# local-only pipeline
-orbit run ship local --base main
-
-# inspect the latest ship run
-orbit run ship show
-
-# run a duel against a specific task
-orbit run duel T20260402-0352
-
-# run a planning duel against a specific task
-orbit run duel plan T20260402-0352
-
-# inspect the latest duel run
-orbit run duel show
-
-# inspect duel scoreboard aggregates
-orbit run duel score --by scope
+orbit run ship <task_id> ...
+orbit run ship local
+orbit reconcile
 ```
+
+- `ship` runs the default PR-based execution path.
+- `ship local` runs a local-only execution path with no PR loop.
+- `reconcile` helps recover pending or running workflow state.
+
+### Current Goal Surface
+
+```bash
+orbit task list
+orbit task show <task_id>
+orbit task approve <task_id>
+orbit task update <task_id> ...
+```
+
+This is the current durable surface for goal and shard state until Orbit grows a dedicated public `goal` UX.
 
 ---
 
-## CLI Surface
+## Advanced And Internal Surfaces
 
-Orbit exposes a small set of top-level command groups:
+Orbit still exposes several lower-level command groups because they are part of the current runtime substrate:
 
 ```text
 orbit [OPTIONS] <COMMAND>
 
 Setup:
-  init       Initialize the global Orbit root (~/.orbit)
-  workspace  Initialize and manage workspaces
-  config     Show or update Orbit configuration
+  init
+  workspace
+  config
 
-Resources:
-  task       Create, update, and manage tasks
-  activity   Define, list, and run v2 activities
-  job        Define, list, and manage job workflows
-  policy     Manage filesystem profile policies and runtime scoping
-  executor   Manage executors
-  tool       Manage tools and external MCP plugins
+Primary:
+  graph
+  task
+  run
+  reconcile
 
-Workflows:
-  run        Run a job workflow (supports run ship / run duel / run job / run <id>)
-  reconcile  Reconcile pending/running job runs
-
-Inspect:
-  audit      Query the audit event log
-  metrics    Inspect token, tool-call, and knowledge-pack metrics
-  scoreboard Generate read-only scoreboard summaries
-  graph      Query the knowledge graph
-
-Serve:
-  serve      Serve Orbit outward (serve web / serve mcp)
+Advanced / Internal:
+  activity
+  job
+  policy
+  executor
+  tool
+  audit
+  metrics
+  scoreboard
+  serve
 ```
 
-The `policy` command group stays in `Resources` because policies now define the
-named filesystem profiles and global deny rules that activities consult at
-runtime.
+These surfaces exist because Orbit still needs an inspectable local runtime. They should not be read as the core product thesis.
 
 ---
 
@@ -179,35 +235,32 @@ Orbit artifacts have two scopes:
 - **Global scope**: initialized via `orbit init`, usually under `~/.orbit/`
 - **Workspace scope**: initialized via `orbit workspace init`, under `<repo>/.orbit/`
 
-Orbit operates through a structured hierarchy under `.orbit/`:
+Typical workspace-local state lives under `.orbit/`:
 
 ```text
 .orbit/
-├── activities/       # Activity definitions (YAML)
 ├── diagnostics/      # Runtime diagnostics and health checks
-├── jobs/
-│   ├── jobs/         # Job definitions
-│   └── runs/         # Immutable execution logs per job run
-├── scoreboard/       # Derived performance metrics and scoring artifacts
-├── skills/           # Agent skill instructions
-└── tasks/            # Task artifacts organized by lifecycle state
+├── jobs/             # Job definitions and immutable run logs
+├── knowledge/        # Code graph artifacts
+├── scoreboard/       # Derived metrics and historical artifacts
+└── tasks/            # Durable goal/shard state
 ```
 
 Scoping rules matter:
 
-- Tasks, job runs, and scoreboards are workspace-local
-- Activities and jobs merge from global defaults with workspace overrides
-- Policies merge by profile name across global and workspace layers; global
-  `denyRead` / `denyModify` rails stay additive
-- Skills are fully controlled by the workspace
-- Audit is global
+- tasks, job runs, and scoreboards are workspace-local
+- graph artifacts are workspace-local
+- activities and jobs can merge from global defaults with workspace overrides
+- policies provide filesystem-scoped execution guardrails
+- audit remains globally scoped
 
-## Filesystem Profiles
+---
 
-Policies are now focused on filesystem runtime scoping. A v2 activity can opt
-into a named filesystem profile with `fsProfile`; if it omits the field, Orbit
-resolves an implicit `unrestricted` profile (`read: [./**]`, `modify: [./**]`)
-and still applies the policy's global deny rules.
+## Filesystem Guardrails
+
+Orbit uses filesystem-scoped policies to control what agent execution can read and modify.
+
+A v2 activity can opt into a named filesystem profile with `fsProfile`; if it omits the field, Orbit resolves an implicit unrestricted profile and still applies global deny rules.
 
 Short example:
 
@@ -241,24 +294,13 @@ spec:
       modify: []
 ```
 
----
-
-## Tasks
-
-Tasks are work items for agent and human coordination, similar to Jira tickets but designed for agent execution.
-
-Tasks are tightly coupled to Orbit jobs. If you already use Linear or Jira, Orbit tasks can serve as the execution-layer counterpart inside the repo.
-
-- **Work unit**: feature, bug fix, chore, refactor, or follow-up
-- **Lifecycle**: Proposed → Backlog → In Progress → Review → Done
-- **Side paths**: Blocked, Rejected, Archived, Someday
-- **Tracked state**: acceptance criteria, plan, execution summary, PR metadata, comments, and history
+This guardrail model matters because Orbit's core problem is safe parallel execution, not just prompt routing.
 
 ---
 
 ## Architecture
 
-Orbit is structured as a layered set of Rust crates. Lower layers have no knowledge of higher layers.
+Orbit is structured as a layered set of Rust crates. Lower layers do not depend on higher layers.
 
 ```mermaid
 flowchart LR
@@ -274,45 +316,20 @@ flowchart LR
   Store --> Types["orbit-types"]
   Agent --> Types
   Core --> Types
-
 ```
 
-### TypeScript Bridge
+Two details matter most:
 
-`packages/orbit-agent` is not the default task runtime today. The standard `ship` and `duel`
-flows still use the Rust `crates/orbit-agent` bridge through the built-in `codex`, `claude`,
-and `gemini` executors.
+- `orbit-knowledge` provides the graph substrate
+- `orbit-engine` and `orbit-agent` provide the execution substrate
 
-The TypeScript package and CLI bridge still live in-repo, but Orbit does not currently seed
-a built-in executor or smoke activity for that path. Wiring it back into the default
-resources remains separate future work.
-
-### Model Strategy
-
-Orbit uses a multi-model strategy to balance reasoning depth and throughput:
-
-| Model | Role | Rationale |
-| :--- | :--- | :--- |
-| **Claude (Opus)** | Planning, dispatch | Strong higher-order reasoning and planning |
-| **Codex (gpt-5.4)** | Implementation, code generation, code review | Strong execution quality and code review performance |
-
-You can override model choices in the job definitions under `.orbit/jobs/jobs`.
+That is the center of gravity for Orbit.
 
 ---
 
-## Persistence And Repo Hygiene
+## MCP And External Tools
 
-Orbit state is local by default.
-
-- Global state lives under `~/.orbit/`
-- Workspace execution state lives under `<repo>/.orbit/`
-- Scoreboards, tasks, diagnostics, and job runs are workspace-scoped artifacts
-
----
-
-## MCP Plugins
-
-Orbit can expose enabled external tools through `orbit serve mcp`, which makes them effectively MCP plugins alongside the built-in Orbit tool surface.
+Orbit can expose enabled external tools through `orbit serve mcp`, making them available alongside Orbit's built-in tool surface.
 
 The easiest path is to scaffold a starter plugin and register it:
 
@@ -323,20 +340,21 @@ orbit tool show demo.hello
 orbit serve mcp
 ```
 
-`orbit tool scaffold` creates:
+This is useful, but it is not the main product thesis. MCP support is an integration layer, not Orbit's moat.
 
-- an executable script that reads JSON input from stdin, writes JSON output to stdout, and demonstrates the `ORBIT_TOOL_*` environment variables
-- a sidecar manifest named `*.orbit-tool.yaml` that declares the MCP-visible tool name, description, and parameters
+---
 
-When you run `orbit tool add`, Orbit automatically loads the adjacent manifest if present. On the next `orbit serve mcp`, the external tool is exposed with the manifest-defined parameter metadata, so MCP clients can discover it through `tools/list`.
+## What Orbit Is Not
 
-You can inspect or troubleshoot registered plugins with:
+Orbit is not trying to be:
 
-```bash
-orbit tool list
-orbit tool show demo.hello
-orbit tool doctor
-```
+- a foundation model provider
+- a generic workflow engine in the style of Temporal
+- a general agent orchestration canvas in the style of LangGraph
+- a replacement for GitHub, Jira, or Linear
+- a generic task manager as the primary product
+
+Orbit is best understood as a serious local runtime for graph-aware parallel coding-agent execution.
 
 ---
 
@@ -344,34 +362,18 @@ orbit tool doctor
 
 Orbit is still a work in progress.
 
-- Core local execution primitives are usable today
-- The intended workflows are increasingly stable
-- Some product surfaces and derived artifacts are still evolving
-- Production or multi-machine deployments are not yet recommended
+- core local execution primitives are usable today
+- graph build and query are available today
+- the execution substrate still shows more of its internal machinery than the final product should
+- some historical surfaces remain in the CLI even though they are no longer central
+- production or multi-machine deployments are not yet recommended
 
-Orbit is best viewed today as a serious local workflow engine for agent-assisted software delivery, not as a hosted orchestration platform or a replacement for GitHub/Jira/Linear.
-
----
-
-## Agent Scoreboard
-
-<!-- SCOREBOARD_START -->
-
-| Agent | Tasks | Friction (R/A/Rej) | Tokens (Tot/Out) | Duels (W/L) | PR (Cm/Cln/Rev) |
-|---|---|---|---|---|---|
-| **gpt-5.4** | 139 | 0/0/0 | 0/0 | 6/2 | 0/0/0 |
-| **agent** | 73 | 0/2/0 | 0/0 | 0/0 | 0/0/0 |
-| **claude-opus-4-6** | 56 | 0/0/0 | 0/0 | 1/4 | 0/0/0 |
-| **human** | 56 | 0/1/0 | 0/0 | 0/0 | 0/0/0 |
-| **claude-sonnet-4-6** | 16 | 0/0/0 | 0/0 | 0/0 | 0/0/0 |
-| **gemini-3.1-pro-preview** | 3 | 0/0/0 | 0/0 | 0/1 | 0/0/0 |
-| **claude-opus-4-7** | 1 | 0/0/0 | 0/0 | 1/0 | 0/0/0 |
-| **gemini-2.5-pro** | 0 | 0/0/0 | 0/0 | 0/1 | 0/0/0 |
-
-<!-- SCOREBOARD_END -->
+The current repository contains more workflow and task machinery than the long-term public story should emphasize. That is intentional technical debt on the path toward a tighter product focused on graph-aware agent scheduling.
 
 ---
 
 ## Contributing
 
-Contributions focused on execution primitives, state management, workflow ergonomics, docs, and tool-calling interfaces are welcome. Open an issue or submit a pull request for review.
+Contributions focused on graph-aware scheduling, locking, worktree/session management, execution primitives, reconciliation, and tool-calling interfaces are especially welcome.
+
+Open an issue or submit a pull request for review.
