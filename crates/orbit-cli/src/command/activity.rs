@@ -114,14 +114,28 @@ pub struct ActivityListArgs {
 impl Execute for ActivityListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let specs = runtime.list_activities(self.all)?;
+        let v2_catalog = runtime
+            .v2_activity_catalog()
+            .map_err(|err| OrbitError::Store(format!("v2 activity catalog: {err}")))?;
+
         if self.ops {
-            let values = specs
+            let mut values = specs
                 .iter()
                 .map(activity_to_signal_json)
                 .collect::<Vec<_>>();
+            for name in v2_catalog.names() {
+                if let Some(spec) = v2_catalog.get(name) {
+                    values.push(v2_activity_to_signal_json(name, spec));
+                }
+            }
             crate::output::json::print_pretty(&Value::Array(values))
         } else if self.json {
-            let values = specs.iter().map(activity_to_json).collect::<Vec<_>>();
+            let mut values = specs.iter().map(activity_to_json).collect::<Vec<_>>();
+            for name in v2_catalog.names() {
+                if let Some(spec) = v2_catalog.get(name) {
+                    values.push(v2_activity_to_json(name, spec));
+                }
+            }
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
             let mut table =
@@ -139,10 +153,53 @@ impl Execute for ActivityListArgs {
                     Cell::new(&spec.description),
                 ]);
             }
+            for name in v2_catalog.names() {
+                use comfy_table::Cell;
+                let Some(spec) = v2_catalog.get(name) else {
+                    continue;
+                };
+                table.add_row(vec![
+                    Cell::new(name),
+                    Cell::new(v2_activity_type_label(spec)),
+                    crate::output::color::job_state_color_cell("active"),
+                    Cell::new(&spec.description),
+                ]);
+            }
             println!("{table}");
             Ok(())
         }
     }
+}
+
+fn v2_activity_type_label(spec: &orbit_common::types::activity_job::ActivityV2) -> &'static str {
+    use orbit_common::types::activity_job::ActivityV2Spec;
+    match &spec.spec {
+        ActivityV2Spec::AgentLoop(_) => "agent_loop",
+        ActivityV2Spec::Deterministic(_) => "deterministic",
+        ActivityV2Spec::Shell(_) => "shell",
+    }
+}
+
+fn v2_activity_to_json(name: &str, spec: &orbit_common::types::activity_job::ActivityV2) -> Value {
+    json!({
+        "id": name,
+        "type": v2_activity_type_label(spec),
+        "description": spec.description,
+        "active": true,
+        "schemaVersion": 2,
+    })
+}
+
+fn v2_activity_to_signal_json(
+    name: &str,
+    spec: &orbit_common::types::activity_job::ActivityV2,
+) -> Value {
+    json!({
+        "id": name,
+        "type": v2_activity_type_label(spec),
+        "description": spec.description,
+        "is_active": true,
+    })
 }
 
 #[derive(Args)]

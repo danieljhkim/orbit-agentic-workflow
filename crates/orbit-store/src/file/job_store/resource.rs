@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use chrono::{DateTime, Utc};
+use orbit_common::types::activity_job::SchemaHeader;
 use orbit_common::types::{
     Job, JobResource, JobResourceSpec, OrbitError, RESOURCE_SCHEMA_VERSION, ResourceKind,
 };
@@ -19,6 +20,13 @@ impl JobFileStore {
         paths.sort();
         let mut jobs = Vec::new();
         for path in paths {
+            // schemaVersion 2 jobs live in the same directory but are loaded
+            // by the v2 catalog (`load_v2_job_assets`), not this legacy
+            // file store. Skip them here so `orbit job list` doesn't choke
+            // on the v2 step shape.
+            if is_v2_job_asset(&path)? {
+                continue;
+            }
             jobs.push(self.read_activity_at(&path)?);
         }
         Ok(jobs)
@@ -78,6 +86,19 @@ pub(super) fn job_to_resource(job: &Job) -> JobResource {
             policy: None,
         },
     )
+}
+
+/// Return `true` if the YAML at `path` declares `schemaVersion: 2` (or any
+/// non-1 value). Used by the legacy job store to ignore v2 assets that share
+/// the `<global_root>/resources/jobs/` directory. Unparseable headers are
+/// treated as v1 so the normal v1 parse path surfaces the real error.
+fn is_v2_job_asset(path: &Path) -> Result<bool, OrbitError> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| OrbitError::Io(format!("reading job file '{}': {e}", path.display())))?;
+    match SchemaHeader::parse_yaml(&raw) {
+        Ok(header) => Ok(header.schema_version != RESOURCE_SCHEMA_VERSION),
+        Err(_) => Ok(false),
+    }
 }
 
 pub(super) fn validate_max_active_runs(max_active_runs: u32) -> Result<u32, OrbitError> {
