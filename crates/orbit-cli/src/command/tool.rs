@@ -276,6 +276,8 @@ const MINIMAL_TASK_FIELDS: &[&str] = &[
     "status",
     "priority",
     "type",
+    "dependencies",
+    "resolved_dependencies",
     "implemented_by",
     "created_at",
     "updated_at",

@@ -193,6 +193,7 @@ pub(super) fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         title: bundle.doc.title,
         description: bundle.doc.description,
         acceptance_criteria: bundle.doc.acceptance_criteria,
+        dependencies: bundle.doc.dependencies,
         plan: bundle.plan,
         execution_summary: bundle.execution_summary,
         context_files: bundle.doc.context_files,

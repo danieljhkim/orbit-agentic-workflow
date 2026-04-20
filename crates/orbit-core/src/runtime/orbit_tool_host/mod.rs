@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use orbit_common::types::{
     AuditEventStatus, OrbitError, ReviewThreadStatus, Task, TaskPriority, TaskStatus, TaskType,
-    normalize_optional_attribution_label, optional_csv_or_string_list_alias, optional_raw_string,
-    optional_string, optional_string_alias, optional_string_list_alias, optional_u32_alias,
-    required_string, split_csv,
+    build_task_status_index, normalize_optional_attribution_label,
+    optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
+    optional_string_list_alias, optional_u32_alias, required_string, split_csv,
+    task_dependencies_ready,
 };
 use orbit_common::utility::path::{
     normalize_workspace_relative_path, workspace_relative_paths_overlap,
@@ -22,10 +23,10 @@ use orbit_tools::{OrbitBuiltinAction, OrbitTaskScope, OrbitToolHost};
 use serde_json::{Value, json};
 
 use self::input::{
-    empty_string_to_none, parse_artifacts, parse_optional_poll_interval_seconds,
-    parse_optional_timeout_seconds, parse_string_array_field, parse_task_complexity,
-    parse_task_priority, parse_task_status, parse_task_type, require_object_field,
-    resolve_state_dir, resolve_state_payload, resolve_step_index,
+    empty_string_to_none, optional_bool_alias, parse_artifacts,
+    parse_optional_poll_interval_seconds, parse_optional_timeout_seconds, parse_string_array_field,
+    parse_task_complexity, parse_task_priority, parse_task_status, parse_task_type,
+    require_object_field, resolve_state_dir, resolve_state_payload, resolve_step_index,
 };
 use self::json::{
     serialize_error, serialize_task, serialize_task_lint_report, task_fields_to_json,
@@ -124,7 +125,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     .transpose()?;
                 self.runtime
                     .add_review_thread(&id, body, path, line, agent, model)?;
-                serialize_task(&self.runtime.get_task(&id)?)
+                serialize_task(&self.runtime, &self.runtime.get_task(&id)?)
             }
             OrbitBuiltinAction::ReviewThreadList => {
                 let id = required_string(&input, &["id"], "id")?;
@@ -141,14 +142,14 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                 let body = required_string(&input, &["body"], "body")?;
                 self.runtime
                     .reply_review_thread(&id, &thread_id, body, agent, model)?;
-                serialize_task(&self.runtime.get_task(&id)?)
+                serialize_task(&self.runtime, &self.runtime.get_task(&id)?)
             }
             OrbitBuiltinAction::ReviewThreadResolve => {
                 let id = required_string(&input, &["id"], "id")?;
                 let thread_id = required_string(&input, &["thread_id"], "thread_id")?;
                 self.runtime
                     .resolve_review_thread(&id, &thread_id, agent, model)?;
-                serialize_task(&self.runtime.get_task(&id)?)
+                serialize_task(&self.runtime, &self.runtime.get_task(&id)?)
             }
             OrbitBuiltinAction::StateGet => {
                 let state_dir = resolve_state_dir(&self.task_scope, &input)?;
@@ -203,6 +204,8 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                             ],
                         )?
                         .unwrap_or_default(),
+                        dependencies: optional_csv_or_string_list_alias(&input, &["dependencies"])?
+                            .unwrap_or_default(),
                         plan,
                         comment: optional_string(&input, "comment")?,
                         context_files: optional_string(&input, "context")?
@@ -232,7 +235,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     agent,
                     model,
                 )?;
-                serialize_task(&task)
+                serialize_task(&self.runtime, &task)
             }
             OrbitBuiltinAction::TaskApprove => {
                 let id = required_string(&input, &["id"], "id")?;
@@ -243,7 +246,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     agent,
                     model,
                 )?;
-                serialize_task(&task)
+                serialize_task(&self.runtime, &task)
             }
             OrbitBuiltinAction::TaskDelete => {
                 let id = required_string(&input, &["id"], "id")?;
@@ -264,17 +267,31 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                 let parent_id =
                     optional_string_alias(&input, &["parent_id", "parent", "parentId"])?;
                 let batch_id = optional_string(&input, "batch_id")?;
-                let tasks = self.runtime.list_tasks_filtered(
-                    status,
-                    None,
-                    parent_id.as_deref(),
-                    batch_id.as_deref(),
-                )?;
+                let ready = optional_bool_alias(&input, &["ready"])?;
+                let all_tasks = self.runtime.list_tasks()?;
+                let status_by_id = build_task_status_index(&all_tasks);
+                let tasks = all_tasks
+                    .into_iter()
+                    .filter(|task| status.is_none_or(|value| task.status == value))
+                    .filter(|task| {
+                        parent_id
+                            .as_deref()
+                            .is_none_or(|value| task.parent_id.as_deref() == Some(value))
+                    })
+                    .filter(|task| {
+                        batch_id
+                            .as_deref()
+                            .is_none_or(|value| task.batch_id.as_deref() == Some(value))
+                    })
+                    .filter(|task| {
+                        ready != Some(true) || task_dependencies_ready(task, &status_by_id)
+                    })
+                    .collect::<Vec<_>>();
                 Ok(Value::Array(
                     tasks
                         .into_iter()
                         .filter(|task| task_type.is_none_or(|kind| task.task_type == kind))
-                        .map(task_to_json)
+                        .map(|task| task_to_json(&task, &status_by_id))
                         .collect::<Vec<_>>(),
                 ))
             }
@@ -461,7 +478,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     agent,
                     model,
                 )?;
-                serialize_task(&task)
+                serialize_task(&self.runtime, &task)
             }
             OrbitBuiltinAction::TaskShow => {
                 let id = required_string(&input, &["id"], "id")?;
@@ -470,7 +487,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                 if let Some(fields) = fields {
                     task_fields_to_json(&self.runtime, &task, &fields)
                 } else {
-                    serialize_task(&task)
+                    serialize_task(&self.runtime, &task)
                 }
             }
             OrbitBuiltinAction::TaskStart => {
@@ -482,7 +499,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     agent,
                     model,
                 )?;
-                serialize_task(&task)
+                serialize_task(&self.runtime, &task)
             }
             OrbitBuiltinAction::TaskUpdate => {
                 let id = required_string(&input, &["id"], "id")?;
@@ -508,6 +525,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                                 "acceptance-criteria",
                             ],
                         )?,
+                        dependencies: optional_csv_or_string_list_alias(&input, &["dependencies"])?,
                         plan: input
                             .get("plan")
                             .map(|value| {
@@ -537,7 +555,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                     agent,
                     model,
                 )?;
-                serialize_task(&task)
+                serialize_task(&self.runtime, &task)
             }
         }
     }

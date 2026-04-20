@@ -22,6 +22,7 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) title: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) acceptance_criteria: Option<Vec<String>>,
+    pub(crate) dependencies: Option<Vec<String>>,
     pub(crate) plan: Option<String>,
     pub(crate) execution_summary: Option<String>,
     pub(crate) context_files: Option<Vec<String>>,
@@ -54,6 +55,7 @@ impl TaskRecordUpdateParams {
         self.title.is_some()
             || self.description.is_some()
             || self.acceptance_criteria.is_some()
+            || self.dependencies.is_some()
             || self.plan.is_some()
             || self.execution_summary.is_some()
             || self.context_files.is_some()
@@ -191,6 +193,7 @@ impl TaskRecords<'_> {
                     title: params.title.clone(),
                     description: params.description.clone(),
                     acceptance_criteria: params.acceptance_criteria.clone(),
+                    dependencies: params.dependencies.clone(),
                     plan: params.plan.clone(),
                     execution_summary: params.execution_summary.clone(),
                     context_files: params.context_files.clone(),

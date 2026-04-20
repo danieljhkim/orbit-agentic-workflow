@@ -95,9 +95,11 @@ pub use role::Role;
 pub use run_state::PipelineState;
 pub use skill::Skill;
 pub use task::{
-    ReviewMessage, ReviewThread, ReviewThreadStatus, Task, TaskArtifact, TaskComment,
-    TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
-    prune_missing_context_files,
+    ResolvedTaskDependency, ReviewMessage, ReviewThread, ReviewThreadStatus, Task, TaskArtifact,
+    TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    build_task_status_index, normalize_task_dependencies, prune_missing_context_files,
+    resolve_task_dependencies, task_dependencies_ready, unmet_task_dependencies,
+    validate_task_dependencies,
 };
 pub use task_plan::{TaskPlan, TaskPlanCheckpoint, TaskPlanSuccessCriterion, parse_task_plan};
 pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};

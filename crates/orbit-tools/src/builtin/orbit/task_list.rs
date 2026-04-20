@@ -32,11 +32,19 @@ impl Tool for OrbitTaskListTool {
                 param_type: "string".to_string(),
                 required: false,
             },
+            ToolParam {
+                name: "ready".to_string(),
+                description: "When true, keep only tasks whose dependencies are satisfied"
+                    .to_string(),
+                param_type: "boolean".to_string(),
+                required: false,
+            },
         ];
         parameters.extend(super::identity_params());
         ToolSchema {
             name: "orbit.task.list".to_string(),
-            description: "List Orbit tasks, optionally filtered by status, parent, or type"
+            description:
+                "List Orbit tasks, optionally filtered by status, parent, type, or dependency readiness"
                 .to_string(),
             parameters,
             builtin: true,

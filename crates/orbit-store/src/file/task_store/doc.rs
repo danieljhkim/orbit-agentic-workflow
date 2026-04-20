@@ -25,6 +25,8 @@ pub(super) struct TaskFileDocument {
     #[serde(default)]
     pub(super) acceptance_criteria: Vec<String>,
     #[serde(default)]
+    pub(super) dependencies: Vec<OrbitId>,
+    #[serde(default)]
     pub(super) context_files: Vec<String>,
     #[serde(default)]
     pub(super) workspace_path: Option<String>,
@@ -93,6 +95,7 @@ pub(super) fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, 
         "acceptance_criteria",
         &doc.acceptance_criteria,
     )?);
+    yaml.push_str(&yaml_field("dependencies", &doc.dependencies)?);
 
     yaml.push_str(&yaml_section("context"));
     yaml.push_str(&yaml_field("context_files", &doc.context_files)?);

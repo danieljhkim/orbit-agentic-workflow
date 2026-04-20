@@ -165,6 +165,31 @@ pub(super) fn empty_string_to_none(raw: String) -> Option<String> {
     }
 }
 
+pub(super) fn optional_bool_alias(
+    input: &Value,
+    names: &[&str],
+) -> Result<Option<bool>, OrbitError> {
+    for name in names {
+        let Some(value) = input.get(*name) else {
+            continue;
+        };
+        return match value {
+            Value::Bool(value) => Ok(Some(*value)),
+            Value::String(raw) => match raw.trim().to_ascii_lowercase().as_str() {
+                "true" => Ok(Some(true)),
+                "false" => Ok(Some(false)),
+                _ => Err(OrbitError::InvalidInput(format!(
+                    "`{name}` must be a boolean"
+                ))),
+            },
+            _ => Err(OrbitError::InvalidInput(format!(
+                "`{name}` must be a boolean"
+            ))),
+        };
+    }
+    Ok(None)
+}
+
 pub(super) fn parse_task_status(field: &str, raw: &str) -> Result<TaskStatus, OrbitError> {
     TaskStatus::from_str(raw)
         .map_err(|error| OrbitError::InvalidInput(format!("`{field}` {error}")))

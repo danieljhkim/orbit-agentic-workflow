@@ -50,6 +50,7 @@ impl TaskFileStore {
                 title: params.title,
                 description: params.description,
                 acceptance_criteria: params.acceptance_criteria,
+                dependencies: params.dependencies,
                 context_files: params.context_files,
                 workspace_path: params.workspace_path,
                 repo_root: params.repo_root,
@@ -186,6 +187,9 @@ impl TaskFileStore {
         }
         if let Some(value) = &fields.acceptance_criteria {
             bundle.doc.acceptance_criteria = value.clone();
+        }
+        if let Some(value) = &fields.dependencies {
+            bundle.doc.dependencies = value.clone();
         }
         if let Some(value) = &fields.plan {
             bundle.plan = value.clone();

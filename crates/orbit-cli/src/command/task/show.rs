@@ -1,5 +1,5 @@
 use clap::Args;
-use orbit_core::{OrbitError, OrbitRuntime};
+use orbit_core::{OrbitError, OrbitRuntime, build_task_status_index};
 
 use crate::command::Execute;
 
@@ -13,7 +13,8 @@ pub struct TaskShowArgs {
     #[arg(long)]
     pub json: bool,
     /// Print only the specified field projection(s). Valid values: comments, plan,
-    /// execution_summary, description, acceptance_criteria, history, context_files, artifacts.
+    /// execution_summary, description, acceptance_criteria, dependencies,
+    /// resolved_dependencies, history, context_files, artifacts.
     /// Repeat the flag or use a comma-separated value list. Combined with --json,
     /// a single field returns that field as JSON and multiple fields return a JSON object.
     #[arg(long = "fields", alias = "field", value_delimiter = ',', num_args = 1..)]
@@ -23,19 +24,23 @@ pub struct TaskShowArgs {
 impl Execute for TaskShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let task = runtime.get_task(&self.id)?;
+        let status_by_id = build_task_status_index(&runtime.list_tasks()?);
         let fields = normalize_task_show_fields(&self.fields)?;
 
         if !fields.is_empty() {
             if self.json {
                 return crate::output::json::print_pretty(&task_fields_to_json(
-                    runtime, &task, &fields,
+                    runtime,
+                    &task,
+                    &fields,
+                    Some(&status_by_id),
                 )?);
             }
-            return print_task_fields(runtime, &task, &fields);
+            return print_task_fields(runtime, &task, &fields, Some(&status_by_id));
         }
 
         if self.json {
-            crate::output::json::print_pretty(&task_to_json(&task))
+            crate::output::json::print_pretty(&task_to_json(&task, &status_by_id))
         } else {
             use crate::output::color::{bold, dimmed, priority_color, status_color};
             println!("{} {}", bold("ID:"), task.id);
@@ -64,6 +69,12 @@ impl Execute for TaskShowArgs {
                 println!("{}", bold("Acceptance Criteria:"));
                 for criterion in &task.acceptance_criteria {
                     println!("  - {}", criterion);
+                }
+            }
+            if !task.dependencies.is_empty() {
+                println!("{}", bold("Dependencies:"));
+                for dependency in orbit_core::resolve_task_dependencies(&task, &status_by_id) {
+                    println!("  - {}", dependency.label());
                 }
             }
             if !task.plan.is_empty() {
@@ -156,12 +167,14 @@ fn normalize_task_show_fields(fields: &[String]) -> Result<Vec<String>, OrbitErr
                 | "execution_summary"
                 | "description"
                 | "acceptance_criteria"
+                | "dependencies"
+                | "resolved_dependencies"
                 | "history"
                 | "context_files"
                 | "artifacts"
         ) {
             return Err(OrbitError::InvalidInput(format!(
-                "unknown field selector `{trimmed}`. Valid values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts"
+                "unknown field selector `{trimmed}`. Valid values: comments, plan, execution_summary, description, acceptance_criteria, dependencies, resolved_dependencies, history, context_files, artifacts"
             )));
         }
         normalized.push(trimmed.to_string());

@@ -29,6 +29,13 @@ impl Tool for OrbitTaskUpdateTool {
                 required: false,
             },
             ToolParam {
+                name: "dependencies".to_string(),
+                description: "Replacement dependency task IDs as a string or array of strings"
+                    .to_string(),
+                param_type: "array".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "plan".to_string(),
                 description: "Replacement task plan text (empty string clears)".to_string(),
                 param_type: "string".to_string(),

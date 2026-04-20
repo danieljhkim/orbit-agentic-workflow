@@ -1,4 +1,7 @@
-use orbit_common::types::{OrbitError, OrbitEvent, Task, prune_missing_context_files};
+use orbit_common::types::{
+    OrbitError, OrbitEvent, Task, normalize_task_dependencies, prune_missing_context_files,
+    validate_task_dependencies,
+};
 use orbit_store::{TaskCreateParams as StoreTaskCreateParams, friction_bounty};
 
 use crate::OrbitRuntime;
@@ -46,6 +49,8 @@ impl OrbitRuntime {
         let comments = build_task_comments(params.comment.clone(), effective_label.as_str())?;
         let workspace_path =
             normalize_workspace_path(&self.paths().repo_root, params.workspace_path.as_deref())?;
+        let dependencies = normalize_task_dependencies(params.dependencies.clone())?;
+        validate_task_dependencies(&self.list_tasks()?, None, &dependencies)?;
 
         let prune_root = context_workspace_root(&self.paths().repo_root, workspace_path.as_deref());
         let (kept_context_files, dropped_context_files) =
@@ -58,6 +63,7 @@ impl OrbitRuntime {
                 title: params.title.clone(),
                 description: params.description.clone(),
                 acceptance_criteria: params.acceptance_criteria.clone(),
+                dependencies: dependencies.clone(),
                 plan: params.plan.clone(),
                 execution_summary: String::new(),
                 context_files: kept_context_files.clone(),

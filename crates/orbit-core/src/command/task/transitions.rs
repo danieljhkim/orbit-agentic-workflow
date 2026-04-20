@@ -1,6 +1,6 @@
 use orbit_common::types::{
-    OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus,
-    normalize_optional_attribution_label,
+    OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus, build_task_status_index,
+    normalize_optional_attribution_label, unmet_task_dependencies,
 };
 use orbit_store::friction_bounty;
 
@@ -117,6 +117,8 @@ impl OrbitRuntime {
         let (canonical_agent, canonical_model) =
             self.canonical_agent_model_identity(agent.as_deref(), model.as_deref());
         let task = self.get_task(id)?;
+        let dependency_status_index = build_task_status_index(&self.list_tasks()?);
+        let unmet_dependencies = unmet_task_dependencies(&task, &dependency_status_index);
         if in_progress_transition_requires_plan(task.status) {
             ensure_task_has_execution_plan(id, task.plan.as_str())?;
         }
@@ -127,9 +129,22 @@ impl OrbitRuntime {
             canonical_model.as_deref(),
         );
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
+        let dependency_warning = (!unmet_dependencies.is_empty()).then(|| {
+            format!(
+                "warning: task '{id}' has unmet dependencies: {}",
+                unmet_dependencies
+                    .iter()
+                    .map(|dependency| dependency.label())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        });
 
         match task.status {
             TaskStatus::Proposed => {
+                if let Some(warning) = &dependency_warning {
+                    eprintln!("{warning}");
+                }
                 let result = self.with_mutation(|| {
                     let at = chrono::Utc::now();
                     let task = self.stores().tasks().update(
@@ -169,6 +184,9 @@ impl OrbitRuntime {
                 Ok(result)
             }
             TaskStatus::Backlog | TaskStatus::Someday | TaskStatus::Blocked => {
+                if let Some(warning) = &dependency_warning {
+                    eprintln!("{warning}");
+                }
                 let task = self.with_mutation(|| {
                     let task = self.stores().tasks().update(
                         id,

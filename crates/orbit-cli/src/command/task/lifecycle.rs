@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::command::Execute;
 
-use super::output::{print_task_table, task_to_json};
+use super::output::{print_task_table, task_to_json_for_runtime};
 
 #[derive(Args)]
 pub struct TaskStartArgs {
@@ -37,7 +37,7 @@ impl Execute for TaskStartArgs {
             self.model,
         )?;
         if self.json {
-            crate::output::json::print_pretty(&task_to_json(&task))
+            crate::output::json::print_pretty(&task_to_json_for_runtime(runtime, &task)?)
         } else {
             println!("Started task '{}'", task.id);
             Ok(())
@@ -92,7 +92,7 @@ impl Execute for TaskApproveArgs {
                     self.agent.clone(),
                     self.model.clone(),
                 )?;
-                results.push(task_to_json(&task));
+                results.push(task_to_json_for_runtime(runtime, &task)?);
             }
             if bulk {
                 crate::output::json::print_pretty(&Value::Array(results))
@@ -162,7 +162,7 @@ impl Execute for TaskRejectArgs {
                     self.agent.clone(),
                     self.model.clone(),
                 )?;
-                results.push(task_to_json(&task));
+                results.push(task_to_json_for_runtime(runtime, &task)?);
             }
             if bulk {
                 crate::output::json::print_pretty(&Value::Array(results))
@@ -199,7 +199,7 @@ impl Execute for TaskArchiveArgs {
         runtime.archive_task(&self.id)?;
         if self.json {
             let task = runtime.get_task(&self.id)?;
-            crate::output::json::print_pretty(&task_to_json(&task))
+            crate::output::json::print_pretty(&task_to_json_for_runtime(runtime, &task)?)
         } else {
             println!("Archived task '{}'", self.id);
             Ok(())
@@ -221,7 +221,7 @@ impl Execute for TaskUnarchiveArgs {
         runtime.unarchive_task(&self.id)?;
         if self.json {
             let task = runtime.get_task(&self.id)?;
-            crate::output::json::print_pretty(&task_to_json(&task))
+            crate::output::json::print_pretty(&task_to_json_for_runtime(runtime, &task)?)
         } else {
             println!("Unarchived task '{}'", self.id);
             Ok(())
@@ -277,7 +277,10 @@ impl Execute for TaskSearchArgs {
         let tasks = runtime.search_tasks(&self.query)?;
 
         if self.json {
-            let json_tasks: Vec<Value> = tasks.iter().map(task_to_json).collect();
+            let json_tasks: Vec<Value> = tasks
+                .iter()
+                .map(|task| task_to_json_for_runtime(runtime, task))
+                .collect::<Result<_, _>>()?;
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else {
             print_task_table(&tasks, false);

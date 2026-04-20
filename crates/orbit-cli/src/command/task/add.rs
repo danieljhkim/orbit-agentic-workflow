@@ -4,7 +4,7 @@ use orbit_core::{OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskTyp
 
 use crate::command::Execute;
 
-use super::output::task_to_json;
+use super::output::task_to_json_for_runtime;
 
 #[derive(Args)]
 pub struct TaskAddArgs {
@@ -20,6 +20,9 @@ pub struct TaskAddArgs {
     /// Acceptance criteria. Repeat the flag for multiple criteria.
     #[arg(long = "acceptance-criteria")]
     pub acceptance_criteria: Vec<String>,
+    /// Comma-separated dependency task IDs
+    #[arg(long, alias = "dependency", default_value = "")]
+    pub dependencies: String,
     /// Optional task plan payload. Leave blank for the executing agent or planning activity to author later.
     #[arg(long, alias = "instructions", default_value = "")]
     pub plan: String,
@@ -105,6 +108,7 @@ impl Execute for TaskAddArgs {
                 title: self.title,
                 description,
                 acceptance_criteria: self.acceptance_criteria,
+                dependencies: crate::parse::csv_to_vec(&self.dependencies),
                 plan,
                 comment: self.comment,
                 context_files: crate::parse::csv_to_vec(&self.context),
@@ -120,7 +124,7 @@ impl Execute for TaskAddArgs {
         )?;
 
         if self.json {
-            crate::output::json::print_pretty(&task_to_json(&task))
+            crate::output::json::print_pretty(&task_to_json_for_runtime(runtime, &task)?)
         } else {
             println!("{}", task.id);
             Ok(())

@@ -107,7 +107,11 @@ pub(super) struct RejectBody {
 async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
     match runtime.list_tasks() {
         Ok(tasks) => {
-            let values: Vec<Value> = tasks.iter().map(task_to_json).collect();
+            let status_by_id = orbit_core::build_task_status_index(&tasks);
+            let values: Vec<Value> = tasks
+                .iter()
+                .map(|task| task_to_json(task, &status_by_id))
+                .collect();
             Json(Value::Array(values)).into_response()
         }
         Err(e) => server_error(e),
@@ -116,7 +120,14 @@ async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
 
 async fn get_task(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
     match runtime.get_task(&id) {
-        Ok(task) => Json(task_to_json(&task)).into_response(),
+        Ok(task) => match runtime.list_tasks() {
+            Ok(tasks) => Json(task_to_json(
+                &task,
+                &orbit_core::build_task_status_index(&tasks),
+            ))
+            .into_response(),
+            Err(e) => server_error(e),
+        },
         Err(e) => map_runtime_error(e),
     }
 }
@@ -128,7 +139,14 @@ async fn approve_task_action(
 ) -> Response {
     let body = body.map(|Json(b)| b).unwrap_or_default();
     match runtime.approve_task(&id, body.note, body.comment) {
-        Ok(task) => Json(task_to_json(&task)).into_response(),
+        Ok(task) => match runtime.list_tasks() {
+            Ok(tasks) => Json(task_to_json(
+                &task,
+                &orbit_core::build_task_status_index(&tasks),
+            ))
+            .into_response(),
+            Err(e) => server_error(e),
+        },
         Err(e) => map_runtime_error(e),
     }
 }
@@ -139,7 +157,14 @@ async fn reject_task_action(
     Json(body): Json<RejectBody>,
 ) -> Response {
     match runtime.reject_task(&id, body.note, body.comment) {
-        Ok(task) => Json(task_to_json(&task)).into_response(),
+        Ok(task) => match runtime.list_tasks() {
+            Ok(tasks) => Json(task_to_json(
+                &task,
+                &orbit_core::build_task_status_index(&tasks),
+            ))
+            .into_response(),
+            Err(e) => server_error(e),
+        },
         Err(e) => map_runtime_error(e),
     }
 }

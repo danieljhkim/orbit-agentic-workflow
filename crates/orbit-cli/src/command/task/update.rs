@@ -5,7 +5,7 @@ use orbit_core::{OrbitError, OrbitRuntime, TaskStatus};
 
 use crate::command::Execute;
 
-use super::output::task_to_json;
+use super::output::task_to_json_for_runtime;
 
 #[derive(Args)]
 pub struct TaskUpdateArgs {
@@ -20,6 +20,9 @@ pub struct TaskUpdateArgs {
     /// Acceptance criteria. Repeat the flag for multiple criteria.
     #[arg(long = "acceptance-criteria")]
     pub acceptance_criteria: Vec<String>,
+    /// Comma-separated dependency task IDs (empty string clears)
+    #[arg(long, alias = "dependency")]
+    pub dependencies: Option<String>,
     /// New task plan (empty string clears)
     #[arg(long, alias = "instructions")]
     pub plan: Option<String>,
@@ -65,6 +68,7 @@ impl Execute for TaskUpdateArgs {
             title,
             description,
             acceptance_criteria,
+            dependencies,
             plan,
             execution_summary,
             comment,
@@ -101,6 +105,7 @@ impl Execute for TaskUpdateArgs {
             }
         });
         let acceptance_criteria = (!acceptance_criteria.is_empty()).then_some(acceptance_criteria);
+        let dependencies = dependencies.map(|value| crate::parse::csv_to_vec(&value));
         let upsert_artifacts = parse_artifact_args(&artifacts)?;
 
         let task = runtime.update_task_with_identity(
@@ -109,6 +114,7 @@ impl Execute for TaskUpdateArgs {
                 title,
                 description,
                 acceptance_criteria,
+                dependencies,
                 plan,
                 execution_summary,
                 comment,
@@ -125,7 +131,7 @@ impl Execute for TaskUpdateArgs {
         )?;
 
         if json {
-            crate::output::json::print_pretty(&task_to_json(&task))
+            crate::output::json::print_pretty(&task_to_json_for_runtime(runtime, &task)?)
         } else {
             println!("Updated task '{}'", task.id);
             Ok(())

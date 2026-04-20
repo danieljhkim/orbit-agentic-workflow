@@ -28,6 +28,13 @@ impl Tool for OrbitTaskAddTool {
                 required: false,
             },
             ToolParam {
+                name: "dependencies".to_string(),
+                description: "Optional dependency task IDs as a string or array of strings"
+                    .to_string(),
+                param_type: "array".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "plan".to_string(),
                 description:
                     "Optional task plan markdown. Leave blank for the executing agent to author."

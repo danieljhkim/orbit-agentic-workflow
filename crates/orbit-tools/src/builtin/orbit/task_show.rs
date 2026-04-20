@@ -14,7 +14,8 @@ impl Tool for OrbitTaskShowTool {
             description:
                 "Optional field projection as a string or array of strings. When set, returns only \
                 the requested field(s) as JSON. Valid values: comments, plan, execution_summary, \
-                description, acceptance_criteria, history, context_files, artifacts."
+                description, acceptance_criteria, dependencies, resolved_dependencies, history, \
+                context_files, artifacts."
                     .to_string(),
             param_type: "array".to_string(),
             required: false,

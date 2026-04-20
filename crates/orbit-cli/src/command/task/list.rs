@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 
 use clap::Args;
-use orbit_core::{OrbitError, OrbitRuntime, TaskPriority, TaskStatus, TaskType};
+use orbit_core::{
+    OrbitError, OrbitRuntime, TaskPriority, TaskStatus, TaskType, build_task_status_index,
+    task_dependencies_ready,
+};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -33,6 +36,9 @@ pub struct TaskListArgs {
     /// Filter by batch ID
     #[arg(long)]
     pub batch_id: Option<String>,
+    /// Keep only tasks whose dependencies are already satisfied
+    #[arg(long)]
+    pub ready: bool,
     /// Output full task objects as JSON
     #[arg(long)]
     pub json: bool,
@@ -52,8 +58,10 @@ impl Execute for TaskListArgs {
         let task_type = self.task_type;
         let parent_id = self.parent_id;
         let batch_id = self.batch_id;
+        let ready = self.ready;
 
         let all_tasks = runtime.list_tasks()?;
+        let status_by_id = build_task_status_index(&all_tasks);
         let active_statuses = [TaskStatus::Backlog, TaskStatus::InProgress];
         let status_filter =
             default_task_list_status_filter(all, &status, batch_id.as_deref(), &active_statuses);
@@ -73,13 +81,17 @@ impl Execute for TaskListArgs {
                     .as_deref()
                     .is_none_or(|b| t.batch_id.as_deref() == Some(b))
             })
+            .filter(|t| !ready || task_dependencies_ready(t, &status_by_id))
             .collect();
 
         if self.ops {
             let json_tasks: Vec<Value> = tasks.iter().map(task_to_signal_json).collect();
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else if self.json {
-            let json_tasks: Vec<Value> = tasks.iter().map(task_to_json).collect();
+            let json_tasks: Vec<Value> = tasks
+                .iter()
+                .map(|task| task_to_json(task, &status_by_id))
+                .collect();
             crate::output::json::print_pretty(&Value::Array(json_tasks))
         } else {
             print_task_table(&tasks, self.full);

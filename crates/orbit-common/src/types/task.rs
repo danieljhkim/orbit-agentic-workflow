@@ -27,6 +27,7 @@
 //!
 //! See [`TaskStatus::validate_transition`] for the blocklist implementation.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -102,6 +103,14 @@ impl TaskStatus {
             TaskStatus::Rejected => "rejected",
             TaskStatus::Someday => "someday",
         }
+    }
+
+    /// Returns true when the status satisfies a task dependency.
+    ///
+    /// Orbit's lifecycle has no standalone terminal `approved` status for
+    /// tasks today; accepted work lands in `done`.
+    pub fn satisfies_dependency(self) -> bool {
+        matches!(self, TaskStatus::Done)
     }
 
     /// Validates a status transition using a short blocklist of invariants:
@@ -372,6 +381,18 @@ pub struct TaskArtifact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResolvedTaskDependency {
+    pub id: OrbitId,
+    pub status: String,
+}
+
+impl ResolvedTaskDependency {
+    pub fn label(&self) -> String {
+        format!("{} [{}]", self.id, self.status)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub id: OrbitId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -380,6 +401,8 @@ pub struct Task {
     pub description: String,
     #[serde(default)]
     pub acceptance_criteria: Vec<String>,
+    #[serde(default)]
+    pub dependencies: Vec<OrbitId>,
     #[serde(default, alias = "instructions")]
     pub plan: String,
     #[serde(default)]
@@ -477,4 +500,156 @@ pub fn prune_missing_context_files(
         }
     }
     (kept, dropped)
+}
+
+pub fn normalize_task_dependencies(
+    raw_dependencies: Vec<String>,
+) -> Result<Vec<OrbitId>, OrbitError> {
+    let mut normalized = Vec::with_capacity(raw_dependencies.len());
+    let mut seen = BTreeSet::new();
+    for raw in raw_dependencies {
+        let dependency = raw.trim();
+        if dependency.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "task dependencies must not contain empty IDs".to_string(),
+            ));
+        }
+        if seen.insert(dependency.to_string()) {
+            normalized.push(dependency.to_string());
+        }
+    }
+    Ok(normalized)
+}
+
+pub fn build_task_status_index(tasks: &[Task]) -> BTreeMap<OrbitId, TaskStatus> {
+    tasks
+        .iter()
+        .map(|task| (task.id.clone(), task.status))
+        .collect::<BTreeMap<_, _>>()
+}
+
+pub fn resolve_task_dependencies(
+    task: &Task,
+    status_by_id: &BTreeMap<OrbitId, TaskStatus>,
+) -> Vec<ResolvedTaskDependency> {
+    task.dependencies
+        .iter()
+        .map(|dependency_id| ResolvedTaskDependency {
+            id: dependency_id.clone(),
+            status: status_by_id
+                .get(dependency_id)
+                .map(|status| status.to_string())
+                .unwrap_or_else(|| "missing".to_string()),
+        })
+        .collect()
+}
+
+pub fn task_dependencies_ready(task: &Task, status_by_id: &BTreeMap<OrbitId, TaskStatus>) -> bool {
+    task.dependencies.iter().all(|dependency_id| {
+        status_by_id
+            .get(dependency_id)
+            .is_some_and(|status| status.satisfies_dependency())
+    })
+}
+
+pub fn unmet_task_dependencies(
+    task: &Task,
+    status_by_id: &BTreeMap<OrbitId, TaskStatus>,
+) -> Vec<ResolvedTaskDependency> {
+    resolve_task_dependencies(task, status_by_id)
+        .into_iter()
+        .filter(|dependency| {
+            status_by_id
+                .get(&dependency.id)
+                .is_none_or(|status| !status.satisfies_dependency())
+        })
+        .collect()
+}
+
+pub fn validate_task_dependencies(
+    tasks: &[Task],
+    current_task_id: Option<&str>,
+    dependencies: &[OrbitId],
+) -> Result<(), OrbitError> {
+    let task_ids = tasks
+        .iter()
+        .map(|task| task.id.clone())
+        .collect::<BTreeSet<_>>();
+    for dependency in dependencies {
+        if !task_ids.contains(dependency) {
+            return Err(OrbitError::InvalidInput(format!(
+                "task dependency '{dependency}' does not resolve in this workspace"
+            )));
+        }
+    }
+
+    let Some(current_task_id) = current_task_id else {
+        return Ok(());
+    };
+
+    if dependencies
+        .iter()
+        .any(|dependency| dependency == current_task_id)
+    {
+        return Err(OrbitError::InvalidInput(format!(
+            "task '{current_task_id}' cannot declare a self-dependency (self-reference)"
+        )));
+    }
+
+    let mut adjacency = tasks
+        .iter()
+        .map(|task| (task.id.clone(), task.dependencies.clone()))
+        .collect::<BTreeMap<_, _>>();
+    adjacency.insert(current_task_id.to_string(), dependencies.to_vec());
+
+    for dependency in dependencies {
+        let mut visiting = BTreeSet::new();
+        let mut trail = Vec::new();
+        if let Some(path) = find_dependency_path(
+            dependency,
+            current_task_id,
+            &adjacency,
+            &mut visiting,
+            &mut trail,
+        ) {
+            let mut cycle = Vec::with_capacity(path.len() + 1);
+            cycle.push(current_task_id.to_string());
+            cycle.extend(path);
+            return Err(OrbitError::InvalidInput(format!(
+                "task dependency cycle detected: {}",
+                cycle.join(" -> ")
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn find_dependency_path(
+    current: &str,
+    target: &str,
+    adjacency: &BTreeMap<OrbitId, Vec<OrbitId>>,
+    visiting: &mut BTreeSet<OrbitId>,
+    trail: &mut Vec<OrbitId>,
+) -> Option<Vec<OrbitId>> {
+    if !visiting.insert(current.to_string()) {
+        return None;
+    }
+
+    trail.push(current.to_string());
+    if current == target {
+        return Some(trail.clone());
+    }
+
+    if let Some(next_dependencies) = adjacency.get(current) {
+        for next in next_dependencies {
+            if let Some(path) = find_dependency_path(next, target, adjacency, visiting, trail) {
+                return Some(path);
+            }
+        }
+    }
+
+    trail.pop();
+    visiting.remove(current);
+    None
 }
