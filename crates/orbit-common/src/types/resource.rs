@@ -2,14 +2,9 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
-use crate::types::{
-    ExecutorType, FsProfile, JobScheduleState, JobStep, OrbitError, StdoutFormat,
-    default_job_max_active_runs, default_max_iterations,
-};
+use crate::types::{ExecutorType, FsProfile, OrbitError, StdoutFormat};
 
-pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
 pub const EXECUTOR_RESOURCE_SCHEMA_VERSION: u32 = 2;
 pub const POLICY_RESOURCE_SCHEMA_VERSION: u32 = 2;
 
@@ -83,9 +78,9 @@ pub struct ResourceEnvelope<T> {
 }
 
 impl<T> ResourceEnvelope<T> {
-    pub fn new(kind: ResourceKind, name: impl Into<String>, spec: T) -> Self {
+    pub fn new(schema_version: u32, kind: ResourceKind, name: impl Into<String>, spec: T) -> Self {
         Self {
-            schema_version: RESOURCE_SCHEMA_VERSION,
+            schema_version,
             kind,
             metadata: ResourceMetadata::named(name),
             spec,
@@ -99,40 +94,6 @@ impl<T> ResourceEnvelope<T> {
             metadata: self.metadata.clone(),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct JobResourceSpec {
-    pub state: JobScheduleState,
-    #[serde(default)]
-    pub default_input: Option<Value>,
-    #[serde(default = "default_job_max_active_runs")]
-    pub max_active_runs: u32,
-    #[serde(default = "default_max_iterations")]
-    pub max_iterations: u32,
-    pub steps: Vec<JobStep>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub policy: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ActivityResourceSpec {
-    pub spec_type: String,
-    pub description: String,
-    #[serde(default)]
-    pub input_schema_json: Value,
-    #[serde(default)]
-    pub output_schema_json: Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub executor: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_by: Option<String>,
-    #[serde(default = "default_true", skip_serializing_if = "is_true")]
-    pub is_active: bool,
-    #[serde(flatten)]
-    pub spec_config: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -177,8 +138,6 @@ pub struct ExecutorResourceSpec {
     pub updated_at: DateTime<Utc>,
 }
 
-pub type JobResource = ResourceEnvelope<JobResourceSpec>;
-pub type ActivityResource = ResourceEnvelope<ActivityResourceSpec>;
 pub type PolicyResource = ResourceEnvelope<PolicyResourceSpec>;
 pub type ExecutorResource = ResourceEnvelope<ExecutorResourceSpec>;
 
@@ -208,12 +167,4 @@ pub fn parse_policy_resource(yaml: &str, label: &str) -> Result<PolicyResource, 
 
     serde_yaml::from_str(yaml)
         .map_err(|error| OrbitError::InvalidInput(format!("failed to parse {label}: {error}")))
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn is_true(value: &bool) -> bool {
-    *value
 }

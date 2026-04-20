@@ -115,8 +115,8 @@ impl OrbitRuntime {
         Ok(audits)
     }
 
-    pub fn get_job(&self, job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
-        self.stores().jobs().get(job_id)
+    pub fn get_job(&self, _job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
+        Ok(None)
     }
 
     pub fn execution_env_config(&self) -> (bool, Vec<String>) {

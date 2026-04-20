@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use orbit_common::types::{
     EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, ExecutorResourceSpec,
-    OrbitError, RESOURCE_SCHEMA_VERSION, ResourceKind, ResourceMetadata,
+    OrbitError, ResourceKind, ResourceMetadata,
 };
 
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
@@ -86,9 +86,7 @@ fn parse_executor_def(content: &str, label: String) -> Result<ExecutorDef, Orbit
             label, doc.kind
         )));
     }
-    if doc.schema_version != RESOURCE_SCHEMA_VERSION
-        && doc.schema_version != EXECUTOR_RESOURCE_SCHEMA_VERSION
-    {
+    if doc.schema_version != EXECUTOR_RESOURCE_SCHEMA_VERSION {
         return Err(OrbitError::InvalidInput(format!(
             "invalid executor def at {}: unsupported schemaVersion {}",
             label, doc.schema_version

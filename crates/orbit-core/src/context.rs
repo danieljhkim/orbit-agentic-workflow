@@ -4,10 +4,9 @@ use std::sync::Arc;
 use orbit_common::types::WorkspacePaths;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
-    ActivityStoreBackend, AuditEventStoreBackend, ExecutorDefStoreBackend,
-    JobDefinitionStoreBackend, JobRunStoreBackend, PolicyDefStoreBackend, TaskArtifactStoreBackend,
-    TaskDocumentStoreBackend, TaskHistoryStoreBackend, TaskReservationStoreBackend,
-    TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
+    AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunStoreBackend, PolicyDefStoreBackend,
+    TaskArtifactStoreBackend, TaskDocumentStoreBackend, TaskHistoryStoreBackend,
+    TaskReservationStoreBackend, TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use orbit_tools::ToolRegistry;
 
@@ -78,8 +77,6 @@ pub(crate) struct OrbitStores {
     pub(crate) task_review: Arc<dyn TaskReviewStoreBackend>,
     pub(crate) task_artifact: Arc<dyn TaskArtifactStoreBackend>,
     pub(crate) task_reservation: Arc<dyn TaskReservationStoreBackend>,
-    pub(crate) activity: Arc<dyn ActivityStoreBackend>,
-    pub(crate) job_definition: Arc<dyn JobDefinitionStoreBackend>,
     pub(crate) job_run: Arc<dyn JobRunStoreBackend>,
     pub(crate) tool: Arc<dyn ToolStoreBackend>,
     pub(crate) audit_event: Arc<dyn AuditEventStoreBackend>,
@@ -95,8 +92,6 @@ impl OrbitStores {
         task_review: Arc<dyn TaskReviewStoreBackend>,
         task_artifact: Arc<dyn TaskArtifactStoreBackend>,
         task_reservation: Arc<dyn TaskReservationStoreBackend>,
-        activity: Arc<dyn ActivityStoreBackend>,
-        job_definition: Arc<dyn JobDefinitionStoreBackend>,
         job_run: Arc<dyn JobRunStoreBackend>,
         tool: Arc<dyn ToolStoreBackend>,
         audit_event: Arc<dyn AuditEventStoreBackend>,
@@ -110,8 +105,6 @@ impl OrbitStores {
             task_review,
             task_artifact,
             task_reservation,
-            activity,
-            job_definition,
             job_run,
             tool,
             audit_event,

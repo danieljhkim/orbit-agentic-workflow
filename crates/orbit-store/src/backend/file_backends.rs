@@ -1,17 +1,15 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Activity, ExecutorDef, Job, JobRun, JobScheduleState, KnowledgeRunMetrics, OrbitError,
-    PipelineState, PolicyDef, Task, TaskArtifact, TaskPriority, TaskStatus,
+    ExecutorDef, JobRun, KnowledgeRunMetrics, OrbitError, PipelineState, PolicyDef, Task,
+    TaskArtifact, TaskPriority, TaskStatus,
 };
 
 use super::contracts::{
-    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, ExecutorDefStoreBackend,
-    JobCreateParams, JobDefinitionStoreBackend, JobRunQuery, JobRunStepParams, JobRunStoreBackend,
-    JobUpdateParams, PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskArtifactUpdateParams,
-    TaskCreateParams, TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
+    ExecutorDefStoreBackend, JobRunQuery, JobRunStepParams, JobRunStoreBackend,
+    PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams,
+    TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
     TaskHistoryUpdateParams, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
 };
-use crate::file::activity_store::ActivityFileStore;
 use crate::file::executor_def_store::ExecutorDefFileStore;
 use crate::file::job_store::JobFileStore;
 use crate::file::policy_def_store::PolicyDefFileStore;
@@ -108,58 +106,6 @@ impl TaskArtifactStoreBackend for TaskFileStore {
         params: TaskArtifactUpdateParams,
     ) -> Result<(), OrbitError> {
         self.upsert_task_artifacts(id, &params)
-    }
-}
-
-impl ActivityStoreBackend for ActivityFileStore {
-    fn add_activity(&self, params: ActivityCreateParams) -> Result<Activity, OrbitError> {
-        self.insert_work(&params)
-    }
-
-    fn list_activities(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError> {
-        self.list_activities(include_inactive)
-    }
-
-    fn get_activity(&self, id: &str) -> Result<Option<Activity>, OrbitError> {
-        self.get_activity(id)
-    }
-
-    fn update_activity(
-        &self,
-        id: &str,
-        params: ActivityUpdateParams,
-    ) -> Result<Activity, OrbitError> {
-        self.update_activity(id, &params)
-    }
-
-    fn disable_activity(&self, id: &str) -> Result<bool, OrbitError> {
-        self.disable_activity(id)
-    }
-}
-
-impl JobDefinitionStoreBackend for JobFileStore {
-    fn add_job(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
-        self.add_job(params)
-    }
-
-    fn update_job(&self, job_id: &str, params: JobUpdateParams) -> Result<Job, OrbitError> {
-        self.update_job(job_id, &params)
-    }
-
-    fn list_jobs(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        self.list_jobs(include_disabled)
-    }
-
-    fn get_job(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        self.get_job(job_id)
-    }
-
-    fn set_job_state(&self, job_id: &str, state: JobScheduleState) -> Result<bool, OrbitError> {
-        self.set_job_state(job_id, state)
-    }
-
-    fn mark_job_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
-        self.mark_job_disabled(job_id)
     }
 }
 

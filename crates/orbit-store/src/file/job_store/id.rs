@@ -11,12 +11,6 @@ struct IdGenerationState {
 }
 
 impl JobFileStore {
-    pub(super) fn next_job_id(&self) -> String {
-        self.next_timestamped_id("job", |candidate| {
-            self.job_path(candidate).exists() || self.disabled_job_path(candidate).exists()
-        })
-    }
-
     pub(super) fn next_run_id(&self, job_id: &str) -> String {
         self.next_timestamped_id("jrun", |candidate| {
             self.run_id_exists_globally(job_id, candidate)

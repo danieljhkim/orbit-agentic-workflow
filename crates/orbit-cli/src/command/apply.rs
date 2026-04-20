@@ -4,8 +4,7 @@ use chrono::Utc;
 use clap::Args;
 use orbit_common::types::{
     EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource,
-    POLICY_RESOURCE_SCHEMA_VERSION, PolicyDef, RESOURCE_SCHEMA_VERSION, ResourceHeader,
-    ResourceKind, parse_policy_resource,
+    POLICY_RESOURCE_SCHEMA_VERSION, PolicyDef, ResourceHeader, ResourceKind, parse_policy_resource,
 };
 use orbit_core::{OrbitError, OrbitRuntime};
 use serde::de::DeserializeOwned;
@@ -144,10 +143,10 @@ fn apply_executor(
 }
 
 fn validate_header(header: &ResourceHeader, path: &PathBuf) -> Result<(), OrbitError> {
-    let supported = match header.kind {
+    let supported: Vec<u32> = match header.kind {
         ResourceKind::Policy => vec![POLICY_RESOURCE_SCHEMA_VERSION],
-        ResourceKind::Executor => vec![RESOURCE_SCHEMA_VERSION, EXECUTOR_RESOURCE_SCHEMA_VERSION],
-        _ => vec![RESOURCE_SCHEMA_VERSION],
+        ResourceKind::Executor => vec![EXECUTOR_RESOURCE_SCHEMA_VERSION],
+        ResourceKind::Job | ResourceKind::Activity => Vec::new(),
     };
     if !supported.contains(&header.schema_version) {
         let expected = supported

@@ -1,18 +1,17 @@
 use orbit_common::types::{
-    Activity, AuditEvent, ExecutorDef, Job, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError,
-    PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity,
-    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    AuditEvent, ExecutorDef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError, PolicyDef,
+    ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry,
+    TaskPriority, TaskStatus, TaskType,
 };
 use orbit_store::{
-    ActivityCreateParams, ActivityStoreBackend, ActivityUpdateParams, AuditEventFilter,
-    AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend, JobCreateParams,
-    JobDefinitionStoreBackend, JobRunQuery, JobRunStepParams, JobRunStoreBackend, JobUpdateParams,
-    PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams,
-    TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
-    TaskHistoryUpdateParams, TaskReservationCheckParams, TaskReservationCheckResult,
-    TaskReservationReleaseParams, TaskReservationReleaseResult, TaskReservationReserveParams,
-    TaskReservationReserveResult, TaskReservationStoreBackend, TaskReviewStoreBackend,
-    TaskReviewUpdateParams, TaskStoreBackend, ToolStoreBackend,
+    AuditEventFilter, AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend,
+    JobRunQuery, JobRunStepParams, JobRunStoreBackend, PolicyDefStoreBackend,
+    TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend,
+    TaskDocumentUpdateParams, TaskHistoryStoreBackend, TaskHistoryUpdateParams,
+    TaskReservationCheckParams, TaskReservationCheckResult, TaskReservationReleaseParams,
+    TaskReservationReleaseResult, TaskReservationReserveParams, TaskReservationReserveResult,
+    TaskReservationStoreBackend, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
+    ToolStoreBackend,
 };
 
 use crate::context::OrbitStores;
@@ -102,12 +101,6 @@ impl OrbitStores {
         }
     }
 
-    pub(crate) fn activities(&self) -> ActivityRecords<'_> {
-        ActivityRecords {
-            store: self.activity.as_ref(),
-        }
-    }
-
     pub(crate) fn task_reservations(&self) -> TaskReservationRecords<'_> {
         TaskReservationRecords {
             store: self.task_reservation.as_ref(),
@@ -116,7 +109,6 @@ impl OrbitStores {
 
     pub(crate) fn jobs(&self) -> JobRecords<'_> {
         JobRecords {
-            definition: self.job_definition.as_ref(),
             run: self.job_run.as_ref(),
         }
     }
@@ -289,62 +281,11 @@ impl TaskReservationRecords<'_> {
     }
 }
 
-pub(crate) struct ActivityRecords<'a> {
-    store: &'a dyn ActivityStoreBackend,
-}
-
-impl ActivityRecords<'_> {
-    pub(crate) fn add(&self, params: ActivityCreateParams) -> Result<Activity, OrbitError> {
-        self.store.add_activity(params)
-    }
-
-    pub(crate) fn list(&self, include_inactive: bool) -> Result<Vec<Activity>, OrbitError> {
-        self.store.list_activities(include_inactive)
-    }
-
-    pub(crate) fn get(&self, id: &str) -> Result<Option<Activity>, OrbitError> {
-        self.store.get_activity(id)
-    }
-
-    pub(crate) fn update(
-        &self,
-        id: &str,
-        params: ActivityUpdateParams,
-    ) -> Result<Activity, OrbitError> {
-        self.store.update_activity(id, params)
-    }
-
-    pub(crate) fn disable(&self, id: &str) -> Result<bool, OrbitError> {
-        self.store.disable_activity(id)
-    }
-}
-
 pub(crate) struct JobRecords<'a> {
-    definition: &'a dyn JobDefinitionStoreBackend,
     run: &'a dyn JobRunStoreBackend,
 }
 
 impl JobRecords<'_> {
-    pub(crate) fn add(&self, params: JobCreateParams) -> Result<Job, OrbitError> {
-        self.definition.add_job(params)
-    }
-
-    pub(crate) fn update(&self, job_id: &str, params: JobUpdateParams) -> Result<Job, OrbitError> {
-        self.definition.update_job(job_id, params)
-    }
-
-    pub(crate) fn mark_disabled(&self, job_id: &str) -> Result<bool, OrbitError> {
-        self.definition.mark_job_disabled(job_id)
-    }
-
-    pub(crate) fn list(&self, include_disabled: bool) -> Result<Vec<Job>, OrbitError> {
-        self.definition.list_jobs(include_disabled)
-    }
-
-    pub(crate) fn get(&self, job_id: &str) -> Result<Option<Job>, OrbitError> {
-        self.definition.get_job(job_id)
-    }
-
     pub(crate) fn list_runs_filtered(
         &self,
         query: &JobRunQuery,

@@ -86,10 +86,9 @@ pub use policy_def::{
     UNRESTRICTED_FS_PROFILE,
 };
 pub use resource::{
-    ActivityResource, ActivityResourceSpec, EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorResource,
-    ExecutorResourceSpec, JobResource, JobResourceSpec, POLICY_RESOURCE_SCHEMA_VERSION,
-    PolicyResource, PolicyResourceSpec, RESOURCE_SCHEMA_VERSION, ResourceEnvelope, ResourceHeader,
-    ResourceKind, ResourceMetadata, parse_policy_resource,
+    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorResource, ExecutorResourceSpec,
+    POLICY_RESOURCE_SCHEMA_VERSION, PolicyResource, PolicyResourceSpec, ResourceEnvelope,
+    ResourceHeader, ResourceKind, ResourceMetadata, parse_policy_resource,
 };
 pub use role::Role;
 pub use run_state::PipelineState;

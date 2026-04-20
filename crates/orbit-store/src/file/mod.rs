@@ -6,7 +6,6 @@
 //! [`orbit_common::utility::fs::atomic_write_text_volatile`] to prevent partial writes
 //! from corrupting state.
 
-pub(crate) mod activity_store;
 pub(crate) mod duel_scoreboard;
 pub(crate) mod executor_def_store;
 pub(crate) mod friction_bounty;
