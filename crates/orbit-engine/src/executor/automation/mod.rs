@@ -29,7 +29,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::ActivityExecutor;
-use crate::activity_runner::validate_activity_output_schema;
+use super::helpers::validate_activity_output_schema;
 use crate::context::{ACTIVITY_EXECUTION_FAILED, AttemptOutcome, ExecutionContext, ExecutorHost};
 
 // ---- retained internal actions (still referenced by duel/worker jobs) ----

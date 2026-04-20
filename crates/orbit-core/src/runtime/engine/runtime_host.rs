@@ -1,11 +1,7 @@
 use orbit_common::types::{
-    Activity, AgentModelPair, InvocationTrace, JobRunState, JobTargetType, OrbitError, OrbitEvent,
-    Role, TaskPriority, TaskStatus, TaskType,
+    Activity, AgentModelPair, InvocationTrace, JobTargetType, OrbitError, OrbitEvent, Role,
 };
-use orbit_engine::{
-    ActivityInvocationResult, ExecutionContext, RuntimeHost, execute_single_attempt,
-    validate_activity_input_schema,
-};
+use orbit_engine::{ActivityInvocationResult, ExecutionContext, RuntimeHost};
 use orbit_store::{InvocationInsertParams, InvocationQuery, InvocationRecord, token_scoreboard};
 use orbit_tools::ToolContext;
 use serde_json::Value;
@@ -35,22 +31,26 @@ impl RuntimeHost for OrbitRuntime {
     fn run_job_now_with_input_debug(
         &self,
         job_id: &str,
-        input: Value,
-        debug: bool,
+        _input: Value,
+        _debug: bool,
     ) -> Result<orbit_engine::JobRunResult, OrbitError> {
-        OrbitRuntime::run_job_now_with_input_debug(self, job_id, input, debug)
+        Err(OrbitError::Execution(format!(
+            "v1 job dispatch is retired; refusing to run job '{job_id}' via RuntimeHost"
+        )))
     }
 
     fn validate_activity_target_exists(
         &self,
-        target_type: JobTargetType,
+        _target_type: JobTargetType,
         target_id: &str,
     ) -> Result<Activity, OrbitError> {
-        OrbitRuntime::validate_activity_target_exists(self, target_type, target_id)
+        Err(OrbitError::Execution(format!(
+            "v1 activity lookup is retired; refusing to resolve activity '{target_id}'"
+        )))
     }
 
-    fn get_job(&self, job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
-        self.stores().jobs().get(job_id)
+    fn get_job(&self, _job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
+        Ok(None)
     }
 
     fn resolved_agent_model_pair(&self, agent_cli: &str) -> Option<AgentModelPair> {
@@ -81,119 +81,27 @@ impl RuntimeHost for OrbitRuntime {
     fn invoke_activity(
         &self,
         activity: Activity,
-        agent_cli: &str,
-        model: Option<&str>,
-        input: Value,
-        timeout_seconds: u64,
-        debug: bool,
+        _agent_cli: &str,
+        _model: Option<&str>,
+        _input: Value,
+        _timeout_seconds: u64,
+        _debug: bool,
     ) -> Result<ActivityInvocationResult, OrbitError> {
-        if activity.spec_type != "agent_invoke" {
-            return Err(OrbitError::InvalidInput(format!(
-                "invoke_activity only supports agent_invoke activities, got '{}'",
-                activity.spec_type
-            )));
-        }
-
-        validate_activity_input_schema(&activity, &input)?;
-
-        let execution = ExecutionContext {
-            activity,
-            job: None,
-            agent_cli: agent_cli.to_string(),
-            model: model.map(ToOwned::to_owned),
-            model_tier: None,
-            timeout_seconds,
-            env_extra: vec![],
-            env_set: std::collections::HashMap::new(),
-            input,
-            debug,
-            steps_outputs: std::collections::HashMap::new(),
-            run_id: None,
-            step_index: None,
-            state_dir: None,
-        };
-        let activity_id = execution.activity.id.clone();
-        let outcome = execute_single_attempt(self, &execution);
-        let duration_ms = outcome
-            .duration_ms
-            .unwrap_or(outcome.invocation_trace.duration_ms);
-
-        if outcome.state != JobRunState::Success {
-            let error_code = outcome
-                .error_code
-                .unwrap_or_else(|| outcome.state.to_string());
-            let error_message = outcome.error_message.unwrap_or_else(|| {
-                format!("activity '{activity_id}' finished in non-success state")
-            });
-            return if error_code == orbit_engine::AGENT_PROTOCOL_VIOLATION {
-                Err(OrbitError::AgentProtocolViolation(error_message))
-            } else {
-                Err(OrbitError::Execution(format!(
-                    "activity '{activity_id}' failed [{error_code}]: {error_message}"
-                )))
-            };
-        }
-
-        Ok(ActivityInvocationResult {
-            response_json: outcome.response_json,
-            invocation_trace: outcome.invocation_trace,
-            exit_code: outcome.exit_code,
-            duration_ms,
-        })
+        Err(OrbitError::Execution(format!(
+            "v1 invoke_activity is retired; activity '{}' cannot be dispatched via RuntimeHost",
+            activity.id
+        )))
     }
 
     fn maybe_create_failure_task(
         &self,
-        job_id: &str,
-        run_id: &str,
-        error_code: &str,
-        error_message: &str,
-        agent: Option<&str>,
-        model: Option<&str>,
+        _job_id: &str,
+        _run_id: &str,
+        _error_code: &str,
+        _error_message: &str,
+        _agent: Option<&str>,
+        _model: Option<&str>,
     ) -> Result<(), OrbitError> {
-        let title = format!("Job failure: {job_id} [{error_code}]");
-        let tasks = self.stores().tasks().list()?;
-        let already_open = tasks.iter().any(|t| {
-            t.title == title
-                && !matches!(
-                    t.status,
-                    TaskStatus::Done | TaskStatus::Archived | TaskStatus::Rejected
-                )
-        });
-        if already_open {
-            return Ok(());
-        }
-        let description = format!(
-            "Job `{job_id}` failed during run `{run_id}` with error code `{error_code}`.\n\nError: {}",
-            if error_message.is_empty() {
-                "No error message provided."
-            } else {
-                error_message
-            }
-        );
-        let _ = self.add_task_with_identity(
-            crate::command::task::TaskAddParams {
-                parent_id: None,
-                title,
-                description,
-                acceptance_criteria: vec![
-                    format!("Root cause for job `{job_id}` is identified"),
-                    "A fix is implemented for the underlying issue".to_string(),
-                    "The job completes successfully after verification".to_string(),
-                ],
-                plan: String::new(),
-                comment: None,
-                context_files: vec![],
-                workspace_path: None,
-                priority: TaskPriority::High,
-                complexity: None,
-                task_type: TaskType::Issue,
-                system_created: true,
-                source_task_id: None,
-            },
-            agent.map(ToOwned::to_owned),
-            model.map(ToOwned::to_owned),
-        );
         Ok(())
     }
 

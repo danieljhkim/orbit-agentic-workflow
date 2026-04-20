@@ -9,9 +9,7 @@ use serde_json::{Value, json};
 use serde_json::Value as JsonValue;
 
 use super::ActivityExecutor;
-use crate::activity_runner::{
-    execution_template_context_with_env, validate_activity_output_schema,
-};
+use super::helpers::{execution_template_context_with_env, validate_activity_output_schema};
 use crate::context::{
     ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EnvironmentHost, ExecutionContext, ExecutorHost,
     TaskReadHost, state_env_vars,

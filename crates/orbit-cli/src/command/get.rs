@@ -69,8 +69,7 @@ fn list_jobs(runtime: &OrbitRuntime, as_json: bool) -> Result<(), OrbitError> {
             println!("No jobs found.");
             return Ok(());
         }
-        let mut table =
-            crate::output::table::build_table(&["JOB ID", "KIND", "STATE", "STEPS"]);
+        let mut table = crate::output::table::build_table(&["JOB ID", "KIND", "STATE", "STEPS"]);
         for (entry, _) in &entries {
             table.add_row(vec![
                 entry.job_id.clone(),

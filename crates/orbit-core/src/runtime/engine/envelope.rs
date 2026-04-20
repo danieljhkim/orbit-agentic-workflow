@@ -4,8 +4,9 @@ use orbit_common::types::{
     Activity, AgentCommitRequest, AgentModelPair, OrbitError, Task, agent_family_from_cli,
     prune_missing_context_files, resolve_agent_model_pair,
 };
-use orbit_engine::{ExecutionContext, TaskHost, activity_skill_refs_from_spec_config};
+use orbit_engine::{ExecutionContext, TaskHost};
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
@@ -39,6 +40,23 @@ pub(super) fn build_agent_stdin_envelope_payload(
 ) -> Result<Vec<u8>, OrbitError> {
     let skill_refs = activity_skill_refs_from_spec_config(&execution.activity.spec_config)?;
     let skills = runtime.resolve_activity_skill_refs(&skill_refs)?;
+    fn activity_skill_refs_from_spec_config(
+        spec_config: &JsonValue,
+    ) -> Result<Vec<String>, OrbitError> {
+        if !spec_config.is_object() {
+            return Err(OrbitError::InvalidInput(
+                "activity spec_config must be a JSON object".to_string(),
+            ));
+        }
+        let Some(raw_refs) = spec_config.get("skill_refs") else {
+            return Ok(Vec::new());
+        };
+        serde_json::from_value(raw_refs.clone()).map_err(|error| {
+            OrbitError::InvalidInput(format!(
+                "activity spec_config.skill_refs must be an array of strings: {error}"
+            ))
+        })
+    }
     let task = task_detail_for_input(
         runtime,
         &execution.input,

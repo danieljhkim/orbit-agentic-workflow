@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use orbit_common::types::{
-    JobKind, JobRun, JobScheduleState, JobV2, OrbitError, load_job_asset,
-};
+use orbit_common::types::{JobKind, JobRun, JobScheduleState, JobV2, OrbitError, load_job_asset};
 use orbit_common::utility::fs::write_text_with_parent;
 use serde_json::Value;
 

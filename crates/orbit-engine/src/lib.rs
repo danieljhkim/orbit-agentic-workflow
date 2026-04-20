@@ -1,39 +1,31 @@
-//! Activity and job execution engine with template rendering and retry logic.
+//! v2 activity/job execution engine with template rendering and retry logic.
 //!
-//! Orchestrates the full lifecycle of running an [`Activity`] or [`Job`]: resolving
-//! input via Handlebars templates, delegating to the appropriate [`ActivityExecutor`],
-//! recording step results, and handling retries and stale-run recovery.
+//! Orchestrates the full lifecycle of running a v2 activity or job:
+//! resolving input via Handlebars templates, dispatching through
+//! [`activity_job`], recording step results, and handling retries.
 //!
 //! # Role
 //! Depends on `orbit-agent`, `orbit-exec`, `orbit-store`, `orbit-tools`, and
-//! `orbit-types`. Consumed by `orbit-core`, which constructs an [`EngineHost`] and
-//! uses the public runner functions to drive execution.
+//! `orbit-common`. Consumed by `orbit-core`.
 //!
 //! # Key exports
-//! - [`run_activity_direct`] — execute a single activity with given input
-//! - [`run_job_with_input`] — run a full job pipeline, stepping through all `JobStep`s
-//! - [`recover_stale_active_run_for_job`] — resume or cancel orphaned job runs
-//! - [`EngineHost`] / [`RuntimeHost`] / [`JobRunHost`] / [`TaskHost`] — host traits
-//!   that orbit-core implements to provide store access and event emission
-//! - [`ExecutionContext`] — per-run context (working directory, actor, tool context)
-//! - [`JobRunResult`] — outcome of a completed job run
+//! - [`activity_job`] — v2 dispatcher, job executor, audit writer
+//! - [`ExecutionContext`] / [`AttemptOutcome`] / [`ExecutorHost`] — host
+//!   primitives still used by the kept v1 executors (cli_command,
+//!   direct_agent, automation) and by the v2 `OrbitToolCallExecutor`
+//! - [`ActivityExecutorRegistry`] — registry of executors (still wired,
+//!   though v2 does not consult it at dispatch time)
 //!
 //! # Dependency direction
-//! `orbit-types`, `orbit-agent`, `orbit-exec`, `orbit-store`, `orbit-tools`
+//! orbit-common, orbit-agent, orbit-exec, orbit-store, orbit-tools
 //! → `orbit-engine` → orbit-core
 
 pub mod activity_job;
-mod activity_runner;
 mod context;
 mod executor;
 mod job_runner;
-pub mod reconciler;
 mod template;
 
-pub use activity_runner::{
-    activity_skill_refs_from_spec_config, execute_single_attempt, run_activity_direct,
-    validate_activity_input_schema, validate_activity_output_schema,
-};
 pub use context::{
     ACTIVITY_EXECUTION_FAILED, AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED,
     AGENT_PROTOCOL_VIOLATION, AGENT_TIMEOUT, ActivityInvocationResult, AgentProtocolHost,
@@ -46,7 +38,3 @@ pub use executor::automation::{
     StateExecutionContext, execute_action as execute_deterministic_action,
 };
 pub use executor::registry::ActivityExecutorRegistry;
-pub use job_runner::{
-    recover_stale_active_run_for_job, retry_job_run_from_step, run_job_with_input,
-};
-pub use reconciler::{ReconcileOutcome, reconcile_once};
