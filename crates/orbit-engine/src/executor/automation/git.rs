@@ -26,7 +26,7 @@ pub(super) fn base_sync_mode_from_input(input: &Value) -> Result<BaseSyncMode, O
     }
 }
 
-pub(super) fn git_output_paths(
+pub(crate) fn git_output_paths(
     current_dir: &Path,
     args: &[&str],
 ) -> Result<Vec<String>, OrbitError> {
@@ -38,11 +38,11 @@ pub(super) fn git_output_paths(
         .collect())
 }
 
-pub(super) fn git_output(current_dir: &Path, args: &[&str]) -> Result<String, OrbitError> {
+pub(crate) fn git_output(current_dir: &Path, args: &[&str]) -> Result<String, OrbitError> {
     Ok(git_output_raw(current_dir, args)?.trim().to_string())
 }
 
-pub(super) fn git_output_raw(current_dir: &Path, args: &[&str]) -> Result<String, OrbitError> {
+pub(crate) fn git_output_raw(current_dir: &Path, args: &[&str]) -> Result<String, OrbitError> {
     let result = run_process(
         &ExecRequest {
             program: "git".to_string(),
@@ -68,7 +68,7 @@ pub(super) fn git_output_raw(current_dir: &Path, args: &[&str]) -> Result<String
     Ok(result.stdout)
 }
 
-pub(super) fn git_success(current_dir: &Path, args: &[&str]) -> Result<(), OrbitError> {
+pub(crate) fn git_success(current_dir: &Path, args: &[&str]) -> Result<(), OrbitError> {
     let result = run_process(
         &ExecRequest {
             program: "git".to_string(),
@@ -94,7 +94,7 @@ pub(super) fn git_success(current_dir: &Path, args: &[&str]) -> Result<(), Orbit
     Ok(())
 }
 
-pub(super) fn git_command_success(current_dir: &Path, args: &[&str]) -> Result<bool, OrbitError> {
+pub(crate) fn git_command_success(current_dir: &Path, args: &[&str]) -> Result<bool, OrbitError> {
     let result = run_process(
         &ExecRequest {
             program: "git".to_string(),

@@ -25,6 +25,7 @@ mod context;
 mod executor;
 mod job_runner;
 mod template;
+mod workspace_snapshot;
 
 pub use context::{
     ACTIVITY_EXECUTION_FAILED, AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED,
@@ -38,3 +39,4 @@ pub use executor::automation::{
     StateExecutionContext, execute_action as execute_deterministic_action,
 };
 pub use executor::registry::ActivityExecutorRegistry;
+pub use workspace_snapshot::{WorkspaceSnapshot, WorkspaceSnapshotRef};
