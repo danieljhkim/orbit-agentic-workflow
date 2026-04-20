@@ -1,20 +1,84 @@
-use std::collections::BTreeSet;
 use std::path::Path;
 
-use orbit_common::types::{
-    Activity, ActivityResource, ExecutorType, JobRunState, OrbitError, OrbitEvent,
-    RESOURCE_SCHEMA_VERSION, ResourceKind,
-};
+use orbit_common::types::{Activity, ExecutorType, JobRunState, OrbitError, OrbitEvent};
+use orbit_common::utility::fs::write_text_with_parent;
 use orbit_store::ActivityCreateParams as StoreWorkCreateParams;
 use orbit_store::ActivityUpdateParams as StoreActivityUpdateParams;
 use serde_json::Value;
 
 use crate::OrbitRuntime;
-use crate::paths::ORBIT_ROOT_TOKEN;
 
-pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[];
-
-const VALID_ACTIVITY_SPEC_TYPES: &[&str] = &["agent_invoke", "cli_command", "automation"];
+/// Shippable default activity assets, seeded under
+/// `<orbit_root>/resources/activities/<name>.yaml` on `orbit init`. Keep this
+/// list in sync with the workflow YAMLs under `crates/orbit-core/assets/jobs/`:
+/// every `target: activity:<name>` reference in a shipped workflow must
+/// resolve to an entry here. Reference/example activities (anything under
+/// `assets/activities/examples/`) are deliberately excluded — they're
+/// fixtures for `crates/orbit-engine/examples/v2_job_runtime_smoke.rs`, not
+/// runtime defaults.
+pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
+    (
+        "agent_implement",
+        include_str!("../../assets/activities/agent_implement.yaml"),
+    ),
+    (
+        "dispatch_agent",
+        include_str!("../../assets/activities/dispatch_agent.yaml"),
+    ),
+    (
+        "epic_orchestrator",
+        include_str!("../../assets/activities/epic_orchestrator.yaml"),
+    ),
+    (
+        "gate_starvation_fail",
+        include_str!("../../assets/activities/gate_starvation_fail.yaml"),
+    ),
+    (
+        "git_merge",
+        include_str!("../../assets/activities/git_merge.yaml"),
+    ),
+    (
+        "git_push",
+        include_str!("../../assets/activities/git_push.yaml"),
+    ),
+    (
+        "invoke_and_wait",
+        include_str!("../../assets/activities/invoke_and_wait.yaml"),
+    ),
+    (
+        "list_backlog_tasks",
+        include_str!("../../assets/activities/list_backlog_tasks.yaml"),
+    ),
+    (
+        "load_epic",
+        include_str!("../../assets/activities/load_epic.yaml"),
+    ),
+    (
+        "pr_open",
+        include_str!("../../assets/activities/pr_open.yaml"),
+    ),
+    (
+        "reserve_locks",
+        include_str!("../../assets/activities/reserve_locks.yaml"),
+    ),
+    ("sleep", include_str!("../../assets/activities/sleep.yaml")),
+    (
+        "summarize_epic",
+        include_str!("../../assets/activities/summarize_epic.yaml"),
+    ),
+    (
+        "update_task",
+        include_str!("../../assets/activities/update_task.yaml"),
+    ),
+    (
+        "validate_bundles",
+        include_str!("../../assets/activities/validate_bundles.yaml"),
+    ),
+    (
+        "worktree_setup",
+        include_str!("../../assets/activities/worktree_setup.yaml"),
+    ),
+];
 
 #[derive(Debug, Clone)]
 pub struct ActivityAddParams {
@@ -204,130 +268,28 @@ impl OrbitRuntime {
     }
 }
 
+/// Seed every entry in [`DEFAULT_ACTIVITY_FILES`] as a YAML file under
+/// `activities_dir`. Mirrors the skill / executor / policy seeding pattern:
+/// the asset YAML is embedded in the binary via `include_str!` and copied
+/// out on `orbit init` so the [`V2ActivityCatalog`] can discover it without
+/// depending on a git checkout of this repo.
+///
+/// When `overwrite` is false, existing files are preserved — users who've
+/// edited a previously-seeded activity won't lose their changes on re-init.
 pub(crate) fn seed_default_activities(
-    runtime: &OrbitRuntime,
-    global_root: &Path,
+    activities_dir: &Path,
     overwrite: bool,
 ) -> Result<usize, OrbitError> {
-    let specs = load_default_activity_specs(DEFAULT_ACTIVITY_FILES, Some(global_root))?;
-    seed_default_activities_from_specs(runtime, &specs, overwrite)
-}
-
-fn load_default_activity_specs(
-    raw_specs: &[(&str, &str)],
-    orbit_root: Option<&Path>,
-) -> Result<Vec<ActivityResource>, OrbitError> {
-    let mut specs = Vec::with_capacity(raw_specs.len());
-    let mut ids = BTreeSet::new();
-    for (expected_id, raw) in raw_specs {
-        let rendered = match orbit_root {
-            Some(root) => inject_activity_template_tokens(raw, root),
-            None => (*raw).to_string(),
-        };
-        let resource = serde_yaml::from_str::<ActivityResource>(&rendered).map_err(|err| {
-            OrbitError::InvalidInput(format!(
-                "invalid default activity spec '{}': {err}",
-                expected_id
-            ))
-        })?;
-        if resource.schema_version != RESOURCE_SCHEMA_VERSION {
-            return Err(OrbitError::InvalidInput(format!(
-                "default activity spec '{}' uses unsupported schemaVersion {}",
-                expected_id, resource.schema_version
-            )));
-        }
-        if resource.kind != ResourceKind::Activity {
-            return Err(OrbitError::InvalidInput(format!(
-                "default activity spec '{}' has unexpected kind {}",
-                expected_id, resource.kind
-            )));
-        }
-        let id = resource.metadata.name.trim();
-        if id.is_empty() {
-            return Err(OrbitError::InvalidInput(format!(
-                "default activity spec '{}' contains empty activity id",
-                expected_id
-            )));
-        }
-        if id != *expected_id {
-            return Err(OrbitError::InvalidInput(format!(
-                "default activity file key '{}' does not match spec id '{}'",
-                expected_id, id
-            )));
-        }
-        if !ids.insert(id.to_string()) {
-            return Err(OrbitError::InvalidInput(format!(
-                "default activity set contains duplicate activity id '{id}'"
-            )));
-        }
-        specs.push(resource);
-    }
-    Ok(specs)
-}
-
-fn inject_activity_template_tokens(raw: &str, orbit_root: &Path) -> String {
-    let orbit_root_value = orbit_root.to_string_lossy();
-    raw.replace(ORBIT_ROOT_TOKEN, orbit_root_value.as_ref())
-}
-
-fn seed_default_activities_from_specs(
-    runtime: &OrbitRuntime,
-    specs: &[ActivityResource],
-    overwrite: bool,
-) -> Result<usize, OrbitError> {
-    let mut created = 0usize;
-    for resource in specs {
-        let activity_id = resource.metadata.name.clone();
-        let spec = &resource.spec;
-        let add_params = ActivityAddParams {
-            id: activity_id.clone(),
-            spec_type: spec.spec_type.clone(),
-            description: spec.description.clone(),
-            input_schema_json: spec.input_schema_json.clone(),
-            output_schema_json: spec.output_schema_json.clone(),
-            spec_config: Value::Object(spec.spec_config.clone()),
-            executor: spec.executor.clone(),
-            workspace_path: spec.workspace_path.clone(),
-            created_by: spec.created_by.clone(),
-        };
-        validate_activity_params(&add_params)?;
-        if runtime.show_activity(&activity_id).is_ok() {
-            if !overwrite {
-                continue;
-            }
-            let update_params: StoreActivityUpdateParams = ActivityUpdateParams {
-                description: Some(spec.description.clone()),
-                input_schema_json: Some(spec.input_schema_json.clone()),
-                output_schema_json: Some(spec.output_schema_json.clone()),
-                spec_config: Some(Value::Object(spec.spec_config.clone())),
-                executor: Some(spec.executor.clone()),
-                workspace_path: Some(spec.workspace_path.clone()),
-                created_by: Some(spec.created_by.clone()),
-                is_active: Some(spec.is_active),
-            }
-            .into();
-            runtime
-                .stores()
-                .activities()
-                .update(&activity_id, update_params)?;
-            created += 1;
+    let mut count = 0usize;
+    for (name, content) in DEFAULT_ACTIVITY_FILES {
+        let path = activities_dir.join(format!("{name}.yaml"));
+        if !overwrite && path.exists() {
             continue;
         }
-        runtime.stores().activities().add(add_params.into())?;
-        if !spec.is_active {
-            let disable_params: StoreActivityUpdateParams = ActivityUpdateParams {
-                is_active: Some(false),
-                ..Default::default()
-            }
-            .into();
-            runtime
-                .stores()
-                .activities()
-                .update(&activity_id, disable_params)?;
-        }
-        created += 1;
+        write_text_with_parent(&path, content)?;
+        count += 1;
     }
-    Ok(created)
+    Ok(count)
 }
 
 fn validate_activity_params(params: &ActivityAddParams) -> Result<(), OrbitError> {
@@ -340,13 +302,6 @@ fn validate_activity_params(params: &ActivityAddParams) -> Result<(), OrbitError
         return Err(OrbitError::InvalidInput(
             "activity type must not be empty".to_string(),
         ));
-    }
-    if !VALID_ACTIVITY_SPEC_TYPES.contains(&params.spec_type.as_str()) {
-        return Err(OrbitError::InvalidInput(format!(
-            "activity type '{}' is unsupported; valid values: {}",
-            params.spec_type,
-            VALID_ACTIVITY_SPEC_TYPES.join(", ")
-        )));
     }
     if params.description.trim().is_empty() {
         return Err(OrbitError::InvalidInput(
