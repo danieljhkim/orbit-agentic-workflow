@@ -188,9 +188,9 @@ impl OrbitRuntime {
     /// The lookup order:
     /// 1. `ORBIT_ACTIVITY_DIR` env var (or legacy `ORBIT_V2_CATALOG_DIR`) as
     ///    a colon-separated list of dirs, highest precedence for smokes/tests.
-    /// 2. `<workspace_root>/.orbit/activities/` — workspace-local.
-    /// 3. `<global_root>/activities/` — global defaults.
-    /// 4. `crates/orbit-core/assets/activities/` under the repo root.
+    /// 2. `<workspace_root>/.orbit/resources/activities/` — workspace-local.
+    /// 3. `<global_root>/resources/activities/` — global defaults (seeded by
+    ///    `orbit init` from the YAMLs embedded in the binary).
     ///
     /// Missing directories are skipped silently; duplicate names across
     /// directories are a hard error (`CatalogError::DuplicateName`).
@@ -231,15 +231,6 @@ impl OrbitRuntime {
                 &global_dir,
                 catalog.load_dir_skipping_retired(&global_dir)?,
             );
-        }
-
-        let repo_dir = self
-            .context
-            .paths()
-            .repo_root
-            .join("crates/orbit-core/assets/activities");
-        if repo_dir.is_dir() && repo_dir != ws_dir && repo_dir != global_dir {
-            catalog.load_dir(&repo_dir)?;
         }
 
         Ok(catalog)

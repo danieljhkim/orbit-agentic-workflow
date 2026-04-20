@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Job, JobKind, JobResource, JobRun, JobScheduleState, JobStep, JobTargetType, JobV2, OrbitError,
-    OrbitEvent, RESOURCE_SCHEMA_VERSION, ResourceKind, default_job_max_active_runs, load_job_asset,
-    resolve_agent_model_pair,
+    Job, JobKind, JobRun, JobScheduleState, JobStep, JobTargetType, JobV2, OrbitError, OrbitEvent,
+    default_job_max_active_runs, load_job_asset, resolve_agent_model_pair,
 };
+use orbit_common::utility::fs::write_text_with_parent;
 use orbit_engine::EnvironmentHost;
 use orbit_store::JobCreateParams as StoreActivityCreateParams;
 use orbit_store::JobUpdateParams as StoreJobUpdateParams;
@@ -17,8 +17,36 @@ use crate::command::activity::activity_requires_agent_cli;
 
 const JOB_PARALLEL_TASK_PIPELINE: &str = "job_parallel_task_pipeline";
 const JOB_LOCAL_TASK_PIPELINE: &str = "job_local_task_pipeline";
-const REPO_V2_SAMPLE_JOBS_DIR: &str = "crates/orbit-core/assets/jobs";
-const DEFAULT_JOB_FILES: &[(&str, &str)] = &[];
+
+/// Shippable default workflow assets, seeded under
+/// `<orbit_root>/resources/jobs/<name>.yaml` on `orbit init`. The five
+/// entries here are the admission-controlled task shipment workflows
+/// (auto / epic / gate / local / pr). Example and smoke fixtures live
+/// under `crates/orbit-core/assets/jobs/examples/` and are NOT seeded —
+/// they exist for `crates/orbit-engine/examples/v2_job_runtime_smoke.rs`
+/// only.
+const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
+    (
+        "task_auto_pipeline",
+        include_str!("../../assets/jobs/task_auto_pipeline.yaml"),
+    ),
+    (
+        "task_epic_pipeline",
+        include_str!("../../assets/jobs/task_epic_pipeline.yaml"),
+    ),
+    (
+        "task_gate_pipeline",
+        include_str!("../../assets/jobs/task_gate_pipeline.yaml"),
+    ),
+    (
+        "task_local_pipeline",
+        include_str!("../../assets/jobs/task_local_pipeline.yaml"),
+    ),
+    (
+        "task_pr_pipeline",
+        include_str!("../../assets/jobs/task_pr_pipeline.yaml"),
+    ),
+];
 
 #[derive(Debug, Clone)]
 pub struct JobAddParams {
@@ -493,7 +521,6 @@ impl OrbitRuntime {
 
         dirs.push(self.paths().jobs_dir.clone());
         dirs.push(self.paths().global_dir.join("resources/jobs"));
-        dirs.push(self.paths().repo_root.join(REPO_V2_SAMPLE_JOBS_DIR));
         dirs
     }
 
@@ -718,78 +745,25 @@ fn find_v2_job_asset_in_dir(
     Ok(())
 }
 
-fn load_default_job_specs(raw_specs: &[(&str, &str)]) -> Result<Vec<JobResource>, OrbitError> {
-    let mut specs = Vec::with_capacity(raw_specs.len());
-    for (expected_id, raw) in raw_specs {
-        let resource = serde_yaml::from_str::<JobResource>(raw).map_err(|err| {
-            OrbitError::InvalidInput(format!("invalid default job spec '{}': {err}", expected_id))
-        })?;
-        if resource.schema_version != RESOURCE_SCHEMA_VERSION {
-            return Err(OrbitError::InvalidInput(format!(
-                "default job '{}' uses unsupported schemaVersion {}",
-                expected_id, resource.schema_version
-            )));
-        }
-        if resource.kind != ResourceKind::Job {
-            return Err(OrbitError::InvalidInput(format!(
-                "default job '{}' has unexpected kind {}",
-                expected_id, resource.kind
-            )));
-        }
-        let id = resource.metadata.name.trim();
-        if id != *expected_id {
-            return Err(OrbitError::InvalidInput(format!(
-                "default job file key '{}' does not match spec job_id '{}'",
-                expected_id, id
-            )));
-        }
-        specs.push(resource);
-    }
-    Ok(specs)
-}
-
-pub(crate) fn seed_default_jobs(
-    runtime: &OrbitRuntime,
-    overwrite: bool,
-) -> Result<usize, OrbitError> {
-    let specs = load_default_job_specs(DEFAULT_JOB_FILES)?;
-    let mut created = 0usize;
-    for resource in specs {
-        let job_id = resource.metadata.name.clone();
-        let spec = resource.spec;
-        if runtime.show_job(&job_id).is_ok() {
-            if !overwrite {
-                continue;
-            }
-            runtime.validate_job_steps(Some(&job_id), &spec.steps, false)?;
-            runtime.update_job_definition(
-                &job_id,
-                spec.default_input,
-                spec.max_active_runs,
-                spec.max_iterations,
-                spec.steps,
-                spec.policy,
-                spec.state,
-            )?;
-            created += 1;
+/// Seed every entry in [`DEFAULT_JOB_FILES`] as a YAML file under
+/// `jobs_dir`. Mirrors the activity / skill / policy seeding pattern:
+/// the workflow YAML is embedded in the binary via `include_str!` and
+/// copied out on `orbit init` so the job loader can discover it without
+/// depending on a git checkout of this repo.
+///
+/// When `overwrite` is false, existing files are preserved — users who've
+/// edited a previously-seeded workflow won't lose their changes on re-init.
+pub(crate) fn seed_default_jobs(jobs_dir: &Path, overwrite: bool) -> Result<usize, OrbitError> {
+    let mut count = 0usize;
+    for (name, content) in DEFAULT_JOB_FILES {
+        let path = jobs_dir.join(format!("{name}.yaml"));
+        if !overwrite && path.exists() {
             continue;
         }
-        runtime.validate_job_steps(Some(&job_id), &spec.steps, false)?;
-        let default_input = normalize_job_default_input(spec.default_input)?;
-        let max_active_runs = validate_job_max_active_runs(Some(spec.max_active_runs))?;
-        let steps = normalize_job_steps(spec.steps)?;
-        runtime.stores().jobs().add(StoreActivityCreateParams {
-            job_id: Some(job_id),
-            default_input,
-            max_active_runs,
-            max_iterations: spec.max_iterations,
-            steps,
-            policy: None,
-            initial_state: spec.state,
-        })?;
-        created += 1;
+        write_text_with_parent(&path, content)?;
+        count += 1;
     }
-    Ok(created)
+    Ok(count)
 }
 
 fn validate_job_max_active_runs(max_active_runs: Option<u32>) -> Result<u32, OrbitError> {
