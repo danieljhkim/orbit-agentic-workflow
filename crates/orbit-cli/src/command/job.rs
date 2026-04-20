@@ -2,9 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 use orbit_common::types::{ActivityV2Spec, JobKind, JobV2Step, JobV2StepBody};
-use orbit_core::command::job::{
-    JobAddParams, JobCatalogDefinition, JobCatalogEntry, JobCatalogFilter,
-};
+use orbit_core::command::job::{JobCatalogDefinition, JobCatalogEntry, JobCatalogFilter};
 use orbit_core::{Job, JobRun, JobStep, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
@@ -25,8 +23,6 @@ impl Execute for JobCommand {
 
 #[derive(Subcommand)]
 pub enum JobSubcommand {
-    /// Register a new job definition
-    Add(JobAddArgs),
     /// List all registered jobs
     List(JobListArgs),
     /// Show details of a specific job
@@ -35,8 +31,6 @@ pub enum JobSubcommand {
     Run(JobRunArgs),
     /// Show run history for a job
     History(JobHistoryArgs),
-    /// Delete a job definition
-    Delete(JobDeleteArgs),
     /// Inspect the pipeline state (state.json) of a job run
     RunState(JobRunStateArgs),
     /// Internal worker entrypoint for persisted pipeline runs
@@ -47,65 +41,12 @@ pub enum JobSubcommand {
 impl Execute for JobSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            JobSubcommand::Add(args) => args.execute(runtime),
             JobSubcommand::List(args) => args.execute(runtime),
             JobSubcommand::Show(args) => args.execute(runtime),
             JobSubcommand::Run(args) => args.execute(runtime),
             JobSubcommand::History(args) => args.execute(runtime),
-            JobSubcommand::Delete(args) => args.execute(runtime),
             JobSubcommand::RunState(args) => args.execute(runtime),
             JobSubcommand::RunPipelineWorker(args) => args.execute(runtime),
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct JobAddArgs {
-    #[arg(long)]
-    pub job_id: Option<String>,
-    #[arg(long, default_value_t = 1)]
-    pub max_active_runs: u32,
-    #[arg(long)]
-    pub target_id: String,
-    #[arg(long)]
-    pub agent_cli: String,
-    #[arg(long)]
-    pub model: Option<String>,
-    #[arg(long, default_value = "20m")]
-    pub timeout: String,
-    /// Comma-separated list of extra env var names to pass through in hermetic mode for this job.
-    #[arg(long, default_value = "")]
-    pub env_extra: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobAddArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let timeout_seconds = crate::parse::parse_duration_seconds(&self.timeout)?;
-
-        let job = runtime.add_job(JobAddParams {
-            job_id: self.job_id,
-            default_input: None,
-            max_active_runs: Some(self.max_active_runs),
-            max_iterations: None,
-            steps: vec![JobStep {
-                target_id: self.target_id,
-                agent_cli: self.agent_cli,
-                model: self.model,
-                timeout_seconds,
-                env_extra: crate::parse::csv_to_vec(&self.env_extra),
-                ..Default::default()
-            }],
-            policy: None,
-            initial_state_override: None,
-        })?;
-
-        if self.json {
-            crate::output::json::print_pretty(&job_to_json(&job))
-        } else {
-            println!("{}", job.job_id);
-            Ok(())
         }
     }
 }
@@ -426,28 +367,6 @@ impl Execute for JobHistoryArgs {
                 ]);
             }
             println!("{table}");
-            Ok(())
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct JobDeleteArgs {
-    pub job_id: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobDeleteArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.delete_job(&self.job_id)?;
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "id": self.job_id,
-                "deleted": true,
-            }))
-        } else {
-            println!("Deleted job '{}'", self.job_id);
             Ok(())
         }
     }

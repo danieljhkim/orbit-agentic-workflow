@@ -1,14 +1,13 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use orbit_core::command::activity::{ActivityAddParams, ActivityUpdateParams};
-use orbit_core::{Activity, OrbitError, OrbitRuntime};
+use orbit_core::{OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
 
 #[derive(Args)]
-#[command(about = "Define, list, and run activities")]
+#[command(about = "List and run v2 activities")]
 pub struct ActivityCommand {
     #[command(subcommand)]
     pub command: ActivitySubcommand,
@@ -22,80 +21,17 @@ impl Execute for ActivityCommand {
 
 #[derive(Subcommand)]
 pub enum ActivitySubcommand {
-    /// Register a new activity definition
-    Add(Box<ActivityAddArgs>),
     /// List all registered activities
     List(ActivityListArgs),
-    /// Show details of a specific activity
-    Show(ActivityShowArgs),
-    /// Update an existing activity
-    Update(ActivityUpdateArgs),
     /// Execute an activity from a YAML path
     Run(ActivityRunArgs),
-    /// Delete an activity definition
-    Delete(ActivityDeleteArgs),
 }
 
 impl Execute for ActivitySubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            ActivitySubcommand::Add(args) => (*args).execute(runtime),
             ActivitySubcommand::List(args) => args.execute(runtime),
-            ActivitySubcommand::Show(args) => args.execute(runtime),
-            ActivitySubcommand::Update(args) => args.execute(runtime),
             ActivitySubcommand::Run(args) => args.execute(runtime),
-            ActivitySubcommand::Delete(args) => args.execute(runtime),
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct ActivityAddArgs {
-    #[arg(long)]
-    pub id: String,
-    #[arg(long = "spec-type", alias = "type", default_value = "agent_invoke")]
-    pub spec_type: String,
-    #[arg(long)]
-    pub description: String,
-    #[arg(long)]
-    pub input_schema: Option<String>,
-    #[arg(long)]
-    pub output_schema: Option<String>,
-    #[arg(long)]
-    pub spec_config: Option<String>,
-    #[arg(long)]
-    pub workspace_path: Option<String>,
-    #[arg(long)]
-    pub created_by: Option<String>,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for ActivityAddArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input_schema_json =
-            parse_optional_json_object(self.input_schema.as_deref(), "input_schema")?;
-        let output_schema_json =
-            parse_optional_json_object(self.output_schema.as_deref(), "output_schema")?;
-        let spec_config = parse_optional_json_object(self.spec_config.as_deref(), "spec_config")?;
-
-        let spec = runtime.add_activity(ActivityAddParams {
-            id: self.id,
-            spec_type: self.spec_type,
-            description: self.description,
-            input_schema_json,
-            output_schema_json,
-            spec_config,
-            executor: None,
-            workspace_path: self.workspace_path,
-            created_by: self.created_by,
-        })?;
-
-        if self.json {
-            crate::output::json::print_pretty(&activity_to_json(&spec))
-        } else {
-            println!("{}", spec.id);
-            Ok(())
         }
     }
 }
@@ -103,65 +39,40 @@ impl Execute for ActivityAddArgs {
 #[derive(Args)]
 pub struct ActivityListArgs {
     #[arg(long)]
-    pub all: bool,
-    #[arg(long)]
     pub json: bool,
-    /// Output signal-tier JSON (id, type, description, is_active only)
+    /// Output signal-tier JSON (id, type, description only)
     #[arg(long)]
     pub ops: bool,
 }
 
 impl Execute for ActivityListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let specs = runtime.list_activities(self.all)?;
-        let v2_catalog = runtime
+        let catalog = runtime
             .v2_activity_catalog()
             .map_err(|err| OrbitError::Store(format!("v2 activity catalog: {err}")))?;
 
         if self.ops {
-            let mut values = specs
-                .iter()
-                .map(activity_to_signal_json)
-                .collect::<Vec<_>>();
-            for name in v2_catalog.names() {
-                if let Some(spec) = v2_catalog.get(name) {
-                    values.push(v2_activity_to_signal_json(name, spec));
-                }
-            }
+            let values: Vec<Value> = catalog
+                .names()
+                .filter_map(|name| catalog.get(name).map(|spec| v2_signal_json(name, spec)))
+                .collect();
             crate::output::json::print_pretty(&Value::Array(values))
         } else if self.json {
-            let mut values = specs.iter().map(activity_to_json).collect::<Vec<_>>();
-            for name in v2_catalog.names() {
-                if let Some(spec) = v2_catalog.get(name) {
-                    values.push(v2_activity_to_json(name, spec));
-                }
-            }
+            let values: Vec<Value> = catalog
+                .names()
+                .filter_map(|name| catalog.get(name).map(|spec| v2_full_json(name, spec)))
+                .collect();
             crate::output::json::print_pretty(&Value::Array(values))
         } else {
-            let mut table =
-                crate::output::table::build_table(&["ID", "TYPE", "ACTIVE", "DESCRIPTION"]);
-            for spec in &specs {
+            let mut table = crate::output::table::build_table(&["ID", "TYPE", "DESCRIPTION"]);
+            for name in catalog.names() {
                 use comfy_table::Cell;
-                table.add_row(vec![
-                    Cell::new(&spec.id),
-                    Cell::new(&spec.spec_type),
-                    crate::output::color::job_state_color_cell(if spec.is_active {
-                        "active"
-                    } else {
-                        "disabled"
-                    }),
-                    Cell::new(&spec.description),
-                ]);
-            }
-            for name in v2_catalog.names() {
-                use comfy_table::Cell;
-                let Some(spec) = v2_catalog.get(name) else {
+                let Some(spec) = catalog.get(name) else {
                     continue;
                 };
                 table.add_row(vec![
                     Cell::new(name),
-                    Cell::new(v2_activity_type_label(spec)),
-                    crate::output::color::job_state_color_cell("active"),
+                    Cell::new(v2_type_label(spec)),
                     Cell::new(&spec.description),
                 ]);
             }
@@ -171,158 +82,9 @@ impl Execute for ActivityListArgs {
     }
 }
 
-fn v2_activity_type_label(spec: &orbit_common::types::activity_job::ActivityV2) -> &'static str {
-    use orbit_common::types::activity_job::ActivityV2Spec;
-    match &spec.spec {
-        ActivityV2Spec::AgentLoop(_) => "agent_loop",
-        ActivityV2Spec::Deterministic(_) => "deterministic",
-        ActivityV2Spec::Shell(_) => "shell",
-    }
-}
-
-fn v2_activity_to_json(name: &str, spec: &orbit_common::types::activity_job::ActivityV2) -> Value {
-    json!({
-        "id": name,
-        "type": v2_activity_type_label(spec),
-        "description": spec.description,
-        "active": true,
-        "schemaVersion": 2,
-    })
-}
-
-fn v2_activity_to_signal_json(
-    name: &str,
-    spec: &orbit_common::types::activity_job::ActivityV2,
-) -> Value {
-    json!({
-        "id": name,
-        "type": v2_activity_type_label(spec),
-        "description": spec.description,
-        "is_active": true,
-    })
-}
-
-#[derive(Args)]
-pub struct ActivityShowArgs {
-    pub id: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for ActivityShowArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let spec = runtime.show_activity(&self.id)?;
-        if self.json {
-            crate::output::json::print_pretty(&activity_to_json(&spec))
-        } else {
-            use crate::output::color::{bold, dimmed, job_state_color};
-            println!("{} {}", bold("ID:"), spec.id);
-            println!("{} {}", bold("Type:"), spec.spec_type);
-            println!("{} {}", bold("Description:"), spec.description);
-            println!(
-                "{} {}",
-                bold("Spec Config:"),
-                serde_json::to_string(&spec.spec_config).unwrap_or_else(|_| "{}".to_string())
-            );
-            if let Some(ref created_by) = spec.created_by {
-                println!("{} {}", bold("Created By:"), created_by);
-            }
-            let active_str = if spec.is_active { "active" } else { "disabled" };
-            println!("{} {}", bold("Active:"), job_state_color(active_str));
-            println!(
-                "{} {}",
-                bold("Created:"),
-                dimmed(&spec.created_at.to_rfc3339())
-            );
-            println!(
-                "{} {}",
-                bold("Updated:"),
-                dimmed(&spec.updated_at.to_rfc3339())
-            );
-            Ok(())
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct ActivityUpdateArgs {
-    pub id: String,
-    #[arg(long)]
-    pub description: Option<String>,
-    #[arg(long)]
-    pub input_schema: Option<String>,
-    #[arg(long)]
-    pub output_schema: Option<String>,
-    #[arg(long)]
-    pub spec_config: Option<String>,
-    #[arg(long)]
-    pub workspace_path: Option<String>,
-    #[arg(long)]
-    pub clear_workspace_path: bool,
-    #[arg(long, conflicts_with = "inactive")]
-    pub active: bool,
-    #[arg(long, conflicts_with = "active")]
-    pub inactive: bool,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for ActivityUpdateArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let input_schema_json = self
-            .input_schema
-            .as_deref()
-            .map(|raw| parse_json_object(raw, "input_schema"))
-            .transpose()?;
-        let output_schema_json = self
-            .output_schema
-            .as_deref()
-            .map(|raw| parse_json_object(raw, "output_schema"))
-            .transpose()?;
-        let spec_config = self
-            .spec_config
-            .as_deref()
-            .map(|raw| parse_json_object(raw, "spec_config"))
-            .transpose()?;
-        let workspace_path = if self.clear_workspace_path {
-            Some(None)
-        } else {
-            self.workspace_path.map(Some)
-        };
-        let is_active = if self.active {
-            Some(true)
-        } else if self.inactive {
-            Some(false)
-        } else {
-            None
-        };
-
-        let activity = runtime.update_activity(
-            &self.id,
-            ActivityUpdateParams {
-                description: self.description,
-                input_schema_json,
-                output_schema_json,
-                spec_config,
-                executor: None,
-                workspace_path,
-                created_by: None,
-                is_active,
-            },
-        )?;
-
-        if self.json {
-            crate::output::json::print_pretty(&activity_to_json(&activity))
-        } else {
-            println!("Updated activity '{}'", activity.id);
-            Ok(())
-        }
-    }
-}
-
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit activity run crates/orbit-core/assets/activities/agent_loop_reference.yaml\n  orbit activity run crates/orbit-core/assets/activities/worktree_setup.yaml --input '{\"task_id\":\"T123\"}'\n"
+    after_help = "Examples:\n  orbit activity run crates/orbit-core/assets/activities/worktree_setup.yaml\n  orbit activity run path/to/agent.yaml --input '{\"task_id\":\"T123\"}'\n"
 )]
 pub struct ActivityRunArgs {
     /// Path to a schemaVersion 2 activity YAML file.
@@ -389,68 +151,31 @@ impl Execute for ActivityRunArgs {
     }
 }
 
-#[derive(Args)]
-pub struct ActivityDeleteArgs {
-    pub id: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for ActivityDeleteArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        runtime.delete_activity(&self.id)?;
-        if self.json {
-            crate::output::json::print_pretty(&json!({
-                "id": self.id,
-                "deleted": true,
-            }))
-        } else {
-            println!("Deleted activity '{}'", self.id);
-            Ok(())
-        }
+fn v2_type_label(spec: &orbit_common::types::activity_job::ActivityV2) -> &'static str {
+    use orbit_common::types::activity_job::ActivityV2Spec;
+    match &spec.spec {
+        ActivityV2Spec::AgentLoop(_) => "agent_loop",
+        ActivityV2Spec::Deterministic(_) => "deterministic",
+        ActivityV2Spec::Shell(_) => "shell",
     }
 }
 
-fn parse_json_object(raw: &str, field: &str) -> Result<Value, OrbitError> {
-    let value = serde_json::from_str::<Value>(raw)
-        .map_err(|e| OrbitError::InvalidInput(format!("{field} must be valid JSON: {e}")))?;
-    if !value.is_object() {
-        return Err(OrbitError::InvalidInput(format!(
-            "{field} must be a JSON object"
-        )));
-    }
-    Ok(value)
-}
-
-fn parse_optional_json_object(raw: Option<&str>, field: &str) -> Result<Value, OrbitError> {
-    match raw {
-        None => Ok(json!({})),
-        Some(value) if value.trim().is_empty() => Ok(json!({})),
-        Some(value) => parse_json_object(value, field),
-    }
-}
-
-fn activity_to_signal_json(spec: &Activity) -> Value {
+fn v2_full_json(name: &str, spec: &orbit_common::types::activity_job::ActivityV2) -> Value {
     json!({
-        "id": spec.id,
-        "type": spec.spec_type,
-        "description": spec.description,
-        "is_active": spec.is_active,
-    })
-}
-
-fn activity_to_json(spec: &Activity) -> Value {
-    json!({
-        "id": spec.id,
-        "type": spec.spec_type,
+        "id": name,
+        "type": v2_type_label(spec),
         "description": spec.description,
         "input_schema_json": spec.input_schema_json,
         "output_schema_json": spec.output_schema_json,
-        "spec_config": spec.spec_config,
-        "workspace_path": spec.workspace_path,
-        "created_by": spec.created_by,
-        "is_active": spec.is_active,
-        "created_at": spec.created_at.to_rfc3339(),
-        "updated_at": spec.updated_at.to_rfc3339(),
+        "fsProfile": spec.fs_profile,
+        "schemaVersion": 2,
+    })
+}
+
+fn v2_signal_json(name: &str, spec: &orbit_common::types::activity_job::ActivityV2) -> Value {
+    json!({
+        "id": name,
+        "type": v2_type_label(spec),
+        "description": spec.description,
     })
 }

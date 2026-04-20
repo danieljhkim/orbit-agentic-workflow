@@ -509,18 +509,31 @@ impl OrbitRuntime {
 
     fn v2_job_asset_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = Vec::new();
+        let mut seen: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+        let push_unique = |dirs: &mut Vec<PathBuf>,
+                           seen: &mut std::collections::BTreeSet<PathBuf>,
+                           path: PathBuf| {
+            let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+            if seen.insert(canonical) {
+                dirs.push(path);
+            }
+        };
 
         let env_dirs = std::env::var("ORBIT_JOB_DIR")
             .ok()
             .or_else(|| std::env::var("ORBIT_V2_JOB_DIR").ok());
         if let Some(raw) = env_dirs {
             for entry in raw.split(':').filter(|value| !value.is_empty()) {
-                dirs.push(PathBuf::from(entry));
+                push_unique(&mut dirs, &mut seen, PathBuf::from(entry));
             }
         }
 
-        dirs.push(self.paths().jobs_dir.clone());
-        dirs.push(self.paths().global_dir.join("resources/jobs"));
+        push_unique(&mut dirs, &mut seen, self.paths().jobs_dir.clone());
+        push_unique(
+            &mut dirs,
+            &mut seen,
+            self.paths().global_dir.join("resources/jobs"),
+        );
         dirs
     }
 

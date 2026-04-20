@@ -72,38 +72,42 @@ fn describe_job(runtime: &OrbitRuntime, job_id: &str) -> Result<(), OrbitError> 
 }
 
 fn describe_activity(runtime: &OrbitRuntime, id: &str) -> Result<(), OrbitError> {
-    let activity = runtime.show_activity(id)?;
+    use orbit_common::types::activity_job::ActivityV2Spec;
+    let catalog = runtime
+        .v2_activity_catalog()
+        .map_err(|err| OrbitError::Store(format!("v2 activity catalog: {err}")))?;
+    let activity = catalog
+        .get(id)
+        .ok_or_else(|| OrbitError::ActivityNotFound(id.to_string()))?;
+    let type_label = match &activity.spec {
+        ActivityV2Spec::AgentLoop(_) => "agent_loop",
+        ActivityV2Spec::Deterministic(_) => "deterministic",
+        ActivityV2Spec::Shell(_) => "shell",
+    };
 
-    println!("ID:          {}", activity.id);
-    println!("Description: {}", activity.description);
-    println!("Spec Type:   {}", activity.spec_type);
-    println!("Active:      {}", activity.is_active);
-    if let Some(ref executor) = activity.executor {
-        println!("Executor:    {executor}");
+    println!("ID:           {id}");
+    println!("Type:         {type_label}");
+    println!("Description:  {}", activity.description);
+    if let Some(ref profile) = activity.fs_profile {
+        println!("FS Profile:   {profile}");
     }
-    if let Some(ref ws) = activity.workspace_path {
-        println!("Workspace:   {ws}");
-    }
-    if !activity.tools.is_empty() {
-        println!("Tools:       {}", activity.tools.join(", "));
-    }
-    if !activity.proc_allowed_programs.is_empty() {
-        println!("Proc Allow:  {}", activity.proc_allowed_programs.join(", "));
-    }
-    if let Some(ref created_by) = activity.created_by {
-        println!("Created By:  {created_by}");
-    }
-    println!("Created:     {}", activity.created_at.to_rfc3339());
-    println!("Updated:     {}", activity.updated_at.to_rfc3339());
-
-    if !activity.spec_config.is_null() {
-        println!();
-        println!("Spec Config:");
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&activity.spec_config)
-                .unwrap_or_else(|_| activity.spec_config.to_string())
-        );
+    match &activity.spec {
+        ActivityV2Spec::AgentLoop(spec) => {
+            println!("Backend:      {}", spec.backend.as_str());
+            println!("Provider:     {}", spec.provider.as_str());
+            if !spec.tools.is_empty() {
+                println!("Tools:        {}", spec.tools.join(", "));
+            }
+        }
+        ActivityV2Spec::Deterministic(spec) => {
+            println!("Action:       {}", spec.action);
+        }
+        ActivityV2Spec::Shell(spec) => {
+            println!("Program:      {}", spec.program);
+            if !spec.args.is_empty() {
+                println!("Args:         {}", spec.args.join(" "));
+            }
+        }
     }
     Ok(())
 }
