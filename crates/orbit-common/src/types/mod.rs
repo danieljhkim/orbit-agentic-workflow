@@ -42,6 +42,7 @@ pub mod role;
 pub mod run_state;
 pub mod skill;
 pub mod task;
+pub mod task_plan;
 pub mod tool;
 pub mod tool_input;
 pub mod workspace;
@@ -98,6 +99,7 @@ pub use task::{
     TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
     prune_missing_context_files,
 };
+pub use task_plan::{TaskPlan, TaskPlanCheckpoint, TaskPlanSuccessCriterion, parse_task_plan};
 pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
 pub use tool_input::{
     optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,

@@ -33,7 +33,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::types::OrbitId;
+use crate::types::{OrbitError, OrbitId};
 
 /// Current lifecycle state of a task.
 ///
@@ -433,6 +433,13 @@ impl Display for Task {
             "{}\t{}\t{}\t{}",
             self.id, self.status, self.priority, self.title
         )
+    }
+}
+
+impl Task {
+    pub fn parsed_plan(&self) -> Result<crate::types::task_plan::TaskPlan, OrbitError> {
+        let label = format!("task '{}' plan", self.id);
+        crate::types::task_plan::parse_task_plan(self.plan.as_str(), label.as_str())
     }
 }
 
