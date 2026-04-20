@@ -21,12 +21,17 @@
 //! → `orbit-engine` → orbit-core
 
 pub mod activity_job;
+mod checkpoint_verifier;
 mod context;
 mod executor;
 mod job_runner;
 mod template;
 mod workspace_snapshot;
 
+pub use checkpoint_verifier::{
+    Criterion, CriterionOutcome, CriterionRun, DEFAULT_OUTPUT_CAP_BYTES, VerifierConfig,
+    VerifierResult, verify_checkpoint, verify_checkpoint_with_config,
+};
 pub use context::{
     ACTIVITY_EXECUTION_FAILED, AGENT_COMMIT_FAILED, AGENT_INVOCATION_FAILED,
     AGENT_PROTOCOL_VIOLATION, AGENT_TIMEOUT, ActivityInvocationResult, AgentProtocolHost,
