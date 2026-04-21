@@ -9,8 +9,6 @@ docs
 !docs/
 docs/*
 !docs/design/
-docs/design/*
-!docs/design/knowledge-graph-refs.md
 sessions
 examples.md
 feature.md
@@ -41,3 +39,4 @@ package-lock.json
 # direnv — per-repo env vars (holds secrets like ANTHROPIC_API_KEY)
 .envrc
 .direnv/
+raw

@@ -1,4 +1,4 @@
-# Knowledge Graph Refs
+# Spec: Refs
 
 Orbit stores the knowledge graph as a git-like split between immutable objects and mutable refs. The immutable side is shared across branches and worktrees; the mutable side is branch-scoped and records which graph snapshot should be considered "current" for a given branch.
 

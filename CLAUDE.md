@@ -10,7 +10,6 @@ Project instructions for agents working on Orbit.
 - Don't add cross-crate dependencies without checking the architecture diagram below.
 - When you hit friction, ambiguity, naming drift, or duplicated sources of truth: file a self-reported friction task via the `orbit-track-issues` skill instead of working around it.
 - Reserve task type `friction` for agent self-reports only. Do not use `friction` for normal user-requested work, backlog shaping, or generic bug tracking.
-- DO NOT WRITE UNIT TESTS or RUN TESTS
 
 ## Project Do's
 
@@ -72,10 +71,11 @@ profile (`read: [./**]`, `modify: [./**]`) before applying the global denies.
 
 Follow the `## Task Quality Standards` section in `orbit-create-task` skill: explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.
 
-**Commits & Tasks**:
+**Commits & Tasks & doc authorship**:
 
-- Use the agent commit identity (e.g. `claude`, `codex`, `gemini`) as author/committer when the agent made the change.
+- Use the agent commit identity (e.g. `claude-opus-4-7`, `gpt-5.4`, `gemini-3.1-pro`) as author/committer when the agent made the change.
 - Include the task ID in the commit message when the commit is associated with an Orbit task (e.g. `[T20260320-001234]`).
+- When writing docs, cite relevant task IDs in the doc itself.
 
 ## Scoreboards
 
