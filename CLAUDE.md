@@ -32,7 +32,7 @@ orbit-common → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → o
 - **orbit-common**: leaf — no internal deps. `types::` owns shared domain types, `OrbitError`, ID generation, and activity/job schemas; `utility::` owns generic helpers like fs, redaction, logging, and blob storage.
 - **orbit-knowledge**: knowledge/graph parsing and storage helpers. Depends on `orbit-common`; consumed by `orbit-tools` and `orbit-cli`.
 - **orbit-store**: layered store pattern (YAML + SQLite). Match existing modules when adding new ones.
-- **orbit-agent**: HTTP `LoopTransport` primitives **and** the retained `AgentRuntime` + `providers/*_cli.rs` CLI runtimes. Per the 2026-04-18 amendment to `docs/design/activity-job.md` (§10.1 retention table), the CLI provider files are **kept** as the implementation of `backend: cli`. Phase 5 retires the legacy asset format and dispatch path; it does NOT delete `providers/*_cli.rs` or the `AgentRuntime` trait.
+- **orbit-agent**: HTTP `LoopTransport` primitives **and** the retained `AgentRuntime` + `providers/*_cli.rs` CLI runtimes. Per the 2026-04-18 amendment to [docs/design/activity-job/2_design.md §10.1](./docs/design/activity-job/2_design.md), the CLI provider files are **kept** as the implementation of `backend: cli`. Phase 5 retires the legacy asset format and dispatch path; it does NOT delete `providers/*_cli.rs` or the `AgentRuntime` trait.
 - **orbit-engine**: activity/job execution, template rendering, retry logic. Also owns the `backend: cli` subprocess runner (`activity_job::cli_runner`), which names `orbit-agent::{Agent, AgentConfig}` directly — orbit-core stays clean of orbit-agent types per the T20260418-2210 boundary.
 - **orbit-mcp**: Model Context Protocol adapter over `orbit-tools::ToolRegistry`. Depends only on `orbit-common`, `orbit-tools`, and `rmcp`; consumed by `orbit-cli` via `orbit serve mcp`.
 - **orbit-core**: runtime bootstrap, config layering, command dispatch, default asset seeding. Exposes `V2RuntimeHost` via `impl` for `OrbitRuntime`; the trait surface is primitive (deterministic dispatch, API-key sourcing, CLI command resolution) so no orbit-agent type leaks through it.
@@ -55,7 +55,7 @@ For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs)
 
 ## Activity / Job Model
 
-The full design lives at [`docs/design/activity-job.md`](docs/design/activity-job.md).
+The full design lives under [docs/design/activity-job/](./docs/design/activity-job/), with the current implementation in [docs/design/activity-job/2_design.md](./docs/design/activity-job/2_design.md).
 
 ### Activity YAML reference
 
@@ -76,7 +76,7 @@ Follow the `## Task Quality Standards` section in `orbit-create-task` skill: exp
 - Use the agent commit identity (e.g. `claude-opus-4-7`, `gpt-5.4`, `gemini-3.1-pro`) as author/committer when the agent made the change.
 - Include the task ID in the commit message when the commit is associated with an Orbit task (e.g. `[T20260320-001234]`).
 - When writing docs, cite relevant task IDs in the doc itself.
-- Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape). Feature leads: `claude` owns `knowledge-graph/`, `codex` owns `groundhog/`.
+- Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape). Feature leads: `claude` owns `knowledge-graph/`; `codex` owns `activity-job/` and `groundhog/`.
 - When your change touches an owned feature's implementation, update that feature's design docs in the same PR: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, and add a new ADR for any non-obvious decision the change embodies. Stale docs are treated as a review blocker.
 
 ## Scoreboards

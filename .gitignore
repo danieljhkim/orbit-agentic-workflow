@@ -8,6 +8,7 @@ agentspace
 docs
 !docs/
 docs/*
+!docs/POSITIONING.md
 !docs/design/
 sessions
 examples.md
