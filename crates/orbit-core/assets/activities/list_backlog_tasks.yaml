@@ -6,12 +6,15 @@ spec:
   type: deterministic
   description: >
     Materialize the current workspace backlog as an ordered task list for
-    the auto-pipeline's `dispatch_agent` grouping step. Filters to
-    `status: backlog` and excludes `type: friction` (per CLAUDE.md,
-    friction is reserved for agent self-reports, not shippable work).
-    Sorts critical → high → medium → low, then by `created_at` ascending
-    so older high-priority work ships first. Caps at `max_tasks` (default
-    50) to keep the agent's context window bounded.
+    the auto-pipeline's `dispatch_agent` grouping step. In automatic mode it
+    filters to `status: backlog`, excludes `type: friction` (per CLAUDE.md,
+    friction is reserved for agent self-reports, not shippable work), and
+    drops any backlog parent/subtask group whose `context_files` overlap the
+    active task-lock surface from `in-progress` or `review` tasks. Explicit
+    `task_ids` input is treated as an override and skips conflict filtering.
+    Sorts critical → high → medium → low, then by `created_at` ascending so
+    older high-priority work ships first. Caps at `max_tasks` (default 50) to
+    keep the agent's context window bounded.
   input_schema_json:
     type: object
     properties:

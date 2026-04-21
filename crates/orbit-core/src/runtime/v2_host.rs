@@ -8,11 +8,15 @@
 //! HTTP agent-loop transport and CLI subprocess execution both live in
 //! `orbit-engine`, so this module never names orbit-agent types.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use orbit_common::types::Task;
 use orbit_common::types::{AuditEventStatus, Role, TaskStatus, TaskType, UNRESTRICTED_FS_PROFILE};
+use orbit_common::utility::path::{
+    normalize_workspace_relative_path, workspace_relative_paths_overlap,
+};
 use orbit_engine::activity_job::{DispatchError, V2RuntimeHost};
 use orbit_engine::{StateExecutionContext, execute_deterministic_action};
 use orbit_store::AuditEventInsertParams;
@@ -171,11 +175,13 @@ impl V2RuntimeHost for OrbitRuntime {
                 }))
             }
             // Materialize the workspace backlog for `dispatch_agent`.
-            // Filters `status: backlog` and excludes `type: friction`
+            // Filters `status: backlog`, excludes `type: friction`
             // (per CLAUDE.md: friction is reserved for agent self-reports,
-            // not shippable work). Sorts critical → high → medium → low then
-            // by `created_at` ascending so older high-priority work ships
-            // first. Caps at `max_tasks` (default 50).
+            // not shippable work), and in automatic mode drops any backlog
+            // task group whose context overlaps files already held by
+            // `in-progress`/`review` tasks. Sorts critical → high → medium →
+            // low then by `created_at` ascending so older high-priority work
+            // ships first. Caps at `max_tasks` (default 50).
             "list_backlog_tasks" => {
                 let max_tasks = input
                     .get("max_tasks")
@@ -192,13 +198,24 @@ impl V2RuntimeHost for OrbitRuntime {
                     })
                     .unwrap_or_default();
                 let mut tasks = if explicit_task_ids.is_empty() {
-                    let mut backlog = self
-                        .list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None)
-                        .map_err(|err| DispatchError::DeterministicActionFailed {
+                    let all_tasks = self.stores().tasks().list().map_err(|err| {
+                        DispatchError::DeterministicActionFailed {
                             action: action.to_string(),
-                            message: format!("list backlog: {err}"),
-                        })?;
-                    backlog.retain(|t| !t.task_type.is_friction());
+                            message: format!("list tasks: {err}"),
+                        }
+                    })?;
+                    let task_lookup: BTreeMap<String, Task> = all_tasks
+                        .iter()
+                        .cloned()
+                        .map(|task| (task.id.clone(), task))
+                        .collect();
+                    let locked_files = active_task_lock_files(task_lookup.values());
+                    let mut backlog: Vec<Task> = all_tasks
+                        .into_iter()
+                        .filter(|task| {
+                            task.status == TaskStatus::Backlog && !task.task_type.is_friction()
+                        })
+                        .collect();
                     backlog.sort_by(|a, b| {
                         let rank = |p: orbit_common::types::TaskPriority| match p {
                             orbit_common::types::TaskPriority::Critical => 0,
@@ -210,6 +227,18 @@ impl V2RuntimeHost for OrbitRuntime {
                             .cmp(&rank(b.priority))
                             .then(a.created_at.cmp(&b.created_at))
                     });
+                    if !locked_files.is_empty() {
+                        let tainted_roots: BTreeSet<String> = backlog
+                            .iter()
+                            .filter(|task| task_overlaps_locked_files(task, &locked_files))
+                            .map(|task| task_root_id(task, &task_lookup))
+                            .collect();
+                        if !tainted_roots.is_empty() {
+                            backlog.retain(|task| {
+                                !tainted_roots.contains(&task_root_id(task, &task_lookup))
+                            });
+                        }
+                    }
                     backlog
                 } else {
                     explicit_task_ids
@@ -706,4 +735,57 @@ fn resolve_cli_command(provider: &str) -> Result<String, DispatchError> {
             "unknown provider `{other}` — no CLI runtime registered"
         ))),
     }
+}
+
+const MAX_TASK_PARENT_CHAIN_DEPTH: usize = 32;
+
+fn active_task_lock_files<'a>(tasks: impl IntoIterator<Item = &'a Task>) -> BTreeSet<String> {
+    let mut locked_files = BTreeSet::new();
+    for task in tasks {
+        if matches!(task.status, TaskStatus::InProgress | TaskStatus::Review) {
+            locked_files.extend(
+                task.context_files
+                    .iter()
+                    .filter_map(|path| normalize_workspace_relative_path(path).map(str::to_owned)),
+            );
+        }
+    }
+    locked_files
+}
+
+fn task_overlaps_locked_files(task: &Task, locked_files: &BTreeSet<String>) -> bool {
+    task.context_files
+        .iter()
+        .filter_map(|path| normalize_workspace_relative_path(path))
+        .any(|requested_file| {
+            locked_files
+                .iter()
+                .any(|held_file| workspace_relative_paths_overlap(requested_file, held_file))
+        })
+}
+
+fn task_root_id(task: &Task, task_lookup: &BTreeMap<String, Task>) -> String {
+    let mut path = vec![task.id.clone()];
+    let mut root_id = task.id.clone();
+    let mut next_parent_id = task.parent_id.clone();
+
+    for _ in 0..MAX_TASK_PARENT_CHAIN_DEPTH {
+        let Some(parent_id) = next_parent_id else {
+            return root_id;
+        };
+
+        if let Some(cycle_start) = path.iter().position(|task_id| task_id == &parent_id) {
+            return path[cycle_start..].iter().min().cloned().unwrap_or(root_id);
+        }
+
+        let Some(parent) = task_lookup.get(&parent_id) else {
+            return root_id;
+        };
+
+        root_id = parent.id.clone();
+        path.push(parent.id.clone());
+        next_parent_id = parent.parent_id.clone();
+    }
+
+    root_id
 }

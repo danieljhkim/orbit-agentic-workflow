@@ -3,7 +3,9 @@
 # Pulls the workspace backlog, asks `dispatch_agent` to group related tasks
 # into bundles, validates the grouping deterministically, then fans out
 # each bundle through `task_gate_pipeline` for admission-controlled
-# dispatch. The gate layer is deterministic (correct, auditable); this
+# dispatch. `list_backlog` pre-filters backlog groups that already overlap
+# active task locks, so the gate layer sees fewer predictable starvation
+# cases. The gate layer is still deterministic (correct, auditable); this
 # workflow only decides bundle SHAPE.
 #
 # Empty-backlog behavior
