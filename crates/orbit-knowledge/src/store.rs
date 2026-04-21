@@ -6,6 +6,8 @@ mod leaf_data;
 mod open;
 #[path = "store/pack.rs"]
 mod pack;
+#[path = "store/task_commits.rs"]
+pub mod task_commits;
 #[path = "store/task_state.rs"]
 mod task_state;
 #[path = "store/types.rs"]

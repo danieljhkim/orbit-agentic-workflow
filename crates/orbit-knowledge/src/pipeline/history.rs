@@ -119,6 +119,32 @@ pub fn walk_commits(
     Ok(commits)
 }
 
+/// List commit SHAs in `from_exclusive..to_inclusive`, topological order,
+/// oldest-first. Thin wrapper around `git rev-list` without fetching the full
+/// commit metadata — use when only the SHA list is needed.
+pub fn rev_list_range(
+    repo: &Path,
+    from_exclusive: &str,
+    to_inclusive: &str,
+) -> Result<Vec<String>, KnowledgeError> {
+    let range = format!("{from_exclusive}..{to_inclusive}");
+    let output = run_git(repo, &["rev-list", "--reverse", "--topo-order", &range])
+        .map_err(|error| KnowledgeError::io(format!("git rev-list failed: {error}")))?;
+    if !output.success {
+        return Err(KnowledgeError::invalid_data(format!(
+            "git rev-list failed for range `{range}`: {}",
+            output.stderr.trim()
+        )));
+    }
+    Ok(output
+        .stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
 /// Resolve HEAD to a commit SHA. Returns `None` when the repo has no commits.
 pub fn resolve_head(repo: &Path) -> Result<Option<String>, KnowledgeError> {
     let output = run_git(repo, &["rev-parse", "--verify", "-q", "HEAD"])
@@ -204,7 +230,10 @@ pub fn parse_task_ids(message: &str) -> Vec<String> {
     ids
 }
 
-fn commit_info(repo: &Path, sha: &str) -> Result<CommitInfo, KnowledgeError> {
+/// Fetch a single commit's `CommitInfo` on demand. Used by Phase 4 to fill
+/// cache misses when a merge commit's ancestry chain extends before the
+/// walker's from-cursor.
+pub fn commit_info(repo: &Path, sha: &str) -> Result<CommitInfo, KnowledgeError> {
     let meta_output = run_git(
         repo,
         &[

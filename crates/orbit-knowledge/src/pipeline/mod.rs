@@ -2,6 +2,7 @@
 //!
 //! Each stage is a plain function operating on a shared [`PipelineContext`].
 
+pub mod attribute;
 pub mod build;
 pub mod context;
 pub mod hash;
@@ -102,7 +103,9 @@ fn run_build_inner(config: BuildConfig) -> Result<PipelineContext, KnowledgeErro
     build::build_graph_files(&mut ctx)?;
     build::build_graph_leaves(&mut ctx)?;
 
-    persist::persist_graph(&ctx)?;
+    let attribute_outcome = attribute::attribute_history(&mut ctx)?;
+
+    persist::persist_graph(&ctx, &attribute_outcome)?;
     persist::write_manifest(&ctx)?;
     hash::save_hash_cache(&ctx)?;
 
