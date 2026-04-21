@@ -1,5 +1,6 @@
 mod add;
 mod command;
+mod history;
 mod lifecycle;
 mod lint;
 mod list;

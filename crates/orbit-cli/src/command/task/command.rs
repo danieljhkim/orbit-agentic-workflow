@@ -4,6 +4,7 @@ use orbit_core::{OrbitError, OrbitRuntime};
 use crate::command::Execute;
 
 use super::add::TaskAddArgs;
+use super::history::TaskHistoryCommand;
 use super::lifecycle::{
     TaskApproveArgs, TaskArchiveArgs, TaskDeleteArgs, TaskRejectArgs, TaskSearchArgs,
     TaskStartArgs, TaskUnarchiveArgs,
@@ -66,6 +67,8 @@ pub enum TaskSubcommand {
     /// Defaults to a dry-run report; pass `--write` to apply.
     #[command(name = "prune-context")]
     PruneContext(TaskPruneContextArgs),
+    /// Query task-ID history for a knowledge-graph selector.
+    History(TaskHistoryCommand),
 }
 
 impl Execute for TaskSubcommand {
@@ -87,6 +90,7 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::Templates(cmd) => cmd.execute(runtime),
             TaskSubcommand::ReviewThread(cmd) => cmd.execute(runtime),
             TaskSubcommand::PruneContext(args) => args.execute(runtime),
+            TaskSubcommand::History(cmd) => cmd.execute(runtime),
         }
     }
 }

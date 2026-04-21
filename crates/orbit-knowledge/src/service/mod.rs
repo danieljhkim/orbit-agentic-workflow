@@ -2,6 +2,7 @@
 
 pub mod callers;
 pub mod deps;
+pub mod history;
 pub mod implementors;
 pub mod lineage;
 

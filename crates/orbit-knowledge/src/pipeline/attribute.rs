@@ -19,8 +19,9 @@
 //! to the matcher.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
 use tracing::debug;
 
 use crate::error::KnowledgeError;
@@ -85,10 +86,36 @@ pub fn attribute_history(ctx: &mut PipelineContext) -> Result<AttributeOutcome, 
         .collect();
 
     let registry = ExtractorRegistry::new();
+    let operations_dir = operation_log_dir(&ctx.output_dir);
+
+    // Determine which commits are handled by operation logs rather than the
+    // matcher. For T20260421-0528 only the read-side hook is reserved; a valid
+    // log (top-level `operations: []`) short-circuits both the matcher and the
+    // sidecar for that commit. Malformed logs emit a stderr warning and fall
+    // back to the matcher.
+    let mut operation_log_skipped: HashSet<String> = HashSet::new();
+    for commit in &commits {
+        match inspect_operation_log(&operations_dir, &commit.sha) {
+            OperationLogStatus::Absent => {}
+            OperationLogStatus::Valid => {
+                operation_log_skipped.insert(commit.sha.clone());
+            }
+            OperationLogStatus::Malformed(error) => {
+                eprintln!(
+                    "warning: malformed operation log for {}: {error} — falling back to matcher",
+                    commit.sha
+                );
+            }
+        }
+    }
 
     // Phase A (read-only): compute touched node IDs per commit.
     let mut touched_by_commit: HashMap<String, HashSet<String>> = HashMap::new();
     for commit in &commits {
+        if operation_log_skipped.contains(&commit.sha) {
+            touched_by_commit.insert(commit.sha.clone(), HashSet::new());
+            continue;
+        }
         let touched = collect_touched_for_commit(
             &ctx.repo_path,
             &ctx.graph,
@@ -105,6 +132,9 @@ pub fn attribute_history(ctx: &mut PipelineContext) -> Result<AttributeOutcome, 
     let mut sidecar = TaskCommitsIndex::default();
     for commit in &commits {
         if commit.task_ids.is_empty() {
+            continue;
+        }
+        if operation_log_skipped.contains(&commit.sha) {
             continue;
         }
         for task_id in &commit.task_ids {
@@ -486,6 +516,51 @@ fn sort_and_dedup_task_ids(graph: &mut CodebaseGraphV1) {
     }
 }
 
+/// Result of inspecting `.orbit/operations/<sha>.json` for a commit.
+///
+/// Phase 6 of T20260421-0528 reserves the read-side hook without defining the
+/// full operation schema (that is T20260421-0543's design task). A file with
+/// top-level `operations: []` array is accepted as valid-but-noop; malformed
+/// files fall back to the matcher with a stderr warning.
+#[derive(Debug)]
+enum OperationLogStatus {
+    Absent,
+    Valid,
+    Malformed(String),
+}
+
+#[derive(Deserialize)]
+struct OperationLogSkeleton {
+    #[serde(default)]
+    #[allow(dead_code)]
+    operations: Vec<serde_json::Value>,
+}
+
+/// Path under which `operations/<sha>.json` files live. Defaults to
+/// `<orbit_root>/operations/` where `orbit_root = knowledge_dir.parent()`.
+pub(crate) fn operation_log_dir(knowledge_dir: &Path) -> PathBuf {
+    knowledge_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("operations")
+}
+
+fn inspect_operation_log(operations_dir: &Path, sha: &str) -> OperationLogStatus {
+    let path = operations_dir.join(format!("{sha}.json"));
+    if !path.is_file() {
+        return OperationLogStatus::Absent;
+    }
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(error) => return OperationLogStatus::Malformed(error.to_string()),
+    };
+    match serde_json::from_str::<OperationLogSkeleton>(&raw) {
+        Ok(_) => OperationLogStatus::Valid,
+        Err(error) => OperationLogStatus::Malformed(error.to_string()),
+    }
+}
+
 fn read_previous_cursor(ctx: &PipelineContext) -> Option<String> {
     let store = GraphObjectStore::new(ctx.graph_dir());
     store
@@ -498,6 +573,7 @@ fn read_previous_cursor(ctx: &PipelineContext) -> Option<String> {
 mod tests {
     use super::*;
     use crate::graph::nodes::{BaseNodeFields, DirNode, FileNode, LeafKind, LeafNode};
+    use tempfile::tempdir;
 
     fn leaf(location: &str, name: &str, kind: LeafKind) -> LeafNode {
         LeafNode {
@@ -720,6 +796,73 @@ mod tests {
         };
         apply_structural_conflict(&mut graph, &HashSet::new());
         assert!(!graph.files[0].base.structural_conflict);
+    }
+
+    #[test]
+    fn operation_log_dir_joins_orbit_root() {
+        let p = operation_log_dir(Path::new("/repo/.orbit/knowledge"));
+        assert_eq!(p, PathBuf::from("/repo/.orbit/operations"));
+    }
+
+    #[test]
+    fn operation_log_dir_handles_rootless_path() {
+        let p = operation_log_dir(Path::new("knowledge"));
+        assert_eq!(p, PathBuf::from("operations"));
+    }
+
+    #[test]
+    fn inspect_operation_log_reports_absent() {
+        let dir = tempdir().unwrap();
+        assert!(matches!(
+            inspect_operation_log(dir.path(), "abc123"),
+            OperationLogStatus::Absent
+        ));
+    }
+
+    #[test]
+    fn inspect_operation_log_reports_valid_for_empty_array() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("abc.json"), r#"{"operations":[]}"#).unwrap();
+        assert!(matches!(
+            inspect_operation_log(dir.path(), "abc"),
+            OperationLogStatus::Valid
+        ));
+    }
+
+    #[test]
+    fn inspect_operation_log_reports_valid_for_missing_operations_field() {
+        // Schema is permissive at this phase; missing `operations` deserializes
+        // to an empty vec via `#[serde(default)]` and is still valid-but-noop.
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("abc.json"), r#"{}"#).unwrap();
+        assert!(matches!(
+            inspect_operation_log(dir.path(), "abc"),
+            OperationLogStatus::Valid
+        ));
+    }
+
+    #[test]
+    fn inspect_operation_log_reports_malformed_for_bad_json() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("abc.json"), "{not valid json").unwrap();
+        assert!(matches!(
+            inspect_operation_log(dir.path(), "abc"),
+            OperationLogStatus::Malformed(_)
+        ));
+    }
+
+    #[test]
+    fn inspect_operation_log_reports_malformed_for_wrong_type() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("abc.json"),
+            r#"{"operations":"not an array"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            inspect_operation_log(dir.path(), "abc"),
+            OperationLogStatus::Malformed(_)
+        ));
     }
 
     #[test]

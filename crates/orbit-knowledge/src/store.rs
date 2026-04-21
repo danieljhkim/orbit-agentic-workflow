@@ -1,5 +1,7 @@
 #[path = "store/graph_io.rs"]
 mod graph_io;
+#[path = "store/history_query.rs"]
+mod history_query;
 #[path = "store/leaf_data.rs"]
 mod leaf_data;
 #[path = "store/open.rs"]
@@ -18,6 +20,7 @@ use std::path::PathBuf;
 
 use crate::selector::SelectorLookupKey;
 
+pub use history_query::NodeTaskInfo;
 pub use task_state::{
     load_task_working_graph, overlay_pack_with_working_graph, pack_from_working_graph,
     save_task_working_graph, task_working_graph_state_path,
