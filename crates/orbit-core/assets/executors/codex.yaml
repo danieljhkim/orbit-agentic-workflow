@@ -3,7 +3,7 @@ kind: Executor
 metadata:
   name: codex
 spec:
-  executor_type: agent_cli
+  executor_type: direct_agent
   command: codex
   args:
     - exec

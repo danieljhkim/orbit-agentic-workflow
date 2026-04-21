@@ -3,7 +3,7 @@ kind: Executor
 metadata:
   name: claude
 spec:
-  executor_type: agent_cli
+  executor_type: direct_agent
   command: claude
   args:
     - -p

@@ -1,5 +1,6 @@
 use orbit_common::types::{
-    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, OrbitError, ResourceKind,
+    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, ExecutorType, OrbitError,
+    ResourceKind,
 };
 use orbit_store::ExecutorDefStoreBackend;
 
@@ -21,12 +22,40 @@ pub(crate) fn seed_default_executors(
     for (name, yaml) in DEFAULT_EXECUTOR_FILES {
         let def = parse_default_executor(name, yaml)?;
         let existing = store.get_executor_def(&def.name)?;
-        if existing.is_none() || overwrite {
-            store.upsert_executor_def(&def)?;
-            created += 1;
+        match existing {
+            None => {
+                store.upsert_executor_def(&def)?;
+                created += 1;
+            }
+            Some(existing) if overwrite => {
+                store.upsert_executor_def(&def)?;
+                created += 1;
+            }
+            Some(existing) => {
+                if let Some(migrated) = migrated_default_executor(&existing, &def) {
+                    store.upsert_executor_def(&migrated)?;
+                    created += 1;
+                }
+            }
         }
     }
     Ok(created)
+}
+
+fn migrated_default_executor(existing: &ExecutorDef, seeded: &ExecutorDef) -> Option<ExecutorDef> {
+    if existing.name != seeded.name {
+        return None;
+    }
+
+    if existing.executor_type != ExecutorType::AgentCli
+        || seeded.executor_type != ExecutorType::DirectAgent
+    {
+        return None;
+    }
+
+    let mut migrated = existing.clone();
+    migrated.executor_type = ExecutorType::DirectAgent;
+    Some(migrated)
 }
 
 fn parse_default_executor(name: &str, yaml: &str) -> Result<ExecutorDef, OrbitError> {
