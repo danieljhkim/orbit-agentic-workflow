@@ -173,6 +173,7 @@ Until those exist: cross-review is the enforcement mechanism. When one agent rev
 
 | Feature | Folder | Lead |
 |---------|--------|------|
+| Activity / Job | [docs/design/activity-job/](./activity-job/) | codex |
 | Knowledge graph | [docs/design/knowledge-graph/](./knowledge-graph/) | claude |
 | Groundhog | [docs/design/groundhog/](./groundhog/) | codex |
 

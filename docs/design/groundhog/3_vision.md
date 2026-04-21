@@ -113,7 +113,7 @@ None of these amount to a research contribution. If Groundhog earns its keep, it
 - [2_design.md](./2_design.md) — current implementation
 - [4_decisions.md](./4_decisions.md) — ADR log
 - [specs/workspace-snapshot.md](./specs/workspace-snapshot.md) — git snapshot and rewind contract
-- [docs/design/activity-job.md](../activity-job.md) — activity/job model consumed by the Groundhog runner
+- [../activity-job/2_design.md](../activity-job/2_design.md) — activity/job model consumed by the Groundhog runner
 
 ### External
 

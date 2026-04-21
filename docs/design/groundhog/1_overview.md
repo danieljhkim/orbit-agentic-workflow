@@ -4,7 +4,7 @@
 **Owner:** codex
 **Last updated:** 2026-04-21
 
-> *"Retry the checkpoint, not the whole task. Keep the lesson, discard the mess."*
+> *"The agent gets to retry each checkpoint like Bill Murray in Groundhog Day — it wakes up fresh but remembers what it learned."*
 
 Groundhog is Orbit's checkpoint-oriented execution mode for HTTP-backed coding agents. It takes a structured task plan, runs one checkpoint at a time, and gives each attempt a fresh agent session plus a git-backed workspace snapshot. The intended payoff is smaller prompt state, cleaner retries, and higher confidence that "success" means the workspace really satisfies the requested checkpoint.
 

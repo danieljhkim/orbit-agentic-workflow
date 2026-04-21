@@ -122,7 +122,7 @@ None of these rise to a research contribution. Treat the knowledge graph as prod
 - [1_overview.md](./1_overview.md) — motivation and core concepts
 - [2_design.md](./2_design.md) — current implementation
 - [specs/refs.md](./specs/refs.md) — ref resolution, migration, concurrency
-- [docs/design/activity-job.md](../activity-job.md) — the activity/job model that consumes the working graph
+- [../activity-job/2_design.md](../activity-job/2_design.md) — the activity/job model that consumes the working graph
 - `crates/orbit-knowledge/` — implementation
 
 ### External
