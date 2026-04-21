@@ -1,8 +1,8 @@
 # Knowledge Graph — Overview
 
-**Status:** Draft — describes the system as implemented in `crates/orbit-knowledge`
-**Owner:** TBD
-**Last updated:** 2026-04-20
+**Status:** Draft
+**Owner:** claude
+**Last updated:** 2026-04-21
 
 > *"Grep finds strings. An LSP finds symbols. A knowledge graph remembers what those symbols are, where they live, who touched them, and how they relate — in a form an agent can page into a 200k context window."*
 

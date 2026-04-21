@@ -1,8 +1,8 @@
 # Knowledge Graph — Vision
 
-**Status:** Draft — forward-looking, not spec
-**Owner:** TBD
-**Last updated:** 2026-04-20
+**Status:** Draft
+**Owner:** claude
+**Last updated:** 2026-04-21
 
 This document captures where the knowledge graph is headed: open questions, where it fits relative to prior art, and what may turn out to be distinctive about Orbit's shape. See [1_overview.md](./1_overview.md) for the system's purpose and [2_design.md](./2_design.md) for what exists today.
 
@@ -26,11 +26,11 @@ The working graph is currently in-memory ([T20260411-0424]). A long activity tha
 
 ### 1.4 Semantic embeddings as an additional index
 
-The graph is symbolic and structural. Natural-language queries ("where do we handle auth failures") today degrade to substring search. Is there a clean way to layer embedding vectors onto leaves without coupling to a specific provider, and without duplicating the content-addressed store?
+The graph is symbolic and structural. Natural-language queries ("where do we handle auth failures") today degrade to substring search. Is there a clean way to layer embedding vectors onto leaves without coupling to a specific provider, and without duplicating the content-addressed store? An earlier attempt at semantic indexing ([T20260408-0445], archived) staged the shape of this but was parked when structural queries proved sufficient for the current agent workloads.
 
 ### 1.5 Rename tracking across history
 
-§6.3 in [2_design.md](./2_design.md) — accept the current best-effort, or invest in `--follow`-equivalent hunk re-mapping? The cost compounds with every rename hop, which is why the walker in [T20260421-0528] opted out.
+§6.3 in [2_design.md](./2_design.md) — accept the current best-effort, or invest in `--follow`-equivalent hunk re-mapping? The cost compounds with every rename hop, which is why the walker in [T20260421-0528] opted out. Two archived predecessors ([T20260421-0342], [T20260421-0343]) explored persistent task→symbol edges with rename survival and were parked in favor of the identity-match-only approach that shipped; revisit them if rename blindness proves material.
 
 ### 1.6 Cross-workspace graph sharing
 
@@ -88,8 +88,9 @@ Nothing in the extractor layer is novel; we use it as off-the-shelf infrastructu
 - **Aider repo map** — ranked file/symbol summary generated per request. Cheaper than a full graph, less precise; no persistence across sessions.
 - **Sweep / CodePlan / Agentless** — research agents that build ad-hoc code graphs before planning. Each rebuilds from scratch; none persist a ref model.
 - **Symbex / Chapter** — local semantic search over code. Symbol-level but embedding-first rather than structure-first.
+- **Graphify** ([safishamsi/graphify](https://github.com/safishamsi/graphify)) — agent-installable skill (Claude Code, Codex, Cursor, and others) that ingests a folder of code, docs, PDFs, images, and video/audio into a single queryable knowledge graph. Tree-sitter AST extraction across ~25 languages, Whisper for transcripts, Claude subagents for concept and relationship extraction, Leiden community detection for clustering, and explicit `EXTRACTED` / `INFERRED` / `AMBIGUOUS` edge tagging. Orbit's graph did not draw from Graphify's design — the two projects converged on tree-sitter independently — but the overlap is worth naming: Graphify is scoped at *"make any folder queryable for any assistant,"* Orbit is scoped at *"make one workspace queryable for one orchestrator across branches with a ref model."* Both choose graph topology over embeddings for similarity signal; neither needs a vector DB.
 
-Orbit's direction differs primarily in **persistence and branch-awareness**: the graph is a durable workspace artifact, not a per-session computation, and it is the same artifact every tool and every activity reads from.
+Orbit's direction differs primarily in **persistence, branch-awareness, and scope**: the graph is a durable workspace artifact keyed to a git ref, not a per-session or per-folder computation, and it is the same artifact every tool and every activity reads from. Graphify's multimodal reach (videos, whiteboards, PDFs) is deliberately out of Orbit's scope today — Orbit indexes code and code-adjacent structure only.
 
 ### 2.5 LSP as a foil, not a target
 
@@ -132,6 +133,7 @@ None of these rise to a research contribution. Treat the knowledge graph as prod
 - Glean — https://glean.software/
 - universal-ctags — https://github.com/universal-ctags/ctags
 - Aider repo map — https://aider.chat/docs/repomap.html
+- Graphify — https://github.com/safishamsi/graphify
 
 ---
 
@@ -139,11 +141,16 @@ None of these rise to a research contribution. Treat the knowledge graph as prod
 
 Tasks cited in this document (all as forward pointers or historical context; none are proposed work on this doc):
 
+- **[T20260408-0445]** (archived) — Earlier semantic-indexing attempt; context for §1.4.
 - **[T20260411-0424]** — Working-graph mutation tools and lock store; foundation for §1.3 and §1.8.
 - **[T20260412-0645-3]** — Architectural graph navigation (`callers`, `implementors`, `deps`); foundation for §1.1.
 - **[T20260417-0301-2]** — Lock/write/read hardening.
 - **[T20260417-0639]** — Persistence-path speedup; related to §1.7.
+- **[T20260421-0342]** (archived) — Symbol-level git-log-based task lookup; superseded by attribution-on-node.
+- **[T20260421-0343]** (archived) — Indexed task→symbol edges with rename survival; superseded by identity-match attribution.
 - **[T20260421-0358]** — Branch-scoped refs; foundation for §3's distinctiveness claim and §1.6.
 - **[T20260421-0528]** — History-walker + `task_ids` attribution; foundation for §1.2, §1.5, and §3.
+
+Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -1,5 +1,9 @@
 # Knowledge Graph — Decisions
 
+**Status:** Draft
+**Owner:** claude
+**Last updated:** 2026-04-21
+
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
 Format for each entry: **Status · Date · Task(s)**, then *Context → Decision → Consequences*. See [1_overview.md](./1_overview.md) and [2_design.md](./2_design.md) for the corresponding implementation; [3_vision.md](./3_vision.md) tracks questions that may trigger future ADRs.
@@ -8,9 +12,9 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-001 — Content-addressed objects + mutable refs
 
-**Status:** Accepted · 2026-04 · [T20260411-0424]
+**Status:** Accepted · 2026-04 · [T20260407-0222], [T20260411-0424]
 
-**Context.** The graph has to survive crashes mid-rebuild, support concurrent reads during a rebuild, and deduplicate unchanged nodes across builds. A single mutable JSON file fails all three.
+**Context.** The graph has to survive crashes mid-rebuild, support concurrent reads during a rebuild, and deduplicate unchanged nodes across builds. A single mutable JSON file fails all three. The original content-addressing refactor landed in [T20260407-0222] (then under `orbit-agent`); the layout stabilized in its current shape during the `orbit-knowledge` consolidation [T20260411-0424].
 
 **Decision.** Adopt a git-style split: immutable content-addressed objects under `objects/<hh>/<hash>.json`, immutable blobs under `blobs/<hh>/<hash>.txt`, immutable per-build index under `index/by-id/<root-graph-hash>.json`, and a mutable branch ref as the only pointer that changes.
 
@@ -39,9 +43,9 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-003 — Tree-sitter extractors over an LSP backend
 
-**Status:** Accepted · 2026-04
+**Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352]
 
-**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead.
+**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352].
 
 **Decision.** Use tree-sitter grammars with per-language extractors (`rust`, `python`, `go`, `java`, `javascript`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
 
@@ -69,9 +73,9 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-005 — Working graph is in-memory, not persistent
 
-**Status:** Accepted (with open question) · 2026-04 · [T20260411-0424]
+**Status:** Accepted (with open question) · 2026-04 · [T20260411-0424], [T20260409-0656], [T20260416-0236], [T20260417-0302]
 
-**Context.** Activities mutate the graph as they edit code. Those mutations must not perturb the persisted store mid-turn (cache stability, concurrent-reader safety). Two implementations are plausible: in-memory overlay vs. per-activity disk staging.
+**Context.** Activities mutate the graph as they edit code. Those mutations must not perturb the persisted store mid-turn (cache stability, concurrent-reader safety). Two implementations are plausible: in-memory overlay vs. per-activity disk staging. Working-graph edit buffering, version chains, and insertion support landed in [T20260409-0656]; write-anchor validation and atomicity guarantees followed in the [T20260416-0236] series (`-2` conflict/audit, `-3` canonical selectors, `-4` atomic moves). Source-file durability on edit ops was added in [T20260417-0302].
 
 **Decision.** Keep the working graph in memory for the duration of an activity. Persist at activity boundaries only.
 
@@ -92,9 +96,8 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 **Consequences.**
 - Walker cost is predictable and linear in commits, not in rename hops.
-- Older attribution is lost when a file is renamed or heavily reformatted.
 - Pure deletions credit the insertion-point symbol — approximation on purpose.
-- See [2_design.md §6.3] for the full caveat.
+- Cost: a symbol moved across files loses attribution from pre-move commits. Agents investigating long-lived code history may see gaps. See [2_design.md §6.3] for the full caveat.
 
 ---
 
@@ -108,8 +111,7 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 **Consequences.**
 - Graph stays independent of task-state evolution (which changes more often than code structure).
-- Consumers wanting shipped-only signal take the join hit.
-- Open question: [3_vision.md §1.11] may reopen this if the external join proves too painful.
+- Cost: consumers wanting shipped-only signal pay the external-join hit every query. [3_vision.md §1.11] may reopen this if the join proves too painful.
 
 ---
 
@@ -124,7 +126,7 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 **Consequences.**
 - One fewer crate in the architecture diagram; simpler dependency graph.
 - Locks remain file-backed and process-shareable, matching the content-addressed store's on-disk model.
-- Hardened incrementally — [T20260417-0301-2] closed holes around concurrent write paths.
+- Cost: if a second consumer ever needs the same lock semantics, we'll re-extract — the shared-crate refactor would have prevented that future churn but would have paid for reuse we don't yet need. [T20260417-0301-2] closed holes around concurrent write paths.
 
 ---
 
@@ -140,3 +142,26 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 - Steady-state read cost on a dirty worktree is one rebuild per debounce window, not one per read.
 - Corrupt-store recovery path ([T20260416-0719]) lives in the same critical section.
 - Cost: the first reader after a change pays full rebuild latency; subsequent readers ride the cache.
+
+---
+
+## Task References
+
+Tasks cited by ADRs above:
+
+- **[T20260406-0455-3]** — Add Rust graph extractor.
+- **[T20260407-0222]** — Refactor graph storage to content-addressed objects (origin of ADR-001).
+- **[T20260409-0550]** — Validate and harden RustGraphExtractor.
+- **[T20260409-0656]** — Leaf-level write tool with edit buffering and version chains.
+- **[T20260411-0424]** — Consolidate `orbit-knowledge` crate; add tree-sitter extractors, build pipeline, lock store.
+- **[T20260416-0236]** (+ `-2`, `-3`, `-4`) — WorkingGraph write-anchor validation, conflict/audit guarantees, canonical selectors, atomic moves.
+- **[T20260416-0352]** — Add Go, Java, and JavaScript extraction support.
+- **[T20260416-0719]** — Recover from corrupted knowledge graph store.
+- **[T20260417-0301-2]** — Harden graph lock store.
+- **[T20260417-0302]** — Durable source-file edits in working graph ops.
+- **[T20260417-0307]** — Gate and guard graph refresh hot paths.
+- **[T20260417-0639]** — Speed up workspace-init graph persistence.
+- **[T20260421-0358]** — Branch-scoped refs.
+- **[T20260421-0528]** — `task_ids` schema + git history walker.
+
+Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

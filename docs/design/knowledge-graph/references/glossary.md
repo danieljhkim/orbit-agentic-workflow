@@ -1,41 +1,26 @@
 # Glossary: Knowledge Graph
 
-Lookup table for terms used across the knowledge-graph docs and the `orbit-knowledge` crate. Sorted alphabetically. Cross-references point at [1_overview.md](../1_overview.md), [2_design.md](../2_design.md), and [specs/refs.md](../specs/refs.md).
+Orbit-specific terms used across the knowledge-graph docs and `orbit-knowledge`. Terms with standard industry meanings (blob, content-addressed, index, manifest, hunk, tree-sitter, etc.) are not repeated here — only vocabulary where the Orbit shape is non-obvious. Cross-references point at [1_overview.md](../1_overview.md), [2_design.md](../2_design.md), and [specs/refs.md](../specs/refs.md).
 
 | Term | Meaning |
 |------|---------|
-| **Attribution** | The process of mapping commit hunks to leaves and accumulating `task_ids` onto the touched nodes. Runs as the final pipeline stage. See [2_design.md §2.2]. |
-| **Blob** | Content-addressed source text for a file or leaf, stored at `.orbit/knowledge/graph/blobs/<hh>/<hash>.txt`. Immutable. |
-| **Branch ref** | Mutable JSON file at `.orbit/knowledge/graph/refs/heads/<branch>.json` pointing at the active index for a branch. The only mutable surface in the store. |
-| **CodebaseGraphV1** | Top-level serialized graph shape: `{ root_dir_id, dirs, files, leaves }`. Loaded once per query session. |
-| **Content-addressed** | Stored under a path derived from the sha256 of the content. Identical content collapses to one file; any change produces a new path. |
-| **DirNode** | Directory node. Holds `dir_children`, `file_children`. |
-| **FileNode** | Source-file node. Holds `leaf_children`, `extension`, `language`, `source_blob_hash`. |
-| **FileDiff / Hunk** | Per-file diff record produced by the history walker. `Hunk` carries old/new start + count in git diff coordinates. |
-| **Fingerprint (dirty)** | Hash of `git status --porcelain` output plus path count plus newest mtime. Drives the dirty-refresh debounce. |
-| **GraphContextService** | Read-side service over a loaded `CodebaseGraphV1`. Wraps a `GraphNavigator` and adds selector resolution, search, and pack rendering. |
-| **GraphNavigator** | Low-level traversal primitive over a loaded graph. |
-| **Identity key** | Cross-build stable key used to track a node's lineage across rebuilds. Distinct from `id` (per-snapshot) and `object_hash` (per-content). |
-| **Index** | Immutable per-build JSON file at `index/by-id/<root-graph-hash>.json` listing every object in a single graph snapshot. |
-| **is_locked** | Base field blocking mutations to a node's body through the working graph. |
-| **Leaf** | Generic term for a `LeafNode` — an extracted symbol. At the tool surface this is renamed to "symbol" ([T20260411-0424]). |
-| **LeafKind** | Enum: `function`, `method`, `class`, `struct`, `interface`, `trait`, `impl`, `field`, `module`. |
-| **LeafNode** | Extracted symbol node. Carries its own `source`, `source_hash`, line range, `input_signature`, `output_signature`, `history`, and `children`. |
-| **Lineage lock** | `lineage_locked` flag. Freezes the node's identity so renames and re-identifications across builds are rejected. |
-| **Location** | Human-readable path used in selectors. Dirs end with `/`; files use the repo-relative path; leaves use `<file>:<qualified_name>`. |
-| **Manifest** | `.orbit/knowledge/manifest.json`. Carries `generated_at` and the pointer to the active build. Consistency hint, not authoritative. |
-| **Object** | Serialized node body stored at `.orbit/knowledge/graph/objects/<hh>/<hash>.json`. Immutable. |
-| **Object hash** | sha256 of a serialized node. Changes whenever any field on the node changes; drives deduplication. |
-| **Pack** | Token-budgeted bundle of selected nodes rendered for prompt consumption via `pack_json`. |
-| **Pipeline** | Straight-line build stages: `scan → hash → detect_changes → build_dirs → build_files → build_leaves → persist → manifest → attribute`. |
-| **Ref fallback** | Read-side behavior: if the current branch's ref does not exist, fall back to the default branch's ref and emit a stderr warning ([T20260421-0358]). |
-| **Refresh lock** | `flock` on `.orbit/knowledge/refresh.lock` single-flighting rebuilds across processes. |
-| **RefName** | Validated branch-name string used as a typed ref identifier. |
-| **Scan** | First pipeline stage; walks the repo honoring gitignore rules and emits `ctx.file_paths`. |
-| **Selector** | Universal addressing primitive for tool inputs. Accepts a location, `location:kind`, or a raw node id. |
-| **Source hash** | sha256 of a leaf's source text. Stable across rebuilds when the symbol body is unchanged. |
-| **Structural conflict** | Flag on a leaf set when both sides of a merge commit touched that leaf. Informational. |
-| **task_ids** | Sorted, deduplicated list of Orbit task IDs attributed to a node. Regex: `\[T\d{8}-\d{4}(?:-\d+)?\]`. Brackets stripped in storage. Introduced in [T20260421-0528]. |
-| **TaskGraphScope** | Scope selector for per-task graph operations (workspace-only, global, etc.). |
-| **Tree-sitter** | Parser framework underlying every `LanguageExtractor`. |
-| **Working graph** | In-memory overlay on a branch snapshot used during an activity to stage edits without touching the persisted store. |
+| **Attribution** | Orbit-specific pipeline stage that parses `\[T\d{8}-\d{4}(?:-\d+)?\]` task IDs from commit messages, maps hunks to leaves by line-range overlap, and unions the IDs onto touched nodes. See [2_design.md §2.2]. |
+| **CodebaseGraphV1** | Top-level serialized graph shape: `{ root_dir_id, dirs, files, leaves }`. The `V1` is load-bearing — it pins the on-disk schema. |
+| **DirNode / FileNode / LeafNode** | The three Orbit node types. `LeafNode` is the in-code name for what the tool surface calls a "symbol" (renamed under [T20260411-0424]; the type name predates the rename). |
+| **Fingerprint (dirty)** | Orbit-specific encoding of worktree dirtiness: `sha256(git status --porcelain)` + path count + newest mtime of any dirty file. Drives the dirty-refresh debounce; a stable fingerprint reuses the cached graph. |
+| **GraphContextService** | Read-side entry point. Holds a loaded graph plus a location index and serves every `orbit.graph.*` query. Writes do not go through it. |
+| **GraphNavigator** | Low-level traversal primitive wrapped by `GraphContextService`. |
+| **Identity key** | Cross-build stable key distinct from `id` and `object_hash`. `id` is stable per-snapshot; `object_hash` changes on any field edit; `identity_key` is what the working graph uses to track a node's lineage across rebuilds. |
+| **is_locked / lineage_locked** | Two lock flags on every node. `is_locked` blocks body mutations; `lineage_locked` blocks identity changes (rename, re-identification). Both survive rebuilds because they live on the node body. |
+| **Leaf** | Internal vocabulary for an extracted symbol. "Symbol" is the public tool surface term ([T20260411-0424]); "leaf" persists in the Rust types. |
+| **LeafKind** | Fixed enum: `function`, `method`, `class`, `struct`, `interface`, `trait`, `impl`, `field`, `module`. Directly inherited from ctags' tag kinds. |
+| **Location** | Orbit's selector-friendly path format. Dirs end with `/`; files use the repo-relative path; leaves use `<file>:<qualified_name>`. |
+| **Pack** | Orbit-specific render: `pack_json` produces a token-budgeted bundle of selected nodes shaped for prompt consumption. Not a generic archive — the field projection is deliberately agent-friendly. |
+| **Ref fallback** | Orbit read-side rule: if `refs/heads/<current-branch>.json` does not exist, fall back to `refs/heads/<default>.json` and emit a stderr warning. Writes never fall back ([T20260421-0358]). |
+| **Refresh lock** | `flock` on `.orbit/knowledge/refresh.lock` single-flighting rebuilds across processes. Concurrent callers wait or reuse the in-flight result rather than racing. |
+| **RefName** | Validated branch-name newtype. Exists so ref paths can't be constructed from arbitrary strings. |
+| **Selector** | Universal addressing primitive for every Orbit graph tool input. Accepts a location, `location:kind` (to disambiguate struct-vs-impl at the same qualified name), or a raw node id. |
+| **Structural conflict** | Flag on a leaf set when both sides of a merge commit touched it. Informational — git already resolved the textual conflict; the flag tells the scoreboard the symbol was contested. |
+| **task_ids** | Sorted, deduplicated list of Orbit task IDs attributed to a node by the history walker. Brackets stripped in storage. Introduced in [T20260421-0528]. |
+| **TaskGraphScope** | Scope selector for per-task graph operations — workspace-only, global, etc. Mirrors the Orbit-wide scoping rules. |
+| **Working graph** | In-memory overlay on a branch snapshot used during an activity to stage edits without perturbing the persisted store. Persists at activity boundaries only. |

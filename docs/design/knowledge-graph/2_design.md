@@ -1,8 +1,8 @@
 # Knowledge Graph — Design
 
-**Status:** Draft — matches the current implementation in `crates/orbit-knowledge`
-**Owner:** TBD
-**Last updated:** 2026-04-20
+**Status:** Draft
+**Owner:** claude
+**Last updated:** 2026-04-21
 
 This document specifies the knowledge graph as it exists today: on-disk layout, build pipeline, query services, Orbit integration, locking, and honest limitations. See [1_overview.md](./1_overview.md) for the "why" and [3_vision.md](./3_vision.md) for where it is headed. Task IDs are cited inline and collected at the end.
 

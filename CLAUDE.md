@@ -76,6 +76,8 @@ Follow the `## Task Quality Standards` section in `orbit-create-task` skill: exp
 - Use the agent commit identity (e.g. `claude-opus-4-7`, `gpt-5.4`, `gemini-3.1-pro`) as author/committer when the agent made the change.
 - Include the task ID in the commit message when the commit is associated with an Orbit task (e.g. `[T20260320-001234]`).
 - When writing docs, cite relevant task IDs in the doc itself.
+- Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape). Feature leads: `claude` owns `knowledge-graph/`, `codex` owns `groundhog/`.
+- When your change touches an owned feature's implementation, update that feature's design docs in the same PR: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, and add a new ADR for any non-obvious decision the change embodies. Stale docs are treated as a review blocker.
 
 ## Scoreboards
 
