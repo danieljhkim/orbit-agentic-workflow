@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-22
 
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -145,6 +145,22 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-010 — Orbit-owned symbol-level write operations
+
+**Status:** Proposed · 2026-04 · [T20260421-0543]
+
+**Context.** The identity matcher from [T20260421-0528] is the accepted limit of what `task_ids` attribution can recover from a refactor — it loses history on every rename, cross-file move, and split because its keys (`path`, `qualified_name`, `kind`) are exactly what those refactors change. The long-term shape aligned with the owner is that Orbit itself performs refactors through a symbol-level API and records the operation as a sidecar the rebuilder consumes; the read-side hook was already reserved in `pipeline/attribute.rs`.
+
+**Decision.** Formalize the contract that hook validates against via [specs/graph-operations.md](./specs/graph-operations.md). Eight-op taxonomy (`create`, `delete`, `rename`, `move`, `change_signature`, `change_body`, `split`, `merge`), each atomic per entry — compound refactors emit multiple entries rather than a single "relocate" primitive. Address symbols by a graph-level **stable ID** (`stable_id: node:<nanoid-21>`) persisted on every node; rejected pre/post address pairs because disambiguation under simultaneous axis changes and N-ary ops (`split`/`merge`) requires a subject handle equivalent to a stable ID under a different name. Operations are **advisory-authoritative**: accepted when consistent with the commit's tree diff, ignored with a warning otherwise — the tree is always ground truth.
+
+**Consequences.**
+- `stable_id` preserves `task_ids` exactly across any refactor Orbit authors; the matcher remains the reconciliation layer for non-Orbit writes.
+- The taxonomy is deliberately small — eight ops cover every refactor shape Orbit intends to own without requiring compound primitives.
+- Divergence policy is asymmetric: ops can enrich attribution, never override. A producer bug cannot silently rewrite history; worst case is a fallback to the pre-producer behavior.
+- Cost: `stable_id` is a new field on `BaseNodeFields` — schema bump on first rebuild after producer lands, and a one-time reallocation of object hashes for every existing node. Also: status stays `Proposed` until the producer ships; flip to `Accepted` + the producer's task ID at that time.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -163,5 +179,6 @@ Tasks cited by ADRs above:
 - **[T20260417-0639]** — Speed up workspace-init graph persistence.
 - **[T20260421-0358]** — Branch-scoped refs.
 - **[T20260421-0528]** — `task_ids` schema + git history walker.
+- **[T20260421-0543]** — Orbit-owned symbol-level write operation schema ([specs/graph-operations.md](./specs/graph-operations.md)).
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
