@@ -296,6 +296,17 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                         .collect::<Vec<_>>(),
                 ))
             }
+            OrbitBuiltinAction::TaskSearch => {
+                let query = required_string(&input, &["query"], "query")?;
+                let status_by_id = build_task_status_index(&self.runtime.list_tasks()?);
+                let tasks = self.runtime.search_tasks(&query)?;
+                Ok(Value::Array(
+                    tasks
+                        .into_iter()
+                        .map(|task| task_to_json(&task, &status_by_id))
+                        .collect::<Vec<_>>(),
+                ))
+            }
             OrbitBuiltinAction::TaskLocks => {
                 let mut tasks: Vec<_> = self
                     .runtime
@@ -781,6 +792,7 @@ mod tests {
     use super::*;
 
     use orbit_store::TaskCreateParams;
+    use serde_json::json;
     use tempfile::tempdir;
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf) {
@@ -798,6 +810,8 @@ mod tests {
     fn create_task(
         runtime: &OrbitRuntime,
         workspace_path: &std::path::Path,
+        title: &str,
+        description: &str,
         status: TaskStatus,
         context_files: &[&str],
     ) -> Task {
@@ -807,8 +821,8 @@ mod tests {
             .create(TaskCreateParams {
                 actor: "test".to_string(),
                 parent_id: None,
-                title: "test task".to_string(),
-                description: "test".to_string(),
+                title: title.to_string(),
+                description: description.to_string(),
                 acceptance_criteria: Vec::new(),
                 dependencies: Vec::new(),
                 plan: String::new(),
@@ -835,6 +849,22 @@ mod tests {
             .expect("create task")
     }
 
+    fn create_context_task(
+        runtime: &OrbitRuntime,
+        workspace_path: &std::path::Path,
+        status: TaskStatus,
+        context_files: &[&str],
+    ) -> Task {
+        create_task(
+            runtime,
+            workspace_path,
+            "test task",
+            "test",
+            status,
+            context_files,
+        )
+    }
+
     #[test]
     fn requested_task_files_prune_missing_context_entries() {
         let (_root, runtime, repo_root) = test_runtime();
@@ -842,7 +872,7 @@ mod tests {
         std::fs::write(repo_root.join("docs/design/groundhog.md"), "alias")
             .expect("write alias doc");
 
-        let task = create_task(
+        let task = create_context_task(
             &runtime,
             &repo_root,
             TaskStatus::Backlog,
@@ -861,7 +891,7 @@ mod tests {
         std::fs::write(repo_root.join("src/lib.rs"), "pub fn ok() {}\n")
             .expect("write source file");
 
-        let holder = create_task(
+        let holder = create_context_task(
             &runtime,
             &repo_root,
             TaskStatus::InProgress,
@@ -895,7 +925,7 @@ mod tests {
         std::fs::write(repo_root.join("src/lib.rs"), "pub fn ok() {}\n")
             .expect("write source file");
 
-        let holder = create_task(
+        let holder = create_context_task(
             &runtime,
             &repo_root,
             TaskStatus::InProgress,
@@ -924,5 +954,53 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn execute_tool_command_searches_tasks_for_agents() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let title_match = create_task(
+            &runtime,
+            &repo_root,
+            "Fix search surface",
+            "Wire the tool through Orbit.",
+            TaskStatus::Backlog,
+            &[],
+        );
+        let description_match = create_task(
+            &runtime,
+            &repo_root,
+            "Refactor task queries",
+            "Preserve SEARCH parity for agents.",
+            TaskStatus::Review,
+            &[],
+        );
+        create_task(
+            &runtime,
+            &repo_root,
+            "Unrelated maintenance",
+            "Nothing to see here.",
+            TaskStatus::Backlog,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.search",
+                json!({ "query": "sEaRcH" }),
+                Some("codex".to_string()),
+                Some("gpt-5.4".to_string()),
+            )
+            .expect("search tool succeeds");
+
+        let matches = output.as_array().expect("search returns an array");
+        let ids = matches
+            .iter()
+            .filter_map(|task| task.get("id").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&title_match.id.as_str()));
+        assert!(ids.contains(&description_match.id.as_str()));
     }
 }

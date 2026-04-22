@@ -33,6 +33,7 @@ pub mod task_locks;
 pub mod task_locks_release;
 pub mod task_locks_reserve;
 pub mod task_reject;
+pub mod task_search;
 pub mod task_show;
 pub mod task_start;
 pub mod task_update;
@@ -72,6 +73,7 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(task_reject::OrbitTaskRejectTool);
     registry.register(task_show::OrbitTaskShowTool);
     registry.register(task_list::OrbitTaskListTool);
+    registry.register(task_search::OrbitTaskSearchTool);
     registry.register(task_update::OrbitTaskUpdateTool);
     registry.register(duel_plan_add::OrbitDuelPlanAddTool);
     registry.register(duel_plan_winner::OrbitDuelPlanWinnerTool);

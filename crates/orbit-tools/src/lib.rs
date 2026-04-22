@@ -71,6 +71,7 @@ pub enum OrbitBuiltinAction {
     TaskDelete,
     TaskLint,
     TaskList,
+    TaskSearch,
     TaskLocks,
     TaskLocksRelease,
     TaskLocksReserve,

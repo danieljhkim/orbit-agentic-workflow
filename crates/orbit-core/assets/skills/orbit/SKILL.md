@@ -41,6 +41,7 @@ When invoking `orbit tool run` directly, include `agent` and `model` in the inpu
 
 - List backlog: `orbit tool run orbit.task.list --input '{"status": "backlog"}'`
 - List in review: `orbit tool run orbit.task.list --input '{"status": "review"}'`
+- Search by text: `orbit tool run orbit.task.search --input '{"query": "search text", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
 
 ### Passing state between steps
 
@@ -97,6 +98,7 @@ orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments", "age
 orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'         # Load only plan
 # Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
 orbit tool run orbit.task.list --input '{"status": "backlog", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'       # List by status
+orbit tool run orbit.task.search --input '{"query": "search text", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'  # Search title/description text
 orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": ".", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
 orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}' # backlog -> in-progress

@@ -314,7 +314,11 @@ fn shape_tool_output(
 fn should_project_minimal_task_output(tool_name: &str, input: &Value) -> bool {
     if !matches!(
         tool_name,
-        "orbit.task.list" | "orbit.task.show" | "orbit.task.add" | "orbit.task.update"
+        "orbit.task.list"
+            | "orbit.task.search"
+            | "orbit.task.show"
+            | "orbit.task.add"
+            | "orbit.task.update"
     ) {
         return false;
     }
@@ -326,6 +330,50 @@ fn should_project_minimal_task_output(tool_name: &str, input: &Value) -> bool {
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_output_uses_minimal_task_projection() {
+        let shaped = shape_tool_output(
+            "orbit.task.search",
+            &json!({ "query": "search" }),
+            json!([{
+                "id": "T20260422-0001",
+                "title": "Search tasks",
+                "status": "backlog",
+                "priority": "medium",
+                "type": "feature",
+                "dependencies": [],
+                "resolved_dependencies": [],
+                "implemented_by": null,
+                "created_at": "2026-04-22T00:00:00Z",
+                "updated_at": "2026-04-22T00:00:00Z",
+                "description": "should be filtered out"
+            }]),
+            false,
+            &[],
+        );
+
+        assert_eq!(
+            shaped,
+            json!([{
+                "id": "T20260422-0001",
+                "title": "Search tasks",
+                "status": "backlog",
+                "priority": "medium",
+                "type": "feature",
+                "dependencies": [],
+                "resolved_dependencies": [],
+                "implemented_by": null,
+                "created_at": "2026-04-22T00:00:00Z",
+                "updated_at": "2026-04-22T00:00:00Z"
+            }])
+        );
+    }
 }
 
 fn filter_top_level_fields(value: Value, fields: &[String]) -> Value {

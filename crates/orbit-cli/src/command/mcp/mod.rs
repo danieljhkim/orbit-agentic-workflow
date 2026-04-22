@@ -29,6 +29,7 @@ pub(crate) const TASK_TOOL_NAMES: &[&str] = &[
     "orbit.task.delete",
     "orbit.task.lint",
     "orbit.task.list",
+    "orbit.task.search",
     "orbit.task.locks",
     "orbit.task.locks.release",
     "orbit.task.locks.reserve",

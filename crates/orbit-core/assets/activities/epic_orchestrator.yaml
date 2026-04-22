@@ -112,7 +112,7 @@ spec:
 
     # Read-only by construction
 
-    You have `orbit.task.list` and `orbit.task.show` for reading
+    You have `orbit.task.list`, `orbit.task.search`, and `orbit.task.show` for reading
     descriptions and checking status changes, plus the pipeline and
     state tools. You do NOT have `orbit.task.update`, `orbit.task.approve`,
     or any other mutating tool — requests for those will be rejected by
@@ -127,6 +127,7 @@ spec:
     exists.
   tools:
     - orbit.task.list
+    - orbit.task.search
     - orbit.task.show
     - orbit.pipeline.invoke
     - orbit.pipeline.wait
