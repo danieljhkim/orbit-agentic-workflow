@@ -26,11 +26,11 @@ Every tool call, provider request/response, and task-state transition is a struc
 
 Full contract below in the [Auditability](#auditability) section.
 
-### Groundhog — *experimental, in design*
+### Groundhog — *experimental, behind the job surface*
 
-A structured execution mode for HTTP-backend agents. Instead of one long agent session, work runs as a sequence of **checkpoints**; each attempt at a checkpoint starts with a fresh agent context and a clean git-backed workspace snapshot. Failed attempts revert the workspace and retry within a budget; successful attempts accumulate a small, stable prompt prefix so later checkpoints build on earlier work.
+A checkpoint-oriented execution mode for HTTP-backend agents. Instead of one long agent session, work runs as a sequence of **checkpoints**; each attempt starts with a fresh agent context and a clean git-backed workspace snapshot, then either rewinds on failure or persists a small stable memory on success.
 
-Groundhog is not a shipped user-facing CLI yet — it runs as an `ActivityV2Spec::Groundhog` activity behind the job surface. Current status lives in [docs/design/groundhog/](docs/design/groundhog/); the v1 scope is deliberately narrow.
+Groundhog is not a front-door CLI feature yet — today it exists as an `ActivityV2Spec::Groundhog` activity behind the job layer. Current status lives in [docs/design/groundhog/](docs/design/groundhog/); treat it as a direction of travel, not the main reason to evaluate Orbit on day one.
 
 ---
 
@@ -91,21 +91,28 @@ orbit workspace init
 # build the code graph
 orbit graph build
 
-# create a task for the work you want done
-# one easy path is to ask an agent to draft it for you
-"Create an orbit task for <what you want done>"
+# create a task for the work you want done (prints the new task ID)
+TASK_ID=$(orbit task add \
+  --title "Create orbit-hello.txt" \
+  --description "Add orbit-hello.txt at the repository root containing the text 'hello from orbit'." \
+  --acceptance-criteria "orbit-hello.txt exists at the repository root." \
+  --acceptance-criteria "orbit-hello.txt contains the text 'hello from orbit'." \
+  --workspace .)
+echo "$TASK_ID"
 
 # review and approve the proposed task(s)
 orbit task list
-orbit task show <task_id>
-orbit task approve <task_id> --note "LGTM"
+orbit task show "$TASK_ID"
+orbit task approve "$TASK_ID" --note "LGTM"
 
 # run the default PR-based execution path
-orbit run ship
+orbit run ship "$TASK_ID"
 
 # or run a local-only execution path
-orbit run ship local
+orbit run ship local "$TASK_ID"
 ```
+
+If you prefer conversational drafting, ask an agent to produce the `orbit task add ...` command for your real task, then run that command and continue with the same approval + ship flow.
 
 If you already know which task(s) you want to run, pin them explicitly:
 
@@ -148,7 +155,7 @@ When something goes wrong — a bad merge, a regression, a mystery refactor — 
 
 Concrete commitments:
 
-- **Complete coverage.** Every operation that touches code, state, or external services emits an audit event. Silent paths are bugs.
+- **Coverage is broad and expanding.** Orbit is aiming for complete coverage across code, state, and external-service operations. Silent paths are treated as bugs.
 - **Structured, queryable events.** Not log strings. Typed records with stable schemas you can query via `orbit audit ...` and `orbit.audit.*` tools, or export to your own observability stack.
 - **Faithful reproducibility.** Prompts and responses are stored verbatim (with configurable redaction for sensitive paths). Summaries are derived artifacts, not replacements.
 - **Tamper-evident retention.** Audit is append-only. The audit trail's own integrity is verifiable; corrupting history is not a silent operation.
@@ -191,14 +198,11 @@ Build and inspect the code-aware structure Orbit uses for partitioning and sched
 orbit run ship
 orbit run ship <task_id> ...
 orbit run ship local
-orbit run duel
-orbit run job <id>
 ```
 
 - `ship` runs the default PR-based execution path.
 - `ship local` runs a local-only execution path with no PR loop.
-- `duel` runs a cross-agent evaluation harness on a single task.
-- `run job <id>` runs a named job workflow directly.
+- adding task IDs pins the run instead of auto-selecting from backlog.
 
 ### Tasks
 
@@ -207,8 +211,6 @@ orbit task add
 orbit task list
 orbit task show <task_id>
 orbit task approve <task_id>
-orbit task update <task_id> ...
-orbit task locks
 ```
 
 Tasks are the durable unit of work. Agents create, update, and complete them under audit.
@@ -219,9 +221,6 @@ Tasks are the durable unit of work. Agents create, update, and complete them und
 orbit audit list
 orbit audit show <event_id>
 orbit audit stats
-orbit audit export <path>
-orbit metrics overview
-orbit scoreboard summary
 ```
 
 Every agent action is queryable. Treat this as a first-class surface, not a debug tool.
@@ -230,36 +229,14 @@ Every agent action is queryable. Treat this as a first-class surface, not a debu
 
 ## Advanced And Internal Surfaces
 
-```text
-orbit [OPTIONS] <COMMAND>
+Orbit also exposes lower-level operating surfaces:
 
-Setup:
-  init       Initialize the global Orbit root (~/.orbit)
-  workspace  Initialize and manage workspaces
-  config     Show or update Orbit configuration
+- `activity` and `job` for defining and running substrate assets directly
+- `policy`, `executor`, and `tool` for runtime customization
+- `orbit run duel` and `orbit run job <id>` for evaluation and direct workflow execution
+- `metrics`, `scoreboard`, and `serve` for observability and outward integration
 
-Resources:
-  task       Create, update, and manage tasks
-  activity   Define, list, and run activities
-  job        Define, list, and manage job workflows
-  policy     Manage filesystem profile policies and runtime scoping
-  executor   Manage executors
-  tool       Manage tools and external MCP plugins
-
-Workflows:
-  run        Run a job workflow (run ship / run duel / run job / run <id>)
-
-Inspect:
-  audit      Query the audit event log
-  metrics    Token, tool-call, and knowledge-pack metrics
-  scoreboard Read-only scoreboard summaries
-  graph      Query the knowledge graph
-
-Serve:
-  serve      Serve Orbit outward (serve web / serve mcp)
-```
-
-The `Resources` and `Inspect` groups expose much of Orbit's internal runtime because durable local state is part of the product. Treat them as operating surfaces, not as the core product thesis.
+They are intentionally available because durable local state is part of the product, but most users can ignore them on day one. Reach for `orbit --help` and `orbit <command> --help` when you need the deeper surface area.
 
 ---
 
@@ -356,7 +333,7 @@ flowchart LR
 Two details matter most:
 
 - **`orbit-knowledge`** provides the graph substrate. Design docs in [docs/design/knowledge-graph/](docs/design/knowledge-graph/).
-- **`orbit-engine`** and **`orbit-agent`** provide the execution substrate. HTTP `LoopTransport` is primary; CLI subprocess providers are retained as the `backend: cli` path.
+- **`orbit-engine`** and **`orbit-agent`** provide the execution substrate. HTTP `LoopTransport` is primary; CLI subprocess providers are retained as the `backend: cli` path. Design docs in [docs/design/activity-job/](docs/design/activity-job/) and [docs/design/groundhog/](docs/design/groundhog/).
 
 That is the center of gravity for Orbit.
 
