@@ -32,7 +32,8 @@ pub struct TaskAddArgs {
     /// Append an initial task comment
     #[arg(long)]
     pub comment: Option<String>,
-    /// Comma-separated context file paths
+    /// Comma-separated task context selectors. Prefer `file:`, `dir:`, or
+    /// `symbol:` forms; legacy raw paths are accepted and upgraded.
     #[arg(long, default_value = "")]
     pub context: String,
     /// Workspace path for the task

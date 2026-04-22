@@ -44,7 +44,8 @@ pub struct TaskUpdateArgs {
     /// Batch ID to associate with the task (empty string clears)
     #[arg(long)]
     pub batch_id: Option<String>,
-    /// Comma-separated context file paths (empty string clears)
+    /// Comma-separated task context selectors (empty string clears). Prefer
+    /// `file:`, `dir:`, or `symbol:` forms; legacy raw paths are accepted and upgraded.
     #[arg(long = "context", alias = "context-files")]
     pub context_files: Option<String>,
     /// Task artifact write in `path=content` form. Repeat for multiple artifacts.

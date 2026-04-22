@@ -10,7 +10,11 @@ use super::helpers::{
     build_task_comments, effective_actor_label, implementation_label, task_comment_history_entries,
 };
 use super::params::TaskUpdateParams;
-use super::paths::{context_files_pruned_history_entry, context_workspace_root};
+use super::paths::{
+    canonicalize_context_files_for_read, context_files_pruned_history_entry,
+    context_workspace_root, emit_graph_unavailable_warning_if_needed,
+    normalize_context_files_for_write,
+};
 use super::transitions::{ensure_task_has_execution_plan, in_progress_transition_requires_plan};
 
 impl OrbitRuntime {
@@ -68,17 +72,28 @@ impl OrbitRuntime {
         let (canonical_agent, canonical_model) =
             self.canonical_agent_model_identity(agent.as_deref(), model.as_deref());
         let task = self.get_task(id)?;
+        let prune_root =
+            context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
 
-        let dropped_context_files: Vec<String> =
-            if let Some(candidates) = params.context_files.take() {
-                let prune_root =
-                    context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
-                let (kept, dropped) = prune_missing_context_files(&prune_root, candidates);
+        let dropped_context_files: Vec<String> = if let Some(candidates) =
+            params.context_files.take()
+        {
+            let normalized = normalize_context_files_for_write(candidates, &prune_root)?;
+            emit_graph_unavailable_warning_if_needed(&normalized, self.data_root_path());
+            let (kept, dropped) = prune_missing_context_files(&prune_root, normalized);
+            params.context_files = Some(kept);
+            dropped
+        } else {
+            let normalized = canonicalize_context_files_for_read(&task.context_files, &prune_root);
+            if normalized != task.context_files {
+                emit_graph_unavailable_warning_if_needed(&normalized, self.data_root_path());
+                let (kept, dropped) = prune_missing_context_files(&prune_root, normalized);
                 params.context_files = Some(kept);
                 dropped
             } else {
                 Vec::new()
-            };
+            }
+        };
         if let Some(dependencies) = params.dependencies.take() {
             let normalized_dependencies = normalize_task_dependencies(dependencies)?;
             validate_task_dependencies(&self.list_tasks()?, Some(id), &normalized_dependencies)?;

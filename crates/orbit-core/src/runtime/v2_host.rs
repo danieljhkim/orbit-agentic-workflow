@@ -9,14 +9,17 @@
 //! `orbit-engine`, so this module never names orbit-agent types.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use orbit_common::types::Task;
-use orbit_common::types::{AuditEventStatus, Role, TaskStatus, TaskType, UNRESTRICTED_FS_PROFILE};
-use orbit_common::utility::path::{
-    normalize_workspace_relative_path, workspace_relative_paths_overlap,
+use orbit_common::types::{
+    AuditEventStatus, Role, TaskStatus, TaskType, UNRESTRICTED_FS_PROFILE,
+    prune_missing_context_files,
 };
+use orbit_common::utility::path::workspace_relative_paths_overlap;
+use orbit_common::utility::selector::canonical_selector_in_workspace;
 use orbit_engine::activity_job::{DispatchError, V2RuntimeHost};
 use orbit_engine::{StateExecutionContext, execute_deterministic_action};
 use orbit_store::AuditEventInsertParams;
@@ -743,25 +746,37 @@ fn active_task_lock_files<'a>(tasks: impl IntoIterator<Item = &'a Task>) -> BTre
     let mut locked_files = BTreeSet::new();
     for task in tasks {
         if matches!(task.status, TaskStatus::InProgress | TaskStatus::Review) {
-            locked_files.extend(
-                task.context_files
-                    .iter()
-                    .filter_map(|path| normalize_workspace_relative_path(path).map(str::to_owned)),
-            );
+            locked_files.extend(existing_lock_context_files(task));
         }
     }
     locked_files
 }
 
 fn task_overlaps_locked_files(task: &Task, locked_files: &BTreeSet<String>) -> bool {
-    task.context_files
+    existing_lock_context_files(task)
         .iter()
-        .filter_map(|path| normalize_workspace_relative_path(path))
         .any(|requested_file| {
             locked_files
                 .iter()
                 .any(|held_file| workspace_relative_paths_overlap(requested_file, held_file))
         })
+}
+
+fn existing_lock_context_files(task: &Task) -> Vec<String> {
+    let workspace_root = task
+        .workspace_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let canonical = task
+        .context_files
+        .iter()
+        .filter_map(|entry| canonical_selector_in_workspace(entry, &workspace_root).ok())
+        .collect::<Vec<_>>();
+    let (kept, _dropped) = prune_missing_context_files(&workspace_root, canonical);
+    kept
 }
 
 fn task_root_id(task: &Task, task_lookup: &BTreeMap<String, Task>) -> String {

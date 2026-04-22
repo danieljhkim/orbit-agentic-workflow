@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use orbit_common::types::{OrbitError, Task};
+use orbit_common::utility::selector::anchor_path;
 use serde_json::{Value, json};
 
 use crate::context::{RuntimeHost, TaskHost};
@@ -269,16 +270,11 @@ fn task_scopes(task: &Task, workspace_path: &Path) -> Vec<String> {
 }
 
 fn normalize_task_scope(raw: &str, workspace_path: &Path) -> Option<String> {
-    let candidate = raw.split('#').next().unwrap_or(raw).trim();
-    if candidate.is_empty() {
-        return None;
-    }
-
-    let path = Path::new(candidate);
-    let relative = if path.is_absolute() {
-        path.strip_prefix(workspace_path).ok()?.to_path_buf()
+    let anchor = anchor_path(raw).ok()?;
+    let relative = if anchor.is_absolute() {
+        anchor.strip_prefix(workspace_path).ok()?.to_path_buf()
     } else {
-        path.to_path_buf()
+        anchor
     };
     normalize_relative_path(&relative)
 }
@@ -451,4 +447,40 @@ fn ensure_no_unmerged_changes(workspace_path: &Path) -> Result<(), OrbitError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_task_scope, path_matches_scope};
+
+    use tempfile::tempdir;
+
+    #[test]
+    fn normalize_task_scope_uses_selector_anchor_paths() {
+        let temp = tempdir().unwrap();
+        let workspace = temp.path();
+        std::fs::create_dir_all(workspace.join("src")).unwrap();
+        std::fs::write(workspace.join("src/lib.rs"), "pub fn run() {}\n").unwrap();
+
+        assert_eq!(
+            normalize_task_scope("symbol:src/lib.rs#run:function", workspace).as_deref(),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            normalize_task_scope("dir:src", workspace).as_deref(),
+            Some("src")
+        );
+        assert_eq!(
+            normalize_task_scope(&workspace.join("src/lib.rs").to_string_lossy(), workspace)
+                .as_deref(),
+            Some("src/lib.rs")
+        );
+    }
+
+    #[test]
+    fn path_matches_scope_handles_directory_scopes() {
+        assert!(path_matches_scope("src/lib.rs", "src"));
+        assert!(path_matches_scope("src/lib.rs", "src/lib.rs"));
+        assert!(!path_matches_scope("tests/lib.rs", "src"));
+    }
 }

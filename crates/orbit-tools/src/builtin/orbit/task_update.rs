@@ -80,8 +80,9 @@ impl Tool for OrbitTaskUpdateTool {
             },
             ToolParam {
                 name: "context_files".to_string(),
-                description: "Context file paths as a comma-separated string or array of strings"
-                    .to_string(),
+                description:
+                    "Task context selectors as a comma-separated string or array of strings. Prefer canonical selectors: `file:path`, `dir:path`, or `symbol:path#name:kind`. Legacy raw paths are accepted and upgraded automatically."
+                        .to_string(),
                 param_type: "array".to_string(),
                 required: false,
             },

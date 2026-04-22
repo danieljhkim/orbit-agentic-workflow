@@ -4,3 +4,4 @@ pub mod git;
 pub mod logging;
 pub mod path;
 pub mod redaction;
+pub mod selector;

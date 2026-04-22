@@ -35,6 +35,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{OrbitError, OrbitId};
+use crate::utility::selector::exists_in_workspace;
 
 /// Current lifecycle state of a task.
 ///
@@ -470,7 +471,7 @@ impl Task {
 ///
 /// - Empty / whitespace-only entries are silently discarded (not reported as dropped).
 /// - Each remaining entry is trimmed of leading/trailing whitespace before use.
-/// - Relative paths are resolved against `workspace_root`.
+/// - Selector anchors and relative paths are resolved against `workspace_root`.
 /// - Absolute paths are checked as-is.
 ///
 /// Entries whose resolved path does not exist on disk end up in `dropped` (as the
@@ -487,13 +488,7 @@ pub fn prune_missing_context_files(
         if trimmed.is_empty() {
             continue;
         }
-        let path = std::path::Path::new(trimmed);
-        let resolved = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            workspace_root.join(path)
-        };
-        if resolved.exists() {
+        if exists_in_workspace(trimmed, workspace_root) {
             kept.push(trimmed.to_string());
         } else {
             dropped.push(trimmed.to_string());

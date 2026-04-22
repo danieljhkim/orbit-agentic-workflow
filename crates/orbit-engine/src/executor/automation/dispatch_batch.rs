@@ -5,6 +5,7 @@ use chrono::Utc;
 use orbit_common::types::{
     OrbitError, Task, TaskComment, TaskComplexity, TaskPriority, TaskStatus,
 };
+use orbit_common::utility::selector::shared_anchor_prefix_depth;
 use serde_json::{Value, json};
 
 use crate::context::{TaskAutomationUpdate, TaskHost};
@@ -302,21 +303,7 @@ fn shared_path_prefix_score(left: &Task, right: &Task) -> usize {
 }
 
 fn shared_prefix_depth(left: &str, right: &str) -> usize {
-    let mut depth = 0usize;
-    for (left_part, right_part) in normalized_parts(left).zip(normalized_parts(right)) {
-        if left_part != right_part {
-            break;
-        }
-        depth += 1;
-    }
-    depth
-}
-
-fn normalized_parts(path: &str) -> impl Iterator<Item = &str> {
-    path.trim()
-        .trim_matches('/')
-        .split('/')
-        .filter(|part| !part.is_empty())
+    shared_anchor_prefix_depth(left, right)
 }
 
 fn priority_rank(priority: TaskPriority) -> u8 {
@@ -325,5 +312,23 @@ fn priority_rank(priority: TaskPriority) -> u8 {
         TaskPriority::Medium => 1,
         TaskPriority::High => 2,
         TaskPriority::Critical => 3,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shared_prefix_depth;
+
+    #[test]
+    fn shared_prefix_depth_uses_selector_anchors() {
+        assert_eq!(
+            shared_prefix_depth("symbol:src/lib.rs#run:function", "dir:src"),
+            1
+        );
+        assert_eq!(
+            shared_prefix_depth("file:src/a.rs", "file:src/nested/b.rs"),
+            1
+        );
+        assert_eq!(shared_prefix_depth("file:src/a.rs", "file:tests/a.rs"), 0);
     }
 }

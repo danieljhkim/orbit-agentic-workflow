@@ -3,7 +3,7 @@ use orbit_common::types::{OrbitError, Task, TaskArtifact, prune_missing_context_
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams;
 
-use super::paths::context_workspace_root;
+use super::paths::{canonicalize_context_files_for_read, context_workspace_root};
 
 impl OrbitRuntime {
     pub fn get_task(&self, id: &str) -> Result<Task, OrbitError> {
@@ -45,7 +45,8 @@ impl OrbitRuntime {
     pub fn dry_run_prune_context_files(&self, task: &Task) -> Vec<String> {
         let prune_root =
             context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
-        let (_kept, dropped) = prune_missing_context_files(&prune_root, task.context_files.clone());
+        let canonicalized = canonicalize_context_files_for_read(&task.context_files, &prune_root);
+        let (_kept, dropped) = prune_missing_context_files(&prune_root, canonicalized);
         dropped
     }
 

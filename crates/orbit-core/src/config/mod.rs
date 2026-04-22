@@ -20,6 +20,4 @@ mod runtime;
 
 pub(crate) use bootstrap::seed_default_config;
 pub(crate) use persistence::PersistenceConfig;
-pub(crate) use runtime::{
-    CodexExecutionPolicy, ExecutionEnvPolicy, RuntimeConfig, normalize_pass_list,
-};
+pub(crate) use runtime::{CodexExecutionPolicy, ExecutionEnvPolicy, RuntimeConfig};

@@ -35,8 +35,10 @@ spec:
        plan, and context files.
     2. If the injected task context is missing or malformed, recover it with
        `orbit.task.show`.
-    3. Read the task description, acceptance criteria, plan, and each path in
-       `context_files` before changing code.
+    3. Read the task description, acceptance criteria, and plan first. Treat
+       `context_files` as Orbit graph selectors: prefer `orbit.graph.pack` to
+       gather context, and fall back to `fs.read` only for selectors that stay
+       unresolved or when the knowledge graph is unavailable.
     4. Use `input.workspace_path` and `input.repo_root` when provided; they
        override the task snapshot's paths.
     5. Implement only the task's scoped work. If a blocker appears, add a task

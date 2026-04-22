@@ -1,5 +1,8 @@
 use chrono::Utc;
 use orbit_common::types::{OrbitError, TaskHistoryEntry};
+use orbit_common::utility::selector::{
+    anchor_path, canonical_selector, canonical_selector_in_workspace, exists_in_workspace,
+};
 use std::path::{Path, PathBuf};
 
 pub(super) fn normalize_workspace_path(
@@ -45,7 +48,7 @@ pub(super) fn normalize_workspace_path(
     Ok(Some(canonical_workspace.to_string_lossy().into_owned()))
 }
 
-pub(super) fn context_workspace_root(repo_root: &Path, workspace_path: Option<&str>) -> PathBuf {
+pub(crate) fn context_workspace_root(repo_root: &Path, workspace_path: Option<&str>) -> PathBuf {
     workspace_path
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -62,11 +65,51 @@ pub(super) fn context_files_pruned_history_entry(
         by: actor.to_string(),
         event: "context_files_pruned".to_string(),
         note: Some(format!(
-            "dropped: {} (not found in workspace)",
+            "dropped: {} (selector anchor not found in workspace)",
             dropped.join(", ")
         )),
         from_status: None,
         to_status: None,
+    }
+}
+
+pub(crate) fn normalize_context_files_for_write(
+    candidates: Vec<String>,
+    workspace_root: &Path,
+) -> Result<Vec<String>, OrbitError> {
+    candidates
+        .into_iter()
+        .map(|entry| {
+            canonical_selector_in_workspace(entry.as_str(), workspace_root)
+                .map_err(|error| OrbitError::InvalidInput(error.to_string()))
+        })
+        .collect()
+}
+
+pub(crate) fn canonicalize_context_files_for_read(
+    candidates: &[String],
+    workspace_root: &Path,
+) -> Vec<String> {
+    candidates
+        .iter()
+        .filter_map(|entry| canonical_selector_in_workspace(entry, workspace_root).ok())
+        .collect()
+}
+
+pub(crate) fn context_files_need_graph_warning(candidates: &[String], orbit_root: &Path) -> bool {
+    !orbit_root.join("knowledge/graph").is_dir()
+        && candidates.iter().any(|entry| {
+            canonical_selector(entry)
+                .ok()
+                .is_some_and(|selector| selector.starts_with("symbol:"))
+        })
+}
+
+pub(crate) fn emit_graph_unavailable_warning_if_needed(candidates: &[String], orbit_root: &Path) {
+    if context_files_need_graph_warning(candidates, orbit_root) {
+        eprintln!(
+            "warning: knowledge graph is unavailable; selector validation is falling back to file-level anchor checks"
+        );
     }
 }
 
@@ -92,16 +135,14 @@ pub(super) fn normalize_path_token(token: &str) -> Option<String> {
         return None;
     }
 
-    let token = token
-        .strip_prefix("file:")
-        .or_else(|| token.strip_prefix("dir:"))
-        .or_else(|| token.strip_prefix("symbol:"))
-        .unwrap_or(token);
-    let token = token.split_once('#').map(|(path, _)| path).unwrap_or(token);
     let token = token.trim_matches('`').trim_end_matches('/');
     if token.is_empty() {
         return None;
     }
+    let anchored = anchor_path(token)
+        .ok()
+        .map(|path| path.to_string_lossy().replace('\\', "/"));
+    let path_token = anchored.as_deref().unwrap_or(token).to_string();
 
     let standalone_files = [
         "Cargo.toml",
@@ -123,28 +164,22 @@ pub(super) fn normalize_path_token(token: &str) -> Option<String> {
         ".orbit/",
     ]
     .iter()
-    .any(|prefix| token.starts_with(prefix));
-    let last_segment_looks_like_file = token
+    .any(|prefix| path_token.starts_with(prefix));
+    let last_segment_looks_like_file = path_token
         .rsplit('/')
         .next()
         .is_some_and(|segment| segment.contains('.'));
 
     if has_known_prefix
-        || standalone_files.contains(&token)
-        || (token.contains('/') && last_segment_looks_like_file)
+        || standalone_files.contains(&path_token.as_str())
+        || (path_token.contains('/') && last_segment_looks_like_file)
     {
-        return Some(token.to_string());
+        return Some(anchored.unwrap_or(path_token));
     }
 
     None
 }
 
 pub(super) fn task_path_exists(workspace_root: &Path, raw_path: &str) -> bool {
-    let candidate = Path::new(raw_path.trim());
-    let resolved = if candidate.is_absolute() {
-        candidate.to_path_buf()
-    } else {
-        workspace_root.join(candidate)
-    };
-    resolved.exists()
+    exists_in_workspace(raw_path, workspace_root)
 }

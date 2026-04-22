@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use orbit_common::types::{JobRunState, OrbitError, Task, TaskStatus};
+use orbit_common::utility::selector::overlaps;
 use serde_json::{Value, json};
 
 use super::git::{
@@ -533,16 +534,26 @@ pub(super) fn tasks_conflict(left: &[String], right: &[String]) -> bool {
 }
 
 fn paths_conflict(left: &str, right: &str) -> bool {
-    let left = normalize_path(left);
-    let right = normalize_path(right);
-    if left.is_empty() || right.is_empty() {
-        return false;
-    }
-    left == right
-        || left.starts_with(&format!("{right}/"))
-        || right.starts_with(&format!("{left}/"))
+    overlaps(left, right)
 }
 
-fn normalize_path(path: &str) -> String {
-    path.trim().trim_matches('/').to_string()
+#[cfg(test)]
+mod tests {
+    use super::tasks_conflict;
+
+    #[test]
+    fn tasks_conflict_uses_selector_anchor_overlap() {
+        assert!(tasks_conflict(
+            &["symbol:f.rs#a:method".to_string()],
+            &["symbol:f.rs#b:method".to_string()]
+        ));
+        assert!(tasks_conflict(
+            &["dir:src".to_string()],
+            &["file:src/lib.rs".to_string()]
+        ));
+        assert!(!tasks_conflict(
+            &["file:f.rs".to_string()],
+            &["file:g.rs".to_string()]
+        ));
+    }
 }

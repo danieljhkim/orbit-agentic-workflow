@@ -11,7 +11,9 @@ use crate::runtime::TaskRecordUpdateParams;
 use super::helpers::{authored_role_value, build_task_comments, effective_actor_label};
 use super::params::TaskAddParams;
 use super::paths::{
-    context_files_pruned_history_entry, context_workspace_root, normalize_workspace_path,
+    context_files_pruned_history_entry, context_workspace_root,
+    emit_graph_unavailable_warning_if_needed, normalize_context_files_for_write,
+    normalize_workspace_path,
 };
 
 impl OrbitRuntime {
@@ -53,8 +55,11 @@ impl OrbitRuntime {
         validate_task_dependencies(&self.list_tasks()?, None, &dependencies)?;
 
         let prune_root = context_workspace_root(&self.paths().repo_root, workspace_path.as_deref());
+        let normalized_context_files =
+            normalize_context_files_for_write(params.context_files.clone(), &prune_root)?;
+        emit_graph_unavailable_warning_if_needed(&normalized_context_files, self.data_root_path());
         let (kept_context_files, dropped_context_files) =
-            prune_missing_context_files(&prune_root, params.context_files.clone());
+            prune_missing_context_files(&prune_root, normalized_context_files);
 
         let task = self.with_mutation(|| {
             let task = self.stores().tasks().create(StoreTaskCreateParams {

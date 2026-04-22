@@ -54,7 +54,7 @@ orbit tool run orbit.task.list --input '{"status": "backlog", "agent": "<claude|
 **If given an existing task ID**, load it with `orbit.task.show`. Extract:
 - `description` and `acceptance_criteria` — these define the required outcome.
 - `plan` — if blank or placeholder, author a plan before starting.
-- `context_files` — read each file before making changes.
+- `context_files` — treat these as selectors first. Prefer `file:`, `dir:`, or `symbol:` forms, use `orbit.graph.pack` when available, and fall back to `fs.read` only for unresolved selectors.
 - `status` — confirm the task is ready to start.
 
 **If this is a new task** (no task ID), clarify intent and success criteria with the human, then create via `orbit-create-task`.
@@ -81,7 +81,7 @@ orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this 
 
 ### Step 4: Implement and validate
 
-Follow the task's `plan` step by step. Read `context_files` before touching code. Run the repo-approved verification commands from the plan. If repo instructions forbid tests, honor that and use the allowed validation path instead.
+Follow the task's `plan` step by step. Use selector-first context from `context_files` before touching code: prefer `orbit.graph.pack`, and read files directly only for unresolved selectors or when the graph is unavailable. Run the repo-approved verification commands from the plan. If repo instructions forbid tests, honor that and use the allowed validation path instead.
 
 ### Step 5: Move to review and summarize
 

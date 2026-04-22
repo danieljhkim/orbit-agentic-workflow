@@ -10,6 +10,7 @@ use serde_json::Value as JsonValue;
 use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
+use crate::command::task::{canonicalize_context_files_for_read, context_workspace_root};
 
 #[derive(Debug, Clone, Serialize)]
 struct ExecutionEnvelope {
@@ -184,14 +185,11 @@ fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Pa
     // in orbit-core, but files can be deleted *after* a task is written, and
     // existing tasks on disk may still reference stale paths. Keep the on-disk
     // task untouched — this only filters what reaches the agent envelope.
-    let prune_root: PathBuf = workspace_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| fallback_repo_root.to_path_buf());
+    let prune_root: PathBuf = context_workspace_root(fallback_repo_root, workspace_path.as_deref());
+    let canonical_context_files =
+        canonicalize_context_files_for_read(&task.context_files, &prune_root);
     let (kept_context_files, _dropped) =
-        prune_missing_context_files(&prune_root, task.context_files.clone());
+        prune_missing_context_files(&prune_root, canonical_context_files);
 
     json!({
         "id": task.id.clone(),

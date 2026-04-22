@@ -18,6 +18,12 @@ Create an Orbit task another engineer or agent can execute without guessing. Foc
 5. Run `orbit tool run orbit.task.add` with the description, acceptance criteria, workspace, and explicit `agent` / `model` fields in the JSON input. Leave `plan` blank unless you have a compelling reason to pre-seed it.
 6. Use the `orbit.task.add` result as the default confirmation. If you need to confirm the canonical stored task record, run `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'`.
 
+## Selector-First Context
+
+- Prefer canonical task context selectors in `context_files`: `file:path`, `dir:path`, and `symbol:path#name:kind`.
+- Raw legacy paths are still accepted, but Orbit silently upgrades them to canonical selector form on write.
+- When a task needs precise code context, prefer `symbol:` selectors over whole-file scopes.
+
 ## Operating Rules
 
 - Never edit task files directly.
@@ -69,7 +75,7 @@ orbit tool run orbit.task.add --input '{
     "<observable outcome 2>"
   ],
   "plan": "",
-  "context": "<comma,separated,paths>",
+  "context_files": ["file:src/lib.rs", "dir:src/command", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
   "type": "<task|feature|epic|issue|bug|chore|refactor>",

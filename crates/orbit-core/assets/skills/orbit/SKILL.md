@@ -27,7 +27,7 @@ When invoking `orbit tool run` directly, include `agent` and `model` in the inpu
 1. If the activity did not preload `task`, load the task: `orbit tool run orbit.task.show --full --input '{"id": "<task-id>", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
 2. Read the `description` and `acceptance_criteria` first — they define the required outcome.
 3. If the `plan` field is blank or placeholder text, author a fresh plan with `orbit.task.update`.
-4. Read each file listed in `context_files` before making changes.
+4. Treat `context_files` as selector-first task context. Prefer canonical selectors (`file:`, `dir:`, `symbol:`), use `orbit.graph.pack` when available, and only fall back to direct file reads for unresolved selectors or when the graph is unavailable.
 5. Start the task: `orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
 6. Implement following the plan. Validate using the plan's verification steps.
 7. Move to review: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`

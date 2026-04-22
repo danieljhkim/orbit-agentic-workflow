@@ -11,11 +11,9 @@ use orbit_common::types::{
     build_task_status_index, normalize_optional_attribution_label,
     optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
     optional_string_list_alias, optional_u32_alias, prune_missing_context_files, required_string,
-    split_csv, task_dependencies_ready,
+    task_dependencies_ready,
 };
-use orbit_common::utility::path::{
-    normalize_workspace_relative_path, workspace_relative_paths_overlap,
-};
+use orbit_common::utility::path::workspace_relative_paths_overlap;
 use orbit_store::{
     ExpiredTaskReservation, TaskLockConflict, TaskLockHolder, TaskReservationCheckParams,
     TaskReservationReleaseParams, TaskReservationReserveParams, state_io,
@@ -34,7 +32,7 @@ use self::json::{
     task_lock_status_rank, task_lock_to_json, task_to_json,
 };
 use crate::OrbitRuntime;
-use crate::command::task::{TaskAddParams, TaskUpdateParams};
+use crate::command::task::{TaskAddParams, TaskUpdateParams, canonicalize_context_files_for_read};
 
 pub(crate) fn build_orbit_tool_host(
     runtime: &OrbitRuntime,
@@ -209,9 +207,11 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                             .unwrap_or_default(),
                         plan,
                         comment: optional_string(&input, "comment")?,
-                        context_files: optional_string(&input, "context")?
-                            .map(|value| split_csv(&value))
-                            .unwrap_or_default(),
+                        context_files: optional_csv_or_string_list_alias(
+                            &input,
+                            &["context_files", "context"],
+                        )?
+                        .unwrap_or_default(),
                         workspace_path: Some(workspace),
                         priority: optional_string(&input, "priority")?
                             .map(|value| parse_task_priority("priority", &value))
@@ -315,7 +315,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
 
                 let locked_files: BTreeSet<String> = tasks
                     .iter()
-                    .flat_map(|task| task.context_files.iter().cloned())
+                    .flat_map(|task| existing_context_files(&self.runtime, task))
                     .collect();
 
                 Ok(json!({
@@ -548,7 +548,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                             .map(empty_string_to_none),
                         context_files: optional_csv_or_string_list_alias(
                             &input,
-                            &["context_files"],
+                            &["context_files", "context"],
                         )?,
                         upsert_artifacts: parse_artifacts(&input)?,
                         ..Default::default()
@@ -600,7 +600,8 @@ fn task_workspace_root(runtime: &OrbitRuntime, task: &Task) -> PathBuf {
 
 fn existing_context_files(runtime: &OrbitRuntime, task: &Task) -> Vec<String> {
     let workspace_root = task_workspace_root(runtime, task);
-    let (kept, _dropped) = prune_missing_context_files(&workspace_root, task.context_files.clone());
+    let canonical = canonicalize_context_files_for_read(&task.context_files, &workspace_root);
+    let (kept, _dropped) = prune_missing_context_files(&workspace_root, canonical);
     kept
 }
 
@@ -658,15 +659,12 @@ pub(crate) fn task_lock_conflicts(
     for task in tasks {
         let held_files = existing_context_files(runtime, &task);
         for requested_file in &requested_files {
-            let Some(requested_file) = normalize_workspace_relative_path(requested_file) else {
-                continue;
-            };
             if held_files
                 .iter()
                 .any(|held_file| workspace_relative_paths_overlap(requested_file, held_file))
             {
                 conflicts.push(TaskLockConflict {
-                    file: requested_file.to_string(),
+                    file: requested_file.clone(),
                     held_by: TaskLockHolder::Task,
                     held_by_id: task.id.clone(),
                 });
@@ -853,7 +851,7 @@ mod tests {
 
         let requested =
             requested_task_files(&runtime, &[task.id]).expect("collect requested task files");
-        assert_eq!(requested, vec!["docs/design/groundhog.md".to_string()]);
+        assert_eq!(requested, vec!["file:docs/design/groundhog.md".to_string()]);
     }
 
     #[test]
@@ -887,6 +885,44 @@ mod tests {
                 held_by: TaskLockHolder::Task,
                 held_by_id: holder.id,
             }]
+        );
+    }
+
+    #[test]
+    fn task_lock_conflicts_use_selector_anchor_overlap() {
+        let (_root, runtime, repo_root) = test_runtime();
+        std::fs::create_dir_all(repo_root.join("src")).expect("create src dir");
+        std::fs::write(repo_root.join("src/lib.rs"), "pub fn ok() {}\n")
+            .expect("write source file");
+
+        let holder = create_task(
+            &runtime,
+            &repo_root,
+            TaskStatus::InProgress,
+            &["symbol:src/lib.rs#ok:function"],
+        );
+
+        let conflicts = task_lock_conflicts(
+            &runtime,
+            &[],
+            &["file:src/lib.rs".to_string(), "dir:src".to_string()],
+        )
+        .expect("compute selector-aware task lock conflicts");
+
+        assert_eq!(
+            conflicts,
+            vec![
+                TaskLockConflict {
+                    file: "dir:src".to_string(),
+                    held_by: TaskLockHolder::Task,
+                    held_by_id: holder.id.clone(),
+                },
+                TaskLockConflict {
+                    file: "file:src/lib.rs".to_string(),
+                    held_by: TaskLockHolder::Task,
+                    held_by_id: holder.id,
+                },
+            ]
         );
     }
 }
