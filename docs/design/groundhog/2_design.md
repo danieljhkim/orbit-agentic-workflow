@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-22
 
-This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
+This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose, [implementation_status.md](./implementation_status.md) for the active gap ledger, and [3_vision.md](./3_vision.md) for forward-looking questions.
 
 ---
 

@@ -2,13 +2,13 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-22
 
 > *"The agent gets to retry each checkpoint like Bill Murray in Groundhog Day — it wakes up fresh but remembers what it learned."*
 
 Groundhog is Orbit's checkpoint-oriented execution mode for HTTP-backed coding agents. It takes a structured task plan, runs one checkpoint at a time, and gives each attempt a fresh agent session plus a git-backed workspace snapshot. The intended payoff is smaller prompt state, cleaner retries, and higher confidence that "success" means the workspace really satisfies the requested checkpoint.
 
-Today Groundhog exists as a partial but load-bearing implementation across `orbit-common`, `orbit-engine`, and `orbit-tools`. [2_design.md](./2_design.md) describes that implementation as it exists now, including the places where the current runner still carries legacy shapes. [3_vision.md](./3_vision.md) captures the next design questions and the longer arc.
+Today Groundhog exists as a partial but load-bearing implementation across `orbit-common`, `orbit-engine`, and `orbit-tools`. [2_design.md](./2_design.md) describes that implementation as it exists now, including the places where the current runner still carries legacy shapes. [implementation_status.md](./implementation_status.md) tracks the remaining cleanup and implementation gaps. [3_vision.md](./3_vision.md) captures the next design questions and the longer arc.
 
 ---
 
