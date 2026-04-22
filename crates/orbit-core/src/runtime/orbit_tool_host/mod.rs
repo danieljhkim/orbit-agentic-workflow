@@ -2,6 +2,7 @@ mod input;
 mod json;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -9,8 +10,8 @@ use orbit_common::types::{
     AuditEventStatus, OrbitError, ReviewThreadStatus, Task, TaskPriority, TaskStatus, TaskType,
     build_task_status_index, normalize_optional_attribution_label,
     optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
-    optional_string_list_alias, optional_u32_alias, required_string, split_csv,
-    task_dependencies_ready,
+    optional_string_list_alias, optional_u32_alias, prune_missing_context_files, required_string,
+    split_csv, task_dependencies_ready,
 };
 use orbit_common::utility::path::{
     normalize_workspace_relative_path, workspace_relative_paths_overlap,
@@ -581,6 +582,28 @@ pub(crate) fn workspace_orbit_dir(runtime: &OrbitRuntime) -> String {
     runtime.paths().orbit_dir.to_string_lossy().into_owned()
 }
 
+fn task_workspace_root(runtime: &OrbitRuntime, task: &Task) -> PathBuf {
+    task.workspace_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                runtime.paths().repo_root.join(path)
+            }
+        })
+        .unwrap_or_else(|| runtime.paths().repo_root.clone())
+}
+
+fn existing_context_files(runtime: &OrbitRuntime, task: &Task) -> Vec<String> {
+    let workspace_root = task_workspace_root(runtime, task);
+    let (kept, _dropped) = prune_missing_context_files(&workspace_root, task.context_files.clone());
+    kept
+}
+
 pub(crate) fn requested_task_files(
     runtime: &OrbitRuntime,
     task_ids: &[String],
@@ -596,7 +619,7 @@ pub(crate) fn requested_task_files(
         let task = task_map
             .get(task_id)
             .ok_or_else(|| OrbitError::TaskNotFound(task_id.clone()))?;
-        requested_files.extend(task.context_files.iter().cloned());
+        requested_files.extend(existing_context_files(runtime, task));
     }
 
     Ok(requested_files.into_iter().collect())
@@ -633,12 +656,12 @@ pub(crate) fn task_lock_conflicts(
 
     let mut conflicts = Vec::new();
     for task in tasks {
+        let held_files = existing_context_files(runtime, &task);
         for requested_file in &requested_files {
             let Some(requested_file) = normalize_workspace_relative_path(requested_file) else {
                 continue;
             };
-            if task
-                .context_files
+            if held_files
                 .iter()
                 .any(|held_file| workspace_relative_paths_overlap(requested_file, held_file))
             {
@@ -753,4 +776,117 @@ fn record_task_lock_audit_event(
         pid: std::process::id(),
         session_id: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use orbit_store::TaskCreateParams;
+    use tempfile::tempdir;
+
+    fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf) {
+        let root = tempdir().expect("create tempdir");
+        let global_root = root.path().join("global");
+        let repo_root = root.path().join("repo");
+        let workspace_root = repo_root.join(".orbit");
+        std::fs::create_dir_all(&global_root).expect("create global root");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+        let runtime =
+            OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
+        (root, runtime, repo_root)
+    }
+
+    fn create_task(
+        runtime: &OrbitRuntime,
+        workspace_path: &std::path::Path,
+        status: TaskStatus,
+        context_files: &[&str],
+    ) -> Task {
+        runtime
+            .stores()
+            .tasks()
+            .create(TaskCreateParams {
+                actor: "test".to_string(),
+                parent_id: None,
+                title: "test task".to_string(),
+                description: "test".to_string(),
+                acceptance_criteria: Vec::new(),
+                dependencies: Vec::new(),
+                plan: String::new(),
+                execution_summary: String::new(),
+                context_files: context_files
+                    .iter()
+                    .map(|path| (*path).to_string())
+                    .collect(),
+                workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
+                repo_root: None,
+                created_by: Some("test".to_string()),
+                planned_by: None,
+                implemented_by: None,
+                agent: None,
+                model: None,
+                status,
+                priority: TaskPriority::Medium,
+                complexity: None,
+                task_type: TaskType::Task,
+                pr_number: None,
+                source_task_id: None,
+                comments: Vec::new(),
+            })
+            .expect("create task")
+    }
+
+    #[test]
+    fn requested_task_files_prune_missing_context_entries() {
+        let (_root, runtime, repo_root) = test_runtime();
+        std::fs::create_dir_all(repo_root.join("docs/design")).expect("create docs dir");
+        std::fs::write(repo_root.join("docs/design/groundhog.md"), "alias")
+            .expect("write alias doc");
+
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            TaskStatus::Backlog,
+            &["docs/design/groundhog.md", "docs/design/missing.md"],
+        );
+
+        let requested =
+            requested_task_files(&runtime, &[task.id]).expect("collect requested task files");
+        assert_eq!(requested, vec!["docs/design/groundhog.md".to_string()]);
+    }
+
+    #[test]
+    fn task_lock_conflicts_ignore_missing_held_context_entries() {
+        let (_root, runtime, repo_root) = test_runtime();
+        std::fs::create_dir_all(repo_root.join("src")).expect("create src dir");
+        std::fs::write(repo_root.join("src/lib.rs"), "pub fn ok() {}\n")
+            .expect("write source file");
+
+        let holder = create_task(
+            &runtime,
+            &repo_root,
+            TaskStatus::InProgress,
+            &["docs/design/groundhog.md", "src/lib.rs"],
+        );
+
+        let conflicts = task_lock_conflicts(
+            &runtime,
+            &[],
+            &[
+                "docs/design/groundhog.md".to_string(),
+                "src/lib.rs".to_string(),
+            ],
+        )
+        .expect("compute task lock conflicts");
+
+        assert_eq!(
+            conflicts,
+            vec![TaskLockConflict {
+                file: "src/lib.rs".to_string(),
+                held_by: TaskLockHolder::Task,
+                held_by_id: holder.id,
+            }]
+        );
+    }
 }
