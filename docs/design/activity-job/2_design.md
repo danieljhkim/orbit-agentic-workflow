@@ -82,7 +82,13 @@ The body is one of:
 
 `TargetStep` is the executor-facing form. It inlines an `ActivityV2Spec` plus optional `fsProfile`, `default_input`, `timeout_seconds`, and optional `session`. `TargetRef` is the authoring-facing form: `target: activity:<name>`. It is resolved away before execution.
 
-Phase 3 also made step-local input layering explicit. Job-level `default_input` fills the run input only when the caller passes `null`, and step-level `default_input` is recursively template-rendered before dispatch. Support for step default inputs landed earlier in [T20260413-0141] and was pulled into the v2 DAG path in [T20260418-2018].
+Phase 3 also made step-local input layering explicit, but the shipped behavior changed in [T20260423-0445]. Job-level `default_input` now behaves as follows:
+
+- if the caller passes `null`, the run input becomes `job.default_input`
+- if both the caller input and `job.default_input` are JSON objects, Orbit performs a shallow merge and caller-supplied keys win on conflict
+- if the caller input is any non-object JSON value, it replaces `job.default_input` entirely
+
+Step-level `default_input` is still recursively template-rendered before dispatch. Support for step default inputs landed earlier in [T20260413-0141] and was pulled into the v2 DAG path in [T20260418-2018]; [T20260423-0445] corrected the job-level merge contract so seeded workflows like `task_auto_pipeline` can rely on omitted keys inheriting defaults.
 
 ---
 
@@ -195,7 +201,7 @@ Just as important, Orbit does not enforce tool allowlists on this path today. It
 
 ### 8.1 Template rendering and pipeline context
 
-The executor wraps pipeline outputs so templates read them as `{{ steps.<id>.output.* }}`. Step `default_input` is rendered recursively through the template engine; strings that parse as JSON are converted back into `Value`, so booleans, numbers, arrays, and objects can flow forward without remaining strings.
+The executor wraps pipeline outputs so templates read them as `{{ steps.<id>.output.* }}`. The initial pipeline context starts from the merged run input contract described in §3: object-valued caller input overlays object-valued `job.default_input`, while `null` and non-object inputs keep their special-case behavior. Step `default_input` is rendered recursively through the template engine; strings that parse as JSON are converted back into `Value`, so booleans, numbers, arrays, and objects can flow forward without remaining strings.
 
 `fan_out` workers additionally see `{{ item }}` / `{{ input.item }}`. Loop bodies additionally see `{{ input.iteration }}`.
 
@@ -237,6 +243,18 @@ A loop runs either:
 - or up to `max_iterations` when `items` is absent
 
 The loop body runs before `break_when` is evaluated, so body steps can populate the pipeline fields the break expression reads. If `items` expands beyond `max_iterations`, the executor fails structurally instead of silently truncating the iteration set.
+
+### 8.6 Persisted failure detail for v2 pipeline runs
+
+Persisted pipeline runs (`orbit run ship`, `orbit.pipeline.invoke` + `orbit.pipeline.wait`, `orbit run ship show`) are stored through `pipeline_run.rs`, not through the direct `orbit job run ...` CLI path. Before [T20260423-0445], a v2 workflow that failed before any concrete step file was written could leave behind a failed `JobRun` with `steps: []` and no surfaced `error_message`, even when the underlying executor had a concrete reason.
+
+The current contract is:
+
+- if a persisted v2 pipeline fails and no recorded step already carries error detail, the pipeline worker writes a synthetic failed `JobRunStep`
+- that synthetic step uses `target_type: job` and `target_id: <job_id>`
+- the step's `error_message` carries the concrete executor error (or a fallback `success=false` summary for message-carrying non-success results)
+
+This is intentionally an operator-surface repair, not a new execution primitive. It keeps `run ship --json`, `run ship show`, and run-history formatting actionable without introducing a second run-level error channel in `JobRun`.
 
 The loop shares the same pipeline map and session map across iterations. That is what makes cross-iteration `session:` binding meaningful in the first place.
 
@@ -346,6 +364,8 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260419-2156]** — Retire v1 assets and drop the transitional v2 naming.
 - **[T20260419-2347]** — Seed activities and workflows on `orbit init`.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260423-0445]** — Merge object-valued job defaults over explicit run input and persist synthetic failed job steps for early v2 pipeline failures.
+- **[T20260423-0447]** — Restore usable `orbit run duel` read-only surfaces after duel workflow retirement.
 - **[T20260423-0447]** — Restore usable `orbit run duel` read-only surfaces after duel workflow retirement.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

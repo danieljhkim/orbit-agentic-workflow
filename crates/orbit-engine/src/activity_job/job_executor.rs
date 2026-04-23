@@ -65,10 +65,7 @@ pub fn execute_job(
 ) -> Result<JobOutcome, DispatchError> {
     validate_job(job)?;
 
-    let base_input = match (&job.default_input, &input) {
-        (Some(d), Value::Null) => d.clone(),
-        _ => input.clone(),
-    };
+    let base_input = merge_job_input(job.default_input.as_ref(), &input);
 
     let ctx = ExecCtx {
         run_id: run_id.to_string(),
@@ -82,10 +79,16 @@ pub fn execute_job(
     };
 
     let mut overall_ok = true;
+    let mut overall_message = None;
     for step in &job.steps {
         let outcome = run_step(step, &ctx)?;
         if !outcome.success {
             overall_ok = false;
+            overall_message = Some(
+                outcome
+                    .message
+                    .unwrap_or_else(|| format!("step `{}` completed with success=false", step.id)),
+            );
             break;
         }
     }
@@ -102,7 +105,7 @@ pub fn execute_job(
     Ok(JobOutcome {
         success: overall_ok,
         pipeline,
-        message: None,
+        message: (!overall_ok).then_some(overall_message).flatten(),
     })
 }
 
@@ -168,6 +171,7 @@ fn wrap_step_output(raw: &Value) -> Value {
 struct StepOutcome {
     success: bool,
     output: Value,
+    message: Option<String>,
     /// `true` when `when:` returned false and the step did not run. Kept for
     /// future callers that need to distinguish a skipped-but-successful step
     /// from one that actually executed.
@@ -189,6 +193,7 @@ fn run_step(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcome, Dispatch
             return Ok(StepOutcome {
                 success: true,
                 output: Value::Null,
+                message: None,
                 skipped: true,
             });
         }
@@ -267,6 +272,7 @@ fn run_step_with_retry(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcom
         None => Ok(StepOutcome {
             success: false,
             output: Value::Null,
+            message: None,
             skipped: false,
         }),
     }
@@ -385,6 +391,7 @@ fn run_target(
             Ok(StepOutcome {
                 success: dispatch.success,
                 output: out,
+                message: dispatch.message,
                 skipped: false,
             })
         }
@@ -404,6 +411,7 @@ fn run_target(
             Ok(StepOutcome {
                 success: dispatch.success,
                 output: out,
+                message: dispatch.message,
                 skipped: false,
             })
         }
@@ -437,6 +445,7 @@ fn run_agent_loop_outcome(
     Ok(StepOutcome {
         success: true,
         output: out_json,
+        message: None,
         skipped: false,
     })
 }
@@ -452,6 +461,20 @@ fn render_input(
 ) -> Result<Value, DispatchError> {
     let src = default_input.cloned().unwrap_or_else(|| base_input.clone());
     render_value(&src, tctx)
+}
+
+fn merge_job_input(default_input: Option<&Value>, input: &Value) -> Value {
+    match (default_input, input) {
+        (Some(defaults), Value::Null) => defaults.clone(),
+        (Some(Value::Object(defaults)), Value::Object(explicit)) => {
+            let mut merged = defaults.clone();
+            for (key, value) in explicit {
+                merged.insert(key.clone(), value.clone());
+            }
+            Value::Object(merged)
+        }
+        _ => input.clone(),
+    }
 }
 
 fn render_items_expression(
@@ -517,6 +540,7 @@ fn run_parallel(
         return Ok(StepOutcome {
             success: true,
             output: Value::Array(Vec::new()),
+            message: None,
             skipped: false,
         });
     }
@@ -612,6 +636,7 @@ fn run_parallel(
     Ok(StepOutcome {
         success: block_ok,
         output: out,
+        message: None,
         skipped: false,
     })
 }
@@ -644,6 +669,7 @@ fn run_fan_out(
         return Ok(StepOutcome {
             success: true,
             output: Value::Array(Vec::new()),
+            message: None,
             skipped: false,
         });
     }
@@ -771,6 +797,7 @@ fn run_fan_out(
     Ok(StepOutcome {
         success: block_ok,
         output: collected_value,
+        message: None,
         skipped: false,
     })
 }
@@ -834,6 +861,7 @@ fn run_loop(
                 return Ok(StepOutcome {
                     success: false,
                     output: outcome.output,
+                    message: outcome.message,
                     skipped: false,
                 });
             }
@@ -877,6 +905,7 @@ fn run_loop(
     Ok(StepOutcome {
         success: true,
         output: out,
+        message: None,
         skipped: false,
     })
 }
@@ -967,6 +996,52 @@ fn collect_session_bindings<'a>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_job_input;
+    use serde_json::json;
+
+    #[test]
+    fn merges_object_defaults_with_explicit_object_input() {
+        let defaults = json!({
+            "mode": "pr",
+            "base_branch": "agent-main",
+            "max_tasks": 50,
+            "max_bundle_size": 5
+        });
+        let explicit = json!({
+            "base_branch": "main",
+            "task_ids": ["T123"]
+        });
+
+        let merged = merge_job_input(Some(&defaults), &explicit);
+
+        assert_eq!(
+            merged,
+            json!({
+                "mode": "pr",
+                "base_branch": "main",
+                "max_tasks": 50,
+                "max_bundle_size": 5,
+                "task_ids": ["T123"]
+            })
+        );
+    }
+
+    #[test]
+    fn preserves_non_object_explicit_input_without_merging() {
+        let defaults = json!({
+            "mode": "pr",
+            "max_tasks": 50
+        });
+        let explicit = json!("override");
+
+        let merged = merge_job_input(Some(&defaults), &explicit);
+
+        assert_eq!(merged, explicit);
+    }
 }
 
 // ---------------------------------------------------------------------------

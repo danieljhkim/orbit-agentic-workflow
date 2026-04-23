@@ -5,9 +5,10 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use orbit_common::types::{
-    AuditEventStatus, JobRun, JobRunState, JobScheduleState, OrbitError, OrbitEvent, PipelineState,
+    AuditEventStatus, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
+    PipelineState,
 };
-use orbit_store::AuditEventInsertParams;
+use orbit_store::{AuditEventInsertParams, JobRunStepParams};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -259,6 +260,10 @@ impl OrbitRuntime {
                 let final_state = if result.success {
                     JobRunState::Success
                 } else {
+                    let fallback = "job completed with success=false but emitted no failure detail";
+                    let message = result.message.as_deref().unwrap_or(fallback);
+                    let _ =
+                        self.record_pipeline_failure_step(run, started_at, finished_at, message);
                     JobRunState::Failed
                 };
                 self.stores().jobs().finalize_run(
@@ -275,6 +280,12 @@ impl OrbitRuntime {
                 Ok(())
             }
             Err(error) => {
+                let _ = self.record_pipeline_failure_step(
+                    run,
+                    started_at,
+                    finished_at,
+                    &error.to_string(),
+                );
                 self.stores().jobs().finalize_run(
                     &run.run_id,
                     JobRunState::Failed,
@@ -289,6 +300,55 @@ impl OrbitRuntime {
                 Err(error)
             }
         }
+    }
+
+    fn record_pipeline_failure_step(
+        &self,
+        run: &JobRun,
+        started_at: chrono::DateTime<Utc>,
+        finished_at: chrono::DateTime<Utc>,
+        message: &str,
+    ) -> Result<(), OrbitError> {
+        let current = self.show_job_run(&run.run_id)?;
+        let already_has_error = current
+            .steps
+            .iter()
+            .any(|step| step.error_code.is_some() || step.error_message.is_some());
+        if already_has_error {
+            return Ok(());
+        }
+
+        let step_index = current
+            .steps
+            .iter()
+            .map(|step| step.step_index)
+            .max()
+            .map(|index| index.saturating_add(1) as usize)
+            .unwrap_or(0);
+        let duration_ms = Some(
+            finished_at
+                .signed_duration_since(started_at)
+                .num_milliseconds()
+                .max(0) as u64,
+        );
+        let params = JobRunStepParams {
+            step_index,
+            target_type: JobTargetType::Job,
+            target_id: run.job_id.clone(),
+            started_at,
+            finished_at,
+            duration_ms,
+            exit_code: None,
+            agent_response_json: None,
+            state: JobRunState::Failed,
+            error_code: None,
+            error_message: Some(message.to_string()),
+        };
+        let _ = self
+            .stores()
+            .jobs()
+            .complete_run_step(&run.run_id, &params)?;
+        Ok(())
     }
 
     fn collect_pipeline_wait_entries(

@@ -138,6 +138,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - CLI retirement messaging and historical inspection behavior stay aligned.
 - Cost: some read-only inspection paths no longer share the same asset-validation gate as active workflow execution paths.
 
+## ADR-011 — Merge object-valued job defaults with caller input, and surface early pipeline failures as synthetic job steps
+
+**Status:** Accepted · 2026-04 · [T20260423-0445]
+
+**Context.** The `task_auto_pipeline` / `orbit run ship` path passes only a partial input object (`mode`, `base_branch`, `task_ids`, optional concurrency). The earlier job executor contract only applied `job.default_input` when the caller passed `null`, so any explicit object silently discarded required default keys like `max_tasks` and `max_bundle_size`. The same incident exposed a second operator gap: persisted v2 pipeline runs that failed before writing any concrete step files surfaced as `steps: []` with no `error_message` in `run ship show`.
+
+**Decision.** When both `job.default_input` and the caller input are JSON objects, Orbit performs a shallow merge and lets caller keys win on conflict; `null` and non-object caller inputs keep their pre-existing semantics. Separately, when a persisted v2 pipeline run fails and no recorded step already carries error detail, the pipeline worker writes a synthetic failed `JobRunStep` (`target_type: job`, `target_id: <job_id>`) so CLI/operator surfaces have a concrete message to show.
+
+**Consequences.**
+- Seeded workflows can rely on omitted keys inheriting from job defaults even when wrappers pass partial input objects.
+- `orbit run ship --json` and `orbit run ship show` surface actionable failure detail for early v2 pipeline failures instead of blank summaries.
+- Cost: the job-level input contract is now a shallow merge rule that docs and tests must preserve, and run history can include synthetic job-level failure steps that were not literal authored YAML steps.
+
 ---
 
 ## Task References
@@ -155,6 +168,7 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260419-2156]** — Retire v1 assets and drop the transitional v2 naming.
 - **[T20260419-2347]** — Seed activities and workflows on `orbit init`.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260423-0445]** — Merge object-valued job defaults over explicit run input and persist synthetic failed job steps for early v2 pipeline failures.
 - **[T20260423-0447]** — Restore usable `orbit run duel` read-only surfaces after duel workflow retirement.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
