@@ -92,7 +92,9 @@ graph-sweep-codex:
 	$(MAKE) graph-sweep GRAPH_PROVIDER=codex
 
 graph-aggregate:
-	$(PYTHON) $(GRAPH_DIR)/scripts/aggregate.py
+	$(PYTHON) $(BENCH_ROOT)/graph/scripts/aggregate.py \
+		--runs $(GRAPH_DIR)/runs \
+		--tasks $(GRAPH_DIR)/tasks
 
 graph-test:
-	$(PYTHON) -m unittest discover -s $(GRAPH_DIR)/scripts -p 'test_*.py'
+	$(PYTHON) -m unittest discover -s $(BENCH_ROOT)/graph/scripts -p 'test_*.py'
