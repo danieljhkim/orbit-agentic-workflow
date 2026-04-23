@@ -97,26 +97,12 @@ CODEX_ARM_STEER = {
     "graph-only": (
         "You have only a shell command tool, and the intended navigation "
         "surface is Orbit knowledge-graph commands run from the repo root via "
-        "`orbit tool run orbit.graph.*`. First inspect the available graph "
-        "tools with `orbit tool list | rg 'orbit\\\\.graph'`. Prefer this flow: "
-        "`orbit.graph.search` to find the symbol, `orbit.graph.show` on the "
-        "returned selector, then `orbit.graph.implementors` with "
-        "`{\"trait_selector\":\"symbol:...\"}` when you need implementors. "
-        "Do not invent tool names like `orbit.graph.locate_symbol`, and avoid "
-        "`orbit tool show orbit.graph.*` in this benchmark. Do NOT use `rg`, "
-        "`git grep`, `find`, or broad file reads unless the graph says "
-        "knowledge is unavailable."
+        "`orbit tool run orbit.graph.*`. Do NOT use `rg`, `grep`, `find`, `ls`, or `cat`. "
     ),
     "hybrid": (
-        "You have only a shell command tool. Use `orbit tool run "
-        "orbit.graph.*` for symbol-oriented lookups and `rg` / `ls` / "
-        "focused `sed -n` reads when filesystem inspection is the better fit. "
-        "When using the graph, first inspect the available graph tools with "
-        "`orbit tool list | rg 'orbit\\\\.graph'`, then prefer "
-        "`orbit.graph.search` -> `orbit.graph.show` -> "
-        "`orbit.graph.implementors` with a full `trait_selector`. Do not "
-        "invent tool names like `orbit.graph.locate_symbol`, and avoid "
-        "`orbit tool show orbit.graph.*` in this benchmark."
+        "You have both filesystem tools (rg, ls, cat, find, grep, etc.) AND orbit "
+        "knowledge-graph tools (orbit.graph.*). Choose the "
+        "tool best fit for each sub-question."
     ),
 }
 

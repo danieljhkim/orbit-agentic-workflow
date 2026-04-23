@@ -18,10 +18,9 @@ Examples of issues worth tracking:
 - missing CLI functionality
 - confusing schema or config
 - documentation gaps
-- repetitive manual steps
-- fragile workflows
 - unclear error messages
 - unexpected runtime behavior
+- confusing seed instructions
 
 If Orbit tooling or Orbit-authored guidance slows the agent down, it should be tracked.
 
@@ -57,5 +56,4 @@ Keep the description concrete — name the command, file, or workflow that broke
 - Do not silently ignore Orbit problems — always create a task.
 - Do not implement large design changes inline — track them first.
 - Document the root issue clearly so the next agent can act on it.
-- Avoid duplicate reports when an existing friction task already captures the same root cause.
 - Report genuine friction only — frivolous issues hurt your score.
