@@ -1,4 +1,4 @@
-use orbit_common::types::{JobAsset, JobKind, JobV2, load_job_asset};
+use orbit_common::types::{JobKind, JobV2, load_job_asset};
 
 fn main() -> Result<(), String> {
     run_case("workflow", workflow_yaml(), JobKind::Workflow)?;

@@ -22,7 +22,7 @@ fn main() -> ExitCode {
     let mut counts = Counts::default();
 
     for path in walk_yaml(&activities_dir) {
-        match fs::read_to_string(&path).and_then(|s| Ok((path.clone(), s))) {
+        match fs::read_to_string(&path).map(|s| (path.clone(), s)) {
             Ok((path, yaml)) => match load_activity_asset(&yaml) {
                 Ok(_) => counts.activities += 1,
                 Err(err) => failures.push(format!("{}: {}", path.display(), err)),
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     }
 
     for path in walk_yaml(&jobs_dir) {
-        match fs::read_to_string(&path).and_then(|s| Ok((path.clone(), s))) {
+        match fs::read_to_string(&path).map(|s| (path.clone(), s)) {
             Ok((path, yaml)) => match load_job_asset(&yaml) {
                 Ok(_) => counts.jobs += 1,
                 Err(err) => failures.push(format!("{}: {}", path.display(), err)),

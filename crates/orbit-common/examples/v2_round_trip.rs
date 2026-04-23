@@ -20,7 +20,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use orbit_common::types::activity_job::{ActivityAsset, load_activity_asset};
+use orbit_common::types::activity_job::load_activity_asset;
 use orbit_common::types::{ActivityV2, ResourceEnvelope, ResourceKind, ResourceMetadata};
 
 fn main() -> ExitCode {

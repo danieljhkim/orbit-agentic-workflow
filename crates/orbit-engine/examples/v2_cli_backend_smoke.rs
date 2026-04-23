@@ -22,8 +22,8 @@ use std::time::{Duration, Instant};
 
 use orbit_common::types::JobScheduleState;
 use orbit_common::types::activity_job::{
-    ActivityAsset, ActivityV2Spec, AgentLoopSpec, Backend, BackendConstraintError, JobKind, JobV2,
-    JobV2Step, JobV2StepBody, LoopBlock, OnDenial, Provider, TargetStep, load_activity_asset,
+    ActivityV2Spec, AgentLoopSpec, Backend, BackendConstraintError, JobKind, JobV2, JobV2Step,
+    JobV2StepBody, LoopBlock, OnDenial, Provider, TargetStep, load_activity_asset,
     resolve_job_backends, validate_job_loop_session_backends,
 };
 use orbit_engine::activity_job::{
@@ -467,12 +467,11 @@ fn synthetic_loop_session_cli_job() -> JobV2 {
 
 fn synthetic_loop_session_auto_job() -> JobV2 {
     let mut job = synthetic_loop_session_cli_job();
-    if let JobV2StepBody::Loop { loop_ } = &mut job.steps[0].body {
-        if let JobV2StepBody::Target(t) = &mut loop_.steps[0].body {
-            if let ActivityV2Spec::AgentLoop(spec) = &mut t.spec {
-                spec.backend = Backend::Auto;
-            }
-        }
+    if let JobV2StepBody::Loop { loop_ } = &mut job.steps[0].body
+        && let JobV2StepBody::Target(t) = &mut loop_.steps[0].body
+        && let ActivityV2Spec::AgentLoop(spec) = &mut t.spec
+    {
+        spec.backend = Backend::Auto;
     }
     job
 }

@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
 use orbit_common::types::activity_job::{
-    ActivityAsset, ActivityV2, ActivityV2Spec, V2AuditEventKind, load_activity_asset,
+    ActivityV2, ActivityV2Spec, V2AuditEventKind, load_activity_asset,
 };
 use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2DispatchInput, V2JsonlSink, V2RuntimeHost,
