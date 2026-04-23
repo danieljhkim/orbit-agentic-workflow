@@ -413,7 +413,7 @@ fn is_tool_allowed(name: &str, allowlist: &[&str]) -> bool {
     if allowlist.is_empty() {
         return false;
     }
-    allowlist.iter().any(|a| *a == name)
+    allowlist.contains(&name)
 }
 
 fn accumulate(total: &mut TurnUsage, delta: &TurnUsage) {

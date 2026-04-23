@@ -95,11 +95,11 @@ impl OrbitRuntime {
             ))
         })?;
 
-        if self.scoring_enabled() && params.task_type.counts_toward_friction_bounty() {
-            if let Some(model) = &canonical_model {
-                let _ =
-                    friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, model);
-            }
+        if self.scoring_enabled()
+            && params.task_type.counts_toward_friction_bounty()
+            && let Some(model) = &canonical_model
+        {
+            let _ = friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, model);
         }
 
         let task = if dropped_context_files.is_empty() {

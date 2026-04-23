@@ -1,19 +1,10 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use orbit_common::types::OrbitError;
-use serde::{Serialize, de::DeserializeOwned};
-
-use super::layout::list_yaml_files;
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
-pub(crate) fn read_yaml<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, OrbitError> {
-    read_yaml_with(path, |path, err| {
-        OrbitError::Store(format!("invalid {label} '{}': {err}", path.display()))
-    })
-}
-
-pub(crate) fn read_yaml_with<T: DeserializeOwned, F>(
+pub(crate) fn read_yaml_with<T: serde::de::DeserializeOwned, F>(
     path: &Path,
     invalid: F,
 ) -> Result<T, OrbitError>
@@ -22,12 +13,6 @@ where
 {
     let raw = fs::read_to_string(path).map_err(|e| OrbitError::Io(e.to_string()))?;
     serde_yaml::from_str(&raw).map_err(|err| invalid(path, err))
-}
-
-pub(crate) fn write_yaml_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), OrbitError> {
-    write_yaml_atomic_with(path, value, |value| {
-        serde_yaml::to_string(value).map_err(|e| OrbitError::Store(e.to_string()))
-    })
 }
 
 pub(crate) fn write_yaml_atomic_with<T, F>(
@@ -40,19 +25,4 @@ where
 {
     let yaml = serialize(value)?;
     write_atomic(path, &yaml).map_err(Into::into)
-}
-
-pub(crate) fn enumerate_yaml<T, F>(
-    dir: &Path,
-    _label: &str,
-    mut transform: F,
-) -> Result<Vec<T>, OrbitError>
-where
-    F: FnMut(PathBuf) -> Result<T, OrbitError>,
-{
-    let mut items = Vec::new();
-    for path in list_yaml_files(dir)? {
-        items.push(transform(path)?);
-    }
-    Ok(items)
 }

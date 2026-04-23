@@ -180,12 +180,14 @@ fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
     }
 }
 
+type SpawnOutput = (Vec<u8>, Vec<u8>, Option<i32>, Duration, bool);
+
 fn spawn_with_timeout(
     program: &str,
     args: &[String],
     stdin_bytes: &[u8],
     timeout: Duration,
-) -> Result<(Vec<u8>, Vec<u8>, Option<i32>, Duration, bool), String> {
+) -> Result<SpawnOutput, String> {
     let started = Instant::now();
     let mut child: Child = Command::new(program)
         .args(args)

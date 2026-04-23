@@ -724,10 +724,10 @@ impl V2RuntimeHost for OrbitRuntime {
 /// `$PATH`.
 fn resolve_cli_command(provider: &str) -> Result<String, DispatchError> {
     let env_key = format!("ORBIT_V2_CLI_{}", provider.to_ascii_uppercase());
-    if let Ok(value) = std::env::var(&env_key) {
-        if !value.is_empty() {
-            return Ok(value);
-        }
+    if let Ok(value) = std::env::var(&env_key)
+        && !value.is_empty()
+    {
+        return Ok(value);
     }
     match provider {
         "claude" | "codex" | "gemini" | "ollama" => Ok(provider.to_string()),

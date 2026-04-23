@@ -58,16 +58,16 @@ fn validate_year_month(raw: &str) -> Result<(), orbit_core::OrbitError> {
 }
 
 async fn require_localhost_origin(request: Request<Body>, next: Next) -> Response {
-    if !request.method().is_safe() {
-        if let Some(origin) = request.headers().get(header::ORIGIN) {
-            let origin = origin.to_str().unwrap_or("");
-            if !origin.starts_with("http://localhost") && !origin.starts_with("http://127.0.0.1") {
-                return (
-                    StatusCode::FORBIDDEN,
-                    Json(json!({"error": "cross-origin requests not allowed"})),
-                )
-                    .into_response();
-            }
+    if !request.method().is_safe()
+        && let Some(origin) = request.headers().get(header::ORIGIN)
+    {
+        let origin = origin.to_str().unwrap_or("");
+        if !origin.starts_with("http://localhost") && !origin.starts_with("http://127.0.0.1") {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "cross-origin requests not allowed"})),
+            )
+                .into_response();
         }
     }
     next.run(request).await

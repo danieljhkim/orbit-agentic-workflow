@@ -100,6 +100,7 @@ impl WorkspaceSnapshot {
         match current_branch(snapshot.workspace_path())?.as_str() {
             branch if branch == snapshot.scratch_branch() => {
                 capture_scratch_branch_changes(snapshot)?;
+                ensure_task_branch_still_at_snapshot(snapshot)?;
                 checkout_branch(snapshot.workspace_path(), snapshot.task_branch())?;
             }
             branch if branch == snapshot.task_branch() => {}
@@ -113,7 +114,6 @@ impl WorkspaceSnapshot {
             }
         }
 
-        ensure_task_branch_still_at_snapshot(snapshot)?;
         git_success(
             snapshot.workspace_path(),
             &["reset", "--hard", snapshot.snapshot_ref()],
@@ -141,8 +141,8 @@ impl WorkspaceSnapshot {
         }
 
         capture_scratch_branch_changes(snapshot)?;
-        checkout_branch(snapshot.workspace_path(), snapshot.task_branch())?;
         ensure_task_branch_still_at_snapshot(snapshot)?;
+        checkout_branch(snapshot.workspace_path(), snapshot.task_branch())?;
         git_success(
             snapshot.workspace_path(),
             &["reset", "--hard", snapshot.snapshot_ref()],

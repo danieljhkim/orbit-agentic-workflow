@@ -299,7 +299,6 @@ fn run_agent_loop_activity(
 }
 
 #[allow(dead_code)]
-
 fn run_agent_loop_via_driver(
     host: &dyn V2RuntimeHost,
     spec: &AgentLoopSpec,

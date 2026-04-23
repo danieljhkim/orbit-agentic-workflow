@@ -56,21 +56,21 @@ pub fn resolve_backend_precedence(
             source: BackendSource::Flag,
         };
     }
-    if let Some(raw) = env_value {
-        if let Some(backend) = Backend::parse(raw) {
-            return ResolvedBackend {
-                backend: concretize(backend, Backend::Http),
-                source: BackendSource::Env,
-            };
-        }
+    if let Some(raw) = env_value
+        && let Some(backend) = Backend::parse(raw)
+    {
+        return ResolvedBackend {
+            backend: concretize(backend, Backend::Http),
+            source: BackendSource::Env,
+        };
     }
-    if let Some(raw) = config_value {
-        if let Some(backend) = Backend::parse(raw) {
-            return ResolvedBackend {
-                backend: concretize(backend, Backend::Http),
-                source: BackendSource::Config,
-            };
-        }
+    if let Some(raw) = config_value
+        && let Some(backend) = Backend::parse(raw)
+    {
+        return ResolvedBackend {
+            backend: concretize(backend, Backend::Http),
+            source: BackendSource::Config,
+        };
     }
     ResolvedBackend {
         backend: Backend::Http,

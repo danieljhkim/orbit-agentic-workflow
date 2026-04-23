@@ -2,6 +2,15 @@ use crate::graph::navigator::GraphNodeRef;
 
 use super::{GraphContextService, SearchResult};
 
+struct SearchCriteria<'q> {
+    query_lower: &'q str,
+    browse: bool,
+    node_types: Option<&'q [&'q str]>,
+    location_prefix: Option<&'q str>,
+    kind_filter: Option<&'q str>,
+    limit: usize,
+}
+
 impl<'a> GraphContextService<'a> {
     pub fn search_with_total(
         &self,
@@ -12,7 +21,14 @@ impl<'a> GraphContextService<'a> {
         limit: usize,
     ) -> (usize, Vec<GraphNodeRef<'a>>) {
         let query_lower = query.to_lowercase();
-        let browse = query_lower.is_empty();
+        let criteria = SearchCriteria {
+            query_lower: &query_lower,
+            browse: query_lower.is_empty(),
+            node_types,
+            location_prefix,
+            kind_filter,
+            limit,
+        };
         let mut total = 0usize;
         let mut results = Vec::new();
 
@@ -20,12 +36,7 @@ impl<'a> GraphContextService<'a> {
             self.collect_search_match(
                 GraphNodeRef::Dir(dir),
                 "dir",
-                &query_lower,
-                browse,
-                node_types,
-                location_prefix,
-                kind_filter,
-                limit,
+                &criteria,
                 &mut total,
                 &mut results,
             );
@@ -34,12 +45,7 @@ impl<'a> GraphContextService<'a> {
             self.collect_search_match(
                 GraphNodeRef::File(file),
                 "file",
-                &query_lower,
-                browse,
-                node_types,
-                location_prefix,
-                kind_filter,
-                limit,
+                &criteria,
                 &mut total,
                 &mut results,
             );
@@ -48,12 +54,7 @@ impl<'a> GraphContextService<'a> {
             self.collect_search_match(
                 GraphNodeRef::Leaf(leaf),
                 "symbol",
-                &query_lower,
-                browse,
-                node_types,
-                location_prefix,
-                kind_filter,
-                limit,
+                &criteria,
                 &mut total,
                 &mut results,
             );
@@ -130,29 +131,16 @@ impl<'a> GraphContextService<'a> {
         &self,
         node: GraphNodeRef<'a>,
         node_type: &str,
-        query_lower: &str,
-        browse: bool,
-        node_types: Option<&[&str]>,
-        location_prefix: Option<&str>,
-        kind_filter: Option<&str>,
-        limit: usize,
+        criteria: &SearchCriteria<'_>,
         total: &mut usize,
         results: &mut Vec<GraphNodeRef<'a>>,
     ) {
-        if !self.node_matches(
-            node,
-            node_type,
-            query_lower,
-            browse,
-            node_types,
-            location_prefix,
-            kind_filter,
-        ) {
+        if !self.node_matches(node, node_type, criteria) {
             return;
         }
 
         *total += 1;
-        if results.len() < limit {
+        if results.len() < criteria.limit {
             results.push(node);
         }
     }
@@ -161,23 +149,19 @@ impl<'a> GraphContextService<'a> {
         &self,
         node: GraphNodeRef<'a>,
         node_type: &str,
-        query_lower: &str,
-        browse: bool,
-        node_types: Option<&[&str]>,
-        location_prefix: Option<&str>,
-        kind_filter: Option<&str>,
+        criteria: &SearchCriteria<'_>,
     ) -> bool {
-        if let Some(types) = node_types
+        if let Some(types) = criteria.node_types
             && !types.contains(&node_type)
         {
             return false;
         }
-        if let Some(prefix) = location_prefix
+        if let Some(prefix) = criteria.location_prefix
             && !node.location().starts_with(prefix)
         {
             return false;
         }
-        if let Some(kind_filter) = kind_filter {
+        if let Some(kind_filter) = criteria.kind_filter {
             match node {
                 GraphNodeRef::Leaf(leaf) if leaf.kind.to_string() == kind_filter => {}
                 GraphNodeRef::Leaf(_) => return false,
@@ -185,8 +169,15 @@ impl<'a> GraphContextService<'a> {
             }
         }
 
-        browse
-            || node.base().name.to_lowercase().contains(query_lower)
-            || node.location().to_lowercase().contains(query_lower)
+        criteria.browse
+            || node
+                .base()
+                .name
+                .to_lowercase()
+                .contains(criteria.query_lower)
+            || node
+                .location()
+                .to_lowercase()
+                .contains(criteria.query_lower)
     }
 }

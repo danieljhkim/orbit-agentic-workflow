@@ -1,5 +1,6 @@
 use std::process::Child;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use orbit_common::types::OrbitError;
@@ -13,6 +14,9 @@ use super::signal::{SignalHandlerGuard, signal_message};
 use super::tee::{spawn_stderr_drain, spawn_stdin_write, spawn_stdout_drain};
 
 pub(crate) const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+type StdinResultReceiver = Receiver<Result<(), String>>;
+type StdinWorker = (Option<StdinResultReceiver>, Option<JoinHandle<()>>);
 
 /// Output collected from a spawned process.
 pub(crate) struct WaitResult {
@@ -131,13 +135,11 @@ pub(crate) fn wait_with_optional_timeout(
         stderr.extend_from_slice(b"process timed out");
     }
     #[cfg(unix)]
-    if !timed_out {
-        if let Some(signal) = interrupted_signal {
-            if !stderr.is_empty() {
-                stderr.push(b'\n');
-            }
-            stderr.extend_from_slice(signal_message(signal).as_bytes());
+    if !timed_out && let Some(signal) = interrupted_signal {
+        if !stderr.is_empty() {
+            stderr.push(b'\n');
         }
+        stderr.extend_from_slice(signal_message(signal).as_bytes());
     }
 
     #[cfg(not(unix))]
@@ -154,13 +156,7 @@ pub(crate) fn wait_with_optional_timeout(
 fn spawn_stdin_thread(
     child: &mut Child,
     stdin_payload: Option<Vec<u8>>,
-) -> Result<
-    (
-        Option<Receiver<Result<(), String>>>,
-        Option<std::thread::JoinHandle<()>>,
-    ),
-    OrbitError,
-> {
+) -> Result<StdinWorker, OrbitError> {
     match stdin_payload {
         Some(bytes) => {
             let stdin = child.stdin.take().ok_or_else(|| {
@@ -175,7 +171,7 @@ fn spawn_stdin_thread(
 }
 
 fn receive_stdin_result(
-    stdin_result_rx: Option<Receiver<Result<(), String>>>,
+    stdin_result_rx: Option<StdinResultReceiver>,
 ) -> Option<Result<(), String>> {
     stdin_result_rx.and_then(|rx| rx.recv().ok())
 }

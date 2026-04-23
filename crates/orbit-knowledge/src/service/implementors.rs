@@ -162,12 +162,8 @@ fn type_param_contains(type_params_text: &str, type_name: &str) -> bool {
 
 fn find_impl_node(root: Node<'_>) -> Option<Node<'_>> {
     let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        if child.kind() == "impl_item" {
-            return Some(child);
-        }
-    }
-    None
+    root.children(&mut cursor)
+        .find(|child| child.kind() == "impl_item")
 }
 
 fn node_text<'a>(node: Node<'_>, source: &'a str) -> &'a str {

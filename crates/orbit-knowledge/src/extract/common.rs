@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 /// A single extracted leaf from a source file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExtractedLeaf {
     pub qualified_name: String,
     pub name: String,
@@ -17,23 +17,6 @@ pub struct ExtractedLeaf {
     /// ATX heading depth (1–6) for `LeafKind::Section`. `None` for every other kind.
     /// Added T20260422-1540 alongside markdown/config/tabular extraction.
     pub depth: Option<u8>,
-}
-
-impl Default for ExtractedLeaf {
-    fn default() -> Self {
-        Self {
-            qualified_name: String::new(),
-            name: String::new(),
-            kind: String::new(),
-            start_line: 0,
-            end_line: 0,
-            source: String::new(),
-            source_hash: String::new(),
-            parent_qualified_name: None,
-            children_qualified_names: Vec::new(),
-            depth: None,
-        }
-    }
 }
 
 /// Result of extracting a single file.

@@ -64,12 +64,10 @@ pub struct TaskAddArgs {
 
 impl Execute for TaskAddArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        if let Some(parent_id) = self.parent_id.as_deref() {
-            if runtime.get_task(parent_id).is_err() {
-                eprintln!(
-                    "warning: parent task '{parent_id}' was not found; creating subtask anyway"
-                );
-            }
+        if let Some(parent_id) = self.parent_id.as_deref()
+            && runtime.get_task(parent_id).is_err()
+        {
+            eprintln!("warning: parent task '{parent_id}' was not found; creating subtask anyway");
         }
 
         let (description, plan, priority, task_type) = if let Some(ref tpl_name) = self.template {

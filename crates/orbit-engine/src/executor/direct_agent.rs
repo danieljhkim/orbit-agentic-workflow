@@ -405,28 +405,25 @@ fn map_envelope_to_outcome<H: EnvironmentHost + AgentProtocolHost + ?Sized>(
     }
 
     // Commit request handling for successful runs.
-    if run_state == JobRunState::Success {
-        if let Some(result) = envelope.result.as_ref() {
-            if let Err(err) = host.execute_commit_request_if_present(result) {
-                let (error_code, protocol_violation) = match err {
-                    OrbitError::AgentProtocolViolation(_) => {
-                        (AGENT_PROTOCOL_VIOLATION.to_string(), true)
-                    }
-                    _ => (crate::context::AGENT_COMMIT_FAILED.to_string(), false),
-                };
-                return AttemptOutcome {
-                    state: JobRunState::Failed,
-                    exit_code: exec_result.exit_code,
-                    duration_ms: Some(exec_result.duration_ms),
-                    invocation_trace: trace,
-                    response_json: serde_json::to_value(&envelope).ok(),
-                    error_code: Some(error_code),
-                    error_message: Some(err.to_string()),
-                    protocol_violation,
-                    retry_count: 0,
-                };
-            }
-        }
+    if run_state == JobRunState::Success
+        && let Some(result) = envelope.result.as_ref()
+        && let Err(err) = host.execute_commit_request_if_present(result)
+    {
+        let (error_code, protocol_violation) = match err {
+            OrbitError::AgentProtocolViolation(_) => (AGENT_PROTOCOL_VIOLATION.to_string(), true),
+            _ => (crate::context::AGENT_COMMIT_FAILED.to_string(), false),
+        };
+        return AttemptOutcome {
+            state: JobRunState::Failed,
+            exit_code: exec_result.exit_code,
+            duration_ms: Some(exec_result.duration_ms),
+            invocation_trace: trace,
+            response_json: serde_json::to_value(&envelope).ok(),
+            error_code: Some(error_code),
+            error_message: Some(err.to_string()),
+            protocol_violation,
+            retry_count: 0,
+        };
     }
 
     let error_code = envelope.error.as_ref().map(|e| e.code.clone());

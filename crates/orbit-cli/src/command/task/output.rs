@@ -157,7 +157,7 @@ pub(super) fn task_field_to_json(
         "dependencies" => {
             serde_json::to_value(&task.dependencies).map_err(|e| OrbitError::Io(e.to_string()))
         }
-        "resolved_dependencies" => serde_json::to_value(&dependency_labels(
+        "resolved_dependencies" => serde_json::to_value(dependency_labels(
             task,
             status_by_id.ok_or_else(|| {
                 OrbitError::Execution(
