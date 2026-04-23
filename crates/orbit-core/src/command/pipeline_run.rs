@@ -302,7 +302,7 @@ impl OrbitRuntime {
         }
     }
 
-    fn record_pipeline_failure_step(
+    pub(crate) fn record_pipeline_failure_step(
         &self,
         run: &JobRun,
         started_at: chrono::DateTime<Utc>,

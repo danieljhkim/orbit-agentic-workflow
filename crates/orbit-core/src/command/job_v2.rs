@@ -11,12 +11,16 @@ use orbit_common::types::activity_job::{
     Backend, V2AuditEventKind, load_job_asset, resolve_job_backends, resolve_job_target_refs,
     validate_job_loop_session_backends,
 };
-use orbit_common::types::{OrbitError, OrbitEvent};
+use orbit_common::types::{
+    JobRun, JobRunState, JobTargetType, OrbitError, OrbitEvent, PipelineState,
+};
 use orbit_engine::activity_job::{JobOutcome, V2AuditWriter, execute_job};
+use orbit_store::JobRunStepParams;
 use serde_json::Value;
 
 use crate::OrbitRuntime;
 
+#[derive(Debug, Clone)]
 pub struct V2JobRunResult {
     pub run_id: String,
     pub job_name: String,
@@ -40,7 +44,99 @@ impl OrbitRuntime {
         input: Value,
         backend_flag: Option<Backend>,
     ) -> Result<V2JobRunResult, OrbitError> {
-        self.run_job_v2_from_yaml_with_run_id(yaml_path, input, backend_flag, None)
+        let job_name = load_job_name(yaml_path)?;
+        let scheduled_at = chrono::Utc::now();
+        let run = self.stores().jobs().insert_run(
+            &job_name,
+            1,
+            scheduled_at,
+            Some(input.clone()),
+            None,
+        )?;
+        let initial_state =
+            PipelineState::new(run.run_id.clone(), run.job_id.clone(), input.clone());
+        self.stores()
+            .jobs()
+            .write_run_state(&run.run_id, &initial_state)?;
+
+        let started_at = chrono::Utc::now();
+        let changed =
+            self.stores()
+                .jobs()
+                .mark_run_running(&run.run_id, started_at, std::process::id())?;
+        if !changed {
+            return Err(OrbitError::JobRunNotFound(run.run_id));
+        }
+        self.record_event(OrbitEvent::JobRunStarted {
+            job_id: run.job_id.clone(),
+            run_id: run.run_id.clone(),
+            attempt: run.attempt,
+        })?;
+
+        let outcome = self.run_job_v2_from_yaml_with_run_id(
+            yaml_path,
+            input.clone(),
+            backend_flag,
+            Some(run.run_id.clone()),
+        );
+        let finished_at = chrono::Utc::now();
+        let duration_ms = Some(
+            finished_at
+                .signed_duration_since(started_at)
+                .num_milliseconds()
+                .max(0) as u64,
+        );
+
+        match outcome {
+            Ok(result) => {
+                let final_state = if result.success {
+                    JobRunState::Success
+                } else {
+                    JobRunState::Failed
+                };
+                self.persist_direct_v2_run_state(&run, &input, &result, final_state)?;
+                if result.success {
+                    self.record_direct_v2_success_step(&run, started_at, finished_at, &result)?;
+                } else {
+                    let fallback = "job completed with success=false but emitted no failure detail";
+                    let message = result.message.as_deref().unwrap_or(fallback);
+                    let _ =
+                        self.record_pipeline_failure_step(&run, started_at, finished_at, message);
+                }
+                self.stores().jobs().finalize_run(
+                    &run.run_id,
+                    final_state,
+                    finished_at,
+                    duration_ms,
+                )?;
+                self.record_event(OrbitEvent::JobRunCompleted {
+                    job_id: run.job_id.clone(),
+                    run_id: run.run_id.clone(),
+                    state: final_state.to_string(),
+                })?;
+                Ok(result)
+            }
+            Err(error) => {
+                let _ = self.record_pipeline_failure_step(
+                    &run,
+                    started_at,
+                    finished_at,
+                    &error.to_string(),
+                );
+                self.stores().jobs().finalize_run(
+                    &run.run_id,
+                    JobRunState::Failed,
+                    finished_at,
+                    duration_ms,
+                )?;
+                self.record_event(OrbitEvent::JobRunCompleted {
+                    job_id: run.job_id.clone(),
+                    run_id: run.run_id.clone(),
+                    state: JobRunState::Failed.to_string(),
+                })?;
+                Err(error)
+            }
+        }
     }
 
     pub fn run_job_v2_from_yaml_with_run_id(
@@ -136,5 +232,180 @@ impl OrbitRuntime {
             }),
             Err(err) => Err(err),
         }
+    }
+
+    fn persist_direct_v2_run_state(
+        &self,
+        run: &JobRun,
+        input: &Value,
+        result: &V2JobRunResult,
+        final_state: JobRunState,
+    ) -> Result<(), OrbitError> {
+        let mut state = self.read_run_state(&run.run_id)?.unwrap_or_else(|| {
+            PipelineState::new(run.run_id.clone(), run.job_id.clone(), input.clone())
+        });
+        state.sync_pipeline(result.pipeline.clone());
+        state.record_step(0, final_state, Some(result.pipeline.clone()), None);
+        self.stores().jobs().write_run_state(&run.run_id, &state)
+    }
+
+    fn record_direct_v2_success_step(
+        &self,
+        run: &JobRun,
+        started_at: chrono::DateTime<chrono::Utc>,
+        finished_at: chrono::DateTime<chrono::Utc>,
+        result: &V2JobRunResult,
+    ) -> Result<(), OrbitError> {
+        let duration_ms = Some(
+            finished_at
+                .signed_duration_since(started_at)
+                .num_milliseconds()
+                .max(0) as u64,
+        );
+        self.stores().jobs().complete_run_step(
+            &run.run_id,
+            &JobRunStepParams {
+                step_index: 0,
+                target_type: JobTargetType::Job,
+                target_id: run.job_id.clone(),
+                started_at,
+                finished_at,
+                duration_ms,
+                exit_code: Some(0),
+                agent_response_json: Some(result.pipeline.clone()),
+                state: JobRunState::Success,
+                error_code: None,
+                error_message: None,
+            },
+        )?;
+        Ok(())
+    }
+}
+
+fn load_job_name(yaml_path: &Path) -> Result<String, OrbitError> {
+    let yaml = std::fs::read_to_string(yaml_path)
+        .map_err(|err| OrbitError::InvalidInput(format!("read {}: {err}", yaml_path.display())))?;
+    let asset = load_job_asset(&yaml)
+        .map_err(|err| OrbitError::InvalidInput(format!("load {}: {err}", yaml_path.display())))?;
+    Ok(asset.name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf, PathBuf) {
+        let root = tempdir().expect("create tempdir");
+        let global_root = root.path().join("global");
+        let repo_root = root.path().join("repo");
+        let workspace_root = repo_root.join(".orbit");
+        std::fs::create_dir_all(&global_root).expect("create global root");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+        let runtime =
+            OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
+        (root, runtime, repo_root, global_root)
+    }
+
+    fn write_job(path: &Path, name: &str, action: &str) {
+        let yaml = format!(
+            r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: {name}
+spec:
+  state: enabled
+  kind: workflow
+  steps:
+    - id: nap
+      spec:
+        type: deterministic
+        action: {action}
+        config: {{}}
+"#
+        );
+        std::fs::write(path, yaml).expect("write job yaml");
+    }
+
+    #[test]
+    fn direct_yaml_run_persists_history_and_run_state() {
+        let (_root, runtime, repo_root, _global_root) = test_runtime();
+        let yaml_path = repo_root.join("qa_sleep.yaml");
+        write_job(&yaml_path, "qa_sleep", "sleep");
+
+        let result = runtime
+            .run_job_v2_from_yaml(&yaml_path, json!({ "seconds": 0 }), None)
+            .expect("direct job run succeeds");
+
+        let run = runtime.show_job_run(&result.run_id).expect("stored run");
+        assert_eq!(run.job_id, "qa_sleep");
+        assert_eq!(run.state, JobRunState::Success);
+        assert_eq!(run.steps.len(), 1);
+
+        let history = runtime.job_history("qa_sleep").expect("job history");
+        assert!(history.iter().any(|run| run.run_id == result.run_id));
+
+        let state = runtime
+            .read_run_state(&result.run_id)
+            .expect("read run state")
+            .expect("persisted run state");
+        assert_eq!(state.run_id, result.run_id);
+        assert!(state.pipeline.get("nap").is_some());
+        assert!(state.step_outputs.contains_key(&0));
+    }
+
+    #[test]
+    fn direct_catalog_run_is_visible_in_history() {
+        let (_root, runtime, repo_root, global_root) = test_runtime();
+        let jobs_dir = global_root.join("resources/jobs");
+        std::fs::create_dir_all(&jobs_dir).expect("create jobs dir");
+        let yaml_path = jobs_dir.join("qa_catalog_sleep.yaml");
+        write_job(&yaml_path, "qa_catalog_sleep", "sleep");
+
+        let catalog = runtime
+            .show_job_catalog_entry("qa_catalog_sleep")
+            .expect("catalog entry");
+        let result = runtime
+            .run_job_v2_from_yaml(&catalog.path, json!({ "seconds": 0 }), None)
+            .expect("catalog job run succeeds");
+
+        let history = runtime
+            .job_history("qa_catalog_sleep")
+            .expect("catalog history");
+        assert!(history.iter().any(|run| run.run_id == result.run_id));
+        assert!(repo_root.join(".orbit/state/job-runs").exists());
+    }
+
+    #[test]
+    fn failing_direct_run_records_failure_state() {
+        let (_root, runtime, repo_root, _global_root) = test_runtime();
+        let yaml_path = repo_root.join("qa_failing.yaml");
+        write_job(&yaml_path, "qa_failing", "missing_action");
+
+        let err = runtime
+            .run_job_v2_from_yaml(&yaml_path, json!({}), None)
+            .expect_err("direct job run should fail");
+        assert!(
+            err.to_string()
+                .contains("deterministic action not registered"),
+            "{err}"
+        );
+
+        let history = runtime.job_history("qa_failing").expect("failure history");
+        let run = history.first().expect("failed run");
+        assert_eq!(run.state, JobRunState::Failed);
+        assert!(run.steps.iter().any(|step| {
+            step.error_message
+                .as_deref()
+                .is_some_and(|message| message.contains("deterministic action not registered"))
+        }));
+        assert!(
+            runtime
+                .read_run_state(&run.run_id)
+                .expect("read run state")
+                .is_some()
+        );
     }
 }

@@ -244,17 +244,20 @@ A loop runs either:
 
 The loop body runs before `break_when` is evaluated, so body steps can populate the pipeline fields the break expression reads. If `items` expands beyond `max_iterations`, the executor fails structurally instead of silently truncating the iteration set.
 
-### 8.6 Persisted failure detail for v2 pipeline runs
+### 8.6 Persisted state for v2 job runs
 
-Persisted pipeline runs (`orbit run ship`, `orbit.pipeline.invoke` + `orbit.pipeline.wait`, `orbit run ship show`) are stored through `pipeline_run.rs`, not through the direct `orbit job run ...` CLI path. Before [T20260423-0445], a v2 workflow that failed before any concrete step file was written could leave behind a failed `JobRun` with `steps: []` and no surfaced `error_message`, even when the underlying executor had a concrete reason.
+Persisted pipeline runs (`orbit run ship`, `orbit.pipeline.invoke` + `orbit.pipeline.wait`, `orbit run ship show`) are stored through `pipeline_run.rs`. Direct v2 runs (`orbit job run <job-id-or-yaml>`) also create a durable `JobRun` bundle after [T20260423-2004-4], using the same workspace-local `state/job-runs/<job_id>/<run_id>/` layout so `orbit job history` and `orbit job run-state` can inspect the returned run ID.
+
+Before [T20260423-0445], a v2 workflow that failed before any concrete step file was written could leave behind a failed `JobRun` with `steps: []` and no surfaced `error_message`, even when the underlying executor had a concrete reason.
 
 The current contract is:
 
 - if a persisted v2 pipeline fails and no recorded step already carries error detail, the pipeline worker writes a synthetic failed `JobRunStep`
+- if a direct v2 run succeeds, the direct-run wrapper writes a synthetic successful `JobRunStep` containing the final pipeline snapshot
 - that synthetic step uses `target_type: job` and `target_id: <job_id>`
 - the step's `error_message` carries the concrete executor error (or a fallback `success=false` summary for message-carrying non-success results)
 
-This is intentionally an operator-surface repair, not a new execution primitive. It keeps `run ship --json`, `run ship show`, and run-history formatting actionable without introducing a second run-level error channel in `JobRun`.
+This is intentionally an operator-surface repair, not a new execution primitive. It keeps `run ship --json`, `run ship show`, direct `job run` output, `job history`, and `job run-state` actionable without introducing a second run-level error channel in `JobRun`.
 
 The loop shares the same pipeline map and session map across iterations. That is what makes cross-iteration `session:` binding meaningful in the first place.
 
