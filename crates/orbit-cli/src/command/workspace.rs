@@ -79,11 +79,15 @@ impl Execute for WorkspaceCommand {
 }
 
 impl WorkspaceInitArgs {
-    pub fn execute_without_runtime(self) -> Result<(), OrbitError> {
+    pub fn execute_without_runtime(
+        self,
+        root_override: Option<&std::path::Path>,
+    ) -> Result<(), OrbitError> {
         let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
-        let registry_path = workspace_registry::registry_path()?;
+        let (global_root, orbit_dir) = OrbitRuntime::resolve_roots_for_cwd(&cwd, root_override)?;
+        let registry_path = workspace_registry::registry_path_for(&global_root);
         let no_mcp = self.no_mcp;
-        let init_result = self.execute_at_path(&cwd, &registry_path)?;
+        let init_result = self.execute_at_path(&cwd, &orbit_dir, &global_root, &registry_path)?;
 
         println!("workspace '{}' initialized", init_result.name);
         println!("  id:        {}", init_result.id);
@@ -132,13 +136,15 @@ impl WorkspaceInitArgs {
     fn execute_at_path(
         self,
         cwd: &std::path::Path,
+        orbit_dir: &std::path::Path,
+        global_root: &std::path::Path,
         registry_path: &std::path::Path,
     ) -> Result<WorkspaceInitResult, OrbitError> {
-        let orbit_dir = cwd.join(".orbit");
         init_workspace_at_root(
-            &orbit_dir,
+            orbit_dir,
             InitOptions {
                 refresh_defaults: true,
+                global_root_override: Some(global_root.to_path_buf()),
                 ..Default::default()
             },
         )?;
@@ -152,7 +158,7 @@ impl WorkspaceInitArgs {
             id: id.clone(),
             name: name.clone(),
             root: cwd.to_path_buf(),
-            orbit_dir: orbit_dir.clone(),
+            orbit_dir: orbit_dir.to_path_buf(),
             git_remote,
             base_branch: self.base_branch,
             status: WorkspaceStatus::Active,
@@ -172,7 +178,7 @@ impl WorkspaceInitArgs {
             id,
             name,
             root: cwd.to_path_buf(),
-            orbit_dir,
+            orbit_dir: orbit_dir.to_path_buf(),
         })
     }
 }
@@ -190,6 +196,8 @@ mod tests {
     use std::sync::Mutex;
 
     use tempfile::tempdir;
+
+    use orbit_core::workspace_registry;
 
     use super::WorkspaceInitArgs;
 
@@ -223,7 +231,7 @@ mod tests {
             no_mcp: false,
             refresh_defaults: false,
         }
-        .execute_without_runtime();
+        .execute_without_runtime(None);
 
         std::env::set_current_dir(previous_cwd).expect("restore cwd");
 
@@ -282,7 +290,7 @@ mod tests {
             no_mcp: true,
             refresh_defaults: false,
         }
-        .execute_without_runtime();
+        .execute_without_runtime(None);
 
         std::env::set_current_dir(previous_cwd).expect("restore cwd");
 
@@ -312,11 +320,69 @@ mod tests {
                 .exists()
         );
     }
+
+    #[test]
+    fn workspace_init_with_root_override_uses_custom_registry() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        let custom_root_parent = tempdir().expect("custom root parent");
+        let custom_root = custom_root_parent.path().join("custom-orbit");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: Some("custom-root".to_string()),
+            base_branch: "main".to_string(),
+            no_mcp: true,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(Some(custom_root.as_path()));
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init with root override");
+
+        let custom_registry_path = custom_root.join("workspaces.json");
+        assert!(custom_registry_path.exists());
+        assert!(!home.path().join(".orbit").join("workspaces.json").exists());
+
+        let registry = workspace_registry::load_registry_from(&custom_registry_path)
+            .expect("load custom registry");
+        let workspace_record = registry
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.name == "custom-root")
+            .expect("registered workspace");
+        assert_eq!(
+            std::fs::canonicalize(&workspace_record.root).expect("canonical registered root"),
+            std::fs::canonicalize(workspace.path()).expect("canonical workspace")
+        );
+        assert_eq!(
+            std::fs::canonicalize(&workspace_record.orbit_dir).expect("canonical registered root"),
+            std::fs::canonicalize(&custom_root).expect("canonical custom root")
+        );
+    }
 }
 
 impl Execute for WorkspaceListArgs {
-    fn execute(self, _runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let registry_path = workspace_registry::registry_path()?;
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let global_root = runtime.global_root();
+        let registry_path = workspace_registry::registry_path_for(&global_root);
         let mut registry = workspace_registry::load_registry_from(&registry_path)?;
         workspace_registry::validate_workspaces(&mut registry);
 
@@ -346,7 +412,8 @@ impl Execute for WorkspaceShowArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let data_root = runtime.data_root();
         let data_root_canonical = std::fs::canonicalize(&data_root).unwrap_or(data_root.clone());
-        let registry_path = workspace_registry::registry_path()?;
+        let global_root = runtime.global_root();
+        let registry_path = workspace_registry::registry_path_for(&global_root);
         let registry = workspace_registry::load_registry_from(&registry_path)?;
 
         // Find workspace whose orbit_dir matches the current runtime's data root
@@ -380,8 +447,9 @@ impl Execute for WorkspaceShowArgs {
 }
 
 impl Execute for WorkspaceRemoveArgs {
-    fn execute(self, _runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let registry_path = workspace_registry::registry_path()?;
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let global_root = runtime.global_root();
+        let registry_path = workspace_registry::registry_path_for(&global_root);
         let mut registry = workspace_registry::load_registry_from(&registry_path)?;
         let removed = workspace_registry::remove_workspace(&mut registry, &self.workspace)?;
         workspace_registry::save_registry_to(&registry, &registry_path)?;
@@ -399,7 +467,7 @@ impl Execute for WorkspaceTeardownArgs {
         }
 
         let orbit_dir = runtime.data_root();
-        let global_dir = workspace_registry::global_orbit_dir()?;
+        let global_dir = runtime.global_root();
 
         // Safety: never delete the global ~/.orbit/ directory
         let orbit_canonical =
@@ -427,7 +495,8 @@ impl Execute for WorkspaceTeardownArgs {
         let mut removed: Vec<String> = Vec::new();
 
         // 1. Deregister from workspace registry (before deleting .orbit/)
-        let registry_path = workspace_registry::registry_path()?;
+        let global_root = runtime.global_root();
+        let registry_path = workspace_registry::registry_path_for(&global_root);
         if registry_path.exists() {
             let mut registry = workspace_registry::load_registry_from(&registry_path)?;
             let ws = registry.workspaces.iter().find(|w| {

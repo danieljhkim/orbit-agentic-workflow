@@ -20,6 +20,7 @@ use crate::context::{
     ActorIdentity, OrbitExecutionAssets, OrbitPolicyContext, OrbitRuntimeSettings, OrbitStores,
 };
 use crate::skill_catalog::SkillCatalog;
+use crate::workspace_registry;
 
 /// Legacy single-root builder. Treats data_root as both global and workspace root.
 pub(crate) fn build_context_from_data_root(data_root: &Path) -> Result<OrbitContext, OrbitError> {
@@ -37,11 +38,14 @@ pub(crate) fn build_context_from_roots(
 
     let store = Store::open(&persistence.audit_db)?;
 
-    // workspace_root IS the .orbit dir; repo_root is its parent.
-    let repo_root = workspace_root
-        .parent()
-        .unwrap_or(workspace_root)
-        .to_path_buf();
+    // workspace_root IS the .orbit dir. For custom roots outside the repo,
+    // prefer the registry's workspace root over the parent-directory fallback.
+    let repo_root = registered_repo_root(global_root, workspace_root).unwrap_or_else(|| {
+        workspace_root
+            .parent()
+            .unwrap_or(workspace_root)
+            .to_path_buf()
+    });
     let paths = WorkspacePaths::new(
         repo_root,
         workspace_root.to_path_buf(),
@@ -117,6 +121,18 @@ pub(crate) fn build_context_from_roots(
             v2_backend,
         ),
     ))
+}
+
+fn registered_repo_root(global_root: &Path, workspace_root: &Path) -> Option<PathBuf> {
+    let registry_path = workspace_registry::registry_path_for(global_root);
+    let registry = workspace_registry::load_registry_from(&registry_path).ok()?;
+    let workspace_root_canonical =
+        std::fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    registry.workspaces.iter().find_map(|workspace| {
+        let orbit_dir_canonical = std::fs::canonicalize(&workspace.orbit_dir)
+            .unwrap_or_else(|_| workspace.orbit_dir.clone());
+        (orbit_dir_canonical == workspace_root_canonical).then(|| workspace.root.clone())
+    })
 }
 
 pub(super) struct TempDir(PathBuf);
