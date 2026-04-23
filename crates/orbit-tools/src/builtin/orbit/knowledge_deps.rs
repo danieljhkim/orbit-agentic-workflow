@@ -12,17 +12,17 @@ impl Tool for OrbitKnowledgeDepsTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.deps".to_string(),
-            description: "List direct `orbit-*` dependencies per workspace crate, derived from Cargo.toml declarations.".to_string(),
+            description: "Use when you need direct workspace-crate dependency edges. Prefer over grep when Cargo.toml text needs to be grouped into crate-to-crate links.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "crate".to_string(),
-                    description: "Optional workspace crate name to filter to (e.g. `orbit-engine`). Omit for all crates.".to_string(),
+                    description: "Workspace crate filter, e.g. `orbit-engine`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "workspace_path".to_string(),
-                    description: "Optional workspace root override; defaults to the active workspace.".to_string(),
+                    description: "Workspace root override. Defaults to the active workspace.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

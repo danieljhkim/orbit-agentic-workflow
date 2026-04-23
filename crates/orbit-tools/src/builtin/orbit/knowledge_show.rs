@@ -12,32 +12,29 @@ impl Tool for OrbitKnowledgeShowTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.show".to_string(),
-            description: "Show a knowledge graph node with lineage, siblings, children, and source"
-                .to_string(),
+            description: "Use when you need one resolved node with lineage, nearby nodes, and source. Prefer over grep when you need structural context like children, siblings, or impl relationships.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description:
-                        "Node selector, e.g. `file:src/lib.rs`, `symbol:src/lib.rs#hello:function`"
-                            .to_string(),
+                    description: "Node selector, e.g. `file:src/lib.rs` or `symbol:src/lib.rs#hello:function`.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "depth".to_string(),
-                    description: "Ancestor depth (default 2)".to_string(),
+                    description: "Ancestor depth. Defaults to `2`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "siblings".to_string(),
-                    description: "Max siblings (default 3)".to_string(),
+                    description: "Max siblings. Defaults to `3`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "children".to_string(),
-                    description: "Max children (default 5)".to_string(),
+                    description: "Max children. Defaults to `5`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },

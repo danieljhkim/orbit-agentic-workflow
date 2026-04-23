@@ -37,23 +37,24 @@ impl Tool for OrbitKnowledgeOverviewTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.overview".to_string(),
-            description: "Return an aggregate overview of the knowledge graph. Broad queries auto-compact above 50 files, and `format: \"summary\"` always forces the compact form.".to_string(),
+            description: "Use when you need a structural map of a subtree. Prefer over grep when you want counts and shape, not a long list of text hits.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "prefix".to_string(),
-                    description: "Location prefix to scope the overview (e.g. `crates/orbit-knowledge/src`)".to_string(),
+                    description: "Path prefix to summarize, e.g. `crates/orbit-knowledge/src`."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "format".to_string(),
-                    description: "Output format: `full` (default) returns per-file symbol listings when the scope stays under 50 files, but broad queries may still auto-compact to summary above 50 files; `summary` always returns the compact form.".to_string(),
+                    description: "`full` for per-file symbol listings when the scope stays under 50 files; `summary` to always return the compact view.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "knowledge_dir".to_string(),
-                    description: "Optional knowledge artifact directory; defaults to `<workspace>/.orbit/knowledge`".to_string(),
+                    description: "Knowledge artifact dir override. Defaults to `<workspace>/.orbit/knowledge`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

@@ -14,23 +14,23 @@ impl Tool for OrbitKnowledgeCallersTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.callers".to_string(),
-            description: "Find transitive callers of a symbol (BFS upward, bounded by `depth`). Matching is by simple name: `self.foo()` and `other::foo()` both count as a call to any symbol named `foo`. Use for orientation; follow up with `orbit.graph.show` for precision.".to_string(),
+            description: "Use when you need a symbol's transitive caller chain. Prefer over grep when one-hop text matches lose call paths. Behavior: BFS upward, bounded by `depth`, matching by simple name; use `orbit.graph.show` for precision.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description: "Symbol selector to find callers of (e.g. `symbol:path/to/file.rs#name:function`).".to_string(),
+                    description: "Target symbol selector, e.g. `symbol:path/to/file.rs#name:function`.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "depth".to_string(),
-                    description: "Maximum BFS depth (default 2, clamped to a small maximum).".to_string(),
+                    description: "Max BFS depth. Defaults to `2`; larger values are clamped.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "knowledge_dir".to_string(),
-                    description: "Optional knowledge artifact directory; defaults to `<workspace>/.orbit/knowledge`.".to_string(),
+                    description: "Knowledge artifact dir override. Defaults to `<workspace>/.orbit/knowledge`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

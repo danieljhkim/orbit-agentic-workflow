@@ -11,18 +11,18 @@ impl Tool for OrbitKnowledgePackTool {
         ToolSchema {
             name: "orbit.graph.pack".to_string(),
             description:
-                "Resolve knowledge selectors into a scoped pack from `.orbit/knowledge` artifacts. `file:` selectors return file metadata and symbol summaries, not full file source."
+                "Use when you know the selectors you want and need their definitions plus context. Prefer over grep when comments or string literals swamp symbol hits. Behavior: `file:` selectors return metadata and symbol summaries, not full source."
                     .to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selectors".to_string(),
-                    description: "Selector strings like `file:path`, `symbol:path#symbol:kind`, or `dir:path`. Use `orbit.graph.show` or `symbol:` selectors when you need file source.".to_string(),
+                    description: "Exact selectors to pack: `file:path`, `symbol:path#name:kind`, or `dir:path`.".to_string(),
                     param_type: "array".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "knowledge_dir".to_string(),
-                    description: "Optional knowledge artifact directory; defaults to `<workspace>/.orbit/knowledge`".to_string(),
+                    description: "Knowledge artifact dir override. Defaults to `<workspace>/.orbit/knowledge`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

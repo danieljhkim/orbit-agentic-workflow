@@ -11,41 +11,41 @@ impl Tool for OrbitKnowledgeSearchTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.search".to_string(),
-            description: "Search knowledge graph nodes by name or location. Omit query to browse all nodes.".to_string(),
+            description: "Use when you need to locate a symbol, file, or dir selector. Prefer over grep when repeated names across crates make text matches ambiguous.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "query".to_string(),
-                    description: "Substring to match against node names and locations. Omit to list all nodes (browse mode).".to_string(),
+                    description: "Substring for names or paths. Omit to browse.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "type".to_string(),
-                    description: "Filter by node type: dir, file, or symbol".to_string(),
+                    description: "Node type filter: `dir`, `file`, or `symbol`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "kind".to_string(),
-                    description: "Filter leaves by kind: function, method, struct, trait, impl, class, interface, field, module".to_string(),
+                    description: "Leaf-kind filter: `function`, `method`, `struct`, `trait`, `impl`, `class`, `interface`, `field`, or `module`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "prefix".to_string(),
-                    description: "Filter by location prefix".to_string(),
+                    description: "Location prefix filter.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "limit".to_string(),
-                    description: "Max results (default 20)".to_string(),
+                    description: "Max results. Defaults to `20`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "format".to_string(),
-                    description: "Output format: 'structured' (default) returns objects with name/kind/file, 'selectors' returns flat selector strings".to_string(),
+                    description: "`structured` for named objects, `selectors` for flat selector strings.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

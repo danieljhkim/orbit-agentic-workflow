@@ -12,53 +12,55 @@ impl Tool for OrbitKnowledgeWriteTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.write".to_string(),
-            description: "Edit a symbol or file in the knowledge graph. Accepts symbol selectors (edit/insert leaf) or file selectors (rewrite file or region).".to_string(),
+            description: "Use when you need a graph-aware edit to a resolved symbol or file region. Prefer over grep when text search cannot safely target the exact node you want to change.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description: "Symbol selector (`symbol:path#symbol:kind`) to edit a leaf, or file selector (`file:path`) for file-level writes.".to_string(),
+                    description: "Symbol selector (`symbol:path#name:kind`) for a leaf edit, or file selector (`file:path`) for a file write.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "new_source".to_string(),
-                    description: "The source code to write".to_string(),
+                    description: "Source to write.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "position".to_string(),
-                    description: "For insert mode: anchor selector like `after:symbol:path#symbol:kind`. Inserts after the anchor leaf.".to_string(),
+                    description: "For insert mode, anchor like `after:symbol:path#name:kind`."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "start_line".to_string(),
-                    description: "For file selectors: start line of region to replace (1-indexed). Requires end_line.".to_string(),
+                    description: "For file selectors, first 1-indexed line of the region to replace. Requires `end_line`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "end_line".to_string(),
-                    description: "For file selectors: end line of region to replace (1-indexed, inclusive). Requires start_line.".to_string(),
+                    description: "For file selectors, last 1-indexed line of the region to replace. Requires `start_line`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "reason".to_string(),
-                    description: "Optional reason for this edit, stored in the version chain".to_string(),
+                    description: "Optional reason recorded in the version chain.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "workspace_path".to_string(),
-                    description: "Optional workspace root override for branch/worktree targeting".to_string(),
+                    description: "Workspace root override for branch or worktree targeting."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "knowledge_dir".to_string(),
-                    description: "Optional knowledge artifact directory; defaults to `<workspace>/.orbit/knowledge`".to_string(),
+                    description: "Knowledge artifact dir override. Defaults to `<workspace>/.orbit/knowledge`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

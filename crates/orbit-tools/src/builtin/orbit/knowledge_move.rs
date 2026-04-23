@@ -15,35 +15,38 @@ impl Tool for OrbitKnowledgeMoveTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.move".to_string(),
-            description: "Move a symbol from one file to another, updating both source files and the working graph".to_string(),
+            description: "Use when you need to move a symbol between files and keep the working graph in sync. Prefer over grep when copy-paste edits could desync source and graph state.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description: "Source symbol selector like `symbol:path#name:kind`".to_string(),
+                    description: "Source symbol selector, e.g. `symbol:path#name:kind`."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "target_file".to_string(),
-                    description: "Destination file path (relative to workspace root)".to_string(),
+                    description: "Destination file path relative to the workspace root."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "position".to_string(),
-                    description: "Optional anchor selector like `after:symbol:path#name:kind` in the target file. Omit to append before `#[cfg(test)]` or at end of file.".to_string(),
+                    description: "Anchor in the target file like `after:symbol:path#name:kind`. Omit to append before `#[cfg(test)]` or at end of file.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "reason".to_string(),
-                    description: "Optional reason for the move, stored in version chain".to_string(),
+                    description: "Optional reason recorded in the version chain.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "workspace_path".to_string(),
-                    description: "Optional workspace root override for branch/worktree targeting".to_string(),
+                    description: "Workspace root override for branch or worktree targeting."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

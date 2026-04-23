@@ -147,7 +147,7 @@ pub(super) fn graph_ref_param() -> ToolParam {
     ToolParam {
         name: "ref".to_string(),
         description:
-            "Optional knowledge-graph ref name. Defaults to the current git branch; read tools may fall back to the repo default branch when the current branch has no graph ref yet."
+            "Graph ref to read. Defaults to the current branch; read tools may fall back to the repo default branch if this branch has no graph ref yet."
                 .to_string(),
         param_type: "string".to_string(),
         required: false,

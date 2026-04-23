@@ -11,29 +11,30 @@ impl Tool for OrbitKnowledgeRefsTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.refs".to_string(),
-            description: "Find references to a symbol across the knowledge graph, including file-level matches that live outside extracted leaves.".to_string(),
+            description: "Use when you need references to one symbol across code and file-level mentions. Prefer over grep when you need symbol-aware matches, not every raw string occurrence.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description: "Symbol selector to find references for (e.g. `symbol:src/lib.rs#hello:function`)".to_string(),
+                    description: "Target symbol selector, e.g. `symbol:src/lib.rs#hello:function`."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "limit".to_string(),
-                    description: "Max results (default 20)".to_string(),
+                    description: "Max results. Defaults to `20`.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "include_simple_name".to_string(),
-                    description: "When true, also search for the unqualified tail component of the symbol name. Disabled by default because common simple names produce noisy matches.".to_string(),
+                    description: "Also search the unqualified tail name. Off by default because common names get noisy.".to_string(),
                     param_type: "boolean".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "knowledge_dir".to_string(),
-                    description: "Optional knowledge artifact directory; defaults to `<workspace>/.orbit/knowledge`".to_string(),
+                    description: "Knowledge artifact dir override. Defaults to `<workspace>/.orbit/knowledge`.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },

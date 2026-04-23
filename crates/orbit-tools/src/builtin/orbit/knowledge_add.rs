@@ -15,35 +15,36 @@ impl Tool for OrbitKnowledgeAddTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.add".to_string(),
-            description: "Add a new symbol to a source file, writing to disk and updating the working graph. Rejects if the symbol already exists.".to_string(),
+            description: "Use when you need to insert a new symbol and keep the working graph in sync. Prefer over grep when a text-only append could land in the wrong spot or miss graph metadata.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "selector".to_string(),
-                    description: "Symbol selector like `symbol:path#name:kind` for the new symbol".to_string(),
+                    description: "New symbol selector, e.g. `symbol:path#name:kind`.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "source".to_string(),
-                    description: "Full source code for the new symbol".to_string(),
+                    description: "Full source for the new symbol.".to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },
                 ToolParam {
                     name: "position".to_string(),
-                    description: "Optional anchor selector like `after:symbol:path#name:kind`. Inserts after the anchor. Omit to append before `#[cfg(test)]` or at end of file.".to_string(),
+                    description: "Anchor like `after:symbol:path#name:kind`. Omit to append before `#[cfg(test)]` or at end of file.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "reason".to_string(),
-                    description: "Optional reason, stored in version chain".to_string(),
+                    description: "Optional reason recorded in the version chain.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "workspace_path".to_string(),
-                    description: "Optional workspace root override for branch/worktree targeting".to_string(),
+                    description: "Workspace root override for branch or worktree targeting."
+                        .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
