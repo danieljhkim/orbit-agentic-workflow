@@ -2,7 +2,18 @@
 
 PYTHON ?= python3
 BENCH_ROOT := $(CURDIR)
+
+# GRAPH_VERSION selects which harness snapshot to target.
+#   (unset) → living harness at benchmarks/graph/       (default; v2-in-progress)
+#   v1      → frozen snapshot at benchmarks/graph_v1/
+#   vN      → frozen snapshot at benchmarks/graph_vN/
+# See benchmarks/CONVENTIONS.md for versioning rules.
+GRAPH_VERSION ?=
+ifeq ($(GRAPH_VERSION),)
 GRAPH_DIR := $(BENCH_ROOT)/graph
+else
+GRAPH_DIR := $(BENCH_ROOT)/graph_$(GRAPH_VERSION)
+endif
 
 GRAPH_PROVIDER ?= claude
 GRAPH_ARM ?= no-graph
@@ -37,9 +48,15 @@ help:
 	@echo ""
 	@echo "  make -C benchmarks graph-aggregate"
 	@echo "    Print aggregate benchmark tables."
+	@echo "    Pass GRAPH_VERSION=v1 to aggregate a frozen snapshot instead of the living harness."
 	@echo ""
 	@echo "  make -C benchmarks graph-test"
 	@echo "    Run benchmark script unit tests."
+	@echo ""
+	@echo "Versioning:"
+	@echo "  GRAPH_VERSION=(unset) targets benchmarks/graph/ (living harness, v2-in-progress)."
+	@echo "  GRAPH_VERSION=v1 targets benchmarks/graph_v1/ (frozen snapshot)."
+	@echo "  See benchmarks/CONVENTIONS.md."
 
 graph-run:
 	$(PYTHON) $(GRAPH_DIR)/scripts/run.py \

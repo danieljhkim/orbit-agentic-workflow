@@ -1,5 +1,7 @@
 # Knowledge Graph Benchmarks
 
+> **Status:** LIVING harness — next round (v2) in progress. The most recently frozen results are at [`../graph_v1/RESULTS.md`](../graph_v1/RESULTS.md). See [`../CONVENTIONS.md`](../CONVENTIONS.md) for the versioning rules.
+
 Measures how much navigation budget an agent spends solving the same task under different tool surfaces. The benchmark is meant to compare repeatable experiment cells, not produce one-off anecdotes.
 
 See [docs/design/knowledge-graph/](../../docs/design/knowledge-graph/) for the graph itself.
@@ -42,7 +44,7 @@ Run a sweep:
 ```bash
 python3 benchmarks/graph/scripts/sweep.py --provider claude --n 5
 python3 benchmarks/graph/scripts/sweep.py --provider codex --n 5
-make -C benchmarks graph-sweep GRAPH_PROVIDER=codex GRAPH_N=1 GRAPH_TASKS=locate-agentruntime
+make -C benchmarks graph-sweep GRAPH_PROVIDER=codex GRAPH_N=1 GRAPH_TASKS=trace-policy-denial-wiring
 ```
 
 Useful flags:
@@ -100,4 +102,14 @@ benchmarks/graph/
 ├── tasks/
 ├── scripts/
 └── runs/
+```
+
+```
+make -C benchmarks graph-sweep-claude GRAPH_N=5 \
+    GRAPH_SWEEP_ARGS="--sweep-seed 1609" 2>&1 | tee /tmp/sweep-claude.log
+
+make -C benchmarks graph-sweep-codex GRAPH_N=5 \
+    GRAPH_SWEEP_ARGS="--sweep-seed 1609" 2>&1 | tee /tmp/sweep-codex.log
+
+make -C benchmarks graph-aggregate > benchmarks/graph/RESULTS.md
 ```
