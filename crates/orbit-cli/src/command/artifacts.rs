@@ -41,7 +41,7 @@ impl Execute for ArtifactsCommand {
                     if !state.step_outputs.is_empty() {
                         println!();
                         println!("Step outputs:");
-                        for (key, _value) in &state.step_outputs {
+                        for key in state.step_outputs.keys() {
                             println!("  - {key}");
                         }
                     }

@@ -1,4 +1,4 @@
-.PHONY: help build build-ts-agent release run check test fmt clippy clean install uninstall dev watch audit tree ci
+.PHONY: help build release run check test fmt fmt-check clippy clean install uninstall dev watch audit tree ci
 
 # ------------------------------------------------------------
 # Config
@@ -37,13 +37,13 @@ help:
 	@echo "Orbit Workspace Make Targets"
 	@echo ""
 	@echo "  make build        Build workspace (PROFILE=release optional)"
-	@echo "  make build-ts-agent Build packages/orbit-agent"
 	@echo "  make release      Build optimized release binary"
 	@echo "  make run ARGS=... Run CLI binary"
 	@echo "  make dev ARGS=... Run debug binary directly"
 	@echo "  make check        Type-check entire workspace"
 	@echo "  make test         Run all tests"
 	@echo "  make fmt          Format code"
+	@echo "  make fmt-check    Check formatting"
 	@echo "  make clippy       Lint with clippy (deny warnings)"
 	@echo "  make audit        Cargo audit (security)"
 	@echo "  make tree         Print dependency tree"
@@ -59,17 +59,14 @@ help:
 build:
 	$(CARGO) build $(WORKSPACE) $(CARGO_PROFILE)
 
-build-ts-agent:
-	npm --prefix packages/orbit-agent run build
-
 release:
-	$(CARGO) build -p $(BIN_CRATE) --release
+	$(CARGO) build -p $(BIN_CRATE) --bin $(BINARY) --release
 
 # ------------------------------------------------------------
 # Run
 # ------------------------------------------------------------
 run:
-	$(CARGO) run -p $(BIN_CRATE) -- $(ARGS)
+	$(CARGO) run -p $(BIN_CRATE) --bin $(BINARY) -- $(ARGS)
 
 # Direct execution (after build)
 dev: build
@@ -79,17 +76,19 @@ dev: build
 # Quality
 # ------------------------------------------------------------
 check:
-	$(CARGO) fmt --all
 	$(CARGO) check $(WORKSPACE)
 
 test:
-	$(CARGO) test $(WORKSPACE) --lib --bins --tests
+	$(CARGO) test $(WORKSPACE)
 
 fmt:
 	$(CARGO) fmt --all
 
+fmt-check:
+	$(CARGO) fmt --all -- --check
+
 clippy:
-	$(CARGO) clippy $(WORKSPACE) --lib --bins --tests -- -D warnings
+	$(CARGO) clippy $(WORKSPACE) --all-targets -- -D warnings
 
 # Security audit (requires cargo-audit)
 audit:
@@ -100,7 +99,8 @@ tree:
 	$(CARGO) tree -e features
 
 # Full CI pass
-ci: fmt clippy test
+ci:
+	./scripts/ci-guardrails.sh
 
 # ------------------------------------------------------------
 # Install

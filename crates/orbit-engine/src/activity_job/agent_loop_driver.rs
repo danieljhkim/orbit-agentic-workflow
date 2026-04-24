@@ -58,6 +58,7 @@ pub fn drive_agent_loop(
 /// Phase 3 loop bodies pass the same `Session` across iterations so the
 /// provider conversation history persists (§2: named `session:` bindings).
 /// The caller owns the `Session`'s lifetime; this function never drops it.
+#[allow(clippy::too_many_arguments)]
 pub fn drive_agent_loop_with_session(
     spec: &AgentLoopSpec,
     api_key: Option<&str>,

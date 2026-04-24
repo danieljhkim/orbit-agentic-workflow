@@ -221,10 +221,10 @@ fn sync_mode_for_thread(
 fn pending_sync_message_labels(thread: &ReviewThread) -> Vec<String> {
     let mut labels = Vec::new();
 
-    if thread.github_thread_id.is_none() {
-        if let Some(first) = thread.messages.first() {
-            labels.push(first.by.clone());
-        }
+    if thread.github_thread_id.is_none()
+        && let Some(first) = thread.messages.first()
+    {
+        labels.push(first.by.clone());
     }
 
     labels.extend(

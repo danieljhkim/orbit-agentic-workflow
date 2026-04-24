@@ -54,11 +54,13 @@ fn run() -> Result<(), OrbitError> {
     let runtime = OrbitRuntime::initialize_with_root_override(root_override.as_deref())?;
     let rules = build_rules()?;
     let data_root = runtime.data_root();
-    let mut stats = MigrationStats::default();
-
-    stats.task_files = normalize_task_artifacts(&data_root.join("tasks"), &rules)?;
-    stats.scoreboard_files =
-        normalize_scoreboard_artifacts(&data_root.join("state/scoreboard"), &rules)?;
+    let mut stats = MigrationStats {
+        task_files: normalize_task_artifacts(&data_root.join("tasks"), &rules)?,
+        scoreboard_files: normalize_scoreboard_artifacts(
+            &data_root.join("state/scoreboard"),
+            &rules,
+        )?,
+    };
 
     let summary_path = runtime.scoreboard_summary_path();
     let previous_summary = fs::read_to_string(&summary_path).ok();

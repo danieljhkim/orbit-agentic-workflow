@@ -22,10 +22,9 @@ use std::sync::Arc;
 
 use orbit_common::types::JobScheduleState;
 use orbit_common::types::activity_job::{
-    ActivityV2, ActivityV2Spec, AgentLoopSpec, Backend, JobAsset, JobKind, JobV2, JobV2Step,
-    JobV2StepBody, LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog,
-    load_job_asset, resolve_job_backends, resolve_job_target_refs,
-    validate_job_loop_session_backends,
+    ActivityV2, ActivityV2Spec, AgentLoopSpec, Backend, JobKind, JobV2, JobV2Step, JobV2StepBody,
+    LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog, load_job_asset,
+    resolve_job_backends, resolve_job_target_refs, validate_job_loop_session_backends,
 };
 use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2DispatchInput, V2RuntimeHost, dispatch_v2_activity,

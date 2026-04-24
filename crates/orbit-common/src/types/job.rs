@@ -214,20 +214,15 @@ impl FromStr for JobRunState {
 ///
 /// Example:
 ///   `"{{steps.plan.state.status}} == success && {{steps.gate.output.match}} == true"`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum StepCondition {
+    #[default]
     Always,
     OnSuccess,
     OnFailure,
     OnTimeout,
     /// A runtime expression evaluated against the template context.
     Expr(String),
-}
-
-impl Default for StepCondition {
-    fn default() -> Self {
-        Self::Always
-    }
 }
 
 impl Serialize for StepCondition {

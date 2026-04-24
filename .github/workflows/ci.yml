@@ -35,16 +35,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Test
-        run: cargo test --workspace
+      - name: Run CI guardrails
+        run: ./scripts/ci-guardrails.sh
 
       - name: Create orbit task on CI failure
         if: failure() && github.event_name == 'pull_request'
         run: |
-          cargo run -- tool run orbit.task.add --input '{
+          cargo run -p orbit-cli --bin orbit -- tool run orbit.task.add --input '{
             "title": "CI failure: ${{ github.workflow }} on PR #${{ github.event.pull_request.number }}",
             "description": "## Problem\nCI failed on PR #${{ github.event.pull_request.number }} (`${{ github.head_ref }}`).\n\nCommit: `${{ github.sha }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
             "acceptance_criteria": ["CI passes on branch ${{ github.head_ref }}"],

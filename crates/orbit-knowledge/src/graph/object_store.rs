@@ -972,7 +972,7 @@ mod tests {
     fn dir_depth_is_strict_weak_order_root_first_by_descending_depth() {
         // Depth-descending sort must place nested dirs before root.
         let mut locations = vec!["./", "src/", "src/foo/"];
-        locations.sort_by(|a, b| dir_depth(b).cmp(&dir_depth(a)));
+        locations.sort_by_key(|location| std::cmp::Reverse(dir_depth(location)));
         assert_eq!(locations, vec!["src/foo/", "src/", "./"]);
     }
 }

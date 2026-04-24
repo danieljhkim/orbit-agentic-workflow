@@ -998,52 +998,6 @@ fn collect_session_bindings<'a>(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::merge_job_input;
-    use serde_json::json;
-
-    #[test]
-    fn merges_object_defaults_with_explicit_object_input() {
-        let defaults = json!({
-            "mode": "pr",
-            "base_branch": "agent-main",
-            "max_tasks": 50,
-            "max_bundle_size": 5
-        });
-        let explicit = json!({
-            "base_branch": "main",
-            "task_ids": ["T123"]
-        });
-
-        let merged = merge_job_input(Some(&defaults), &explicit);
-
-        assert_eq!(
-            merged,
-            json!({
-                "mode": "pr",
-                "base_branch": "main",
-                "max_tasks": 50,
-                "max_bundle_size": 5,
-                "task_ids": ["T123"]
-            })
-        );
-    }
-
-    #[test]
-    fn preserves_non_object_explicit_input_without_merging() {
-        let defaults = json!({
-            "mode": "pr",
-            "max_tasks": 50
-        });
-        let explicit = json!("override");
-
-        let merged = merge_job_input(Some(&defaults), &explicit);
-
-        assert_eq!(merged, explicit);
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Semaphore
 // ---------------------------------------------------------------------------
@@ -1095,3 +1049,49 @@ impl Drop for Permit {
 // Silence unused-import warnings when compiling without the loop sample.
 #[allow(dead_code)]
 fn _unused_timing(_: Instant) {}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_job_input;
+    use serde_json::json;
+
+    #[test]
+    fn merges_object_defaults_with_explicit_object_input() {
+        let defaults = json!({
+            "mode": "pr",
+            "base_branch": "agent-main",
+            "max_tasks": 50,
+            "max_bundle_size": 5
+        });
+        let explicit = json!({
+            "base_branch": "main",
+            "task_ids": ["T123"]
+        });
+
+        let merged = merge_job_input(Some(&defaults), &explicit);
+
+        assert_eq!(
+            merged,
+            json!({
+                "mode": "pr",
+                "base_branch": "main",
+                "max_tasks": 50,
+                "max_bundle_size": 5,
+                "task_ids": ["T123"]
+            })
+        );
+    }
+
+    #[test]
+    fn preserves_non_object_explicit_input_without_merging() {
+        let defaults = json!({
+            "mode": "pr",
+            "max_tasks": 50
+        });
+        let explicit = json!("override");
+
+        let merged = merge_job_input(Some(&defaults), &explicit);
+
+        assert_eq!(merged, explicit);
+    }
+}

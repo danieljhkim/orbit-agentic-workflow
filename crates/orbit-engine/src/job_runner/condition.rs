@@ -21,6 +21,7 @@ use crate::template::{self, TemplateContext};
 /// provided `keyword_eval` closure, which lets callers keep their existing
 /// sequential/DAG keyword logic. `Expr` variants resolve templates and
 /// evaluate the resulting boolean expression.
+#[allow(dead_code)]
 pub(crate) fn evaluate_condition(
     condition: &StepCondition,
     ctx: &TemplateContext,

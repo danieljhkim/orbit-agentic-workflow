@@ -56,10 +56,10 @@ pub enum BackendConstraintError {
 /// concrete backend. No-op when the activity isn't `agent_loop` or the backend
 /// is already concrete.
 pub fn resolve_activity_backends(activity: &mut ActivityV2, resolved: Backend) {
-    if let ActivityV2Spec::AgentLoop(spec) = &mut activity.spec {
-        if spec.backend == Backend::Auto {
-            spec.backend = resolved;
-        }
+    if let ActivityV2Spec::AgentLoop(spec) = &mut activity.spec
+        && spec.backend == Backend::Auto
+    {
+        spec.backend = resolved;
     }
 }
 
@@ -75,10 +75,10 @@ pub fn resolve_job_backends(job: &mut JobV2, resolved: Backend) {
 fn resolve_step_backends(step: &mut JobV2Step, resolved: Backend) {
     match &mut step.body {
         JobV2StepBody::Target(target) => {
-            if let ActivityV2Spec::AgentLoop(spec) = &mut target.spec {
-                if spec.backend == Backend::Auto {
-                    spec.backend = resolved;
-                }
+            if let ActivityV2Spec::AgentLoop(spec) = &mut target.spec
+                && spec.backend == Backend::Auto
+            {
+                spec.backend = resolved;
             }
         }
         JobV2StepBody::TargetRef(_) => {
@@ -122,21 +122,19 @@ fn validate_step(
 ) -> Result<(), BackendConstraintError> {
     match &step.body {
         JobV2StepBody::Target(target) => {
-            if inside_loop {
-                if let (Some(session), ActivityV2Spec::AgentLoop(spec)) =
+            if inside_loop
+                && let (Some(session), ActivityV2Spec::AgentLoop(spec)) =
                     (&target.session, &target.spec)
-                {
-                    if spec.backend == Backend::Cli {
-                        let feature = HttpOnlyFeature::CrossIterationSession;
-                        return Err(BackendConstraintError::LoopSessionOnCli {
-                            asset_path: asset_path.to_string(),
-                            step_id: step.id.clone(),
-                            session_name: session.clone(),
-                            item_number: feature.item_number(),
-                            feature_desc: feature.description(),
-                        });
-                    }
-                }
+                && spec.backend == Backend::Cli
+            {
+                let feature = HttpOnlyFeature::CrossIterationSession;
+                return Err(BackendConstraintError::LoopSessionOnCli {
+                    asset_path: asset_path.to_string(),
+                    step_id: step.id.clone(),
+                    session_name: session.clone(),
+                    item_number: feature.item_number(),
+                    feature_desc: feature.description(),
+                });
             }
             Ok(())
         }

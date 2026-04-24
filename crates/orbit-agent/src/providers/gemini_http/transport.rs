@@ -253,7 +253,7 @@ impl LoopTransport for GeminiHttpTransport {
 
         let content = candidate
             .content
-            .map(|c| map_incoming_content(c))
+            .map(map_incoming_content)
             .unwrap_or_default();
 
         let mut stop_reason = map_stop_reason(candidate.finish_reason.as_deref());

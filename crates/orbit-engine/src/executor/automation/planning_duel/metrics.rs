@@ -52,6 +52,7 @@ pub(super) fn role_metrics_from_invocation(
     }
 }
 
+#[allow(dead_code)]
 fn summarize_role_metrics(records: &[InvocationRecord]) -> PlanningDuelEfficiency {
     let mut efficiency = PlanningDuelEfficiency {
         invocation_count: records.len() as u64,
@@ -86,7 +87,7 @@ fn summarize_role_metrics(records: &[InvocationRecord]) -> PlanningDuelEfficienc
     efficiency
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[allow(dead_code)]
 fn role_metrics_for_activity<H: RuntimeHost + ?Sized>(
     host: &H,
     job_run_id: &str,
@@ -118,7 +119,7 @@ fn role_metrics_for_activity<H: RuntimeHost + ?Sized>(
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[allow(dead_code)]
 pub(super) fn record_planning_duel_efficiency<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,

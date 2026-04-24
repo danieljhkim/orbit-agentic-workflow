@@ -95,11 +95,11 @@ impl OrbitRuntime {
             ))
         })?;
 
-        if self.scoring_enabled() && params.task_type.counts_toward_friction_bounty() {
-            if let Some(model) = &canonical_model {
-                let _ =
-                    friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, model);
-            }
+        if self.scoring_enabled()
+            && params.task_type.counts_toward_friction_bounty()
+            && let Some(model) = &canonical_model
+        {
+            let _ = friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, model);
         }
 
         let task = if dropped_context_files.is_empty() {
@@ -119,5 +119,56 @@ impl OrbitRuntime {
         };
 
         Ok(task)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use orbit_common::types::TaskStatus;
+    use tempfile::tempdir;
+
+    fn test_runtime() -> (tempfile::TempDir, OrbitRuntime) {
+        let root = tempdir().expect("create tempdir");
+        let global_root = root.path().join("global");
+        let repo_root = root.path().join("repo");
+        let workspace_root = repo_root.join(".orbit");
+        std::fs::create_dir_all(&global_root).expect("create global root");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+        let runtime =
+            OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
+        (root, runtime)
+    }
+
+    #[test]
+    fn human_task_add_enters_backlog_and_starts_without_proposal_approval() {
+        let (_root, runtime) = test_runtime();
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Create orbit hello".to_string(),
+                description: "Add a small hello file.".to_string(),
+                acceptance_criteria: vec!["orbit-hello.txt exists.".to_string()],
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("human task add succeeds");
+
+        assert_eq!(task.status, TaskStatus::Backlog);
+
+        let err = runtime
+            .approve_task(&task.id, Some("LGTM".to_string()), None)
+            .expect_err("backlog task should not use proposal approval");
+        assert!(
+            err.to_string()
+                .contains("approve requires 'proposed' or 'review'"),
+            "{err}"
+        );
+
+        let started = runtime
+            .start_task(&task.id, Some("start backlog task".to_string()), None)
+            .expect("backlog task starts directly");
+        assert_eq!(started.status, TaskStatus::InProgress);
     }
 }

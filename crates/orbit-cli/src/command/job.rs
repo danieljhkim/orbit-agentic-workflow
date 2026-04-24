@@ -246,6 +246,7 @@ impl Execute for JobRunArgs {
         let backend_str = result.resolved_backend.as_str();
         if self.json {
             crate::output::json::print_pretty(&json!({
+                "run_id": result.run_id,
                 "job_id": job.job_id.clone(),
                 "kind": job.kind().to_string(),
                 "resolved_backend": backend_str,
@@ -257,7 +258,8 @@ impl Execute for JobRunArgs {
             }))
         } else {
             println!(
-                "job_id={};kind={};backend={};success={};events={};audit_jsonl={}",
+                "run_id={};job_id={};kind={};backend={};success={};events={};audit_jsonl={}",
+                result.run_id,
                 job.job_id.as_str(),
                 job.kind(),
                 backend_str,

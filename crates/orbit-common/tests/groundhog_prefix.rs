@@ -170,7 +170,7 @@ proptest! {
         let later = chronicle.serialize_at(m).expect("index comes from day range");
 
         prop_assert!(prefix.len() <= later.len());
-        prop_assert_eq!(prefix, later[..prefix.len()]);
+        prop_assert_eq!(&prefix, &later[..prefix.len()]);
     }
 
     #[test]
@@ -179,9 +179,12 @@ proptest! {
         let restored = Chronicle::deserialize_cache_bytes(&bytes)
             .expect("serialized cache bytes should round-trip");
 
-        prop_assert_eq!(restored.task_id, chronicle.task_id);
-        prop_assert_eq!(restored.plan_id, chronicle.plan_id);
-        prop_assert_eq!(restored.days, chronicle.days[..=m]);
+        prop_assert_eq!(restored.days.len(), m + 1);
         prop_assert!(restored.deviation_stack.is_empty());
+
+        let reserialized = restored
+            .serialize_at(restored.days.len() - 1)
+            .expect("restored cache bytes should serialize");
+        prop_assert_eq!(reserialized, bytes);
     }
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use clap::Args;
@@ -39,7 +39,7 @@ impl Execute for ApplyCommand {
     }
 }
 
-fn resolve_paths(path: &PathBuf) -> Result<Vec<PathBuf>, OrbitError> {
+fn resolve_paths(path: &Path) -> Result<Vec<PathBuf>, OrbitError> {
     if path.is_dir() {
         let mut files: Vec<PathBuf> = std::fs::read_dir(path)
             .map_err(|e| OrbitError::Io(format!("{}: {e}", path.display())))?
@@ -58,7 +58,7 @@ fn resolve_paths(path: &PathBuf) -> Result<Vec<PathBuf>, OrbitError> {
         files.sort();
         Ok(files)
     } else if path.is_file() {
-        Ok(vec![path.clone()])
+        Ok(vec![path.to_path_buf()])
     } else {
         Err(OrbitError::InvalidInput(format!(
             "path not found: {}",
@@ -67,7 +67,7 @@ fn resolve_paths(path: &PathBuf) -> Result<Vec<PathBuf>, OrbitError> {
     }
 }
 
-fn apply_one(runtime: &OrbitRuntime, content: &str, path: &PathBuf) -> Result<(), OrbitError> {
+fn apply_one(runtime: &OrbitRuntime, content: &str, path: &Path) -> Result<(), OrbitError> {
     let header: ResourceHeader = parse_resource(content, path, "resource header")?;
     validate_header(&header, path)?;
 
@@ -86,7 +86,7 @@ fn apply_one(runtime: &OrbitRuntime, content: &str, path: &PathBuf) -> Result<()
 fn apply_policy(
     runtime: &OrbitRuntime,
     content: &str,
-    path: &PathBuf,
+    path: &Path,
     name: &str,
 ) -> Result<(), OrbitError> {
     let doc = parse_policy_resource(content, &format!("{}: Policy resource", path.display()))?;
@@ -114,7 +114,7 @@ fn apply_policy(
 fn apply_executor(
     runtime: &OrbitRuntime,
     content: &str,
-    path: &PathBuf,
+    path: &Path,
     name: &str,
 ) -> Result<(), OrbitError> {
     let doc: ExecutorResource = parse_resource(content, path, "Executor resource")?;
@@ -142,7 +142,7 @@ fn apply_executor(
     Ok(())
 }
 
-fn validate_header(header: &ResourceHeader, path: &PathBuf) -> Result<(), OrbitError> {
+fn validate_header(header: &ResourceHeader, path: &Path) -> Result<(), OrbitError> {
     let supported: Vec<u32> = match header.kind {
         ResourceKind::Policy => vec![POLICY_RESOURCE_SCHEMA_VERSION],
         ResourceKind::Executor => vec![EXECUTOR_RESOURCE_SCHEMA_VERSION],
@@ -166,7 +166,7 @@ fn validate_header(header: &ResourceHeader, path: &PathBuf) -> Result<(), OrbitE
 
 fn parse_resource<T: DeserializeOwned>(
     content: &str,
-    path: &PathBuf,
+    path: &Path,
     label: &str,
 ) -> Result<T, OrbitError> {
     serde_yaml::from_str(content).map_err(|error| {

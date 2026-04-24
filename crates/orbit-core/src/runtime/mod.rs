@@ -54,10 +54,22 @@ impl OrbitRuntime {
 
     pub fn initialize_with_root_override(root_override: Option<&Path>) -> Result<Self, OrbitError> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let workspace_root = resolve_initialize_data_root(&cwd, root_override)?;
-        let global_root = resolve_global_root()?;
+        let (global_root, workspace_root) = Self::resolve_roots_for_cwd(&cwd, root_override)?;
         ensure_orbit_root_initialized(&global_root, &workspace_root)?;
         Self::from_roots(&global_root, &workspace_root)
+    }
+
+    pub fn resolve_roots_for_cwd(
+        cwd: &Path,
+        root_override: Option<&Path>,
+    ) -> Result<(PathBuf, PathBuf), OrbitError> {
+        let workspace_root = resolve_initialize_data_root(cwd, root_override)?;
+        let global_root = if has_explicit_root_override(root_override) {
+            workspace_root.clone()
+        } else {
+            resolve_global_root()?
+        };
+        Ok((global_root, workspace_root))
     }
 
     pub fn from_data_root(data_root: &Path) -> Result<Self, OrbitError> {
@@ -315,6 +327,11 @@ impl OrbitRuntime {
     ) -> Result<(), OrbitError> {
         self.stores().policies().upsert(def)
     }
+}
+
+fn has_explicit_root_override(root_override: Option<&Path>) -> bool {
+    root_override.is_some()
+        || std::env::var("ORBIT_ROOT").is_ok_and(|value| !value.trim().is_empty())
 }
 
 fn build_activity_executor_registry(

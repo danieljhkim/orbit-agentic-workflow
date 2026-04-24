@@ -96,18 +96,16 @@ impl ActivityExecutor for AutomationExecutor {
                 }
                 if let (Some(state_dir), Some(step_index)) =
                     (execution.state_dir.as_deref(), execution.step_index)
+                    && let Err(error) = state_io::write_step_output(state_dir, step_index, &result)
                 {
-                    if let Err(error) = state_io::write_step_output(state_dir, step_index, &result)
-                    {
-                        return AttemptOutcome {
-                            exit_code: Some(1),
-                            response_json: Some(result),
-                            ..AttemptOutcome::failed(
-                                ACTIVITY_EXECUTION_FAILED,
-                                format!("failed to persist automation step output: {error}"),
-                            )
-                        };
-                    }
+                    return AttemptOutcome {
+                        exit_code: Some(1),
+                        response_json: Some(result),
+                        ..AttemptOutcome::failed(
+                            ACTIVITY_EXECUTION_FAILED,
+                            format!("failed to persist automation step output: {error}"),
+                        )
+                    };
                 }
                 AttemptOutcome {
                     state: JobRunState::Success,

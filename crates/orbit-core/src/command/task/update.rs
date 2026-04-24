@@ -194,10 +194,10 @@ impl OrbitRuntime {
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
         })?;
 
-        if let Some(new_status) = target_status {
-            if new_status != old_status {
-                self.try_record_friction_transition(&task, old_status, new_status);
-            }
+        if let Some(new_status) = target_status
+            && new_status != old_status
+        {
+            self.try_record_friction_transition(&task, old_status, new_status);
         }
 
         Ok(updated)

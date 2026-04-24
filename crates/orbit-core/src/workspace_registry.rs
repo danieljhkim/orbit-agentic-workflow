@@ -13,7 +13,12 @@ pub fn global_orbit_dir() -> Result<PathBuf, OrbitError> {
 
 /// Returns the path to the global workspace registry file.
 pub fn registry_path() -> Result<PathBuf, OrbitError> {
-    Ok(global_orbit_dir()?.join("workspaces.json"))
+    Ok(registry_path_for(&global_orbit_dir()?))
+}
+
+/// Returns the workspace registry path for an already-resolved Orbit root.
+pub fn registry_path_for(global_root: &Path) -> PathBuf {
+    global_root.join("workspaces.json")
 }
 
 /// Loads the workspace registry from `~/.orbit/workspaces.json`.

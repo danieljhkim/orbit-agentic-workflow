@@ -13,6 +13,7 @@ pub(super) trait GhClient {
         owner_repo: &str,
         pr_number: &str,
     ) -> Result<super::patch_match::PrFilePatchMap, OrbitError>;
+    #[allow(clippy::too_many_arguments)]
     fn create_inline_review_comment(
         &self,
         repo_root: &str,
@@ -270,10 +271,10 @@ pub(super) fn create_general_comment(
     }
 
     let output = result.stdout.trim();
-    if let Some(id_str) = output.rsplit("issuecomment-").next() {
-        if let Ok(id) = id_str.trim().parse::<u64>() {
-            return Ok(id);
-        }
+    if let Some(id_str) = output.rsplit("issuecomment-").next()
+        && let Ok(id) = id_str.trim().parse::<u64>()
+    {
+        return Ok(id);
     }
 
     Err(OrbitError::Execution(format!(

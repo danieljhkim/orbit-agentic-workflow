@@ -284,12 +284,12 @@ impl<'de> Deserialize<'de> for PipelineRef {
         if let Some(s) = v.as_str() {
             return Ok(PipelineRef::Literal(s.to_string()));
         }
-        if let Some(obj) = v.as_object() {
-            if let Some(from) = obj.get("from").and_then(|x| x.as_str()) {
-                return Ok(PipelineRef::Block {
-                    from: from.to_string(),
-                });
-            }
+        if let Some(obj) = v.as_object()
+            && let Some(from) = obj.get("from").and_then(|x| x.as_str())
+        {
+            return Ok(PipelineRef::Block {
+                from: from.to_string(),
+            });
         }
         Err(serde::de::Error::custom(
             "PipelineRef must be either a string or a block with `from:`",

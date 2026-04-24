@@ -275,16 +275,16 @@ pub(super) fn parse_planning_duel_roles(input: &Value) -> Result<PlanningRoles, 
     .map_err(|err| OrbitError::InvalidInput(format!("invalid planning_duel_roles payload: {err}")))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[allow(dead_code)]
 pub(super) fn role_activity_id(input: &Value, role: &str) -> Result<String, OrbitError> {
     let flat_key = format!("{role}_activity_id");
     if let Some(value) = input_string_field(input, &flat_key) {
         return Ok(value);
     }
-    if matches!(role, "planner_a" | "planner_b") {
-        if let Some(value) = input_string_field(input, "planner_activity_id") {
-            return Ok(value);
-        }
+    if matches!(role, "planner_a" | "planner_b")
+        && let Some(value) = input_string_field(input, "planner_activity_id")
+    {
+        return Ok(value);
     }
 
     input

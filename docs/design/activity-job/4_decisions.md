@@ -151,6 +151,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - `orbit run ship --json` and `orbit run ship show` surface actionable failure detail for early v2 pipeline failures instead of blank summaries.
 - Cost: the job-level input contract is now a shallow merge rule that docs and tests must preserve, and run history can include synthetic job-level failure steps that were not literal authored YAML steps.
 
+## ADR-012 — Direct v2 job runs are durable job runs, not audit-only executions
+
+**Status:** Accepted · 2026-04 · [T20260423-2004-4]
+
+**Context.** `orbit job run <schemaVersion: 2 yaml>` returned a run ID and wrote v2 audit JSONL, but did not create the persisted `JobRun` bundle that `orbit job history`, `orbit job run-state`, the dashboard, and other operator surfaces read. That made the returned run ID less useful than IDs from pipeline-dispatched workflows and weakened Orbit's auditability story.
+
+**Decision.** Treat direct v2 job execution as a normal durable job run at the public CLI/API boundary. The direct-run wrapper inserts a `JobRun`, marks it running, writes `state.json`, executes the same normalized v2 job path with the stored run ID, records a synthetic job-level step for the final pipeline/error surface, and finalizes the run. The lower-level `run_job_v2_from_yaml_with_run_id` remains available for already-persisted pipeline workers.
+
+**Consequences.**
+- A run ID returned by `orbit job run` is inspectable through `orbit job history <job_name>` and `orbit job run-state <run_id>`.
+- Ad hoc YAML runs remain visible even when the job is not part of the live catalog, because history can fall back to stored run bundles.
+- Cost: direct v2 execution now has persistence side effects and can record synthetic job-level steps that were not literal authored YAML steps.
+
 ---
 
 ## Task References
@@ -170,5 +183,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
 - **[T20260423-0445]** — Merge object-valued job defaults over explicit run input and persist synthetic failed job steps for early v2 pipeline failures.
 - **[T20260423-0447]** — Restore usable `orbit run duel` read-only surfaces after duel workflow retirement.
+- **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into job history and run-state.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -5,11 +5,12 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cli_src_dir="$repo_root/crates/orbit-cli/src"
 
 forbidden=(
-  "orbit_store"
-  "orbit_tools"
+  "orbit_agent"
+  "orbit_engine"
   "orbit_exec"
   "orbit_policy"
-  "orbit_types"
+  "orbit_store"
+  "orbit_tools"
 )
 
 failed=0

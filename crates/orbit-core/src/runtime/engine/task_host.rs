@@ -63,13 +63,13 @@ impl TaskWriteHost for OrbitRuntime {
         update: TaskAutomationUpdate,
     ) -> Result<(), OrbitError> {
         let existing_task = self.get_task(task_id)?;
-        if update.status == Some(TaskStatus::InProgress) {
-            if crate::command::task::in_progress_transition_requires_plan(existing_task.status) {
-                crate::command::task::ensure_task_has_execution_plan(
-                    task_id,
-                    existing_task.plan.as_str(),
-                )?;
-            }
+        if update.status == Some(TaskStatus::InProgress)
+            && crate::command::task::in_progress_transition_requires_plan(existing_task.status)
+        {
+            crate::command::task::ensure_task_has_execution_plan(
+                task_id,
+                existing_task.plan.as_str(),
+            )?;
         }
         let _ = self.with_mutation(|| {
             let (agent, model) = self

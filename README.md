@@ -102,10 +102,9 @@ TASK_ID=$(orbit task add \
   --workspace .)
 echo "$TASK_ID"
 
-# review and approve the proposed task(s)
+# review the created backlog task
 orbit task list
 orbit task show "$TASK_ID"
-orbit task approve "$TASK_ID" --note "LGTM"
 
 # run the default PR-based execution path
 orbit run ship "$TASK_ID"
@@ -114,7 +113,7 @@ orbit run ship "$TASK_ID"
 orbit run ship local "$TASK_ID"
 ```
 
-If you prefer conversational drafting, ask an agent to produce the `orbit task add ...` command for your real task, then run that command and continue with the same approval + ship flow.
+If you prefer conversational drafting, ask an agent to produce the `orbit task add ...` command for your real task, then run that command and continue with the same review + ship flow.
 
 If you already know which task(s) you want to run, pin them explicitly:
 
@@ -215,7 +214,7 @@ orbit task show <task_id>
 orbit task approve <task_id>
 ```
 
-Tasks are the durable unit of work. Agents create, update, and complete them under audit.
+Tasks are the durable unit of work. Direct human-created tasks enter the backlog; `approve` is for proposal and review gates.
 
 ### Audit and Observability
 

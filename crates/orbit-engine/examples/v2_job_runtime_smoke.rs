@@ -16,7 +16,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
-use orbit_common::types::activity_job::{JobAsset, V2AuditEventKind, load_job_asset};
+use orbit_common::types::activity_job::{V2AuditEventKind, load_job_asset};
 use orbit_engine::activity_job::{
     DispatchError, V2AuditWriter, V2JsonlSink, V2RuntimeHost, execute_job, reset_replay_transport,
 };
@@ -28,44 +28,44 @@ fn main() -> ExitCode {
     let tmp_audit_root = std::env::temp_dir().join("orbit-v2-job-smoke");
     let _ = std::fs::create_dir_all(&tmp_audit_root);
 
-    let mut results: Vec<(String, Result<(), String>)> = Vec::new();
-
-    results.push((
-        "parallel_branches".into(),
-        smoke_parallel_success(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "parallel_branches_failing".into(),
-        smoke_parallel_failing(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "conditional_on_value (approved)".into(),
-        smoke_conditional_approved(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "conditional_on_value (rejected)".into(),
-        smoke_conditional_rejected(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "retry_backoff".into(),
-        smoke_retry(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "fanout_fanin".into(),
-        smoke_fanout(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "loop_review_fix".into(),
-        smoke_loop_converge(&samples_dir, &fixtures_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "loop_no_converge".into(),
-        smoke_loop_diverge(&samples_dir, &tmp_audit_root),
-    ));
-    results.push((
-        "tool_denial_no_retry".into(),
-        smoke_denial_no_retry(&samples_dir, &tmp_audit_root),
-    ));
+    let results: Vec<(String, Result<(), String>)> = vec![
+        (
+            "parallel_branches".into(),
+            smoke_parallel_success(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "parallel_branches_failing".into(),
+            smoke_parallel_failing(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "conditional_on_value (approved)".into(),
+            smoke_conditional_approved(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "conditional_on_value (rejected)".into(),
+            smoke_conditional_rejected(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "retry_backoff".into(),
+            smoke_retry(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "fanout_fanin".into(),
+            smoke_fanout(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "loop_review_fix".into(),
+            smoke_loop_converge(&samples_dir, &fixtures_dir, &tmp_audit_root),
+        ),
+        (
+            "loop_no_converge".into(),
+            smoke_loop_diverge(&samples_dir, &tmp_audit_root),
+        ),
+        (
+            "tool_denial_no_retry".into(),
+            smoke_denial_no_retry(&samples_dir, &tmp_audit_root),
+        ),
+    ];
 
     let mut ok = 0;
     let mut fail = 0;
@@ -135,10 +135,9 @@ fn smoke_parallel_failing(samples: &Path, audit_root: &Path) -> Result<(), Strin
     if let V2AuditEventKind::StepJoin {
         branch_outcomes, ..
     } = &join.kind
+        && !branch_outcomes.iter().any(|b| b.outcome == "failed")
     {
-        if !branch_outcomes.iter().any(|b| b.outcome == "failed") {
-            return Err("expected at least one branch to fail".into());
-        }
+        return Err("expected at least one branch to fail".into());
     }
     Ok(())
 }
@@ -252,22 +251,21 @@ fn smoke_fanout(samples: &Path, audit_root: &Path) -> Result<(), String> {
     )?;
     let fanout = find_event(&events, "fanout.dispatched")
         .ok_or_else(|| "no fanout.dispatched event".to_string())?;
-    if let V2AuditEventKind::FanoutDispatched { worker_count, .. } = &fanout.kind {
-        if *worker_count != 3 {
-            return Err(format!("expected worker_count=3, got {worker_count}"));
-        }
+    if let V2AuditEventKind::FanoutDispatched { worker_count, .. } = &fanout.kind
+        && *worker_count != 3
+    {
+        return Err(format!("expected worker_count=3, got {worker_count}"));
     }
     let fanin =
         find_event(&events, "fanin.joined").ok_or_else(|| "no fanin.joined event".to_string())?;
     if let V2AuditEventKind::FaninJoined {
         collected, failed, ..
     } = &fanin.kind
+        && (*collected != 3 || *failed != 0)
     {
-        if *collected != 3 || *failed != 0 {
-            return Err(format!(
-                "expected collected=3 failed=0, got collected={collected} failed={failed}"
-            ));
-        }
+        return Err(format!(
+            "expected collected=3 failed=0, got collected={collected} failed={failed}"
+        ));
     }
     let worker_events = events
         .iter()

@@ -261,6 +261,7 @@ pub fn run_groundhog_activity(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_attempt(
     host: &dyn V2RuntimeHost,
     spec: &GroundhogSpec,
@@ -810,7 +811,7 @@ struct VerifierOutcome {
     failure_report: Option<FailureReport>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 struct SuccessPayload {
     summary: String,
     side_effects: Vec<SideEffect>,
@@ -906,15 +907,6 @@ impl GroundhogToolHost for AttemptGroundhogHost {
 
     fn scope(&self) -> GroundhogScope {
         self.scope.clone()
-    }
-}
-
-impl Default for SuccessPayload {
-    fn default() -> Self {
-        Self {
-            summary: String::new(),
-            side_effects: Vec::new(),
-        }
     }
 }
 

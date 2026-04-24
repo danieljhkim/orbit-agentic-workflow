@@ -105,7 +105,7 @@ fn task_field_to_json(
         "dependencies" => serde_json::to_value(&task.dependencies)
             .map_err(serialize_error("serialize dependencies")),
         "resolved_dependencies" => serde_json::to_value(
-            &resolve_task_dependencies(
+            resolve_task_dependencies(
                 task,
                 status_by_id.ok_or_else(|| {
                     OrbitError::Execution(

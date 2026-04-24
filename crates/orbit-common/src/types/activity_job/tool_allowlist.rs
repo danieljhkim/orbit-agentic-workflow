@@ -31,10 +31,10 @@ pub fn validate_tool_allowlist(allowlist: &[String]) -> Result<(), ToolAllowlist
         if entry.is_empty() {
             return Err(ToolAllowlistError::EmptyName);
         }
-        if let Some(prefix) = wildcard_prefix(entry) {
-            if !V2_TOOL_WILDCARD_ROOTS.iter().any(|root| *root == prefix) {
-                return Err(ToolAllowlistError::WildcardRootNotPermitted(entry.clone()));
-            }
+        if let Some(prefix) = wildcard_prefix(entry)
+            && !V2_TOOL_WILDCARD_ROOTS.iter().any(|root| *root == prefix)
+        {
+            return Err(ToolAllowlistError::WildcardRootNotPermitted(entry.clone()));
         }
     }
     Ok(())
@@ -47,10 +47,10 @@ pub fn tool_allowed(tool_name: &str, allowlist: &[String]) -> bool {
         if entry == tool_name {
             return true;
         }
-        if let Some(prefix) = wildcard_prefix(entry) {
-            if tool_name.starts_with(&prefix) {
-                return true;
-            }
+        if let Some(prefix) = wildcard_prefix(entry)
+            && tool_name.starts_with(&prefix)
+        {
+            return true;
         }
     }
     false

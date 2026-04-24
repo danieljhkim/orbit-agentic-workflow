@@ -85,6 +85,7 @@ pub(crate) struct OrbitStores {
 }
 
 impl OrbitStores {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         task: Arc<dyn TaskStoreBackend>,
         task_document: Arc<dyn TaskDocumentStoreBackend>,

@@ -46,9 +46,7 @@ pub(crate) fn render_content(
 ) -> String {
     let separator = line_ending.separator();
     let mut content = lines.join(separator);
-    if preserve_trailing_newline && !content.is_empty() {
-        content.push_str(separator);
-    } else if preserve_trailing_newline && content.is_empty() {
+    if preserve_trailing_newline {
         content.push_str(separator);
     }
     content

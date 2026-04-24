@@ -82,13 +82,27 @@ impl OrbitRuntime {
     }
 
     pub fn job_history(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
-        let _ = self.load_v2_job_asset_by_name(job_id)?;
-        self.list_job_history_backend(job_id)
+        match self.load_v2_job_asset_by_name(job_id) {
+            Ok(_) => self.list_job_history_backend(job_id),
+            Err(error) => {
+                let runs = self.list_job_history_backend(job_id)?;
+                if runs.is_empty() {
+                    Err(error)
+                } else {
+                    Ok(runs)
+                }
+            }
+        }
     }
 
     pub fn list_job_runs(&self, params: JobRunListParams) -> Result<Vec<JobRun>, OrbitError> {
-        if let Some(job_id) = params.job_id.as_deref() {
-            let _ = self.load_v2_job_asset_by_name(job_id)?;
+        if let Some(job_id) = params.job_id.as_deref()
+            && let Err(error) = self.load_v2_job_asset_by_name(job_id)
+        {
+            let runs = self.list_job_history_backend(job_id)?;
+            if runs.is_empty() {
+                return Err(error);
+            }
         }
 
         self.list_job_runs_filtered_backend(&JobRunQuery {
