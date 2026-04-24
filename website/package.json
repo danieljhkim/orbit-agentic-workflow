@@ -1,0 +1,25 @@
+{
+  "name": "orbit-website",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:design": "node ./scripts/sync-design-docs.mjs",
+    "predev": "npm run sync:design",
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "prebuild": "npm run sync:design",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "prepreview": "npm run sync:design",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "precheck": "npm run sync:design",
+    "check": "ASTRO_TELEMETRY_DISABLED=1 astro check"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.38.4",
+    "astro": "^6.1.9"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "typescript": "^5.9.3"
+  }
+}

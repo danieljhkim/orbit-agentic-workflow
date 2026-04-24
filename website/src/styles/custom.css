@@ -1,0 +1,286 @@
+:root {
+  color-scheme: dark light;
+  --sl-content-width: 45rem;
+  --sl-sidebar-width: 18rem;
+  --sl-text-h1: 2rem;
+  --sl-text-h2: 1.5rem;
+  --sl-text-h3: 1.25rem;
+  --sl-text-base: 1rem;
+  --sl-font: Inter, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sl-font-mono: "Geist Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  --sl-color-white: #ededf0;
+  --sl-color-gray-1: #ededf0;
+  --sl-color-gray-2: #c7c7cc;
+  --sl-color-gray-3: #9b9ba3;
+  --sl-color-gray-4: #686872;
+  --sl-color-gray-5: #3b3b42;
+  --sl-color-gray-6: #26262b;
+  --sl-color-black: #0a0a0a;
+  --sl-color-accent-low: #102448;
+  --sl-color-accent: #6e9fff;
+  --sl-color-accent-high: #c9ddff;
+  --sl-color-text: #ededf0;
+  --sl-color-text-accent: #8ab3ff;
+  --sl-color-bg: #0a0a0a;
+  --sl-color-bg-nav: #0a0a0a;
+  --sl-color-bg-sidebar: #0a0a0a;
+  --sl-color-bg-inline-code: #17171a;
+  --sl-color-hairline-light: #26262b;
+  --sl-color-hairline: #26262b;
+  --sl-color-hairline-shade: #17171a;
+}
+
+:root[data-theme='light'] {
+  --sl-color-white: #0f1014;
+  --sl-color-gray-1: #15161a;
+  --sl-color-gray-2: #30313a;
+  --sl-color-gray-3: #5f606b;
+  --sl-color-gray-4: #9da0aa;
+  --sl-color-gray-5: #d8dbe2;
+  --sl-color-gray-6: #eceef3;
+  --sl-color-black: #ffffff;
+  --sl-color-accent-low: #dce8ff;
+  --sl-color-accent: #2f67d8;
+  --sl-color-accent-high: #173b84;
+  --sl-color-text: #17171a;
+  --sl-color-text-accent: #2f67d8;
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-bg-inline-code: #f4f5f8;
+  --sl-color-hairline-light: #d8dbe2;
+  --sl-color-hairline: #eceef3;
+  --sl-color-hairline-shade: #f4f5f8;
+}
+
+html {
+  scroll-padding-top: 5rem;
+}
+
+body {
+  background: var(--sl-color-bg);
+  letter-spacing: 0;
+}
+
+.site-title,
+.header .site-title {
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.site-title img {
+  color: var(--sl-color-text);
+  height: 1.5rem;
+}
+
+.sl-markdown-content {
+  line-height: 1.65;
+}
+
+.sl-markdown-content h2 {
+  border-top: 1px solid var(--sl-color-hairline-light);
+  margin-top: 3rem;
+  padding-top: 2rem;
+  position: relative;
+}
+
+.sl-markdown-content h2::before {
+  background: var(--sl-color-bg);
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px var(--sl-color-bg);
+  content: "";
+  height: 0.52rem;
+  left: 50%;
+  position: absolute;
+  top: -0.3rem;
+  transform: translateX(-50%);
+  width: 0.52rem;
+}
+
+.sl-markdown-content :is(p, li) {
+  color: var(--sl-color-gray-2);
+}
+
+.sl-markdown-content a {
+  text-decoration-color: color-mix(in srgb, var(--sl-color-text-accent) 45%, transparent);
+  text-underline-offset: 0.2em;
+}
+
+.sl-markdown-content code {
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 4px;
+}
+
+.sl-markdown-content pre {
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 8px;
+}
+
+.sl-markdown-content table {
+  font-size: 0.92rem;
+}
+
+.sl-markdown-content blockquote {
+  background: color-mix(in srgb, var(--sl-color-accent) 6%, transparent);
+  border-inline-start-color: var(--sl-color-accent);
+}
+
+.orbit-hero {
+  align-items: center;
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem);
+  margin: 1.2rem 0 2rem;
+}
+
+.orbit-hero-copy p {
+  color: var(--sl-color-gray-2);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.orbit-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.orbit-button {
+  align-items: center;
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 6px;
+  color: var(--sl-color-text);
+  display: inline-flex;
+  font-size: 0.92rem;
+  font-weight: 600;
+  gap: 0.45rem;
+  min-height: 2.35rem;
+  padding: 0.45rem 0.8rem;
+  text-decoration: none;
+}
+
+.orbit-button.primary {
+  background: var(--sl-color-accent);
+  border-color: var(--sl-color-accent);
+  color: #081020;
+}
+
+.orbit-button:hover {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-text-accent);
+}
+
+.orbit-button.primary:hover {
+  background: #8ab3ff;
+  color: #081020;
+}
+
+.orbit-hero-diagram {
+  aspect-ratio: 1;
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 999px;
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  position: relative;
+}
+
+.orbit-hero-diagram::before,
+.orbit-hero-diagram::after {
+  border: 1px solid color-mix(in srgb, var(--sl-color-accent) 45%, var(--sl-color-hairline-light));
+  border-radius: 999px;
+  content: "";
+  inset: 18%;
+  position: absolute;
+  transform: rotate(18deg);
+}
+
+.orbit-hero-diagram::after {
+  animation: orbit-rotate 42s linear infinite;
+  border-color: color-mix(in srgb, var(--sl-color-accent) 75%, var(--sl-color-hairline-light));
+  inset: 31%;
+  transform-origin: center;
+}
+
+.orbit-dot {
+  animation: orbit-rotate 28s linear infinite;
+  border-radius: 999px;
+  height: 100%;
+  position: absolute;
+  width: 100%;
+}
+
+.orbit-dot::before {
+  background: var(--sl-color-accent);
+  border-radius: 999px;
+  box-shadow: 0 0 28px color-mix(in srgb, var(--sl-color-accent) 45%, transparent);
+  content: "";
+  height: 0.75rem;
+  left: calc(50% - 0.375rem);
+  position: absolute;
+  top: 12%;
+  width: 0.75rem;
+}
+
+.orbit-core {
+  background: var(--sl-color-text);
+  border-radius: 999px;
+  height: 0.55rem;
+  width: 0.55rem;
+}
+
+.orbit-card-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1.25rem 0 2rem;
+}
+
+.orbit-card {
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.orbit-card h3 {
+  font-size: 1rem;
+  margin: 0 0 0.35rem;
+}
+
+.orbit-card p {
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+@keyframes orbit-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit-hero-diagram::after,
+  .orbit-dot {
+    animation: none;
+  }
+}
+
+@media (max-width: 54rem) {
+  .orbit-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .orbit-hero-diagram {
+    max-width: 16rem;
+  }
+
+  .orbit-card-grid {
+    grid-template-columns: 1fr;
+  }
+}

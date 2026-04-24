@@ -1,0 +1,115 @@
+import { defineConfig } from 'astro/config';
+import starlight from '@astrojs/starlight';
+
+export default defineConfig({
+  site: 'https://orbit-cli.com',
+  integrations: [
+    starlight({
+      title: 'Orbit',
+      description:
+        'Reference documentation for Orbit, a self-hosted runtime for fleets of coding agents.',
+      logo: {
+        dark: './src/assets/orbit-logo-dark.svg',
+        light: './src/assets/orbit-logo-light.svg',
+        alt: 'Orbit',
+        replacesTitle: true,
+      },
+      favicon: '/favicon.svg',
+      social: [
+        {
+          icon: 'github',
+          label: 'GitHub',
+          href: 'https://github.com/danieljhkim/orbit',
+        },
+      ],
+      tableOfContents: {
+        minHeadingLevel: 2,
+        maxHeadingLevel: 3,
+      },
+      customCss: ['./src/styles/custom.css'],
+      components: {
+        ThemeProvider: './src/components/ThemeProvider.astro',
+      },
+      pagefind: true,
+      sidebar: [
+        {
+          label: 'Introduction',
+          items: [{ slug: 'index', label: 'What Orbit Is' }],
+        },
+        {
+          label: 'Getting Started',
+          items: [
+            { slug: 'getting-started', label: 'Overview' },
+            { slug: 'getting-started/install', label: 'Install Orbit' },
+            { slug: 'getting-started/first-task', label: 'First Task' },
+            { slug: 'getting-started/first-activity-run', label: 'First Activity Run' },
+          ],
+        },
+        {
+          label: 'Concepts',
+          items: [
+            { slug: 'concepts', label: 'Overview' },
+            { slug: 'concepts/tasks', label: 'Tasks' },
+            { slug: 'concepts/activities-jobs', label: 'Activities and Jobs' },
+            { slug: 'concepts/policies', label: 'Policies' },
+            { slug: 'concepts/knowledge-graph', label: 'Knowledge Graph' },
+            { slug: 'concepts/agents', label: 'Agents' },
+          ],
+        },
+        {
+          label: 'How-to Guides',
+          items: [
+            { slug: 'how-to', label: 'Overview' },
+            { slug: 'how-to/task-lifecycle', label: 'Run a Task Lifecycle' },
+            { slug: 'how-to/write-activity', label: 'Write an Activity' },
+            { slug: 'how-to/scoping-rules', label: 'Choose Scopes' },
+            { slug: 'how-to/mcp-integration', label: 'Set Up MCP' },
+          ],
+        },
+        {
+          label: 'Reference',
+          items: [
+            { slug: 'reference', label: 'Overview' },
+            { slug: 'reference/cli', label: 'CLI Commands' },
+            { slug: 'reference/activity-job-yaml', label: 'Activity and Job YAML' },
+            { slug: 'reference/policy-format', label: 'Policy Format' },
+            { slug: 'reference/config', label: 'Configuration' },
+            { slug: 'reference/scoping', label: 'Scoping Rules' },
+          ],
+        },
+        {
+          label: 'Architecture',
+          items: [
+            { slug: 'architecture', label: 'Overview' },
+            {
+              label: 'Design Mirror',
+              autogenerate: {
+                directory: 'architecture/design',
+                collapsed: true,
+              },
+              collapsed: true,
+            },
+          ],
+        },
+        {
+          label: 'Contributing',
+          items: [
+            { slug: 'contributing', label: 'Overview' },
+            { slug: 'contributing/local-dev', label: 'Local Development' },
+            { slug: 'contributing/crate-layout', label: 'Crate Layout' },
+            { slug: 'contributing/pr-workflow', label: 'PR Workflow' },
+          ],
+        },
+      ],
+      head: [
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'theme-color',
+            content: '#0A0A0A',
+          },
+        },
+      ],
+    }),
+  ],
+});
