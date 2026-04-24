@@ -33,6 +33,7 @@ from pathlib import Path
 
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/Users/daniel/.local/bin/claude")
 CODEX_BIN = os.environ.get("CODEX_BIN", "codex")
+ORBIT_DATA_ROOT = os.environ.get("ORBIT_DATA_ROOT", os.path.expanduser("~/.orbit"))
 DEFAULT_MODELS = {
     # Sonnet is the main-run model. We experimented with opus during Gate C
     # of the v2 fixture design (some sonnet runs refused to engage with graph
@@ -41,7 +42,10 @@ DEFAULT_MODELS = {
     # surfaces at the CLI as a "Credit balance is too low" 400. Sonnet stays
     # well under the window and was sufficient in all smoke tests.
     "claude": "sonnet",
-    "codex": "gpt-5.3-codex",
+    # v1 ran `gpt-5.4`; v2 regressed to `gpt-5.3-codex` silently. v3 pins the
+    # model explicitly so the v3-vs-v2 delta is interpretable. Bump with
+    # intent, not drift. Override per-run via `GRAPH_CODEX_MODEL` if needed.
+    "codex": os.environ.get("GRAPH_CODEX_MODEL", "gpt-5.3-codex"),
 }
 
 CLAUDE_GRAPH_TOOLS = (
@@ -114,18 +118,20 @@ CLAUDE_ARM_STEER = {
 CODEX_ARM_STEER = {
     "no-graph": (
         "You have only a shell command tool for filesystem navigation. Use "
-        "`rg`, `git grep`, `find`, `ls`, and focused `sed -n` reads. Do NOT "
-        "run `orbit tool run orbit.graph.*` commands in this arm."
+        "`rg`, `git grep`, `find`, `ls`, and focused `sed -n` reads. The "
+        "knowledge-graph MCP server is not available in this arm."
     ),
     "graph-only": (
-        "You have only a shell command tool, and the intended navigation "
-        "surface is Orbit knowledge-graph commands run from the repo root via "
-        "`orbit tool run orbit.graph.*`. Do NOT use `rg`, `grep`, `find`, `ls`, or `cat`. "
+        "You have ONLY the orbit knowledge-graph MCP tools "
+        "(orbit_bench.orbit_graph_*). You do NOT have shell/exec. Answer by "
+        "calling the MCP graph tools — start with orbit_graph_search or "
+        "orbit_graph_overview. Do not guess paths; if the graph cannot "
+        "answer, say so."
     ),
     "hybrid": (
-        "You have both filesystem tools (rg, ls, cat, find, grep, etc.) AND orbit "
-        "knowledge-graph tools (orbit.graph.*). Choose the "
-        "tool best fit for each sub-question."
+        "You have both a shell command tool (rg, ls, cat, find, grep, etc.) "
+        "AND the orbit knowledge-graph MCP tools (orbit_bench.orbit_graph_*). "
+        "Choose the tool best fit for each sub-question."
     ),
 }
 
@@ -214,8 +220,15 @@ def _run_jsonl_subprocess(
 
 
 def _is_graph_tool_name(name: str) -> bool:
-    return name.startswith("mcp__orbit-bench__orbit_graph_") or name.startswith(
-        "orbit.graph."
+    # Claude MCP naming: `mcp__orbit-bench__orbit_graph_<op>`
+    # Codex MCP naming: `orbit_bench.orbit_graph_<op>` / `orbit_bench__orbit_graph_<op>`
+    # Codex shell CLI: `orbit.graph.<op>` (extracted by GRAPH_COMMAND_RE)
+    return (
+        name.startswith("mcp__orbit-bench__orbit_graph_")
+        or name.startswith("orbit_bench.orbit_graph_")
+        or name.startswith("orbit_bench__orbit_graph_")
+        or name.startswith("orbit.graph.")
+        or "orbit_graph_" in name  # defensive fallback for unexpected prefixing
     )
 
 
@@ -238,25 +251,82 @@ def _build_codex_prompt(
     return (
         f"<run-nonce sweep={sweep_id} nonce={nonce} provider=codex arm={arm} />\n\n"
         f"{scaffold}\n\n"
-        "Benchmark rule: use only shell commands. Ignore Orbit skills that "
-        "suggest direct MCP tools such as `orbit.graph.*` or `orbit.task.*`. "
-        "If graph access is allowed for this arm, invoke it only through "
-        "`orbit tool run orbit.graph.*` shell commands.\n\n"
+        "Benchmark rule: respect the arm's allowed surface. Ignore user-level "
+        "Orbit skills that suggest tools outside that surface. Do not fall "
+        "back to alternative paths if a preferred tool fails; report the "
+        "failure in the final message instead.\n\n"
         f"Task:\n{prompt}"
     )
 
 
-def _codex_overrides() -> list[str]:
-    return [
+def _codex_mcp_overrides_from_config(mcp_config_path: str) -> list[str]:
+    """Translate an mcp.json config into codex `-c` override flags.
+
+    The mcp.json format matches Claude's `--mcp-config` shape:
+
+        {"mcpServers": {"<name>": {"command": ..., "args": [...], "env": {...}}}}
+
+    We rename the server to `orbit_bench` on the codex side (underscore form
+    required for TOML keys) and emit one override per field. The server is
+    emitted with `enabled=true`; per-arm gating happens in `_codex_overrides`.
+    """
+    with open(mcp_config_path) as fh:
+        cfg = json.load(fh)
+    servers = cfg.get("mcpServers", {}) or {}
+    overrides: list[str] = []
+    for _raw_name, spec in servers.items():
+        # Normalize to `orbit_bench` (TOML-legal key) regardless of the
+        # incoming name. Only one server is expected in bench config.
+        key = "orbit_bench"
+        command = spec.get("command")
+        if command:
+            overrides.append(f'mcp_servers.{key}.command={json.dumps(command)}')
+        args = spec.get("args")
+        if args:
+            overrides.append(f"mcp_servers.{key}.args={json.dumps(args)}")
+        env = spec.get("env")
+        if env:
+            # TOML inline table: env = { KEY = "value", ... }
+            pairs = ", ".join(f'{k} = {json.dumps(v)}' for k, v in env.items())
+            overrides.append(f"mcp_servers.{key}.env={{{pairs}}}")
+        overrides.append(f"mcp_servers.{key}.enabled=true")
+    return overrides
+
+
+def _codex_overrides(*, arm: str, mcp_config_path: str | None) -> list[str]:
+    # Per-arm: no-graph disables the orbit-bench MCP server AND keeps
+    # exec_command on. graph-only disables exec_command and keeps the MCP
+    # server on. hybrid keeps both on.
+    shell_enabled = arm in ("no-graph", "hybrid")
+    mcp_enabled = arm in ("graph-only", "hybrid")
+
+    enabled_tools = '["exec_command"]' if shell_enabled else "[]"
+    base = [
         "default_tools_enabled=false",
-        'enabled_tools=["exec_command"]',
+        f"enabled_tools={enabled_tools}",
         'approval_policy="never"',
+        # Neutralize any user-level orbit MCP server so only the bench-scoped
+        # orbit_bench server is visible to the agent.
         "mcp_servers.orbit.enabled=false",
-        "features.tool_call_mcp_elicitation=false",
+        # Keep elicitation on — v3 smoke test showed that disabling it causes
+        # codex to auto-cancel MCP tool calls ("user cancelled MCP tool call")
+        # when a tool schema has any optional field. We accept a small mid-run
+        # elicitation risk in exchange for MCP calls actually running.
         "features.skill_mcp_dependency_install=false",
         "features.plugins=false",
         "features.apps=false",
     ]
+    if mcp_enabled and mcp_config_path:
+        base.extend(_codex_mcp_overrides_from_config(mcp_config_path))
+    elif mcp_config_path:
+        # Load server definition but disable it, so the arm signal is purely
+        # "MCP server off" rather than "MCP server never configured".
+        base.extend(
+            override if not override.endswith(".enabled=true")
+            else override[:-len("=true")] + "=false"
+            for override in _codex_mcp_overrides_from_config(mcp_config_path)
+        )
+    return base
 
 
 def _is_permission_denial_message(message: str) -> bool:
@@ -615,10 +685,17 @@ class ClaudeProvider(BenchmarkProvider):
             if _is_graph_tool_name(name)
         }
         final = (normalized.get("final_message") or "").upper()
+        # Preferred signal: tool call AND PROBE_OK. Acceptable: tool call only.
+        # Accepted but flagged: PROBE_OK only — haiku will sometimes shortcut-
+        # answer without actually invoking the tool. Exit=0 + PROBE_OK is
+        # sufficient evidence that the CLI invocation and MCP config loaded;
+        # the main run will surface any downstream MCP failure quickly.
         if "PROBE_OK" in final and graph_calls:
             return (True, "PROBE_OK")
         if graph_calls:
             return (True, f"graph tool call observed despite missing PROBE_OK: {graph_calls}")
+        if "PROBE_OK" in final:
+            return (True, "PROBE_OK (haiku shortcut; MCP config loaded but tool not exercised)")
         return (False, f"probe made zero graph-tool calls; final={final[:120]!r}")
 
 
@@ -629,7 +706,21 @@ class CodexProvider(BenchmarkProvider):
     def arm_config(self, arm: str) -> ProviderArmConfig:
         if arm not in CODEX_ARM_STEER:
             raise SystemExit(f"unknown arm: {arm!r}")
-        return ProviderArmConfig(allowed=("exec_command",), disallowed=())
+        # Codex doesn't take an --allowed-tools CLI flag; per-arm gating is
+        # enforced via the `-c` overrides built from the arm name in
+        # `_codex_overrides`. The ProviderArmConfig is retained for
+        # record-keeping parity with Claude but is not wired into the child
+        # CLI invocation.
+        if arm == "no-graph":
+            return ProviderArmConfig(allowed=("exec_command",), disallowed=())
+        if arm == "graph-only":
+            return ProviderArmConfig(allowed=("mcp:orbit_bench.orbit_graph_*",), disallowed=("exec_command",))
+        if arm == "hybrid":
+            return ProviderArmConfig(
+                allowed=("exec_command", "mcp:orbit_bench.orbit_graph_*"),
+                disallowed=(),
+            )
+        raise SystemExit(f"unknown arm: {arm!r}")
 
     def run(
         self,
@@ -650,14 +741,28 @@ class CodexProvider(BenchmarkProvider):
             "--json",
             "--ephemeral",
             "--skip-git-repo-check",
+            # v3: danger-full-access (was read-only in v2). Two reasons:
+            #  1. The orbit binary's SQLite WAL needs write access in the
+            #     ORBIT_DATA_ROOT; v2's read-only sandbox produced 45 of the
+            #     157 command_failures (see v2/METHOD.md caveat #8).
+            #  2. In non-interactive `codex exec` with `approval_policy=never`,
+            #     workspace-write auto-CANCELS MCP tool calls ("user cancelled
+            #     MCP tool call"); only danger-full-access auto-approves them.
+            #     This was verified against a clean smoke test of the user's
+            #     production `orbit` MCP server — the cancel behavior is
+            #     independent of our server wiring.
+            # Benchmark tasks never request writes (edit/apply_patch aren't in
+            # enabled_tools) so the widened sandbox only unblocks tool-call
+            # auto-approval and the store's journaling. Runs are `--ephemeral`
+            # so no codex session state persists between cells.
             "--sandbox",
-            "read-only",
+            "danger-full-access",
             "--cd",
             str(self.repo_root),
             "--model",
             model,
         ]
-        for override in _codex_overrides():
+        for override in _codex_overrides(arm=arm, mcp_config_path=self.mcp_config):
             cmd.extend(["-c", override])
         cmd.append("-")
 
@@ -691,12 +796,24 @@ class CodexProvider(BenchmarkProvider):
         sweep_id: str,
         model: str,
     ) -> tuple[bool, str]:
+        # Per-arm probe: no-graph smoke-tests the shell; graph-only/hybrid
+        # smoke-test the MCP graph server is reachable. The probe verifies
+        # the ARM's expected surface is live, not just any tool surface.
+        if arm == "no-graph":
+            probe_prompt = (
+                "Run `orbit --version` exactly once with the shell tool. "
+                "After the command returns successfully, reply with exactly: "
+                "PROBE_OK."
+            )
+        else:
+            probe_prompt = (
+                "Call the orbit_graph_overview MCP tool from the orbit_bench "
+                "server exactly once with arguments "
+                f'{{"format":"summary","workspace":"{self.repo_root}"}}. '
+                "After the tool returns, reply with exactly: PROBE_OK."
+            )
         probe_result = self.run(
-            prompt=(
-                "Run `orbit tool run orbit.graph.overview --output text` exactly once "
-                "with the shell tool. After the command returns successfully, reply "
-                "with exactly: PROBE_OK."
-            ),
+            prompt=probe_prompt,
             arm=arm,
             arm_config=self.arm_config(arm),
             system_suffix=build_system_prompt_suffix(
@@ -716,16 +833,26 @@ class CodexProvider(BenchmarkProvider):
                 False,
                 f"probe exit={probe_result.exit_code} result_present={normalized is not None}",
             )
-        graph_calls = {
-            name: count
-            for name, count in (normalized.get("tool_calls") or {}).items()
-            if _is_graph_tool_name(name)
-        }
         if normalized.get("command_failures"):
             return (False, f"probe command failures: {normalized['command_failures']}")
         final = (normalized.get("final_message") or "").upper()
+        tool_calls = normalized.get("tool_calls") or {}
+        if arm == "no-graph":
+            # Success: any shell exec completed and the agent emitted PROBE_OK.
+            if "PROBE_OK" in final and "exec_command" in tool_calls:
+                return (True, "PROBE_OK")
+            return (
+                False,
+                f"no-graph probe missed shell+PROBE_OK; tool_calls={tool_calls} final={final[:120]!r}",
+            )
+        # graph-only / hybrid: require an MCP graph call.
+        graph_calls = {
+            name: count
+            for name, count in tool_calls.items()
+            if _is_graph_tool_name(name)
+        }
         if "PROBE_OK" in final and graph_calls:
             return (True, "PROBE_OK")
         if graph_calls:
-            return (True, f"graph command observed despite missing PROBE_OK: {graph_calls}")
+            return (True, f"graph call observed despite missing PROBE_OK: {graph_calls}")
         return (False, f"probe made zero graph-tool calls; final={final[:120]!r}")

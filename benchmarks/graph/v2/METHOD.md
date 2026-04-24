@@ -21,10 +21,11 @@ A v2-vs-v1 delta is therefore measuring `(v2 fixtures) × (trimmed surface) × (
 - **Tool descriptions:** rewritten for selector-first, navigation-first phrasing ([T20260423-0525]).
 - **Indexer noise:** `.orbitignore` now excludes `benchmarks/graph*/` from the knowledge-graph ([T20260422-0452]).
 - **Harness code:** pre-flight probe pinned to haiku; `--max-budget-usd` flag removed from the Claude CLI invocation (subscription usage-window is enforced upstream); subprocess timeout raised from 600 s to 1000 s.
+- **Codex model regressed unintentionally:** v1 ran `gpt-5.4`; v2 ran `gpt-5.3-codex`. Caveat #7 below explains the impact on the v2-vs-v1 delta.
 
 ## Scope
 
-- **Providers run:** Codex (gpt-5.3-codex-spark, via `codex exec`). **Claude was NOT run** — the subscription usage window exhausted during the v2 sweep attempts; see caveat #1 below.
+- **Providers run:** Codex (`gpt-5.3-codex`, via `codex exec`). **Claude was NOT run** — the subscription usage window exhausted during the v2 sweep attempts; see caveat #1 below. Note: this is the plain `gpt-5.3-codex` variant, not `-spark`; an earlier draft of this file listed `-spark` in error. Verified against the `requested_model` field in all 90 run records.
 - **Arms:** `no-graph`, `graph-only`, `hybrid`.
 - **Fixtures:** 10 (6 carried from v1 + 4 new — see [`V2_FIXTURES.md`](./V2_FIXTURES.md)).
 - **Seeds:** 3 per (provider × arm × fixture) cell.
@@ -55,6 +56,12 @@ These are material to interpreting `RESULTS.md` and should be read before relyin
 4. **One fixture (`impact-tool-context-struct-literals`) broke graph-only entirely** — 0/3 pass on graph-only, 3/3 on both no-graph and hybrid. Transcripts show the agent making the graph navigation attempts but the assembled answer misses the construction sites the oracle expects. Worth a per-transcript audit before v3 design.
 5. **Codex cost is reported as $0.** Same as v1 — the Codex CLI does not emit billing. All USD figures are zero by construction.
 6. **Tool-utilization audit is still ad-hoc.** [T20260423-0524] (aggregate utilization column) landed in v2-prep but was not executed against the v2 sweep before freeze. Counts in `RESULTS.md` were produced by a transcript scan at report time, as in v1.
+7. **Codex model regressed from v1.** v1 ran `gpt-5.4`; v2 ran `gpt-5.3-codex` (older). The v2-vs-v1 codex delta therefore conflates (tool-surface trim × description rewrite × indexer noise × grep-hard fixtures × `.orbitignore`) with a model downgrade. The regression was unintentional — it came from a DEFAULT_MODELS change at harness-polish time that was not noticed during pre-flight.
+8. **Codex command_failures rate was high.** 38 of 90 runs (42 %) emitted at least one `command_failures` entry, 157 failures total. The dominant classes:
+    - 45× `error: store error: attempt to write a readonly database` — SQLite WAL writes rejected because codex ran with `--sandbox read-only` and `~/.orbit/` was not in `--add-dir`. This broke graph CLI calls that went through the orbit binary.
+    - 13× `error: unexpected argument '--output' found` — the agent invented a `--output` flag for `orbit tool list` that doesn't exist. A pure CLI-surface hallucination; MCP tool schemas would prevent this class of failure entirely (v3 measures that).
+    - 9× WAL-mode warnings (same root cause as #1).
+    Together these inflated the codex cost/turn counts and polluted the graph-only / hybrid arms' reliability signal in ways the `verdict: pass/fail` column alone doesn't expose. See v3 METHOD for how both classes are addressed.
 
 ## Reproduction
 
