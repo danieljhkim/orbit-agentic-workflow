@@ -18,6 +18,8 @@ import uuid
 from pathlib import Path
 
 BENCH_ROOT = Path(__file__).resolve().parents[1]
+GRAPH_VERSION = os.environ.get("GRAPH_VERSION", "v3")
+VERSION_ROOT = BENCH_ROOT / GRAPH_VERSION
 RUN_SH = BENCH_ROOT / "scripts" / "run.sh"
 
 
@@ -48,9 +50,9 @@ def main() -> int:
                     help="write order.json and print the plan; do not execute runs")
     args = ap.parse_args()
 
-    task_ids = args.tasks or discover_tasks(BENCH_ROOT / "tasks")
+    task_ids = args.tasks or discover_tasks(VERSION_ROOT / "tasks")
     if not task_ids:
-        print("no fixtures under benchmarks/graph/tasks/", file=sys.stderr)
+        print(f"no fixtures under {VERSION_ROOT}/tasks/", file=sys.stderr)
         return 1
 
     sweep_seed = args.sweep_seed if args.sweep_seed is not None else random.randrange(1 << 30)
@@ -65,7 +67,7 @@ def main() -> int:
     rng = random.Random(sweep_seed)
     rng.shuffle(cells)
 
-    sweep_dir = BENCH_ROOT / "runs" / "_sweeps" / args.provider / sweep_id
+    sweep_dir = VERSION_ROOT / "runs" / "_sweeps" / args.provider / sweep_id
     sweep_dir.mkdir(parents=True, exist_ok=True)
     order_path = sweep_dir / "order.json"
     order_path.write_text(
@@ -123,7 +125,8 @@ def main() -> int:
         tail = proc.stdout.strip().split("\n")[-1] if proc.stdout else ""
         try:
             info = json.loads(tail)
-            total_spend += info.get("cost", 0.0)
+            cell_cost = info.get("cost") or 0.0
+            total_spend += cell_cost
             results.append(
                 {
                     "provider": args.provider,
@@ -134,7 +137,7 @@ def main() -> int:
                 }
             )
             print(
-                f"  verdict={info.get('verdict')} cost={info.get('cost'):.3f} "
+                f"  verdict={info.get('verdict')} cost={cell_cost:.3f} "
                 f"running_total=${total_spend:.2f}"
             )
         except json.JSONDecodeError:

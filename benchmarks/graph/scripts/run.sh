@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Single-cell benchmark driver. Thin wrapper around run.py so the AC
-# "`bash benchmarks/graph/scripts/run.sh`" is honored while the real
-# logic lives in Python.
+# Single-cell benchmark driver. Thin wrapper around run.py.
 #
 # Usage:
-#   benchmarks/graph/scripts/run.sh <arm> <task_id> <seed> [--provider claude|codex] [--no-probe] [--budget N]
+#   benchmarks/graph/scripts/run.sh <arm> <task_id> <seed> [--provider claude|codex] [--no-probe]
 #
-# Environment (optional; normally set by sweep.py):
+# Environment (optional; normally set by sweep.py or the Makefile):
+#   GRAPH_VERSION      — which version's tasks/runs to target (default: v3)
 #   SWEEP_ID           — groups runs into a sweep
 #   RUN_ORDER_INDEX    — 0-based index within a shuffled sweep order
 #   NONCE              — cold-cache nonce (uuid4 if unset)

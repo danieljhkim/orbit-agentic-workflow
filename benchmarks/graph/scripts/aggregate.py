@@ -1,15 +1,19 @@
 """Sweep aggregator.
 
-Reads benchmark records under `benchmarks/graph/runs/` and emits two
-markdown tables to stdout: the primary `(provider, arm, task_class)`
-headline table and the secondary `(provider, model, arm, task_class)`
-per-model breakdown.
+Reads benchmark records under `benchmarks/graph/<version>/runs/` and
+emits two markdown tables to stdout: the primary `(provider, arm,
+task_class)` headline table and the secondary `(provider, model, arm,
+task_class)` per-model breakdown.
+
+Defaults target the living version (v3); override with `--runs` /
+`--tasks` or `GRAPH_VERSION=vN` to address a frozen snapshot.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 from collections import defaultdict
@@ -19,6 +23,8 @@ from pathlib import Path
 import yaml
 
 BENCH_ROOT = Path(__file__).resolve().parents[1]
+GRAPH_VERSION = os.environ.get("GRAPH_VERSION", "v3")
+VERSION_ROOT = BENCH_ROOT / GRAPH_VERSION
 ARMS = {"no-graph", "graph-only", "hybrid"}
 PROVIDERS = {"claude", "codex"}
 CLAUDE_SHELL_OR_FS_TOOLS = {"Bash", "Glob", "Grep", "Read"}
@@ -301,8 +307,8 @@ def _render(title: str, rows: list[dict]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--runs", default=str(BENCH_ROOT / "runs"))
-    ap.add_argument("--tasks", default=str(BENCH_ROOT / "tasks"))
+    ap.add_argument("--runs", default=str(VERSION_ROOT / "runs"))
+    ap.add_argument("--tasks", default=str(VERSION_ROOT / "tasks"))
     args = ap.parse_args(argv)
 
     runs = load_runs(Path(args.runs), Path(args.tasks))

@@ -1,14 +1,26 @@
 # Knowledge Graph Benchmarks
 
-> **Status:** LIVING harness — next round (v2) in progress. The most recently frozen results are at [`../graph_v1/RESULTS.md`](../graph_v1/RESULTS.md). See [`../CONVENTIONS.md`](../CONVENTIONS.md) for the versioning rules.
-
-Measures how much navigation budget an agent spends solving the same task under different tool surfaces. The benchmark is meant to compare repeatable experiment cells, not produce one-off anecdotes.
+Measures how much navigation budget an agent spends solving the same task under different tool surfaces. The benchmark compares repeatable experiment cells, not one-off anecdotes.
 
 See [docs/design/knowledge-graph/](../../docs/design/knowledge-graph/) for the graph itself.
 
+## Versions
+
+Rounds are numbered; each round is a complete sweep campaign (fixtures + harness + run records + report). Frozen snapshots are immutable; the living version is where the next round is being developed.
+
+| Version | Status | Report | Method |
+|---|---|---|---|
+| [v1](./v1/) | FROZEN (2026-04-22) | [RESULTS.md](./v1/RESULTS.md) | [METHOD.md](./v1/METHOD.md) |
+| [v2](./v2/) | FROZEN (2026-04-23) | [RESULTS.md](./v2/RESULTS.md) | [METHOD.md](./v2/METHOD.md), [V2_FIXTURES.md](./v2/V2_FIXTURES.md) |
+| [v3](./v3/) | LIVING (round 3 in progress) | — | — |
+
+The [`../CONVENTIONS.md`](../CONVENTIONS.md) document governs version freezing, directory shape, and report structure. Version-specific deltas (fixture changes, harness changes, delta vs the previous round) live in that version's `METHOD.md`.
+
+A null-result evidence log for the cross-round question *"do agent-facing graph tools earn their token cost?"* lives at [`docs/design/knowledge-graph/5_null_result.md`](../../docs/design/knowledge-graph/5_null_result.md).
+
 ## Providers
 
-The harness supports two CLI providers:
+Two CLI providers are supported:
 
 | Provider | Navigation surface in this benchmark |
 |---|---|
@@ -31,19 +43,21 @@ Claude keeps native allowlists. Codex is provider-native in Phase 1, so the arm 
 
 ## Running
 
+All commands target the living version (v3) by default. To run against a frozen snapshot for reproduction, pass `GRAPH_VERSION=vN` to the Makefile targets.
+
 Run a single cell:
 
 ```bash
-benchmarks/graph/scripts/run.sh graph-only locate-agentruntime 1 --provider claude
-benchmarks/graph/scripts/run.sh graph-only locate-agentruntime 1 --provider codex
+benchmarks/graph/v3/scripts/run.sh graph-only locate-agentruntime 1 --provider claude
+benchmarks/graph/v3/scripts/run.sh graph-only locate-agentruntime 1 --provider codex
 make -C benchmarks graph-run GRAPH_PROVIDER=codex GRAPH_ARM=graph-only GRAPH_TASK=locate-agentruntime
 ```
 
 Run a sweep:
 
 ```bash
-python3 benchmarks/graph/scripts/sweep.py --provider claude --n 5
-python3 benchmarks/graph/scripts/sweep.py --provider codex --n 5
+python3 benchmarks/graph/v3/scripts/sweep.py --provider claude --n 5
+python3 benchmarks/graph/v3/scripts/sweep.py --provider codex --n 5
 make -C benchmarks graph-sweep GRAPH_PROVIDER=codex GRAPH_N=1 GRAPH_TASKS=trace-policy-denial-wiring
 ```
 
@@ -51,25 +65,26 @@ Useful flags:
 
 - `--provider {claude,codex}` selects the child CLI.
 - `--no-probe` skips the graph pre-flight check for graph-enabled arms.
-- `--budget` sets the Claude spend hint for a single run. Codex records cost as `0.0` in Phase 1 because its JSON event stream does not expose spend.
+
+Cost accounting: Claude records `total_cost_usd` in each run record; Codex records cost as `0.0` in Phase 1 because its JSON event stream does not expose spend. There is no per-run CLI-side budget cap — subscription plans surface exhaustion as a 400 at the API layer.
 
 ## Tasks
 
-Fixtures live under [`tasks/`](./tasks/) and pin:
+Fixtures live under each version's `tasks/` folder and pin:
 
 - `commit_sha`: exact repo state to run against
 - `prompt`: verbatim user message
 - `oracle`: grading rule for the final assistant message
 
-See [`tasks/_schema.yaml`](./tasks/_schema.yaml) for the schema.
+See [`v3/tasks/_schema.yaml`](./v3/tasks/_schema.yaml) for the schema.
 
 ## Outputs
 
-Per-run records live under:
+Per-run records live under each version's `runs/` subtree:
 
 ```text
-benchmarks/graph/runs/<provider>/<arm>/<task_id>/<seed>.json
-benchmarks/graph/runs/<provider>/<arm>/<task_id>/<seed>.transcript.json
+benchmarks/graph/<version>/runs/<provider>/<arm>/<task_id>/<seed>.json
+benchmarks/graph/<version>/runs/<provider>/<arm>/<task_id>/<seed>.transcript.json
 ```
 
 Each run record includes:
@@ -80,15 +95,16 @@ Each run record includes:
 - `verdict` in `{pass, fail, error}` plus a diagnostic
 - transcript artifact paths
 
-Sweep metadata lives under:
-
-```text
-benchmarks/graph/runs/_sweeps/<provider>/<sweep_id>/
-```
+Sweep metadata lives under `benchmarks/graph/<version>/runs/_sweeps/<provider>/<sweep_id>/`.
 
 ## Aggregation
 
-`python3 benchmarks/graph/scripts/aggregate.py` reads the run tree and prints:
+```bash
+make -C benchmarks graph-aggregate                  # living version (v3)
+make -C benchmarks graph-aggregate GRAPH_VERSION=v1 # frozen v1
+```
+
+Prints:
 
 - a primary table grouped by `(provider, arm, task_class)`
 - a secondary table grouped by `(provider, model, arm, task_class)`
@@ -98,18 +114,17 @@ benchmarks/graph/runs/_sweeps/<provider>/<sweep_id>/
 
 ```text
 benchmarks/graph/
-├── README.md
-├── tasks/
-├── scripts/
-└── runs/
-```
-
-```
-make -C benchmarks graph-sweep-claude GRAPH_N=5 \
-    GRAPH_SWEEP_ARGS="--sweep-seed 1609" 2>&1 | tee /tmp/sweep-claude.log
-
-make -C benchmarks graph-sweep-codex GRAPH_N=5 \
-    GRAPH_SWEEP_ARGS="--sweep-seed 1609" 2>&1 | tee /tmp/sweep-codex.log
-
-make -C benchmarks graph-aggregate > benchmarks/graph/RESULTS.md
+├── README.md        # this file (shared across versions)
+├── v1/              # FROZEN round 1
+│   ├── README.md    # version-specific banner
+│   ├── METHOD.md
+│   ├── RESULTS.md
+│   ├── mcp.json
+│   ├── scripts/     # harness as it ran
+│   ├── tasks/       # fixtures as they were graded
+│   └── runs/        # per-cell records
+├── v2/              # FROZEN round 2
+│   └── ...
+└── v3/              # LIVING
+    └── ...
 ```

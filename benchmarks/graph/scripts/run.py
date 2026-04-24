@@ -2,7 +2,13 @@
 
 Invoked by run.sh. Spawns a child CLI session with deterministic arm
 steering, a fresh cold-cache nonce, and optional pre-flight probe.
-Writes a canonical per-run record under benchmarks/graph/runs/.
+Writes a canonical per-run record under benchmarks/graph/<version>/runs/.
+
+The harness scripts live once under benchmarks/graph/scripts/ and target
+a specific version (default: v3) whose tasks/ and runs/ subtrees are
+addressed via GRAPH_VERSION. At freeze time, a version's scripts are
+snapshot-copied under benchmarks/graph/vN/scripts/ so reproduction of
+that version is self-contained.
 """
 
 from __future__ import annotations
@@ -21,6 +27,8 @@ import oracle
 from providers import DEFAULT_MODELS, build_system_prompt_suffix, get_provider
 
 BENCH_ROOT = Path(__file__).resolve().parents[1]
+GRAPH_VERSION = os.environ.get("GRAPH_VERSION", "v3")
+VERSION_ROOT = BENCH_ROOT / GRAPH_VERSION
 REPO_ROOT = BENCH_ROOT.parent.parent
 MCP_CONFIG = str(BENCH_ROOT / "mcp.json")
 
@@ -109,7 +117,6 @@ def main() -> int:
     )
     ap.add_argument("--fixture", help="path to fixture YAML (default: tasks/<task_id>.yaml)")
     ap.add_argument("--no-probe", action="store_true", help="skip pre-flight probe")
-    ap.add_argument("--budget", type=float, default=1.0, help="budget hint for Claude runs")
     args = ap.parse_args()
 
     provider_runner = get_provider(
@@ -122,7 +129,7 @@ def main() -> int:
     run_order_index = int(os.environ.get("RUN_ORDER_INDEX", "0"))
     nonce = os.environ.get("NONCE", str(uuid.uuid4()))
 
-    fixture_path = Path(args.fixture or BENCH_ROOT / "tasks" / f"{args.task_id}.yaml")
+    fixture_path = Path(args.fixture or VERSION_ROOT / "tasks" / f"{args.task_id}.yaml")
     fixture = oracle.load_fixture(fixture_path)
     arm_config = provider_runner.arm_config(args.arm)
     system_suffix = build_system_prompt_suffix(
@@ -132,7 +139,7 @@ def main() -> int:
         provider=args.provider,
     )
 
-    out_dir = BENCH_ROOT / "runs" / args.provider / args.arm / args.task_id
+    out_dir = VERSION_ROOT / "runs" / args.provider / args.arm / args.task_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{args.seed}.json"
     transcript_path = out_dir / f"{args.seed}.transcript.json"
@@ -185,7 +192,6 @@ def main() -> int:
         nonce=nonce,
         sweep_id=sweep_id,
         model=requested_model,
-        budget_usd=args.budget,
     )
     record["wall_seconds"] = round(time.monotonic() - t0, 2)
     transcript_path.write_text(execution.raw_stdout)

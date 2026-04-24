@@ -31,6 +31,12 @@ GRAPH_TOOL_PREFIXES = (
 INFRA_MODEL_PATTERNS = (
     re.compile(r"^claude-sonnet-4-\d+(-\d+)?$"),
     re.compile(r"^claude-haiku-4-\d+(-\d+)?$"),
+    # Opus allowed for v2+ — the living harness may run on opus as the
+    # lead model (see T20260423-0507 Gate C notes). Historically only
+    # sonnet/haiku were in-scope; as of v2-prep we opt into opus too
+    # so benchmark runs with `--model opus` are not flagged as advisor
+    # escalation.
+    re.compile(r"^claude-opus-4-\d+(-\d+)?$"),
 )
 
 

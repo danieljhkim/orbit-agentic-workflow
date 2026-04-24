@@ -3,17 +3,20 @@
 PYTHON ?= python3
 BENCH_ROOT := $(CURDIR)
 
-# GRAPH_VERSION selects which harness snapshot to target.
-#   (unset) → living harness at benchmarks/graph/       (default; v2-in-progress)
-#   v1      → frozen snapshot at benchmarks/graph_v1/
-#   vN      → frozen snapshot at benchmarks/graph_vN/
+# GRAPH_VERSION selects which version's tasks/ and runs/ to target.
+#   v3 → living harness at benchmarks/graph/v3/    (default; round 3 in progress)
+#   v1 → frozen snapshot at benchmarks/graph/v1/
+#   v2 → frozen snapshot at benchmarks/graph/v2/
 # See benchmarks/CONVENTIONS.md for versioning rules.
-GRAPH_VERSION ?=
-ifeq ($(GRAPH_VERSION),)
-GRAPH_DIR := $(BENCH_ROOT)/graph
-else
-GRAPH_DIR := $(BENCH_ROOT)/graph_$(GRAPH_VERSION)
-endif
+GRAPH_VERSION ?= v3
+
+# Scripts live once under benchmarks/graph/scripts/ and are expected to stay
+# backward-compatible with all frozen run records. If a future round needs
+# to break back-compat (e.g. record schema change), copy scripts into that
+# version's directory at freeze time and override GRAPH_SCRIPTS when
+# reproducing it. See benchmarks/CONVENTIONS.md §Freezing a version.
+GRAPH_SCRIPTS ?= $(BENCH_ROOT)/graph/scripts
+GRAPH_DIR := $(BENCH_ROOT)/graph/$(GRAPH_VERSION)
 
 GRAPH_PROVIDER ?= claude
 GRAPH_ARM ?= no-graph
@@ -21,11 +24,13 @@ GRAPH_TASK ?= locate-agentruntime
 GRAPH_TASKS ?=
 GRAPH_SEED ?= 1
 GRAPH_N ?= 1
-GRAPH_BUDGET ?= 1.0
 GRAPH_ARMS ?= no-graph graph-only hybrid
 GRAPH_SWEEP_ID ?=
 GRAPH_RUN_ARGS ?=
 GRAPH_SWEEP_ARGS ?=
+
+# Export GRAPH_VERSION so the Python scripts resolve VERSION_ROOT correctly.
+export GRAPH_VERSION
 
 help:
 	@echo "Benchmark Make Targets"
@@ -47,24 +52,23 @@ help:
 	@echo "  make -C benchmarks graph-sweep-claude"
 	@echo ""
 	@echo "  make -C benchmarks graph-aggregate"
-	@echo "    Print aggregate benchmark tables."
-	@echo "    Pass GRAPH_VERSION=v1 to aggregate a frozen snapshot instead of the living harness."
+	@echo "    Print aggregate benchmark tables for GRAPH_VERSION."
 	@echo ""
 	@echo "  make -C benchmarks graph-test"
-	@echo "    Run benchmark script unit tests."
+	@echo "    Run benchmark script unit tests (living scripts only)."
 	@echo ""
 	@echo "Versioning:"
-	@echo "  GRAPH_VERSION=(unset) targets benchmarks/graph/ (living harness, v2-in-progress)."
-	@echo "  GRAPH_VERSION=v1 targets benchmarks/graph_v1/ (frozen snapshot)."
+	@echo "  GRAPH_VERSION=v3 (default)  targets benchmarks/graph/v3/ (living)."
+	@echo "  GRAPH_VERSION=v2            targets benchmarks/graph/v2/ (frozen)."
+	@echo "  GRAPH_VERSION=v1            targets benchmarks/graph/v1/ (frozen)."
 	@echo "  See benchmarks/CONVENTIONS.md."
 
 graph-run:
-	$(PYTHON) $(GRAPH_DIR)/scripts/run.py \
+	$(PYTHON) $(GRAPH_SCRIPTS)/run.py \
 		$(GRAPH_ARM) \
 		$(GRAPH_TASK) \
 		$(GRAPH_SEED) \
 		--provider $(GRAPH_PROVIDER) \
-		--budget $(GRAPH_BUDGET) \
 		$(GRAPH_RUN_ARGS)
 
 graph-run-claude:
@@ -74,7 +78,7 @@ graph-run-codex:
 	$(MAKE) graph-run GRAPH_PROVIDER=codex
 
 graph-sweep:
-	$(PYTHON) $(GRAPH_DIR)/scripts/sweep.py \
+	$(PYTHON) $(GRAPH_SCRIPTS)/sweep.py \
 		--provider $(GRAPH_PROVIDER) \
 		$(if $(GRAPH_TASKS),--tasks $(GRAPH_TASKS),) \
 		--n $(GRAPH_N) \
@@ -92,7 +96,7 @@ graph-sweep-codex:
 	$(MAKE) graph-sweep GRAPH_PROVIDER=codex
 
 graph-aggregate:
-	$(PYTHON) $(BENCH_ROOT)/graph/scripts/aggregate.py \
+	$(PYTHON) $(GRAPH_SCRIPTS)/aggregate.py \
 		--runs $(GRAPH_DIR)/runs \
 		--tasks $(GRAPH_DIR)/tasks
 

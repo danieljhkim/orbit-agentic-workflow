@@ -34,8 +34,14 @@ from pathlib import Path
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/Users/daniel/.local/bin/claude")
 CODEX_BIN = os.environ.get("CODEX_BIN", "codex")
 DEFAULT_MODELS = {
+    # Sonnet is the main-run model. We experimented with opus during Gate C
+    # of the v2 fixture design (some sonnet runs refused to engage with graph
+    # tools under graph-only), but opus's economics make a full sweep
+    # impractical — it hit the subscription's usage window mid-sweep, which
+    # surfaces at the CLI as a "Credit balance is too low" 400. Sonnet stays
+    # well under the window and was sufficient in all smoke tests.
     "claude": "sonnet",
-    "codex": "gpt-5.4",
+    "codex": "gpt-5.3-codex",
 }
 
 CLAUDE_GRAPH_TOOLS = (
@@ -466,8 +472,7 @@ class BenchmarkProvider:
         nonce: str,
         sweep_id: str,
         model: str,
-        budget_usd: float = 1.0,
-        timeout_s: int = 600,
+        timeout_s: int = 1000,
     ) -> ProviderExecution:
         raise NotImplementedError
 
@@ -515,10 +520,13 @@ class ClaudeProvider(BenchmarkProvider):
         nonce: str,
         sweep_id: str,
         model: str,
-        budget_usd: float = 1.0,
-        timeout_s: int = 600,
+        timeout_s: int = 1000,
     ) -> ProviderExecution:
         preamble = f"<run-nonce sweep={sweep_id} nonce={nonce} provider=claude />\n\n"
+        # No --max-budget-usd: subscription plans surface budget exhaustion as
+        # a 400 "Credit balance is too low" at the API layer, not a CLI-side
+        # abort. Keeping the flag at a small number only caused the pre-flight
+        # probe to trip on MCP schema cache-creation on expensive models.
         cmd = [
             CLAUDE_BIN,
             "-p",
@@ -528,8 +536,6 @@ class ClaudeProvider(BenchmarkProvider):
             "--verbose",
             "--no-session-persistence",
             "--exclude-dynamic-system-prompt-sections",
-            "--max-budget-usd",
-            str(budget_usd),
             "--model",
             model,
             "--mcp-config",
@@ -564,8 +570,14 @@ class ClaudeProvider(BenchmarkProvider):
         arm: str,
         nonce: str,
         sweep_id: str,
-        model: str,
+        model: str,  # accepted for ABC compatibility; the probe always runs on haiku
     ) -> tuple[bool, str]:
+        # The probe is a smoke test: "is the MCP server reachable and does the
+        # graph-tool surface load in the child CLI?" That question is
+        # model-independent. We pin haiku regardless of the main-run model so
+        # the $0.25 budget covers the MCP schema cache-creation tax even when
+        # the main run is on opus or sonnet.
+        del model
         probe_result = self.run(
             prompt=(
                 "Call mcp__orbit-bench__orbit_graph_overview once with input "
@@ -588,8 +600,7 @@ class ClaudeProvider(BenchmarkProvider):
             ),
             nonce=f"probe-{uuid.uuid4().hex[:8]}",
             sweep_id="probe",
-            model=model,
-            budget_usd=0.25,
+            model="haiku",
             timeout_s=90,
         )
         normalized = probe_result.normalized_result
@@ -630,10 +641,9 @@ class CodexProvider(BenchmarkProvider):
         nonce: str,
         sweep_id: str,
         model: str,
-        budget_usd: float = 1.0,
-        timeout_s: int = 600,
+        timeout_s: int = 1000,
     ) -> ProviderExecution:
-        del arm_config, budget_usd
+        del arm_config
         cmd = [
             CODEX_BIN,
             "exec",

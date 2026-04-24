@@ -25,9 +25,12 @@ class TestInfraModel(unittest.TestCase):
     def test_haiku_allowed(self):
         self.assertTrue(classify.is_infra_model("claude-haiku-4-5-20251001"))
 
-    def test_opus_rejected(self):
-        self.assertFalse(classify.is_infra_model("claude-opus-4-7"))
-        self.assertFalse(classify.is_infra_model("claude-opus-4-6"))
+    def test_opus_allowed(self):
+        # Opus was opted into the infra allowlist in v2-prep (see
+        # T20260423-0507) so benchmark runs that explicitly pass
+        # `--model opus` are not flagged as advisor escalation.
+        self.assertTrue(classify.is_infra_model("claude-opus-4-7"))
+        self.assertTrue(classify.is_infra_model("claude-opus-4-6"))
 
     def test_unknown_rejected(self):
         self.assertFalse(classify.is_infra_model("gpt-5.4"))
@@ -92,15 +95,27 @@ class TestArmEnforcement(unittest.TestCase):
 
 
 class TestModelEscalation(unittest.TestCase):
-    def test_opus_triggers_error(self):
+    def test_opus_no_longer_triggers_error(self):
+        # As of T20260423-0507 v2-prep, opus is in the infra allowlist,
+        # so a mixed sonnet+opus model_usage is NOT flagged as advisor
+        # escalation. See classify.INFRA_MODEL_PATTERNS for rationale.
         result = classify.classify_model_escalation(
             "claude",
             {"claude-sonnet-4-6": {}, "claude-opus-4-7": {}}
         )
+        self.assertIsNone(result)
+
+    def test_unknown_model_triggers_error(self):
+        # Models outside the infra allowlist still trigger the
+        # escalation guard — e.g. a future `claude-jumbo-5-0`.
+        result = classify.classify_model_escalation(
+            "claude",
+            {"claude-sonnet-4-6": {}, "claude-jumbo-5-0": {}}
+        )
         self.assertIsNotNone(result)
         verdict, diag = result
         self.assertEqual(verdict, "error")
-        self.assertIn("opus", diag.lower())
+        self.assertIn("jumbo", diag.lower())
 
     def test_sonnet_only_is_ok(self):
         result = classify.classify_model_escalation("claude", {"claude-sonnet-4-6": {}})
