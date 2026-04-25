@@ -2,3 +2,25 @@
 # not be indexed into the knowledge graph.
 benchmarks/**/tasks/**
 benchmarks/**/runs/**
+benchmarks/**
+.git/**
+.orbit/**
+.claude/**
+.codex/**
+.agents/**
+.vscode/**
+.envrc
+.env
+.venv/**
+__pycache__/**
+node_modules/**
+node_modules/
+venv/**
+target/**
+dist/**
+.astro/**
+package-lock.json
+npm-debug.log
+.DS_Store
+/out
+raw
