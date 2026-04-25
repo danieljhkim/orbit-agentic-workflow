@@ -36,7 +36,9 @@ use crate::context::ActorIdentity;
 use crate::context::OrbitStores;
 
 pub(crate) use orbit_tool_host::build_orbit_tool_host;
-pub(crate) use resolve::{resolve_global_root, resolve_initialize_data_root};
+pub(crate) use resolve::{
+    resolve_bootstrap_data_root, resolve_global_root, resolve_initialize_data_root,
+};
 pub(crate) use store_delegates::TaskRecordUpdateParams;
 
 #[derive(Clone)]
@@ -64,6 +66,21 @@ impl OrbitRuntime {
         root_override: Option<&Path>,
     ) -> Result<(PathBuf, PathBuf), OrbitError> {
         let workspace_root = resolve_initialize_data_root(cwd, root_override)?;
+        Self::roots_from_workspace_root(workspace_root, root_override)
+    }
+
+    pub fn resolve_bootstrap_roots_for_cwd(
+        cwd: &Path,
+        root_override: Option<&Path>,
+    ) -> Result<(PathBuf, PathBuf), OrbitError> {
+        let workspace_root = resolve_bootstrap_data_root(cwd, root_override)?;
+        Self::roots_from_workspace_root(workspace_root, root_override)
+    }
+
+    fn roots_from_workspace_root(
+        workspace_root: PathBuf,
+        root_override: Option<&Path>,
+    ) -> Result<(PathBuf, PathBuf), OrbitError> {
         let global_root = if has_explicit_root_override(root_override) {
             workspace_root.clone()
         } else {

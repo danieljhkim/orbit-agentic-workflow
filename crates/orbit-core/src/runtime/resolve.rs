@@ -25,16 +25,32 @@ pub(crate) fn resolve_initialize_data_root(
     cwd: &Path,
     root_override: Option<&Path>,
 ) -> Result<PathBuf, OrbitError> {
+    resolve_data_root(cwd, root_override, ExplicitRootMode::RequireInitialized)
+}
+
+/// Resolves the `.orbit` data root for commands that are allowed to create it.
+pub(crate) fn resolve_bootstrap_data_root(
+    cwd: &Path,
+    root_override: Option<&Path>,
+) -> Result<PathBuf, OrbitError> {
+    resolve_data_root(cwd, root_override, ExplicitRootMode::AllowUninitialized)
+}
+
+fn resolve_data_root(
+    cwd: &Path,
+    root_override: Option<&Path>,
+    explicit_root_mode: ExplicitRootMode,
+) -> Result<PathBuf, OrbitError> {
     // 1. --root flag (escape hatch)
     if let Some(root) = root_override {
-        return resolve_root_path_value(&root.to_string_lossy(), cwd);
+        return resolve_explicit_root_path_value(&root.to_string_lossy(), cwd, explicit_root_mode);
     }
 
     // 2. ORBIT_ROOT env (escape hatch)
     if let Ok(explicit) = std::env::var("ORBIT_ROOT")
         && !explicit.trim().is_empty()
     {
-        return resolve_root_path_value(&explicit, cwd);
+        return resolve_explicit_root_path_value(&explicit, cwd, explicit_root_mode);
     }
 
     // 3. path_overrides in global registry (longest prefix match)
@@ -61,6 +77,12 @@ pub(crate) fn resolve_initialize_data_root(
 
     // 6. Fallback: <cwd>/.orbit
     Ok(paths::cwd_orbit_root(cwd))
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ExplicitRootMode {
+    AllowUninitialized,
+    RequireInitialized,
 }
 
 /// Checks path_overrides in the global registry for a matching workspace.
@@ -123,6 +145,130 @@ fn configured_root_from_config(config_path: &Path) -> Result<Option<PathBuf>, Or
     Ok(Some(resolve_root_path_value(&root_value, base)?))
 }
 
+fn resolve_explicit_root_path_value(
+    raw: &str,
+    base_dir: &Path,
+    mode: ExplicitRootMode,
+) -> Result<PathBuf, OrbitError> {
+    let root = resolve_root_path_value(raw, base_dir)?;
+    match mode {
+        ExplicitRootMode::AllowUninitialized => Ok(root),
+        ExplicitRootMode::RequireInitialized => resolve_initialized_root(root),
+    }
+}
+
+fn resolve_initialized_root(root: PathBuf) -> Result<PathBuf, OrbitError> {
+    let child_orbit = root.join(".orbit");
+    if is_initialized_orbit_root(&child_orbit) {
+        return Ok(child_orbit);
+    }
+
+    if is_initialized_orbit_root(&root) {
+        return Ok(root);
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "{} is not an Orbit workspace; run `orbit workspace init` first or pass `--root <path/to/.orbit>`",
+        root.display()
+    )))
+}
+
+fn is_initialized_orbit_root(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    if path.join("config.toml").is_file() {
+        return true;
+    }
+
+    path.join("resources").is_dir() && path.join("tasks").is_dir() && path.join("state").is_dir()
+}
+
 fn resolve_root_path_value(raw: &str, base_dir: &Path) -> Result<PathBuf, OrbitError> {
     paths::resolve_path_value(raw, base_dir, "root path")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn explicit_root_with_initialized_child_orbit_resolves_to_child() {
+        let repo = tempdir().expect("repo tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&orbit_root);
+
+        let resolved =
+            resolve_initialize_data_root(repo.path(), Some(repo.path())).expect("resolve root");
+
+        assert_eq!(resolved, orbit_root);
+    }
+
+    #[test]
+    fn explicit_root_prefers_initialized_child_orbit_over_polluted_repo_root() {
+        let repo = tempdir().expect("repo tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&orbit_root);
+        fs::write(repo.path().join("config.toml"), "polluted = true\n")
+            .expect("write root pollution");
+
+        let resolved =
+            resolve_initialize_data_root(repo.path(), Some(repo.path())).expect("resolve root");
+
+        assert_eq!(resolved, orbit_root);
+    }
+
+    #[test]
+    fn explicit_root_with_uninitialized_directory_returns_invalid_input_without_layout() {
+        let parent = tempdir().expect("parent tempdir");
+        let root = parent.path().join("not-an-orbit-root");
+        fs::create_dir_all(&root).expect("create uninitialized root");
+
+        let err = resolve_initialize_data_root(parent.path(), Some(&root))
+            .expect_err("uninitialized root should fail");
+
+        assert!(matches!(
+            err,
+            OrbitError::InvalidInput(message) if message.contains("not an Orbit workspace")
+        ));
+        assert!(!root.join(".orbit").exists());
+        assert!(!root.join("resources").exists());
+        assert!(!root.join("tasks").exists());
+        assert!(!root.join("state").exists());
+    }
+
+    #[test]
+    fn explicit_root_with_initialized_orbit_root_resolves_as_is() {
+        let repo = tempdir().expect("repo tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&orbit_root);
+
+        let resolved =
+            resolve_initialize_data_root(repo.path(), Some(&orbit_root)).expect("resolve root");
+
+        assert_eq!(resolved, orbit_root);
+    }
+
+    #[test]
+    fn bootstrap_root_allows_uninitialized_path_without_creating_it() {
+        let parent = tempdir().expect("parent tempdir");
+        let root = parent.path().join("new-orbit-root");
+
+        let resolved =
+            resolve_bootstrap_data_root(parent.path(), Some(&root)).expect("resolve root");
+
+        assert_eq!(resolved, root);
+        assert!(!root.exists());
+    }
+
+    fn seed_initialized_workspace_root(path: &Path) {
+        fs::create_dir_all(path.join("resources")).expect("create resources");
+        fs::create_dir_all(path.join("tasks")).expect("create tasks");
+        fs::create_dir_all(path.join("state")).expect("create state");
+    }
 }
