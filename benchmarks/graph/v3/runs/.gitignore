@@ -1,5 +1,0 @@
-# Living staging area — per-cell run records and transcripts are not committed.
-# When a round is frozen, its runs are copied into benchmarks/graph_vN/runs/
-# and that directory DOES commit its contents (see benchmarks/CONVENTIONS.md).
-*
-!.gitignore
