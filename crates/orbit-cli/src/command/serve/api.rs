@@ -13,8 +13,8 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use chrono::Utc;
-use orbit_core::OrbitRuntime;
 use orbit_core::command::job_run::JobRunListParams;
+use orbit_core::{OrbitRuntime, Task, TaskStatus};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -22,7 +22,24 @@ use crate::command::audit::audit_event_to_json;
 use crate::command::job::{job_catalog_to_json_with_last_run, job_run_to_json};
 use crate::command::task::output::task_to_json;
 
-const DIAG_DEFAULT_LIMIT: usize = 200;
+const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
+    TaskStatus::InProgress,
+    TaskStatus::Review,
+    TaskStatus::Blocked,
+    TaskStatus::Proposed,
+    TaskStatus::Backlog,
+    TaskStatus::Someday,
+    TaskStatus::Rejected,
+];
+const HISTORY_DEFAULT_LIMIT: usize = 50;
+const JOB_RUN_DEFAULT_LIMIT: usize = 25;
+const HISTORY_MAX_LIMIT: usize = 200;
+
+#[derive(Deserialize, Default)]
+pub(super) struct LimitQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
 
 #[derive(Deserialize)]
 pub(super) struct DiagnosticsQuery {
@@ -105,7 +122,7 @@ pub(super) struct RejectBody {
 }
 
 async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
-    match runtime.list_tasks() {
+    match list_dashboard_tasks(&runtime) {
         Ok(tasks) => {
             let status_by_id = orbit_core::build_task_status_index(&tasks);
             let values: Vec<Value> = tasks
@@ -118,14 +135,30 @@ async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
     }
 }
 
+fn list_dashboard_tasks(runtime: &OrbitRuntime) -> Result<Vec<Task>, orbit_core::OrbitError> {
+    let mut tasks = Vec::new();
+    for status in DASHBOARD_TASK_STATUSES {
+        tasks.extend(runtime.list_tasks_filtered(Some(*status), None, None, None)?);
+    }
+    Ok(tasks)
+}
+
+fn dashboard_status_index(
+    runtime: &OrbitRuntime,
+) -> Result<std::collections::BTreeMap<String, TaskStatus>, orbit_core::OrbitError> {
+    Ok(orbit_core::build_task_status_index(&list_dashboard_tasks(
+        runtime,
+    )?))
+}
+
+fn bounded_limit(requested: Option<usize>, default: usize) -> usize {
+    requested.unwrap_or(default).min(HISTORY_MAX_LIMIT)
+}
+
 async fn get_task(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
     match runtime.get_task(&id) {
-        Ok(task) => match runtime.list_tasks() {
-            Ok(tasks) => Json(task_to_json(
-                &task,
-                &orbit_core::build_task_status_index(&tasks),
-            ))
-            .into_response(),
+        Ok(task) => match dashboard_status_index(&runtime) {
+            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -139,12 +172,8 @@ async fn approve_task_action(
 ) -> Response {
     let body = body.map(|Json(b)| b).unwrap_or_default();
     match runtime.approve_task(&id, body.note, body.comment) {
-        Ok(task) => match runtime.list_tasks() {
-            Ok(tasks) => Json(task_to_json(
-                &task,
-                &orbit_core::build_task_status_index(&tasks),
-            ))
-            .into_response(),
+        Ok(task) => match dashboard_status_index(&runtime) {
+            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -157,12 +186,8 @@ async fn reject_task_action(
     Json(body): Json<RejectBody>,
 ) -> Response {
     match runtime.reject_task(&id, body.note, body.comment) {
-        Ok(task) => match runtime.list_tasks() {
-            Ok(tasks) => Json(task_to_json(
-                &task,
-                &orbit_core::build_task_status_index(&tasks),
-            ))
-            .into_response(),
+        Ok(task) => match dashboard_status_index(&runtime) {
+            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -195,12 +220,16 @@ async fn list_jobs(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
     }
 }
 
-async fn list_job_runs(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
+async fn list_job_runs(
+    State(runtime): State<Arc<OrbitRuntime>>,
+    Query(q): Query<LimitQuery>,
+) -> Response {
+    let limit = bounded_limit(q.limit, JOB_RUN_DEFAULT_LIMIT);
     let params = JobRunListParams {
         job_id: None,
         state: None,
         since: None,
-        limit: Some(50),
+        limit: Some(limit),
     };
     match runtime.list_job_runs(params) {
         Ok(runs) => {
@@ -211,8 +240,12 @@ async fn list_job_runs(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
     }
 }
 
-async fn list_audit(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
-    match runtime.list_audit_events(None, None, None, None, 100) {
+async fn list_audit(
+    State(runtime): State<Arc<OrbitRuntime>>,
+    Query(q): Query<LimitQuery>,
+) -> Response {
+    let limit = bounded_limit(q.limit, HISTORY_DEFAULT_LIMIT);
+    match runtime.list_audit_events(None, None, None, None, limit) {
         Ok(events) => {
             let values: Vec<Value> = events.iter().map(audit_event_to_json).collect();
             Json(Value::Array(values)).into_response()
@@ -239,8 +272,8 @@ async fn list_diagnostics_metrics(
     if let Err(e) = validate_year_month(&month) {
         return map_runtime_error(e);
     }
-    let limit = q.limit.unwrap_or(DIAG_DEFAULT_LIMIT);
-    match runtime.read_metrics_entries(&month) {
+    let limit = bounded_limit(q.limit, HISTORY_DEFAULT_LIMIT);
+    match runtime.read_metrics_entries_limited(&month, limit) {
         Ok(mut entries) => {
             entries.sort_by(|a, b| b.ts.cmp(&a.ts));
             entries.truncate(limit);
@@ -261,8 +294,8 @@ async fn list_diagnostics_friction(
     if let Err(e) = validate_year_month(&month) {
         return map_runtime_error(e);
     }
-    let limit = q.limit.unwrap_or(DIAG_DEFAULT_LIMIT);
-    match runtime.read_friction_entries(&month) {
+    let limit = bounded_limit(q.limit, HISTORY_DEFAULT_LIMIT);
+    match runtime.read_friction_entries_limited(&month, limit) {
         Ok(mut entries) => {
             entries.sort_by(|a, b| b.ts.cmp(&a.ts));
             entries.truncate(limit);

@@ -1,5 +1,5 @@
-// Orbit dashboard — terminal-dark, polling-based read-only SPA.
-// Pure vanilla JS, no build step. Polls every POLL_MS or ?poll=<ms>.
+// Orbit dashboard — terminal-dark, manually refreshed SPA.
+// Pure vanilla JS, no build step.
 
 const STATUS_ORDER = [
   "in-progress",
@@ -8,15 +8,18 @@ const STATUS_ORDER = [
   "proposed",
   "backlog",
   "someday",
-  "done",
   "rejected",
-  "archived",
 ];
 
-const DEFAULT_INACTIVE_STATUSES = new Set(["done", "someday", "archived"]);
+const DEFAULT_INACTIVE_STATUSES = new Set(["someday"]);
 
 const params = new URLSearchParams(window.location.search);
-const POLL_MS = Math.max(1000, parseInt(params.get("poll") || "5000", 10));
+function positiveIntParam(name, fallback) {
+  const parsed = parseInt(params.get(name) || String(fallback), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+const JOB_RUN_LIMIT = positiveIntParam("runs", 25);
+const DIAG_LIMIT = positiveIntParam("diag", 50);
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,8 +30,10 @@ let activeStatuses = new Set(
 let lastTasks = [];
 let lastRuns = [];
 let lastDiagnostics = { metrics: [], friction: [] };
+let activeTab = "tasks";
 let activeDiagSubtab = "runs";
 let expandedTaskIds = new Set();
+let isRefreshing = false;
 
 function el(tag, opts = {}, children = []) {
   const node = document.createElement(tag);
@@ -332,7 +337,7 @@ async function runAction(task, kind, detail, body, btnNode) {
       throw new Error(msg);
     }
     expandedTaskIds.delete(task.id);
-    await tick();
+    await refreshDashboard();
   } catch (err) {
     for (const b of detail.querySelectorAll("button.action")) b.disabled = false;
     if (btnNode) btnNode.textContent = oldText;
@@ -629,9 +634,10 @@ function wireSearch() {
 const TABS = ["tasks", "scoreboard", "diagnostics"];
 const DIAG_SUBTABS = ["runs", "metrics", "friction"];
 
-      function setActiveTab(raw) {
+function setActiveTab(raw, opts = {}) {
   const [topRaw, subRaw] = String(raw || "").split("/");
   const top = TABS.includes(topRaw) ? topRaw : "tasks";
+  activeTab = top;
   for (const tab of document.querySelectorAll(".tab")) {
     tab.classList.toggle("active", tab.dataset.tab === top);
   }
@@ -653,9 +659,12 @@ const DIAG_SUBTABS = ["runs", "metrics", "friction"];
     setDiagSubtab(sub);
     hash = `#diagnostics/${sub}`;
   }
-  if (window.location.hash !== hash) {
+  const hashChanged = window.location.hash !== hash;
+  const shouldUpdateHash = opts.updateHash !== false;
+  if (hashChanged && shouldUpdateHash) {
     window.location.hash = hash;
   }
+  if (opts.refresh !== false && (!hashChanged || !shouldUpdateHash)) refreshDashboard();
 }
 
 function setDiagSubtab(name) {
@@ -686,15 +695,21 @@ function setDiagSubtab(name) {
 
 function initTabs() {
   for (const tab of document.querySelectorAll(".tab")) {
-    tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
+    tab.addEventListener("click", () => setActiveTab(tab.dataset.tab, { refresh: false }));
   }
   for (const btn of document.querySelectorAll("#diag-subtabs .subtab")) {
-    btn.addEventListener("click", () => setActiveTab(`diagnostics/${btn.dataset.subtab}`));
+    btn.addEventListener("click", () =>
+      setActiveTab(`diagnostics/${btn.dataset.subtab}`, { refresh: false }),
+    );
   }
   window.addEventListener("hashchange", () => {
     setActiveTab(window.location.hash.replace(/^#/, ""));
   });
-  setActiveTab(window.location.hash.replace(/^#/, "") || "tasks");
+  setActiveTab(window.location.hash.replace(/^#/, "") || "tasks", {
+    refresh: false,
+    updateHash: false,
+  });
+  refreshDashboard();
 }
 
 function fmtRelative(iso) {
@@ -816,56 +831,85 @@ function renderDiagnostics() {
   );
 }
 
-async function tick() {
+function activeRefreshJobs() {
+  if (activeTab === "tasks") {
+    return [
+      fetchJson("/api/tasks").then((tasks) => {
+        lastTasks = tasks;
+        renderTasks(tasks);
+      }),
+    ];
+  }
+
+  if (activeTab === "scoreboard") {
+    return [fetchJson("/api/scoreboard").then(renderScoreboard)];
+  }
+
+  if (activeDiagSubtab === "runs") {
+    return [
+      fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
+        lastRuns = runs;
+        renderRuns(runs);
+      }),
+    ];
+  }
+
+  if (activeDiagSubtab === "metrics") {
+    return [
+      fetchJson(`/api/diagnostics/metrics?limit=${DIAG_LIMIT}`).then((rows) => {
+        lastDiagnostics.metrics = rows;
+        renderDiagnostics();
+      }),
+    ];
+  }
+
+  return [
+    fetchJson(`/api/diagnostics/friction?limit=${DIAG_LIMIT}`).then((rows) => {
+      lastDiagnostics.friction = rows;
+      renderDiagnostics();
+    }),
+  ];
+}
+
+function refreshLabel() {
+  if (activeTab === "diagnostics") return `diagnostics/${activeDiagSubtab}`;
+  return activeTab;
+}
+
+async function refreshDashboard() {
+  if (isRefreshing) return;
+  isRefreshing = true;
   const now = new Date();
   $("meta-text").textContent = `fetching...`;
   $("conn-status").className = "status-dot orange";
+  const btn = $("refresh-btn");
+  if (btn) btn.disabled = true;
   
   let hasErrors = false;
   
-  await Promise.all([
-    fetchJson("/api/tasks")
-      .then((tasks) => {
-        lastTasks = tasks;
-        renderTasks(tasks);
-      })
-      .catch((e) => { hasErrors = true; console.error(e); }),
-    fetchJson("/api/job-runs")
-      .then((runs) => {
-        lastRuns = runs;
-        if (activeDiagSubtab === "runs") renderRuns(runs);
-      })
-      .catch((e) => { hasErrors = true; console.error(e); }),
-    fetchJson("/api/scoreboard")
-      .then(renderScoreboard)
-      .catch((e) => { hasErrors = true; console.error(e); }),
-    fetchJson("/api/diagnostics/metrics")
-      .then((rows) => {
-        lastDiagnostics.metrics = rows;
-        if (activeDiagSubtab === "metrics") renderDiagnostics();
-      })
-      .catch((e) => { hasErrors = true; console.error(e); }),
-    fetchJson("/api/diagnostics/friction")
-      .then((rows) => {
-        lastDiagnostics.friction = rows;
-        if (activeDiagSubtab === "friction") renderDiagnostics();
-      })
-      .catch((e) => { hasErrors = true; console.error(e); }),
-  ]);
+  await Promise.all(
+    activeRefreshJobs().map((job) =>
+      job.catch((e) => {
+        hasErrors = true;
+        console.error(e);
+      }),
+    ),
+  );
   
   if (hasErrors) {
     $("conn-status").className = "status-dot red";
     $("meta-text").textContent = `offline · ${now.toLocaleTimeString()}`;
   } else {
     $("conn-status").className = "status-dot green";
-    $("meta-text").textContent = `polled ${now.toLocaleTimeString()} · ${POLL_MS}ms`;
+    $("meta-text").textContent = `refreshed ${refreshLabel()} · ${now.toLocaleTimeString()}`;
   }
+  if (btn) btn.disabled = false;
+  isRefreshing = false;
   
-  $("footer").textContent = `orbit dashboard · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
+  $("footer").textContent = `orbit dashboard · manual refresh · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
 }
 
-initTabs();
 buildChips();
 wireSearch();
-tick();
-setInterval(tick, POLL_MS);
+$("refresh-btn").addEventListener("click", refreshDashboard);
+initTabs();

@@ -74,7 +74,7 @@
         border-bottom: 1px solid var(--border);
         padding: 14px 24px;
         display: flex;
-        align-items: baseline;
+        align-items: center;
         justify-content: space-between;
         gap: 16px;
         background: rgba(9, 9, 11, 0.7);
@@ -98,6 +98,34 @@
         font-family: var(--font-mono);
         font-size: 12px;
         color: var(--fg-dim);
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .refresh-btn {
+        min-width: 74px;
+        height: 30px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--fg);
+        font: inherit;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .refresh-btn:hover:not(:disabled) {
+        border-color: var(--accent);
+        color: var(--accent-hover);
+      }
+
+      .refresh-btn:disabled {
+        cursor: wait;
+        opacity: 0.55;
       }
       
       main {
@@ -783,6 +811,7 @@
       <div class="meta" id="meta">
         <span id="conn-status" class="status-dot orange"></span>
         <span id="meta-text">connecting&hellip;</span>
+        <button id="refresh-btn" class="refresh-btn" type="button">Refresh</button>
       </div>
     </header>
     <nav class="tabs" id="tabs">

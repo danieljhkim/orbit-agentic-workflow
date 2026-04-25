@@ -118,14 +118,25 @@ impl TaskFileStore {
         parent_id: Option<&str>,
         batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        let tasks = self.list_tasks()?;
-        Ok(tasks
-            .into_iter()
-            .filter(|task| status.is_none_or(|value| task.status == value))
-            .filter(|task| priority.is_none_or(|value| task.priority == value))
-            .filter(|task| parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value)))
-            .filter(|task| batch_id.is_none_or(|value| task.batch_id.as_deref() == Some(value)))
-            .collect())
+        let mut tasks = if let Some(status) = status {
+            let state = TaskStateDir::from_status(status);
+            let mut tasks = Vec::new();
+            for task_dir in self.task_dirs_for_state(state)? {
+                let bundle = self.read_bundle_at(&task_dir)?;
+                tasks.push(bundle_to_task(state, bundle));
+            }
+            sort_by_created_desc_id_asc(&mut tasks, |task| &task.created_at, |task| &task.id);
+            tasks
+        } else {
+            self.list_tasks()?
+        };
+
+        tasks.retain(|task| {
+            priority.is_none_or(|value| task.priority == value)
+                && parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value))
+                && batch_id.is_none_or(|value| task.batch_id.as_deref() == Some(value))
+        });
+        Ok(tasks)
     }
 
     pub(crate) fn get_task(&self, id: &str) -> Result<Option<Task>, OrbitError> {
