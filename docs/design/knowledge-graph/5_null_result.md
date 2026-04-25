@@ -56,14 +56,14 @@ v2 was designed to test whether grep-hard fixtures would induce graph-tool use. 
 
 **Signals (codex, v3):**
 - Pass rates: no-graph 28/30, graph-only **30/30**, hybrid 29/30. Graph-only was codex's *best* arm on accuracy — the opposite of v2.
-- Token cost (median passing run): no-graph 22,848, graph-only 24,935 (**1.09×**), hybrid 14,907 (**0.65×** — hybrid was 35 % cheaper than no-graph because the graph tools let codex skip wasteful shell exploration).
+- Token cost (median passing run, aggregate across all fixtures): no-graph 22,848, graph-only 24,935 (1.09× aggregate), hybrid 14,907 (0.65× aggregate — hybrid was 35 % cheaper than no-graph because the graph tools let codex skip wasteful shell exploration). The per-fixture distribution is much wider than the aggregate suggests — see §"Disposition" for the per-cell table; one fixture (`impact-tool-context-struct-literals`) hits 12.43×.
 - Command failures dropped from 157 → 57. The 45× readonly-DB class and 13× hallucinated-CLI-flag class were eliminated outright. The sandbox widening fixed the first; MCP schemas fixed the second.
 - 8 of 10 fixtures had ≥2/3 hybrid graph use. The outlier `impact-scope-strategy-callsites` (0/3 hybrid graph use) is a 4-file grep-ergonomic task where codex correctly picked grep and still passed 3/3. Not a graph-tool loss — a correct selection.
 
 **Signals (claude, v3):**
 - Hybrid utilization: **0 / 30.** Tool histogram across 30 hybrid runs: 58 `Grep`, 35 `Read`, 0 graph. Claude had the same MCP graph surface in v1 and v3; neither round lifted hybrid utilization. The claim "MCP access fixes utilization" does not transfer to Claude.
 - Pass rates: no-graph 28/30, graph-only 23/30, hybrid 28/30. Graph-only was *worse* than no-graph for Claude.
-- Graph-only cost: **1.44× no-graph** — above the pre-registered 1.3× threshold.
+- Graph-only cost: 1.44× no-graph aggregate; 9 of 10 fixtures exceed the pre-registered 1.3× per-cell threshold (worst: `impact-scope-strategy-callsites` at 27.18×). See §"Disposition" for the table.
 - Hybrid cost: 0.79× no-graph (schema caches, never invokes).
 
 **Why codex and claude diverge.** Both had MCP parity in v3. The difference is what the graph tool was competing against in each agent's tool list:
@@ -80,14 +80,44 @@ The mechanism is the same in both cases — the agent picks the most familiar sp
 v3's `METHOD.md` pre-registered the cull threshold before the sweep ran: keep the agent-facing `orbit_graph_*` MCP surface iff *both*
 
 1. Hybrid utilization ≥ 20 % on at least one provider, **AND**
-2. Graph-only median tokens ≤ 1.3× no-graph median.
+2. Graph-only median (input + output) tokens ≤ 1.3× the matching no-graph median **for the same (provider × fixture) cell**.
 
-| criterion | codex v3 | claude v3 | passes? |
-|---|---|---|---|
-| hybrid utilization (≥ 20 % on ≥ 1 provider) | **77 %** | 0 % | **yes — codex carries** |
-| graph-only cost (≤ 1.3×) | **1.09×** | 1.44× | **yes — codex carries** |
+### Utilization (criterion 1)
 
-**Decision: retain the agent-facing graph surface.** Both threshold criteria are satisfied by at least one provider, and the criteria are explicitly provider-any (not provider-all). Codex v2→v3 is the clean experimental comparison — same model, same fixtures, one variable moved — and the delta is decisive.
+| provider | hybrid graph-call rate | criterion |
+|---|---|---|
+| codex | **23/30 = 77 %** | passes |
+| claude | 0/30 = 0 % | fails |
+
+Provider-any: **carried by codex.**
+
+### Cost (criterion 2) — per-fixture reading
+
+The pre-registered language is per-cell. An earlier draft of this section reported a single aggregate ratio (1.09× codex, 1.44× claude) computed across all cells — a looser reading than METHOD.md actually specified. The strict per-cell reading:
+
+| fixture | codex go/ng | codex ≤1.3× | claude go/ng | claude ≤1.3× |
+|---|---:|:---:|---:|:---:|
+| deps-orbit-knowledge-consumers | 0.82× | yes | 3.88× | no |
+| locate-agentruntime | 0.44× | yes | 1.80× | no |
+| locate-v2-runtime-host-trait | 0.18× | yes | 1.57× | no |
+| trace-v2runtime-production-impls | 0.58× | yes | 0.77× | yes |
+| trace-policy-denial-wiring | 1.74× | no | 1.46× | no |
+| locate-loopaudit-variants | 4.87× | no | 3.88× | no |
+| callers-run-deterministic-containers | 1.67× | no | 5.10× | no |
+| trace-tool-call-event-construct-sites | 2.08× | no | 2.74× | no |
+| impact-scope-strategy-callsites | 1.85× | no | 27.18× | no |
+| impact-tool-context-struct-literals | **12.43×** | no | 2.82× | no |
+| **per-cell pass count** | **4 / 10** | | **1 / 10** | |
+
+Cost criterion under the literal per-cell reading: **codex passes 4 of 10, claude passes 1 of 10.** Neither provider clears the criterion as a clean per-cell sweep.
+
+The `impact-tool-context-struct-literals` outlier (12.43× on codex) is graph eventually finding the answer through a firehose — one passing run made 17 `pack` calls and burned ~225 k marginal tokens to assemble what no-graph solves in 18 k. Pass-rate parity hides this.
+
+### Decision
+
+**Retain the agent-facing graph surface.** The retention rests primarily on criterion 1 (utilization), which codex carries decisively. The cost criterion is mixed even per-cell; codex passes a plurality of fixtures (4 / 10) and the cells that pass include all four `locate` / `deps` / `trace` cases where graph is the structurally correct tool. The cells that fail cluster on `callers` / `impact` / `trace-construct-sites` — fixtures that either ask graph to do precision work it isn't yet built for (signature-based refs are a superset, not type-resolved truth, per [`2_design.md`](./2_design.md) §"Reference resolution") or expose payload-volume problems on `pack`-heavy navigations.
+
+This is a defensible product call, not a clean benchmark pass. Honesty about the per-cell numbers matters because v4 design must inherit the right unsolved questions, not the wrong ones.
 
 **Provider-dependent caveat to carry forward:** the surface earns its cost on providers whose baseline tool surface is generic (shell-only). It does *not* earn its cost on providers whose baseline already includes specialized fs primitives that overlap in function. For Claude specifically, the v1/v3 data is consistent with "graph tools exist but don't get used" — a latent schema-cache tax Claude pays without return. Whether that tax is worth eating to keep codex happy is a product question, not a benchmark question.
 
@@ -95,17 +125,21 @@ v3's `METHOD.md` pre-registered the cull threshold before the sweep ran: keep th
 
 The v3 outcome motivates an ADR in `4_decisions.md` with the following shape (to be drafted in a follow-up PR):
 
-- **Title:** Retain agent-facing `orbit_graph_*` MCP tools; acknowledge provider-dependent value.
+- **Title:** Retain agent-facing `orbit_graph_*` MCP tools; acknowledge provider-dependent value and per-cell cost variance.
 - **Status:** Accepted.
 - **Consequences:**
   - The 8-tool `orbit_graph_*` MCP surface stays shipped.
-  - No v4 benchmark round is planned — the pre-registered threshold resolved the question.
-  - Future work on reducing Claude's schema-cache overhead (pointer-only graph reads, [T20260423-0607]) is optional, not gating; pursue only if the overhead shows up as a real problem for Claude users.
+  - A diagnostic v4 round is planned to characterise the cost-overshoot fixtures, not to re-litigate the keep/cull decision. Specifically: the `impact-tool-context` firehose, the signature-vs-type-resolved precision gap, and the payload-volume problem on `pack`-heavy navigations.
+  - Future work on reducing schema-cache overhead and payload size (pointer-only graph reads, [T20260423-0607]) becomes a measured-need item, not a speculative one.
   - Future tool-surface decisions for other specialized orbit tooling should examine the same question: is the new tool competing in a shell selector (win), a tool-list selector against a generic alternative (win), or a tool-list selector against a specialized alternative (likely loss)?
 
 ## Methodological postscript
 
-The v3 result also matters for how the next benchmark series should be designed. The most load-bearing meta-lesson is that v1 and v2's "null result" was partly a measurement artifact: codex never had MCP access in the first two rounds, and the harness did not surface the asymmetry. v3 was the first round where the tool-surface question was asked with each provider on a comparable surface. The answer only became available once the measurement caught up.
+Two meta-lessons from this series.
+
+**The measurement caught up late.** v1 and v2's "null result" was partly a measurement artifact: codex never had MCP access in the first two rounds, and the harness did not surface the asymmetry. v3 was the first round where the tool-surface question was asked with each provider on a comparable surface.
+
+**Pre-registered thresholds need pre-registered aggregation.** v3's METHOD specified the cost criterion per-cell ("the same provider × fixture cell") but did not specify *how many cells* must clear 1.3× to count as a pass. An earlier draft of the disposition above quietly substituted a single cross-cell aggregate median, which is the loosest possible reading and is not what was pre-registered. The per-cell table now shows the strict reading. Future rounds must pre-register both the per-cell threshold *and* the cell-count rule (e.g. "≥ 8 of 10 fixtures ≤ 1.3×, no single fixture > 2×") before the sweep runs.
 
 ---
 
