@@ -78,14 +78,14 @@ Each fixture has a YAML at `tasks/<fixture-id>.yaml` with prompt, deny-list, ora
 | `callers-2hop-graphbenchpolicy` | synthetic | ✓ | Find functions that transitively call `GraphBenchPolicy::resolve` via 2 hops, excluding direct callers. |
 | `deps-downstream-orbit-knowledge` | production | ✓ | List crates that transitively depend on `orbit-knowledge` through 2 levels. |
 | `reverse-export-orbit-error` | production | ✓ | List every module that re-exports `orbit_common::OrbitError` (or its production-equivalent re-export chain). |
-| `implementors-auditsink-with-blanket` | synthetic | ✓ | Enumerate impls of `AuditSink` including a blanket impl `impl<T: Sink> AuditSink for Wrapper<T>` and a feature-gated impl. |
+| `implementors-benchsink-with-blanket` | synthetic | ✓ | Enumerate impls of synthetic trait `BenchAuditSink` (defined in `_fixture_code/`) including a blanket impl `impl<T: Sink> BenchAuditSink for Wrapper<T>` and a feature-gated impl. Synthetic-only naming avoids polluting the production `impl-divergence-trait-method` fixture. |
 
 ### Precision-gap (4)
 
 | id | mode | hybrid | one-line purpose |
 |---|---|:---:|---|
-| `construct-vs-match-loopaudit-distinct` | synthetic | ✓ | Find files that CONSTRUCT `LoopAuditEvent::ToolCallResult{...}` via builder helper, nested constructor, or imported variant. Exclude pure pattern-match files. Distinct from v2's variant by adding the helper / nested / import patterns. |
-| `function-as-value-vs-direct-call` | production | ✓ | Find sites where a real production function (target validated during authoring; candidates: `OrbitError::from`, conversion functions used in `.map_err(...)` chains) is passed as a value/closure callback, excluding sites that call it directly. |
+| `construct-vs-match-benchevent-distinct` | synthetic | ✓ | Find files that CONSTRUCT synthetic enum `BenchAuditEvent::ToolCallResult{...}` (defined in `_fixture_code/`) via builder helper, nested constructor, or imported variant. Exclude pure pattern-match files. Synthetic enum naming avoids name collision with the production `LoopAuditEvent` (which v2 already covered). |
+| `function-as-value-vs-direct-call` | production | ✓ | Find sites where `RefName::new` is passed as a value (e.g. `.map(RefName::new)`), excluding sites that call `RefName::new(...)` directly. Production has 3 as-value sites and ~22 direct calls — bounded ground truth. |
 | `generic-dispatch-concrete-impl` | synthetic | ✓ | At call-site `f::<ConcreteT>()`, identify which impl of `Trait::f` actually runs. |
 | `macro-expanded-callers` | synthetic | ✓ | Find call-sites of `Default::default()` on a struct that derives `Default`. **Expected-fail sentinel** — graph parser does not expand derive macros; treat as known-loss baseline. |
 
@@ -93,8 +93,8 @@ Each fixture has a YAML at `tasks/<fixture-id>.yaml` with prompt, deny-list, ora
 
 | id | mode | hybrid | one-line purpose |
 |---|---|:---:|---|
-| `impl-divergence-trait-method` | production | ✗ | Compare implementations of a real trait method across all impls. Real target validated during YAML authoring (candidates: `AuditSink::record`, `Backend::apply` if present, or another trait with 4–6 impls of bounded body size). |
-| `const-value-extraction` | production | ✗ | List all `const DEFAULT_*` values across `orbit-common` with declared values. |
+| `impl-divergence-trait-method` | production | ✗ | Compare implementations of `AuditSink::emit` across all 4 production impls (`NullSink`, `InMemorySink`, `JsonlFileSink`, `EnforcedAuditSink`). Body sizes range 1–50 lines; the divergence between trivial impls and the policy-mirroring `EnforcedAuditSink` body is the load-bearing answer. |
+| `const-value-extraction` | production | ✗ | List all `pub const` declarations (not `pub const fn`) in `orbit-common/src/types/` with their declared values. ~7 declarations: `AUDIT_ENVELOPE_SCHEMA_VERSION`, `ACTIVITY_REF_PREFIX`, `V2_TOOL_WILDCARD_ROOTS`, `DEFAULT_POLICY_NAME`, `UNRESTRICTED_FS_PROFILE`, `EXECUTOR_RESOURCE_SCHEMA_VERSION`, `POLICY_RESOURCE_SCHEMA_VERSION`. |
 
 ### Selector-ambiguity (2)
 
@@ -118,6 +118,8 @@ Synthetic fixture code lives at `_fixture_code/`. The current `.orbitignore` exc
 `benchmarks/graph/v4/runs/`, `benchmarks/graph/v4/tasks/`, and `benchmarks/graph/v4/_sweeps/` remain excluded so YAML and run artifacts don't pollute graph search.
 
 Synthetic-fixture prompts explicitly scope the ask: *"in `benchmarks/graph/v4/_fixture_code/`"* rather than *"in Orbit production code."* Production-fixture prompts use *"in Orbit production code"* or name a specific crate. This separation keeps the benchmark honest: synthetic fixtures test graph mechanics; production fixtures test product utility.
+
+**Synthetic-vs-production name isolation.** Synthetic fixtures use distinct symbol names (e.g. `BenchAuditSink`, `BenchAuditEvent`) rather than extending production traits/enums in place. This prevents synthetic blanket impls or constructor sites from polluting production fixtures' ground truth — `impl-divergence-trait-method` (target: production `AuditSink::emit`) must not pick up synthetic impls of `BenchAuditSink`, and vice versa. Naming convention: synthetic targets prefix `Bench*` or use `_fixture_code/`-qualified paths.
 
 ## Structured oracle format
 
