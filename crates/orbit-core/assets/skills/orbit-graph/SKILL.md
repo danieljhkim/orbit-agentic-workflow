@@ -9,7 +9,7 @@ Use `orbit.graph.*` as your default way to navigate code. Start with the smalles
 
 ## Default Workflow
 
-1. **Search first** — Use `orbit.graph.search` when the prompt names a symbol, trait, function, type, or file. Add `type`, `kind`, and `prefix` filters when you can.
+1. **Search first** — Use `orbit.graph.search` when the prompt names a symbol, trait, function, type, or file. Add `type`, `kind`, `prefix`, and `source_regex` filters when you can. For content-shape questions ("every file/symbol matching pattern X"), see [Source-Regex Enumeration](#source-regex-enumeration) — one call usually answers the whole question.
 2. **Inspect the exact selector** — Use `orbit.graph.show` to confirm the definition, source, lines, or lineage of the match you found.
 3. **Use one relationship tool only if needed**:
    - `orbit.graph.implementors` for trait or interface implementation questions
