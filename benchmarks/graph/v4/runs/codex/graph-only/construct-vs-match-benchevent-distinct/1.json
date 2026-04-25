@@ -4,10 +4,10 @@
   "arm": "graph-only",
   "task_id": "construct-vs-match-benchevent-distinct",
   "seed": 1,
-  "sweep_id": "20260424-230632-f36f84",
-  "run_order_index": 55,
-  "nonce": "719b81145f3d40fbb66d7e38b45328cf",
-  "system_prompt_hash": "0231a665c4bad9d1",
+  "sweep_id": "20260425-115117-21a938",
+  "run_order_index": 11,
+  "nonce": "46682c35b0d840a69b3338dbe695ad40",
+  "system_prompt_hash": "acfad87b471b4958",
   "fixture_path": "benchmarks/graph/v4/tasks/construct-vs-match-benchevent-distinct.yaml",
   "allowed_tools": [
     "mcp:orbit_bench.orbit_graph_*"
@@ -17,25 +17,25 @@
   ],
   "verdict": "pass",
   "diagnostic": "oracle accepted final message",
-  "wall_seconds": 36.25,
+  "wall_seconds": 83.61,
   "turns": 1,
-  "input_tokens": 14202,
-  "cache_read_tokens": 68608,
+  "input_tokens": 15557,
+  "cache_read_tokens": 145408,
   "cache_creation_tokens": 0,
-  "output_tokens": 1055,
+  "output_tokens": 2284,
   "total_cost_usd": 0.0,
   "tool_calls": {
-    "orbit.graph.search": 1,
-    "orbit.graph.overview": 1,
-    "orbit.graph.pack": 1,
+    "orbit.graph.search": 2,
+    "orbit.graph.show": 2,
+    "orbit.graph.pack": 3,
     "orbit.graph.callers": 1
   },
   "model_usage": {
     "gpt-5.3-codex": {
-      "input_tokens": 14202,
-      "cache_read_tokens": 68608,
+      "input_tokens": 15557,
+      "cache_read_tokens": 145408,
       "cache_creation_tokens": 0,
-      "output_tokens": 1055,
+      "output_tokens": 2284,
       "cost_usd": 0.0
     }
   },

@@ -4,10 +4,10 @@
   "arm": "graph-only",
   "task_id": "impl-divergence-trait-method",
   "seed": 3,
-  "sweep_id": "20260424-230632-f36f84",
-  "run_order_index": 62,
-  "nonce": "e6d02ec625144a059a5555a1214c7bbe",
-  "system_prompt_hash": "d50c928b4c862c16",
+  "sweep_id": "20260425-115117-21a938",
+  "run_order_index": 27,
+  "nonce": "96025a9e177c484a943ac8a34dc0efff",
+  "system_prompt_hash": "543ad6dabf3ded3d",
   "fixture_path": "benchmarks/graph/v4/tasks/impl-divergence-trait-method.yaml",
   "allowed_tools": [
     "mcp:orbit_bench.orbit_graph_*"
@@ -17,24 +17,26 @@
   ],
   "verdict": "pass",
   "diagnostic": "oracle accepted final message",
-  "wall_seconds": 34.12,
+  "wall_seconds": 100.04,
   "turns": 1,
-  "input_tokens": 2129,
-  "cache_read_tokens": 63104,
+  "input_tokens": 9163,
+  "cache_read_tokens": 290560,
   "cache_creation_tokens": 0,
-  "output_tokens": 673,
+  "output_tokens": 3093,
   "total_cost_usd": 0.0,
   "tool_calls": {
-    "orbit.graph.search": 1,
+    "orbit.graph.search": 6,
     "orbit.graph.implementors": 1,
-    "orbit.graph.pack": 1
+    "orbit.graph.pack": 3,
+    "orbit.graph.show": 2,
+    "orbit.graph.refs": 2
   },
   "model_usage": {
     "gpt-5.3-codex": {
-      "input_tokens": 2129,
-      "cache_read_tokens": 63104,
+      "input_tokens": 9163,
+      "cache_read_tokens": 290560,
       "cache_creation_tokens": 0,
-      "output_tokens": 673,
+      "output_tokens": 3093,
       "cost_usd": 0.0
     }
   },
