@@ -75,16 +75,16 @@ Each fixture has a YAML at `tasks/<fixture-id>.yaml` with prompt, deny-list, ora
 
 | id | mode | hybrid | one-line purpose |
 |---|---|:---:|---|
-| `callers-2hop-graphbenchpolicy` | synthetic | ✓ | Find functions that transitively call `GraphBenchPolicy::resolve` via 2 hops, excluding direct callers. |
+| `callers-2hop-graphbenchpolicy` | synthetic | ✓ | Find functions that transitively call `GraphBenchPolicy::lookup_rule` via 2 hops, excluding direct callers. Method renamed from `resolve` to avoid name collision with production `*::resolve` methods (verified empirically; see §"Synthetic-vs-production name isolation"). |
 | `deps-downstream-orbit-knowledge` | production | ✓ | List crates that transitively depend on `orbit-knowledge` through 2 levels. |
 | `reverse-export-orbit-error` | production | ✓ | List every module that re-exports `orbit_common::OrbitError` (or its production-equivalent re-export chain). |
-| `implementors-benchsink-with-blanket` | synthetic | ✓ | Enumerate impls of synthetic trait `BenchAuditSink` (defined in `_fixture_code/`) including a blanket impl `impl<T: Sink> BenchAuditSink for Wrapper<T>` and a feature-gated impl. Synthetic-only naming avoids polluting the production `impl-divergence-trait-method` fixture. |
+| `implementors-benchsink-with-blanket` | synthetic | ✓ | Enumerate impls of synthetic trait `BenchAuditSink` (method: `record`, distinct from production `AuditSink::emit`) including a blanket impl `impl<T: Sink> BenchAuditSink for Wrapper<T>` and a feature-gated impl. |
 
 ### Precision-gap (4)
 
 | id | mode | hybrid | one-line purpose |
 |---|---|:---:|---|
-| `construct-vs-match-benchevent-distinct` | synthetic | ✓ | Find files that CONSTRUCT synthetic enum `BenchAuditEvent::ToolCallResult{...}` (defined in `_fixture_code/`) via builder helper, nested constructor, or imported variant. Exclude pure pattern-match files. Synthetic enum naming avoids name collision with the production `LoopAuditEvent` (which v2 already covered). |
+| `construct-vs-match-benchevent-distinct` | synthetic | ✓ | Find files that CONSTRUCT synthetic enum `BenchAuditEvent::CallReturned{...}` (variant name distinct from production `LoopAuditEvent::ToolCallResult`) via builder helper, nested constructor, or imported variant. Exclude pure pattern-match files. |
 | `function-as-value-vs-direct-call` | production | ✓ | Find sites where `RefName::new` is passed as a value (e.g. `.map(RefName::new)`), excluding sites that call `RefName::new(...)` directly. Production has 3 as-value sites and ~22 direct calls — bounded ground truth. |
 | `generic-dispatch-concrete-impl` | synthetic | ✓ | At call-site `f::<ConcreteT>()`, identify which impl of `Trait::f` actually runs. |
 | `macro-expanded-callers` | synthetic | ✓ | Find call-sites of `Default::default()` on a struct that derives `Default`. **Expected-fail sentinel** — graph parser does not expand derive macros; treat as known-loss baseline. |
@@ -119,7 +119,14 @@ Synthetic fixture code lives at `_fixture_code/`. The current `.orbitignore` exc
 
 Synthetic-fixture prompts explicitly scope the ask: *"in `benchmarks/graph/v4/_fixture_code/`"* rather than *"in Orbit production code."* Production-fixture prompts use *"in Orbit production code"* or name a specific crate. This separation keeps the benchmark honest: synthetic fixtures test graph mechanics; production fixtures test product utility.
 
-**Synthetic-vs-production name isolation.** Synthetic fixtures use distinct symbol names (e.g. `BenchAuditSink`, `BenchAuditEvent`) rather than extending production traits/enums in place. This prevents synthetic blanket impls or constructor sites from polluting production fixtures' ground truth — `impl-divergence-trait-method` (target: production `AuditSink::emit`) must not pick up synthetic impls of `BenchAuditSink`, and vice versa. Naming convention: synthetic targets prefix `Bench*` or use `_fixture_code/`-qualified paths.
+**Synthetic-vs-production name isolation.** Synthetic fixtures use distinct symbol names — including **distinct method and variant names**, not just distinct trait/struct/enum names. This is forced by graph's `callers` and `refs` semantics, which are name-based BFS (not type-resolved); a synthetic `BenchAuditSink::emit` would pollute callers queries on production `AuditSink::emit` and vice versa. Verified empirically: `GraphBenchPolicy::resolve` (synthetic) initially returned 59 callers across both `_fixture_code/` and production crates; renaming the method to `lookup_rule` cut the result to 6 clean synthetic-only callers.
+
+Naming convention applied to v4 synthetic targets:
+- `GraphBenchPolicy::lookup_rule` (not `::resolve` — collides with production `*::resolve`)
+- `BenchAuditSink::record` (not `::emit` — collides with production `AuditSink::emit`)
+- `BenchAuditEvent::CallReturned` (not `::ToolCallResult` — collides with production `LoopAuditEvent::ToolCallResult`)
+
+The `macro-expanded-callers` fixture is an exception: its target is `Default::default()`, a stdlib trait method with thousands of production callers. That fixture's oracle must explicitly scope to `_fixture_code/` paths.
 
 ## Structured oracle format
 
