@@ -98,7 +98,8 @@ pub fn init_workspace_from_root_override(
     options: InitOptions,
 ) -> Result<InitResult, OrbitError> {
     let cwd = std::env::current_dir().map_err(|e| OrbitError::Io(e.to_string()))?;
-    let (global_root, data_root) = OrbitRuntime::resolve_roots_for_cwd(&cwd, root_override)?;
+    let (global_root, data_root) =
+        OrbitRuntime::resolve_bootstrap_roots_for_cwd(&cwd, root_override)?;
     init_workspace_at_root(
         &data_root,
         InitOptions {
