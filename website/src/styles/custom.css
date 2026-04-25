@@ -113,10 +113,7 @@ body {
   border-radius: 4px;
 }
 
-.sl-markdown-content pre {
-  border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
-}
+
 
 .sl-markdown-content table {
   font-size: 0.92rem;

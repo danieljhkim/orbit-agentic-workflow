@@ -19,11 +19,30 @@ Use `orbit.graph.*` as your default way to navigate code. Start with the smalles
 4. **Gather only when needed** — Use `orbit.graph.pack` only for a small set of exact selectors when you need multi-symbol context for synthesis, editing, or review. `file:` selectors return metadata and symbol summaries, not full file source, and leaf bodies stay hidden unless you pass `summary: false`.
 5. **Orient only when scope is unclear** — Use `orbit.graph.overview` when the subtree is unfamiliar or the task is architectural. Broad scopes default to `summary`; ask for `format: "full"` only when you need per-file symbol lists.
 
+## Source-Regex Enumeration
+
+For content-shape questions ("every file/symbol matching pattern X"), call `orbit.graph.search` with `source_regex` ONCE on the broadest viable `prefix`. Do NOT iterate per-subdirectory or per-crate — a single call with the right scope returns the complete answer set, including `matched_lines: [{line_number, snippet}]` so you usually do not need a follow-up `show` or `pack`.
+
+Question shapes that fit:
+
+- "every file that re-exports `X`" → `source_regex: "^\\s*pub\\s+use\\s+.*X"`
+- "every top-level constant" → `source_regex: "^\\s*pub\\s+const\\s+"`
+- "every cross-language `class ... implements IFoo`" → `source_regex: "class\\s+\\w+\\s+implements\\s+IFoo"`
+
+Caveat: regex matches comments and string literals too. If a match looks suspicious, verify it with `show`. Do not refine by re-running with a narrower prefix — refine the regex instead.
+
+```bash
+# One call returns every file re-exporting OrbitError
+orbit tool run orbit.graph.search --input '{"type":"file","prefix":"crates/","source_regex":"^\\s*pub\\s+use\\s+.*OrbitError"}'
+```
+
 ## Stop Rule
 
-If `search + show`, or `search + implementors`, already answers the question, stop.
+If `search + show`, or `search + implementors`, or a single `search` with `source_regex`, already answers the question, stop.
 
 Do not also run `overview`, `refs`, or `pack` unless they add information the task still requires.
+
+If you are about to call `pack` or `show` on each candidate to verify which one matches, stop and reconsider — that is the verification-loop anti-pattern. Either rephrase the question as a `source_regex` enumeration, or use the appropriate relation tool (`callers`, `implementors`, `refs`).
 
 ## When `fs.read` Is Acceptable
 
@@ -77,3 +96,5 @@ Common symbol kinds: `function`, `method`, `struct`, `trait`, `impl`, `field`, `
 - Packing broad directories or many selectors just to explore
 - Reading full files after `show` or `pack` already gave the needed context
 - Falling back to `fs.read` globally when only some selectors failed
+- Iterating `source_regex` per-crate or per-subdirectory when a single broad `prefix` returns the same set in one call
+- Using `pack` or `show` to verify each candidate from a `search` result one at a time — rephrase as `source_regex` or use `callers`/`implementors`/`refs` instead
