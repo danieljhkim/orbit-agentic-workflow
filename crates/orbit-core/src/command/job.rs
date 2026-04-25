@@ -348,6 +348,7 @@ pub(crate) fn seed_default_jobs(jobs_dir: &Path, overwrite: bool) -> Result<usiz
 mod tests {
     use super::*;
 
+    use orbit_common::types::JobV2StepBody;
     use tempfile::tempdir;
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf, PathBuf) {
@@ -385,6 +386,49 @@ spec:
         std::fs::write(path, yaml).expect("write job yaml");
     }
 
+    fn assert_condition_tokens_are_paths(condition: &str) {
+        let mut remaining = condition;
+        while let Some(start) = remaining.find("{{") {
+            let after_start = &remaining[start + 2..];
+            let end = after_start
+                .find("}}")
+                .unwrap_or_else(|| panic!("unterminated template token in {condition:?}"));
+            let token = after_start[..end].trim();
+            assert!(
+                !["==", "!=", "&&", "||", ">", "<"]
+                    .iter()
+                    .any(|op| token.contains(op)),
+                "template token {token:?} in condition {condition:?} must be a path; put comparisons outside the braces",
+            );
+            remaining = &after_start[end + 2..];
+        }
+    }
+
+    fn assert_step_condition_tokens_are_paths(step: &orbit_common::types::JobV2Step) {
+        if let Some(when) = &step.when {
+            assert_condition_tokens_are_paths(when);
+        }
+        match &step.body {
+            JobV2StepBody::Parallel { parallel } => {
+                for branch in &parallel.branches {
+                    assert_step_condition_tokens_are_paths(branch);
+                }
+            }
+            JobV2StepBody::FanOut { fan_out, .. } => {
+                assert_step_condition_tokens_are_paths(&fan_out.worker);
+            }
+            JobV2StepBody::Loop { loop_ } => {
+                if let Some(break_when) = &loop_.break_when {
+                    assert_condition_tokens_are_paths(break_when);
+                }
+                for child in &loop_.steps {
+                    assert_step_condition_tokens_are_paths(child);
+                }
+            }
+            JobV2StepBody::TargetRef(_) | JobV2StepBody::Target(_) => {}
+        }
+    }
+
     #[test]
     fn seeded_jobs_include_planning_duel_pipeline() {
         let (_root, runtime, global_root, _workspace_root) = test_runtime();
@@ -396,6 +440,18 @@ spec:
         assert_eq!(entry.spec.kind, JobKind::Workflow);
         assert_eq!(entry.spec.steps.len(), 1);
         assert_eq!(entry.spec.steps[0].id, "run_planning_duel");
+    }
+
+    #[test]
+    fn default_job_conditions_keep_comparisons_outside_template_tokens() {
+        for (name, yaml) in DEFAULT_JOB_FILES {
+            let asset = load_job_asset(yaml).unwrap_or_else(|err| {
+                panic!("default job {name} should parse before condition checks: {err}")
+            });
+            for step in &asset.spec.steps {
+                assert_step_condition_tokens_are_paths(step);
+            }
+        }
     }
 
     #[test]

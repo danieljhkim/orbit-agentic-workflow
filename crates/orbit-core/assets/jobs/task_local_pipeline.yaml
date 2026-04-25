@@ -56,7 +56,7 @@ spec:
               status: review
 
     - id: push
-      when: "{{ input.auto_push == true }}"
+      when: "{{ input.auto_push }} == true"
       target: activity:git_push
       default_input:
         workspace_path: "{{ steps.worktree.output.workspace_path }}"
