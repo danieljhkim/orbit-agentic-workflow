@@ -21,8 +21,8 @@ use crate::graph::nodes::CodebaseGraphV1;
 pub use overview::compact_from_overview;
 pub use task_graph::{TaskGraphScope, TaskGraphService, default_knowledge_dir};
 pub use types::{
-    FileOverview, GraphOverview, GraphOverviewSummary, NodeContext, ReferenceHit, SearchResult,
-    SymbolBrief, TopFileEntry,
+    FileOverview, GraphOverview, GraphOverviewSummary, MatchedLine, NodeContext, ReferenceHit,
+    SearchHit, SearchResult, SearchScanLimitExceeded, SymbolBrief, TopFileEntry,
 };
 
 /// High-level query service over a [`CodebaseGraphV1`].

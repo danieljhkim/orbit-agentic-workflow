@@ -198,6 +198,7 @@ pub fn build_graph_files(ctx: &mut PipelineContext) -> Result<(), KnowledgeError
             },
             extension,
             source_blob_hash: None,
+            source: String::new(),
             imports: Vec::new(),
             exports: Vec::new(),
             re_exports: Vec::new(),
@@ -258,6 +259,7 @@ pub fn build_graph_leaves(ctx: &mut PipelineContext) -> Result<(), KnowledgeErro
 
         // Set file source_blob_hash (will be written to blob by persist)
         ctx.graph.files[file_idx].source_blob_hash = Some(source_hash);
+        ctx.graph.files[file_idx].source = content.clone();
         let (exports, re_exports) = file_exports(&result.exports);
         ctx.graph.files[file_idx].exports = exports;
         ctx.graph.files[file_idx].re_exports = re_exports;

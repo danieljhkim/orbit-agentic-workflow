@@ -460,6 +460,15 @@ impl GraphObjectStore {
                 KnowledgeError::invalid_data(format!("file node parse: {error}"))
             })?;
             file.base.object_hash = Some(entry.object_hash.clone());
+            if let Some(ref blob_hash) = file.source_blob_hash
+                && file.source.is_empty()
+            {
+                // Legacy graphs recorded a file source hash before file blobs were
+                // persisted. Keep those refs readable; new refs hydrate normally.
+                if let Ok(source) = self.read_blob(blob_hash) {
+                    file.source = source;
+                }
+            }
             files.push(file);
         }
 
@@ -561,6 +570,14 @@ impl GraphObjectStore {
             })?;
             if let Value::Object(ref mut map) = node_json {
                 map.remove("object_hash");
+            }
+
+            if !file.source.is_empty() {
+                let blob_hash = self.write_blob(&file.source)?;
+                if let Value::Object(ref mut map) = node_json {
+                    map.insert("source_blob_hash".to_string(), Value::String(blob_hash));
+                    map.insert("source".to_string(), Value::String(String::new()));
+                }
             }
 
             let child_hashes: HashMap<String, String> = file

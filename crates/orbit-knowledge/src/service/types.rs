@@ -2,6 +2,22 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::graph::navigator::GraphNodeRef;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchedLine {
+    pub line_number: usize,
+    pub snippet: String,
+}
+
+pub struct SearchHit<'a> {
+    pub node: GraphNodeRef<'a>,
+    pub matched_lines: Vec<MatchedLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchScanLimitExceeded {
+    pub limit: usize,
+}
+
 /// A single structured search result.
 pub struct SearchResult {
     pub selector: String,

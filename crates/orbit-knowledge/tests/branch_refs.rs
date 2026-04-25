@@ -393,6 +393,7 @@ fn sample_graph(function_name: &str) -> CodebaseGraphV1 {
             base: base_node(&file_id, "lib.rs", "src/lib.rs", Some(&root_id)),
             extension: Some("rs".to_string()),
             source_blob_hash: None,
+            source: String::new(),
             imports: Vec::new(),
             exports: Vec::new(),
             re_exports: Vec::new(),

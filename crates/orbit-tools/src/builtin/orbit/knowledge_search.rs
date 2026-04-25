@@ -1,6 +1,7 @@
-use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
+use orbit_common::types::{OrbitError, ToolParam, ToolSchema, optional_raw_string};
 use orbit_knowledge::graph::navigator::GraphNodeRef;
-use orbit_knowledge::service::GraphContextService;
+use orbit_knowledge::service::{GraphContextService, SearchHit};
+use regex::Regex;
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -8,52 +9,59 @@ use crate::{Tool, ToolContext};
 pub struct OrbitKnowledgeSearchTool;
 
 const DEFAULT_LIMIT: usize = 20;
+const SOURCE_REGEX_UNBOUNDED_LIMIT_MAX: usize = 200;
 
 impl Tool for OrbitKnowledgeSearchTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.search".to_string(),
-            description: "Use when you need to locate selectors. Prefer over grep when repeated names make raw hits ambiguous. Behavior: without `type`, `kind`, or `prefix`, code symbols rank first and non-code stays hidden unless `include_non_code` is true.".to_string(),
+            description: "Use when locating selectors by name/path/source regex. Prefer over grep when names repeat. Examples: pub use, pub const, class.*implements. Rust raw lines.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "query".to_string(),
-                    description: "Name or path substring.".to_string(),
+                    description: "Name/path.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "type".to_string(),
-                    description: "`dir`, `file`, or `symbol`.".to_string(),
+                    description: "dir/file/symbol.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "kind".to_string(),
-                    description: "Leaf kind.".to_string(),
+                    description: "Kind.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "prefix".to_string(),
-                    description: "Only this path prefix.".to_string(),
+                    description: "Prefix.".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
+                    name: "source_regex".to_string(),
+                    description: "Rust regex; empty query needs prefix/limit<=200; adds matched_lines.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "limit".to_string(),
-                    description: "Max results.".to_string(),
+                    description: "Limit.".to_string(),
                     param_type: "number".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "include_non_code".to_string(),
-                    description: "Include doc/config hits too.".to_string(),
+                    description: "Docs/configs.".to_string(),
                     param_type: "boolean".to_string(),
                     required: false,
                 },
                 ToolParam {
                     name: "format".to_string(),
-                    description: "`structured` or `selectors`.".to_string(),
+                    description: "structured/selectors.".to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
@@ -64,21 +72,35 @@ impl Tool for OrbitKnowledgeSearchTool {
     }
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let query = super::optional_string(&input, "query")?.unwrap_or_default();
+        let query = optional_raw_string(&input, "query")?
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
         let node_type = super::optional_string(&input, "type")?;
         let kind_filter = super::optional_string(&input, "kind")?;
         let prefix = super::optional_string(&input, "prefix")?;
+        let source_regex_text = super::optional_string(&input, "source_regex")?;
+        let limit_provided = input.get("limit").is_some();
         let limit = input
             .get("limit")
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_LIMIT as u64) as usize;
+        validate_source_regex_bound(
+            &query,
+            prefix.as_deref(),
+            limit,
+            limit_provided,
+            &source_regex_text,
+        )?;
+        let source_regex = compile_source_regex(source_regex_text.as_deref())?;
+        let has_source_regex = source_regex.is_some();
         let include_non_code = input
             .get("include_non_code")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let format = super::optional_string(&input, "format")?;
         let use_selectors = format.as_deref() == Some("selectors");
-        let use_default_ranking = node_type.is_none() && kind_filter.is_none() && prefix.is_none();
+        let use_default_ranking =
+            node_type.is_none() && kind_filter.is_none() && prefix.is_none() && !has_source_regex;
 
         let graph = super::load_graph_for_read(ctx, &input)?;
         let svc = GraphContextService::new(&graph);
@@ -94,29 +116,56 @@ impl Tool for OrbitKnowledgeSearchTool {
         } else {
             limit
         };
-        let (service_total, nodes) = svc.search_with_total(
-            &query,
-            node_types,
-            prefix.as_deref(),
-            kind_filter.as_deref(),
-            search_limit,
-        );
-        let (total, nodes) = if use_default_ranking {
+        let candidate_scan_limit =
+            if has_source_regex && prefix.is_none() && query.trim().is_empty() {
+                Some(SOURCE_REGEX_UNBOUNDED_LIMIT_MAX)
+            } else {
+                None
+            };
+        let (service_total, hits) = svc
+            .search_hits_with_total_bounded(
+                &query,
+                node_types,
+                prefix.as_deref(),
+                kind_filter.as_deref(),
+                source_regex.as_ref(),
+                search_limit,
+                candidate_scan_limit,
+            )
+            .map_err(|error| {
+                OrbitError::InvalidInput(format!(
+                    "`source_regex` scanned more than {} source candidates; provide `prefix` or non-empty `query` to narrow the search",
+                    error.limit
+                ))
+            })?;
+        let (total, hits) = if use_default_ranking {
+            let nodes = hits.into_iter().map(|hit| hit.node).collect();
             let ranked = rank_default_search_results(nodes, include_non_code);
             let total = ranked.len();
-            let limited = ranked.into_iter().take(limit).collect::<Vec<_>>();
+            let limited = ranked
+                .into_iter()
+                .take(limit)
+                .map(|node| SearchHit {
+                    node,
+                    matched_lines: Vec::new(),
+                })
+                .collect::<Vec<_>>();
             (total, limited)
         } else {
-            (service_total, nodes)
+            (service_total, hits)
         };
 
         if use_selectors {
-            let selectors: Vec<String> = nodes.iter().map(|n| svc.selector_for_node(*n)).collect();
+            let selectors: Vec<String> = hits
+                .iter()
+                .map(|hit| svc.selector_for_node(hit.node))
+                .collect();
             Ok(json!(selectors))
         } else {
-            let items: Vec<Value> = nodes
+            let items: Vec<Value> = hits
                 .into_iter()
-                .map(|node| {
+                .map(|hit| {
+                    let node = hit.node;
                     let kind = match node {
                         GraphNodeRef::Dir(_) => "dir".to_string(),
                         GraphNodeRef::File(_) => "file".to_string(),
@@ -140,6 +189,17 @@ impl Tool for OrbitKnowledgeSearchTool {
                     if let Some(file) = file {
                         obj["file"] = json!(file);
                     }
+                    if has_source_regex {
+                        obj["matched_lines"] = json!(
+                            hit.matched_lines
+                                .into_iter()
+                                .map(|line| json!({
+                                    "line_number": line.line_number,
+                                    "snippet": line.snippet,
+                                }))
+                                .collect::<Vec<_>>()
+                        );
+                    }
                     obj
                 })
                 .collect();
@@ -149,6 +209,38 @@ impl Tool for OrbitKnowledgeSearchTool {
             }))
         }
     }
+}
+
+fn validate_source_regex_bound(
+    query: &str,
+    prefix: Option<&str>,
+    limit: usize,
+    limit_provided: bool,
+    source_regex: &Option<String>,
+) -> Result<(), OrbitError> {
+    if source_regex.is_none() {
+        return Ok(());
+    }
+    if prefix.is_some() || !query.trim().is_empty() {
+        return Ok(());
+    }
+    if limit_provided && limit <= SOURCE_REGEX_UNBOUNDED_LIMIT_MAX {
+        return Ok(());
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "`source_regex` without `prefix` or non-empty `query` requires explicit `limit` <= {SOURCE_REGEX_UNBOUNDED_LIMIT_MAX}"
+    )))
+}
+
+fn compile_source_regex(source_regex: Option<&str>) -> Result<Option<Regex>, OrbitError> {
+    source_regex
+        .map(|pattern| {
+            Regex::new(pattern).map_err(|error| {
+                OrbitError::InvalidInput(format!("invalid `source_regex`: {error}"))
+            })
+        })
+        .transpose()
 }
 
 fn rank_default_search_results<'a>(

@@ -73,6 +73,107 @@ fn search_prefers_code_symbols_and_hides_non_code_by_default() {
 }
 
 #[test]
+fn search_source_regex_filters_file_source_and_adds_matched_lines() {
+    let mut re_export_file = file_node("src/types/mod.rs", "rust", Some("rs"), vec![]);
+    re_export_file.source =
+        "mod error;\npub use error::OrbitError;\npub use ids::TaskId;\n".to_string();
+    let mut definition_file = file_node("src/types/error.rs", "rust", Some("rs"), vec![]);
+    definition_file.source = "pub enum OrbitError {\n    Message(String),\n}\n".to_string();
+    let fixture = write_graph_fixture(graph_with_root(
+        vec![re_export_file, definition_file],
+        Vec::new(),
+    ));
+
+    let response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({
+            "query": "",
+            "type": "file",
+            "prefix": "src/types/",
+            "source_regex": "^\\s*pub\\s+use\\s+.*OrbitError",
+            "limit": 50
+        }),
+    );
+
+    assert_eq!(response["total"], 1);
+    assert_eq!(response["results"][0]["selector"], "file:src/types/mod.rs");
+    assert_eq!(response["results"][0]["matched_lines"][0]["line_number"], 2);
+    assert_eq!(
+        response["results"][0]["matched_lines"][0]["snippet"],
+        "pub use error::OrbitError;"
+    );
+
+    let query_keeps_name_location_semantics = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({
+            "query": "OrbitError",
+            "type": "file",
+            "prefix": "src/types/",
+            "source_regex": "^\\s*pub\\s+use\\s+.*OrbitError",
+            "limit": 50
+        }),
+    );
+    assert_eq!(query_keeps_name_location_semantics["total"], 0);
+}
+
+#[test]
+fn search_source_regex_selector_format_stays_plain_selectors() {
+    let mut file = file_node("src/lib.rs", "rust", Some("rs"), vec![]);
+    file.source = "pub const MAX_RETRIES: usize = 3;\n".to_string();
+    let fixture = write_graph_fixture(graph_with_root(vec![file], Vec::new()));
+
+    let response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({
+            "query": "",
+            "type": "file",
+            "prefix": "src/",
+            "source_regex": "^\\s*pub\\s+const\\s+",
+            "format": "selectors"
+        }),
+    );
+
+    assert_eq!(response, json!(["file:src/lib.rs"]));
+}
+
+#[test]
+fn search_source_regex_rejects_invalid_and_unbounded_inputs() {
+    let mut file = file_node("src/lib.rs", "rust", Some("rs"), vec![]);
+    file.source = "pub const MAX_RETRIES: usize = 3;\n".to_string();
+    let fixture = write_graph_fixture(graph_with_root(vec![file], Vec::new()));
+
+    let invalid_regex = execute_graph_tool_result(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({"query": "lib", "source_regex": "["}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(invalid_regex.contains("invalid `source_regex`"));
+
+    let omitted_limit = execute_graph_tool_result(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({"query": "", "source_regex": "pub const"}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(omitted_limit.contains("requires explicit `limit` <= 200"));
+
+    let too_large_limit = execute_graph_tool_result(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({"query": "", "source_regex": "pub const", "limit": 201}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(too_large_limit.contains("requires explicit `limit` <= 200"));
+}
+
+#[test]
 fn overview_defaults_to_summary_for_broad_scope() {
     let mut files = Vec::new();
     let mut leaves = Vec::new();
@@ -482,6 +583,7 @@ fn file_node(path: &str, language: &str, extension: Option<&str>, imports: Vec<&
         ),
         extension: extension.map(str::to_string),
         source_blob_hash: None,
+        source: String::new(),
         imports: imports.into_iter().map(str::to_string).collect(),
         exports: Vec::new(),
         re_exports: Vec::new(),

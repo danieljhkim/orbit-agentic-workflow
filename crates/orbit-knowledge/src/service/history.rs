@@ -402,6 +402,7 @@ mod tests {
                 base: file_base,
                 extension: Some("rs".to_string()),
                 source_blob_hash: None,
+                source: String::new(),
                 imports: Vec::new(),
                 exports: Vec::new(),
                 re_exports: Vec::new(),

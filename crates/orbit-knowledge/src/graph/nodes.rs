@@ -144,6 +144,8 @@ pub struct FileNode {
     pub extension: Option<String>,
     pub source_blob_hash: Option<String>,
     #[serde(default)]
+    pub source: String,
+    #[serde(default)]
     pub imports: Vec<String>,
     #[serde(default)]
     pub exports: Vec<String>,
