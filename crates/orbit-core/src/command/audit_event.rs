@@ -67,6 +67,25 @@ impl OrbitRuntime {
     pub fn record_audit_event(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {
         self.stores().audit_events().insert(params)
     }
+
+    /// Hourly count buckets `(rfc3339_hour_start, count)` for audit events at or
+    /// after `since`. Empty hours are NOT in the result; callers must zero-fill
+    /// when rendering a sparkline that needs every bucket.
+    pub fn audit_event_hourly_buckets(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        self.stores().audit_events().hourly_buckets(since)
+    }
+
+    /// `(role, count)` for `status='denied'` audit events at or after `since`,
+    /// sorted desc by count. When `since` is `None`, all-time totals are returned.
+    pub fn audit_denials_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        self.stores().audit_events().denials_by_role(since)
+    }
 }
 
 pub(crate) fn compute_p95(sorted_durations: &[i64]) -> i64 {

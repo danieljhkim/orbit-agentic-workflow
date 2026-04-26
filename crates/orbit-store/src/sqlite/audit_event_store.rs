@@ -342,6 +342,80 @@ impl Store {
             .map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    /// Returns hourly buckets `(rfc3339_hour_start, count)` of audit events with
+    /// `timestamp >= since`, ordered ascending by bucket. Bucket starts are
+    /// truncated to `YYYY-MM-DDTHH:00:00Z`. Empty hours are NOT returned —
+    /// callers must zero-fill missing hours when rendering a sparkline.
+    pub fn get_audit_event_hourly_buckets(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let sql = "SELECT strftime('%Y-%m-%dT%H:00:00Z', timestamp) AS bucket, COUNT(*) \
+                   FROM audit_events WHERE timestamp >= ?1 \
+                   GROUP BY bucket ORDER BY bucket ASC";
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![since.to_rfc3339()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    /// Returns `(role, denied_count)` for audit events with status='denied' and
+    /// `timestamp >= since`, ordered desc by count. Used to join SQLite-level
+    /// CLI denials onto the per-agent scoreboard.
+    pub fn get_audit_denials_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let sql = if since.is_some() {
+            "SELECT role, COUNT(*) FROM audit_events \
+             WHERE status = 'denied' AND timestamp >= ?1 \
+             GROUP BY role ORDER BY COUNT(*) DESC"
+        } else {
+            "SELECT role, COUNT(*) FROM audit_events \
+             WHERE status = 'denied' \
+             GROUP BY role ORDER BY COUNT(*) DESC"
+        };
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = if let Some(s) = since {
+            stmt.query_map(params![s.to_rfc3339()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+        } else {
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+        };
+
+        rows.map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
     pub fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         let conn = self
             .conn

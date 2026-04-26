@@ -41,8 +41,14 @@ let isRefreshing = false;
 
 // Audit tab state
 let lastAudit = [];
-let auditFilter = { status: null, q: "", tool: null, role: null, run_id: null };
+let auditFilter = { status: null, q: "", tool: null, role: null, run_id: null, profile: null };
 let expandedAuditIds = new Set();
+let activeAuditSubtab = "events";
+let lastAuditPolicy = null;
+let policySort = { by_profile: "count", by_target: "count", by_run: "count", by_agent: "count" };
+
+// Health strip state
+let lastSummary = null;
 
 // Run detail state
 let activeRunId = null;
@@ -520,6 +526,10 @@ const SCOREBOARD_COLUMNS = [
   { key: "pr.merged_clean", label: "pr clean", num: true },
   { key: "pr.merged_with_revision", label: "pr w/rev", num: true },
   { key: "pr.review_comments", label: "pr cmts", num: true },
+  { key: "avg_step_duration_ms", label: "avg step", num: true, format: "duration" },
+  { key: "p95_wall_clock_ms", label: "p95 wall", num: true, format: "duration" },
+  { key: "retries", label: "retries", num: true },
+  { key: "denials", label: "denials", num: true },
 ];
 
 function readPath(obj, path) {
@@ -577,23 +587,32 @@ function renderScoreboard(summary) {
     for (const col of SCOREBOARD_COLUMNS) {
       let cellText;
       let extra = "";
+      let titleText;
       if (col.key === "agent") {
         cellText = name;
+        titleText = `${name} — click to filter audit by role`;
+        extra = " clickable";
       } else {
         const v = readPath(agent, col.key);
         const num = typeof v === "number" ? v : 0;
-        cellText = String(num);
+        if (col.format === "duration") {
+          cellText = num === 0 ? "0" : fmtDuration(num);
+        } else {
+          cellText = String(num);
+        }
         if (num === 0) extra = " zero";
       }
       const cellClass =
         (col.num ? "num" : col.key === "agent" ? "agent" : "") + extra;
-      row.appendChild(
-        el("td", {
-          class: cellClass,
-          text: cellText,
-          title: col.key === "agent" ? name : undefined,
-        }),
-      );
+      const td = el("td", {
+        class: cellClass,
+        text: cellText,
+        title: titleText,
+      });
+      if (col.key === "agent") {
+        td.addEventListener("click", () => navigateToRole(name));
+      }
+      row.appendChild(td);
     }
     row.dataset.key = `agent-${name}`;
     row.dataset.hash = JSON.stringify(agent);
@@ -652,6 +671,7 @@ function wireSearch() {
 const TABS = ["tasks", "scoreboard", "audit", "diagnostics", "run-detail"];
 const DIAG_SUBTABS = ["runs", "metrics", "friction"];
 const RUN_DETAIL_SUBTABS = ["steps", "events"];
+const AUDIT_SUBTABS = ["events", "policy"];
 
 function parseHashRoute(raw) {
   const trimmed = String(raw || "").replace(/^#/, "");
@@ -707,7 +727,10 @@ function setActiveTab(raw, opts = {}) {
     auditFilter.tool = query.get("tool") || null;
     auditFilter.role = query.get("role") || null;
     auditFilter.run_id = query.get("run_id") || null;
+    auditFilter.profile = query.get("profile") || null;
     auditFilter.q = query.get("q") || "";
+    const sub = AUDIT_SUBTABS.includes(segments[1]) ? segments[1] : activeAuditSubtab;
+    setAuditSubtab(sub);
     hash = buildAuditHash();
     syncAuditControls();
   } else if (top === "run-detail") {
@@ -731,9 +754,29 @@ function buildAuditHash() {
   if (auditFilter.tool) sp.set("tool", auditFilter.tool);
   if (auditFilter.role) sp.set("role", auditFilter.role);
   if (auditFilter.run_id) sp.set("run_id", auditFilter.run_id);
+  if (auditFilter.profile) sp.set("profile", auditFilter.profile);
   if (auditFilter.q) sp.set("q", auditFilter.q);
+  const path = activeAuditSubtab && activeAuditSubtab !== "events"
+    ? `audit/${activeAuditSubtab}`
+    : "audit";
   const qs = sp.toString();
-  return qs ? `#audit?${qs}` : `#audit`;
+  return qs ? `#${path}?${qs}` : `#${path}`;
+}
+
+function setAuditSubtab(name) {
+  if (!AUDIT_SUBTABS.includes(name)) name = "events";
+  activeAuditSubtab = name;
+  for (const btn of document.querySelectorAll("#audit-subtabs .subtab")) {
+    btn.classList.toggle("active", btn.dataset.subtab === name);
+  }
+  const eventsCtl = $("audit-events-controls");
+  const eventsBody = $("audit-body");
+  const policyBody = $("audit-policy-body");
+  if (eventsCtl) eventsCtl.style.display = name === "events" ? "" : "none";
+  if (eventsBody) eventsBody.style.display = name === "events" ? "" : "none";
+  if (policyBody) policyBody.style.display = name === "policy" ? "" : "none";
+  const title = $("audit-title");
+  if (title) title.textContent = name === "policy" ? "Policy Denials" : "Audit Events";
 }
 
 function syncAuditControls() {
@@ -799,6 +842,18 @@ function initTabs() {
         (activeRunSubtab !== "steps" ? `/${activeRunSubtab}` : "");
       setActiveTab(path, { refresh: false });
       refreshDashboard();
+    });
+  }
+  for (const btn of document.querySelectorAll("#audit-subtabs .subtab")) {
+    btn.addEventListener("click", () => {
+      activeAuditSubtab = btn.dataset.subtab;
+      setAuditSubtab(activeAuditSubtab);
+      const newHash = buildAuditHash();
+      if (window.location.hash !== newHash) {
+        window.location.hash = newHash;
+      } else {
+        refreshDashboard();
+      }
     });
   }
   window.addEventListener("hashchange", () => {
@@ -932,29 +987,39 @@ function renderDiagnostics() {
 }
 
 function activeRefreshJobs() {
+  // The health strip is global; refresh on every tick alongside the active tab.
+  const jobs = [fetchAndRenderSummary()];
+
   if (activeTab === "tasks") {
-    return [
+    jobs.push(
       fetchJson("/api/tasks").then((tasks) => {
         lastTasks = tasks;
         renderTasks(tasks);
       }),
-    ];
+    );
+    return jobs;
   }
 
   if (activeTab === "scoreboard") {
-    return [fetchJson("/api/scoreboard").then(renderScoreboard)];
+    jobs.push(fetchJson("/api/scoreboard").then(renderScoreboard));
+    return jobs;
   }
 
   if (activeTab === "audit") {
-    return [fetchAndRenderAudit()];
+    if (activeAuditSubtab === "policy") {
+      jobs.push(fetchAndRenderPolicy());
+    } else {
+      jobs.push(fetchAndRenderAudit());
+    }
+    return jobs;
   }
 
   if (activeTab === "run-detail") {
     if (!activeRunId) {
       renderRunDetailEmpty("No run selected.");
-      return [];
+      return jobs;
     }
-    const jobs = [
+    jobs.push(
       fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
         activeRunDetail = data;
         renderRunDetailMeta();
@@ -963,7 +1028,7 @@ function activeRefreshJobs() {
         renderRunDetailEmpty(`Run not found: ${activeRunId}`);
         throw e;
       }),
-    ];
+    );
     if (activeRunSubtab === "events") {
       jobs.push(
         fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
@@ -976,29 +1041,32 @@ function activeRefreshJobs() {
   }
 
   if (activeDiagSubtab === "runs") {
-    return [
+    jobs.push(
       fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
         lastRuns = runs;
         renderRuns(runs);
       }),
-    ];
+    );
+    return jobs;
   }
 
   if (activeDiagSubtab === "metrics") {
-    return [
+    jobs.push(
       fetchJson(`/api/diagnostics/metrics?limit=${DIAG_LIMIT}`).then((rows) => {
         lastDiagnostics.metrics = rows;
         renderDiagnostics();
       }),
-    ];
+    );
+    return jobs;
   }
 
-  return [
+  jobs.push(
     fetchJson(`/api/diagnostics/friction?limit=${DIAG_LIMIT}`).then((rows) => {
       lastDiagnostics.friction = rows;
       renderDiagnostics();
     }),
-  ];
+  );
+  return jobs;
 }
 
 function fetchAndRenderAudit() {
@@ -1008,11 +1076,172 @@ function fetchAndRenderAudit() {
   if (auditFilter.tool) sp.set("tool", auditFilter.tool);
   if (auditFilter.role) sp.set("role", auditFilter.role);
   if (auditFilter.run_id) sp.set("run_id", auditFilter.run_id);
+  if (auditFilter.profile) sp.set("profile", auditFilter.profile);
   if (auditFilter.q) sp.set("q", auditFilter.q);
   return fetchJson(`/api/audit?${sp.toString()}`).then((events) => {
     lastAudit = events;
     renderAudit(events);
   });
+}
+
+function fetchAndRenderSummary() {
+  return fetchJson(`/api/audit/summary?since=24h`).then((data) => {
+    lastSummary = data;
+    renderHealthStrip(data);
+  });
+}
+
+function fetchAndRenderPolicy() {
+  const sp = new URLSearchParams();
+  sp.set("since", "24h");
+  if (auditFilter.profile) sp.set("profile", auditFilter.profile);
+  if (auditFilter.role) sp.set("agent", auditFilter.role);
+  return fetchJson(`/api/diagnostics/denials?${sp.toString()}`).then((data) => {
+    lastAuditPolicy = data;
+    renderPolicy(data);
+  });
+}
+
+function renderHealthStrip(data) {
+  if (!data) return;
+  $("tile-events-value").textContent = formatBigInt(data.events);
+  $("tile-denials-value").textContent = formatBigInt(data.denials);
+  $("tile-failed-value").textContent = formatBigInt(data.failed_runs);
+  $("tile-active-value").textContent = formatBigInt(data.active_long_runs);
+  const tile = $("tile-denials");
+  const threshold = data.denial_threshold ?? 10;
+  if (data.denials > threshold) {
+    tile.classList.add("tile-alert");
+  } else {
+    tile.classList.remove("tile-alert");
+  }
+  renderSparkline(data.sparkline || []);
+}
+
+function formatBigInt(n) {
+  if (n == null) return "-";
+  if (n >= 10000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function renderSparkline(buckets) {
+  const svg = $("tile-events-sparkline");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  if (buckets.length === 0) return;
+  const counts = buckets.map((b) => b.count || 0);
+  const max = Math.max(1, ...counts);
+  const w = 100;
+  const h = 22;
+  const stepX = buckets.length > 1 ? w / (buckets.length - 1) : 0;
+  const points = counts.map((c, i) => {
+    const x = i * stepX;
+    const y = h - (c / max) * (h - 2) - 1;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+  const baseline = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  baseline.setAttribute("x1", "0");
+  baseline.setAttribute("y1", String(h - 0.5));
+  baseline.setAttribute("x2", String(w));
+  baseline.setAttribute("y2", String(h - 0.5));
+  baseline.setAttribute("class", "baseline");
+  svg.appendChild(baseline);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", `M${points.join(" L")}`);
+  svg.appendChild(path);
+}
+
+const POLICY_TABLES = [
+  { id: "by_profile", label: "By Profile",  nameField: "name",   filterKey: "profile" },
+  { id: "by_target",  label: "By Target",   nameField: "name",   filterKey: null },
+  { id: "by_run",     label: "By Run",      nameField: "run_id", filterKey: "run_id" },
+  { id: "by_agent",   label: "By Agent",    nameField: "agent",  filterKey: "role" },
+];
+
+function renderPolicy(data) {
+  const body = $("audit-policy-body");
+  if (!body) return;
+  $("audit-count").textContent = `${data && data.total ? data.total : 0}`;
+
+  if (!data || (data.total || 0) === 0) {
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No denials in the last 24h." }),
+    ])]);
+    return;
+  }
+
+  const grid = el("div", { class: "policy-grid" });
+  for (const tbl of POLICY_TABLES) {
+    const cell = el("div", { class: "policy-cell" });
+    cell.appendChild(el("h5", { text: tbl.label }));
+    const rawRows = (data[tbl.id] || []).slice();
+    const sortMode = policySort[tbl.id] || "count";
+    rawRows.sort((a, b) => {
+      if (sortMode === "name") {
+        return String(a[tbl.nameField] || "").localeCompare(String(b[tbl.nameField] || ""));
+      }
+      return (b.count || 0) - (a.count || 0);
+    });
+    cell.appendChild(buildPolicyTable(tbl, rawRows, sortMode));
+    grid.appendChild(cell);
+  }
+  syncNodes(body, [grid]);
+}
+
+function buildPolicyTable(spec, rows, sortMode) {
+  const table = el("table", { class: "policy-table" });
+  const thead = el("thead");
+  const headRow = el("tr");
+  const nameTh = el("th", { text: spec.nameField });
+  if (sortMode === "name") {
+    const arrow = el("span", { class: "sort-arrow", text: "▼" });
+    nameTh.appendChild(arrow);
+  }
+  nameTh.addEventListener("click", () => {
+    policySort[spec.id] = "name";
+    if (lastAuditPolicy) renderPolicy(lastAuditPolicy);
+  });
+  headRow.appendChild(nameTh);
+  const countTh = el("th", { class: "num", text: "count" });
+  if (sortMode === "count") {
+    const arrow = el("span", { class: "sort-arrow", text: "▼" });
+    countTh.appendChild(arrow);
+  }
+  countTh.addEventListener("click", () => {
+    policySort[spec.id] = "count";
+    if (lastAuditPolicy) renderPolicy(lastAuditPolicy);
+  });
+  headRow.appendChild(countTh);
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  if (rows.length === 0) {
+    const tr = el("tr");
+    const td = el("td", { class: "value-name", text: "—" });
+    td.colSpan = 2;
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  } else {
+    for (const row of rows) {
+      const name = String(row[spec.nameField] ?? "");
+      const tr = el("tr", { title: name });
+      tr.appendChild(el("td", { class: "value-name", text: name }));
+      tr.appendChild(el("td", { class: "num", text: String(row.count || 0) }));
+      if (spec.filterKey) {
+        tr.style.cursor = "pointer";
+        tr.addEventListener("click", () => {
+          auditFilter[spec.filterKey] = name;
+          activeAuditSubtab = "events";
+          window.location.hash = buildAuditHash();
+        });
+      }
+      tbody.appendChild(tr);
+    }
+  }
+  table.appendChild(tbody);
+  return table;
 }
 
 function refreshLabel() {
@@ -1027,6 +1256,15 @@ function navigateToRun(runId) {
   activeRunDetail = null;
   activeRunEvents = [];
   setActiveTab(`runs/${encodeURIComponent(runId)}`);
+}
+
+/// Navigates to the Audit tab pre-filtered by `role` (audit `role` ≈ scoreboard
+/// agent name). Clears unrelated filters so the landing page is the role view.
+function navigateToRole(role) {
+  auditFilter = { status: null, q: "", tool: null, role, run_id: null, profile: null };
+  activeAuditSubtab = "events";
+  syncAuditControls();
+  window.location.hash = buildAuditHash();
 }
 
 function buildAuditChips() {
@@ -1430,7 +1668,7 @@ async function refreshDashboard() {
   if (btn) btn.disabled = false;
   isRefreshing = false;
   
-  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|run_id|q|limit|offset,runs/:id,runs/:id/events?kind|limit|offset,scoreboard,diagnostics/{metrics,friction}}`;
+  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|run_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,scoreboard,diagnostics/{metrics,friction,denials?since|kind|profile|agent}}`;
 }
 
 buildChips();

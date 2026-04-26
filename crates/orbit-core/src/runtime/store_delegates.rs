@@ -471,6 +471,20 @@ impl AuditEventRecords<'_> {
         self.store.get_audit_event_durations(since, tool)
     }
 
+    pub(crate) fn hourly_buckets(
+        &self,
+        since: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        self.store.get_audit_event_hourly_buckets(since)
+    }
+
+    pub(crate) fn denials_by_role(
+        &self,
+        since: Option<&chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        self.store.get_audit_denials_by_role(since)
+    }
+
     pub(crate) fn insert(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {
         self.store.insert_audit_event_record(params)
     }

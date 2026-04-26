@@ -329,6 +329,14 @@ pub trait AuditEventStoreBackend: Send + Sync {
         since: Option<&DateTime<Utc>>,
         tool: Option<&str>,
     ) -> Result<Vec<i64>, OrbitError>;
+    fn get_audit_event_hourly_buckets(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<(String, i64)>, OrbitError>;
+    fn get_audit_denials_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<(String, i64)>, OrbitError>;
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError>;
 }
 

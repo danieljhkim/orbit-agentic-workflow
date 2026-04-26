@@ -75,6 +75,20 @@ impl AuditEventStoreBackend for SqliteAuditEventStoreBackend {
         self.store.get_audit_event_durations(since, tool)
     }
 
+    fn get_audit_event_hourly_buckets(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        self.store.get_audit_event_hourly_buckets(since)
+    }
+
+    fn get_audit_denials_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<(String, i64)>, OrbitError> {
+        self.store.get_audit_denials_by_role(since)
+    }
+
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         self.store.prune_audit_events(older_than)
     }
