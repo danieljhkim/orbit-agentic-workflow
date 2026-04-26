@@ -38,7 +38,31 @@ Run history:
     arg_required_else_help = true,
     args_conflicts_with_subcommands = true,
     override_usage = "orbit run <COMMAND>\n       orbit run <JOB_ID> [OPTIONS]",
-    after_help = RUN_AFTER_HELP
+    after_help = RUN_AFTER_HELP,
+    help_template = "\
+{about}
+
+{usage-heading} {usage}
+
+Workflows:
+  ship       Ship explicitly selected tasks through the task pipeline
+  ship-auto  Auto-select backlog tasks and ship them through the task pipeline
+  duel-plan  Run a planning duel for one task
+  job        Run an arbitrary job by ID
+
+Audits:
+  history    Show recent job runs, optionally filtered to one job
+  show       Show structured state and step summary for a job run
+  logs       Print raw stdout/stderr captured for a job run
+  events     Show audit events recorded for a job run
+  trace      Show audit event parent/child trace for a job run
+
+Arguments:
+{positionals}
+
+Options:
+{options}
+{after-help}"
 )]
 pub struct RunCommand {
     #[command(subcommand)]
@@ -73,9 +97,9 @@ pub enum RunSubcommand {
     Show(RunShowArgs),
     /// Print raw stdout/stderr captured for a job run
     Logs(RunLogsArgs),
-    /// Show v2 audit events recorded for a job run
+    /// Show audit events recorded for a job run
     Events(RunEventsArgs),
-    /// Show v2 audit event parent/child trace for a job run
+    /// Show audit event parent/child trace for a job run
     Trace(RunTraceArgs),
     /// Run an arbitrary job by ID
     Job(job::JobRunArgs),
