@@ -2,9 +2,9 @@
 //!
 //! Mirrors `orbit_agent::loop_engine::audit::JsonlFileSink`: one JSON object
 //! per line, append-only, flushed per write. Writes to
-//! `.orbit/audit/v2_loop/{run_id}.jsonl` so v2 envelope events live alongside
+//! `.orbit/state/audit/v2_loop/{run_id}.jsonl` so v2 envelope events live alongside
 //! — but do not collide with — the loop-level JSONL stream at
-//! `.orbit/audit/loop/{run_id}.jsonl`.
+//! `.orbit/state/audit/loop/{run_id}.jsonl`.
 //!
 //! Used by `V2AuditWriter` callers that want envelope events persisted. In
 //! smoke runs this is what lets reviewers open the emitted file and confirm

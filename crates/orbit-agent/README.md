@@ -142,8 +142,11 @@ Every event carries `run_id`, `session_id`, optional `task_id`, and
 
 The JSONL file and blob store are designed to be read by a later
 `orbit.audit.loop.*` query tool family (split to its own follow-up
-task). Humans can inspect them today via the existing `orbit audit`
-CLI surface.
+task). Humans can inspect them today as JSONL/blob files; `orbit audit`
+queries the separate SQLite command-audit store.
+
+Orbit runtime callers pass `.orbit/state/audit` as `audit_root`; standalone
+examples use temporary roots under the system temp directory.
 
 ## Redaction
 

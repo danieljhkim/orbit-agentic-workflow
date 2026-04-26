@@ -287,6 +287,7 @@ fn ensure_workspace_dirs(paths: &WorkspacePaths) -> Result<(), OrbitError> {
         &paths.resources_dir,
         &paths.skills_dir,
         &paths.state_dir,
+        &paths.audit_dir,
         &paths.job_runs_dir,
         &paths.diagnostics_dir,
         &paths.scoreboard_dir,

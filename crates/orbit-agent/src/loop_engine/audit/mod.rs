@@ -6,10 +6,11 @@
 //! pointers to verbatim payloads stored in a [`BlobStore`]; full bodies live
 //! in a separate content-addressed store so events stay small and queryable.
 //!
-//! The default [`JsonlFileSink`] writes one JSON object per line to
-//! `.orbit/audit/loop/{run_id}.jsonl` and fans blob writes to
-//! `.orbit/audit/blobs/`. Sinks are pluggable: tests use [`InMemorySink`],
-//! callers with no need for persistence use [`NullSink`].
+//! [`JsonlFileSink`] writes one JSON object per line to
+//! `{audit_root}/loop/{run_id}.jsonl` and fans blob writes to
+//! `{audit_root}/blobs/`. Orbit runtime callers pass `.orbit/state/audit` as
+//! that root; tests use [`InMemorySink`], callers with no need for persistence
+//! use [`NullSink`].
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};

@@ -41,14 +41,14 @@ Loop-engine HTTP and tool-call events remain in the lower-level sink and are rel
 Envelope events append to:
 
 ```text
-.orbit/audit/v2_loop/<run_id>.jsonl
+.orbit/state/audit/v2_loop/<run_id>.jsonl
 ```
 
 Loop-engine events and blobs continue to use the sibling audit layout under:
 
 ```text
-.orbit/audit/loop/<run_id>.jsonl
-.orbit/audit/blobs/<hh>/<hash>
+.orbit/state/audit/loop/<run_id>.jsonl
+.orbit/state/audit/blobs/<hh>/<hash>
 ```
 
 The v2 writer may also keep an in-memory snapshot for smoke assertions and CLI summaries.
@@ -70,6 +70,7 @@ The v2 writer may also keep an in-memory snapshot for smoke assertions and CLI s
 
 - The envelope is additive. It does not retire or rewrite the existing loop-level audit sink.
 - CLI backend events are first-class envelope events, so CLI runs remain visible even when no HTTP transcript exists.
+- File-backed runtime traces moved from `.orbit/audit/` to `.orbit/state/audit/` in [T20260426-0519]. Existing `.orbit/audit/` files are legacy local artifacts rather than the current write target.
 
 ## Agent Signature
 

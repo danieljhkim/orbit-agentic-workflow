@@ -70,7 +70,7 @@ impl OrbitRuntime {
             chrono::Utc::now().format("%Y%m%dT%H%M%S%.3f")
         );
 
-        let audit_root = self.data_root().join("audit");
+        let audit_root = self.paths().audit_dir.clone();
         let agent_identity = self.actor().label.clone();
         let workspace_path = self.paths().repo_root.clone();
         let writer = V2AuditWriter::with_disk_sinks(

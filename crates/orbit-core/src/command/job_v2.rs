@@ -178,7 +178,7 @@ impl OrbitRuntime {
             )
         });
 
-        let audit_root = self.data_root().join("audit");
+        let audit_root = self.paths().audit_dir.clone();
         let agent_identity = self.actor().label.clone();
         let workspace_path = self.paths().repo_root.clone();
         let writer = V2AuditWriter::with_disk_sinks(
@@ -408,6 +408,20 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
         assert_eq!(state.run_id, result.run_id);
         assert!(state.pipeline.get("nap").is_some());
         assert!(state.step_outputs.contains_key(&0));
+
+        let audit_jsonl = result.audit_jsonl.as_ref().expect("audit jsonl path");
+        let expected_audit_jsonl = repo_root
+            .join(".orbit/state/audit/v2_loop")
+            .join(format!("{}.jsonl", result.run_id));
+        assert_eq!(audit_jsonl, &expected_audit_jsonl);
+        assert!(expected_audit_jsonl.exists());
+        assert!(
+            repo_root
+                .join(".orbit/state/audit/loop")
+                .join(format!("{}.jsonl", result.run_id))
+                .exists()
+        );
+        assert!(!repo_root.join(".orbit/audit").exists());
     }
 
     #[test]

@@ -256,10 +256,9 @@ Typical workspace-local state:
 
 ```text
 .orbit/
-├── diagnostics/      # Runtime diagnostics and health checks
-├── jobs/             # Job definitions and immutable run logs
 ├── knowledge/        # Code graph artifacts (see docs/design/knowledge-graph/)
-├── scoreboard/       # Derived metrics and historical artifacts
+├── resources/        # Workspace overrides for activities, jobs, policies, executors, and skills
+├── state/            # Runtime state: audit traces, diagnostics, job runs, scoreboards, worktrees
 └── tasks/            # Durable task state
 ```
 
@@ -269,7 +268,7 @@ Scoping rules:
 - graph artifacts are workspace-local, branch-scoped, and shared-object-addressed
 - activities and jobs merge from global defaults with workspace overrides
 - policies provide filesystem-scoped execution guardrails
-- audit remains globally scoped (single authoritative event trail)
+- command audit events remain globally scoped in SQLite; file-backed activity/job run traces are workspace-local under `.orbit/state/audit`
 
 ---
 

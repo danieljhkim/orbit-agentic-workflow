@@ -230,6 +230,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - CLI and HTTP agent-loop paths converge on the same invocation-store contract.
 - Cost: job execution now has another persistence side effect, and CLI metrics remain limited by the provider harness output format.
 
+## ADR-018 — File-backed run traces live under workspace state
+
+**Status:** Accepted · 2026-04 · [T20260426-0519]
+
+**Context.** The v2 activity/job audit JSONL tree was written directly under `.orbit/audit/`, which made runtime traces a first-level sibling of durable authoring surfaces such as resources, tasks, and graph artifacts. That placement also obscured the distinction between the SQLite command audit store and file-backed run reconstruction artifacts.
+
+**Decision.** Store activity/job audit JSONL and payload blobs under `.orbit/state/audit/`, with `v2_loop/`, `loop/`, and `blobs/` as siblings below that state root. Keep the SQLite command audit database at its existing persistence path and keep the v2 envelope's `workspace_path` field as the cross-workspace filter.
+
+**Consequences.**
+- Workspace runtime artifacts now live together under `.orbit/state/`.
+- The file layout more clearly separates command audit queries from run-trace reconstruction files.
+- Cost: existing local `.orbit/audit/` artifacts are legacy files; readers looking for historical runs may need to check both locations during any manual transition period.
+
 ---
 
 ## Task References
@@ -255,5 +268,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and revive `duel-plan` as a seeded run workflow.
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 - **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
+- **[T20260426-0519]** — Move file-backed activity/job audit traces under `.orbit/state/audit`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

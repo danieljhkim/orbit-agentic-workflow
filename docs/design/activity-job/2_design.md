@@ -353,7 +353,7 @@ Some bad shapes are rejected at load time, some at job preflight validation, and
 
 ### 11.5 The audit story is powerful but split
 
-The v2 envelope tree lives in `.orbit/audit/v2_loop/`. The loop-engine HTTP details and blobs live in the older loop sink. That split is intentional, but reviewers still need to know two storage layouts.
+The v2 envelope tree lives in `.orbit/state/audit/v2_loop/`. The loop-engine HTTP details live in the sibling `.orbit/state/audit/loop/` sink, and verbatim payload blobs live under `.orbit/state/audit/blobs/`. That split is intentional, but reviewers still need to know two related layouts. [T20260426-0519] moved these file-backed run traces under `.orbit/state/` so the top-level `.orbit/` directory remains reserved for configuration, resources, tasks, graph artifacts, and the SQLite command-audit database.
 
 ### 11.6 The substrate still leaks into the public product story
 
@@ -395,5 +395,6 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and move workflow history inspection to `orbit job history`.
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 - **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
+- **[T20260426-0519]** — Move file-backed activity/job audit traces under `.orbit/state/audit`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
