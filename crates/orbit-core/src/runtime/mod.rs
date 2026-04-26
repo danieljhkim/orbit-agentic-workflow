@@ -1,7 +1,7 @@
 //! Runtime bootstrap and the two-root architecture (global + workspace).
 //!
 //! `OrbitRuntime` is initialized by locating two roots:
-//! 1. **Global root** — `~/.orbit/` (or `ORBIT_ROOT`): houses global config,
+//! 1. **Global root** — `~/.orbit/`: houses global config,
 //!    the audit SQLite database, skills, and globally-scoped resources.
 //! 2. **Workspace root** — the nearest ancestor `.orbit/` directory from cwd:
 //!    houses workspace-local tasks, knowledge, optional skill overrides, and runtime state.
@@ -67,7 +67,7 @@ impl OrbitRuntime {
         root_override: Option<&Path>,
     ) -> Result<(PathBuf, PathBuf), OrbitError> {
         let workspace_root = resolve_initialize_data_root(cwd, root_override)?;
-        Self::roots_from_workspace_root(workspace_root, root_override)
+        Ok((resolve_global_root()?, workspace_root))
     }
 
     pub fn resolve_bootstrap_roots_for_cwd(
@@ -75,10 +75,10 @@ impl OrbitRuntime {
         root_override: Option<&Path>,
     ) -> Result<(PathBuf, PathBuf), OrbitError> {
         let workspace_root = resolve_bootstrap_data_root(cwd, root_override)?;
-        Self::roots_from_workspace_root(workspace_root, root_override)
+        Self::bootstrap_roots_from_workspace_root(workspace_root, root_override)
     }
 
-    fn roots_from_workspace_root(
+    fn bootstrap_roots_from_workspace_root(
         workspace_root: PathBuf,
         root_override: Option<&Path>,
     ) -> Result<(PathBuf, PathBuf), OrbitError> {
@@ -416,7 +416,12 @@ fn orbit_event_to_audit(id: i64, event: OrbitEvent) -> Audit {
 mod tests {
     use super::*;
 
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
     use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf, PathBuf) {
         let root = tempdir().expect("create tempdir");
@@ -428,6 +433,57 @@ mod tests {
         let runtime =
             OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
         (root, runtime, global_root, workspace_root)
+    }
+
+    #[test]
+    fn orbit_root_env_selects_workspace_but_not_global_root() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let home = tempdir().expect("home tempdir");
+        let repo = tempdir().expect("repo tempdir");
+        let workspace_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&workspace_root);
+        let _home = EnvVarGuard::set("HOME", home.path().as_os_str().to_os_string());
+        let _orbit_root = EnvVarGuard::set("ORBIT_ROOT", workspace_root.as_os_str().to_os_string());
+
+        let (global_root, resolved_workspace_root) =
+            OrbitRuntime::resolve_roots_for_cwd(repo.path(), None).expect("resolve roots");
+
+        assert_eq!(global_root, home.path().join(".orbit"));
+        assert_eq!(resolved_workspace_root, workspace_root);
+    }
+
+    fn seed_initialized_workspace_root(path: &Path) {
+        std::fs::create_dir_all(path.join("resources")).expect("create resources dir");
+        std::fs::create_dir_all(path.join("tasks")).expect("create tasks dir");
+        std::fs::create_dir_all(path.join("state")).expect("create state dir");
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: OsString) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe {
+                    std::env::set_var(self.key, value);
+                },
+                None => unsafe {
+                    std::env::remove_var(self.key);
+                },
+            }
+        }
     }
 
     fn write_activity(path: &Path, name: &str, description: &str) {
