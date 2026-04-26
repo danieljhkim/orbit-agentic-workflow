@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-26
 
 > *"Grep finds strings. An LSP finds symbols. A knowledge graph remembers what those symbols are, where they live, who touched them, and how they relate — in a form an agent can page into a 200k context window."*
 
@@ -86,7 +86,7 @@ Each node carries a `task_ids` list. These are populated by the history-walker s
 |---------|----------------|-----------------|
 | Crate boundary | `crates/orbit-knowledge` | [T20260411-0008], [T20260411-0424] |
 | Storage layout | `src/graph/object_store.rs` | [T20260421-0358] |
-| Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639] |
+| Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139] |
 | History attribution | `src/pipeline/history.rs` | [T20260421-0528] |
 | Query services | `src/service/` | [T20260412-0645-2], [T20260412-0645-3] |
 | Working graph | `src/working_graph/` | [T20260411-0424] |
@@ -107,5 +107,6 @@ Each node carries a `task_ids` list. These are populated by the history-walker s
 - **[T20260417-0639]** — Speed up workspace-init graph persistence hot path.
 - **[T20260421-0358]** — Scope graph refs by branch.
 - **[T20260421-0528]** — `task_ids` schema on every node + git history walker for attribution.
+- **[T20260426-0139]** — Parallelize per-file hashing and leaf extraction while preserving deterministic graph output.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

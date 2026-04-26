@@ -2,6 +2,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::error::KnowledgeError;
 use crate::extract::{self, FileKind, identity_key, leaf_location, node_id};
 use crate::graph::nodes::{BaseNodeFields, DirNode, FileNode, LeafKind, LeafNode, ReExport};
@@ -230,8 +232,7 @@ pub fn build_graph_leaves(ctx: &mut PipelineContext) -> Result<(), KnowledgeErro
     let prior_files = load_prior_file_snapshots(ctx);
     let changed_paths: HashSet<String> = ctx.changed_paths.iter().cloned().collect();
 
-    // Collect file indices to process (we need to mutate ctx.graph but iterate files)
-    let file_infos: Vec<(usize, String, String, FileKind)> = ctx
+    let file_infos: Vec<LeafBuildInput> = ctx
         .graph
         .files
         .iter()
@@ -242,97 +243,177 @@ pub fn build_graph_leaves(ctx: &mut PipelineContext) -> Result<(), KnowledgeErro
             if !kind.is_extractable() {
                 return None;
             }
-            Some((i, f.base.location.clone(), f.base.id.clone(), kind))
+            Some(LeafBuildInput {
+                file_idx: i,
+                location: f.base.location.clone(),
+                file_id: f.base.id.clone(),
+                file_kind: kind,
+            })
         })
         .collect();
 
-    for (file_idx, location, file_id, file_kind) in file_infos {
-        if let Some(snapshot) = reusable_prior_snapshot(
-            ctx,
-            prior_files.as_ref(),
-            &changed_paths,
-            &location,
-            &file_id,
-        ) {
-            reuse_prior_file(ctx, file_idx, snapshot);
-            continue;
+    let mut outputs: Vec<LeafBuildOutput> = file_infos
+        .par_iter()
+        .filter_map(|info| {
+            build_file_leaves(ctx, &registry, prior_files.as_ref(), &changed_paths, info)
+        })
+        .collect();
+    outputs.sort_by_key(LeafBuildOutput::file_idx);
+
+    for output in outputs {
+        match output {
+            LeafBuildOutput::Reused { file_idx, snapshot } => {
+                reuse_prior_file(ctx, file_idx, snapshot);
+            }
+            LeafBuildOutput::Extracted { file_idx, file } => {
+                apply_extracted_file(ctx, file_idx, file);
+            }
         }
-
-        let abs = ctx.repo_path.join(&location);
-        let content = match fs::read_to_string(&abs) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let extractor = match registry.get(file_kind) {
-            Some(e) => e,
-            None => continue,
-        };
-
-        let result = extractor.extract(&content);
-        let source_hash = extract::compute_source_hash(&content);
-
-        // Set file source_blob_hash (will be written to blob by persist)
-        ctx.graph.files[file_idx].source_blob_hash = Some(source_hash);
-        ctx.graph.files[file_idx].source = content.clone();
-        let (exports, re_exports) = file_exports(&result.exports);
-        ctx.graph.files[file_idx].exports = exports;
-        ctx.graph.files[file_idx].re_exports = re_exports;
-
-        let mut leaf_ids = Vec::new();
-
-        for extracted in &result.leaves {
-            let loc = leaf_location(&location, &extracted.qualified_name);
-            let id = node_id("symbol", &loc, &extracted.kind);
-            let ikey = identity_key("symbol", &loc, &extracted.kind);
-
-            let kind = parse_leaf_kind(&extracted.kind, extracted.depth);
-
-            let leaf = LeafNode {
-                base: BaseNodeFields {
-                    id: id.clone(),
-                    identity_key: ikey,
-                    object_hash: None,
-                    name: extracted.name.clone(),
-                    location: loc,
-                    language: file_kind.as_str().to_string(),
-                    description: String::new(),
-                    parent_id: Some(file_id.clone()),
-                    is_locked: false,
-                    lineage_locked: false,
-                    lock_owner: None,
-                    lock_reason: String::new(),
-                    task_ids: Vec::new(),
-                    structural_conflict: false,
-                },
-                kind,
-                source: extracted.source.clone(),
-                source_blob_hash: None,
-                source_hash: Some(extracted.source_hash.clone()),
-                file_hash_at_capture: ctx.new_hashes.get(&location).cloned(),
-                history: Vec::new(),
-                input_signature: Vec::new(),
-                output_signature: Vec::new(),
-                start_line: Some(extracted.start_line as u32),
-                end_line: Some(extracted.end_line as u32),
-                children: extracted
-                    .children_qualified_names
-                    .iter()
-                    .map(|qn| {
-                        let child_loc = leaf_location(&location, qn);
-                        node_id("symbol", &child_loc, "method")
-                    })
-                    .collect(),
-            };
-
-            leaf_ids.push(id);
-            ctx.graph.leaves.push(leaf);
-        }
-
-        ctx.graph.files[file_idx].leaf_children = leaf_ids;
     }
 
     Ok(())
+}
+
+struct LeafBuildInput {
+    file_idx: usize,
+    location: String,
+    file_id: String,
+    file_kind: FileKind,
+}
+
+struct ExtractedFile {
+    source_blob_hash: String,
+    source: String,
+    exports: Vec<String>,
+    re_exports: Vec<ReExport>,
+    leaf_children: Vec<String>,
+    leaves: Vec<LeafNode>,
+}
+
+enum LeafBuildOutput {
+    Reused {
+        file_idx: usize,
+        snapshot: PriorFileSnapshot,
+    },
+    Extracted {
+        file_idx: usize,
+        file: ExtractedFile,
+    },
+}
+
+impl LeafBuildOutput {
+    fn file_idx(&self) -> usize {
+        match self {
+            Self::Reused { file_idx, .. } | Self::Extracted { file_idx, .. } => *file_idx,
+        }
+    }
+}
+
+fn build_file_leaves(
+    ctx: &PipelineContext,
+    registry: &extract::ExtractorRegistry,
+    prior_files: Option<&HashMap<String, PriorFileSnapshot>>,
+    changed_paths: &HashSet<String>,
+    info: &LeafBuildInput,
+) -> Option<LeafBuildOutput> {
+    if let Some(snapshot) = reusable_prior_snapshot(
+        ctx,
+        prior_files,
+        changed_paths,
+        &info.location,
+        &info.file_id,
+    ) {
+        return Some(LeafBuildOutput::Reused {
+            file_idx: info.file_idx,
+            snapshot,
+        });
+    }
+
+    let abs = ctx.repo_path.join(&info.location);
+    let content = fs::read_to_string(&abs).ok()?;
+    let extractor = registry.get(info.file_kind)?;
+    let result = extractor.extract(&content);
+    let file_hash_at_capture = ctx.new_hashes.get(&info.location).cloned();
+
+    Some(LeafBuildOutput::Extracted {
+        file_idx: info.file_idx,
+        file: extracted_file_from_result(
+            &info.location,
+            &info.file_id,
+            info.file_kind,
+            content,
+            result,
+            file_hash_at_capture,
+        ),
+    })
+}
+
+fn extracted_file_from_result(
+    location: &str,
+    file_id: &str,
+    file_kind: FileKind,
+    content: String,
+    result: extract::ExtractionResult,
+    file_hash_at_capture: Option<String>,
+) -> ExtractedFile {
+    let source_blob_hash = extract::compute_source_hash(&content);
+    let (exports, re_exports) = file_exports(&result.exports);
+    let mut leaf_children = Vec::new();
+    let mut leaves = Vec::with_capacity(result.leaves.len());
+
+    for extracted in &result.leaves {
+        let loc = leaf_location(location, &extracted.qualified_name);
+        let id = node_id("symbol", &loc, &extracted.kind);
+        let ikey = identity_key("symbol", &loc, &extracted.kind);
+        let kind = parse_leaf_kind(&extracted.kind, extracted.depth);
+
+        leaf_children.push(id.clone());
+        leaves.push(LeafNode {
+            base: BaseNodeFields {
+                id,
+                identity_key: ikey,
+                object_hash: None,
+                name: extracted.name.clone(),
+                location: loc,
+                language: file_kind.as_str().to_string(),
+                description: String::new(),
+                parent_id: Some(file_id.to_string()),
+                is_locked: false,
+                lineage_locked: false,
+                lock_owner: None,
+                lock_reason: String::new(),
+                task_ids: Vec::new(),
+                structural_conflict: false,
+            },
+            kind,
+            source: extracted.source.clone(),
+            source_blob_hash: None,
+            source_hash: Some(extracted.source_hash.clone()),
+            file_hash_at_capture: file_hash_at_capture.clone(),
+            history: Vec::new(),
+            input_signature: Vec::new(),
+            output_signature: Vec::new(),
+            start_line: Some(extracted.start_line as u32),
+            end_line: Some(extracted.end_line as u32),
+            children: extracted
+                .children_qualified_names
+                .iter()
+                .map(|qn| {
+                    let child_loc = leaf_location(location, qn);
+                    node_id("symbol", &child_loc, "method")
+                })
+                .collect(),
+        });
+    }
+
+    ExtractedFile {
+        source_blob_hash,
+        source: content,
+        exports,
+        re_exports,
+        leaf_children,
+        leaves,
+    }
 }
 
 #[derive(Clone)]
@@ -470,6 +551,16 @@ fn reuse_prior_file(ctx: &mut PipelineContext, file_idx: usize, snapshot: PriorF
     file.re_exports = snapshot.re_exports;
     file.leaf_children = snapshot.leaf_children;
     ctx.graph.leaves.extend(snapshot.leaves);
+}
+
+fn apply_extracted_file(ctx: &mut PipelineContext, file_idx: usize, extracted: ExtractedFile) {
+    let file = &mut ctx.graph.files[file_idx];
+    file.source_blob_hash = Some(extracted.source_blob_hash);
+    file.source = extracted.source;
+    file.exports = extracted.exports;
+    file.re_exports = extracted.re_exports;
+    file.leaf_children = extracted.leaf_children;
+    ctx.graph.leaves.extend(extracted.leaves);
 }
 
 fn parse_leaf_kind(s: &str, depth: Option<u8>) -> LeafKind {
@@ -622,6 +713,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn leaf_build_skips_missing_files_without_error() {
+        let fixture = IncrementalFixture::new();
+        fixture.write_file("readable.rs", "pub fn readable_symbol() {}\n");
+
+        let rebuilt = fixture.build_context_with_paths(
+            false,
+            &[],
+            vec![PathBuf::from("missing.rs"), PathBuf::from("readable.rs")],
+        );
+
+        assert_eq!(
+            leaf_by_name(&rebuilt, "readable_symbol").base.location,
+            "readable.rs#readable_symbol"
+        );
+        assert!(
+            file_by_location(&rebuilt, "missing.rs")
+                .leaf_children
+                .is_empty()
+        );
+        assert!(
+            !rebuilt
+                .graph
+                .leaves
+                .iter()
+                .any(|leaf| leaf.base.location.starts_with("missing.rs#"))
+        );
+    }
+
     struct IncrementalFixture {
         repo: TempDir,
         knowledge: TempDir,
@@ -646,6 +766,19 @@ mod tests {
         }
 
         fn build_context(&self, incremental: bool, changed_paths: &[&str]) -> PipelineContext {
+            self.build_context_with_paths(
+                incremental,
+                changed_paths,
+                rust_file_paths(self.repo.path()),
+            )
+        }
+
+        fn build_context_with_paths(
+            &self,
+            incremental: bool,
+            changed_paths: &[&str],
+            file_paths: Vec<PathBuf>,
+        ) -> PipelineContext {
             let config = BuildConfig {
                 repo_path: self.repo.path().to_path_buf(),
                 output_dir: self.knowledge.path().to_path_buf(),
@@ -653,7 +786,7 @@ mod tests {
                 ref_name: Some(self.ref_name.clone()),
             };
             let mut ctx = PipelineContext::new(config, self.ref_name.clone(), None);
-            ctx.file_paths = rust_file_paths(self.repo.path());
+            ctx.file_paths = file_paths;
             hash::compute_hashes(&mut ctx).expect("compute hashes");
             ctx.changed_paths = changed_paths
                 .iter()

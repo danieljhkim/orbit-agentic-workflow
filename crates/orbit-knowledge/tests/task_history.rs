@@ -195,11 +195,17 @@ fn rebuild_is_idempotent_byte_for_byte() {
     };
 
     orbit_knowledge::pipeline::run_build(make_config()).expect("first build");
+    let first_root_object_hash = current_root_object_hash(&output_dir);
     let first_snapshot = snapshot_graph_objects(&output_dir);
 
     orbit_knowledge::pipeline::run_build(make_config()).expect("second build");
+    let second_root_object_hash = current_root_object_hash(&output_dir);
     let second_snapshot = snapshot_graph_objects(&output_dir);
 
+    assert_eq!(
+        first_root_object_hash, second_root_object_hash,
+        "root object hash diverged between identical rebuilds"
+    );
     assert_eq!(
         first_snapshot, second_snapshot,
         "graph objects diverged between identical rebuilds"
@@ -249,6 +255,14 @@ fn snapshot_graph_objects(output_dir: &Path) -> Vec<(PathBuf, String)> {
     collect_files(&objects, &mut entries);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     entries
+}
+
+fn current_root_object_hash(output_dir: &Path) -> String {
+    let store = GraphObjectStore::new(output_dir.join("graph"));
+    store
+        .read_ref(&RefName::new("main").unwrap())
+        .expect("ref loads")
+        .root_object_hash
 }
 
 fn collect_files(root: &Path, acc: &mut Vec<(PathBuf, String)>) {
