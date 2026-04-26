@@ -123,15 +123,12 @@ This is a defensible product call, not a clean benchmark pass. Honesty about the
 
 ## Implications for `4_decisions.md`
 
-The v3 outcome motivates an ADR in `4_decisions.md` with the following shape (to be drafted in a follow-up PR):
+Recorded as [ADR-018](./4_decisions.md#adr-018--retain-agent-facing-orbit_graph_-mcp-surface-provider-dependent-value) — *Retain agent-facing `orbit_graph_*` MCP surface; provider-dependent value* (Accepted, [T20260426-0402]). The ADR carries the four consequences originally drafted in this section:
 
-- **Title:** Retain agent-facing `orbit_graph_*` MCP tools; acknowledge provider-dependent value and per-cell cost variance.
-- **Status:** Accepted.
-- **Consequences:**
-  - The 8-tool `orbit_graph_*` MCP surface stays shipped.
-  - A diagnostic v4 round is planned to characterise the cost-overshoot fixtures, not to re-litigate the keep/cull decision. Specifically: the `impact-tool-context` firehose, the signature-vs-type-resolved precision gap, and the payload-volume problem on `pack`-heavy navigations.
-  - Future work on reducing schema-cache overhead and payload size (pointer-only graph reads, [T20260423-0607]) becomes a measured-need item, not a speculative one.
-  - Future tool-surface decisions for other specialized orbit tooling should examine the same question: is the new tool competing in a shell selector (win), a tool-list selector against a generic alternative (win), or a tool-list selector against a specialized alternative (likely loss)?
+- The 8-tool `orbit_graph_*` MCP surface stays shipped.
+- A diagnostic v4 round is planned to characterise the cost-overshoot fixtures, not to re-litigate the keep/cull decision. Specifically: the `impact-tool-context` firehose, the signature-vs-type-resolved precision gap, and the payload-volume problem on `pack`-heavy navigations.
+- Future work on reducing schema-cache overhead and payload size (pointer-only graph reads, [T20260423-0607]) becomes a measured-need item, not a speculative one.
+- Future tool-surface decisions for other specialized orbit tooling should examine the same question: is the new tool competing in a shell selector (win), a tool-list selector against a generic alternative (win), or a tool-list selector against a specialized alternative (likely loss)?
 
 ## Methodological postscript
 

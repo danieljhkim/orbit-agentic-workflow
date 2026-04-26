@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (ADR-017)
+**Last updated:** 2026-04-26 (ADR-018)
 
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -271,6 +271,23 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-018 — Retain agent-facing `orbit_graph_*` MCP surface; provider-dependent value
+
+**Status:** Accepted · 2026-04 · [T20260423-0524], [T20260426-0402]
+
+**Context.** Three rounds of evidence asked whether the eight-tool agent-facing `orbit_graph_*` MCP surface earns its token cost against `grep` + `read`. Full record in [`5_null_result.md`](./5_null_result.md). v3 (the disposition round) gave codex first-class MCP parity with the same backend it had only reached through shell-exec in v1/v2. Codex hybrid utilization moved from 0/30 → 23/30 on the same model, with hybrid token cost 0.65× no-graph (aggregate) and graph-only the best codex arm on accuracy (30/30). Claude utilization stayed at 0/30 because its baseline tool surface already includes `Read` / `Grep` / `Glob`, so the graph tools competed against specialized fs primitives carrying higher base-rate familiarity rather than against a generic `exec_command`. Pre-registered cull thresholds: hybrid utilization ≥ 20% on at least one provider AND graph-only ≤ 1.3× no-graph per provider × fixture cell. Utilization passes (codex). Cost is mixed per-cell: codex passes 4 / 10 fixtures, claude 1 / 10.
+
+**Decision.** Retain the agent-facing `orbit_graph_*` MCP surface. The retention rests primarily on criterion 1 (utilization), which codex carries decisively. The cost criterion is mixed even per-cell; the cells that pass include all four `locate` / `deps` / `trace` cases where graph is the structurally correct tool. This is a defensible product call, not a clean benchmark pass — see [`5_null_result.md`](./5_null_result.md) §"Decision" for the per-cell table and reasoning.
+
+**Consequences.**
+- The eight-tool `orbit_graph_*` MCP surface stays shipped.
+- A diagnostic v4 round is planned to characterize the cost-overshoot fixtures, not to re-litigate keep/cull. Targets: the `impact-tool-context-struct-literals` firehose (12.43× on codex), the signature-vs-type-resolved precision gap, and payload-volume problems on `pack`-heavy navigations.
+- Future work on schema-cache overhead and payload size (pointer-only graph reads, [T20260423-0607]) is a measured-need item, not speculative.
+- Provider-dependent caveat: the surface earns its cost where the baseline tool list is generic (codex's `exec_command`-only). On providers whose baseline already includes specialized fs primitives that overlap in function (Claude), the data is consistent with "graph tools exist but don't get used" — a latent schema-cache tax paid without return. Whether eating that tax to keep codex happy is worth it is a product question, not a benchmark question.
+- Future tool-surface decisions for other specialized orbit tooling should examine the same question: is the new tool competing in a shell selector (win), a tool-list selector against a generic alternative (win), or a tool-list selector against a specialized alternative (likely loss).
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -297,5 +314,8 @@ Tasks cited by ADRs above:
 - **[T20260426-0141]** — Store-scoped LRU for graph objects and blobs.
 - **[T20260426-0220]** — Exact task-id filtering through `orbit.graph.search`.
 - **[T20260426-0236]** — End-to-end graph build benchmark with scoreboard trend records.
+- **[T20260423-0524]** — v3 graph MCP parity sweep (utilization & cost disposition).
+- **[T20260423-0607]** — Pointer-only graph reads (deferred; cited by ADR-018 consequences).
+- **[T20260426-0402]** — Land v3 retention decision in the ADR index.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
