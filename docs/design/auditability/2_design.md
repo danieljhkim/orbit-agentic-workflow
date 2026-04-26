@@ -10,16 +10,17 @@ This document describes Orbit's shipped auditability implementation across comma
 
 ## 1. Storage Roots and Audit Channels
 
-Auditability is currently split across four channels:
+Auditability is currently split across five channels:
 
 1. **Command audit records.** SQLite rows in the configured audit database. These back the public `orbit audit` query/export surface.
 2. **V2 activity/job envelope events.** JSONL files under `.orbit/state/audit/v2_loop/{run_id}.jsonl`.
 3. **Loop-level provider/tool events.** JSONL files under `.orbit/state/audit/loop/{run_id}.jsonl`.
-4. **Invocation metrics.** SQLite records keyed by job run, activity, task, agent, model, usage, and tool-call summaries.
+4. **Global tracing events.** JSONL lines under `~/.orbit/state/logs/orbit.jsonl`.
+5. **Invocation metrics.** SQLite records keyed by job run, activity, task, agent, model, usage, and tool-call summaries.
 
-The split is intentional. Command audit rows are compact and queryable across invocations. Activity/job envelopes preserve workflow structure. Loop audit preserves provider and tool-call detail. Invocation metrics support cost and scoreboard questions without scraping audit JSONL.
+The split is intentional. Command audit rows are compact and queryable across invocations. Activity/job envelopes preserve workflow structure. Loop audit preserves provider and tool-call detail. The global tracing feed gives operators a live, tail-able stream before workspace runtime context exists. Invocation metrics support cost and scoreboard questions without scraping audit JSONL.
 
-The most recent storage-placement decision is [T20260426-0519]: file-backed run traces moved under `.orbit/state/audit/`, while command audit rows remain in the configured SQLite database. README now describes that split as "command audit events remain globally scoped in SQLite; file-backed activity/job run traces are workspace-local under `.orbit/state/audit`."
+The run-trace storage-placement decision is [T20260426-0519]: file-backed run traces moved under `.orbit/state/audit/`, while command audit rows remain in the configured SQLite database. README now describes that split as "command audit events remain globally scoped in SQLite; file-backed activity/job run traces are workspace-local under `.orbit/state/audit`."
 
 ---
 
@@ -162,7 +163,19 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 
 ---
 
-## 9. Concerns & Honest Limitations
+## 9. Global Process Tracing JSONL
+
+`crates/orbit-common/src/utility/logging.rs` installs the default tracing subscriber. After [T20260426-2343], that subscriber is a `tracing_subscriber::Registry` with one shared `EnvFilter`, the existing stderr fmt layer, and an optional JSON Lines file layer.
+
+The file layer opens `~/.orbit/state/logs/orbit.jsonl` in append mode and writes through `tracing_appender::non_blocking`. The associated `WorkerGuard` is retained for the process lifetime inside `logging.rs`, so routine event emission does not synchronously block on disk writes.
+
+Each JSONL record uses the standard tracing JSON formatter shape: timestamp, level, target, and a `fields` object containing the structured event fields. This is the durable landing zone for live `tracing` events such as the CLI subprocess stdout/stderr events added in [T20260426-2313].
+
+This channel is global rather than workspace-local because `orbit-cli` initializes logging before clap parsing and before `OrbitRuntime` can resolve workspace roots. It is not a replacement for command audit rows or run traces: readers should treat it as an operational log stream, not the canonical workflow envelope.
+
+---
+
+## 10. Concerns & Honest Limitations
 
 1. **Tamper evidence is promised more strongly than it is implemented.** README describes append-only and tamper-evident retention, but the current SQLite rows and JSONL files do not yet have a hash chain, signature, or external transparency log.
 2. **Audit is split across storage systems.** Command audit rows, v2 JSONL, loop JSONL, blobs, job-run state, and invocation metrics are related by ids but not yet joined by one operator command.
@@ -170,7 +183,8 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 4. **Some command-audit fields are placeholders.** `stdout_truncated`, `stderr_truncated`, and `session_id` exist in the schema but are often `None`.
 5. **CLI backend tool enforcement remains weaker than HTTP.** Activity/job audit records the CLI backend allowlist as harness-delegated. That preserves accountability but does not enforce Orbit-level tool denial semantics in the CLI provider path.
 6. **Redaction favors known secret shapes.** Environment-value and regex redaction cover common provider-key paths, but no redactor can prove arbitrary user secrets are absent from every payload.
-7. **Coverage is still expanding.** Some deterministic actions and direct runtime mutations write explicit audit rows; others rely on enclosing command/job context. The coverage matrix must become the review checklist for new mutation paths.
+7. **The global tracing feed is intentionally v1-simple.** It has no rotation, no tracing-layer redaction, and no cross-process line lock; readers should tolerate rare malformed lines if concurrent processes interleave large writes.
+8. **Coverage is still expanding.** Some deterministic actions and direct runtime mutations write explicit audit rows; others rely on enclosing command/job context. The coverage matrix must become the review checklist for new mutation paths.
 
 ---
 
@@ -183,5 +197,7 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 - **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 - **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
+- **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events while retaining the existing audit/blob path.
+- **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

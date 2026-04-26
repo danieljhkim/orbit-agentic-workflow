@@ -99,6 +99,19 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Activity `step.id` becomes the shared selector for `run show`, `run logs`, and run trace/event inspection.
 - Cost: users must understand that `orbit audit` and `orbit run events/trace` answer related but different audit questions.
 
+## ADR-008 — Process tracing feed is global JSONL
+
+**Status:** Accepted · 2026-04 · [T20260426-2343]
+
+**Context.** CLI subprocess output now emits structured tracing events after [T20260426-2313], but subscriber initialization happens before Orbit resolves a workspace root.
+
+**Decision.** Append process-level tracing events to `~/.orbit/state/logs/orbit.jsonl` through the default subscriber, using the same `EnvFilter` as stderr and a non-blocking file writer retained for the process lifetime.
+
+**Consequences.**
+- Operators and future dashboards can tail one machine-readable feed across workspaces.
+- Early bootstrap events have a durable destination without needing runtime path resolution.
+- Cost: the v1 file is unrotated, only pre-redacted call sites are safe by construction, and concurrent processes can rarely interleave oversized JSONL records.
+
 ---
 
 ## Task References
@@ -109,5 +122,7 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-0605]** — Add this auditability design folder and record initial ADRs.
 - **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
+- **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events.
+- **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

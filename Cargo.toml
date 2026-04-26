@@ -38,7 +38,8 @@ tiktoken-rs = "0.11.0"
 thiserror = "2"
 toml = "0.8"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 unicode-normalization = "0.1"
 wait-timeout = "0.2"
 proptest = "1"
