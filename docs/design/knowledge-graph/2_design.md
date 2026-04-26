@@ -34,20 +34,21 @@ The legacy `refs/current.json` layout is migrated to `refs/heads/<default-branch
 The pipeline is a straight-line sequence of plain functions operating on a shared `PipelineContext`:
 
 ```
-scan → hash → detect_changes → build_dirs → build_files → build_leaves → persist → write_manifest → attribute_history
+scan → hash → detect_changes → build_dirs → build_files → build_leaves → attribute_history → persist → write_manifest → save_hash_cache
 ```
 
 | Stage | Output | Notes |
 |-------|--------|-------|
 | `scan_repo` | `ctx.file_paths` | Walks the repo honoring `.gitignore` plus Orbit-specific `.orbitignore` rules |
 | `compute_hashes` | Per-file content hashes | Drives incremental detection |
-| `detect_changes` | Added / modified / unchanged sets | Unchanged files reuse prior leaves |
+| `detect_changes` | Added / modified / unchanged path set | Incremental leaf extraction uses this set to decide what can reuse the prior graph |
 | `build_graph_dirs` | `DirNode` entries with parent/child wiring | Deterministic; root dir id derived from `.` |
 | `build_graph_files` | `FileNode` entries linked to parent dir | Language detected from extension |
-| `build_graph_leaves` | `LeafNode` entries via file-kind-dispatched extractor | Code via tree-sitter (Rust, Python, Go, Java, JavaScript); markdown sections, YAML/JSON/TOML top-level keys, and CSV/TSV header columns via shallow extractors added in [T20260422-1540] |
+| `build_graph_leaves` | `LeafNode` entries via file-kind-dispatched extractor | Code via tree-sitter (Rust, Python, Go, Java, JavaScript); markdown sections, YAML/JSON/TOML top-level keys, and CSV/TSV header columns via shallow extractors added in [T20260422-1540]. Incremental builds reuse unchanged file/leaf snapshots from the same branch ref when hashes match ([T20260426-0140]) |
+| `attribute_history` | `task_ids` on touched nodes | Introduced in [T20260421-0528] |
 | `persist_graph` | Content-addressed objects, blobs, index | Atomic via tempfile + rename |
 | `write_manifest` | `manifest.json` | Timestamp + commit + ref pointer |
-| `attribute_history` | `task_ids` on touched nodes | Introduced in [T20260421-0528] |
+| `save_hash_cache` | `hashes.json` | Baseline for the next incremental `detect_changes` pass |
 
 Extraction is dispatched on `FileKind`. Each `FileExtractor` (renamed from `LanguageExtractor` in [T20260422-1540]) emits `ExtractedLeaf` records with a `qualified_name`, `kind`, source span, source hash, and child qualified names (methods inside classes, associated fns inside impls). Code extractors wrap tree-sitter grammars; the shallow doc/config/table extractors parse their formats directly (ATX headings for markdown, top-level map entries for YAML/JSON/TOML via the existing serde ecosystem, first-row cells for CSV/TSV with a 1 MiB size cap).
 
@@ -61,6 +62,8 @@ Extraction is dispatched on `FileKind`. Each `FileExtractor` (renamed from `Lang
 - **SkippedConcurrent** — another process already holds the refresh lock; wait briefly and reuse its result.
 
 The refresh lock is a `flock` on `.orbit/knowledge/refresh.lock`. Concurrent callers either wait for the in-flight build or fall through to the pre-existing graph once the lock-holder publishes a new ref. The debounce window is `ORBIT_KNOWLEDGE_REFRESH_DEBOUNCE_SECS` (default 5s).
+
+Incremental rebuilds still rebuild the directory and file node skeleton from the current scan so deletes and `.orbitignore` changes take effect. The expensive leaf phase loads the previously persisted graph for the same branch ref and copies unchanged files' `source_blob_hash`, hydrated source, exports, re-exports, `leaf_children`, and leaf nodes when both the file source hash and every reused leaf's `file_hash_at_capture` match the new hash. Paths in `ctx.changed_paths`, new files, hash mismatches, absent refs, or unreadable prior graphs take the full extractor path instead ([T20260426-0140]).
 
 Refresh hardening: [T20260417-0307] gated and guarded the refresh/search hot paths; [T20260416-0719] added recovery from a corrupted default store; [T20260417-0639] sped up the workspace-init persistence path.
 
@@ -234,6 +237,7 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 - **[T20260421-0528]** — `task_ids` schema on every node + git history walker for attribution.
 - **[T20260422-1540]** — Extend extraction to markdown sections, top-level config keys, and CSV/TSV columns via `FileKind`-dispatched extractors (`FileExtractor` trait, replacing `LanguageExtractor`).
 - **[T20260423-0452]** — `.orbitignore` scan exclusions, nested composition, default ignore baseline, and workspace-init seeding.
+- **[T20260426-0140]** — Reuse prior file and leaf snapshots for unchanged paths during incremental graph rebuilds.
 - **[T20260426-0141]** — Bounded `KnowledgeStore` LRU for graph objects and source blobs.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

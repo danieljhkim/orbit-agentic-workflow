@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (ADR-013)
+**Last updated:** 2026-04-26 (ADR-014)
 
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -193,7 +193,23 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
-## ADR-013 — Store-scoped LRU for graph objects and blobs
+## ADR-013 — Changed-path incremental leaf reuse
+
+**Status:** Accepted · 2026-04 · [T20260426-0140]
+
+**Context.** Incremental rebuilds already computed `ctx.changed_paths`, but the leaf phase still re-read and re-extracted every extractable file. That made dirty-read refreshes O(repo) even when one file changed, and it wasted the content-addressed store's ability to preserve identical file/leaf objects.
+
+**Decision.** During incremental builds, `build_graph_leaves` reads the previously persisted graph for the same branch ref and reuses unchanged file snapshots when the file source hash and every reused leaf's `file_hash_at_capture` match the new hash. Changed paths, new files, hash mismatches, absent refs, and unreadable prior graphs fall back to the normal extractor path; directory and file skeletons are still rebuilt from the current scan so deletes and ignore-rule changes are reflected.
+
+**Consequences.**
+- Single-file edits reduce extraction work from the whole repo to the changed path set.
+- Zero-change incremental rebuilds can reproduce the previous root object hash byte-for-byte because reused leaves preserve IDs, identity keys, source hashes, and attribution fields.
+- Deleted or newly ignored files naturally disappear because reuse only considers files in the current scan.
+- Cost: extractor improvements do not automatically reparse unchanged files during an incremental rebuild; users need a full `orbit graph build` when extractor semantics, not file contents, are what changed.
+
+---
+
+## ADR-014 — Store-scoped LRU for graph objects and blobs
 
 **Status:** Accepted · 2026-04 · [T20260426-0141]
 
@@ -230,6 +246,7 @@ Tasks cited by ADRs above:
 - **[T20260421-0543]** — Orbit-owned symbol-level write operation schema ([specs/graph-operations.md](./specs/graph-operations.md)).
 - **[T20260422-1540]** — Non-code extraction via `FileKind`-dispatched extractors (markdown, YAML/JSON/TOML, CSV/TSV).
 - **[T20260423-0452]** — `.orbitignore` scan exclusions and separation from runtime policy access.
+- **[T20260426-0140]** — Changed-path incremental leaf reuse.
 - **[T20260426-0141]** — Store-scoped LRU for graph objects and blobs.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
