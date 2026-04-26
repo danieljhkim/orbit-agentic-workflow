@@ -25,6 +25,7 @@ pub(crate) const ORBIT_MCP_SERVER_ID: &str = "orbit";
 pub(crate) const TASK_TOOL_NAMES: &[&str] = &[
     "orbit.task.add",
     "orbit.task.approve",
+    "orbit.task.artifact.put",
     "orbit.task.delete",
     "orbit.task.lint",
     "orbit.task.list",

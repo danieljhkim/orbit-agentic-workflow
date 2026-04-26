@@ -5,7 +5,8 @@ use orbit_core::{OrbitError, OrbitRuntime, find_workflow};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
-use crate::command::job_run_support::{dispatch_workflow, print_workflow_dispatch_results};
+
+use super::support::{dispatch_workflow, print_workflow_dispatch_results};
 
 const DUEL_PLAN_WORKFLOW: &str = "duel-plan";
 

@@ -472,7 +472,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
 
 fn run_command_meta(cmd: &crate::command::run::RunCommand) -> CommandMeta {
     use crate::command::run::RunSubcommand;
-    use crate::command::ship::ShipMode;
+    use crate::command::run::ship::ShipMode;
 
     let (subcommand, target_type, target_id) = match &cmd.command {
         RunSubcommand::Ship(command) => {

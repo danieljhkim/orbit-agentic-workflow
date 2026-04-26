@@ -16,7 +16,7 @@ Examples:
   orbit tool show demo.hello
 ";
 const EXTERNAL_TOOL_TEMPLATE: &str =
-    include_str!("../../assets/tool_templates/external_tool.py.tmpl");
+    include_str!("../../../assets/tool_templates/external_tool.py.tmpl");
 const SCAFFOLD_DEFAULT_DESCRIPTION: &str =
     "Return a greeting and optionally echo Orbit tool context.";
 

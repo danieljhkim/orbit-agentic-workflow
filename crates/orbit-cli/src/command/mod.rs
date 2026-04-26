@@ -1,28 +1,14 @@
-pub mod activity;
-pub mod apply;
-pub mod artifacts;
-pub mod audit;
-pub mod config;
-pub mod describe;
-pub mod duel;
-pub mod executor;
-pub mod get;
-pub mod graph;
-pub mod init;
-pub mod job;
-pub(crate) mod job_run_support;
-pub mod logs;
+pub mod definitions;
+pub mod environment;
 pub mod mcp;
-pub mod metrics;
-pub mod policy;
+pub mod observe;
 pub mod run;
-pub mod scoreboard;
-pub mod ship;
-pub mod skill;
 pub mod task;
-pub mod tool;
 pub mod web;
-pub mod workspace;
+
+pub use definitions::{activity, executor, job, policy, skill, tool};
+pub use environment::{config, init, workspace};
+pub use observe::{audit, graph, metrics, scoreboard};
 
 use std::path::PathBuf;
 
@@ -119,9 +105,9 @@ pub enum Commands {
     #[command(hide = true)]
     Skill(skill::SkillCommand),
     #[command(hide = true)]
-    Logs(logs::LogsCommand),
+    Logs(run::legacy_logs::LogsCommand),
     #[command(hide = true)]
-    Artifacts(artifacts::ArtifactsCommand),
+    Artifacts(task::artifacts::ArtifactsCommand),
 }
 
 impl Execute for Commands {

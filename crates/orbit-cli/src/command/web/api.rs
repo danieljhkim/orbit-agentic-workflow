@@ -19,7 +19,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::command::audit::audit_event_to_json;
-use crate::command::job::{job_catalog_to_json_with_last_run, job_run_to_json};
+use crate::command::job::job_catalog_to_json_with_last_run;
+use crate::command::run::job_run_to_json;
 use crate::command::task::output::task_to_json;
 
 const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[

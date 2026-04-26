@@ -1,5 +1,6 @@
 mod add;
 pub(crate) mod artifact;
+pub mod artifacts;
 mod command;
 mod lifecycle;
 mod lint;
