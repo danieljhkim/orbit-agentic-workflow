@@ -288,6 +288,7 @@ pub struct JobHistoryArgs {
 
 impl Execute for JobHistoryArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        eprintln!("[deprecated] use \"orbit run history -j {}\"", self.job_id);
         let runs = runtime.job_history(&self.job_id)?;
         if self.json {
             let values = runs.iter().map(job_run_to_json).collect::<Vec<_>>();
@@ -618,6 +619,7 @@ pub struct JobRunStateArgs {
 
 impl Execute for JobRunStateArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        eprintln!("[deprecated] use \"orbit run show {}\"", self.run_id);
         match runtime.read_run_state(&self.run_id)? {
             Some(state) => crate::output::json::print_pretty(
                 &serde_json::to_value(&state).map_err(|e| OrbitError::Store(e.to_string()))?,

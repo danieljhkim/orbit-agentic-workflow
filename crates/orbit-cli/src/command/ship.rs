@@ -39,7 +39,7 @@ impl ShipMode {
 #[command(
     about = "Ship explicitly selected tasks through the task pipeline",
     override_usage = "orbit run ship <TASK_ID> [<TASK_ID>...] [OPTIONS]",
-    after_help = "Examples:\n  orbit run ship T123\n  orbit run ship T123 T456 --mode local\n  orbit run ship T123 --base main\n\nRun history moved to `orbit job history <JOB_ID>`."
+    after_help = "Examples:\n  orbit run ship T123\n  orbit run ship T123 T456 --mode local\n  orbit run ship T123 --base main\n\nRun history moved to `orbit run history -j <JOB_ID>`."
 )]
 pub struct ShipCommand {
     /// Task IDs to process as one explicit task bundle.
@@ -68,7 +68,7 @@ impl Execute for ShipCommand {
 #[command(
     about = "Auto-select backlog tasks and ship them through the task pipeline",
     override_usage = "orbit run ship-auto [OPTIONS]",
-    after_help = "Examples:\n  orbit run ship-auto\n  orbit run ship-auto --mode local\n  orbit run ship-auto --base main\n\nRun history moved to `orbit job history task_auto_pipeline`."
+    after_help = "Examples:\n  orbit run ship-auto\n  orbit run ship-auto --mode local\n  orbit run ship-auto --base main\n\nRun history moved to `orbit run history -j task_auto_pipeline`."
 )]
 pub struct ShipAutoCommand {
     /// Pipeline mode for auto-selected task bundles.
@@ -162,7 +162,7 @@ fn legacy_ship_form(value: &str) -> Option<&'static str> {
         }
         "pr" => Some("`orbit run ship pr` was replaced by `orbit run ship --mode pr <TASK_ID>`"),
         "list" | "show" => Some(
-            "`orbit run ship list/show` was removed; use `orbit job history <JOB_ID>` and `orbit job run-state <RUN_ID>` for run inspection",
+            "`orbit run ship list/show` was removed; use `orbit run history -j <JOB_ID>` and `orbit run show <RUN_ID>` for run inspection",
         ),
         _ => None,
     }
@@ -254,14 +254,14 @@ mod tests {
         let err = build_ship_run_plan(&explicit_args(&["list"], ShipMode::Pr, "agent-main"))
             .expect_err("legacy history form should fail");
         assert!(
-            err.to_string().contains("orbit job history"),
+            err.to_string().contains("orbit run history"),
             "unexpected error: {err}"
         );
 
         let err = build_ship_run_plan(&explicit_args(&["show"], ShipMode::Pr, "agent-main"))
             .expect_err("legacy history form should fail");
         assert!(
-            err.to_string().contains("orbit job history"),
+            err.to_string().contains("orbit run history"),
             "unexpected error: {err}"
         );
     }

@@ -2,6 +2,7 @@ use clap::Args;
 use orbit_core::{OrbitError, OrbitRuntime};
 
 use crate::command::Execute;
+use crate::command::run;
 
 #[derive(Args)]
 #[command(about = "View artifacts for a job run or task")]
@@ -24,35 +25,20 @@ impl Execute for ArtifactsCommand {
             return show_task_artifacts(runtime, &self.id, self.json);
         }
 
-        // Show run's pipeline state as the primary "artifact"
-        match runtime.read_run_state(&self.id)? {
-            Some(state) => {
-                if self.json {
-                    crate::output::json::print_pretty(
-                        &serde_json::to_value(&state)
-                            .map_err(|e| OrbitError::Store(e.to_string()))?,
-                    )
-                } else {
-                    println!("Run:       {}", state.run_id);
-                    println!("Job:       {}", state.job_id);
-                    println!("Iteration: {}", state.iteration);
-                    println!("Steps:     {}", state.step_outputs.len());
-                    println!("Updated:   {}", state.updated_at.to_rfc3339());
-                    if !state.step_outputs.is_empty() {
-                        println!();
-                        println!("Step outputs:");
-                        for key in state.step_outputs.keys() {
-                            println!("  - {key}");
-                        }
-                    }
+        eprintln!("[deprecated] use \"orbit run show {}\"", self.id);
+        if self.json {
+            return match runtime.read_run_state(&self.id)? {
+                Some(state) => crate::output::json::print_pretty(
+                    &serde_json::to_value(&state).map_err(|e| OrbitError::Store(e.to_string()))?,
+                ),
+                None => {
+                    println!("No pipeline state found for run '{}'", self.id);
                     Ok(())
                 }
-            }
-            None => {
-                println!("No pipeline state found for run '{}'", self.id);
-                Ok(())
-            }
+            };
         }
+
+        run::print_run_show(runtime, Some(&self.id), None, self.json)
     }
 }
 
