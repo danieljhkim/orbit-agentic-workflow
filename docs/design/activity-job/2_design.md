@@ -150,12 +150,13 @@ The prescriptive contract for this area lives in [specs/backend-resolution.md](.
 
 Activity / Job is the seam where orbit-core hands work to orbit-engine without taking a dependency on `orbit-agent` types.
 
-`V2RuntimeHost` is the key boundary. orbit-core implements it and supplies four services back into the engine:
+`V2RuntimeHost` is the key boundary. orbit-core implements it and supplies five services back into the engine:
 
 - run a deterministic action by name
 - source an API key for a provider
 - resolve a provider's CLI executor command plus static args
 - build `ToolContext` for an activity, including policy and filesystem audit hooks
+- persist invocation traces for completed agent-loop work
 
 That host wiring arrived in [T20260418-2143]. The cleanup in [T20260418-2210] made the boundary primitive on purpose: the engine receives strings, `Value`, and `ToolContext`, not `orbit-agent` transport objects.
 
@@ -185,6 +186,8 @@ Today that transport path is narrower than the schema surface suggests. `Provide
 
 The allowlist is enforced in the loop engine on this path. A denied tool becomes a structural `DispatchError::ToolDenied` so the job retry wrapper can classify it as non-retryable.
 
+After [T20260426-0526], completed HTTP loop outcomes are converted into `InvocationTrace` records and persisted through the host under the job run ID and step ID. That includes loop-body `session:` steps, which use a separate session-aware executor path but feed the same invocation metrics store.
+
 ### 7.2 CLI path
 
 The CLI path is driven by `cli_runner.rs`, added in [T20260419-0104]. The flow is:
@@ -196,6 +199,7 @@ The CLI path is driven by `cli_runner.rs`, added in [T20260419-0104]. The flow i
 5. Emit `CliInvocationStarted` with redacted argv and stdin blob ref.
 6. Spawn the subprocess with a wall-clock timeout.
 7. Emit `CliInvocationFinished` with stdout/stderr blob refs and timeout state.
+8. Parse the captured provider output with the existing Orbit response parser and persist its `InvocationTrace` through the host.
 
 Executor args are prepended before provider runtime args. For the seeded Codex executor, that means the subprocess starts as `codex exec --json --sandbox workspace-write ...`, not as the interactive `codex` TUI with piped stdin. This was tightened after a local ship run for [T20260423-0114] exposed that the earlier command-only boundary ignored executor args.
 
@@ -268,6 +272,14 @@ The current contract is:
 This is intentionally an operator-surface repair, not a new execution primitive. It keeps `run ship --json`, direct `job run` output, `job history`, and `job run-state` actionable without introducing a second run-level error channel in `JobRun`.
 
 The loop shares the same pipeline map and session map across iterations. That is what makes cross-iteration `session:` binding meaningful in the first place.
+
+### 8.7 Invocation metrics
+
+The `orbit metrics` command reads knowledge usage from job-run state and agent/tool usage from the SQLite invocation store. It does not scrape `.orbit/audit/v2_loop/` or the diagnostics JSONL stream.
+
+V2 jobs therefore persist invocation traces as an explicit execution side effect after [T20260426-0526]. The engine carries optional trace data on `DispatchOutcome`, the job executor associates it with the durable run ID and step ID, and orbit-core inserts it into the invocation store with canonical agent/model names plus task IDs extracted from the rendered step input. The same persistence hook refreshes the token scoreboard.
+
+For `backend: cli`, the trace comes from the provider's structured stdout using the same parser that validates Orbit response envelopes. For the HTTP loop path, the trace is derived from `LoopOutcome` usage and tool-call names.
 
 ---
 
@@ -382,5 +394,6 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260425-0204]** — Make v2 job catalog discovery honor workspace-over-global `MergeByKey` precedence.
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and move workflow history inspection to `orbit job history`.
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
+- **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -217,6 +217,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - Public execution stays concentrated in `orbit job run` and workflow aliases under `orbit run`.
 - Cost: lower-precedence activity assets can be shadowed silently, and direct ad hoc activity execution is no longer a documented CLI workflow.
 
+## ADR-017 — V2 job metrics persist invocation traces beside audit
+
+**Status:** Accepted · 2026-04 · [T20260426-0526]
+
+**Context.** V2 job execution emitted rich audit JSONL, but `orbit metrics` reads agent and tool usage from the SQLite invocation store. After the v1 runner trace hook was removed, v2 CLI agent-loop runs could finish successfully while metrics reported no invocations or tool calls.
+
+**Decision.** Treat invocation metrics as a first-class v2 job side effect rather than an audit scrape. `DispatchOutcome` may carry an `InvocationTrace`; the job executor persists that trace through `V2RuntimeHost` with the durable run ID, step ID, canonical agent/model identity, and task IDs from rendered input. The CLI backend derives the trace by parsing structured provider stdout, while HTTP loop paths convert `LoopOutcome` usage and tool-call names into the same store shape.
+
+**Consequences.**
+- `orbit metrics` can report v2 job agent usage and tool calls without depending on audit-log parsing.
+- CLI and HTTP agent-loop paths converge on the same invocation-store contract.
+- Cost: job execution now has another persistence side effect, and CLI metrics remain limited by the provider harness output format.
+
 ---
 
 ## Task References
@@ -241,5 +254,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260425-0204]** — Make v2 job catalog discovery honor workspace-over-global `MergeByKey` precedence.
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and revive `duel-plan` as a seeded run workflow.
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
+- **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

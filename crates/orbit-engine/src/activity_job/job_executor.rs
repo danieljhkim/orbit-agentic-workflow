@@ -381,11 +381,12 @@ fn run_target(
                 activity_name: &step.id,
                 spec: &t.spec,
                 fs_profile: t.fs_profile.as_deref(),
-                input: rendered_input,
+                input: rendered_input.clone(),
                 audit: ctx.audit.clone(),
                 run_id: &ctx.run_id,
                 host: Some(ctx.host),
             })?;
+            persist_dispatch_invocation(ctx, &step.id, &rendered_input, &dispatch)?;
             let out = dispatch.output.clone();
             record_pipeline(ctx, &step.id, out.clone());
             Ok(StepOutcome {
@@ -401,11 +402,12 @@ fn run_target(
                 activity_name: &step.id,
                 spec: &t.spec,
                 fs_profile: t.fs_profile.as_deref(),
-                input: rendered_input,
+                input: rendered_input.clone(),
                 audit: ctx.audit.clone(),
                 run_id: &ctx.run_id,
                 host: Some(ctx.host),
             })?;
+            persist_dispatch_invocation(ctx, &step.id, &rendered_input, &dispatch)?;
             let out = dispatch.output.clone();
             record_pipeline(ctx, &step.id, out.clone());
             Ok(StepOutcome {
@@ -418,6 +420,26 @@ fn run_target(
     }
 }
 
+fn persist_dispatch_invocation(
+    ctx: &ExecCtx<'_>,
+    step_id: &str,
+    input: &Value,
+    dispatch: &super::dispatcher::DispatchOutcome,
+) -> Result<(), DispatchError> {
+    let Some(invocation) = dispatch.invocation.as_ref() else {
+        return Ok(());
+    };
+
+    ctx.host.persist_invocation_trace(
+        &ctx.run_id,
+        step_id,
+        &invocation.provider,
+        invocation.model.as_deref(),
+        input,
+        &invocation.trace,
+    )
+}
+
 fn run_agent_loop_outcome(
     step: &JobV2Step,
     spec: &AgentLoopSpec,
@@ -427,6 +449,7 @@ fn run_agent_loop_outcome(
     fs_profile: Option<&str>,
     ctx: &ExecCtx<'_>,
 ) -> Result<StepOutcome, DispatchError> {
+    let started = Instant::now();
     let outcome = drive_agent_loop_with_session(
         spec,
         api_key,
@@ -436,6 +459,16 @@ fn run_agent_loop_outcome(
         input,
         ctx.host,
         fs_profile,
+    )?;
+    let trace =
+        super::dispatcher::loop_outcome_trace(&outcome, started.elapsed().as_millis() as u64);
+    ctx.host.persist_invocation_trace(
+        &ctx.run_id,
+        &step.id,
+        spec.provider.as_str(),
+        spec.model.as_deref(),
+        input,
+        &trace,
     )?;
     let out_json = serde_json::json!({
         "final_message": outcome.final_message,

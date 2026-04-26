@@ -1,10 +1,12 @@
 use std::process::Command;
 use std::sync::Arc;
+use std::time::Instant;
 
+use orbit_common::types::activity_job::V2AuditEventKind;
 use orbit_common::types::activity_job::{
     ActivityV2Spec, AgentLoopSpec, Backend, DeterministicSpec, ShellSpec,
 };
-use orbit_common::types::{OrbitError, activity_job::V2AuditEventKind};
+use orbit_common::types::{InvocationTrace, OrbitError, TokenUsage, ToolCallTrace};
 use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, ToolContext};
 use serde_json::Value;
 use thiserror::Error;
@@ -58,6 +60,18 @@ pub trait V2RuntimeHost: Send + Sync {
         fs_profile: Option<&str>,
         fs_audit: Option<Arc<dyn FsAuditLogger>>,
     ) -> ToolContext;
+
+    fn persist_invocation_trace(
+        &self,
+        _job_run_id: &str,
+        _activity_id: &str,
+        _provider: &str,
+        _model: Option<&str>,
+        _input: &Value,
+        _trace: &InvocationTrace,
+    ) -> Result<(), DispatchError> {
+        Ok(())
+    }
 }
 
 /// Input bundle for a single v2 activity dispatch.
@@ -81,6 +95,14 @@ pub struct DispatchOutcome {
     pub success: bool,
     pub output: Value,
     pub message: Option<String>,
+    pub invocation: Option<DispatchInvocationTrace>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DispatchInvocationTrace {
+    pub provider: String,
+    pub model: Option<String>,
+    pub trace: InvocationTrace,
 }
 
 #[derive(Debug, Error, Clone)]
@@ -276,6 +298,7 @@ fn run_deterministic(
         success: true,
         output,
         message: None,
+        invocation: None,
     })
 }
 
@@ -319,6 +342,7 @@ fn run_agent_loop_via_driver(
     // replay path (ORBIT_V2_REPLAY) without credentials. When the driver
     // actually needs a key and none is present, it errors structurally.
     let api_key = host.api_key_for("anthropic").ok();
+    let started = Instant::now();
     let outcome = drive_agent_loop(
         spec,
         api_key.as_deref(),
@@ -328,6 +352,7 @@ fn run_agent_loop_via_driver(
         host,
         fs_profile,
     )?;
+    let trace = loop_outcome_trace(&outcome, started.elapsed().as_millis() as u64);
     Ok(DispatchOutcome {
         success: true,
         output: serde_json::json!({
@@ -339,7 +364,44 @@ fn run_agent_loop_via_driver(
             },
         }),
         message: None,
+        invocation: Some(DispatchInvocationTrace {
+            provider: spec.provider.as_str().to_string(),
+            model: spec.model.clone(),
+            trace,
+        }),
     })
+}
+
+pub(crate) fn loop_outcome_trace(
+    outcome: &orbit_agent::loop_engine::LoopOutcome,
+    duration_ms: u64,
+) -> InvocationTrace {
+    let mut seq = 0;
+    let tool_calls = outcome
+        .trace
+        .iter()
+        .flat_map(|iteration| iteration.tool_calls.iter())
+        .map(|tool_name| {
+            seq += 1;
+            ToolCallTrace {
+                seq,
+                tool_name: tool_name.clone(),
+                result_bytes: 0,
+                result_payload: None,
+            }
+        })
+        .collect();
+
+    InvocationTrace {
+        usage: TokenUsage {
+            input: outcome.usage.input_tokens,
+            cache_read: outcome.usage.cache_read_input_tokens,
+            cache_create: outcome.usage.cache_creation_input_tokens,
+            output: outcome.usage.output_tokens,
+        },
+        tool_calls,
+        duration_ms,
+    }
 }
 
 struct V2FsAuditLogger {
@@ -413,5 +475,6 @@ fn run_shell(spec: &ShellSpec) -> Result<DispatchOutcome, DispatchError> {
             "stderr": stderr,
         }),
         message: (!success).then(|| format!("exit {exit_code} not in {expected:?}")),
+        invocation: None,
     })
 }

@@ -28,13 +28,14 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest};
+use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest, parse_and_validate_response};
 use orbit_common::types::activity_job::{AgentLoopSpec, V2AuditEventKind};
+use orbit_common::types::{ExecutionResult, InvocationTrace};
 use orbit_common::utility::redaction::PatternRedactor;
 use serde_json::Value;
 
 use super::audit_writer::V2AuditWriter;
-use super::dispatcher::{DispatchError, DispatchOutcome, V2RuntimeHost};
+use super::dispatcher::{DispatchError, DispatchInvocationTrace, DispatchOutcome, V2RuntimeHost};
 
 /// Default wall-clock timeout when `AgentLoopSpec::wall_clock_timeout_seconds`
 /// is zero. Matches §7.6 guidance: CLI subprocesses must have a mandatory
@@ -96,6 +97,7 @@ pub fn run_cli_backend(
     let (invocation, _trace) = agent
         .invoke(agent_req)
         .map_err(|err| DispatchError::CliInvocationFailed(format!("agent invoke: {err}")))?;
+    let model = agent.model_name().map(str::to_string);
 
     let mut subprocess_args = Vec::with_capacity(cli_executor.args.len() + invocation.args.len());
     subprocess_args.extend(cli_executor.args.iter().cloned());
@@ -141,6 +143,13 @@ pub fn run_cli_backend(
     });
 
     let success = !timed_out && matches!(exit_code, Some(0));
+    let trace = parse_cli_invocation_trace(
+        &stdout,
+        &stderr,
+        exit_code,
+        duration.as_millis() as u64,
+        success,
+    );
     let message = if timed_out {
         Some(format!(
             "cli subprocess exceeded {}s wall-clock timeout",
@@ -168,7 +177,33 @@ pub fn run_cli_backend(
             "stdout_text": stdout_text,
         }),
         message,
+        invocation: trace.map(|trace| DispatchInvocationTrace {
+            provider,
+            model,
+            trace,
+        }),
     })
+}
+
+fn parse_cli_invocation_trace(
+    stdout: &[u8],
+    stderr: &[u8],
+    exit_code: Option<i32>,
+    duration_ms: u64,
+    success: bool,
+) -> Option<InvocationTrace> {
+    let exec_result = ExecutionResult {
+        success,
+        stdout: String::from_utf8_lossy(stdout).into_owned(),
+        stderr: String::from_utf8_lossy(stderr).into_owned(),
+        exit_code,
+        duration_ms,
+        output: None,
+    };
+
+    parse_and_validate_response(&exec_result)
+        .map(|(_, _, trace)| trace)
+        .ok()
 }
 
 fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {

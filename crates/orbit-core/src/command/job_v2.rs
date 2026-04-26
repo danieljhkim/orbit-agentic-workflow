@@ -294,6 +294,11 @@ fn load_job_name(yaml_path: &Path) -> Result<String, OrbitError> {
 mod tests {
     use super::*;
 
+    use std::collections::HashMap;
+
+    use chrono::Utc;
+    use orbit_common::types::{ExecutorDef, ExecutorType};
+    use orbit_store::InvocationQuery;
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -327,6 +332,55 @@ spec:
 "#
         );
         std::fs::write(path, yaml).expect("write job yaml");
+    }
+
+    fn write_cli_metrics_job(path: &Path, name: &str) {
+        let yaml = format!(
+            r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: {name}
+spec:
+  state: enabled
+  kind: workflow
+  steps:
+    - id: codex_metrics
+      spec:
+        type: agent_loop
+        instruction: "emit a successful Orbit envelope"
+        tools: [fs.read]
+        on_denial: terminate
+        max_iterations: 1
+        model: gpt-test
+        backend: cli
+        provider: codex
+        wall_clock_timeout_seconds: 30
+"#
+        );
+        std::fs::write(path, yaml).expect("write cli metrics job yaml");
+    }
+
+    #[cfg(unix)]
+    fn write_fake_codex(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::write(
+            path,
+            r#"#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"thread.started","thread_id":"fake"}'
+printf '%s\n' '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"orbit metrics","aggregated_output":"","exit_code":null,"status":"in_progress"}}'
+printf '%s\n' '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"orbit metrics","aggregated_output":"ok","exit_code":0,"status":"completed"}}'
+printf '%s\n' '{"schemaVersion":1,"status":"success","result":{"ok":true},"error":null}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":25,"output_tokens":12}}'
+"#,
+        )
+        .expect("write fake codex");
+        let mut permissions = std::fs::metadata(path)
+            .expect("fake codex metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).expect("chmod fake codex");
     }
 
     #[test]
@@ -376,6 +430,79 @@ spec:
             .expect("catalog history");
         assert!(history.iter().any(|run| run.run_id == result.run_id));
         assert!(repo_root.join(".orbit/state/job-runs").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn v2_cli_agent_loop_persists_invocation_metrics() {
+        let (_root, runtime, repo_root, _global_root) = test_runtime();
+        let fake_bin = repo_root.join("codex");
+        write_fake_codex(&fake_bin);
+
+        let now = Utc::now();
+        runtime
+            .upsert_executor_def(&ExecutorDef {
+                name: "codex".to_string(),
+                executor_type: ExecutorType::DirectAgent,
+                command: Some(fake_bin.display().to_string()),
+                args: Vec::new(),
+                stdout_format: None,
+                models: HashMap::new(),
+                timeout_seconds: None,
+                env: HashMap::new(),
+                created_at: now,
+                updated_at: now,
+            })
+            .expect("seed fake codex executor");
+
+        let yaml_path = repo_root.join("qa_cli_metrics.yaml");
+        write_cli_metrics_job(&yaml_path, "qa_cli_metrics");
+
+        let result = runtime
+            .run_job_v2_from_yaml(
+                &yaml_path,
+                json!({"prompt": "collect metrics", "task_id": "TTEST-1"}),
+                None,
+            )
+            .expect("cli metrics job succeeds");
+
+        let records = runtime
+            .invocation_records(InvocationQuery {
+                job_run_id: Some(result.run_id.clone()),
+                limit: 10,
+                ..InvocationQuery::default()
+            })
+            .expect("query invocation records");
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.activity_id, "codex_metrics");
+        assert_eq!(record.agent, "codex");
+        assert_eq!(record.model.as_deref(), Some("gpt-test"));
+        assert_eq!(record.input_tokens, 100);
+        assert_eq!(record.cache_read_tokens, 25);
+        assert_eq!(record.output_tokens, 12);
+        assert_eq!(record.task_ids, ["TTEST-1"]);
+        assert_eq!(record.tool_call_count, 1);
+        assert_eq!(record.tool_calls[0].tool_name, "command_execution");
+
+        let activity = runtime
+            .activity_invocation_metrics()
+            .expect("activity metrics");
+        assert!(activity.iter().any(|row| {
+            row.activity_id == "codex_metrics"
+                && row.agent == "codex"
+                && row.model.as_deref() == Some("gpt-test")
+                && row.total_input_tokens == 100
+                && row.total_output_tokens == 12
+                && row.total_tool_calls == 1
+        }));
+
+        let tools = runtime.tool_invocation_metrics().expect("tool metrics");
+        assert!(tools.iter().any(|row| {
+            row.activity_id == "codex_metrics"
+                && row.tool_name == "command_execution"
+                && row.call_count == 1
+        }));
     }
 
     #[test]

@@ -68,6 +68,7 @@ pub fn run_groundhog_activity(
                     "chronicle_days": chronicle.days.len(),
                 }),
                 message: Some("groundhog run completed all checkpoints".to_string()),
+                invocation: None,
             });
         }
 
@@ -170,6 +171,7 @@ pub fn run_groundhog_activity(
                                 "checkpoint `{}` exhausted its attempt budget",
                                 checkpoint.id
                             )),
+                            invocation: None,
                         });
                     }
                     state.current = Some(checkpoint_state);
@@ -250,6 +252,7 @@ pub fn run_groundhog_activity(
                             "checkpoint `{}` exhausted its attempt budget",
                             checkpoint.id
                         )),
+                        invocation: None,
                     });
                 }
                 state.current = Some(checkpoint_state);

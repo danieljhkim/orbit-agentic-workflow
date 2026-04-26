@@ -13,16 +13,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use orbit_common::types::Task;
 use orbit_common::types::{
     AuditEventStatus, ExecutorType, Role, TaskStatus, TaskType, UNRESTRICTED_FS_PROFILE,
     prune_missing_context_files,
 };
+use orbit_common::types::{InvocationTrace, Task};
 use orbit_common::utility::path::workspace_relative_paths_overlap;
 use orbit_common::utility::selector::canonical_selector_in_workspace;
 use orbit_engine::activity_job::{DispatchError, ResolvedCliExecutor, V2RuntimeHost};
 use orbit_engine::{StateExecutionContext, execute_deterministic_action};
-use orbit_store::AuditEventInsertParams;
+use orbit_store::{AuditEventInsertParams, InvocationInsertParams, Store, token_scoreboard};
 use orbit_tools::{FsAuditLogger, ToolContext};
 use serde_json::Value;
 
@@ -717,6 +717,41 @@ impl V2RuntimeHost for OrbitRuntime {
         }
     }
 
+    fn persist_invocation_trace(
+        &self,
+        job_run_id: &str,
+        activity_id: &str,
+        provider: &str,
+        model: Option<&str>,
+        input: &Value,
+        trace: &InvocationTrace,
+    ) -> Result<(), DispatchError> {
+        let (agent, model) = self.canonical_agent_model_identity(Some(provider), model);
+        let store = Store::open(&self.context.persistence().audit_db).map_err(|error| {
+            DispatchError::JobExecution(format!("open invocation store: {error}"))
+        })?;
+        store
+            .insert_invocation_trace_record(&InvocationInsertParams {
+                job_run_id: job_run_id.to_string(),
+                activity_id: activity_id.to_string(),
+                agent: agent.unwrap_or_else(|| provider.to_ascii_lowercase()),
+                model,
+                task_ids: associated_task_ids(input),
+                trace: trace.clone(),
+            })
+            .map_err(|error| {
+                DispatchError::JobExecution(format!("persist invocation trace: {error}"))
+            })?;
+
+        if let Err(error) =
+            token_scoreboard::write_token_scoreboard(&self.paths().scoreboard_dir, &store)
+        {
+            eprintln!("orbit: failed to refresh tokens scoreboard: {error}");
+        }
+
+        Ok(())
+    }
+
     fn api_key_for(&self, provider: &str) -> Result<String, DispatchError> {
         match provider {
             "anthropic" => {
@@ -737,6 +772,43 @@ impl V2RuntimeHost for OrbitRuntime {
                 "unsupported provider: {other}"
             ))),
         }
+    }
+}
+
+fn associated_task_ids(input: &Value) -> Vec<String> {
+    let mut task_ids = Vec::new();
+    if let Some(task_id) = input.get("task_id").and_then(Value::as_str) {
+        push_unique_task_id(&mut task_ids, task_id);
+    }
+    if let Some(items) = input.get("task_ids").and_then(Value::as_array) {
+        for item in items {
+            if let Some(task_id) = item.as_str() {
+                push_unique_task_id(&mut task_ids, task_id);
+            }
+        }
+    }
+    if let Some(items) = input.get("tasks").and_then(Value::as_array) {
+        for item in items {
+            if let Some(task_id) = item.as_str() {
+                push_unique_task_id(&mut task_ids, task_id);
+                continue;
+            }
+            if let Some(task_id) = item
+                .get("id")
+                .and_then(Value::as_str)
+                .or_else(|| item.get("task_id").and_then(Value::as_str))
+            {
+                push_unique_task_id(&mut task_ids, task_id);
+            }
+        }
+    }
+    task_ids
+}
+
+fn push_unique_task_id(task_ids: &mut Vec<String>, task_id: &str) {
+    let task_id = task_id.trim();
+    if !task_id.is_empty() && !task_ids.iter().any(|existing| existing == task_id) {
+        task_ids.push(task_id.to_string());
     }
 }
 
