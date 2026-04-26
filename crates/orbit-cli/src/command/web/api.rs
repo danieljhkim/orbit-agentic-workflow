@@ -3,6 +3,8 @@
 //! Each handler delegates to the same `*_to_json` helpers used by the CLI's
 //! `--json` paths so the wire format stays in lockstep with the CLI.
 
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::Router;
@@ -14,7 +16,7 @@ use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use chrono::Utc;
 use orbit_core::command::job_run::JobRunListParams;
-use orbit_core::{OrbitRuntime, Task, TaskStatus};
+use orbit_core::{AuditEventStatus, OrbitRuntime, Task, TaskStatus};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -22,6 +24,7 @@ use crate::command::audit::audit_event_to_json;
 use crate::command::job::job_catalog_to_json_with_last_run;
 use crate::command::run::job_run_to_json;
 use crate::command::task::output::task_to_json;
+use crate::parse::parse_since;
 
 const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
     TaskStatus::InProgress,
@@ -35,6 +38,7 @@ const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
 const HISTORY_DEFAULT_LIMIT: usize = 50;
 const JOB_RUN_DEFAULT_LIMIT: usize = 25;
 const HISTORY_MAX_LIMIT: usize = 200;
+const RUN_EVENTS_DEFAULT_LIMIT: usize = 100;
 
 #[derive(Deserialize, Default)]
 pub(super) struct LimitQuery {
@@ -48,6 +52,36 @@ pub(super) struct DiagnosticsQuery {
     month: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
+}
+
+#[derive(Deserialize, Default)]
+pub(super) struct AuditQuery {
+    #[serde(default)]
+    since: Option<String>,
+    #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    run_id: Option<String>,
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    offset: Option<usize>,
+}
+
+#[derive(Deserialize, Default)]
+pub(super) struct RunEventsQuery {
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    offset: Option<usize>,
 }
 
 fn current_year_month_utc() -> String {
@@ -100,6 +134,8 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
         .route("/tasks/:id/archive", post(archive_task_action))
         .route("/jobs", get(list_jobs))
         .route("/job-runs", get(list_job_runs))
+        .route("/runs/:id", get(get_run))
+        .route("/runs/:id/events", get(list_run_events))
         .route("/audit", get(list_audit))
         .route("/scoreboard", get(scoreboard))
         .route("/diagnostics/metrics", get(list_diagnostics_metrics))
@@ -243,16 +279,160 @@ async fn list_job_runs(
 
 async fn list_audit(
     State(runtime): State<Arc<OrbitRuntime>>,
-    Query(q): Query<LimitQuery>,
+    Query(q): Query<AuditQuery>,
 ) -> Response {
+    let since = match q.since.as_deref() {
+        Some(raw) => match parse_since(raw) {
+            Ok(ts) => Some(ts),
+            Err(e) => return map_runtime_error(e),
+        },
+        None => None,
+    };
+
+    let status = match q.status.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => match AuditEventStatus::from_str(raw) {
+            Ok(s) => Some(s),
+            Err(msg) => return bad_request(msg),
+        },
+        None => None,
+    };
+
     let limit = bounded_limit(q.limit, HISTORY_DEFAULT_LIMIT);
-    match runtime.list_audit_events(None, None, None, None, limit) {
-        Ok(events) => {
-            let values: Vec<Value> = events.iter().map(audit_event_to_json).collect();
-            Json(Value::Array(values)).into_response()
-        }
-        Err(e) => server_error(e),
+    let offset = q.offset.unwrap_or(0);
+
+    // Post-query filters (run_id, q) and offset are applied after the SQLite
+    // call. Request a generous prefetch so common filtered pages are full.
+    let prefetch = HISTORY_MAX_LIMIT;
+    let tool = q.tool.filter(|s| !s.is_empty());
+    let role = q.role.filter(|s| !s.is_empty());
+
+    let events = match runtime.list_audit_events(since, tool, status, role, prefetch) {
+        Ok(events) => events,
+        Err(e) => return server_error(e),
+    };
+
+    let run_id_filter = q.run_id.as_deref().filter(|s| !s.is_empty());
+    let needle =
+        q.q.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_lowercase);
+
+    let mut filtered: Vec<_> = events
+        .into_iter()
+        .filter(|e| {
+            if let Some(rid) = run_id_filter
+                && e.execution_id != rid
+            {
+                return false;
+            }
+            if let Some(ref needle) = needle {
+                let haystacks = [
+                    e.command.as_str(),
+                    e.subcommand.as_deref().unwrap_or(""),
+                    e.tool_name.as_deref().unwrap_or(""),
+                    e.target_id.as_deref().unwrap_or(""),
+                    e.target_type.as_deref().unwrap_or(""),
+                    e.role.as_str(),
+                    e.error_message.as_deref().unwrap_or(""),
+                ];
+                if !haystacks.iter().any(|h| h.to_lowercase().contains(needle)) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    if offset >= filtered.len() {
+        return Json(Value::Array(Vec::new())).into_response();
     }
+    let end = offset.saturating_add(limit).min(filtered.len());
+    let page: Vec<Value> = filtered
+        .drain(offset..end)
+        .map(|e| audit_event_to_json(&e))
+        .collect();
+    Json(Value::Array(page)).into_response()
+}
+
+async fn get_run(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
+    match runtime.show_job_run(&id) {
+        Ok(run) => {
+            let mut full = job_run_to_json(&run);
+            // Reshape into `{run, steps}` per the dashboard contract: peel the
+            // `steps` array off the flat `job_run_to_json` output.
+            let steps = full
+                .as_object_mut()
+                .and_then(|m| m.remove("steps"))
+                .unwrap_or(Value::Array(Vec::new()));
+            Json(json!({ "run": full, "steps": steps })).into_response()
+        }
+        Err(e) => map_runtime_error(e),
+    }
+}
+
+async fn list_run_events(
+    State(runtime): State<Arc<OrbitRuntime>>,
+    Path(id): Path<String>,
+    Query(q): Query<RunEventsQuery>,
+) -> Response {
+    let limit = bounded_limit(q.limit, RUN_EVENTS_DEFAULT_LIMIT);
+    let offset = q.offset.unwrap_or(0);
+    let kind = q
+        .kind
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let path = v2_loop_path(&runtime, &id);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Json(Value::Array(Vec::new())).into_response();
+        }
+        Err(e) => {
+            return server_error(orbit_core::OrbitError::Io(format!(
+                "read {}: {e}",
+                path.display()
+            )));
+        }
+    };
+
+    let mut events: Vec<Value> = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(ref needle) = kind {
+            let body_kind = value.get("body_kind").and_then(Value::as_str).unwrap_or("");
+            if body_kind != needle {
+                continue;
+            }
+        }
+        events.push(value);
+    }
+
+    if offset >= events.len() {
+        return Json(Value::Array(Vec::new())).into_response();
+    }
+    let end = offset.saturating_add(limit).min(events.len());
+    let page: Vec<Value> = events.drain(offset..end).collect();
+    Json(Value::Array(page)).into_response()
+}
+
+fn v2_loop_path(runtime: &OrbitRuntime, run_id: &str) -> PathBuf {
+    runtime
+        .data_root()
+        .join("state")
+        .join("audit")
+        .join("v2_loop")
+        .join(format!("{run_id}.jsonl"))
 }
 
 async fn scoreboard(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
@@ -313,6 +493,7 @@ fn map_runtime_error(e: orbit_core::OrbitError) -> Response {
     match e {
         orbit_core::OrbitError::InvalidInput(msg) => bad_request(msg),
         orbit_core::OrbitError::TaskNotFound(msg) => not_found(format!("task not found: {msg}")),
+        orbit_core::OrbitError::JobRunNotFound(msg) => not_found(format!("run not found: {msg}")),
         other => server_error(other),
     }
 }

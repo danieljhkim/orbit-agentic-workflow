@@ -20,6 +20,10 @@ function positiveIntParam(name, fallback) {
 }
 const JOB_RUN_LIMIT = positiveIntParam("runs", 25);
 const DIAG_LIMIT = positiveIntParam("diag", 50);
+const AUDIT_LIMIT = positiveIntParam("audit", 50);
+const RUN_EVENTS_LIMIT = positiveIntParam("events", 100);
+
+const AUDIT_STATUSES = ["success", "failure", "denied"];
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +38,18 @@ let activeTab = "tasks";
 let activeDiagSubtab = "runs";
 let expandedTaskIds = new Set();
 let isRefreshing = false;
+
+// Audit tab state
+let lastAudit = [];
+let auditFilter = { status: null, q: "", tool: null, role: null, run_id: null };
+let expandedAuditIds = new Set();
+
+// Run detail state
+let activeRunId = null;
+let activeRunDetail = null;
+let activeRunEvents = [];
+let activeRunSubtab = "steps";
+let expandedStepIndices = new Set();
 
 function el(tag, opts = {}, children = []) {
   const node = document.createElement(tag);
@@ -475,7 +491,7 @@ function renderRuns(runs) {
   }
   for (const r of top) {
     const ts = r.finished_at || r.started_at || r.scheduled_at || r.created_at;
-    const row = el("div", { class: "runs-row", title: r.run_id }, [
+    const row = el("div", { class: "runs-row", title: `${r.run_id} (click to inspect)` }, [
       el("span", { class: "when", text: fmtTimestamp(ts) }),
       el("span", { class: "id", text: r.job_id }),
       el("span", { class: "duration", text: fmtDuration(r.duration_ms) }),
@@ -483,6 +499,8 @@ function renderRuns(runs) {
     ]);
     row.dataset.key = `run-${r.run_id}`;
     row.dataset.hash = `${r.run_id}-${ts}-${r.duration_ms}-${r.state}`;
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => navigateToRun(r.run_id));
     frag.appendChild(row);
   }
   syncNodes(body, Array.from(frag.children));
@@ -631,12 +649,34 @@ function wireSearch() {
   });
 }
 
-const TABS = ["tasks", "scoreboard", "diagnostics"];
+const TABS = ["tasks", "scoreboard", "audit", "diagnostics", "run-detail"];
 const DIAG_SUBTABS = ["runs", "metrics", "friction"];
+const RUN_DETAIL_SUBTABS = ["steps", "events"];
+
+function parseHashRoute(raw) {
+  const trimmed = String(raw || "").replace(/^#/, "");
+  const queryIdx = trimmed.indexOf("?");
+  const path = queryIdx >= 0 ? trimmed.slice(0, queryIdx) : trimmed;
+  const queryStr = queryIdx >= 0 ? trimmed.slice(queryIdx + 1) : "";
+  const segments = path.split("/").filter(Boolean);
+  const query = new URLSearchParams(queryStr);
+  return { segments, query };
+}
 
 function setActiveTab(raw, opts = {}) {
-  const [topRaw, subRaw] = String(raw || "").split("/");
-  const top = TABS.includes(topRaw) ? topRaw : "tasks";
+  const { segments, query } = parseHashRoute(raw);
+  const head = segments[0] || "tasks";
+  let top;
+  if (head === "runs" && segments[1]) {
+    top = "run-detail";
+    activeRunId = decodeURIComponent(segments[1]);
+    const sub = RUN_DETAIL_SUBTABS.includes(segments[2]) ? segments[2] : activeRunSubtab;
+    activeRunSubtab = sub;
+  } else if (TABS.includes(head)) {
+    top = head;
+  } else {
+    top = "tasks";
+  }
   activeTab = top;
   for (const tab of document.querySelectorAll(".tab")) {
     tab.classList.toggle("active", tab.dataset.tab === top);
@@ -644,20 +684,38 @@ function setActiveTab(raw, opts = {}) {
   for (const pane of document.querySelectorAll(".tab-pane")) {
     pane.classList.toggle("active", pane.dataset.tab === top);
   }
-  
+
   const indicator = $("tab-indicator") || el("div", {id: "tab-indicator", class: "tab-indicator"});
   if (!indicator.parentNode) document.querySelector(".tabs").appendChild(indicator);
+  // For run-detail (no top tab button), hide the indicator
   const activeTabEl = document.querySelector(`.tab[data-tab="${top}"]`);
   if (activeTabEl) {
+    indicator.style.display = "";
     indicator.style.width = `${activeTabEl.offsetWidth}px`;
     indicator.style.left = `${activeTabEl.offsetLeft}px`;
+  } else {
+    indicator.style.display = "none";
   }
 
-  let hash = `#${top}`;
+  let hash;
   if (top === "diagnostics") {
-    const sub = DIAG_SUBTABS.includes(subRaw) ? subRaw : activeDiagSubtab;
+    const sub = DIAG_SUBTABS.includes(segments[1]) ? segments[1] : activeDiagSubtab;
     setDiagSubtab(sub);
     hash = `#diagnostics/${sub}`;
+  } else if (top === "audit") {
+    auditFilter.status = query.get("status") || null;
+    auditFilter.tool = query.get("tool") || null;
+    auditFilter.role = query.get("role") || null;
+    auditFilter.run_id = query.get("run_id") || null;
+    auditFilter.q = query.get("q") || "";
+    hash = buildAuditHash();
+    syncAuditControls();
+  } else if (top === "run-detail") {
+    setRunDetailSubtab(activeRunSubtab);
+    hash = `#runs/${encodeURIComponent(activeRunId || "")}` +
+      (activeRunSubtab !== "steps" ? `/${activeRunSubtab}` : "");
+  } else {
+    hash = `#${top}`;
   }
   const hashChanged = window.location.hash !== hash;
   const shouldUpdateHash = opts.updateHash !== false;
@@ -665,6 +723,38 @@ function setActiveTab(raw, opts = {}) {
     window.location.hash = hash;
   }
   if (opts.refresh !== false && (!hashChanged || !shouldUpdateHash)) refreshDashboard();
+}
+
+function buildAuditHash() {
+  const sp = new URLSearchParams();
+  if (auditFilter.status) sp.set("status", auditFilter.status);
+  if (auditFilter.tool) sp.set("tool", auditFilter.tool);
+  if (auditFilter.role) sp.set("role", auditFilter.role);
+  if (auditFilter.run_id) sp.set("run_id", auditFilter.run_id);
+  if (auditFilter.q) sp.set("q", auditFilter.q);
+  const qs = sp.toString();
+  return qs ? `#audit?${qs}` : `#audit`;
+}
+
+function syncAuditControls() {
+  const search = $("audit-search");
+  if (search && search.value !== (auditFilter.q || "")) {
+    search.value = auditFilter.q || "";
+  }
+  for (const chip of document.querySelectorAll("#audit-filter .chip")) {
+    const status = chip.dataset.status;
+    chip.classList.toggle("active", auditFilter.status === status);
+  }
+}
+
+function setRunDetailSubtab(name) {
+  if (!RUN_DETAIL_SUBTABS.includes(name)) name = "steps";
+  activeRunSubtab = name;
+  for (const btn of document.querySelectorAll("#run-detail-subtabs .subtab")) {
+    btn.classList.toggle("active", btn.dataset.subtab === name);
+  }
+  $("run-steps-body").style.display = name === "steps" ? "block" : "none";
+  $("run-events-body").style.display = name === "events" ? "block" : "none";
 }
 
 function setDiagSubtab(name) {
@@ -702,10 +792,19 @@ function initTabs() {
       setActiveTab(`diagnostics/${btn.dataset.subtab}`, { refresh: false }),
     );
   }
+  for (const btn of document.querySelectorAll("#run-detail-subtabs .subtab")) {
+    btn.addEventListener("click", () => {
+      activeRunSubtab = btn.dataset.subtab;
+      const path = `runs/${encodeURIComponent(activeRunId || "")}` +
+        (activeRunSubtab !== "steps" ? `/${activeRunSubtab}` : "");
+      setActiveTab(path, { refresh: false });
+      refreshDashboard();
+    });
+  }
   window.addEventListener("hashchange", () => {
-    setActiveTab(window.location.hash.replace(/^#/, ""));
+    setActiveTab(window.location.hash);
   });
-  setActiveTab(window.location.hash.replace(/^#/, "") || "tasks", {
+  setActiveTab(window.location.hash || "tasks", {
     refresh: false,
     updateHash: false,
   });
@@ -846,6 +945,36 @@ function activeRefreshJobs() {
     return [fetchJson("/api/scoreboard").then(renderScoreboard)];
   }
 
+  if (activeTab === "audit") {
+    return [fetchAndRenderAudit()];
+  }
+
+  if (activeTab === "run-detail") {
+    if (!activeRunId) {
+      renderRunDetailEmpty("No run selected.");
+      return [];
+    }
+    const jobs = [
+      fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
+        activeRunDetail = data;
+        renderRunDetailMeta();
+        renderRunSteps();
+      }).catch((e) => {
+        renderRunDetailEmpty(`Run not found: ${activeRunId}`);
+        throw e;
+      }),
+    ];
+    if (activeRunSubtab === "events") {
+      jobs.push(
+        fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
+          activeRunEvents = events;
+          renderRunEvents();
+        }),
+      );
+    }
+    return jobs;
+  }
+
   if (activeDiagSubtab === "runs") {
     return [
       fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
@@ -872,9 +1001,403 @@ function activeRefreshJobs() {
   ];
 }
 
+function fetchAndRenderAudit() {
+  const sp = new URLSearchParams();
+  sp.set("limit", String(AUDIT_LIMIT));
+  if (auditFilter.status) sp.set("status", auditFilter.status);
+  if (auditFilter.tool) sp.set("tool", auditFilter.tool);
+  if (auditFilter.role) sp.set("role", auditFilter.role);
+  if (auditFilter.run_id) sp.set("run_id", auditFilter.run_id);
+  if (auditFilter.q) sp.set("q", auditFilter.q);
+  return fetchJson(`/api/audit?${sp.toString()}`).then((events) => {
+    lastAudit = events;
+    renderAudit(events);
+  });
+}
+
 function refreshLabel() {
   if (activeTab === "diagnostics") return `diagnostics/${activeDiagSubtab}`;
+  if (activeTab === "run-detail") return `run/${activeRunId || "?"}`;
   return activeTab;
+}
+
+function navigateToRun(runId) {
+  activeRunId = runId;
+  expandedStepIndices = new Set();
+  activeRunDetail = null;
+  activeRunEvents = [];
+  setActiveTab(`runs/${encodeURIComponent(runId)}`);
+}
+
+function buildAuditChips() {
+  const container = $("audit-filter");
+  if (!container) return;
+  container.innerHTML = "";
+  const allChip = el("button", { class: "chip", text: "all" });
+  allChip.addEventListener("click", () => {
+    auditFilter.status = null;
+    syncAuditControls();
+    setActiveTab("audit" + buildAuditHash().slice(6), { refresh: true });
+  });
+  container.appendChild(allChip);
+  for (const status of AUDIT_STATUSES) {
+    const chip = el("button", { class: "chip", text: status });
+    chip.dataset.status = status;
+    chip.style.borderLeft = `2px solid var(--audit-status-${status}, var(--border))`;
+    chip.addEventListener("click", () => {
+      auditFilter.status = auditFilter.status === status ? null : status;
+      syncAuditControls();
+      const hash = buildAuditHash();
+      window.location.hash = hash;
+    });
+    container.appendChild(chip);
+  }
+  syncAuditControls();
+}
+
+function wireAuditSearch() {
+  const input = $("audit-search");
+  if (!input) return;
+  let debounce = null;
+  input.addEventListener("input", (e) => {
+    auditFilter.q = e.target.value.trim();
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const hash = buildAuditHash();
+      if (window.location.hash !== hash) {
+        window.location.hash = hash;
+      } else {
+        refreshDashboard();
+      }
+    }, 250);
+  });
+}
+
+const AUDIT_COLUMNS = [
+  { key: "time", label: "time" },
+  { key: "role", label: "role" },
+  { key: "tool", label: "tool" },
+  { key: "command", label: "command" },
+  { key: "target", label: "target" },
+  { key: "status", label: "status" },
+  { key: "exit", label: "exit", num: true },
+  { key: "duration", label: "duration", num: true },
+  { key: "run_id", label: "run id" },
+];
+
+function renderAudit(events) {
+  const body = $("audit-body");
+  if (!body) return;
+  $("audit-count").textContent = `${events.length}`;
+
+  if (events.length === 0) {
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No audit events match the current filter." }),
+    ])]);
+    return;
+  }
+
+  let table = body.querySelector("table.scoreboard-table");
+  let tbody;
+  if (!table) {
+    table = el("table", { class: "scoreboard-table" });
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const col of AUDIT_COLUMNS) {
+      headRow.appendChild(el("th", { class: col.num ? "num" : "", text: col.label }));
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    tbody = el("tbody");
+    table.appendChild(tbody);
+    syncNodes(body, [table]);
+  } else {
+    tbody = table.querySelector("tbody");
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const ev of events) {
+    const exit = ev.exit_code;
+    const exitClass = exit != null && exit !== 0 ? "num exit-fail" : "num";
+    const tool = ev.tool_name || "-";
+    const target = ev.target_id || ev.target_type || "-";
+    const cmd = ev.subcommand ? `${ev.command} ${ev.subcommand}` : ev.command;
+    const tr = el("tr", { class: "audit-row", title: `event ${ev.id}` });
+    tr.dataset.key = `audit-${ev.id}`;
+    tr.dataset.hash = `${ev.id}-${ev.status}-${exit}`;
+    tr.appendChild(el("td", { text: fmtTimestamp(ev.timestamp) }));
+    tr.appendChild(el("td", { text: ev.role || "-" }));
+    tr.appendChild(el("td", { text: tool }));
+    tr.appendChild(el("td", { text: cmd }));
+    tr.appendChild(el("td", { text: target, title: target }));
+    const statusTd = el("td");
+    statusTd.appendChild(el("span", { class: `audit-status ${ev.status}`, text: ev.status }));
+    tr.appendChild(statusTd);
+    tr.appendChild(el("td", { class: exitClass, text: exit == null ? "-" : String(exit) }));
+    tr.appendChild(el("td", { class: "num", text: fmtDuration(ev.duration_ms) }));
+    tr.appendChild(el("td", { text: ev.execution_id || "-", title: ev.execution_id || "" }));
+    if (expandedAuditIds.has(ev.id)) tr.classList.add("expanded");
+    tr.addEventListener("click", () => {
+      if (expandedAuditIds.has(ev.id)) expandedAuditIds.delete(ev.id);
+      else expandedAuditIds.add(ev.id);
+      renderAudit(lastAudit);
+    });
+    frag.appendChild(tr);
+
+    if (expandedAuditIds.has(ev.id)) {
+      frag.appendChild(buildAuditDetailRow(ev));
+    }
+  }
+  syncNodes(tbody, Array.from(frag.children));
+}
+
+function buildAuditDetailRow(ev) {
+  const tr = el("tr", { class: "audit-detail-row" });
+  tr.dataset.key = `audit-detail-${ev.id}`;
+  tr.dataset.hash = JSON.stringify(ev);
+  const td = el("td");
+  td.colSpan = AUDIT_COLUMNS.length;
+  td.addEventListener("click", (e) => e.stopPropagation());
+
+  const meta = el("div", { class: "audit-detail-meta" });
+  const addMeta = (label, value) => {
+    if (value == null || value === "") return;
+    meta.appendChild(el("span", {}, [
+      el("span", { class: "label", text: `${label}:` }),
+      el("span", { class: "value", text: String(value) }),
+    ]));
+  };
+  addMeta("execution_id", ev.execution_id);
+  addMeta("session_id", ev.session_id);
+  addMeta("host", ev.host);
+  addMeta("pid", ev.pid);
+  addMeta("cwd", ev.working_directory);
+  addMeta("timestamp", fmtAbsTime(ev.timestamp));
+  td.appendChild(meta);
+
+  if (ev.arguments_json) {
+    const block = el("div", { class: "audit-detail-block" });
+    block.appendChild(el("div", { class: "label", text: "arguments" }));
+    let pretty = ev.arguments_json;
+    try {
+      pretty = JSON.stringify(JSON.parse(ev.arguments_json), null, 2);
+    } catch (_) {
+      /* leave raw */
+    }
+    block.appendChild(el("pre", { text: pretty }));
+    td.appendChild(block);
+  }
+  if (ev.stderr_truncated) {
+    const block = el("div", { class: "audit-detail-block" });
+    block.appendChild(el("div", { class: "label", text: "stderr (truncated)" }));
+    block.appendChild(el("pre", { text: ev.stderr_truncated }));
+    td.appendChild(block);
+  }
+  if (ev.stdout_truncated) {
+    const block = el("div", { class: "audit-detail-block" });
+    block.appendChild(el("div", { class: "label", text: "stdout (truncated)" }));
+    block.appendChild(el("pre", { text: ev.stdout_truncated }));
+    td.appendChild(block);
+  }
+  if (ev.error_message) {
+    const block = el("div", { class: "audit-detail-block" });
+    block.appendChild(el("div", { class: "label", text: "error" }));
+    block.appendChild(el("pre", { text: ev.error_message }));
+    td.appendChild(block);
+  }
+
+  const actions = el("div", { class: "audit-detail-actions" });
+  if (ev.execution_id) {
+    const btn = el("button", { class: "link-action", text: "View run" });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigateToRun(ev.execution_id);
+    });
+    actions.appendChild(btn);
+  }
+  td.appendChild(actions);
+
+  tr.appendChild(td);
+  return tr;
+}
+
+function renderRunDetailEmpty(message) {
+  const meta = $("run-detail-meta");
+  if (meta) syncNodes(meta, [el("div", { class: "empty-state" }, [
+    el("div", { class: "icon", text: "✧" }),
+    el("div", { class: "text", text: message }),
+  ])]);
+  $("run-detail-title").textContent = "Run Detail";
+  $("run-detail-count").textContent = "-";
+  $("run-steps-body").innerHTML = "";
+  $("run-events-body").innerHTML = "";
+}
+
+function renderRunDetailMeta() {
+  const meta = $("run-detail-meta");
+  if (!meta) return;
+  const detail = activeRunDetail || {};
+  const run = detail.run || {};
+  $("run-detail-title").textContent = `Run ${run.run_id || activeRunId || "?"}`;
+  const stepCount = Array.isArray(detail.steps) ? detail.steps.length : 0;
+  $("run-detail-count").textContent = `${stepCount} steps`;
+
+  const grid = el("div", { class: "run-meta-grid" });
+  const addCell = (label, value) => {
+    const cell = el("div");
+    cell.appendChild(el("div", { class: "label", text: label }));
+    cell.appendChild(el("div", { class: "value", text: value == null ? "-" : String(value) }));
+    grid.appendChild(cell);
+  };
+  addCell("job", run.job_id);
+  addCell("state", run.state);
+  addCell("attempt", run.attempt);
+  addCell("started", run.started_at ? fmtAbsTime(run.started_at) : "-");
+  addCell("finished", run.finished_at ? fmtAbsTime(run.finished_at) : "-");
+  addCell("duration", run.duration_ms != null ? fmtDuration(run.duration_ms) : "-");
+
+  const wrap = el("div");
+  const back = el("button", { class: "back-action", text: "← back to runs" });
+  back.addEventListener("click", () => setActiveTab("diagnostics/runs"));
+  wrap.appendChild(el("div", { style: { padding: "8px 16px 0 16px" } }, [back]));
+  wrap.appendChild(grid);
+  syncNodes(meta, [wrap]);
+}
+
+function renderRunSteps() {
+  const body = $("run-steps-body");
+  if (!body) return;
+  const steps = (activeRunDetail && activeRunDetail.steps) || [];
+  if (steps.length === 0) {
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No steps recorded for this run." }),
+    ])]);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const step of steps) {
+    const exit = step.exit_code;
+    const exitClass = exit != null && exit !== 0 ? "exit fail" : "exit";
+    const row = el("div", { class: "step-row" }, [
+      el("span", { class: "idx", text: `#${step.step_index}` }),
+      el("span", { class: "target", text: `${step.target_type}:${step.target_id}` }),
+      el("span", {}, [stateCell(step.state)]),
+      el("span", { class: "duration", text: fmtDuration(step.duration_ms) }),
+      el("span", { class: exitClass, text: exit == null ? "-" : String(exit) }),
+    ]);
+    row.dataset.key = `step-${step.step_index}`;
+    row.dataset.hash = `${step.step_index}-${step.state}-${exit}`;
+    if (expandedStepIndices.has(step.step_index)) row.classList.add("expanded");
+    row.addEventListener("click", () => {
+      if (expandedStepIndices.has(step.step_index)) expandedStepIndices.delete(step.step_index);
+      else expandedStepIndices.add(step.step_index);
+      renderRunSteps();
+    });
+    frag.appendChild(row);
+    if (expandedStepIndices.has(step.step_index)) {
+      frag.appendChild(buildStepDetail(step));
+    }
+  }
+  syncNodes(body, Array.from(frag.children));
+}
+
+function buildStepDetail(step) {
+  const wrap = el("div", { class: "step-detail" });
+  wrap.dataset.key = `step-detail-${step.step_index}`;
+  wrap.dataset.hash = JSON.stringify(step);
+  wrap.addEventListener("click", (e) => e.stopPropagation());
+
+  const addBlock = (label, raw) => {
+    const v = raw == null ? "" : (typeof raw === "string" ? raw : JSON.stringify(raw, null, 2));
+    if (!v) return;
+    const block = el("div", { class: "audit-detail-block" });
+    block.appendChild(el("div", { class: "label", text: label }));
+    block.appendChild(el("pre", { text: v }));
+    wrap.appendChild(block);
+  };
+
+  if (step.error_message) addBlock("error", `${step.error_code || ""} ${step.error_message}`);
+  addBlock("agent_response", step.agent_response_json);
+  const km = activeRunDetail && activeRunDetail.run && activeRunDetail.run.knowledge_metrics;
+  if (km && step.step_index === 0) addBlock("knowledge_metrics (run)", km);
+  return wrap;
+}
+
+const RUN_EVENT_COLUMNS = [
+  { key: "ts", label: "time" },
+  { key: "body_kind", label: "kind" },
+  { key: "event_type", label: "scope" },
+  { key: "agent_identity", label: "agent" },
+  { key: "summary", label: "detail" },
+];
+
+function renderRunEvents() {
+  const body = $("run-events-body");
+  if (!body) return;
+  const events = activeRunEvents || [];
+  if (events.length === 0) {
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No v2 envelope events for this run." }),
+    ])]);
+    return;
+  }
+  let table = body.querySelector("table.scoreboard-table");
+  let tbody;
+  if (!table) {
+    table = el("table", { class: "scoreboard-table" });
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const col of RUN_EVENT_COLUMNS) {
+      headRow.appendChild(el("th", { text: col.label }));
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    tbody = el("tbody");
+    table.appendChild(tbody);
+    syncNodes(body, [table]);
+  } else {
+    tbody = table.querySelector("tbody");
+  }
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const summary = summarizeEvent(ev);
+    const tr = el("tr");
+    tr.appendChild(el("td", { text: fmtTimestamp(ev.ts) }));
+    tr.appendChild(el("td", { text: ev.body_kind || "-" }));
+    tr.appendChild(el("td", { text: ev.event_type || "-" }));
+    tr.appendChild(el("td", { text: ev.agent_identity || "-" }));
+    const td = el("td", { class: "stderr" });
+    td.title = summary.title;
+    td.textContent = summary.text;
+    tr.appendChild(td);
+    tr.dataset.key = `runev-${ev.event_id || i}`;
+    tr.dataset.hash = `${ev.event_id || i}-${ev.body_kind}`;
+    frag.appendChild(tr);
+  }
+  syncNodes(tbody, Array.from(frag.children));
+}
+
+function summarizeEvent(ev) {
+  const ignoreKeys = new Set([
+    "schemaVersion", "event_type", "event_id", "ts", "run_id",
+    "agent_identity", "parent_event_id", "workspace_path", "body_kind",
+  ]);
+  const parts = [];
+  for (const [k, v] of Object.entries(ev)) {
+    if (ignoreKeys.has(k)) continue;
+    if (v == null) continue;
+    if (typeof v === "object") {
+      parts.push(`${k}=${JSON.stringify(v)}`);
+    } else {
+      parts.push(`${k}=${v}`);
+    }
+  }
+  const text = parts.join(" ");
+  return { text: truncate(text, 200), title: text };
 }
 
 async function refreshDashboard() {
@@ -907,10 +1430,12 @@ async function refreshDashboard() {
   if (btn) btn.disabled = false;
   isRefreshing = false;
   
-  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
+  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|run_id|q|limit|offset,runs/:id,runs/:id/events?kind|limit|offset,scoreboard,diagnostics/{metrics,friction}}`;
 }
 
 buildChips();
 wireSearch();
+buildAuditChips();
+wireAuditSearch();
 $("refresh-btn").addEventListener("click", refreshDashboard);
 initTabs();

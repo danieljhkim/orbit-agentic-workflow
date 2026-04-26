@@ -750,6 +750,151 @@
         color: var(--fg-dim);
         font-size: 12px;
       }
+
+      /* Audit + Run Detail */
+      .audit-status {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .audit-status.success { color: var(--state-success); }
+      .audit-status.failure { color: var(--state-failed); }
+      .audit-status.denied { color: var(--accent); }
+
+      tr.audit-row { cursor: pointer; }
+      tr.audit-row:hover td { background: rgba(255, 255, 255, 0.03); }
+      tr.audit-row.expanded td { background: rgba(245, 158, 11, 0.05); }
+      tr.audit-detail-row td {
+        padding: 12px 16px;
+        background: #050505;
+        border-bottom: 1px solid var(--border);
+      }
+      .audit-detail-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        margin-bottom: 10px;
+      }
+      .audit-detail-meta .label { color: var(--fg-dim); margin-right: 6px; }
+      .audit-detail-meta .value {
+        color: var(--fg);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 2px 6px;
+        border-radius: 2px;
+      }
+      .audit-detail-block {
+        margin-top: 8px;
+      }
+      .audit-detail-block .label {
+        color: var(--fg-dim);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
+      .audit-detail-block pre {
+        margin: 0;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        padding: 8px 12px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        line-height: 1.5;
+        max-height: 240px;
+        overflow: auto;
+        color: var(--fg);
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .audit-detail-actions {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+      }
+      .link-action {
+        font: inherit;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 4px 10px;
+        border-radius: 2px;
+        cursor: pointer;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--accent);
+        transition: all 0.2s ease;
+      }
+      .link-action:hover {
+        border-color: var(--accent);
+        background: rgba(245, 158, 11, 0.1);
+      }
+
+      /* Run detail */
+      .run-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        padding: 16px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .run-meta-grid .label {
+        color: var(--fg-dim);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 2px;
+      }
+      .run-meta-grid .value { color: var(--fg); }
+
+      .step-row {
+        display: grid;
+        grid-template-columns: 60px 1fr 100px 80px 80px;
+        gap: 12px;
+        padding: 8px 16px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+      }
+      .step-row:hover { background: rgba(255, 255, 255, 0.03); }
+      .step-row.expanded { background: rgba(245, 158, 11, 0.05); }
+      .step-row .idx { color: var(--fg-dim); }
+      .step-row .target { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .step-row .duration, .step-row .exit { color: var(--fg-dim); text-align: right; }
+      .step-row .exit.fail { color: var(--state-failed); font-weight: 600; }
+
+      .step-detail {
+        padding: 12px 20px;
+        background: #050505;
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        gap: 10px;
+      }
+
+      .back-action {
+        font: inherit;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 2px;
+        cursor: pointer;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--fg-dim);
+        transition: all 0.2s ease;
+      }
+      .back-action:hover {
+        color: var(--fg);
+        border-color: var(--fg-dim);
+      }
       
       @keyframes highlight-changed {
         0% { background-color: rgba(16, 185, 129, 0.4); }
@@ -801,6 +946,7 @@
     <nav class="tabs" id="tabs">
       <button class="tab" data-tab="tasks" type="button">Tasks</button>
       <button class="tab" data-tab="scoreboard" type="button">Scoreboard</button>
+      <button class="tab" data-tab="audit" type="button">Audit</button>
       <button class="tab" data-tab="diagnostics" type="button">Diagnostics</button>
     </nav>
     <section class="tab-pane" data-tab="tasks">
@@ -832,6 +978,46 @@
               <div class="skeleton skeleton-row" style="width: 70%"></div>
             </div>
           </div>
+        </section>
+      </main>
+    </section>
+    <section class="tab-pane" data-tab="audit">
+      <main style="grid-template-columns: 1fr;">
+        <section class="panel" id="audit-pane">
+          <header><span>Audit Events</span><span class="count" id="audit-count">-</span></header>
+          <div class="controls">
+            <input type="search" id="audit-search" placeholder="Search command, tool, target..." autocomplete="off" spellcheck="false" />
+            <div id="audit-filter"></div>
+          </div>
+          <div class="body scoreboard-table-wrap" id="audit-body">
+            <div class="skeleton-state">
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row" style="width: 80%"></div>
+              <div class="skeleton skeleton-row" style="width: 70%"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+    <section class="tab-pane" data-tab="run-detail">
+      <main style="grid-template-columns: 1fr;">
+        <section class="panel" id="run-detail-panel">
+          <header>
+            <span id="run-detail-title">Run Detail</span>
+            <span class="count" id="run-detail-count">-</span>
+          </header>
+          <div class="body" id="run-detail-meta">
+            <div class="skeleton-state">
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row" style="width: 70%"></div>
+            </div>
+          </div>
+          <nav class="subtabs" id="run-detail-subtabs">
+            <button class="subtab" data-subtab="steps" type="button">Steps</button>
+            <button class="subtab" data-subtab="events" type="button">Events</button>
+          </nav>
+          <div class="body" id="run-steps-body" style="display: none;"></div>
+          <div class="body scoreboard-table-wrap" id="run-events-body" style="display: none;"></div>
         </section>
       </main>
     </section>
