@@ -293,7 +293,6 @@ pub trait AgentProtocolHost {
         &self,
         execution: &ExecutionContext,
     ) -> Result<Vec<u8>, OrbitError>;
-    fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError>;
 }
 
 pub trait EnvironmentHost {
@@ -563,11 +562,6 @@ impl AgentProtocolHost for AgentExecutorHost<'_> {
     ) -> Result<Vec<u8>, OrbitError> {
         self.agent_protocol
             .build_agent_stdin_envelope_payload(execution)
-    }
-
-    fn execute_commit_request_if_present(&self, result: &Value) -> Result<(), OrbitError> {
-        self.agent_protocol
-            .execute_commit_request_if_present(result)
     }
 }
 

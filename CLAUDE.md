@@ -68,6 +68,10 @@ Activity and job YAMLs declare `schemaVersion: 2`. Job steps reference activitie
 
 Policy is a filesystem-scoping surface only. Activities can declare `fsProfile: <name>` to select a named profile from the active policy; the policy layer contributes global `denyRead` / `denyModify` safety rails. If an activity omits `fsProfile:`, runtime resolves an implicit `unrestricted` profile (`read: [./**]`, `modify: [./**]`) before applying the global denies.
 
+### Durable workflow state
+
+Treat direct-agent stdout as an audit/diagnostic stream, not a workflow handoff channel. Jobs and activities should pass durable data through task artifacts, `orbit.state.*`, job-run state, or purpose-built tools such as `orbit.duel.plan.add` and `orbit.duel.plan.winner`; downstream steps should read those persisted records instead of parsing agent process output.
+
 ## Task Authoring Quality
 
 Follow the `## Task Quality Standards` section in `orbit-create-task` skill: explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.

@@ -264,14 +264,7 @@ mod tests {
             .expect("planning duel activity should invoke through bridge");
 
         assert_eq!(result.exit_code, Some(0));
-        assert_eq!(
-            result
-                .response_json
-                .as_ref()
-                .and_then(|value| value.get("status"))
-                .and_then(Value::as_str),
-            Some("success")
-        );
+        assert_eq!(result.response_json, None);
     }
 
     #[test]

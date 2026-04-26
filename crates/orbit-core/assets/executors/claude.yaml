@@ -12,7 +12,7 @@ spec:
     - --output-format
     - json
     - --debug-file
-    - .orbit/logs/claude-debug.log
+    - .orbit/state/logs/claude-debug.log
     - --tools
     - Write,Edit,Grep,Glob,Bash,TodoWrite
   stdout_format: envelope

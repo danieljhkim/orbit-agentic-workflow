@@ -66,6 +66,24 @@ pub(crate) fn seed_default_skills(
     Ok(count)
 }
 
+pub(crate) fn is_default_skill_file_for_root(
+    skill_id: &str,
+    path: &Path,
+    orbit_root: &Path,
+) -> Result<bool, OrbitError> {
+    let Some((_, content)) = DEFAULT_SKILL_FILES
+        .iter()
+        .find(|(default_id, _)| *default_id == skill_id)
+    else {
+        return Ok(false);
+    };
+    if !path.exists() {
+        return Ok(false);
+    }
+    let existing = std::fs::read_to_string(path).map_err(|e| OrbitError::Io(e.to_string()))?;
+    Ok(existing == inject_skill_template_tokens(content, orbit_root))
+}
+
 fn inject_skill_template_tokens(raw: &str, orbit_root: &Path) -> String {
     let orbit_root_value = orbit_root.to_string_lossy();
     raw.replace(ORBIT_ROOT_TOKEN, orbit_root_value.as_ref())

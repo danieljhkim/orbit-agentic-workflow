@@ -9,11 +9,15 @@ use crate::command::activity::seed_default_activities;
 use crate::command::executor::seed_default_executors;
 use crate::command::job::seed_default_jobs;
 use crate::command::policy::seed_default_policies;
-use crate::command::skill::{default_skill_ids, seed_default_skills};
+use crate::command::skill::{
+    default_skill_ids, is_default_skill_file_for_root, seed_default_skills,
+};
 use orbit_common::utility::fs::{create_dir_symlink, remove_path_if_exists};
 
 use crate::config::{RuntimeConfig, seed_default_config};
 use crate::runtime::resolve_global_root;
+
+const LEGACY_WORKSPACE_SEEDED_SKILL_IDS: [&str; 2] = ["orbit-approve-task", "orbit-pr"];
 
 #[derive(Debug, Clone)]
 pub struct InitResult {
@@ -277,6 +281,7 @@ fn prepare_workspace_root_layout(orbit_root: &Path) -> Result<WorkspacePaths, Or
     fs::create_dir_all(orbit_root).map_err(|e| OrbitError::Io(e.to_string()))?;
     let layout = orbit_layout_paths(orbit_root);
     ensure_workspace_dirs(&layout)?;
+    remove_workspace_seeded_default_skills(orbit_root, &layout)?;
     Ok(layout)
 }
 
@@ -302,6 +307,7 @@ fn ensure_workspace_dirs(paths: &WorkspacePaths) -> Result<(), OrbitError> {
         &paths.state_dir,
         &paths.audit_dir,
         &paths.job_runs_dir,
+        &paths.logs_dir,
         &paths.diagnostics_dir,
         &paths.scoreboard_dir,
         &paths.worktrees_dir,
@@ -309,6 +315,42 @@ fn ensure_workspace_dirs(paths: &WorkspacePaths) -> Result<(), OrbitError> {
         &paths.knowledge_dir,
     ] {
         fs::create_dir_all(dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+    }
+    Ok(())
+}
+
+fn remove_workspace_seeded_default_skills(
+    orbit_root: &Path,
+    paths: &WorkspacePaths,
+) -> Result<(), OrbitError> {
+    for skills_dir in [&paths.skills_dir, &orbit_root.join("skills")] {
+        if !skills_dir.exists() {
+            continue;
+        }
+
+        for skill_id in default_skill_ids() {
+            let skill_dir = skills_dir.join(skill_id);
+            let skill_file = skill_dir.join("SKILL.md");
+            if is_default_skill_file_for_root(skill_id, &skill_file, orbit_root)? {
+                remove_path_if_exists(&skill_dir)?;
+            }
+        }
+        for skill_id in LEGACY_WORKSPACE_SEEDED_SKILL_IDS {
+            remove_path_if_exists(&skills_dir.join(skill_id))?;
+        }
+
+        remove_empty_dir(skills_dir)?;
+    }
+    Ok(())
+}
+
+fn remove_empty_dir(dir: &Path) -> Result<(), OrbitError> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let mut entries = fs::read_dir(dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+    if entries.next().is_none() {
+        fs::remove_dir(dir).map_err(|e| OrbitError::Io(e.to_string()))?;
     }
     Ok(())
 }
@@ -581,6 +623,29 @@ mod tests {
         }
 
         let orbit_root = workspace.path().join(".orbit");
+        seed_default_skills(
+            &orbit_root.join("resources").join("skills"),
+            &orbit_root,
+            true,
+        )
+        .expect("seed legacy workspace resource skills");
+        seed_default_skills(&orbit_root.join("skills"), &orbit_root, true)
+            .expect("seed legacy workspace skills");
+        let custom_skill = orbit_root.join("resources").join("skills").join("custom");
+        fs::create_dir_all(&custom_skill).expect("create custom skill");
+        fs::write(
+            custom_skill.join("SKILL.md"),
+            "# Custom\n\n## Purpose\n\nKeep me.\n",
+        )
+        .expect("write custom skill");
+        let legacy_skill = orbit_root.join("resources").join("skills").join("orbit-pr");
+        fs::create_dir_all(&legacy_skill).expect("create legacy skill");
+        fs::write(
+            legacy_skill.join("SKILL.md"),
+            "---\nname: orbit-pr\n---\n\n# Orbit PR\n",
+        )
+        .expect("write legacy skill");
+
         let result = init_workspace_at_root(
             &orbit_root,
             InitOptions {
@@ -603,6 +668,10 @@ mod tests {
                 .join("SKILL.md")
                 .exists()
         );
+        assert!(!orbit_root.join("skills").exists());
+        assert!(orbit_root.join("state").join("logs").exists());
+        assert!(custom_skill.join("SKILL.md").exists());
+        assert!(!legacy_skill.exists());
         assert!(
             home.path()
                 .join(".orbit")

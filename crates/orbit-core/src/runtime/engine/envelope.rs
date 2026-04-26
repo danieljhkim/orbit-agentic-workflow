@@ -102,20 +102,6 @@ pub(super) fn build_agent_stdin_envelope_payload(
         .map_err(|e| OrbitError::Execution(format!("failed to serialize stdin envelope: {e}")))
 }
 
-pub(super) fn execute_commit_request_if_present(
-    _runtime: &OrbitRuntime,
-    result: &Value,
-) -> Result<(), OrbitError> {
-    if result.get("commit").is_none() {
-        return Ok(());
-    }
-
-    Err(OrbitError::AgentProtocolViolation(
-        "result.commit is no longer supported; task pipelines commit through deterministic workflow activities"
-            .to_string(),
-    ))
-}
-
 fn task_detail_for_input<H: TaskHost + ?Sized>(
     host: &H,
     input: &Value,
