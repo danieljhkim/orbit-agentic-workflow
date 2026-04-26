@@ -16,6 +16,31 @@ const orderByFile = new Map([
   ['ISSUES.md', 40],
 ]);
 
+function computeOrder(relative) {
+  const segments = toPosix(relative).split('/');
+  const basename = segments[segments.length - 1];
+  const topDir = segments[0];
+
+  if (segments.length === 1) {
+    if (basename === 'README.md') return 1;
+    if (basename === 'RESULTS.md') return 5;
+    return orderByFile.get(basename);
+  }
+
+  const versionMatch = topDir.match(/^v(\d+)$/);
+  if (versionMatch) {
+    const versionNum = parseInt(versionMatch[1], 10);
+    const folderOrder = 100 + versionNum * 10;
+    // The file that becomes the version folder's representative entry in the parent
+    // sidebar — README.md when present, otherwise the only file in the folder (v5 case).
+    const isFolderRepresentative =
+      basename === 'README.md' || (topDir === 'v5' && basename === 'RESULTS.md');
+    if (isFolderRepresentative) return folderOrder;
+  }
+
+  return orderByFile.get(basename);
+}
+
 const labelByFile = new Map([
   ['RESULTS.md', 'Results'],
   ['METHOD.md', 'Methodology'],
@@ -36,7 +61,7 @@ for (const file of await collectMarkdown(sourceRoot)) {
   const description = summarize(pageBody, title);
 
   const sourcePath = path.posix.join('benchmarks/graph', toPosix(relative));
-  const order = orderByFile.get(path.basename(relative));
+  const order = computeOrder(relative);
 
   const sidebarLabel = labelByFile.get(path.basename(relative));
 

@@ -8,7 +8,12 @@ export default defineConfig({
       title: 'Orbit',
       expressiveCode: {
         styleOverrides: {
-          borderRadius: '12px',
+          borderRadius: '8px',
+          codeBackground: 'var(--sl-color-bg-inline-code)',
+          frames: {
+            editorBackground: 'var(--sl-color-bg-inline-code)',
+            terminalBackground: 'var(--sl-color-bg-inline-code)',
+          },
         },
       },
       description:

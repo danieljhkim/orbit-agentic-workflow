@@ -15,6 +15,7 @@ description: "A two-minute orientation to Orbit and the documentation paths that
   </div>
   <div class="orbit-hero-diagram" aria-hidden="true">
     <span class="orbit-dot"></span>
+    <span class="orbit-dot orbit-dot-outer"></span>
     <span class="orbit-core"></span>
   </div>
 </section>
