@@ -647,10 +647,10 @@ function setActiveTab(raw, opts = {}) {
   
   const indicator = $("tab-indicator") || el("div", {id: "tab-indicator", class: "tab-indicator"});
   if (!indicator.parentNode) document.querySelector(".tabs").appendChild(indicator);
-  const activeTab = document.querySelector(`.tab[data-tab="${top}"]`);
-  if (activeTab) {
-    indicator.style.width = `${activeTab.offsetWidth}px`;
-    indicator.style.left = `${activeTab.offsetLeft}px`;
+  const activeTabEl = document.querySelector(`.tab[data-tab="${top}"]`);
+  if (activeTabEl) {
+    indicator.style.width = `${activeTabEl.offsetWidth}px`;
+    indicator.style.left = `${activeTabEl.offsetLeft}px`;
   }
 
   let hash = `#${top}`;
@@ -710,6 +710,7 @@ function initTabs() {
     updateHash: false,
   });
   refreshDashboard();
+  setInterval(refreshDashboard, 30000);
 }
 
 function fmtRelative(iso) {
@@ -906,7 +907,7 @@ async function refreshDashboard() {
   if (btn) btn.disabled = false;
   isRefreshing = false;
   
-  $("footer").textContent = `orbit dashboard · manual refresh · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
+  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit,scoreboard,diagnostics/{metrics,friction}}`;
 }
 
 buildChips();
