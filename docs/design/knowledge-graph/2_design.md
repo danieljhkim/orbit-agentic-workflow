@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (parallel hashing and extraction, [T20260426-0139])
+**Last updated:** 2026-04-26 (parallel build stages and task-id search, [T20260426-0139], [T20260426-0220])
 
 This document specifies the knowledge graph as it exists today: on-disk layout, build pipeline, query services, Orbit integration, locking, and honest limitations. See [1_overview.md](./1_overview.md) for the "why" and [3_vision.md](./3_vision.md) for where it is headed. Task IDs are cited inline and collected at the end.
 
@@ -117,7 +117,7 @@ All tool inputs that reference a node accept a selector string.
 | Service | Entry point | Notable task |
 |---------|-------------|--------------|
 | Overview | `overview(prefix?)` | Compact mode above 50 files added in [T20260412-0645-2] |
-| Search | `search(query)` / `search_structured` | — |
+| Search | `search(query)` / `search_structured` | `task_id` filtering exposed through `orbit.graph.search` in [T20260426-0220] |
 | Context | `bounded_context(selector, budget)` | — |
 | References | `find_references(selector)` | — |
 | Callers | `transitive_callers(selector, depth)` | [T20260412-0645-3] |
@@ -127,6 +127,8 @@ All tool inputs that reference a node accept a selector string.
 | Pack | `pack_json(...)` | Agent-friendly field projection ships in the same era as [T20260411-0424] |
 
 All services are read-only against a resolved snapshot. Writes go through the working graph, never through the service.
+
+Search accepts an optional task-id filter that exact-matches against the `task_ids` vector stored on every node ([T20260426-0220]). The filter composes with query text, node type, kind, prefix, and source regex by logical AND. When present, it is applied before source-regex matching so task-scoped regex searches do not spend their candidate budget on unrelated nodes. Missing or null `task_id` preserves the pre-existing search behavior.
 
 ### 3.3 Object/blob read cache
 
@@ -156,7 +158,7 @@ Writes without `--ref` resolve the current git branch; writes fail on detached H
 The knowledge graph is exposed through `orbit-mcp` as a stable tool surface. Each tool accepts an optional `ref` and delegates to the services above:
 
 - `orbit.graph.overview`
-- `orbit.graph.search`
+- `orbit.graph.search` (optional `task_id`, validated as `T\d{8}-\d{4}`)
 - `orbit.graph.show`
 - `orbit.graph.pack`
 - `orbit.graph.callers`
@@ -246,5 +248,6 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 - **[T20260426-0139]** — Parallelize per-file hashing and leaf extraction while preserving deterministic graph output.
 - **[T20260426-0140]** — Reuse prior file and leaf snapshots for unchanged paths during incremental graph rebuilds.
 - **[T20260426-0141]** — Bounded `KnowledgeStore` LRU for graph objects and source blobs.
+- **[T20260426-0220]** — Add exact `task_id` filtering to `orbit.graph.search`.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

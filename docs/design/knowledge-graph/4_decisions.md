@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (ADR-015)
+**Last updated:** 2026-04-26 (ADR-016)
 
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -241,6 +241,21 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-016 — Task-id graph search as a scan filter, not a sidecar index
+
+**Status:** Accepted · 2026-04 · [T20260426-0220]
+
+**Context.** Nodes already carry `task_ids` from the attribution pass, but agents had no inverse lookup for "which selectors did this task touch?" A dedicated sidecar index could make that lookup faster, but it would add another persisted source of truth before usage patterns justify it.
+
+**Decision.** Add `task_id` as an optional filter on `GraphContextService` search and expose it through `orbit.graph.search`. The filter exact-matches one task ID against each node's existing `task_ids` vector and composes with the existing query/type/kind/prefix/source-regex filters.
+
+**Consequences.**
+- Agents can answer review-prep and incident-inspection questions from the existing graph snapshot.
+- No new graph schema, sidecar, or invalidation path is introduced.
+- Cost: lookup remains O(nodes) and multi-task queries require repeated calls until a real usage pattern justifies an indexed or array-based surface.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -265,5 +280,6 @@ Tasks cited by ADRs above:
 - **[T20260426-0139]** — Parallel per-file hashing and leaf extraction with ordered graph merge.
 - **[T20260426-0140]** — Changed-path incremental leaf reuse.
 - **[T20260426-0141]** — Store-scoped LRU for graph objects and blobs.
+- **[T20260426-0220]** — Exact task-id filtering through `orbit.graph.search`.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

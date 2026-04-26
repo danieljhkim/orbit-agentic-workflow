@@ -10,12 +10,13 @@ pub struct OrbitKnowledgeSearchTool;
 
 const DEFAULT_LIMIT: usize = 20;
 const SOURCE_REGEX_UNBOUNDED_LIMIT_MAX: usize = 200;
+const TASK_ID_PATTERN: &str = r"T\d{8}-\d{4}";
 
 impl Tool for OrbitKnowledgeSearchTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "orbit.graph.search".to_string(),
-            description: "Use when locating selectors by name/path/source regex. Prefer over grep when names repeat. Examples: pub use, pub const, class.*implements. Rust raw lines.".to_string(),
+            description: "Locate selectors by name/path/source regex.".to_string(),
             parameters: vec![
                 ToolParam {
                     name: "query".to_string(),
@@ -42,8 +43,16 @@ impl Tool for OrbitKnowledgeSearchTool {
                     required: false,
                 },
                 ToolParam {
+                    name: "task_id".to_string(),
+                    description: "Exact task ID.".to_string(),
+                    param_type: "string".to_string(),
+                    required: false,
+                },
+                ToolParam {
                     name: "source_regex".to_string(),
-                    description: "Rust regex; empty query needs prefix/limit<=200; adds matched_lines.".to_string(),
+                    description:
+                        "Rust regex; empty query needs prefix/limit<=200; adds matched_lines."
+                            .to_string(),
                     param_type: "string".to_string(),
                     required: false,
                 },
@@ -78,6 +87,8 @@ impl Tool for OrbitKnowledgeSearchTool {
         let node_type = super::optional_string(&input, "type")?;
         let kind_filter = super::optional_string(&input, "kind")?;
         let prefix = super::optional_string(&input, "prefix")?;
+        let task_id = super::optional_string(&input, "task_id")?;
+        validate_task_id(task_id.as_deref())?;
         let source_regex_text = super::optional_string(&input, "source_regex")?;
         let limit_provided = input.get("limit").is_some();
         let limit = input
@@ -128,6 +139,7 @@ impl Tool for OrbitKnowledgeSearchTool {
                 node_types,
                 prefix.as_deref(),
                 kind_filter.as_deref(),
+                task_id.as_deref(),
                 source_regex.as_ref(),
                 search_limit,
                 candidate_scan_limit,
@@ -208,6 +220,26 @@ impl Tool for OrbitKnowledgeSearchTool {
                 "results": items,
             }))
         }
+    }
+}
+
+fn validate_task_id(task_id: Option<&str>) -> Result<(), OrbitError> {
+    let Some(task_id) = task_id else {
+        return Ok(());
+    };
+    let bytes = task_id.as_bytes();
+    let valid = bytes.len() == 14
+        && bytes[0] == b'T'
+        && bytes[1..9].iter().all(u8::is_ascii_digit)
+        && bytes[9] == b'-'
+        && bytes[10..14].iter().all(u8::is_ascii_digit);
+
+    if valid {
+        Ok(())
+    } else {
+        Err(OrbitError::InvalidInput(format!(
+            "`task_id` must match {TASK_ID_PATTERN}"
+        )))
     }
 }
 

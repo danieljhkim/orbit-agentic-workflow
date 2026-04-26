@@ -9,7 +9,7 @@ Use `orbit.graph.*` as your default way to navigate code. Start with the smalles
 
 ## Default Workflow
 
-1. **Search first** — Use `orbit.graph.search` when the prompt names a symbol, trait, function, type, or file. Add `type`, `kind`, `prefix`, and `source_regex` filters when you can. For content-shape questions ("every file/symbol matching pattern X"), see [Source-Regex Enumeration](#source-regex-enumeration) — one call usually answers the whole question.
+1. **Search first** — Use `orbit.graph.search` when the prompt names a symbol, trait, function, type, file, or Orbit task ID. Add `type`, `kind`, `prefix`, `task_id`, and `source_regex` filters when you can. For content-shape questions ("every file/symbol matching pattern X"), see [Source-Regex Enumeration](#source-regex-enumeration) — one call usually answers the whole question.
 2. **Inspect the exact selector** — Use `orbit.graph.show` to confirm the definition, source, lines, or lineage of the match you found.
 3. **Use one relationship tool only if needed**:
    - `orbit.graph.implementors` for trait or interface implementation questions
@@ -36,6 +36,18 @@ Caveat: regex matches comments and string literals too. If a match looks suspici
 orbit tool run orbit.graph.search --input '{"type":"file","prefix":"crates/","source_regex":"^\\s*pub\\s+use\\s+.*OrbitError"}'
 ```
 
+## Task-ID Filtering
+
+When the prompt asks what a task touched, or gives an Orbit task ID as the main lookup key, call `orbit.graph.search` with `task_id`. The filter exact-matches node `task_ids`, composes with query/type/kind/prefix/source-regex filters, and expects the `TYYYYMMDD-NNNN` shape.
+
+```bash
+# Return selectors touched by a task
+orbit tool run orbit.graph.search --input '{"task_id":"T20260421-0528","format":"selectors"}'
+
+# Narrow a task lookup to symbols whose name/path also matches Runtime
+orbit tool run orbit.graph.search --input '{"task_id":"T20260421-0528","query":"Runtime","type":"symbol"}'
+```
+
 ## Stop Rule
 
 If `search + show`, or `search + implementors`, or a single `search` with `source_regex`, already answers the question, stop.
@@ -58,6 +70,7 @@ If you are about to call `pack` or `show` on each candidate to verify which one 
 orbit tool run orbit.graph.search --input '{"query":"hello","type":"symbol","kind":"function","limit":10}'
 orbit tool run orbit.graph.show --input '{"selector":"symbol:src/lib.rs#hello:function"}'
 orbit tool run orbit.graph.search --input '{"query":"AgentRuntime","include_non_code":true}'
+orbit tool run orbit.graph.search --input '{"task_id":"T20260421-0528","format":"selectors"}'
 
 # Trait/interface implementations
 orbit tool run orbit.graph.implementors --input '{"trait_selector":"symbol:src/lib.rs#Greeter:trait"}'
