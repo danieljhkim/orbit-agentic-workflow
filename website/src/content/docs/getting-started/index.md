@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: "Install Orbit, initialize state, run a first task, and execute a first activity."
+description: "Install Orbit, initialize state, run a first task, and inspect available activities."
 sidebar:
   order: 1
 ---
@@ -19,8 +19,8 @@ Use this section when you are setting up Orbit for the first time.
     <p>Create a task, inspect it, and ship it.</p>
   </a>
   <a class="orbit-card" href="./first-activity-run/">
-    <h3>First Activity Run</h3>
-    <p>Run a schema v2 activity YAML directly.</p>
+    <h3>Activity Catalog</h3>
+    <p>List the schema v2 activities available to jobs.</p>
   </a>
 </div>
 

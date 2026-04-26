@@ -221,8 +221,10 @@ impl OrbitRuntime {
     /// 3. `<global_root>/resources/activities/` — global defaults (seeded by
     ///    `orbit init` from the YAMLs embedded in the binary).
     ///
-    /// Missing directories are skipped silently; duplicate names across
-    /// directories are a hard error (`CatalogError::DuplicateName`).
+    /// Missing directories are skipped silently. Directories are loaded from
+    /// highest to lowest precedence; the first activity for each name wins.
+    /// Duplicate names inside one directory tree are still a hard error
+    /// (`CatalogError::DuplicateName`).
     pub fn v2_activity_catalog(
         &self,
     ) -> Result<
@@ -230,39 +232,43 @@ impl OrbitRuntime {
         orbit_common::types::activity_job::CatalogError,
     > {
         let mut catalog = orbit_common::types::activity_job::V2ActivityCatalog::new();
+        for dir in self.v2_activity_catalog_dirs() {
+            if !dir.is_dir() {
+                continue;
+            }
+            warn_skipped_retired_activity_assets(
+                &dir,
+                catalog.load_dir_skipping_retired_prefer_existing(&dir)?,
+            );
+        }
+
+        Ok(catalog)
+    }
+
+    fn v2_activity_catalog_dirs(&self) -> Vec<std::path::PathBuf> {
+        let mut dirs = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
 
         let env_dirs = std::env::var("ORBIT_ACTIVITY_DIR")
             .ok()
             .or_else(|| std::env::var("ORBIT_V2_CATALOG_DIR").ok());
         if let Some(raw) = env_dirs {
-            for entry in raw.split(':').filter(|s| !s.is_empty()) {
-                let path = std::path::Path::new(entry);
-                if path.is_dir() {
-                    warn_skipped_retired_activity_assets(
-                        path,
-                        catalog.load_dir_skipping_retired(path)?,
-                    );
-                }
+            for entry in raw.split(':').filter(|value| !value.is_empty()) {
+                push_unique_activity_dir(&mut dirs, &mut seen, std::path::PathBuf::from(entry));
             }
         }
 
-        let ws_dir = self.context.paths().activities_dir.clone();
-        if ws_dir.is_dir() {
-            warn_skipped_retired_activity_assets(
-                &ws_dir,
-                catalog.load_dir_skipping_retired(&ws_dir)?,
-            );
-        }
-
-        let global_dir = self.context.paths().global_dir.join("resources/activities");
-        if global_dir.is_dir() && global_dir != ws_dir {
-            warn_skipped_retired_activity_assets(
-                &global_dir,
-                catalog.load_dir_skipping_retired(&global_dir)?,
-            );
-        }
-
-        Ok(catalog)
+        push_unique_activity_dir(
+            &mut dirs,
+            &mut seen,
+            self.context.paths().activities_dir.clone(),
+        );
+        push_unique_activity_dir(
+            &mut dirs,
+            &mut seen,
+            self.context.paths().global_dir.join("resources/activities"),
+        );
+        dirs
     }
 
     pub(crate) fn actor(&self) -> &ActorIdentity {
@@ -371,6 +377,17 @@ fn warn_skipped_retired_activity_assets(dir: &Path, skipped: Vec<PathBuf>) {
     );
 }
 
+fn push_unique_activity_dir(
+    dirs: &mut Vec<PathBuf>,
+    seen: &mut std::collections::BTreeSet<PathBuf>,
+    path: PathBuf,
+) {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+    if seen.insert(canonical) {
+        dirs.push(path);
+    }
+}
+
 fn orbit_event_to_audit(id: i64, event: OrbitEvent) -> Audit {
     let payload = serde_json::to_value(&event).unwrap_or(Value::Null);
     let event_type = payload
@@ -385,5 +402,82 @@ fn orbit_event_to_audit(id: i64, event: OrbitEvent) -> Audit {
         payload,
         message: event_type,
         created_at: Utc::now(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::tempdir;
+
+    fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf, PathBuf) {
+        let root = tempdir().expect("create tempdir");
+        let global_root = root.path().join("global");
+        let repo_root = root.path().join("repo");
+        let workspace_root = repo_root.join(".orbit");
+        std::fs::create_dir_all(&global_root).expect("create global root");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+        let runtime =
+            OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
+        (root, runtime, global_root, workspace_root)
+    }
+
+    fn write_activity(path: &Path, name: &str, description: &str) {
+        let yaml = format!(
+            r#"schemaVersion: 2
+kind: Activity
+metadata:
+  name: {name}
+spec:
+  type: deterministic
+  description: {description}
+  action: test_action
+  config: {{}}
+"#
+        );
+        std::fs::create_dir_all(path.parent().expect("activity path has parent"))
+            .expect("create activity dir");
+        std::fs::write(path, yaml).expect("write activity yaml");
+    }
+
+    #[test]
+    fn workspace_activity_overrides_global_default_in_catalog() {
+        let (_root, runtime, global_root, workspace_root) = test_runtime();
+        write_activity(
+            &global_root.join("resources/activities/pr_open.yaml"),
+            "pr_open",
+            "global description",
+        );
+        write_activity(
+            &workspace_root.join("resources/activities/pr_open.yaml"),
+            "pr_open",
+            "workspace description",
+        );
+
+        let catalog = runtime.v2_activity_catalog().expect("activity catalog");
+        let activity = catalog.get("pr_open").expect("pr_open activity");
+        assert_eq!(activity.description, "workspace description");
+    }
+
+    #[test]
+    fn duplicate_activities_within_one_catalog_directory_remain_invalid() {
+        let (_root, runtime, _global_root, workspace_root) = test_runtime();
+        let activities_dir = workspace_root.join("resources/activities");
+        write_activity(
+            &activities_dir.join("first.yaml"),
+            "duplicate_activity",
+            "first description",
+        );
+        write_activity(
+            &activities_dir.join("nested/second.yaml"),
+            "duplicate_activity",
+            "second description",
+        );
+
+        let err = runtime
+            .v2_activity_catalog()
+            .expect_err("duplicate activity name should fail");
+        assert!(err.to_string().contains("duplicate activity name"), "{err}");
     }
 }

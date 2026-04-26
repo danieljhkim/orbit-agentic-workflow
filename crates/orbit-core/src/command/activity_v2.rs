@@ -1,4 +1,4 @@
-//! `orbit activity run <yaml-path>` command.
+//! Direct v2 activity execution helper.
 //!
 //! Reads a YAML file from disk, parses it through the two-pass loader at
 //! `orbit_common::types::activity_job::load_activity_asset`, and invokes the dispatcher with
@@ -7,9 +7,6 @@
 //!
 //! Loop + envelope audit sink construction is delegated to
 //! `V2AuditWriter::with_disk_sinks` — this file never names orbit-agent types.
-//!
-//! The existing `orbit activity run <id>` handler is untouched — it still
-//! drives v1 assets via `orbit_engine::run_activity_direct`.
 
 use std::path::{Path, PathBuf};
 

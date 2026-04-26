@@ -19,7 +19,7 @@ sidebar:
 | Command | Purpose |
 |---------|---------|
 | `orbit task` | Create, update, and manage tasks. |
-| `orbit activity` | Define, list, and run activities. |
+| `orbit activity` | List activity catalog entries. |
 | `orbit job` | Define, list, and manage job workflows. |
 | `orbit policy` | Manage filesystem profile policies and runtime scoping. |
 | `orbit executor` | Manage executors. |

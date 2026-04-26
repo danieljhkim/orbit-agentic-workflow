@@ -94,7 +94,7 @@ Three-column, fixed:
 Initial top-level sections (left nav, in order):
 
 1. **Introduction** — what Orbit is, who it's for, 2-minute read
-2. **Getting Started** — install, first task, first activity run
+2. **Getting Started** — install, first task, activity catalog
 3. **Concepts** — tasks, activities/jobs, policies, knowledge graph, agents
 4. **How-to Guides** — task-oriented recipes
 5. **Reference** — CLI, YAML schemas, config, scoping rules

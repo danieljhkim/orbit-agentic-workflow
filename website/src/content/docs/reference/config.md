@@ -23,8 +23,8 @@ For `agent_loop` execution, backend selection resolves once before dispatch.
 4. `http`
 
 ```bash
-ORBIT_BACKEND=cli orbit activity run path/to/agent.yaml
-orbit activity run path/to/agent.yaml --backend http
+ORBIT_BACKEND=cli orbit job run task_auto_pipeline
+orbit job run task_auto_pipeline --backend http
 ```
 
 Accepted backend values:

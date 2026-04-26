@@ -266,7 +266,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             use crate::command::activity::ActivitySubcommand;
             let (sub, target_id): (&str, Option<&str>) = match &cmd.command {
                 ActivitySubcommand::List(_) => ("list", None),
-                ActivitySubcommand::Run(_) => ("run", None),
             };
             CommandMeta {
                 command: "activity".to_string(),

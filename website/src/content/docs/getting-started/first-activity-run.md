@@ -1,13 +1,13 @@
 ---
-title: First Activity Run
-description: "Run a schemaVersion 2 activity YAML file directly from the Orbit CLI."
+title: Activity Catalog
+description: "List and inspect the schemaVersion 2 activities available to jobs."
 sidebar:
   order: 4
 ---
 
 ## List Activities
 
-Orbit ships default activities. List them before running one directly.
+Orbit ships default activities for job workflows. List them before wiring or inspecting a job.
 
 ```bash
 orbit activity list
@@ -20,18 +20,20 @@ Use `--ops` for the compact signal shape.
 orbit activity list --ops
 ```
 
-## Run an Activity YAML
+## Run a Job
 
-Run a checked-in activity file:
+Activities execute as job steps through `orbit job run` or workflow aliases under `orbit run`.
+Use `orbit job list` to find runnable workflows.
 
 ```bash
-orbit activity run crates/orbit-core/assets/activities/worktree_setup.yaml
+orbit job list
+orbit job run task_auto_pipeline
 ```
 
-Pass JSON input when the activity expects it:
+Pass input to the job when its activities expect it:
 
 ```bash
-orbit activity run path/to/activity.yaml --input '{"task_id":"T123"}'
+orbit job run task_auto_pipeline --input mode=local
 ```
 
 ## Choose a Backend
@@ -44,5 +46,5 @@ For `agent_loop` activities, backend resolution follows this order:
 4. `http`
 
 ```bash
-orbit activity run path/to/agent.yaml --backend cli
+orbit job run task_auto_pipeline --backend cli
 ```

@@ -28,6 +28,7 @@ pub const ACTIVITY_REF_PREFIX: &str = "activity:";
 #[derive(Debug, Default, Clone)]
 pub struct V2ActivityCatalog {
     entries: BTreeMap<String, ActivityV2>,
+    sources: BTreeMap<String, PathBuf>,
 }
 
 #[derive(Debug, Error)]
@@ -72,25 +73,34 @@ impl V2ActivityCatalog {
     /// schemaVersion 2 activity asset. Duplicate names across files are a
     /// hard error; merge semantics belong to the caller.
     pub fn load_dir(&mut self, dir: &Path) -> Result<(), CatalogError> {
-        self.load_dir_inner(dir, false).map(|_| ())
+        self.load_dir_inner(dir, false, ExistingNamePolicy::Reject)
+            .map(|_| ())
     }
 
     /// Variant of [`load_dir`] that skips retired schemaVersion 1 assets and
     /// returns the file paths that were ignored.
     pub fn load_dir_skipping_retired(&mut self, dir: &Path) -> Result<Vec<PathBuf>, CatalogError> {
-        self.load_dir_inner(dir, true)
+        self.load_dir_inner(dir, true, ExistingNamePolicy::Reject)
+    }
+
+    /// Layered-catalog variant of [`load_dir_skipping_retired`]. Duplicate
+    /// names inside `dir` are still invalid, but names that already exist in
+    /// the catalog are left untouched so callers can load directories from
+    /// highest to lowest precedence.
+    pub fn load_dir_skipping_retired_prefer_existing(
+        &mut self,
+        dir: &Path,
+    ) -> Result<Vec<PathBuf>, CatalogError> {
+        self.load_dir_inner(dir, true, ExistingNamePolicy::PreferExisting)
     }
 
     fn load_dir_inner(
         &mut self,
         dir: &Path,
         skip_retired: bool,
+        existing_name_policy: ExistingNamePolicy,
     ) -> Result<Vec<PathBuf>, CatalogError> {
-        let mut name_source: BTreeMap<String, PathBuf> = self
-            .entries
-            .keys()
-            .map(|k| (k.clone(), PathBuf::from("<pre-loaded>")))
-            .collect();
+        let mut local_entries: BTreeMap<String, (ActivityV2, PathBuf)> = BTreeMap::new();
         let mut skipped = Vec::new();
         walk_dir(dir, &mut |path| {
             let yaml = std::fs::read_to_string(path).map_err(|source| CatalogError::ReadFile {
@@ -110,24 +120,44 @@ impl V2ActivityCatalog {
                     });
                 }
             };
-            if let Some(prev) = name_source.get(&asset.name) {
+            if let Some((_, prev)) = local_entries.get(&asset.name) {
                 return Err(CatalogError::DuplicateName {
                     name: asset.name,
                     first: prev.clone(),
                     second: path.to_path_buf(),
                 });
             }
-            name_source.insert(asset.name.clone(), path.to_path_buf());
-            self.entries.insert(asset.name, asset.spec);
+            local_entries.insert(asset.name, (asset.spec, path.to_path_buf()));
             Ok(())
         })?;
+
+        for (name, (spec, path)) in local_entries {
+            if let Some(prev) = self.sources.get(&name) {
+                match existing_name_policy {
+                    ExistingNamePolicy::Reject => {
+                        return Err(CatalogError::DuplicateName {
+                            name,
+                            first: prev.clone(),
+                            second: path,
+                        });
+                    }
+                    ExistingNamePolicy::PreferExisting => continue,
+                }
+            }
+            self.sources.insert(name.clone(), path);
+            self.entries.insert(name, spec);
+        }
+
         Ok(skipped)
     }
 
     /// Insert an explicit `(name, spec)` pair — used by smokes and in-memory
     /// composition. Returns the displaced entry if the name was already set.
     pub fn insert(&mut self, name: impl Into<String>, spec: ActivityV2) -> Option<ActivityV2> {
-        self.entries.insert(name.into(), spec)
+        let name = name.into();
+        self.sources
+            .insert(name.clone(), PathBuf::from("<explicit>"));
+        self.entries.insert(name, spec)
     }
 
     pub fn get(&self, name: &str) -> Option<&ActivityV2> {
@@ -145,6 +175,12 @@ impl V2ActivityCatalog {
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.entries.keys().map(String::as_str)
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExistingNamePolicy {
+    Reject,
+    PreferExisting,
 }
 
 fn walk_dir(

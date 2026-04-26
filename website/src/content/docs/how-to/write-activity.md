@@ -59,8 +59,9 @@ backend: http
 max_iterations: 25
 ```
 
-## Run It
+## Use It
 
 ```bash
-orbit activity run path/to/activity.yaml --input '{}'
+orbit activity list
+orbit job run path/to/job.yaml --input key=value
 ```

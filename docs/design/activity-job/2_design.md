@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-25
+**Last updated:** 2026-04-26
 
 This document describes the shipped Activity / Job substrate as it exists today across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, load-time normalization, dispatch boundaries, backend semantics, DAG execution, audit, and the legacy edges that still matter. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -98,7 +98,9 @@ The code does not dispatch the raw YAML shape. orbit-core normalizes it first.
 
 Catalog-discovered v2 jobs use `MergeByKey` precedence after [T20260425-0204]: `ORBIT_JOB_DIR` / `ORBIT_V2_JOB_DIR` entries first, then workspace jobs, then global seeded jobs. The first valid `metadata.name` wins, so a workspace `task_auto_pipeline` overrides the global default without making `orbit run ship` fail. Duplicate names inside one directory tree remain invalid because that single layer would otherwise be ambiguous.
 
-For a single activity run:
+Activity catalogs follow the same first-wins rule after [T20260426-0047]: `ORBIT_ACTIVITY_DIR` / `ORBIT_V2_CATALOG_DIR` entries first, then workspace activities, then global seeded activities. This lets a workspace carry an override such as `pr_open` without `orbit activity list --ops` failing on the duplicate global default. Duplicate names inside one activity directory tree remain invalid.
+
+For direct single-activity execution inside runtime helpers:
 
 1. Read YAML from disk.
 2. Parse via `load_activity_asset(...)`.
@@ -118,6 +120,8 @@ For a job run:
 8. Execute the normalized `JobV2`.
 
 The target-ref pass was added in [T20260418-2019]. The concrete backend resolution and `run-v2` entrypoints were wired in [T20260418-2143]. The CLI backend path and the HTTP-only loop/session rejection tightened this load-time contract in [T20260419-0104].
+
+The public CLI now executes activity assets through jobs rather than exposing a standalone `orbit activity run` subcommand. `orbit activity` is an inspection/catalog surface; `orbit job run` and workflow aliases under `orbit run` are the public execution surfaces after [T20260426-0047].
 
 One nuance worth naming: some module comments still describe older Phase ordering. The authoritative behavior is the orbit-core call path above in `crates/orbit-core/src/command/job_v2.rs`.
 
@@ -377,5 +381,6 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into job history and run-state.
 - **[T20260425-0204]** — Make v2 job catalog discovery honor workspace-over-global `MergeByKey` precedence.
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and move workflow history inspection to `orbit job history`.
+- **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

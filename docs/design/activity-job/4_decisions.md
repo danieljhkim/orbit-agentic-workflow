@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-25
+**Last updated:** 2026-04-26
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -204,6 +204,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - Codex task runs enter non-interactive `codex exec --json` instead of the interactive TUI.
 - Cost: the engine/core boundary is slightly wider than a single string and every smoke host implementing `V2RuntimeHost` must model executor args explicitly.
 
+## ADR-016 — Activity catalogs honor layer precedence and activity execution stays job-owned
+
+**Status:** Accepted · 2026-04 · [T20260426-0047]
+
+**Context.** Activity assets are scoped as `MergeByKey`, but the catalog still rejected workspace/global duplicate names such as `pr_open`. The same product pass exposed that `orbit activity run` made activities look like a standalone public execution surface even though shipped workflows execute them through jobs.
+
+**Decision.** Load activity catalog directories from highest to lowest precedence and keep the first activity for each `metadata.name`; environment activity dirs outrank workspace activities, and workspace activities outrank global seeded activities. Keep duplicate-name rejection inside a single directory tree, and remove the public `orbit activity run` subcommand so `orbit activity` remains a catalog surface.
+
+**Consequences.**
+- Workspace activity overrides can coexist with global defaults without breaking `orbit activity list --ops` or job target resolution.
+- Public execution stays concentrated in `orbit job run` and workflow aliases under `orbit run`.
+- Cost: lower-precedence activity assets can be shadowed silently, and direct ad hoc activity execution is no longer a documented CLI workflow.
+
 ---
 
 ## Task References
@@ -227,5 +240,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into job history and run-state.
 - **[T20260425-0204]** — Make v2 job catalog discovery honor workspace-over-global `MergeByKey` precedence.
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and revive `duel-plan` as a seeded run workflow.
+- **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
