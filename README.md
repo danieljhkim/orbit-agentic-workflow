@@ -206,7 +206,7 @@ orbit run trace [run_id]
 - `ship-auto` auto-selects backlog tasks and dispatches them through the same PR/local mode switch.
 - `duel-plan` runs the planning-duel workflow for one task.
 - `show`, `logs`, `events`, and `trace` inspect the most recent run by default, or a specific run ID when supplied.
-- use `orbit job history <job_id>` and `orbit job run-state <run_id>` for durable job-run history and state.
+- use `orbit run history -j <job_id>` and `orbit run show <run_id>` for durable job-run history and state.
 
 ### Tasks
 
@@ -290,7 +290,7 @@ Lower-level operating surfaces are intentionally available because durable local
 
 - `activity` and `job` for defining and running substrate assets directly
 - `policy`, `executor`, and `tool` for runtime customization
-- `orbit scoreboard`, `orbit job history <job_id>`, `orbit run show/logs/events/trace`, and `orbit run job <id>` for evaluation, history, trace inspection, and direct workflow execution
+- `orbit scoreboard`, `orbit run history -j <job_id>`, `orbit run show/logs/events/trace`, and `orbit run job <id>` for evaluation, history, trace inspection, and direct workflow execution
 - `metrics` and `serve` for observability and outward integration
 
 Most users can ignore these on day one. Reach for `orbit --help` and `orbit <command> --help` when you need the deeper surface area.

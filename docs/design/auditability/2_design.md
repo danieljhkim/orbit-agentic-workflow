@@ -156,7 +156,7 @@ V2 JSONL traces are exposed through run-scoped inspection commands after [T20260
 - `orbit run trace [run_id]` renders the `event_id` / `parent_event_id` tree.
 - `orbit run logs [run_id]` extracts CLI stdout/stderr blobs from CLI invocation envelope events.
 
-These are intentionally separate from `orbit audit`, which remains the compact SQLite command-audit query surface. `orbit job history` and `orbit job run-state` continue to expose durable job-run state rather than the full envelope stream.
+These are intentionally separate from `orbit audit`, which remains the compact SQLite command-audit query surface. `orbit run history` and `orbit run show` expose durable job-run state rather than the full envelope stream.
 
 Invocation metrics are surfaced through metrics and scoreboard commands. They are useful for cost and usage analysis, but they do not replace the audit trail because they summarize rather than preserve transcript structure.
 
@@ -182,5 +182,6 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 - **[T20260426-0605]** — Add this auditability design folder and document the current audit architecture.
 - **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
+- **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

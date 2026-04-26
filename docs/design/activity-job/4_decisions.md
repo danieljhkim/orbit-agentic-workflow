@@ -148,19 +148,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 
 **Consequences.**
 - Seeded workflows can rely on omitted keys inheriting from job defaults even when wrappers pass partial input objects.
-- `orbit run ship --json`, `orbit job history`, and `orbit job run-state` surface actionable failure detail for early v2 pipeline failures instead of blank summaries.
+- `orbit run ship --json`, `orbit run history`, and `orbit run show` surface actionable failure detail for early v2 pipeline failures instead of blank summaries.
 - Cost: the job-level input contract is now a shallow merge rule that docs and tests must preserve, and run history can include synthetic job-level failure steps that were not literal authored YAML steps.
 
 ## ADR-012 — Direct v2 job runs are durable job runs, not audit-only executions
 
 **Status:** Accepted · 2026-04 · [T20260423-2004-4]
 
-**Context.** `orbit job run <schemaVersion: 2 yaml>` returned a run ID and wrote v2 audit JSONL, but did not create the persisted `JobRun` bundle that `orbit job history`, `orbit job run-state`, the dashboard, and other operator surfaces read. That made the returned run ID less useful than IDs from pipeline-dispatched workflows and weakened Orbit's auditability story.
+**Context.** `orbit job run <schemaVersion: 2 yaml>` returned a run ID and wrote v2 audit JSONL, but did not create the persisted `JobRun` bundle that run inspection, the dashboard, and other operator surfaces read. That made the returned run ID less useful than IDs from pipeline-dispatched workflows and weakened Orbit's auditability story.
 
 **Decision.** Treat direct v2 job execution as a normal durable job run at the public CLI/API boundary. The direct-run wrapper inserts a `JobRun`, marks it running, writes `state.json`, executes the same normalized v2 job path with the stored run ID, records a synthetic job-level step for the final pipeline/error surface, and finalizes the run. The lower-level `run_job_v2_from_yaml_with_run_id` remains available for already-persisted pipeline workers.
 
 **Consequences.**
-- A run ID returned by `orbit job run` is inspectable through `orbit job history <job_name>` and `orbit job run-state <run_id>`.
+- A run ID returned by `orbit job run` is inspectable through `orbit run history -j <job_name>` and `orbit run show <run_id>`.
 - Ad hoc YAML runs remain visible even when the job is not part of the live catalog, because history can fall back to stored run bundles.
 - Cost: direct v2 execution now has persistence side effects and can record synthetic job-level steps that were not literal authored YAML steps.
 
@@ -179,11 +179,11 @@ This ADR log records the decisions that define the current Activity / Job substr
 
 ## ADR-014 — Public run workflows are execution aliases only
 
-**Status:** Accepted · 2026-04 · [T20260425-2010]
+**Status:** Superseded by ADR-020 · 2026-04 · [T20260425-2010]
 
-**Context.** `orbit run` had become a mixed surface: some entries executed workflows, while `ship list/show` and `duel list/show` browsed history that was already available through `orbit job history` and `orbit job run-state`. At the same time, the explicit task ship path and auto-dispatch path needed different job targets, and planning duel support had a live workflow alias without a seeded runnable job asset.
+**Context.** `orbit run` had become a mixed surface: some entries executed workflows, while `ship list/show` and `duel list/show` browsed history that was already available through the then-generic job-run inspection surface. At the same time, the explicit task ship path and auto-dispatch path needed different job targets, and planning duel support had a live workflow alias without a seeded runnable job asset.
 
-**Decision.** Treat `orbit run` as an execution-alias surface only. `orbit run ship <TASK_ID>...` dispatches explicit bundles through `task_pr_pipeline` or `task_local_pipeline` selected by `--mode`; `orbit run ship-auto` dispatches `task_auto_pipeline`; `orbit run duel-plan <TASK_ID>` dispatches the seeded `job_duel_plan_pipeline`; `orbit run job <JOB_ID>` remains the direct job surface. Run history inspection belongs to `orbit job history <JOB_ID>` and `orbit job run-state <RUN_ID>`.
+**Decision.** Treat `orbit run` as an execution-alias surface only. `orbit run ship <TASK_ID>...` dispatches explicit bundles through `task_pr_pipeline` or `task_local_pipeline` selected by `--mode`; `orbit run ship-auto` dispatches `task_auto_pipeline`; `orbit run duel-plan <TASK_ID>` dispatches the seeded `job_duel_plan_pipeline`; `orbit run job <JOB_ID>` remains the direct job surface. ADR-020 supersedes the inspection placement part of this decision.
 
 **Consequences.**
 - The public command grammar separates execution from inspection and removes workflow-specific history aliases.
@@ -256,6 +256,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - Run-log stdout/stderr reading now follows the same boundary as v2 audit sink construction.
 - Cost: the runtime layer now owns a read-side view model for audit JSONL, so envelope schema changes must update both writer and accessor tests together.
 
+## ADR-020 — Run inspection belongs to `orbit run`
+
+**Status:** Accepted · 2026-04 · [T20260426-0742]
+
+**Context.** After run inspection gained history, state, logs, events, and trace commands, keeping duplicate job-level inspection aliases made `orbit job` mix catalog/execution responsibilities with run browsing. The help output also taught users two places to do the same inspection work.
+
+**Decision.** Remove the public job-level history and run-state aliases. Keep `orbit job` focused on `list`, `show`, and direct `run`; use `orbit run history -j <JOB_ID>` and `orbit run show <RUN_ID>` for durable run inspection.
+
+**Consequences.**
+- Operators have one public command family for job-run inspection.
+- The `orbit run` inspection commands keep their existing history/state behavior.
+- Cost: scripts and muscle memory that used the removed aliases must migrate to the `orbit run` forms.
+
 ---
 
 ## Task References
@@ -276,7 +289,7 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260423-0114]** — Expose the `backend: cli` executor-args gap during a local task ship run.
 - **[T20260423-0445]** — Merge object-valued job defaults over explicit run input and persist synthetic failed job steps for early v2 pipeline failures.
 - **[T20260423-0447]** — Restore usable `orbit run duel` read-only surfaces after duel workflow retirement.
-- **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into job history and run-state.
+- **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into durable job-run records and state.
 - **[T20260425-0204]** — Make v2 job catalog discovery honor workspace-over-global `MergeByKey` precedence.
 - **[T20260425-2010]** — Refactor `orbit run` task workflow commands and revive `duel-plan` as a seeded run workflow.
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
@@ -284,5 +297,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under `.orbit/state/audit`.
 - **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
+- **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

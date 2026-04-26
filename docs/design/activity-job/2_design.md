@@ -258,7 +258,7 @@ The loop body runs before `break_when` is evaluated, so body steps can populate 
 
 ### 8.6 Persisted state for v2 job runs
 
-Persisted pipeline runs (`orbit run ship`, `orbit run ship-auto`, `orbit run duel-plan`, `orbit.pipeline.invoke` + `orbit.pipeline.wait`) are stored through `pipeline_run.rs`. Direct v2 runs (`orbit job run <job-id-or-yaml>`) also create a durable `JobRun` bundle after [T20260423-2004-4], using the same workspace-local `state/job-runs/<job_id>/<run_id>/` layout so `orbit job history` and `orbit job run-state` can inspect the returned run ID. The workflow-specific `orbit run <workflow> list/show` aliases were removed in [T20260425-2010] so history inspection has one public surface.
+Persisted pipeline runs (`orbit run ship`, `orbit run ship-auto`, `orbit run duel-plan`, `orbit.pipeline.invoke` + `orbit.pipeline.wait`) are stored through `pipeline_run.rs`. Direct v2 runs (`orbit job run <job-id-or-yaml>`) also create a durable `JobRun` bundle after [T20260423-2004-4], using the same workspace-local `state/job-runs/<job_id>/<run_id>/` layout so `orbit run history -j <job_id>` and `orbit run show <run_id>` can inspect the returned run ID. The workflow-specific `orbit run <workflow> list/show` aliases were removed in [T20260425-2010], and duplicate job-level inspection aliases were removed in [T20260426-0742], so history inspection has one public surface.
 
 Before [T20260423-0445], a v2 workflow that failed before any concrete step file was written could leave behind a failed `JobRun` with `steps: []` and no surfaced `error_message`, even when the underlying executor had a concrete reason.
 
@@ -269,7 +269,7 @@ The current contract is:
 - that synthetic step uses `target_type: job` and `target_id: <job_id>`
 - the step's `error_message` carries the concrete executor error (or a fallback `success=false` summary for message-carrying non-success results)
 
-This is intentionally an operator-surface repair, not a new execution primitive. It keeps `run ship --json`, direct `job run` output, `job history`, and `job run-state` actionable without introducing a second run-level error channel in `JobRun`.
+This is intentionally an operator-surface repair, not a new execution primitive. It keeps `orbit run ship --json`, direct `orbit job run` output, `orbit run history`, and `orbit run show` actionable without introducing a second run-level error channel in `JobRun`.
 
 The loop shares the same pipeline map and session map across iterations. That is what makes cross-iteration `session:` binding meaningful in the first place.
 
@@ -373,9 +373,9 @@ README already frames tasks, jobs, and activities as substrate rather than the l
 
 Most code comments are accurate, but some module prose still reflects earlier phase names or pass ordering. When there is tension, orbit-core entrypoints and executor behavior are the authoritative source.
 
-### 11.8 Historical run inspection belongs to the job surface
+### 11.8 Historical run inspection belongs to the run surface
 
-Read-only history surfaces do not always have the same dependency shape as live execution. [T20260423-0447] proved that retired workflow runs can remain observable without live assets, but [T20260425-2010] consolidated public inspection under `orbit job history <job_id>` and `orbit job run-state <run_id>`. `orbit run` now names execution aliases (`ship`, `ship-auto`, `duel-plan`, `job`), not workflow-specific history browsers.
+Read-only history surfaces do not always have the same dependency shape as live execution. [T20260423-0447] proved that retired workflow runs can remain observable without live assets, [T20260425-2010] removed workflow-specific history browsers, and [T20260426-0742] removed the duplicate job-level inspection aliases. Current public inspection belongs to `orbit run history -j <job_id>` and `orbit run show <run_id>`, while `orbit job` is reserved for job catalog browsing and direct job execution.
 
 ---
 
@@ -400,13 +400,14 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260423-0114]** — Expose the `backend: cli` executor-args gap during a local task ship run.
 - **[T20260423-0445]** — Merge object-valued job defaults over explicit run input and persist synthetic failed job steps for early v2 pipeline failures.
 - **[T20260423-0447]** — Restore usable `orbit run duel` read-only surfaces after duel workflow retirement.
-- **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into job history and run-state.
+- **[T20260423-2004-4]** — Persist direct v2 `orbit job run` executions into durable job-run records and state.
 - **[T20260425-0204]** — Make v2 job catalog discovery honor workspace-over-global `MergeByKey` precedence.
-- **[T20260425-2010]** — Refactor `orbit run` task workflow commands and move workflow history inspection to `orbit job history`.
+- **[T20260425-2010]** — Refactor `orbit run` task workflow commands and remove workflow-specific history browsers.
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 - **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under `.orbit/state/audit`.
 - **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
+- **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

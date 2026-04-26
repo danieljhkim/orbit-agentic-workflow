@@ -29,10 +29,6 @@ pub enum JobSubcommand {
     Show(JobShowArgs),
     /// Execute a schemaVersion 2 job by ID or YAML path
     Run(JobRunArgs),
-    /// Show run history for a job
-    History(JobHistoryArgs),
-    /// Inspect the pipeline state (state.json) of a job run
-    RunState(JobRunStateArgs),
     /// Internal worker entrypoint for persisted pipeline runs
     #[command(name = "run-pipeline-worker", hide = true)]
     RunPipelineWorker(JobRunPipelineWorkerArgs),
@@ -44,8 +40,6 @@ impl Execute for JobSubcommand {
             JobSubcommand::List(args) => args.execute(runtime),
             JobSubcommand::Show(args) => args.execute(runtime),
             JobSubcommand::Run(args) => args.execute(runtime),
-            JobSubcommand::History(args) => args.execute(runtime),
-            JobSubcommand::RunState(args) => args.execute(runtime),
             JobSubcommand::RunPipelineWorker(args) => args.execute(runtime),
         }
     }
@@ -274,63 +268,6 @@ impl Execute for JobRunArgs {
                 "pipeline: {}",
                 serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
             );
-            Ok(())
-        }
-    }
-}
-
-#[derive(Args)]
-pub struct JobHistoryArgs {
-    pub job_id: String,
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for JobHistoryArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        eprintln!("[deprecated] use \"orbit run history -j {}\"", self.job_id);
-        let runs = runtime.job_history(&self.job_id)?;
-        if self.json {
-            let values = runs.iter().map(job_run_to_json).collect::<Vec<_>>();
-            crate::output::json::print_pretty(&Value::Array(values))
-        } else {
-            let mut table = crate::output::table::build_table(&[
-                "RUN_ID",
-                "ATTEMPT",
-                "STATE",
-                "STARTED_AT",
-                "FINISHED_AT",
-                "ERROR_CODE",
-                "ERROR_MESSAGE",
-            ]);
-            for run in &runs {
-                use comfy_table::Cell;
-                table.add_row(vec![
-                    Cell::new(&run.run_id),
-                    Cell::new(run.attempt.to_string()),
-                    crate::output::color::job_state_color_cell(&run.state.to_string()),
-                    Cell::new(
-                        run.started_at
-                            .map(|v| v.format("%Y-%m-%dT%H:%M:%SZ").to_string())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                    Cell::new(
-                        run.finished_at
-                            .map(|v| v.format("%Y-%m-%dT%H:%M:%SZ").to_string())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                    Cell::new(
-                        run.steps
-                            .last()
-                            .and_then(|s| s.error_code.clone())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                    Cell::new(summarize_error_message(
-                        run.steps.last().and_then(|s| s.error_message.as_deref()),
-                    )),
-                ]);
-            }
-            println!("{table}");
             Ok(())
         }
     }
@@ -612,27 +549,6 @@ fn v2_step_target_summary(step: &JobV2Step) -> (String, String) {
 }
 
 #[derive(Args)]
-pub struct JobRunStateArgs {
-    /// The run ID to inspect
-    pub run_id: String,
-}
-
-impl Execute for JobRunStateArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        eprintln!("[deprecated] use \"orbit run show {}\"", self.run_id);
-        match runtime.read_run_state(&self.run_id)? {
-            Some(state) => crate::output::json::print_pretty(
-                &serde_json::to_value(&state).map_err(|e| OrbitError::Store(e.to_string()))?,
-            ),
-            None => {
-                println!("No pipeline state found for run '{}'", self.run_id);
-                Ok(())
-            }
-        }
-    }
-}
-
-#[derive(Args)]
 pub struct JobRunPipelineWorkerArgs {
     /// Persisted run ID to claim and execute.
     pub run_id: String,
@@ -661,4 +577,17 @@ fn build_job_run_input(pairs: &[String]) -> Result<Value, OrbitError> {
         map.insert(key.to_string(), Value::String(value.to_string()));
     }
     Ok(Value::Object(map))
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use crate::command::Cli;
+
+    #[test]
+    fn rejects_removed_job_run_inspection_aliases() {
+        assert!(Cli::try_parse_from(["orbit", "job", "history", "task_auto_pipeline"]).is_err());
+        assert!(Cli::try_parse_from(["orbit", "job", "run-state", "jrun-1"]).is_err());
+    }
 }
