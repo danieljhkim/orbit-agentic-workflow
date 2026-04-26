@@ -2,9 +2,9 @@
 
 **Status:** Accepted
 **Owner:** daniel
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-26
 
-Rules both Claude (lead: `knowledge-graph`) and Codex (lead: `groundhog`) follow when writing and maintaining feature design docs under `docs/design/<feature>/`. The goal is a set of feature folders that read as one coherent documentation system regardless of which agent authored them.
+Rules feature leads follow when writing and maintaining design docs under `docs/design/<feature>/`. The goal is a set of feature folders that read as one coherent documentation system regardless of which agent authored them.
 
 This doc is itself the source of truth for the conventions. When a convention changes, update this doc and then update existing feature folders to match — do not silently diverge.
 
@@ -174,6 +174,7 @@ Until those exist: cross-review is the enforcement mechanism. When one agent rev
 | Feature | Folder | Lead |
 |---------|--------|------|
 | Activity / Job | [docs/design/activity-job/](./activity-job/) | codex |
+| Auditability | [docs/design/auditability/](./auditability/) | codex |
 | Knowledge graph | [docs/design/knowledge-graph/](./knowledge-graph/) | claude |
 | Groundhog | [docs/design/groundhog/](./groundhog/) | codex |
 

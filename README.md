@@ -24,7 +24,7 @@ This is the technical moat and the reason to pick Orbit over a generic agent fra
 
 Every tool call, provider request/response, and task-state transition is a structured, queryable event with agent identity attached. When something goes sideways on your team's monorepo, you answer *what / why / who* without calling the Orbit maintainers. Append-only, tamper-evident, exportable.
 
-Full contract below in the [Auditability](#auditability) section.
+Full contract below in the [Auditability](#auditability) section. Design docs: [docs/design/auditability/](docs/design/auditability/).
 
 ### Groundhog — *experimental, behind the job surface*
 
