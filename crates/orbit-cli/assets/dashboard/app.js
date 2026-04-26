@@ -41,7 +41,19 @@ let isRefreshing = false;
 
 // Audit tab state
 let lastAudit = [];
-let auditFilter = { status: null, q: "", tool: null, role: null, run_id: null, profile: null };
+let auditFilter = {
+  status: null,
+  q: "",
+  tool: null,
+  role: null,
+  run_id: null,
+  profile: null,
+  // Time-window filter for the Events sub-tab. Accepts the same shorthands as
+  // the API (`24h`, `7d`, `1w`, RFC3339); null means the API-side default.
+  since: null,
+  // Policy sub-tab only: scopes /api/diagnostics/denials to fs vs tool denials.
+  policyKind: null,
+};
 let expandedAuditIds = new Set();
 let activeAuditSubtab = "events";
 let lastAuditPolicy = null;
@@ -729,6 +741,9 @@ function setActiveTab(raw, opts = {}) {
     auditFilter.run_id = query.get("run_id") || null;
     auditFilter.profile = query.get("profile") || null;
     auditFilter.q = query.get("q") || "";
+    auditFilter.since = query.get("since") || null;
+    const kindParam = query.get("kind");
+    auditFilter.policyKind = kindParam === "fs" || kindParam === "tool" ? kindParam : null;
     const sub = AUDIT_SUBTABS.includes(segments[1]) ? segments[1] : activeAuditSubtab;
     setAuditSubtab(sub);
     hash = buildAuditHash();
@@ -750,12 +765,23 @@ function setActiveTab(raw, opts = {}) {
 
 function buildAuditHash() {
   const sp = new URLSearchParams();
-  if (auditFilter.status) sp.set("status", auditFilter.status);
-  if (auditFilter.tool) sp.set("tool", auditFilter.tool);
-  if (auditFilter.role) sp.set("role", auditFilter.role);
-  if (auditFilter.run_id) sp.set("run_id", auditFilter.run_id);
-  if (auditFilter.profile) sp.set("profile", auditFilter.profile);
-  if (auditFilter.q) sp.set("q", auditFilter.q);
+  // The Audit Events tab and the Policy sub-tab serialize different filter
+  // axes. The shared `auditFilter` object holds all of them; here we project
+  // only the fields meaningful for the active sub-tab so the hash stays
+  // self-describing and reload-safe.
+  if (activeAuditSubtab === "policy") {
+    if (auditFilter.policyKind) sp.set("kind", auditFilter.policyKind);
+    if (auditFilter.profile) sp.set("profile", auditFilter.profile);
+    if (auditFilter.role) sp.set("role", auditFilter.role);
+  } else {
+    if (auditFilter.since) sp.set("since", auditFilter.since);
+    if (auditFilter.status) sp.set("status", auditFilter.status);
+    if (auditFilter.tool) sp.set("tool", auditFilter.tool);
+    if (auditFilter.role) sp.set("role", auditFilter.role);
+    if (auditFilter.run_id) sp.set("run_id", auditFilter.run_id);
+    if (auditFilter.profile) sp.set("profile", auditFilter.profile);
+    if (auditFilter.q) sp.set("q", auditFilter.q);
+  }
   const path = activeAuditSubtab && activeAuditSubtab !== "events"
     ? `audit/${activeAuditSubtab}`
     : "audit";
@@ -1023,20 +1049,28 @@ function activeRefreshJobs() {
       fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
         activeRunDetail = data;
         renderRunDetailMeta();
+        renderRunKnowledge();
+        renderRunGantt();
         renderRunSteps();
       }).catch((e) => {
         renderRunDetailEmpty(`Run not found: ${activeRunId}`);
         throw e;
       }),
     );
-    if (activeRunSubtab === "events") {
-      jobs.push(
-        fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
-          activeRunEvents = events;
-          renderRunEvents();
-        }),
-      );
-    }
+    // Events power both the Events sub-tab and the Gantt's retry markers, so
+    // they're fetched on every run-detail refresh regardless of which sub-tab
+    // is active.
+    jobs.push(
+      fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
+        activeRunEvents = events;
+        renderRunEvents();
+        renderRunGantt();
+      }).catch(() => {
+        // Missing v2 events file is non-fatal — run detail still renders.
+        activeRunEvents = [];
+        renderRunGantt();
+      }),
+    );
     return jobs;
   }
 
@@ -1072,6 +1106,7 @@ function activeRefreshJobs() {
 function fetchAndRenderAudit() {
   const sp = new URLSearchParams();
   sp.set("limit", String(AUDIT_LIMIT));
+  if (auditFilter.since) sp.set("since", auditFilter.since);
   if (auditFilter.status) sp.set("status", auditFilter.status);
   if (auditFilter.tool) sp.set("tool", auditFilter.tool);
   if (auditFilter.role) sp.set("role", auditFilter.role);
@@ -1094,6 +1129,7 @@ function fetchAndRenderSummary() {
 function fetchAndRenderPolicy() {
   const sp = new URLSearchParams();
   sp.set("since", "24h");
+  if (auditFilter.policyKind) sp.set("kind", auditFilter.policyKind);
   if (auditFilter.profile) sp.set("profile", auditFilter.profile);
   if (auditFilter.role) sp.set("agent", auditFilter.role);
   return fetchJson(`/api/diagnostics/denials?${sp.toString()}`).then((data) => {
@@ -1261,7 +1297,16 @@ function navigateToRun(runId) {
 /// Navigates to the Audit tab pre-filtered by `role` (audit `role` ≈ scoreboard
 /// agent name). Clears unrelated filters so the landing page is the role view.
 function navigateToRole(role) {
-  auditFilter = { status: null, q: "", tool: null, role, run_id: null, profile: null };
+  auditFilter = {
+    status: null,
+    q: "",
+    tool: null,
+    role,
+    run_id: null,
+    profile: null,
+    since: null,
+    policyKind: null,
+  };
   activeAuditSubtab = "events";
   syncAuditControls();
   window.location.hash = buildAuditHash();
@@ -1470,6 +1515,10 @@ function renderRunDetailEmpty(message) {
   $("run-detail-count").textContent = "-";
   $("run-steps-body").innerHTML = "";
   $("run-events-body").innerHTML = "";
+  const knowledge = $("run-knowledge-panel");
+  const gantt = $("run-gantt-panel");
+  if (knowledge) knowledge.style.display = "none";
+  if (gantt) gantt.style.display = "none";
 }
 
 function renderRunDetailMeta() {
@@ -1539,6 +1588,228 @@ function renderRunSteps() {
     }
   }
   syncNodes(body, Array.from(frag.children));
+}
+
+function renderRunKnowledge() {
+  const panel = $("run-knowledge-panel");
+  if (!panel) return;
+  panel.style.display = "block";
+  const km = activeRunDetail && activeRunDetail.run && activeRunDetail.run.knowledge_metrics;
+  panel.innerHTML = "";
+  const header = el("div", { class: "knowledge-header", text: "Knowledge Pack" });
+  panel.appendChild(header);
+  if (km == null) {
+    panel.appendChild(el("div", { class: "knowledge-empty", text: "no knowledge metrics for this run" }));
+    return;
+  }
+  const grid = el("div", { class: "knowledge-grid" });
+  const baseline = Number(km.raw_read_token_baseline || 0);
+  const packTokens = km.knowledge_pack_tokens == null ? null : Number(km.knowledge_pack_tokens);
+  const totalLlm = km.total_llm_input_tokens == null ? null : Number(km.total_llm_input_tokens);
+  const ratioText = baseline === 0 || packTokens == null
+    ? "n/a"
+    : `${((packTokens / baseline) * 100).toFixed(1)}%`;
+  const addCell = (label, value, extra = "") => {
+    const cell = el("div");
+    cell.appendChild(el("div", { class: "label", text: label }));
+    cell.appendChild(el("div", { class: `value${extra ? " " + extra : ""}`, text: value }));
+    grid.appendChild(cell);
+  };
+  addCell("raw_read_token_baseline", String(baseline));
+  addCell("knowledge_pack_tokens", packTokens == null ? "-" : String(packTokens));
+  addCell("total_llm_input_tokens", totalLlm == null ? "-" : String(totalLlm));
+  addCell("compression_ratio", ratioText, "ratio");
+  panel.appendChild(grid);
+}
+
+function renderRunGantt() {
+  const panel = $("run-gantt-panel");
+  if (!panel) return;
+  const detail = activeRunDetail || {};
+  const run = detail.run || {};
+  const steps = Array.isArray(detail.steps) ? detail.steps : [];
+  if (steps.length === 0) {
+    panel.style.display = "none";
+    panel.innerHTML = "";
+    return;
+  }
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  panel.appendChild(el("div", { class: "gantt-header", text: "Step Timeline" }));
+
+  const startMs = run.started_at ? new Date(run.started_at).getTime() : null;
+  let endMs = run.finished_at ? new Date(run.finished_at).getTime() : null;
+  // Walk steps for tighter bounds when run-level timestamps are missing.
+  let derivedStart = startMs;
+  let derivedEnd = endMs;
+  for (const s of steps) {
+    if (s.started_at) {
+      const t = new Date(s.started_at).getTime();
+      if (derivedStart == null || t < derivedStart) derivedStart = t;
+    }
+    if (s.finished_at) {
+      const t = new Date(s.finished_at).getTime();
+      if (derivedEnd == null || t > derivedEnd) derivedEnd = t;
+    }
+  }
+  // Run still in flight or missing finish: extend to now.
+  if (derivedEnd == null) derivedEnd = Date.now();
+  if (derivedStart == null) derivedStart = derivedEnd - 1000;
+  if (derivedEnd <= derivedStart) derivedEnd = derivedStart + 1000;
+
+  const PAD_LEFT = 56;   // step-index gutter
+  const PAD_RIGHT = 12;
+  const PAD_TOP = 18;
+  const ROW_H = 22;
+  const BAR_H = 14;
+  const W_TOTAL = 1000;  // virtual viewBox width; SVG rescales to container
+  const innerW = W_TOTAL - PAD_LEFT - PAD_RIGHT;
+  const totalH = PAD_TOP + steps.length * ROW_H + 18;
+  const span = derivedEnd - derivedStart;
+  const xOf = (ms) => PAD_LEFT + ((ms - derivedStart) / span) * innerW;
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("class", "gantt-svg");
+  svg.setAttribute("viewBox", `0 0 ${W_TOTAL} ${totalH}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.style.height = `${totalH}px`;
+
+  // Lane backgrounds + step-index labels.
+  steps.forEach((step, i) => {
+    const y = PAD_TOP + i * ROW_H;
+    const bg = document.createElementNS(svgNS, "rect");
+    bg.setAttribute("class", `gantt-lane-bg${i % 2 === 0 ? "" : " alt"}`);
+    bg.setAttribute("x", String(0));
+    bg.setAttribute("y", String(y));
+    bg.setAttribute("width", String(W_TOTAL));
+    bg.setAttribute("height", String(ROW_H));
+    svg.appendChild(bg);
+    const label = document.createElementNS(svgNS, "text");
+    label.setAttribute("class", "gantt-lane-label");
+    label.setAttribute("x", String(8));
+    label.setAttribute("y", String(y + ROW_H / 2 + 3));
+    label.textContent = `#${step.step_index}`;
+    svg.appendChild(label);
+  });
+
+  // Axis: start and end labels.
+  const axisY = PAD_TOP + steps.length * ROW_H + 6;
+  const axisLine = document.createElementNS(svgNS, "line");
+  axisLine.setAttribute("class", "gantt-axis-line");
+  axisLine.setAttribute("x1", String(PAD_LEFT));
+  axisLine.setAttribute("y1", String(axisY));
+  axisLine.setAttribute("x2", String(W_TOTAL - PAD_RIGHT));
+  axisLine.setAttribute("y2", String(axisY));
+  svg.appendChild(axisLine);
+  const fmtAxis = (ms) => {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+  const axisStart = document.createElementNS(svgNS, "text");
+  axisStart.setAttribute("class", "gantt-axis-label");
+  axisStart.setAttribute("x", String(PAD_LEFT));
+  axisStart.setAttribute("y", String(axisY + 12));
+  axisStart.textContent = fmtAxis(derivedStart);
+  svg.appendChild(axisStart);
+  const axisEnd = document.createElementNS(svgNS, "text");
+  axisEnd.setAttribute("class", "gantt-axis-label");
+  axisEnd.setAttribute("x", String(W_TOTAL - PAD_RIGHT));
+  axisEnd.setAttribute("y", String(axisY + 12));
+  axisEnd.setAttribute("text-anchor", "end");
+  axisEnd.textContent = fmtAxis(derivedEnd);
+  svg.appendChild(axisEnd);
+
+  // Bars per step.
+  steps.forEach((step, i) => {
+    const sStart = step.started_at ? new Date(step.started_at).getTime() : derivedStart;
+    const sEnd = step.finished_at ? new Date(step.finished_at).getTime() : derivedEnd;
+    const x1 = xOf(sStart);
+    const x2 = xOf(sEnd);
+    const w = Math.max(2, x2 - x1);
+    const y = PAD_TOP + i * ROW_H + (ROW_H - BAR_H) / 2;
+    const bar = document.createElementNS(svgNS, "rect");
+    bar.setAttribute("class", "gantt-bar");
+    bar.setAttribute("x", String(x1));
+    bar.setAttribute("y", String(y));
+    bar.setAttribute("width", String(w));
+    bar.setAttribute("height", String(BAR_H));
+    bar.setAttribute("fill", `var(--state-${step.state}, var(--fg-dim))`);
+    bar.addEventListener("mousemove", (e) => showGanttTooltip(e, step));
+    bar.addEventListener("mouseleave", hideGanttTooltip);
+    bar.addEventListener("click", () => {
+      // Reuse the per-step expand/collapse panel from the Steps sub-tab.
+      if (expandedStepIndices.has(step.step_index)) {
+        expandedStepIndices.delete(step.step_index);
+      } else {
+        expandedStepIndices.add(step.step_index);
+      }
+      activeRunSubtab = "steps";
+      setRunDetailSubtab("steps");
+      renderRunSteps();
+      const target = document.querySelector(`[data-key="step-${step.step_index}"]`);
+      if (target && target.scrollIntoView) {
+        target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    });
+    svg.appendChild(bar);
+  });
+
+  // Retry markers from StepRetry events.
+  const stepIdToIndex = new Map();
+  steps.forEach((s) => {
+    // step_id is the activity name (or step.id); the step file stores it as
+    // target_id. Map both forms to the lane index.
+    if (s.target_id != null) stepIdToIndex.set(String(s.target_id), s.step_index);
+  });
+  for (const ev of activeRunEvents || []) {
+    if (ev.body_kind !== "step_retry") continue;
+    const stepId = ev.step_id;
+    const index = stepIdToIndex.get(stepId);
+    if (index == null) continue;
+    const tsMs = ev.ts ? new Date(ev.ts).getTime() : null;
+    if (!tsMs || isNaN(tsMs)) continue;
+    const cx = xOf(Math.max(derivedStart, Math.min(derivedEnd, tsMs)));
+    const cy = PAD_TOP + index * ROW_H + ROW_H / 2;
+    const marker = document.createElementNS(svgNS, "circle");
+    marker.setAttribute("class", "gantt-retry-marker");
+    marker.setAttribute("cx", String(cx));
+    marker.setAttribute("cy", String(cy));
+    marker.setAttribute("r", "3.5");
+    const title = document.createElementNS(svgNS, "title");
+    title.textContent = `retry attempt=${ev.attempt} backoff=${ev.next_backoff_ms}ms`;
+    marker.appendChild(title);
+    svg.appendChild(marker);
+  }
+
+  panel.appendChild(svg);
+}
+
+function showGanttTooltip(e, step) {
+  const tip = $("gantt-tooltip");
+  if (!tip) return;
+  const lines = [
+    `step_index: ${step.step_index}`,
+    `state: ${step.state}`,
+    `exit_code: ${step.exit_code == null ? "-" : step.exit_code}`,
+    `duration_ms: ${step.duration_ms == null ? "-" : step.duration_ms}`,
+  ];
+  tip.textContent = lines.join("\n");
+  tip.style.display = "block";
+  tip.setAttribute("aria-hidden", "false");
+  // Position relative to viewport; clamp to keep the tooltip on-screen.
+  const x = Math.min(window.innerWidth - 220, e.clientX + 12);
+  const y = Math.min(window.innerHeight - 80, e.clientY + 12);
+  tip.style.left = `${x}px`;
+  tip.style.top = `${y}px`;
+}
+
+function hideGanttTooltip() {
+  const tip = $("gantt-tooltip");
+  if (!tip) return;
+  tip.style.display = "none";
+  tip.setAttribute("aria-hidden", "true");
 }
 
 function buildStepDetail(step) {

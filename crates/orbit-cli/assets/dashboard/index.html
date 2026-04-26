@@ -1066,6 +1066,91 @@
       table.scoreboard-table td.agent.clickable { cursor: pointer; }
       table.scoreboard-table td.agent.clickable:hover { color: var(--accent); }
 
+      /* Run Detail — Gantt timeline */
+      .gantt-panel {
+        padding: 12px 16px 16px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .gantt-panel .gantt-header {
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fg-dim);
+        margin-bottom: 10px;
+      }
+      .gantt-svg {
+        width: 100%;
+        display: block;
+        font-family: var(--font-mono);
+        font-size: 10px;
+      }
+      .gantt-svg .gantt-axis-line { stroke: var(--border); stroke-width: 1px; }
+      .gantt-svg .gantt-axis-label { fill: var(--fg-dim); font-size: 9px; }
+      .gantt-svg .gantt-lane-bg { fill: rgba(255, 255, 255, 0.02); }
+      .gantt-svg .gantt-lane-bg.alt { fill: rgba(255, 255, 255, 0.04); }
+      .gantt-svg .gantt-lane-label { fill: var(--fg-dim); font-size: 10px; }
+      .gantt-svg .gantt-bar {
+        cursor: pointer;
+        stroke: rgba(0, 0, 0, 0.3);
+        stroke-width: 0.5px;
+        transition: opacity 0.15s ease;
+      }
+      .gantt-svg .gantt-bar:hover { opacity: 0.85; }
+      .gantt-svg .gantt-retry-marker {
+        fill: var(--state-failed);
+        stroke: #000;
+        stroke-width: 0.5px;
+      }
+      #gantt-tooltip {
+        position: fixed;
+        pointer-events: none;
+        background: var(--bg-elev);
+        border: 1px solid var(--accent);
+        padding: 6px 10px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--fg);
+        white-space: pre;
+        z-index: 200;
+        display: none;
+        border-radius: 2px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      }
+
+      /* Run Detail — Knowledge-pack efficiency panel */
+      .knowledge-panel {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .knowledge-panel .knowledge-header {
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fg-dim);
+        margin-bottom: 10px;
+      }
+      .knowledge-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .knowledge-grid .label {
+        color: var(--fg-dim);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 2px;
+      }
+      .knowledge-grid .value { color: var(--fg); }
+      .knowledge-grid .value.ratio { color: var(--accent-hover); }
+      .knowledge-empty { color: var(--fg-dim); font-family: var(--font-mono); font-size: 12px; }
+
       /* Custom scrollbar */
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
@@ -1187,6 +1272,8 @@
               <div class="skeleton skeleton-row" style="width: 70%"></div>
             </div>
           </div>
+          <div class="knowledge-panel" id="run-knowledge-panel" style="display: none;"></div>
+          <div class="gantt-panel" id="run-gantt-panel" style="display: none;"></div>
           <nav class="subtabs" id="run-detail-subtabs">
             <button class="subtab" data-subtab="steps" type="button">Steps</button>
             <button class="subtab" data-subtab="events" type="button">Events</button>
@@ -1224,6 +1311,7 @@
       </main>
     </section>
     <footer id="footer"></footer>
+    <div id="gantt-tooltip" role="tooltip" aria-hidden="true"></div>
     <script src="/static/app.js"></script>
   </body>
 </html>
