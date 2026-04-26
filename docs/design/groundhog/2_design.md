@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-22
+**Last updated:** 2026-04-26 (removed public deviation verb, [T20260426-0603])
 
 This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose, [implementation_status.md](./implementation_status.md) for the active gap ledger, and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -119,7 +119,7 @@ These builtins are only legal when `ToolContext.groundhog_host` is present and t
 - failure: `{what_tried, what_happened, next_attempt_plan}`
 - side effect: `{kind, target, reversible}`
 
-There is one important legacy mismatch: `orbit.groundhog.checkpoint_deviate` is still registered in the tool registry. The current runner treats that action as unsupported and closes the attempt with a synthetic failure path, but the tool still exists in the shipped surface. That is design drift, not intended v1 shape.
+The legacy `orbit.groundhog.checkpoint_deviate` verb is no longer registered in the public tool surface as of [T20260426-0603]. Some internal deviation types still exist as deferred cleanup substrate, but Groundhog v1 exposes only success, failure, and side-effect verbs to attempts.
 
 ---
 

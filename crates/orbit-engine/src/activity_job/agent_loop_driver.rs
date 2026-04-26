@@ -215,8 +215,8 @@ fn build_replay_transport(model: &str) -> Result<ReplayTransport, DispatchError>
         let turns = vec![ReplayTurn {
             content: vec![ContentBlock::ToolUse {
                 id: "toolu_orbit_v2_replay".to_string(),
-                name: "fs.write".to_string(),
-                input: serde_json::json!({"path": "/tmp/blocked.txt", "content": "x"}),
+                name: "fs.delete".to_string(),
+                input: serde_json::json!({"path": "/tmp/blocked.txt"}),
             }],
             stop_reason: StopReason::ToolUse,
         }];

@@ -18,11 +18,11 @@ spec:
               description: >
                 Iterative reviewer. Under ORBIT_V2_REPLAY_FIXTURE the fixture
                 scripts two iterations: iteration 1 emits a tool_use for
-                `time.now` and terminal text "reviewed: blocking=1"; iteration
+                `fs.read` and terminal text "reviewed: blocking=1"; iteration
                 2 does the same and emits "reviewed: blocking=0", satisfying
                 the outer break_when. The `session: reviewer` binding keeps
                 the provider conversation warm across iterations.
-              tools: [time.now]
+              tools: [fs.read]
               max_iterations: 4
               on_denial: terminate
               model: replay-model

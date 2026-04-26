@@ -17,7 +17,7 @@ spec:
         type: agent_loop
         description: >
           Under ORBIT_V2_REPLAY=tool_denial the replay emits a tool_use for
-          `fs.write` while the allowlist is `[fs.read]`. The driver surfaces
+          `fs.delete` while the allowlist is `[fs.read]`. The driver surfaces
           `DispatchError::ToolDenied`, which is non-retryable — the retry
           wrapper must skip retry and emit `step.denied` without any
           `step.retry` events for this step.

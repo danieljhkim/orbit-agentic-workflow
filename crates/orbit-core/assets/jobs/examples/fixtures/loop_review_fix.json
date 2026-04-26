@@ -1,9 +1,9 @@
 {
-  "_note": "Replay fixture for loop_review_fix.yaml. Iteration 1 emits a tool_use for time.now (exercises tool.call.* with session_id), then text; iteration 2 emits another tool_use then terminal text containing 'blocking=0' which the break_when matches.",
+  "_note": "Replay fixture for loop_review_fix.yaml. Iteration 1 emits a tool_use for fs.read (exercises tool.call.* with session_id), then text; iteration 2 emits another tool_use then terminal text containing 'blocking=0' which the break_when matches.",
   "turns": [
     {
       "content": [
-        { "kind": "tool_use", "id": "toolu_review_1a", "name": "time.now", "input": {} }
+        { "kind": "tool_use", "id": "toolu_review_1a", "name": "fs.read", "input": { "path": "Cargo.toml" } }
       ],
       "stop_reason": "tool_use"
     },
@@ -15,7 +15,7 @@
     },
     {
       "content": [
-        { "kind": "tool_use", "id": "toolu_review_2a", "name": "time.now", "input": {} }
+        { "kind": "tool_use", "id": "toolu_review_2a", "name": "fs.read", "input": { "path": "Cargo.toml" } }
       ],
       "stop_reason": "tool_use"
     },

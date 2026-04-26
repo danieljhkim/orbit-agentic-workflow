@@ -151,7 +151,7 @@ fn smoke_dispatch_agent_loop(
     let host = EchoHost;
 
     // Phase 3: ToolDenied is structural — setting the env triggers the replay
-    // path, which scripts fs.write → loop denies → driver returns Err(ToolDenied).
+    // path, which scripts fs.delete -> loop denies -> driver returns Err(ToolDenied).
     unsafe {
         env::set_var("ORBIT_V2_REPLAY", "tool_denial");
     }

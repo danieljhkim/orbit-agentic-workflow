@@ -8,7 +8,7 @@ spec:
     Phase 2 reference for the agent_loop activity type. Declares a narrow
     tool allowlist (fs.read only) so the tool-denial smoke run can exercise
     the enforcement path in orbit-engine::v2::tool_enforcement by receiving
-    a model-requested `fs.write` and observing the synthesized tool.denied
+    a model-requested `fs.delete` and observing the synthesized tool.denied
     audit event.
   input_schema_json:
     type: object

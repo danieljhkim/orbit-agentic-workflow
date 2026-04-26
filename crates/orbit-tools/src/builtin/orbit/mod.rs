@@ -65,7 +65,6 @@ pub(super) struct OrbitIdentity {
 pub fn register(registry: &mut ToolRegistry) {
     registry.register(groundhog_checkpoint_success::OrbitGroundhogCheckpointSuccessTool);
     registry.register(groundhog_checkpoint_failure::OrbitGroundhogCheckpointFailureTool);
-    registry.register(groundhog_checkpoint_deviate::OrbitGroundhogCheckpointDeviateTool);
     registry.register(groundhog_side_effect::OrbitGroundhogSideEffectTool);
     registry.register(task_add::OrbitTaskAddTool);
     registry.register(task_approve::OrbitTaskApproveTool);

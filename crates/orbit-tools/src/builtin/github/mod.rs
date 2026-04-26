@@ -123,20 +123,14 @@ pub mod pr_view;
 pub mod repo;
 
 pub fn register(registry: &mut ToolRegistry) {
-    registry.register(auth::GithubAuthStatusTool);
-    registry.register(repo::GithubRepoViewTool);
     registry.register(pr_create::GithubPrCreateTool);
-    registry.register(pr_list::GithubPrListTool);
     registry.register(pr_view::GithubPrViewTool);
-    registry.register(pr_checkout::GithubPrCheckoutTool);
     registry.register(pr_comment::GithubPrCommentTool);
     registry.register(pr_comment_reply::GithubPrCommentReplyTool);
     registry.register(pr_comments::GithubPrCommentsTool);
     registry.register(pr_review::GithubPrReviewTool);
     registry.register(pr_review_comment::GithubPrReviewCommentTool);
     registry.register(pr_merge::GithubPrMergeTool);
-    registry.register(pr_close::GithubPrCloseTool);
-    registry.register(pr_checks::GithubPrChecksTool);
 }
 
 /// Validate that `repo` matches the `owner/name` format expected by the GitHub API.

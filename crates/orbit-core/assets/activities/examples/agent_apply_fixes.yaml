@@ -40,9 +40,7 @@ spec:
     the loop.
   tools:
     - fs.read
-    - fs.write
-    - git.diff
-    - git.commit
+    - proc.spawn
   on_denial: terminate
   max_iterations: 3
   backend: auto

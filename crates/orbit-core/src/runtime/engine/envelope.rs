@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use orbit_common::types::{
-    Activity, AgentCommitRequest, AgentModelPair, OrbitError, Task, agent_family_from_cli,
-    prune_missing_context_files, resolve_agent_model_pair,
+    Activity, AgentModelPair, OrbitError, Task, agent_family_from_cli, prune_missing_context_files,
+    resolve_agent_model_pair,
 };
 use orbit_engine::{ExecutionContext, TaskHost};
 use serde::Serialize;
@@ -103,52 +103,17 @@ pub(super) fn build_agent_stdin_envelope_payload(
 }
 
 pub(super) fn execute_commit_request_if_present(
-    runtime: &OrbitRuntime,
+    _runtime: &OrbitRuntime,
     result: &Value,
 ) -> Result<(), OrbitError> {
-    let Some(commit_value) = result.get("commit") else {
+    if result.get("commit").is_none() {
         return Ok(());
-    };
-
-    let commit: AgentCommitRequest =
-        serde_json::from_value(commit_value.clone()).map_err(|error| {
-            OrbitError::AgentProtocolViolation(format!(
-                "result.commit must be an object with string `message` and string-array `files`: {error}"
-            ))
-        })?;
-
-    if commit.message.trim().is_empty() {
-        return Err(OrbitError::AgentProtocolViolation(
-            "result.commit.message must not be empty".to_string(),
-        ));
     }
-    if commit.files.is_empty() {
-        return Err(OrbitError::AgentProtocolViolation(
-            "result.commit.files must contain at least one path".to_string(),
-        ));
-    }
-    let files = commit.files.clone();
-    let message = commit.message.clone();
 
-    let repo_root = &runtime.context.paths().repo_root;
-    let repo_root_str = repo_root.to_string_lossy().to_string();
-
-    runtime.run_tool(
-        "git.stage_paths",
-        json!({
-            "repo_root": repo_root_str,
-            "files": files.clone(),
-        }),
-    )?;
-    runtime.run_tool(
-        "git.commit",
-        json!({
-            "repo_root": repo_root.to_string_lossy(),
-            "message": message,
-            "files": files,
-        }),
-    )?;
-    Ok(())
+    Err(OrbitError::AgentProtocolViolation(
+        "result.commit is no longer supported; task pipelines commit through deterministic workflow activities"
+            .to_string(),
+    ))
 }
 
 fn task_detail_for_input<H: TaskHost + ?Sized>(

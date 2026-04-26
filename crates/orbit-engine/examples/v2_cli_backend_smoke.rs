@@ -418,7 +418,7 @@ fn repo_root() -> PathBuf {
 fn cli_agent_loop_spec(provider: Option<Provider>) -> AgentLoopSpec {
     AgentLoopSpec {
         instruction: "cli smoke".to_string(),
-        tools: vec!["fs.read".to_string(), "fs.write".to_string()],
+        tools: vec!["fs.read".to_string(), "fs.delete".to_string()],
         on_denial: OnDenial::Terminate,
         model: Some("claude-sonnet-4-5".to_string()),
         max_iterations: 1,

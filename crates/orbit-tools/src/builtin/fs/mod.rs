@@ -23,15 +23,8 @@ pub(crate) struct FsPolicyAllowance {
 }
 
 pub fn register(registry: &mut ToolRegistry) {
-    registry.register(copy::FsCopyTool);
-    registry.register(create::FsCreateTool);
     registry.register(read::FsReadTool);
-    registry.register(ls::FsLsTool);
-    registry.register(write::FsWriteTool);
     registry.register(delete::FsDeleteTool);
-    registry.register(move_file::FsMoveTool);
-    registry.register(mkdir::FsMkdirTool);
-    registry.register(patch::FsPatchTool);
 }
 
 /// Checks that `path` resolves inside the context workspace root.

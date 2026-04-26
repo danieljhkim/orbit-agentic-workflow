@@ -11,8 +11,6 @@ use serde_json::Value;
 use crate::{ToolContext, ToolRegistry};
 
 pub fn register(registry: &mut ToolRegistry) {
-    registry.register(stage_paths::GitStagePathsTool);
-    registry.register(commit::GitCommitTool);
     registry.register(push::GitPushTool);
 }
 

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-22
+**Last updated:** 2026-04-26 (public deviation verb removed, [T20260426-0603])
 
 This file is the living drift ledger for Groundhog. `2_design.md` explains the current implementation in prose; this file answers the narrower question: what is left to implement, clean up, or make explicit?
 
@@ -25,7 +25,7 @@ This file is the living drift ledger for Groundhog. `2_design.md` explains the c
 | Structured checkpoint plans | Shipped | `TaskPlan` checkpoints with typed `success_criteria` and per-checkpoint budgets are live. | Keep plan quality expectations explicit in docs. | codex | 2026-04-22 |
 | Scratch-branch rewind | Shipped | `WorkspaceSnapshot` creates `groundhog/<task_id>/day-<n>`, rewinds on failure, and squash-merges on success. | Preserve this as the baseline contract unless approval-safe refs replace direct task-branch commits. | codex | 2026-04-22 |
 | Prompt-facing memory vs audit split | Partial | Runtime persists `artifacts.chronicle` plus `groundhog/state.json`, not a clean `GroundhogMemory` and `GroundhogRun` split. | Decide migration shape, then rewrite persistence around separate prompt and audit records. | codex | 2026-04-22 |
-| Legacy deviation surface removal | Partial | `checkpoint_deviate`, `deviation_stack`, and `DayOutcome::DeviatedTo` still exist even though v1 does not use them. | Remove the tool, enum variants, and serializer baggage or explicitly defer them to a vnext design. | codex | 2026-04-22 |
+| Legacy deviation surface removal | Partial | `orbit.groundhog.checkpoint_deviate` is no longer registered in the public tool surface; `checkpoint_deviate`, `deviation_stack`, and `DayOutcome::DeviatedTo` internals still exist even though v1 does not use them. | Remove the remaining enum variants and serializer baggage or explicitly defer them to a vnext design. | codex | 2026-04-26 |
 | Groundhog using shared verifier | Partial | The shared verifier exists, but the runner still uses an inline local verifier helper. | Rewire the runner onto `checkpoint_verifier.rs` so verifier semantics stop drifting. | codex | 2026-04-22 |
 | Verifier run persistence | Open | Attempt records do not store `VerifierRun` data on pass or fail. | Persist verifier runs into the audit-side Groundhog record once the shared verifier is adopted. | codex | 2026-04-22 |
 | Tool-call audit fidelity | Partial | `Attempt.tool_calls` exists in the type but the runner writes empty vectors today. | Capture per-attempt Groundhog tool-call summaries or remove the field until it is real. | codex | 2026-04-22 |
