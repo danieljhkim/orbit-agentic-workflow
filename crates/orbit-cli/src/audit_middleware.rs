@@ -485,6 +485,8 @@ fn run_command_meta(cmd: &crate::command::run::RunCommand) -> CommandMeta {
         Some(RunSubcommand::History(args)) => ("history", Some("job_run"), args.job_id.as_deref()),
         Some(RunSubcommand::Show(args)) => ("show", Some("job_run"), args.run_id.as_deref()),
         Some(RunSubcommand::Logs(args)) => ("logs", Some("job_run"), args.run_id.as_deref()),
+        Some(RunSubcommand::Events(args)) => ("events", Some("job_run"), args.run_id.as_deref()),
+        Some(RunSubcommand::Trace(args)) => ("trace", Some("job_run"), args.run_id.as_deref()),
         Some(RunSubcommand::Job(args)) => ("job", Some("job"), Some(args.job_id.as_str())),
         None => ("job", Some("job"), cmd.positional.job_id.as_deref()),
     };

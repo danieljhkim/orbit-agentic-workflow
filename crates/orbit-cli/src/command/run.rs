@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-use std::fs;
+use std::collections::{HashMap, HashSet};
 
 use clap::{Args, Subcommand};
-use orbit_common::utility::blob_store::BlobStore;
 use orbit_core::command::job_run::JobRunListParams;
-use orbit_core::{JobRun, JobRunStep, OrbitError, OrbitRuntime};
+use orbit_core::runtime::run_audit::{RunAuditEvent, RunAuditStep, RunCliInvocationRecord};
+use orbit_core::{JobRun, JobRunStep, JobTargetType, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
@@ -29,6 +28,8 @@ Run history:
   orbit run history -j <job_id>
   orbit run show [run_id] [-s step_id] [--json]
   orbit run logs [run_id] [-s step_id] [--json]
+  orbit run events [run_id] [-s step_id] [--type event_type] [--json]
+  orbit run trace [run_id] [--json]
 ";
 
 #[derive(Args)]
@@ -72,6 +73,10 @@ pub enum RunSubcommand {
     Show(RunShowArgs),
     /// Print raw stdout/stderr captured for a job run
     Logs(RunLogsArgs),
+    /// Show v2 audit events recorded for a job run
+    Events(RunEventsArgs),
+    /// Show v2 audit event parent/child trace for a job run
+    Trace(RunTraceArgs),
     /// Run an arbitrary job by ID
     Job(job::JobRunArgs),
 }
@@ -85,6 +90,8 @@ impl Execute for RunSubcommand {
             RunSubcommand::History(command) => command.execute(runtime),
             RunSubcommand::Show(command) => command.execute(runtime),
             RunSubcommand::Logs(command) => command.execute(runtime),
+            RunSubcommand::Events(command) => command.execute(runtime),
+            RunSubcommand::Trace(command) => command.execute(runtime),
             RunSubcommand::Job(command) => command.execute(runtime),
         }
     }
@@ -122,7 +129,7 @@ pub struct RunShowArgs {
     /// Run ID to inspect. Defaults to the most recently scheduled run globally.
     pub run_id: Option<String>,
 
-    /// Show a single step by target/step ID
+    /// Show a single activity step.id from the v2 job YAML; legacy target ID and index still work
     #[arg(short = 's', long = "step")]
     pub step_id: Option<String>,
 
@@ -150,7 +157,7 @@ pub struct RunLogsArgs {
     /// Run ID to inspect. Defaults to the most recently scheduled run globally.
     pub run_id: Option<String>,
 
-    /// Show raw logs for a single step ID
+    /// Show raw logs for a single activity step.id from the v2 job YAML
     #[arg(short = 's', long = "step")]
     pub step_id: Option<String>,
 
@@ -167,6 +174,58 @@ impl Execute for RunLogsArgs {
             self.step_id.as_deref(),
             self.json,
         )
+    }
+}
+
+#[derive(Args)]
+#[command(
+    after_help = "JSON shape: {\"run_id\":\"...\",\"job_id\":\"...\",\"events\":[<raw-v2-audit-event-with-step_id>]}\nExamples:\n  orbit run events\n  orbit run events jrun-20260426-0631\n  orbit run events jrun-20260426-0631 -s implement_one --type cli.invocation.finished --json"
+)]
+pub struct RunEventsArgs {
+    /// Run ID to inspect. Defaults to the most recently scheduled run globally.
+    pub run_id: Option<String>,
+
+    /// Filter to an activity step.id from the v2 job YAML, or its zero-based audit step index
+    #[arg(short = 's', long = "step")]
+    pub step_id: Option<String>,
+
+    /// Filter to an exact v2 audit event_type such as step.started
+    #[arg(long = "type")]
+    pub event_type: Option<String>,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for RunEventsArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        print_run_events(
+            runtime,
+            self.run_id.as_deref(),
+            self.step_id.as_deref(),
+            self.event_type.as_deref(),
+            self.json,
+        )
+    }
+}
+
+#[derive(Args)]
+#[command(
+    after_help = "JSON shape: {\"run_id\":\"...\",\"job_id\":\"...\",\"roots\":[<tree-node>],\"orphans\":[<tree-node>]}\nExamples:\n  orbit run trace\n  orbit run trace jrun-20260426-0631 --json"
+)]
+pub struct RunTraceArgs {
+    /// Run ID to inspect. Defaults to the most recently scheduled run globally.
+    pub run_id: Option<String>,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for RunTraceArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        print_run_trace(runtime, self.run_id.as_deref(), self.json)
     }
 }
 
@@ -300,12 +359,12 @@ pub(crate) fn print_run_show(
     let state = runtime.read_run_state(&run.run_id)?;
 
     if let Some(step_id) = step_id {
-        let step = find_run_step(&run, step_id)?;
+        let step = resolve_run_step(runtime, &run, step_id)?;
         let step_output = state
             .as_ref()
             .and_then(|state| state.step_outputs.get(&step.step_index))
             .cloned();
-        return print_step_record(&run, step, step_output, json_output);
+        return print_step_record(&run, &step, step_output, json_output);
     }
 
     if json_output {
@@ -337,13 +396,18 @@ pub(crate) fn print_run_logs(
     json_output: bool,
 ) -> Result<(), OrbitError> {
     let run = resolve_run(runtime, run_id)?;
-    let records = collect_raw_log_records(runtime, &run, step_id)?;
+    let audit_steps = runtime.collect_run_audit_steps(&run.run_id)?;
+    let step_filter = resolve_step_filter(&run, &audit_steps, step_id)?;
+    let records = filter_cli_invocation_records(
+        runtime.collect_run_cli_invocations(&run.run_id)?,
+        step_filter.as_deref(),
+    );
 
     if json_output {
         return crate::output::json::print_pretty(&json!({
             "run_id": run.run_id,
             "job_id": run.job_id,
-            "records": records.iter().map(raw_log_record_to_json).collect::<Vec<_>>(),
+            "records": records.iter().map(cli_invocation_record_to_json).collect::<Vec<_>>(),
         }));
     }
 
@@ -355,6 +419,84 @@ pub(crate) fn print_run_logs(
     for record in &records {
         print!("{}", record.stdout);
         eprint!("{}", record.stderr);
+    }
+    Ok(())
+}
+
+pub(crate) fn print_run_events(
+    runtime: &OrbitRuntime,
+    run_id: Option<&str>,
+    step_id: Option<&str>,
+    event_type: Option<&str>,
+    json_output: bool,
+) -> Result<(), OrbitError> {
+    let run = resolve_run(runtime, run_id)?;
+    let audit_steps = runtime.collect_run_audit_steps(&run.run_id)?;
+    let step_filter = resolve_step_filter(&run, &audit_steps, step_id)?;
+    let events = filter_run_audit_events(
+        runtime.collect_run_audit_events(&run.run_id)?,
+        step_filter.as_deref(),
+        event_type,
+    );
+
+    if json_output {
+        return crate::output::json::print_pretty(&json!({
+            "run_id": run.run_id,
+            "job_id": run.job_id,
+            "events": events.iter().map(RunAuditEvent::json_with_step_id).collect::<Vec<_>>(),
+        }));
+    }
+
+    if events.is_empty() {
+        println!("No audit events recorded.");
+        return Ok(());
+    }
+
+    let mut table = crate::output::table::build_table(&["TS", "STEP", "EVENT_TYPE", "SUMMARY"]);
+    for event in &events {
+        use comfy_table::Cell;
+        table.add_row(vec![
+            Cell::new(format_timestamp(event.timestamp)),
+            Cell::new(event.step_id.as_deref().unwrap_or("-")),
+            Cell::new(event.event_type.as_deref().unwrap_or("-")),
+            Cell::new(summarize_audit_event(event)),
+        ]);
+    }
+    println!("{table}");
+    Ok(())
+}
+
+pub(crate) fn print_run_trace(
+    runtime: &OrbitRuntime,
+    run_id: Option<&str>,
+    json_output: bool,
+) -> Result<(), OrbitError> {
+    let run = resolve_run(runtime, run_id)?;
+    let events = runtime.collect_run_audit_events(&run.run_id)?;
+    let tree = build_trace_tree(&events);
+
+    if json_output {
+        return crate::output::json::print_pretty(&json!({
+            "run_id": run.run_id,
+            "job_id": run.job_id,
+            "roots": tree.roots.iter().map(trace_node_to_json).collect::<Vec<_>>(),
+            "orphans": tree.orphans.iter().map(trace_node_to_json).collect::<Vec<_>>(),
+        }));
+    }
+
+    if tree.roots.is_empty() && tree.orphans.is_empty() {
+        println!("No audit events recorded.");
+        return Ok(());
+    }
+
+    for node in &tree.roots {
+        print_trace_node(node, 0);
+    }
+    if !tree.orphans.is_empty() {
+        println!("Orphans:");
+        for node in &tree.orphans {
+            print_trace_node(node, 1);
+        }
     }
     Ok(())
 }
@@ -400,16 +542,34 @@ fn resolve_run(runtime: &OrbitRuntime, run_id: Option<&str>) -> Result<JobRun, O
         .ok_or_else(|| OrbitError::JobRunNotFound("latest".to_string()))
 }
 
-fn find_run_step<'a>(run: &'a JobRun, step_id: &str) -> Result<&'a JobRunStep, OrbitError> {
+fn resolve_run_step(
+    runtime: &OrbitRuntime,
+    run: &JobRun,
+    step_id: &str,
+) -> Result<RunStepRecord, OrbitError> {
+    if let Some(audit_step) = runtime
+        .collect_run_audit_steps(&run.run_id)?
+        .into_iter()
+        .find(|step| step.step_id == step_id)
+    {
+        return Ok(RunStepRecord::from_audit_step(audit_step));
+    }
+
+    find_stored_run_step(run, step_id)
+        .map(RunStepRecord::from_job_step)
+        .ok_or_else(|| step_not_found(&run.run_id, step_id))
+}
+
+fn find_stored_run_step<'a>(run: &'a JobRun, step_id: &str) -> Option<&'a JobRunStep> {
     run.steps
         .iter()
         .find(|step| step.target_id == step_id || step.step_index.to_string() == step_id)
-        .ok_or_else(|| {
-            OrbitError::InvalidInput(format!(
-                "step '{step_id}' does not match any step in run '{}'",
-                run.run_id
-            ))
-        })
+}
+
+fn step_not_found(run_id: &str, step_id: &str) -> OrbitError {
+    OrbitError::InvalidInput(format!(
+        "step '{step_id}' does not match any step in run '{run_id}'"
+    ))
 }
 
 fn filtered_steps<'a>(
@@ -417,8 +577,93 @@ fn filtered_steps<'a>(
     step_id: Option<&str>,
 ) -> Result<Vec<&'a JobRunStep>, OrbitError> {
     match step_id {
-        Some(step_id) => Ok(vec![find_run_step(run, step_id)?]),
+        Some(step_id) => Ok(vec![
+            find_stored_run_step(run, step_id)
+                .ok_or_else(|| step_not_found(&run.run_id, step_id))?,
+        ]),
         None => Ok(run.steps.iter().collect()),
+    }
+}
+
+fn resolve_step_filter(
+    run: &JobRun,
+    audit_steps: &[RunAuditStep],
+    step_id: Option<&str>,
+) -> Result<Option<String>, OrbitError> {
+    let Some(step_id) = step_id else {
+        return Ok(None);
+    };
+
+    if let Some(step) = audit_steps.iter().find(|step| step.step_id == step_id) {
+        return Ok(Some(step.step_id.clone()));
+    }
+    if let Ok(index) = step_id.parse::<u32>()
+        && let Some(step) = audit_steps.iter().find(|step| step.step_index == index)
+    {
+        return Ok(Some(step.step_id.clone()));
+    }
+    if find_stored_run_step(run, step_id).is_some() {
+        return Ok(Some(step_id.to_string()));
+    }
+
+    Err(step_not_found(&run.run_id, step_id))
+}
+
+#[derive(Clone, Debug)]
+struct RunStepRecord {
+    step_index: u32,
+    target_type: String,
+    target_id: String,
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+    finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    duration_ms: Option<u64>,
+    exit_code: Option<i32>,
+    agent_response_json: Option<Value>,
+    state: String,
+    error_code: Option<String>,
+    error_message: Option<String>,
+}
+
+impl RunStepRecord {
+    fn from_job_step(step: &JobRunStep) -> Self {
+        Self {
+            step_index: step.step_index,
+            target_type: step.target_type.to_string(),
+            target_id: step.target_id.clone(),
+            started_at: step.started_at,
+            finished_at: step.finished_at,
+            duration_ms: step.duration_ms,
+            exit_code: step.exit_code,
+            agent_response_json: step.agent_response_json.clone(),
+            state: step.state.to_string(),
+            error_code: step.error_code.clone(),
+            error_message: step.error_message.clone(),
+        }
+    }
+
+    fn from_audit_step(step: RunAuditStep) -> Self {
+        let duration_ms = match (step.started_at, step.finished_at) {
+            (Some(started), Some(finished)) => Some(
+                finished
+                    .signed_duration_since(started)
+                    .num_milliseconds()
+                    .max(0) as u64,
+            ),
+            _ => None,
+        };
+        Self {
+            step_index: step.step_index,
+            target_type: JobTargetType::Activity.to_string(),
+            target_id: step.step_id,
+            started_at: step.started_at,
+            finished_at: step.finished_at,
+            duration_ms,
+            exit_code: None,
+            agent_response_json: None,
+            state: step.state.unwrap_or_else(|| "running".to_string()),
+            error_code: None,
+            error_message: step.error_message,
+        }
     }
 }
 
@@ -475,7 +720,7 @@ fn print_step_summary_table(steps: &[&JobRunStep]) -> Result<(), OrbitError> {
 
 fn print_step_record(
     run: &JobRun,
-    step: &JobRunStep,
+    step: &RunStepRecord,
     step_output: Option<Value>,
     json_output: bool,
 ) -> Result<(), OrbitError> {
@@ -483,7 +728,7 @@ fn print_step_record(
         return crate::output::json::print_pretty(&json!({
             "run_id": run.run_id,
             "job_id": run.job_id,
-            "step": step_to_json(step),
+            "step": run_step_record_to_json(step),
             "step_output": step_output,
         }));
     }
@@ -493,11 +738,7 @@ fn print_step_record(
     println!("{} {}", bold("Job ID:"), run.job_id);
     println!("{} {}", bold("Target ID:"), step.target_id);
     println!("{} {}", bold("Target Type:"), step.target_type);
-    println!(
-        "{} {}",
-        bold("State:"),
-        job_state_color(&step.state.to_string())
-    );
+    println!("{} {}", bold("State:"), job_state_color(&step.state));
     println!(
         "{} {}",
         bold("Started:"),
@@ -541,12 +782,12 @@ fn print_step_record(
     Ok(())
 }
 
-fn step_to_json(step: &JobRunStep) -> Value {
+fn run_step_record_to_json(step: &RunStepRecord) -> Value {
     json!({
         "step_index": step.step_index,
         "target_id": step.target_id,
-        "target_type": step.target_type.to_string(),
-        "state": step.state.to_string(),
+        "target_type": step.target_type,
+        "state": step.state,
         "started_at": step.started_at.map(|t| t.to_rfc3339()),
         "finished_at": step.finished_at.map(|t| t.to_rfc3339()),
         "duration_ms": step.duration_ms,
@@ -572,150 +813,17 @@ fn legacy_step_to_json(step: &JobRunStep) -> Value {
     })
 }
 
-#[derive(Clone, Debug)]
-struct RawLogRecord {
-    step_id: Option<String>,
-    provider: Option<String>,
-    stdout_blob_ref: Option<String>,
-    stderr_blob_ref: Option<String>,
-    stdout: String,
-    stderr: String,
+fn filter_cli_invocation_records(
+    records: Vec<RunCliInvocationRecord>,
+    step_filter: Option<&str>,
+) -> Vec<RunCliInvocationRecord> {
+    records
+        .into_iter()
+        .filter(|record| step_filter.is_none_or(|filter| record.step_id.as_deref() == Some(filter)))
+        .collect()
 }
 
-fn collect_raw_log_records(
-    runtime: &OrbitRuntime,
-    run: &JobRun,
-    step_id: Option<&str>,
-) -> Result<Vec<RawLogRecord>, OrbitError> {
-    let audit_path = runtime
-        .data_root()
-        .join("state")
-        .join("audit")
-        .join("v2_loop")
-        .join(format!("{}.jsonl", run.run_id));
-    if !audit_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let raw = fs::read_to_string(&audit_path).map_err(|err| {
-        OrbitError::Io(format!("read audit log '{}': {err}", audit_path.display()))
-    })?;
-    let mut events = HashMap::new();
-    let mut ordered_ids = Vec::new();
-    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
-        let value: Value = serde_json::from_str(line).map_err(|err| {
-            OrbitError::Store(format!(
-                "invalid audit log '{}': {err}",
-                audit_path.display()
-            ))
-        })?;
-        let Some(event_id) = value.get("event_id").and_then(Value::as_str) else {
-            continue;
-        };
-        ordered_ids.push(event_id.to_string());
-        events.insert(event_id.to_string(), value);
-    }
-
-    let blob_store = BlobStore::new(
-        runtime
-            .data_root()
-            .join("state")
-            .join("audit")
-            .join("blobs"),
-    );
-    let mut records = Vec::new();
-    for event_id in ordered_ids {
-        let Some(event) = events.get(&event_id) else {
-            continue;
-        };
-        if event.get("body_kind").and_then(Value::as_str) != Some("cli_invocation_finished") {
-            continue;
-        }
-        let event_step_id = enclosing_step_id(event, &events);
-        if let Some(filter) = step_id
-            && event_step_id.as_deref() != Some(filter)
-        {
-            continue;
-        }
-        let stdout_blob_ref = event
-            .get("stdout_blob_ref")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let stderr_blob_ref = event
-            .get("stderr_blob_ref")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let stdout = match stdout_blob_ref.as_deref() {
-            Some(blob_ref) => read_blob_text(&blob_store, blob_ref)?,
-            None => String::new(),
-        };
-        let stderr = match stderr_blob_ref.as_deref() {
-            Some(blob_ref) => read_blob_text(&blob_store, blob_ref)?,
-            None => String::new(),
-        };
-        records.push(RawLogRecord {
-            step_id: event_step_id,
-            provider: event
-                .get("provider")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            stdout_blob_ref,
-            stderr_blob_ref,
-            stdout,
-            stderr,
-        });
-    }
-
-    if let Some(step_id) = step_id {
-        let step_exists_in_run = run
-            .steps
-            .iter()
-            .any(|step| step.target_id == step_id || step.step_index.to_string() == step_id);
-        if records.is_empty() && !step_exists_in_run {
-            return Err(OrbitError::InvalidInput(format!(
-                "step '{step_id}' does not match any step in run '{}'",
-                run.run_id
-            )));
-        }
-    }
-
-    Ok(records)
-}
-
-fn enclosing_step_id(event: &Value, events: &HashMap<String, Value>) -> Option<String> {
-    let mut parent_id = event
-        .get("parent_event_id")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    while let Some(id) = parent_id {
-        let parent = events.get(&id)?;
-        if parent.get("body_kind").and_then(Value::as_str) == Some("step_started") {
-            return parent
-                .get("step_id")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-        }
-        parent_id = parent
-            .get("parent_event_id")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-    }
-    None
-}
-
-fn read_blob_text(blob_store: &BlobStore, blob_ref: &str) -> Result<String, OrbitError> {
-    if blob_ref.len() < 2 || blob_ref.starts_with("error:") {
-        return Err(OrbitError::Store(format!(
-            "invalid audit blob reference '{blob_ref}'"
-        )));
-    }
-    let bytes = blob_store
-        .read(blob_ref)
-        .map_err(|err| OrbitError::Io(format!("read audit blob '{blob_ref}': {err}")))?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
-}
-
-fn raw_log_record_to_json(record: &RawLogRecord) -> Value {
+fn cli_invocation_record_to_json(record: &RunCliInvocationRecord) -> Value {
     json!({
         "step_id": record.step_id,
         "provider": record.provider,
@@ -724,6 +832,211 @@ fn raw_log_record_to_json(record: &RawLogRecord) -> Value {
         "stdout": record.stdout,
         "stderr": record.stderr,
     })
+}
+
+fn filter_run_audit_events(
+    events: Vec<RunAuditEvent>,
+    step_filter: Option<&str>,
+    event_type: Option<&str>,
+) -> Vec<RunAuditEvent> {
+    events
+        .into_iter()
+        .filter(|event| {
+            step_filter.is_none_or(|filter| event.step_id.as_deref() == Some(filter))
+                && event_type.is_none_or(|filter| event.event_type.as_deref() == Some(filter))
+        })
+        .collect()
+}
+
+fn summarize_audit_event(event: &RunAuditEvent) -> String {
+    let raw = &event.raw;
+    match event.event_type.as_deref() {
+        Some("run.started") => field_summary(raw, "job_name"),
+        Some("run.finished") => field_summary(raw, "outcome"),
+        Some("step.started") => field_summary(raw, "step_id"),
+        Some("step.finished") => join_present(&[
+            ("step", raw_str(raw, "step_id")),
+            ("outcome", raw_str(raw, "outcome")),
+        ]),
+        Some("step.skipped") => join_present(&[
+            ("step", raw_str(raw, "step_id")),
+            ("reason", raw_str(raw, "reason")),
+        ]),
+        Some("step.denied") => join_present(&[
+            ("step", raw_str(raw, "step_id")),
+            ("reason", raw_str(raw, "reason")),
+        ]),
+        Some("activity.started") => join_present(&[
+            ("activity", raw_str(raw, "activity_name")),
+            ("type", raw_str(raw, "activity_type")),
+        ]),
+        Some("activity.finished") => join_present(&[
+            ("activity", raw_str(raw, "activity_name")),
+            ("outcome", raw_str(raw, "outcome")),
+        ]),
+        Some("cli.invocation.started") => join_present(&[
+            ("provider", raw_str(raw, "provider")),
+            ("model", raw_str(raw, "model")),
+        ]),
+        Some("cli.invocation.finished") => join_present(&[
+            ("provider", raw_str(raw, "provider")),
+            ("exit", raw_i64(raw, "exit_code")),
+            ("duration_ms", raw_u64(raw, "duration_ms")),
+            ("timed_out", raw_bool(raw, "timed_out")),
+        ]),
+        Some("tool.denied") => join_present(&[
+            ("tool", raw_str(raw, "tool_name")),
+            ("reason", raw_str(raw, "reason")),
+        ]),
+        Some("fs.call.request" | "fs.call.result" | "fs.call.denied") => join_present(&[
+            ("op", raw_str(raw, "op")),
+            ("path", raw_str(raw, "path")),
+            ("allowed", raw_bool(raw, "allowed")),
+        ]),
+        Some("fanout.dispatched") => join_present(&[
+            ("step", raw_str(raw, "step_id")),
+            ("workers", raw_u64(raw, "worker_count")),
+        ]),
+        Some("worker.state") => join_present(&[
+            ("step", raw_str(raw, "step_id")),
+            ("worker", raw_u64(raw, "worker_index")),
+            ("state", raw_str(raw, "state")),
+        ]),
+        Some("fanin.joined") => join_present(&[
+            ("step", raw_str(raw, "step_id")),
+            ("collected", raw_u64(raw, "collected")),
+            ("failed", raw_u64(raw, "failed")),
+        ]),
+        _ => event.body_kind.clone().unwrap_or_else(|| "-".to_string()),
+    }
+}
+
+fn field_summary(raw: &Value, field: &str) -> String {
+    raw_str(raw, field).unwrap_or_else(|| "-".to_string())
+}
+
+fn raw_str(raw: &Value, field: &str) -> Option<String> {
+    raw.get(field).and_then(Value::as_str).map(str::to_string)
+}
+
+fn raw_i64(raw: &Value, field: &str) -> Option<String> {
+    raw.get(field)
+        .and_then(Value::as_i64)
+        .map(|value| value.to_string())
+}
+
+fn raw_u64(raw: &Value, field: &str) -> Option<String> {
+    raw.get(field)
+        .and_then(Value::as_u64)
+        .map(|value| value.to_string())
+}
+
+fn raw_bool(raw: &Value, field: &str) -> Option<String> {
+    raw.get(field)
+        .and_then(Value::as_bool)
+        .map(|value| value.to_string())
+}
+
+fn join_present(fields: &[(&str, Option<String>)]) -> String {
+    let summary = fields
+        .iter()
+        .filter_map(|(label, value)| value.as_ref().map(|value| format!("{label}={value}")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if summary.is_empty() {
+        "-".to_string()
+    } else {
+        summary
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TraceTree {
+    roots: Vec<TraceNode>,
+    orphans: Vec<TraceNode>,
+}
+
+#[derive(Clone, Debug)]
+struct TraceNode {
+    event: RunAuditEvent,
+    children: Vec<TraceNode>,
+}
+
+fn build_trace_tree(events: &[RunAuditEvent]) -> TraceTree {
+    let index_by_id = events
+        .iter()
+        .enumerate()
+        .map(|(index, event)| (event.event_id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut child_indexes = vec![Vec::<usize>::new(); events.len()];
+    let mut roots = Vec::new();
+    let mut orphans = Vec::new();
+
+    for (index, event) in events.iter().enumerate() {
+        match event
+            .parent_event_id
+            .as_ref()
+            .and_then(|parent_id| index_by_id.get(parent_id))
+        {
+            Some(parent_index) => child_indexes[*parent_index].push(index),
+            None if event.parent_event_id.is_some() => orphans.push(index),
+            None => roots.push(index),
+        }
+    }
+
+    TraceTree {
+        roots: roots
+            .into_iter()
+            .map(|index| build_trace_node(index, events, &child_indexes, &mut HashSet::new()))
+            .collect(),
+        orphans: orphans
+            .into_iter()
+            .map(|index| build_trace_node(index, events, &child_indexes, &mut HashSet::new()))
+            .collect(),
+    }
+}
+
+fn build_trace_node(
+    index: usize,
+    events: &[RunAuditEvent],
+    child_indexes: &[Vec<usize>],
+    visited: &mut HashSet<usize>,
+) -> TraceNode {
+    if !visited.insert(index) {
+        return TraceNode {
+            event: events[index].clone(),
+            children: Vec::new(),
+        };
+    }
+    let children = child_indexes[index]
+        .iter()
+        .map(|child_index| build_trace_node(*child_index, events, child_indexes, visited))
+        .collect::<Vec<_>>();
+    visited.remove(&index);
+    TraceNode {
+        event: events[index].clone(),
+        children,
+    }
+}
+
+fn trace_node_to_json(node: &TraceNode) -> Value {
+    json!({
+        "event": node.event.json_with_step_id(),
+        "children": node.children.iter().map(trace_node_to_json).collect::<Vec<_>>(),
+    })
+}
+
+fn print_trace_node(node: &TraceNode, depth: usize) {
+    let indent = "  ".repeat(depth);
+    let prefix = if depth == 0 { "" } else { "- " };
+    println!(
+        "{indent}{prefix}{} {}",
+        node.event.event_type.as_deref().unwrap_or("-"),
+        summarize_audit_event(&node.event)
+    );
+    for child in &node.children {
+        print_trace_node(child, depth + 1);
+    }
 }
 
 fn format_timestamp(value: Option<chrono::DateTime<chrono::Utc>>) -> String {
@@ -925,8 +1238,204 @@ mod tests {
     }
 
     #[test]
+    fn parses_run_events_latest() {
+        let command = parse_run(&["orbit", "run", "events"]);
+        match command.command.expect("subcommand") {
+            RunSubcommand::Events(args) => {
+                assert_eq!(args.run_id, None);
+                assert_eq!(args.step_id, None);
+                assert_eq!(args.event_type, None);
+                assert!(!args.json);
+            }
+            _ => panic!("expected events"),
+        }
+    }
+
+    #[test]
+    fn parses_run_events_filters() {
+        let command = parse_run(&[
+            "orbit",
+            "run",
+            "events",
+            "jrun-1",
+            "-s",
+            "implement_one",
+            "--type",
+            "cli.invocation.finished",
+            "--json",
+        ]);
+        match command.command.expect("subcommand") {
+            RunSubcommand::Events(args) => {
+                assert_eq!(args.run_id.as_deref(), Some("jrun-1"));
+                assert_eq!(args.step_id.as_deref(), Some("implement_one"));
+                assert_eq!(args.event_type.as_deref(), Some("cli.invocation.finished"));
+                assert!(args.json);
+            }
+            _ => panic!("expected events"),
+        }
+    }
+
+    #[test]
+    fn parses_run_trace_latest() {
+        let command = parse_run(&["orbit", "run", "trace"]);
+        match command.command.expect("subcommand") {
+            RunSubcommand::Trace(args) => {
+                assert_eq!(args.run_id, None);
+                assert!(!args.json);
+            }
+            _ => panic!("expected trace"),
+        }
+    }
+
+    #[test]
+    fn parses_run_trace_json() {
+        let command = parse_run(&["orbit", "run", "trace", "jrun-1", "--json"]);
+        match command.command.expect("subcommand") {
+            RunSubcommand::Trace(args) => {
+                assert_eq!(args.run_id.as_deref(), Some("jrun-1"));
+                assert!(args.json);
+            }
+            _ => panic!("expected trace"),
+        }
+    }
+
+    #[test]
+    fn run_events_filter_by_step_and_type() {
+        let events = vec![
+            test_audit_event("evt-run", None, "run.started", None),
+            test_audit_event(
+                "evt-step",
+                Some("evt-run"),
+                "step.started",
+                Some("implement_one"),
+            ),
+            test_audit_event(
+                "evt-cli",
+                Some("evt-step"),
+                "cli.invocation.finished",
+                Some("implement_one"),
+            ),
+            test_audit_event(
+                "evt-review",
+                Some("evt-run"),
+                "step.started",
+                Some("review"),
+            ),
+        ];
+
+        let filtered = filter_run_audit_events(
+            events,
+            Some("implement_one"),
+            Some("cli.invocation.finished"),
+        );
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].event_id, "evt-cli");
+    }
+
+    #[test]
+    fn run_trace_tree_nests_children_and_keeps_orphans() {
+        let events = vec![
+            test_audit_event("evt-run", None, "run.started", None),
+            test_audit_event(
+                "evt-step",
+                Some("evt-run"),
+                "step.started",
+                Some("implement_one"),
+            ),
+            test_audit_event(
+                "evt-activity",
+                Some("evt-step"),
+                "activity.started",
+                Some("implement_one"),
+            ),
+            test_audit_event("evt-orphan", Some("evt-missing"), "tool.denied", None),
+        ];
+
+        let tree = build_trace_tree(&events);
+        assert_eq!(tree.roots.len(), 1);
+        assert_eq!(tree.roots[0].event.event_id, "evt-run");
+        assert_eq!(tree.roots[0].children[0].event.event_id, "evt-step");
+        assert_eq!(
+            tree.roots[0].children[0].children[0].event.event_id,
+            "evt-activity"
+        );
+        assert_eq!(tree.orphans.len(), 1);
+        assert_eq!(tree.orphans[0].event.event_id, "evt-orphan");
+    }
+
+    #[test]
+    fn resolve_run_step_prefers_audit_step_id() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let yaml_path = runtime.data_root().join("qa_step_id.yaml");
+        std::fs::write(
+            &yaml_path,
+            r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: qa_step_id
+spec:
+  state: enabled
+  kind: workflow
+  steps:
+    - id: nap
+      spec:
+        type: deterministic
+        action: sleep
+        config: {}
+"#,
+        )
+        .expect("write job yaml");
+        let result = runtime
+            .run_job_v2_from_yaml(&yaml_path, json!({ "seconds": 0 }), None)
+            .expect("run job");
+        let run = runtime.show_job_run(&result.run_id).expect("show run");
+
+        let resolved = resolve_run_step(&runtime, &run, "nap").expect("resolve step");
+        assert_eq!(resolved.target_id, "nap");
+        assert_eq!(resolved.target_type, "activity");
+    }
+
+    #[test]
     fn rejects_removed_duel_history_forms() {
         assert!(Cli::try_parse_from(["orbit", "run", "duel", "list"]).is_err());
         assert!(Cli::try_parse_from(["orbit", "run", "duel", "show"]).is_err());
+    }
+
+    fn test_audit_event(
+        event_id: &str,
+        parent_event_id: Option<&str>,
+        event_type: &str,
+        step_id: Option<&str>,
+    ) -> RunAuditEvent {
+        let body_kind = event_type.replace('.', "_");
+        let mut raw = json!({
+            "schemaVersion": 1,
+            "event_type": event_type,
+            "event_id": event_id,
+            "ts": "2026-04-26T07:00:00Z",
+            "run_id": "jrun-test",
+            "agent_identity": "codex",
+            "body_kind": body_kind,
+        });
+        if let Some(parent_event_id) = parent_event_id {
+            raw.as_object_mut().unwrap().insert(
+                "parent_event_id".to_string(),
+                Value::String(parent_event_id.to_string()),
+            );
+        }
+        if let Some(step_id) = step_id {
+            raw.as_object_mut()
+                .unwrap()
+                .insert("step_id".to_string(), Value::String(step_id.to_string()));
+        }
+        RunAuditEvent {
+            raw,
+            event_id: event_id.to_string(),
+            parent_event_id: parent_event_id.map(str::to_string),
+            event_type: Some(event_type.to_string()),
+            body_kind: Some(body_kind),
+            timestamp: None,
+            step_id: step_id.map(str::to_string),
+        }
     }
 }

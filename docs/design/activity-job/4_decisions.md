@@ -243,6 +243,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - The file layout more clearly separates command audit queries from run-trace reconstruction files.
 - Cost: existing local `.orbit/audit/` artifacts are legacy files; readers looking for historical runs may need to check both locations during any manual transition period.
 
+## ADR-019 — Run inspection reads v2 traces through runtime accessors
+
+**Status:** Accepted · 2026-04 · [T20260426-0705], [T20260426-0709]
+
+**Context.** Operators need to inspect the v2 envelope tree from `orbit run`, but letting CLI command rendering parse `.orbit/state/audit/` paths directly couples user-facing inspection to engine-owned persistence details. Step selectors also drifted because durable v2 runs can store synthetic job-level steps while the envelope carries the activity DAG `step.id`.
+
+**Decision.** Keep file-layout and blob-reading knowledge in orbit-core runtime accessors, and expose `orbit run events`, `orbit run trace`, and `orbit run logs` through those accessors. Treat envelope `step.started.step_id` as the primary user-facing step selector, with legacy `JobRunStep.target_id` and numeric step indexes as fallbacks.
+
+**Consequences.**
+- `orbit run events` and `orbit run trace` give operators chronological and tree-shaped views of run-local audit envelopes.
+- Run-log stdout/stderr reading now follows the same boundary as v2 audit sink construction.
+- Cost: the runtime layer now owns a read-side view model for audit JSONL, so envelope schema changes must update both writer and accessor tests together.
+
 ---
 
 ## Task References
@@ -269,5 +282,7 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 - **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under `.orbit/state/audit`.
+- **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
+- **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

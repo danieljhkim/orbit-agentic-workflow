@@ -86,6 +86,8 @@ The body is a tagged `V2AuditEventKind`. Current event families include:
 
 `crates/orbit-engine/src/activity_job/jsonl_sink.rs` writes one JSON object per line under `v2_loop/`, append-only for the life of a run and flushed per write.
 
+`crates/orbit-core/src/runtime/run_audit.rs` owns the read-side accessor for this file-backed layer after [T20260426-0709]. It collects v2 envelope events, derives activity DAG `step.id` values from `parent_event_id` ancestry, and resolves CLI stdout/stderr blob references for `orbit run logs` without exposing audit storage paths to the CLI renderer.
+
 ---
 
 ## 5. Loop-Level Provider and Tool Events
@@ -148,7 +150,13 @@ This area is still uneven. Some paths store role strings such as `admin`; some s
 
 The command audit query surface supports filters for time, tool, status, role, and limit. Exports include all command-audit columns, including currently sparse fields such as `stdout_truncated`, `stderr_truncated`, and `session_id`.
 
-V2 JSONL traces are not yet exposed through an equally rich first-class query command. `orbit job history` and `orbit job run-state` expose durable job-run state, while the JSONL files remain the canonical file-backed reconstruction trail.
+V2 JSONL traces are exposed through run-scoped inspection commands after [T20260426-0705]:
+
+- `orbit run events [run_id]` prints chronological envelope events and supports step and event-type filters.
+- `orbit run trace [run_id]` renders the `event_id` / `parent_event_id` tree.
+- `orbit run logs [run_id]` extracts CLI stdout/stderr blobs from CLI invocation envelope events.
+
+These are intentionally separate from `orbit audit`, which remains the compact SQLite command-audit query surface. `orbit job history` and `orbit job run-state` continue to expose durable job-run state rather than the full envelope stream.
 
 Invocation metrics are surfaced through metrics and scoreboard commands. They are useful for cost and usage analysis, but they do not replace the audit trail because they summarize rather than preserve transcript structure.
 
@@ -172,5 +180,7 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under workspace state.
 - **[T20260426-0526]** — Persist v2 invocation traces for metrics beside audit.
 - **[T20260426-0605]** — Add this auditability design folder and document the current audit architecture.
+- **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
+- **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

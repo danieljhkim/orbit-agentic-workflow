@@ -86,6 +86,19 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - CLI and HTTP agent-loop paths can converge on one usage record shape.
 - Cost: job execution has another persistence side effect, and metrics can diverge from transcript detail if a provider path reports incomplete usage.
 
+## ADR-007 — Run trace inspection stays separate from command audit
+
+**Status:** Accepted · 2026-04 · [T20260426-0705], [T20260426-0709]
+
+**Context.** Operators need first-class commands for activity/job envelope JSONL, but `orbit audit` is intentionally the compact SQLite command-audit surface. Mixing run-local envelope traversal into command-audit queries would blur two storage scopes and make command audit rows carry workflow-specific semantics.
+
+**Decision.** Expose v2 envelope inspection under `orbit run events` and `orbit run trace`, and keep `orbit audit` focused on command-audit rows. Keep envelope JSONL/blob parsing behind orbit-core runtime accessors so CLI rendering does not own file-backed run-trace layout.
+
+**Consequences.**
+- Operators can inspect both command history and run-local workflow traces through dedicated commands.
+- Activity `step.id` becomes the shared selector for `run show`, `run logs`, and run trace/event inspection.
+- Cost: users must understand that `orbit audit` and `orbit run events/trace` answer related but different audit questions.
+
 ---
 
 ## Task References
@@ -94,5 +107,7 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under workspace state.
 - **[T20260426-0526]** — Persist v2 invocation traces for metrics beside audit.
 - **[T20260426-0605]** — Add this auditability design folder and record initial ADRs.
+- **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
+- **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

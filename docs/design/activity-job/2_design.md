@@ -275,11 +275,21 @@ The loop shares the same pipeline map and session map across iterations. That is
 
 ### 8.7 Invocation metrics
 
-The `orbit metrics` command reads knowledge usage from job-run state and agent/tool usage from the SQLite invocation store. It does not scrape `.orbit/audit/v2_loop/` or the diagnostics JSONL stream.
+The `orbit metrics` command reads knowledge usage from job-run state and agent/tool usage from the SQLite invocation store. It does not scrape `.orbit/state/audit/v2_loop/` or the diagnostics JSONL stream.
 
 V2 jobs therefore persist invocation traces as an explicit execution side effect after [T20260426-0526]. The engine carries optional trace data on `DispatchOutcome`, the job executor associates it with the durable run ID and step ID, and orbit-core inserts it into the invocation store with canonical agent/model names plus task IDs extracted from the rendered step input. The same persistence hook refreshes the token scoreboard.
 
 For `backend: cli`, the trace comes from the provider's structured stdout using the same parser that validates Orbit response envelopes. For the HTTP loop path, the trace is derived from `LoopOutcome` usage and tool-call names.
+
+### 8.8 Run trace inspection
+
+`orbit run show`, `orbit run logs`, `orbit run events`, and `orbit run trace` are the operator surfaces for already-scheduled runs. They all resolve an omitted run ID to the most recently scheduled run.
+
+After [T20260426-0709], `orbit run show <run> -s <id>` treats the v2 audit envelope's activity DAG `step.id` as the primary identifier. That matters because durable v2 runs may store a synthetic job-level `JobRunStep` whose `target_id` is the job ID, while the audit envelope still records the actual YAML step IDs. The legacy `JobRunStep.target_id` and numeric `step_index` remain fallback selectors.
+
+After [T20260426-0705], `orbit run events <run>` reads the v2 envelope chronologically and can filter by activity step ID or event type. `orbit run trace <run>` renders the parent/child tree from `event_id` and `parent_event_id`. JSON mode for both commands returns deterministic structures for tests and downstream tooling.
+
+The CLI does not own the envelope storage layout. `orbit-core` exposes runtime accessors for v2 audit events and CLI invocation records, including derived step IDs and blob-backed stdout/stderr. This keeps `.orbit/state/audit/v2_loop/` and `.orbit/state/audit/blobs/` knowledge with the runtime layer that also builds the activity/job audit sinks.
 
 ---
 
@@ -396,5 +406,7 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260426-0047]** — Make v2 activity catalog discovery honor workspace-over-global `MergeByKey` precedence and remove the public `orbit activity run` command.
 - **[T20260426-0526]** — Restore v2 job invocation trace persistence so `orbit metrics` can report agent and tool usage.
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under `.orbit/state/audit`.
+- **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
+- **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

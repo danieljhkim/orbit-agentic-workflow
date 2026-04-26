@@ -53,6 +53,14 @@ Loop-engine events and blobs continue to use the sibling audit layout under:
 
 The v2 writer may also keep an in-memory snapshot for smoke assertions and CLI summaries.
 
+## CLI Inspection
+
+`orbit run events [run_id]` is the human-facing chronological reader for the v2 envelope. It resolves the same default run as `orbit run show`, prints timestamp, derived activity `step.id`, event type, and a concise body summary, and can emit the flattened raw event objects as JSON with derived `step_id` attached to descendant events.
+
+`orbit run trace [run_id]` renders the `event_id` / `parent_event_id` tree. JSON mode returns deterministic `roots` and `orphans` arrays so partial traces remain inspectable instead of silently dropping events whose parent is absent.
+
+`orbit run logs` reads CLI stdout/stderr through the same runtime-owned envelope accessor rather than parsing the file layout in the CLI command module. `orbit run show -s <id>` treats the activity DAG `step.id` from `step.started` events as the primary step identifier, with legacy job-run target IDs and numeric step indexes retained as fallbacks. This inspection surface landed in [T20260426-0705] and [T20260426-0709].
+
 ## Invariants
 
 - Envelope writes are append-only, one JSON object per line.

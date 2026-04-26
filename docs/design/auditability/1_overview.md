@@ -34,6 +34,8 @@ The v2 activity/job runtime emits `V2AuditEvent` envelopes for run, step, activi
 
 This layer is the structural spine for workflow replay. It knows `run_id`, `event_id`, `parent_event_id`, `agent_identity`, and optional `workspace_path`.
 
+`orbit run events <run_id>` and `orbit run trace <run_id>` expose this layer as chronological and tree-shaped operator views after [T20260426-0705]. `orbit run show -s <id>` and `orbit run logs -s <id>` use the same activity DAG `step.id` source of truth after [T20260426-0709].
+
 ### 2.3 Agent-loop audit events preserve provider and tool detail
 
 The HTTP loop engine emits structured `LoopAuditEvent` records for sessions, HTTP requests/responses, tool requests/results, iteration boundaries, and policy denials. Large payload bodies are stored as redacted content-addressed blobs and referenced by sha256.
@@ -66,6 +68,7 @@ The redaction and retention contract is specified in [specs/redaction-retention.
 | V2 activity/job envelope | `crates/orbit-common/src/types/activity_job/audit_envelope.rs` | [T20260419-0002] |
 | V2 JSONL writer and sink | `crates/orbit-engine/src/activity_job/audit_writer.rs`, `crates/orbit-engine/src/activity_job/jsonl_sink.rs` | [T20260419-0002], [T20260426-0519] |
 | Workspace-local run trace location | `.orbit/state/audit/` | [T20260426-0519] |
+| Run trace inspection CLI | `crates/orbit-cli/src/command/run.rs`, `crates/orbit-core/src/runtime/run_audit.rs` | [T20260426-0705], [T20260426-0709] |
 | Loop audit events and blob storage | `crates/orbit-agent/src/loop_engine/audit/mod.rs`, `crates/orbit-common/src/utility/blob_store.rs` | [T20260426-0605] |
 | Redaction utilities | `crates/orbit-common/src/utility/redaction.rs` | [T20260426-0605] |
 | V2 invocation metrics persistence | `crates/orbit-store/src/sqlite/invocation_store.rs`, `crates/orbit-core/src/runtime/v2_host.rs` | [T20260426-0526] |
@@ -79,5 +82,7 @@ The redaction and retention contract is specified in [specs/redaction-retention.
 - **[T20260426-0519]** — Move file-backed activity/job audit traces under workspace state.
 - **[T20260426-0526]** — Persist v2 invocation traces for metrics beside audit.
 - **[T20260426-0605]** — Add this auditability design folder and establish codex ownership.
+- **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
+- **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

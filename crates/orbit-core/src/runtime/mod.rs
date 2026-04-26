@@ -19,6 +19,7 @@ pub mod mutation;
 mod orbit_tool_host;
 pub mod pipeline;
 mod resolve;
+pub mod run_audit;
 mod store_delegates;
 mod v2_host;
 

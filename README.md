@@ -156,7 +156,7 @@ When something goes wrong on your team's monorepo, you need to answer three ques
 
 When auditability conflicts with performance, ergonomics, or feature surface, auditability wins.
 
-The full contract — coverage commitments, schema stability, reproducibility, tamper-evidence — lives in [docs/POSITIONING.md](docs/POSITIONING.md#primary-focus-auditability). Query the trail with `orbit audit list`, `orbit audit show`, and `orbit audit stats`.
+The full contract — coverage commitments, schema stability, reproducibility, tamper-evidence — lives in [docs/POSITIONING.md](docs/POSITIONING.md#primary-focus-auditability). Query command audit rows with `orbit audit list`, `orbit audit show`, and `orbit audit stats`. Inspect run-local activity/job traces with `orbit run events <run_id>` and `orbit run trace <run_id>`.
 
 ---
 
@@ -195,13 +195,18 @@ orbit run ship --mode local <task_id> ...
 orbit run ship-auto
 orbit run duel-plan <task_id>
 orbit run job <job_id>
+orbit run show [run_id]
+orbit run logs [run_id]
+orbit run events [run_id]
+orbit run trace [run_id]
 ```
 
 - `ship` runs explicitly selected tasks through the PR pipeline by default.
 - `ship --mode local` runs explicitly selected tasks through the local-only path.
 - `ship-auto` auto-selects backlog tasks and dispatches them through the same PR/local mode switch.
 - `duel-plan` runs the planning-duel workflow for one task.
-- use `orbit job history <job_id>` and `orbit job run-state <run_id>` for run inspection.
+- `show`, `logs`, `events`, and `trace` inspect the most recent run by default, or a specific run ID when supplied.
+- use `orbit job history <job_id>` and `orbit job run-state <run_id>` for durable job-run history and state.
 
 ### Tasks
 
@@ -220,9 +225,11 @@ Tasks are the durable unit of work. Direct human-created tasks enter the backlog
 orbit audit list
 orbit audit show <event_id>
 orbit audit stats
+orbit run events <run_id>
+orbit run trace <run_id>
 ```
 
-Every agent action is queryable. Treat this as a first-class surface, not a debug tool.
+Every agent action is queryable. `orbit audit` reads compact command-audit rows; `orbit run events` and `orbit run trace` read workspace-local activity/job run traces from `.orbit/state/audit/`. Treat this as a first-class surface, not a debug tool.
 
 ---
 
@@ -283,7 +290,7 @@ Lower-level operating surfaces are intentionally available because durable local
 
 - `activity` and `job` for defining and running substrate assets directly
 - `policy`, `executor`, and `tool` for runtime customization
-- `orbit scoreboard`, `orbit job history <job_id>`, and `orbit run job <id>` for evaluation, history, and direct workflow execution
+- `orbit scoreboard`, `orbit job history <job_id>`, `orbit run show/logs/events/trace`, and `orbit run job <id>` for evaluation, history, trace inspection, and direct workflow execution
 - `metrics` and `serve` for observability and outward integration
 
 Most users can ignore these on day one. Reach for `orbit --help` and `orbit <command> --help` when you need the deeper surface area.
