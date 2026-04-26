@@ -14,13 +14,19 @@ pub(crate) fn resolve_global_root() -> Result<PathBuf, OrbitError> {
 
 /// Resolves the `.orbit` data root using the full resolution chain.
 ///
+/// Linked git worktrees intentionally resolve to the main checkout's `.orbit`
+/// before local walk-up discovery, so task state cannot diverge per worktree.
+/// Explicit `--root` and `ORBIT_ROOT` still take precedence over this automatic
+/// worktree resolution. A worktree-local `.orbit/` is ignored by design.
+///
 /// Resolution order:
 /// 1. `--root` flag (escape hatch)
 /// 2. `ORBIT_ROOT` env (escape hatch)
-/// 3. `path_overrides` in global registry (longest prefix match from cwd)
-/// 4. Walk up from cwd to find first `.orbit/` directory
-/// 5. Legacy: git repo root (for repos without `.orbit/` directory yet)
-/// 6. Fallback: `<cwd>/.orbit`
+/// 3. Linked git worktree's main checkout `.orbit/`
+/// 4. `path_overrides` in global registry (longest prefix match from cwd)
+/// 5. Walk up from cwd to find first `.orbit/` directory
+/// 6. Legacy: git repo root (for repos without `.orbit/` directory yet)
+/// 7. Fallback: `<cwd>/.orbit`
 pub(crate) fn resolve_initialize_data_root(
     cwd: &Path,
     root_override: Option<&Path>,
@@ -36,6 +42,11 @@ pub(crate) fn resolve_bootstrap_data_root(
     resolve_data_root(cwd, root_override, ExplicitRootMode::AllowUninitialized)
 }
 
+/// Core implementation for `.orbit` workspace root discovery.
+///
+/// Explicit roots from `--root` and `ORBIT_ROOT` win first. Linked git
+/// worktrees then resolve through the main checkout, intentionally ignoring a
+/// worktree-local `.orbit/`, before registry overrides and legacy walk-up run.
 fn resolve_data_root(
     cwd: &Path,
     root_override: Option<&Path>,
@@ -43,40 +54,48 @@ fn resolve_data_root(
 ) -> Result<PathBuf, OrbitError> {
     // 1. --root flag (escape hatch)
     if let Some(root) = root_override {
-        return resolve_explicit_root_path_value(&root.to_string_lossy(), cwd, explicit_root_mode);
+        let root =
+            resolve_explicit_root_path_value(&root.to_string_lossy(), cwd, explicit_root_mode)?;
+        return Ok(log_resolved_data_root(cwd, "explicit_root", root));
     }
 
     // 2. ORBIT_ROOT env (escape hatch)
     if let Ok(explicit) = std::env::var("ORBIT_ROOT")
         && !explicit.trim().is_empty()
     {
-        return resolve_explicit_root_path_value(&explicit, cwd, explicit_root_mode);
+        let root = resolve_explicit_root_path_value(&explicit, cwd, explicit_root_mode)?;
+        return Ok(log_resolved_data_root(cwd, "orbit_root_env", root));
     }
 
-    // 3. path_overrides in global registry (longest prefix match)
+    // 3. Linked git worktree's main checkout .orbit/
+    if let Some(orbit_dir) = find_main_worktree_orbit_dir(cwd) {
+        let root = resolve_orbit_dir_candidate(&orbit_dir)?;
+        return Ok(log_resolved_data_root(cwd, "git_worktree_main", root));
+    }
+
+    // 4. path_overrides in global registry (longest prefix match)
     if let Some(ws) = resolve_from_path_override(cwd) {
-        return Ok(ws);
+        return Ok(log_resolved_data_root(cwd, "path_override", ws));
     }
 
-    // 4. Walk up from cwd to find first .orbit/ directory
+    // 5. Walk up from cwd to find first .orbit/ directory
     if let Some(orbit_dir) = find_orbit_dir_walk_up(cwd) {
-        // Check if this .orbit has a config.toml with a root redirect
-        let config_path = orbit_dir.join("config.toml");
-        if config_path.exists()
-            && let Some(configured_root) = configured_root_from_config(&config_path)?
-        {
-            return Ok(configured_root);
-        }
-        return Ok(orbit_dir);
+        let root = resolve_orbit_dir_candidate(&orbit_dir)?;
+        return Ok(log_resolved_data_root(cwd, "walk_up", root));
     }
 
-    // 5. Legacy: git repo root (for repos without .orbit/ directory yet)
+    // 6. Legacy: git repo root (for repos without .orbit/ directory yet)
     if let Some(repo_root) = paths::find_git_repo_root(cwd) {
-        return Ok(repo_root.join(".orbit"));
+        let root = repo_root.join(".orbit");
+        return Ok(log_resolved_data_root(cwd, "git_repo_root", root));
     }
 
-    // 6. Fallback: <cwd>/.orbit
-    Ok(paths::cwd_orbit_root(cwd))
+    // 7. Fallback: <cwd>/.orbit
+    Ok(log_resolved_data_root(
+        cwd,
+        "cwd_fallback",
+        paths::cwd_orbit_root(cwd),
+    ))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -92,6 +111,10 @@ fn resolve_from_path_override(cwd: &Path) -> Option<PathBuf> {
     Some(ws.orbit_dir.clone())
 }
 
+fn find_main_worktree_orbit_dir(cwd: &Path) -> Option<PathBuf> {
+    Some(paths::find_git_main_worktree_root(cwd)?.join(".orbit"))
+}
+
 /// Walks up the directory tree from `start` looking for the first `.orbit/` directory.
 fn find_orbit_dir_walk_up(start: &Path) -> Option<PathBuf> {
     let mut current = start;
@@ -102,6 +125,26 @@ fn find_orbit_dir_walk_up(start: &Path) -> Option<PathBuf> {
         }
         current = current.parent()?;
     }
+}
+
+fn resolve_orbit_dir_candidate(orbit_dir: &Path) -> Result<PathBuf, OrbitError> {
+    let config_path = orbit_dir.join("config.toml");
+    if config_path.exists()
+        && let Some(configured_root) = configured_root_from_config(&config_path)?
+    {
+        return Ok(configured_root);
+    }
+    Ok(orbit_dir.to_path_buf())
+}
+
+fn log_resolved_data_root(cwd: &Path, source: &'static str, root: PathBuf) -> PathBuf {
+    tracing::debug!(
+        source,
+        cwd = %cwd.display(),
+        orbit_root = %root.display(),
+        "resolved Orbit data root"
+    );
+    root
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,12 +233,16 @@ fn resolve_root_path_value(raw: &str, base_dir: &Path) -> Result<PathBuf, OrbitE
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
     use std::fs;
     use std::path::Path;
+    use std::sync::Mutex;
 
     use tempfile::tempdir;
 
     use super::*;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn explicit_root_with_initialized_child_orbit_resolves_to_child() {
@@ -266,9 +313,141 @@ mod tests {
         assert!(!root.exists());
     }
 
+    #[test]
+    fn explicit_root_precedes_env_and_worktree_resolution() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let main_repo = tempdir().expect("main repo tempdir");
+        let worktree = tempdir().expect("worktree tempdir");
+        let explicit_repo = tempdir().expect("explicit repo tempdir");
+        let env_repo = tempdir().expect("env repo tempdir");
+        seed_fake_git_worktree(main_repo.path(), worktree.path());
+        seed_initialized_workspace_root(&main_repo.path().join(".orbit"));
+        seed_initialized_workspace_root(&explicit_repo.path().join(".orbit"));
+        seed_initialized_workspace_root(&env_repo.path().join(".orbit"));
+        let _env = EnvVarGuard::set("ORBIT_ROOT", env_repo.path().as_os_str().to_os_string());
+
+        let resolved = resolve_initialize_data_root(worktree.path(), Some(explicit_repo.path()))
+            .expect("resolve explicit root");
+
+        assert_eq!(resolved, explicit_repo.path().join(".orbit"));
+    }
+
+    #[test]
+    fn env_root_precedes_worktree_resolution() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let main_repo = tempdir().expect("main repo tempdir");
+        let worktree = tempdir().expect("worktree tempdir");
+        let env_repo = tempdir().expect("env repo tempdir");
+        seed_fake_git_worktree(main_repo.path(), worktree.path());
+        seed_initialized_workspace_root(&main_repo.path().join(".orbit"));
+        seed_initialized_workspace_root(&env_repo.path().join(".orbit"));
+        let _env = EnvVarGuard::set("ORBIT_ROOT", env_repo.path().as_os_str().to_os_string());
+
+        let resolved =
+            resolve_initialize_data_root(worktree.path(), None).expect("resolve env root");
+
+        assert_eq!(resolved, env_repo.path().join(".orbit"));
+    }
+
+    #[test]
+    fn worktree_main_orbit_precedes_worktree_local_orbit() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let main_repo = tempdir().expect("main repo tempdir");
+        let worktree = tempdir().expect("worktree tempdir");
+        seed_fake_git_worktree(main_repo.path(), worktree.path());
+        let main_orbit = main_repo.path().join(".orbit");
+        let worktree_orbit = worktree.path().join(".orbit");
+        seed_initialized_workspace_root(&main_orbit);
+        seed_initialized_workspace_root(&worktree_orbit);
+
+        let resolved =
+            resolve_initialize_data_root(worktree.path(), None).expect("resolve worktree root");
+
+        assert_eq!(resolved, main_orbit);
+        assert_ne!(resolved, worktree_orbit);
+    }
+
+    #[test]
+    fn worktree_without_orbit_uses_main_repo_legacy_orbit_path() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let main_repo = tempdir().expect("main repo tempdir");
+        let worktree = tempdir().expect("worktree tempdir");
+        seed_fake_git_worktree(main_repo.path(), worktree.path());
+
+        let resolved =
+            resolve_bootstrap_data_root(worktree.path(), None).expect("resolve worktree root");
+
+        assert_eq!(resolved, main_repo.path().join(".orbit"));
+        assert!(!resolved.exists());
+        assert!(!worktree.path().join(".orbit").exists());
+    }
+
+    #[test]
+    fn non_worktree_walk_up_behavior_is_preserved() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let repo = tempdir().expect("repo tempdir");
+        let nested = repo.path().join("a").join("b");
+        fs::create_dir_all(&nested).expect("create nested dir");
+        let orbit_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&orbit_root);
+
+        let resolved = resolve_initialize_data_root(&nested, None).expect("resolve walk-up root");
+
+        assert_eq!(resolved, orbit_root);
+    }
+
     fn seed_initialized_workspace_root(path: &Path) {
         fs::create_dir_all(path.join("resources")).expect("create resources");
         fs::create_dir_all(path.join("tasks")).expect("create tasks");
         fs::create_dir_all(path.join("state")).expect("create state");
+    }
+
+    fn seed_fake_git_worktree(main_repo: &Path, worktree: &Path) {
+        let worktree_git_dir = main_repo.join(".git").join("worktrees").join("orbit-test");
+        fs::create_dir_all(&worktree_git_dir).expect("create fake worktree git dir");
+        fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", worktree_git_dir.display()),
+        )
+        .expect("write worktree gitfile");
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: OsString) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe {
+                    std::env::set_var(self.key, value);
+                },
+                None => unsafe {
+                    std::env::remove_var(self.key);
+                },
+            }
+        }
     }
 }

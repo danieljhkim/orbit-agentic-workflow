@@ -1,4 +1,6 @@
+use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 use orbit_common::types::OrbitError;
 
@@ -67,6 +69,83 @@ pub(crate) fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
             if let Some(main_root) = resolve_main_repo_from_worktree_gitfile(&git_path) {
                 return Some(main_root);
             }
+        }
+    }
+    None
+}
+
+pub(crate) fn find_git_main_worktree_root(start: &Path) -> Option<PathBuf> {
+    find_git_main_worktree_root_with_git(start)
+        .or_else(|| find_git_main_worktree_root_from_gitfile(start))
+}
+
+fn find_git_main_worktree_root_with_git(start: &Path) -> Option<PathBuf> {
+    let git_dir = git_rev_parse_path(start, "--git-dir")?;
+    let common_dir = git_rev_parse_path(start, "--git-common-dir")?;
+    if git_dir == common_dir {
+        return None;
+    }
+
+    main_root_from_common_git_dir(&common_dir).or_else(|| git_worktree_list_main_root(start))
+}
+
+fn git_rev_parse_path(start: &Path, flag: &str) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(start)
+        .args(["rev-parse", "--path-format=absolute", flag])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let raw_path = stdout.lines().next()?.trim();
+    if raw_path.is_empty() {
+        return None;
+    }
+
+    Some(normalize_path_components(Path::new(raw_path)))
+}
+
+fn main_root_from_common_git_dir(common_dir: &Path) -> Option<PathBuf> {
+    if common_dir.file_name() == Some(OsStr::new(".git")) {
+        return common_dir.parent().map(normalize_path_components);
+    }
+    None
+}
+
+fn git_worktree_list_main_root(start: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(start)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let first_worktree = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("worktree "))?;
+    if first_worktree.trim().is_empty() {
+        return None;
+    }
+
+    Some(normalize_path_components(Path::new(first_worktree)))
+}
+
+fn find_git_main_worktree_root_from_gitfile(start: &Path) -> Option<PathBuf> {
+    for ancestor in start.ancestors() {
+        let git_path = ancestor.join(".git");
+        if git_path.is_file() {
+            return resolve_main_repo_from_worktree_gitfile(&git_path);
+        }
+        if git_path.is_dir() {
+            return None;
         }
     }
     None
