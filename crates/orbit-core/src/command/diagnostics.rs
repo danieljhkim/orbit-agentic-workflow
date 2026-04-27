@@ -153,7 +153,7 @@ fn read_jsonl_month_limited<T: DeserializeOwned>(
 
 fn parse_jsonl_values<T: DeserializeOwned>(line: &str) -> Result<Vec<T>, serde_json::Error> {
     match serde_json::from_str::<T>(line) {
-        Ok(entry) => return Ok(vec![entry]),
+        Ok(entry) => Ok(vec![entry]),
         Err(single_value_error) => {
             let mut values = Vec::new();
             let stream = serde_json::Deserializer::from_str(line).into_iter::<T>();

@@ -112,6 +112,13 @@ impl V2AuditWriter {
             .map(|s| s.log_path().to_path_buf())
     }
 
+    /// Run identifier carried in every emitted envelope. Exposed so dual-write
+    /// helpers (e.g. `job_executor::emit_job_event`) can stamp `run_id` onto
+    /// paired tracing events without re-threading the value from call sites.
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
     /// Emit a v2 envelope event of the given kind. Returns the event_id so
     /// callers can use it as a parent for nested events.
     pub fn emit(&self, kind: V2AuditEventKind) -> Result<String, WriteError> {

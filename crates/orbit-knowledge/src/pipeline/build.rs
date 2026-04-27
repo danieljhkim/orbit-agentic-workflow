@@ -503,9 +503,7 @@ fn reusable_prior_snapshot(
     }
 
     let snapshot = prior_files?.get(location)?;
-    let Some(new_hash) = ctx.new_hashes.get(location) else {
-        return None;
-    };
+    let new_hash = ctx.new_hashes.get(location)?;
 
     if snapshot.source_blob_hash.as_ref() != Some(new_hash) {
         debug!(

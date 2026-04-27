@@ -90,13 +90,17 @@ fn enable_best_effort_wal_mode(conn: &Connection) {
     match set_journal_mode_wal(conn) {
         Ok(mode) if mode.eq_ignore_ascii_case("wal") => {}
         Ok(mode) => {
-            eprintln!(
-                "orbit: warning: requested WAL mode on the store database, but SQLite kept journal_mode={mode}; continuing with the active journal mode"
+            orbit_common::tracing::warn!(
+                target: "orbit.store.sqlite",
+                journal_mode = mode.as_str(),
+                "requested WAL mode on the store database, but SQLite kept the active journal mode",
             );
         }
         Err(err) => {
-            eprintln!(
-                "orbit: warning: could not set WAL mode on the store database ({err}); continuing with the default journal mode"
+            orbit_common::tracing::warn!(
+                target: "orbit.store.sqlite",
+                error = %err,
+                "could not set WAL mode on the store database; continuing with the default journal mode",
             );
         }
     }

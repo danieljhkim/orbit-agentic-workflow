@@ -63,6 +63,7 @@ impl<'a> GraphContextService<'a> {
         .expect("unbounded search cannot exceed a candidate scan cap")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn search_hits_with_total_bounded(
         &self,
         query: &str,

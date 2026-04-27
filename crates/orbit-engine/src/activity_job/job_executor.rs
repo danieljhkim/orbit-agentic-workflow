@@ -40,7 +40,7 @@ use crate::job_runner::evaluate_bool_expr;
 use crate::template::{self, TemplateContext};
 
 use super::agent_loop_driver::drive_agent_loop_with_session;
-use super::audit_writer::V2AuditWriter;
+use super::audit_writer::{V2AuditWriter, WriteError};
 use super::dispatcher::{DispatchError, V2DispatchInput, V2RuntimeHost, dispatch_v2_activity};
 
 const DEFAULT_MODEL_FOR_SESSION: &str = "claude-sonnet-4-5";
@@ -109,6 +109,227 @@ pub fn execute_job(
     })
 }
 
+/// Dual-write entry point for job-lifecycle audit events.
+///
+/// Emits a `tracing::*!` event with a stable, target-keyed projection of
+/// `kind` (so the global JSONL feed and `orbit log tail` see live job
+/// activity) and persists the same `kind` through the canonical audit writer.
+/// Tracing comes first so the live feed reflects the event before the audit
+/// store's in-memory snapshot lock is taken; the audit store remains the
+/// authoritative trail.
+///
+/// `task_id` is the optional task identifier extracted from the surrounding
+/// activity input (via [`super::cli_runner::task_id_from_input`]) so job-step
+/// tracing events correlate with cli_runner subprocess events that already
+/// emit `task_id` and `job_run_id`. Pass `None` when no task id is in scope.
+///
+/// This helper is the only place in `job_executor.rs` that pairs an
+/// `audit.emit(...)` with a `tracing::*!` for job-lifecycle events. Adding a
+/// new `V2AuditEventKind` variant requires touching only `emit_job_tracing`
+/// to get tracing coverage.
+fn emit_job_event(
+    audit: &V2AuditWriter,
+    task_id: Option<&str>,
+    kind: V2AuditEventKind,
+) -> Result<String, WriteError> {
+    emit_job_tracing(audit.run_id(), task_id, &kind);
+    audit.emit(kind)
+}
+
+/// Project a job-lifecycle `V2AuditEventKind` onto the unified tracing feed
+/// using the per-variant target/level rules documented in T20260427-27.
+///
+/// Common fields on every emission:
+/// - `job_run_id` — the `V2AuditWriter::run_id()` (matches cli_runner's field
+///   naming so subprocess and step events correlate in JSONL consumers).
+/// - `step_id` — present on every job-lifecycle variant.
+/// - `task_id` — emitted only when the calling context resolved a task id
+///   from the activity input; omitted otherwise.
+///
+/// Variants that are emitted by other layers (e.g. `RunStarted`,
+/// `ActivityStarted`, `FsCall*`, `ToolDenied`, `CliInvocation*`) are
+/// intentionally not projected here — those producers run their own dual
+/// writes and we do not want job_executor to double-emit on their behalf.
+fn emit_job_tracing(job_run_id: &str, task_id: Option<&str>, kind: &V2AuditEventKind) {
+    match kind {
+        V2AuditEventKind::StepStarted { step_id } => {
+            tracing::info!(
+                target: "orbit.job.step_started",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                "step started",
+            );
+        }
+        V2AuditEventKind::StepFinished { step_id, outcome } => {
+            let success = outcome == "success";
+            if success {
+                tracing::info!(
+                    target: "orbit.job.step_finished",
+                    job_run_id = job_run_id,
+                    task_id = task_id,
+                    step_id = step_id.as_str(),
+                    outcome = outcome.as_str(),
+                    success = success,
+                    "step finished",
+                );
+            } else {
+                tracing::error!(
+                    target: "orbit.job.step_finished",
+                    job_run_id = job_run_id,
+                    task_id = task_id,
+                    step_id = step_id.as_str(),
+                    outcome = outcome.as_str(),
+                    success = success,
+                    "step finished",
+                );
+            }
+        }
+        V2AuditEventKind::StepSkipped { step_id, reason } => {
+            tracing::warn!(
+                target: "orbit.job.step_skipped",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                reason = reason.as_str(),
+                "step skipped",
+            );
+        }
+        V2AuditEventKind::StepRetry {
+            step_id,
+            attempt,
+            next_backoff_ms,
+        } => {
+            tracing::warn!(
+                target: "orbit.job.step_retry",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                attempt = *attempt,
+                next_backoff_ms = *next_backoff_ms,
+                "step retry",
+            );
+        }
+        V2AuditEventKind::StepDenied { step_id, reason } => {
+            tracing::error!(
+                target: "orbit.job.step_denied",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                reason = reason.as_str(),
+                "step denied",
+            );
+        }
+        V2AuditEventKind::StepJoin {
+            step_id,
+            mode,
+            branch_outcomes,
+        } => {
+            tracing::info!(
+                target: "orbit.job.step_join",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                mode = mode.as_str(),
+                branch_count = branch_outcomes.len(),
+                "step join",
+            );
+        }
+        V2AuditEventKind::FanoutDispatched {
+            step_id,
+            worker_count,
+        } => {
+            tracing::info!(
+                target: "orbit.job.fanout",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                phase = "dispatched",
+                worker_count = *worker_count,
+                "fanout dispatched",
+            );
+        }
+        V2AuditEventKind::FaninJoined {
+            step_id,
+            collected,
+            failed,
+        } => {
+            tracing::info!(
+                target: "orbit.job.fanout",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                phase = "joined",
+                collected = *collected,
+                failed = *failed,
+                "fanin joined",
+            );
+        }
+        V2AuditEventKind::WorkerState {
+            step_id,
+            worker_index,
+            state,
+        } => {
+            tracing::info!(
+                target: "orbit.job.worker_state",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                worker_index = *worker_index,
+                state = state.as_str(),
+                "worker state",
+            );
+        }
+        V2AuditEventKind::LoopIterationStart { step_id, iteration } => {
+            tracing::info!(
+                target: "orbit.job.loop_iteration",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                phase = "start",
+                iteration = *iteration,
+                "loop iteration start",
+            );
+        }
+        V2AuditEventKind::LoopIterationEnd {
+            step_id,
+            iteration,
+            broke,
+        } => {
+            tracing::info!(
+                target: "orbit.job.loop_iteration",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                phase = "end",
+                iteration = *iteration,
+                broke = *broke,
+                "loop iteration end",
+            );
+        }
+        V2AuditEventKind::LoopDidNotConverge {
+            step_id,
+            max_iterations,
+        } => {
+            tracing::warn!(
+                target: "orbit.job.loop_did_not_converge",
+                job_run_id = job_run_id,
+                task_id = task_id,
+                step_id = step_id.as_str(),
+                max_iterations = *max_iterations,
+                "loop did not converge",
+            );
+        }
+        // Other V2AuditEventKind variants (RunStarted, RunFinished,
+        // ActivityStarted, ActivityFinished, FsCall*, ToolDenied,
+        // ToolAllowlistHarnessDelegated, CliInvocationStarted,
+        // CliInvocationFinished) are emitted by other producers, which own
+        // their own tracing dual-write story. We intentionally do not project
+        // them here so call sites outside `job_executor.rs` don't double-emit.
+        _ => {}
+    }
+}
+
 /// Shared execution context for recursive step dispatch.
 ///
 /// `pipeline` accumulates step outputs keyed by step.id. `sessions` holds
@@ -129,6 +350,12 @@ struct ExecCtx<'a> {
 }
 
 impl ExecCtx<'_> {
+    /// Resolved task id for the activity input, if any. Threaded onto every
+    /// job-lifecycle tracing emission so subprocess and step events correlate.
+    fn task_id(&self) -> Option<&str> {
+        super::cli_runner::task_id_from_input(&self.input)
+    }
+
     fn template_ctx(&self) -> TemplateContext {
         let pipeline = self.pipeline.lock().expect("pipeline poisoned").clone();
         let mut steps: HashMap<String, Value> = HashMap::new();
@@ -186,10 +413,14 @@ fn run_step(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcome, Dispatch
         let matched = evaluate_bool_expr(expr, &tctx)
             .map_err(|err| DispatchError::JobExecution(format!("when expr: {err}")))?;
         if !matched {
-            let _ = ctx.audit.emit(V2AuditEventKind::StepSkipped {
-                step_id: step.id.clone(),
-                reason: format!("when:{expr} => false"),
-            });
+            let _ = emit_job_event(
+                &ctx.audit,
+                ctx.task_id(),
+                V2AuditEventKind::StepSkipped {
+                    step_id: step.id.clone(),
+                    reason: format!("when:{expr} => false"),
+                },
+            );
             return Ok(StepOutcome {
                 success: true,
                 output: Value::Null,
@@ -199,12 +430,14 @@ fn run_step(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcome, Dispatch
         }
     }
 
-    let step_event_id = ctx
-        .audit
-        .emit(V2AuditEventKind::StepStarted {
+    let step_event_id = emit_job_event(
+        &ctx.audit,
+        ctx.task_id(),
+        V2AuditEventKind::StepStarted {
             step_id: step.id.clone(),
-        })
-        .map_err(|e| DispatchError::AuditFailed(format!("{e:?}")))?;
+        },
+    )
+    .map_err(|e| DispatchError::AuditFailed(format!("{e:?}")))?;
     let _ = ctx.audit.push_parent(step_event_id);
 
     let result = run_step_with_retry(step, ctx);
@@ -215,10 +448,14 @@ fn run_step(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcome, Dispatch
         Ok(_) => "failed",
         Err(_) => "error",
     };
-    let _ = ctx.audit.emit(V2AuditEventKind::StepFinished {
-        step_id: step.id.clone(),
-        outcome: outcome_str.to_string(),
-    });
+    let _ = emit_job_event(
+        &ctx.audit,
+        ctx.task_id(),
+        V2AuditEventKind::StepFinished {
+            step_id: step.id.clone(),
+            outcome: outcome_str.to_string(),
+        },
+    );
 
     result
 }
@@ -229,7 +466,7 @@ fn run_step_with_retry(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcom
         return match run_step_body(step, ctx) {
             Ok(outcome) => Ok(outcome),
             Err(err) if err.is_non_retryable() => {
-                emit_denied_if_applicable(&err, &step.id, &ctx.audit);
+                emit_denied_if_applicable(&err, &step.id, &ctx.audit, ctx.task_id());
                 Err(err)
             }
             Err(err) => Err(err),
@@ -248,7 +485,7 @@ fn run_step_with_retry(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcom
                 last_err = None;
             }
             Err(err) if err.is_non_retryable() => {
-                emit_denied_if_applicable(&err, &step.id, &ctx.audit);
+                emit_denied_if_applicable(&err, &step.id, &ctx.audit, ctx.task_id());
                 return Err(err);
             }
             Err(err) => {
@@ -259,11 +496,15 @@ fn run_step_with_retry(step: &JobV2Step, ctx: &ExecCtx<'_>) -> Result<StepOutcom
             break;
         }
         let backoff_ms = compute_backoff_ms(retry, attempt);
-        let _ = ctx.audit.emit(V2AuditEventKind::StepRetry {
-            step_id: step.id.clone(),
-            attempt: attempt + 1,
-            next_backoff_ms: backoff_ms,
-        });
+        let _ = emit_job_event(
+            &ctx.audit,
+            ctx.task_id(),
+            V2AuditEventKind::StepRetry {
+                step_id: step.id.clone(),
+                attempt: attempt + 1,
+                next_backoff_ms: backoff_ms,
+            },
+        );
         thread::sleep(Duration::from_millis(backoff_ms));
     }
 
@@ -293,12 +534,21 @@ fn compute_backoff_ms(retry: &RetrySpec, attempt_index: u32) -> u64 {
     }
 }
 
-fn emit_denied_if_applicable(err: &DispatchError, step_id: &str, audit: &Arc<V2AuditWriter>) {
+fn emit_denied_if_applicable(
+    err: &DispatchError,
+    step_id: &str,
+    audit: &Arc<V2AuditWriter>,
+    task_id: Option<&str>,
+) {
     if matches!(err, DispatchError::ToolDenied { .. }) {
-        let _ = audit.emit(V2AuditEventKind::StepDenied {
-            step_id: step_id.to_string(),
-            reason: err.to_string(),
-        });
+        let _ = emit_job_event(
+            audit,
+            task_id,
+            V2AuditEventKind::StepDenied {
+                step_id: step_id.to_string(),
+                reason: err.to_string(),
+            },
+        );
     }
 }
 
@@ -641,11 +891,15 @@ fn run_parallel(
         JoinMode::Any => "any",
         JoinMode::Quorum { .. } => "quorum",
     };
-    let _ = ctx.audit.emit(V2AuditEventKind::StepJoin {
-        step_id: step.id.clone(),
-        mode: mode_label.to_string(),
-        branch_outcomes: outcomes.clone(),
-    });
+    let _ = emit_job_event(
+        &ctx.audit,
+        ctx.task_id(),
+        V2AuditEventKind::StepJoin {
+            step_id: step.id.clone(),
+            mode: mode_label.to_string(),
+            branch_outcomes: outcomes.clone(),
+        },
+    );
 
     let block_ok = match &block.join {
         JoinMode::All => failures == 0,
@@ -688,17 +942,25 @@ fn run_fan_out(
     let items = render_items_expression(&block.items, &tctx, "fan_out.items")?;
     let worker_count = items.len() as u32;
 
-    let _ = ctx.audit.emit(V2AuditEventKind::FanoutDispatched {
-        step_id: step.id.clone(),
-        worker_count,
-    });
+    let _ = emit_job_event(
+        &ctx.audit,
+        ctx.task_id(),
+        V2AuditEventKind::FanoutDispatched {
+            step_id: step.id.clone(),
+            worker_count,
+        },
+    );
 
     if items.is_empty() {
-        let _ = ctx.audit.emit(V2AuditEventKind::FaninJoined {
-            step_id: step.id.clone(),
-            collected: 0,
-            failed: 0,
-        });
+        let _ = emit_job_event(
+            &ctx.audit,
+            ctx.task_id(),
+            V2AuditEventKind::FaninJoined {
+                step_id: step.id.clone(),
+                collected: 0,
+                failed: 0,
+            },
+        );
         return Ok(StepOutcome {
             success: true,
             output: Value::Array(Vec::new()),
@@ -742,11 +1004,20 @@ fn run_fan_out(
                     }
                 };
                 let _permit = sem.acquire();
-                let _ = audit.emit(V2AuditEventKind::WorkerState {
-                    step_id: worker_step.id.clone(),
-                    worker_index: idx,
-                    state: "dispatched".to_string(),
-                });
+                // Resolve task_id once so both worker_state emissions stamp
+                // the same value; `base_input` will be moved into worker_ctx
+                // below and is no longer accessible afterwards.
+                let worker_task_id =
+                    super::cli_runner::task_id_from_input(&base_input).map(str::to_string);
+                let _ = emit_job_event(
+                    &audit,
+                    worker_task_id.as_deref(),
+                    V2AuditEventKind::WorkerState {
+                        step_id: worker_step.id.clone(),
+                        worker_index: idx,
+                        state: "dispatched".to_string(),
+                    },
+                );
                 let worker_ctx = ExecCtx {
                     run_id,
                     audit: audit.clone(),
@@ -763,11 +1034,15 @@ fn run_fan_out(
                     Ok(_) => "failed",
                     Err(_) => "failed",
                 };
-                let _ = audit.emit(V2AuditEventKind::WorkerState {
-                    step_id: worker_step.id.clone(),
-                    worker_index: idx,
-                    state: state.to_string(),
-                });
+                let _ = emit_job_event(
+                    &audit,
+                    worker_task_id.as_deref(),
+                    V2AuditEventKind::WorkerState {
+                        step_id: worker_step.id.clone(),
+                        worker_index: idx,
+                        state: state.to_string(),
+                    },
+                );
                 results_ref
                     .lock()
                     .expect("results poisoned")
@@ -805,11 +1080,15 @@ fn run_fan_out(
         }
     }
 
-    let _ = ctx.audit.emit(V2AuditEventKind::FaninJoined {
-        step_id: step.id.clone(),
-        collected: collected_count,
-        failed: failed_count,
-    });
+    let _ = emit_job_event(
+        &ctx.audit,
+        ctx.task_id(),
+        V2AuditEventKind::FaninJoined {
+            step_id: step.id.clone(),
+            collected: collected_count,
+            failed: failed_count,
+        },
+    );
 
     let block_ok = match &fan_in.join {
         JoinMode::All => failed_count == 0,
@@ -871,10 +1150,14 @@ fn run_loop(
     for iter in 1..=planned_iterations {
         let iteration_index = iter - 1;
         last_iter = iter;
-        let _ = ctx.audit.emit(V2AuditEventKind::LoopIterationStart {
-            step_id: step.id.clone(),
-            iteration: iter,
-        });
+        let _ = emit_job_event(
+            &ctx.audit,
+            ctx.task_id(),
+            V2AuditEventKind::LoopIterationStart {
+                step_id: step.id.clone(),
+                iteration: iter,
+            },
+        );
         let loop_ctx = ExecCtx {
             run_id: ctx.run_id.clone(),
             audit: ctx.audit.clone(),
@@ -910,11 +1193,15 @@ fn run_loop(
             false
         };
 
-        let _ = ctx.audit.emit(V2AuditEventKind::LoopIterationEnd {
-            step_id: step.id.clone(),
-            iteration: iter,
-            broke: should_break,
-        });
+        let _ = emit_job_event(
+            &ctx.audit,
+            ctx.task_id(),
+            V2AuditEventKind::LoopIterationEnd {
+                step_id: step.id.clone(),
+                iteration: iter,
+                broke: should_break,
+            },
+        );
 
         if should_break {
             broke = true;
@@ -923,10 +1210,14 @@ fn run_loop(
     }
 
     if !broke && block.break_when.is_some() {
-        let _ = ctx.audit.emit(V2AuditEventKind::LoopDidNotConverge {
-            step_id: step.id.clone(),
-            max_iterations: block.max_iterations,
-        });
+        let _ = emit_job_event(
+            &ctx.audit,
+            ctx.task_id(),
+            V2AuditEventKind::LoopDidNotConverge {
+                step_id: step.id.clone(),
+                max_iterations: block.max_iterations,
+            },
+        );
     }
 
     let out = serde_json::json!({
@@ -1085,8 +1376,18 @@ fn _unused_timing(_: Instant) {}
 
 #[cfg(test)]
 mod tests {
-    use super::merge_job_input;
+    use std::collections::BTreeMap;
+    use std::fmt;
+    use std::sync::Mutex as StdMutex;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use orbit_agent::loop_engine::audit::{AuditSink, NullSink};
+    use orbit_common::types::activity_job::{BranchOutcome, V2AuditEventKind};
     use serde_json::json;
+    use tracing::field::{Field, Visit};
+    use tracing::{Event, Level, Metadata, Subscriber, span};
+
+    use super::{V2AuditWriter, emit_job_event, merge_job_input};
 
     #[test]
     fn merges_object_defaults_with_explicit_object_input() {
@@ -1126,5 +1427,428 @@ mod tests {
         let merged = merge_job_input(Some(&defaults), &explicit);
 
         assert_eq!(merged, explicit);
+    }
+
+    #[test]
+    fn emit_job_event_dual_writes_step_lifecycle_to_audit_and_tracing() {
+        let writer = test_writer("run-step-lifecycle");
+        let captured = capture(|| {
+            emit_job_event(
+                &writer,
+                Some("T-build"),
+                V2AuditEventKind::StepStarted {
+                    step_id: "build".to_string(),
+                },
+            )
+            .expect("StepStarted emit");
+            emit_job_event(
+                &writer,
+                Some("T-build"),
+                V2AuditEventKind::StepFinished {
+                    step_id: "build".to_string(),
+                    outcome: "success".to_string(),
+                },
+            )
+            .expect("StepFinished emit");
+        });
+
+        assert_eq!(
+            captured.targets(),
+            vec![
+                ("orbit.job.step_started", Level::INFO),
+                ("orbit.job.step_finished", Level::INFO),
+            ]
+        );
+        // Field schema: job_run_id matches V2AuditWriter::run_id() and aligns
+        // with the cli_runner producer's naming so JSONL consumers can join
+        // job-step events with subprocess events on the same key.
+        assert_eq!(
+            captured.events[0].field("job_run_id"),
+            Some("run-step-lifecycle")
+        );
+        assert_eq!(captured.events[0].field("task_id"), Some("T-build"));
+        assert_eq!(captured.events[0].field("step_id"), Some("build"));
+        // The legacy `run_id` field name is not emitted: prevent regression.
+        assert_eq!(captured.events[0].field("run_id"), None);
+        assert_eq!(captured.events[1].field("step_id"), Some("build"));
+        assert_eq!(captured.events[1].field("outcome"), Some("success"));
+        assert_eq!(captured.events[1].field("success"), Some("true"));
+        assert_eq!(captured.events[1].field("task_id"), Some("T-build"));
+
+        let snapshot = writer.events_snapshot().expect("audit snapshot");
+        assert!(matches!(
+            snapshot[0].kind,
+            V2AuditEventKind::StepStarted { ref step_id } if step_id == "build"
+        ));
+        assert!(matches!(
+            snapshot[1].kind,
+            V2AuditEventKind::StepFinished { ref step_id, ref outcome }
+                if step_id == "build" && outcome == "success"
+        ));
+    }
+
+    #[test]
+    fn emit_job_event_omits_task_id_when_none() {
+        let writer = test_writer("run-no-task");
+        let captured = capture(|| {
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::StepStarted {
+                    step_id: "anon".to_string(),
+                },
+            )
+            .expect("StepStarted emit");
+        });
+
+        assert_eq!(captured.events[0].field("job_run_id"), Some("run-no-task"));
+        // None should NOT serialize a `task_id` field at all.
+        assert_eq!(captured.events[0].field("task_id"), None);
+    }
+
+    #[test]
+    fn emit_job_event_routes_step_finished_failure_to_error_level() {
+        let writer = test_writer("run-fail");
+        let captured = capture(|| {
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::StepFinished {
+                    step_id: "deploy".to_string(),
+                    outcome: "failed".to_string(),
+                },
+            )
+            .expect("StepFinished failed emit");
+        });
+
+        assert_eq!(
+            captured.targets(),
+            vec![("orbit.job.step_finished", Level::ERROR)]
+        );
+        assert_eq!(captured.events[0].field("success"), Some("false"));
+    }
+
+    #[test]
+    fn emit_job_event_uses_warn_for_retry_skip_no_converge_and_error_for_denied() {
+        let writer = test_writer("run-warn-error");
+        let captured = capture(|| {
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::StepRetry {
+                    step_id: "flaky".to_string(),
+                    attempt: 2,
+                    next_backoff_ms: 250,
+                },
+            )
+            .expect("StepRetry emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::StepSkipped {
+                    step_id: "flaky".to_string(),
+                    reason: "when:false".to_string(),
+                },
+            )
+            .expect("StepSkipped emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::StepDenied {
+                    step_id: "flaky".to_string(),
+                    reason: "policy".to_string(),
+                },
+            )
+            .expect("StepDenied emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::LoopDidNotConverge {
+                    step_id: "loopy".to_string(),
+                    max_iterations: 5,
+                },
+            )
+            .expect("LoopDidNotConverge emit");
+        });
+
+        assert_eq!(
+            captured.targets(),
+            vec![
+                ("orbit.job.step_retry", Level::WARN),
+                ("orbit.job.step_skipped", Level::WARN),
+                ("orbit.job.step_denied", Level::ERROR),
+                ("orbit.job.loop_did_not_converge", Level::WARN),
+            ]
+        );
+        assert_eq!(captured.events[0].field("attempt"), Some("2"));
+        assert_eq!(captured.events[0].field("next_backoff_ms"), Some("250"));
+        assert_eq!(captured.events[1].field("reason"), Some("when:false"));
+        assert_eq!(captured.events[3].field("max_iterations"), Some("5"));
+    }
+
+    #[test]
+    fn emit_job_event_projects_fanout_loop_and_join_phases() {
+        let writer = test_writer("run-fanout");
+        let captured = capture(|| {
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::FanoutDispatched {
+                    step_id: "scatter".to_string(),
+                    worker_count: 3,
+                },
+            )
+            .expect("FanoutDispatched emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::WorkerState {
+                    step_id: "scatter.worker".to_string(),
+                    worker_index: 1,
+                    state: "dispatched".to_string(),
+                },
+            )
+            .expect("WorkerState emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::FaninJoined {
+                    step_id: "scatter".to_string(),
+                    collected: 3,
+                    failed: 0,
+                },
+            )
+            .expect("FaninJoined emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::StepJoin {
+                    step_id: "merge".to_string(),
+                    mode: "all".to_string(),
+                    branch_outcomes: vec![
+                        BranchOutcome {
+                            branch_id: "a".to_string(),
+                            outcome: "success".to_string(),
+                        },
+                        BranchOutcome {
+                            branch_id: "b".to_string(),
+                            outcome: "success".to_string(),
+                        },
+                    ],
+                },
+            )
+            .expect("StepJoin emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::LoopIterationStart {
+                    step_id: "spin".to_string(),
+                    iteration: 1,
+                },
+            )
+            .expect("LoopIterationStart emit");
+            emit_job_event(
+                &writer,
+                None,
+                V2AuditEventKind::LoopIterationEnd {
+                    step_id: "spin".to_string(),
+                    iteration: 1,
+                    broke: true,
+                },
+            )
+            .expect("LoopIterationEnd emit");
+        });
+
+        assert_eq!(
+            captured.targets(),
+            vec![
+                ("orbit.job.fanout", Level::INFO),
+                ("orbit.job.worker_state", Level::INFO),
+                ("orbit.job.fanout", Level::INFO),
+                ("orbit.job.step_join", Level::INFO),
+                ("orbit.job.loop_iteration", Level::INFO),
+                ("orbit.job.loop_iteration", Level::INFO),
+            ]
+        );
+        assert_eq!(captured.events[0].field("phase"), Some("dispatched"));
+        assert_eq!(captured.events[0].field("worker_count"), Some("3"));
+        assert_eq!(captured.events[1].field("worker_index"), Some("1"));
+        assert_eq!(captured.events[1].field("state"), Some("dispatched"));
+        assert_eq!(captured.events[2].field("phase"), Some("joined"));
+        assert_eq!(captured.events[2].field("collected"), Some("3"));
+        assert_eq!(captured.events[2].field("failed"), Some("0"));
+        assert_eq!(captured.events[3].field("mode"), Some("all"));
+        assert_eq!(captured.events[3].field("branch_count"), Some("2"));
+        assert_eq!(captured.events[4].field("phase"), Some("start"));
+        assert_eq!(captured.events[4].field("iteration"), Some("1"));
+        assert_eq!(captured.events[5].field("phase"), Some("end"));
+        assert_eq!(captured.events[5].field("broke"), Some("true"));
+    }
+
+    #[test]
+    fn emit_job_event_audit_snapshot_matches_direct_emit_for_same_kinds() {
+        // The dual-write helper must not perturb the audit-store representation.
+        // Compare the snapshot from emit_job_event against a writer that calls
+        // V2AuditWriter::emit directly with the same kinds in the same order.
+        let kinds = || {
+            vec![
+                V2AuditEventKind::StepStarted {
+                    step_id: "build".to_string(),
+                },
+                V2AuditEventKind::StepRetry {
+                    step_id: "build".to_string(),
+                    attempt: 1,
+                    next_backoff_ms: 100,
+                },
+                V2AuditEventKind::StepFinished {
+                    step_id: "build".to_string(),
+                    outcome: "success".to_string(),
+                },
+            ]
+        };
+
+        let dual = test_writer("run-snapshot");
+        for k in kinds() {
+            emit_job_event(&dual, None, k).expect("dual emit");
+        }
+        let direct = test_writer("run-snapshot");
+        for k in kinds() {
+            direct.emit(k).expect("direct emit");
+        }
+
+        let dual_snapshot = dual.events_snapshot().expect("dual snapshot");
+        let direct_snapshot = direct.events_snapshot().expect("direct snapshot");
+        let dual_json = serde_json::to_value(&dual_snapshot).expect("dual json");
+        let direct_json = serde_json::to_value(&direct_snapshot).expect("direct json");
+        // The envelope timestamps and event_ids will differ; strip those before
+        // comparing the body shape.
+        let stripped = |value: serde_json::Value| -> serde_json::Value {
+            let mut value = value;
+            if let serde_json::Value::Array(items) = &mut value {
+                for item in items {
+                    if let serde_json::Value::Object(map) = item {
+                        map.remove("ts");
+                        map.remove("event_id");
+                    }
+                }
+            }
+            value
+        };
+        assert_eq!(stripped(dual_json), stripped(direct_json));
+    }
+
+    fn test_writer(run_id: &str) -> V2AuditWriter {
+        let inner: std::sync::Arc<dyn AuditSink> = std::sync::Arc::new(NullSink);
+        V2AuditWriter::new(run_id, "test-agent", inner)
+    }
+
+    fn capture<F>(f: F) -> CapturedTrace
+    where
+        F: FnOnce(),
+    {
+        let events = std::sync::Arc::new(StdMutex::new(Vec::<CapturedEvent>::new()));
+        let subscriber = CaptureSubscriber {
+            events: events.clone(),
+            next_span_id: AtomicU64::new(1),
+        };
+        let dispatch = tracing::Dispatch::new(subscriber);
+        tracing::dispatcher::with_default(&dispatch, f);
+        CapturedTrace {
+            events: events.lock().expect("events lock").clone(),
+        }
+    }
+
+    struct CapturedTrace {
+        events: Vec<CapturedEvent>,
+    }
+
+    impl CapturedTrace {
+        fn targets(&self) -> Vec<(&str, Level)> {
+            self.events
+                .iter()
+                .map(|e| (e.target.as_str(), e.level))
+                .collect()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct CapturedEvent {
+        target: String,
+        level: Level,
+        fields: BTreeMap<String, String>,
+    }
+
+    impl CapturedEvent {
+        fn field(&self, name: &str) -> Option<&str> {
+            self.fields.get(name).map(String::as_str)
+        }
+    }
+
+    struct CaptureSubscriber {
+        events: std::sync::Arc<StdMutex<Vec<CapturedEvent>>>,
+        next_span_id: AtomicU64,
+    }
+
+    impl Subscriber for CaptureSubscriber {
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            true
+        }
+
+        fn new_span(&self, _span: &span::Attributes<'_>) -> span::Id {
+            span::Id::from_u64(self.next_span_id.fetch_add(1, Ordering::Relaxed))
+        }
+
+        fn record(&self, _span: &span::Id, _values: &span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &span::Id, _follows: &span::Id) {}
+
+        fn event(&self, event: &Event<'_>) {
+            let mut visitor = FieldCapture::default();
+            event.record(&mut visitor);
+            let metadata = event.metadata();
+            self.events
+                .lock()
+                .expect("events lock")
+                .push(CapturedEvent {
+                    target: metadata.target().to_string(),
+                    level: *metadata.level(),
+                    fields: visitor.fields,
+                });
+        }
+
+        fn enter(&self, _span: &span::Id) {}
+        fn exit(&self, _span: &span::Id) {}
+    }
+
+    #[derive(Default)]
+    struct FieldCapture {
+        fields: BTreeMap<String, String>,
+    }
+
+    impl Visit for FieldCapture {
+        fn record_str(&mut self, field: &Field, value: &str) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_i64(&mut self, field: &Field, value: i64) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_u64(&mut self, field: &Field, value: u64) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_bool(&mut self, field: &Field, value: bool) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+            self.fields
+                .insert(field.name().to_string(), format!("{value:?}"));
+        }
     }
 }

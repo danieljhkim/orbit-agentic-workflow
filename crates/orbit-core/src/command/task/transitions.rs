@@ -161,22 +161,24 @@ impl OrbitRuntime {
             )
         });
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
-        let dependency_warning = (!unmet_dependencies.is_empty()).then(|| {
-            format!(
-                "warning: task '{id}' has unmet dependencies: {}",
-                unmet_dependencies
-                    .iter()
-                    .map(|dependency| dependency.label())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        });
+        let unmet_dependency_labels: Vec<String> = unmet_dependencies
+            .iter()
+            .map(|dependency| dependency.label())
+            .collect();
+        let warn_unmet_dependencies = || {
+            if !unmet_dependency_labels.is_empty() {
+                orbit_common::tracing::warn!(
+                    target: "orbit.task.dependencies",
+                    task_id = id,
+                    unmet = unmet_dependency_labels.join(",").as_str(),
+                    "task has unmet dependencies",
+                );
+            }
+        };
 
         match task.status {
             TaskStatus::Proposed => {
-                if let Some(warning) = &dependency_warning {
-                    eprintln!("{warning}");
-                }
+                warn_unmet_dependencies();
                 let result = self.with_mutation(|| {
                     let at = chrono::Utc::now();
                     let task = self.stores().tasks().update(
@@ -216,9 +218,7 @@ impl OrbitRuntime {
                 Ok(result)
             }
             TaskStatus::Backlog | TaskStatus::Someday | TaskStatus::Blocked => {
-                if let Some(warning) = &dependency_warning {
-                    eprintln!("{warning}");
-                }
+                warn_unmet_dependencies();
                 let task = self.with_mutation(|| {
                     let task = self.stores().tasks().update(
                         id,

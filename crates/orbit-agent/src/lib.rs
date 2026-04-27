@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Agent provider abstraction for Orbit. Two transport families coexist:
 //!
 //! - **CLI transports** — drive `claude`, `codex`, `gemini`, `ollama`, or

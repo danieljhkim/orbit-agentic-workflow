@@ -223,7 +223,7 @@ fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
     }
 }
 
-fn task_id_from_input(input: &Value) -> Option<&str> {
+pub(super) fn task_id_from_input(input: &Value) -> Option<&str> {
     fn non_empty(value: &str) -> Option<&str> {
         if value.is_empty() { None } else { Some(value) }
     }

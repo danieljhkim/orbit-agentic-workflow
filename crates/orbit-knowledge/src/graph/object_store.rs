@@ -384,9 +384,11 @@ impl GraphObjectStore {
         {
             let fallback_path = self.ref_path(fallback);
             if fallback_path.is_file() {
-                eprintln!(
-                    "warning: knowledge graph ref for branch '{}' is missing; falling back to default branch '{}'",
-                    requested, fallback
+                tracing::warn!(
+                    target: "orbit.knowledge.refs",
+                    requested = requested.as_str(),
+                    fallback = fallback.as_str(),
+                    "knowledge graph ref for requested branch is missing; falling back to default branch",
                 );
                 return self.load_resolved_ref(
                     requested.clone(),

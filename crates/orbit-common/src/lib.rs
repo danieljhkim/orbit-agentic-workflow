@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Shared leaf crate for the Orbit workspace.
 //!
 //! The public surface is intentionally split into three namespaces:

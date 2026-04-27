@@ -17,11 +17,11 @@
 //! assigned when the formatter writes the event, which may lag event emission
 //! slightly when the non-blocking writer is under load.
 //!
-//! Replacement guidance: the 13+ stray `eprintln!`/`println!` calls in
-//! library crates (orbit-core, orbit-engine, orbit-store, orbit-knowledge)
-//! should become `tracing::warn!` / `tracing::error!` with structured
-//! fields. A workspace-level `deny(clippy::print_stderr, clippy::print_stdout)`
-//! would enforce this but is left to follow-up.
+//! Library crates enforce a `#![deny(clippy::print_stderr,
+//! clippy::print_stdout)]` guard at their crate roots so new diagnostic output
+//! must flow through `tracing` rather than ad-hoc stdout/stderr macros (see
+//! T20260427-27). The CLI binary (`orbit-cli`) and `examples/` are exempt
+//! because their stdout/stderr are user-facing surfaces.
 //!
 //! Redaction integration: both the stderr formatter and global JSONL formatter
 //! use [`RedactingFields`], which applies [`super::redaction::redact_all`] to
@@ -387,7 +387,14 @@ fn env_filter(default_filter: &str) -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter))
 }
 
-fn global_jsonl_log_path() -> io::Result<PathBuf> {
+/// Resolve the canonical path to the global JSONL tracing feed
+/// (`$HOME/.orbit/state/logs/orbit.jsonl`). Returned as `Result` because the
+/// path depends on `HOME` (or `USERPROFILE`); callers that need a fallback
+/// should fall back to a workspace-relative path or fail with a clear error.
+///
+/// Producers and readers MUST agree on this path — `init_default_subscriber`
+/// writes here, and `orbit log tail` reads here by default.
+pub fn global_jsonl_log_path() -> io::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|value| !value.is_empty())

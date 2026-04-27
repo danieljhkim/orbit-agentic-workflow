@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Builtin tool registry providing the standard Orbit toolset for agents and jobs.
 //!
 //! Implements and registers all built-in tools that agents can invoke during

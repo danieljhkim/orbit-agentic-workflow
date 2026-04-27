@@ -107,8 +107,9 @@ pub(crate) fn context_files_need_graph_warning(candidates: &[String], orbit_root
 
 pub(crate) fn emit_graph_unavailable_warning_if_needed(candidates: &[String], orbit_root: &Path) {
     if context_files_need_graph_warning(candidates, orbit_root) {
-        eprintln!(
-            "warning: knowledge graph is unavailable; selector validation is falling back to file-level anchor checks"
+        tracing::warn!(
+            target: "orbit.task.context",
+            "knowledge graph is unavailable; selector validation is falling back to file-level anchor checks",
         );
     }
 }

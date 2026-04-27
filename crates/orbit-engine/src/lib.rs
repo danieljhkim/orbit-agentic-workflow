@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! v2 activity/job execution engine with template rendering and retry logic.
 //!
 //! Orchestrates the full lifecycle of running a v2 activity or job:

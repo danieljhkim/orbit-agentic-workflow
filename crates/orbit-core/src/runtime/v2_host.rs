@@ -746,7 +746,11 @@ impl V2RuntimeHost for OrbitRuntime {
         if let Err(error) =
             token_scoreboard::write_token_scoreboard(&self.paths().scoreboard_dir, &store)
         {
-            eprintln!("orbit: failed to refresh tokens scoreboard: {error}");
+            tracing::warn!(
+                target: "orbit.core.scoreboard",
+                error = %error,
+                "failed to refresh tokens scoreboard",
+            );
         }
 
         Ok(())

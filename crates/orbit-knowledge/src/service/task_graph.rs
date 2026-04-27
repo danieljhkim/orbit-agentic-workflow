@@ -253,7 +253,11 @@ impl TaskGraphService {
         };
 
         if let Err(error) = crate::pipeline::ensure_fresh(&self.knowledge_dir, workspace_root) {
-            eprintln!("warning: knowledge graph auto-refresh failed: {error}");
+            tracing::warn!(
+                target: "orbit.knowledge.refresh",
+                error = %error,
+                "knowledge graph auto-refresh failed",
+            );
         }
     }
 
@@ -271,9 +275,11 @@ impl TaskGraphService {
             return Ok(false);
         };
 
-        eprintln!(
-            "warning: knowledge graph load failed: {first_error}; rebuilding default knowledge graph at {}",
-            self.knowledge_dir.display()
+        tracing::warn!(
+            target: "orbit.knowledge.load",
+            error = %first_error,
+            knowledge_dir = %self.knowledge_dir.display(),
+            "knowledge graph load failed; rebuilding default knowledge graph",
         );
         let incremental = self.knowledge_dir.join("manifest.json").is_file();
         crate::pipeline::run_build(BuildConfig {

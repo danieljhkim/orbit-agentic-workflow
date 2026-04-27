@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Runtime bootstrap, config layering, command dispatch, and default asset seeding.
 //!
 //! This is the top-level library crate that assembles all subsystems into the

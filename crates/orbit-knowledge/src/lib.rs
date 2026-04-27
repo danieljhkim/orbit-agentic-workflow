@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Knowledge-graph parsing, storage, and query services for Orbit.
 //!
 //! The scan pipeline applies a built-in `.orbitignore` baseline before files

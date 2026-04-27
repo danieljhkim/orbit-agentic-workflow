@@ -377,10 +377,11 @@ fn warn_skipped_retired_activity_assets(dir: &Path, skipped: Vec<PathBuf>) {
     if skipped.is_empty() {
         return;
     }
-    eprintln!(
-        "orbit: warning: skipped {} retired schemaVersion 1 activity asset(s) while loading {}",
-        skipped.len(),
-        dir.display()
+    tracing::warn!(
+        target: "orbit.core.assets",
+        count = skipped.len(),
+        dir = %dir.display(),
+        "skipped retired schemaVersion 1 activity assets while loading",
     );
 }
 

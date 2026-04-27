@@ -62,9 +62,10 @@ fn sync_task_review_to_github_with_client<
         OrbitError::InvalidInput("sync_review_to_github: task missing pr_number".to_string())
     })?;
     let Some(repo_root) = task.repo_root.as_deref().or(task.workspace_path.as_deref()) else {
-        eprintln!(
-            "orbit: skipping review sync for task {task_id}: \
-             missing repo_root and workspace_path"
+        tracing::warn!(
+            target: "orbit.engine.review_sync",
+            task_id = task_id,
+            "skipping review sync: missing repo_root and workspace_path",
         );
         return Ok(0);
     };

@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Filesystem-profile policy evaluation for Orbit runtime activities.
 //!
 //! # Role

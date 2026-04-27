@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-27 (T20260427-27)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -138,6 +138,26 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - New producers can follow the same dual-write pattern: persist to the source of truth first, then project a redacted live event.
 - Cost: the tracing feed is lossy and filterable, so readers must not treat missing live events as proof that the canonical store has no matching record.
 
+## ADR-011 — Unified log feed: producer completion + reader CLI
+
+**Status:** Accepted · 2026-04 · [T20260427-27]
+
+**Context.** Producer-side coverage of the unified JSONL tracing feed (ADR-008/009/010) reached policy and friction events, but three gaps blocked the v2-terminal-console mockup from being demonstrable end-to-end:
+1. Job-DAG lifecycle events (`step.*`, `fanout.*`, `worker.state`, `loop.*`) flowed only into the `V2AuditWriter` audit store.
+2. ~16 stray `eprintln!` / `println!` calls in library crates (orbit-core, orbit-engine, orbit-store, orbit-knowledge) bypassed `tracing` entirely.
+3. Operators had to `tail -F | jq` the JSONL file by hand — no first-class reader existed.
+
+**Decision.** Close all three slices in one task:
+- **Slice 1.** Add a single `emit_job_event` dual-write helper in `crates/orbit-engine/src/activity_job/job_executor.rs` that pairs every `V2AuditEventKind` lifecycle emission with a structured `tracing::*!` event under stable targets (`orbit.job.step_started`, `orbit.job.step_finished`, `orbit.job.step_skipped`, `orbit.job.step_retry`, `orbit.job.step_denied`, `orbit.job.step_join`, `orbit.job.fanout`, `orbit.job.worker_state`, `orbit.job.loop_iteration`, `orbit.job.loop_did_not_converge`). Tracing emit precedes the audit emit so the live feed reflects activity before the audit lock; the audit store remains authoritative. The helper is the only call site that pairs both writes — adding a new variant only requires touching `emit_job_tracing`.
+- **Slice 2.** Migrate every stray `eprintln!` / `println!` in library crates to `tracing::warn!` / `error!` / `info!` with namespaced targets (`orbit.store.sqlite`, `orbit.task.dependencies`, `orbit.knowledge.*`, etc.) and stable structured fields. Add `#![deny(clippy::print_stderr, clippy::print_stdout)]` to every library crate root (`orbit-common`, `orbit-policy`, `orbit-exec`, `orbit-knowledge`, `orbit-store`, `orbit-tools`, `orbit-agent`, `orbit-engine`, `orbit-core`, `orbit-mcp`); `orbit-cli` and `examples/` stay exempt because they own user-facing stdout/stderr. `cargo clippy --workspace --all-targets -- -D warnings` is the regression-prevention gate.
+- **Slice 3.** Add `orbit log tail` at `crates/orbit-cli/src/command/log/`. The reader resolves the JSONL path from `--path` → `$ORBIT_LOG_PATH` → `orbit_common::utility::logging::global_jsonl_log_path()` (newly made `pub`). It filters by `--target` prefix, `--level` minimum, and `--since` duration; emits raw lines under `--json` and a four-column rendering otherwise (timestamp · source · code · message) with target-aware formatters for the high-signal targets above plus the cli_runner subprocess target. ANSI escapes are suppressed when stdout is not a TTY. Follow mode (`-f`) seeks to EOF after the initial window and polls every 50 ms.
+
+**Consequences.**
+- The v2-terminal-console mockup is fully demonstrable from real Orbit binaries; no fictional events.
+- Library code can no longer regress on `eprintln!`/`println!` — clippy fails the workspace under `-D warnings`.
+- The audit store and JSONL feed stay independent: schema and bytes-level shape of `V2AuditEnvelope` records are unchanged, the tracing feed is purely additive.
+- Cost: scheduler-event semantics from the mockup remain aspirational (Orbit has no scheduler), follow mode does not handle file rotation or truncation, and the CLI reader currently keeps the entire file in memory before applying `-n` (acceptable for the v1 unrotated file).
+
 ---
 
 ## Task References
@@ -152,5 +172,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
+- **[T20260427-27]** — Close out the unified-log story: job lifecycle dual-write, library print migration with workspace lint gate, and `orbit log tail` reader CLI.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

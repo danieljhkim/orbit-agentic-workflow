@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! MCP (Model Context Protocol) server that exposes an Orbit tool surface to
 //! any MCP-capable client.
 //!

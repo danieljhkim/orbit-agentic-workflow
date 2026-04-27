@@ -1,3 +1,4 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 //! File-based (YAML) and SQLite persistence backends for Orbit data.
 //!
 //! Provides two storage backends — a file store for human-readable, git-friendly

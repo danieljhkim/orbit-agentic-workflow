@@ -130,9 +130,11 @@ pub fn attribute_history(ctx: &mut PipelineContext) -> Result<AttributeOutcome, 
                 operation_log_skipped.insert(commit.sha.clone());
             }
             OperationLogStatus::Malformed(error) => {
-                eprintln!(
-                    "warning: malformed operation log for {}: {error} — falling back to matcher",
-                    commit.sha
+                tracing::warn!(
+                    target: "orbit.knowledge.attribute",
+                    commit = commit.sha.as_str(),
+                    error = error.as_str(),
+                    "malformed operation log; falling back to matcher",
                 );
             }
         }

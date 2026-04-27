@@ -882,8 +882,10 @@ fn resolve_env_refs(value: &str) -> String {
         match std::env::var(inner) {
             Ok(resolved) => resolved,
             Err(_) => {
-                eprintln!(
-                    "orbit: warning: env_set references ${{{inner}}} but it is not set in the environment"
+                tracing::warn!(
+                    target: "orbit.engine.env",
+                    var = inner,
+                    "env_set references an environment variable that is not set; substituting empty string",
                 );
                 String::new()
             }

@@ -199,9 +199,10 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
             let outcome = match rx.recv_timeout(Duration::from_secs(7200)) {
                 Ok(outcome) => outcome,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    eprintln!(
-                        "orbit: parallel task pipeline timed out waiting for worker after 7200s; \
-                         breaking out of receive loop"
+                    tracing::error!(
+                        target: "orbit.engine.parallel",
+                        timeout_secs = 7200,
+                        "parallel task pipeline timed out waiting for worker; breaking out of receive loop",
                     );
                     let timeout_error = "worker timed out after 7200s";
                     for task in active.drain(..) {

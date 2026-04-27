@@ -1,5 +1,6 @@
 pub mod definitions;
 pub mod environment;
+pub mod log;
 pub mod mcp;
 pub mod observe;
 pub mod run;
@@ -47,6 +48,7 @@ Operate:
 Observe:
   graph       Query the knowledge graph
   audit       Query the audit event log
+  log         Tail the unified Orbit log feed
   metrics     Show metrics
   scoreboard  Show scoreboards (friction, duel-plan)
 
@@ -87,6 +89,7 @@ pub enum Commands {
     // ── Observe ──
     Graph(graph::GraphCommand),
     Audit(audit::AuditCommand),
+    Log(log::LogCommand),
     Metrics(metrics::MetricsCommand),
     Scoreboard(scoreboard::ScoreboardCommand),
 
@@ -120,6 +123,7 @@ impl Execute for Commands {
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
+            Commands::Log(cmd) => cmd.execute(runtime),
             Commands::Metrics(cmd) => cmd.execute(runtime),
             Commands::Scoreboard(cmd) => cmd.execute(runtime),
             Commands::Activity(cmd) => cmd.execute(runtime),

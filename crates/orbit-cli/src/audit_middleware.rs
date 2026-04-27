@@ -448,6 +448,15 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             }
         }
         Commands::Audit(_) => unreachable!("audit commands should not be audited"),
+        Commands::Log(_) => CommandMeta {
+            command: "log".to_string(),
+            subcommand: Some("tail".to_string()),
+            tool_name: None,
+            target_type: Some("log_feed".to_string()),
+            target_id: None,
+            role: "admin".to_string(),
+            arguments_json: None,
+        },
         Commands::Workspace(cmd) => {
             use crate::command::workspace::WorkspaceSubcommand;
             let sub = match &cmd.command {

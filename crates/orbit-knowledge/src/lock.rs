@@ -214,9 +214,11 @@ impl Drop for GraphLockGuard {
 
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if let Err(error) = self.release() {
-                eprintln!(
-                    "warning: failed to release graph locks for `{}`: {error}",
-                    self.owner
+                tracing::warn!(
+                    target: "orbit.knowledge.lock",
+                    owner = self.owner.as_str(),
+                    error = %error,
+                    "failed to release graph locks",
                 );
             }
         }));
