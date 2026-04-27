@@ -45,8 +45,6 @@ orbit tool run orbit.task.update --input '{"id": "<task-id>", "execution_summary
 orbit tool run orbit.task.list --input '{"status": "backlog", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
 ```
 
-**If running from a worktree**, pass `--root` pointing to the original repo's `.orbit` directory so commands resolve correctly.
-
 ## Workflow
 
 ### Step 1: Load or create the task
