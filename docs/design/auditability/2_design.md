@@ -87,7 +87,7 @@ The body is a tagged `V2AuditEventKind`. Current event families include:
 - tool denial
 - CLI-backend allowlist delegation and subprocess lifecycle
 
-`crates/orbit-engine/src/activity_job/audit_writer.rs` owns `V2AuditWriter`. It assigns event ids, stores parent stacks per thread, emits JSONL through `V2JsonlSink`, keeps an in-memory snapshot for smoke verification, and exposes the inner loop sink so provider/tool events can live beneath the envelope tree.
+`crates/orbit-engine/src/activity_job/audit_writer.rs` owns `V2AuditWriter`. It assigns event ids, stores parent stacks per thread, emits JSONL through `V2JsonlSink`, keeps an in-memory snapshot for smoke verification, and exposes the inner loop sink so provider/tool events can live beneath the envelope tree. CLI-launched v2 activity/job runs stamp envelope `agent_identity` as `system` because these records describe Orbit's workflow orchestration; concrete agent/provider identity is carried by activity configuration, CLI invocation events, and invocation metrics.
 
 `crates/orbit-engine/src/activity_job/jsonl_sink.rs` writes one JSON object per line under `v2_loop/`, append-only for the life of a run and flushed per write.
 
@@ -132,7 +132,7 @@ Orbit currently carries identity through several related fields:
 
 - CLI runtime actor identity defaults direct CLI commands to `human`.
 - `orbit tool run` paths carry explicit `agent` and `model` inputs for provenance, and command audit rows project that identity into the `role` column for audit filtering.
-- `V2AuditEnvelope.agent_identity` records the actor label used for an activity/job run.
+- `V2AuditEnvelope.agent_identity` records the workflow-envelope actor. CLI-launched v2 runs use `system`; concrete agent activity is recorded in provider-specific event bodies and invocation metrics.
 - Task records carry `created_by`, `planned_by`, `implemented_by`, `agent`, and `model` fields.
 - Invocation metrics record agent and model beside job run and activity ids.
 
