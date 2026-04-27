@@ -275,12 +275,25 @@ This ADR log records the decisions that define the current Activity / Job substr
 
 **Context.** The CLI backend captured subprocess stdout/stderr as bulk buffers and surfaced them only after process exit through blob refs. That preserved auditability, but it left dashboard/log-feed work without a live structured signal for agent progress.
 
-**Decision.** Read CLI subprocess stdout and stderr line by line in the existing pipe-reader threads, append each raw line to the retained byte buffer, and emit one `tracing::info!` event per line with `provider`, `stream`, `job_run_id`, `task_id`, and redacted `line`. Keep `CliInvocationFinished` and its stdout/stderr blob refs on the same captured-byte path as before.
+**Decision.** Read CLI subprocess stdout and stderr line by line in the existing pipe-reader threads, append each raw line to the retained byte buffer, and emit one `tracing::info!` event per line with `provider`, `stream`, `job_run_id`, `task_id`, and `line`. Keep `CliInvocationFinished` and its stdout/stderr blob refs on the same captured-byte path as before; output redaction is now enforced by the tracing subscriber per ADR-022.
 
 **Consequences.**
 - Future tracing sinks can build a merged live feed without scraping subprocess blobs.
 - The audit/blob contract, exit-code handling, and timeout handling remain the durable completion record.
 - Cost: CLI output now has two observability paths; the tracing line text is UTF-8/lossy and newline-stripped while the retained blob bytes remain the archival source.
+
+## ADR-022 — CLI output redaction belongs to the tracing subscriber
+
+**Status:** Accepted · 2026-04 · [T20260426-2349]
+
+**Context.** `cli_runner` originally scrubbed subprocess lines before emitting `tracing::info!`, but that made redaction a per-emitter obligation. The global JSONL tracing feed made forgotten call-site wrappers a durable secret-leak risk.
+
+**Decision.** Emit raw line text from `cli_runner` and rely on `orbit-common`'s default tracing formatter to redact string field values and `Debug`-formatted field values before stderr or JSONL output is written. Keep the retained stdout/stderr byte buffers unmodified because they are the audit/blob contract.
+
+**Consequences.**
+- New tracing emitters inherit the same string-field redaction path without adding `redact_event_text` at each call site.
+- The live tracing stream is redacted while `CliInvocationFinished` blob refs still point at the original captured bytes.
+- Cost: tests that inspect tracing safety must capture formatted subscriber output, not raw `Event` fields.
 
 ---
 
@@ -312,5 +325,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 - **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events while retaining the existing audit/blob path.
+- **[T20260426-2349]** — Move CLI tracing output redaction from `cli_runner` call sites into the default tracing formatter layer.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

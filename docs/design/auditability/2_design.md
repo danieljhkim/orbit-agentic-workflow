@@ -116,7 +116,7 @@ The loop engine emits hashes for request bodies, response bodies, tool inputs, a
 - sensitive live environment values, selected by environment variable name patterns such as `SECRET`, `TOKEN`, `PASSWORD`, `API_KEY`, `AUTH`, and related names
 - regex-based HTTP and argv patterns for authorization headers, x-api-key fields, bearer tokens, JSON API keys, and bare `sk-...` tokens when argv scrubbing is requested
 
-The CLI audit guard redacts error messages before writing them. The blob store redacts bytes before writing them. The pipeline runtime also redacts JSON outputs and errors before persisting selected pipeline data.
+The CLI audit guard redacts error messages before writing them. The blob store redacts bytes before writing them. The pipeline runtime also redacts JSON outputs and errors before persisting selected pipeline data. After [T20260426-2349], the default tracing subscriber also redacts string field values, `Debug`-formatted field values, and unstructured `message` fields before writing stderr or global JSONL tracing output.
 
 The smoke example `crates/orbit-agent/examples/redaction_smoke.rs` verifies that stored blob bytes omit the raw secret and contain a redaction marker.
 
@@ -169,7 +169,7 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 
 The file layer opens `~/.orbit/state/logs/orbit.jsonl` in append mode and writes through `tracing_appender::non_blocking`. The associated `WorkerGuard` is retained for the process lifetime inside `logging.rs`, so routine event emission does not synchronously block on disk writes.
 
-Each JSONL record uses the standard tracing JSON formatter shape: timestamp, level, target, and a `fields` object containing the structured event fields. This is the durable landing zone for live `tracing` events such as the CLI subprocess stdout/stderr events added in [T20260426-2313].
+Each JSONL record contains timestamp, level, target, and a `fields` object containing the structured event fields. After [T20260426-2349], `logging.rs` routes JSONL events through the same `RedactingFields` formatter used by stderr, so string field values, `Debug`-formatted field values, and unstructured messages are scrubbed before serialization while typed numeric and boolean values keep their JSON types. The timestamp is assigned when the formatter writes the record, so a non-blocking writer under load may introduce a small lag from event emission. This is the durable landing zone for live `tracing` events such as the CLI subprocess stdout/stderr events added in [T20260426-2313].
 
 This channel is global rather than workspace-local because `orbit-cli` initializes logging before clap parsing and before `OrbitRuntime` can resolve workspace roots. It is not a replacement for command audit rows or run traces: readers should treat it as an operational log stream, not the canonical workflow envelope.
 
@@ -183,7 +183,7 @@ This channel is global rather than workspace-local because `orbit-cli` initializ
 4. **Some command-audit fields are placeholders.** `stdout_truncated`, `stderr_truncated`, and `session_id` exist in the schema but are often `None`.
 5. **CLI backend tool enforcement remains weaker than HTTP.** Activity/job audit records the CLI backend allowlist as harness-delegated. That preserves accountability but does not enforce Orbit-level tool denial semantics in the CLI provider path.
 6. **Redaction favors known secret shapes.** Environment-value and regex redaction cover common provider-key paths, but no redactor can prove arbitrary user secrets are absent from every payload.
-7. **The global tracing feed is intentionally v1-simple.** It has no rotation, no tracing-layer redaction, and no cross-process line lock; readers should tolerate rare malformed lines if concurrent processes interleave large writes.
+7. **The global tracing feed is intentionally v1-simple.** It has no rotation and no cross-process line lock; readers should tolerate rare malformed lines if concurrent processes interleave large writes. Redaction covers known string secret shapes, but span attributes and binary blobs are separate concerns.
 8. **Coverage is still expanding.** Some deterministic actions and direct runtime mutations write explicit audit rows; others rely on enclosing command/job context. The coverage matrix must become the review checklist for new mutation paths.
 
 ---
@@ -199,5 +199,6 @@ This channel is global rather than workspace-local because `orbit-cli` initializ
 - **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events while retaining the existing audit/blob path.
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
+- **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

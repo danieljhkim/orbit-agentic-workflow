@@ -56,7 +56,7 @@ The redaction and retention contract is specified in [specs/redaction-retention.
 
 ### 2.6 Process tracing has a global JSONL feed
 
-The default tracing subscriber appends structured events to `~/.orbit/state/logs/orbit.jsonl` after [T20260426-2343]. This feed is global because subscriber initialization runs before Orbit knows the workspace root, and it is the live, tail-able counterpart to workspace-local run traces.
+The default tracing subscriber appends structured events to `~/.orbit/state/logs/orbit.jsonl` after [T20260426-2343]. After [T20260426-2349], the subscriber redacts string field values, `Debug`-formatted field values, and unstructured messages before writing stderr or JSONL output. This feed is global because subscriber initialization runs before Orbit knows the workspace root, and it is the live, tail-able counterpart to workspace-local run traces.
 
 ---
 
@@ -75,7 +75,7 @@ The default tracing subscriber appends structured events to `~/.orbit/state/logs
 | Run trace inspection CLI | `crates/orbit-cli/src/command/run.rs`, `crates/orbit-core/src/runtime/run_audit.rs` | [T20260426-0705], [T20260426-0709] |
 | Loop audit events and blob storage | `crates/orbit-agent/src/loop_engine/audit/mod.rs`, `crates/orbit-common/src/utility/blob_store.rs` | [T20260426-0605] |
 | Redaction utilities | `crates/orbit-common/src/utility/redaction.rs` | [T20260426-0605] |
-| Global tracing JSONL feed | `crates/orbit-common/src/utility/logging.rs`, `~/.orbit/state/logs/orbit.jsonl` | [T20260426-2343] |
+| Global tracing JSONL feed | `crates/orbit-common/src/utility/logging.rs`, `~/.orbit/state/logs/orbit.jsonl` | [T20260426-2343], [T20260426-2349] |
 | V2 invocation metrics persistence | `crates/orbit-store/src/sqlite/invocation_store.rs`, `crates/orbit-core/src/runtime/v2_host.rs` | [T20260426-0526] |
 | Task attribution fields | `crates/orbit-common/src/types/task.rs`, task update/runtime host paths | [T20260426-0605] |
 
@@ -90,5 +90,6 @@ The default tracing subscriber appends structured events to `~/.orbit/state/logs
 - **[T20260426-0705]** — Expose v2 run audit events through `orbit run events` and `orbit run trace`.
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
+- **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

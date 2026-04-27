@@ -110,7 +110,20 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 **Consequences.**
 - Operators and future dashboards can tail one machine-readable feed across workspaces.
 - Early bootstrap events have a durable destination without needing runtime path resolution.
-- Cost: the v1 file is unrotated, only pre-redacted call sites are safe by construction, and concurrent processes can rarely interleave oversized JSONL records.
+- Cost: the v1 file is unrotated and concurrent processes can rarely interleave oversized JSONL records.
+
+## ADR-009 — Tracing redaction is enforced by field formatting
+
+**Status:** Accepted · 2026-04 · [T20260426-2349]
+
+**Context.** The global JSONL feed made `tracing` output durable, but pre-emission helpers such as `redact_event_text` only protected call sites that remembered to use them.
+
+**Decision.** Install a redacting `FormatFields` implementation on both stderr and JSONL tracing formatters. The formatter redacts string field values, `Debug`-formatted field values, and unstructured `message` output while preserving field names and typed numeric/boolean JSON values.
+
+**Consequences.**
+- New structured tracing emitters inherit the default redaction path before data reaches terminal or disk output.
+- CLI subprocess tracing can emit raw line fields while the retained stdout/stderr audit blobs preserve original bytes.
+- Cost: span attribute redaction, binary payload redaction, and user-configurable redaction policies remain separate follow-up concerns.
 
 ---
 
@@ -124,5 +137,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-0709]** — Align run step selectors on activity `step.id` and move CLI invocation log reading behind orbit-core runtime accessors.
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events.
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
+- **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

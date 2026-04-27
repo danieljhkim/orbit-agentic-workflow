@@ -13,6 +13,7 @@ Auditability and secrecy pull in opposite directions. Orbit needs faithful recor
 - Pipeline outputs persisted by runtime helpers are scrubbed for sensitive live environment values.
 - HTTP-shaped payload redaction covers authorization headers, x-api-key headers, JSON API-key fields, and bearer tokens.
 - CLI argv redaction uses HTTP defaults plus bare `sk-...` token scrubbing when argv-shaped data is being persisted.
+- Default tracing output redacts string field values, `Debug`-formatted field values, and unstructured `message` fields before writing stderr or `~/.orbit/state/logs/orbit.jsonl`.
 - Readers should not need to apply the standard redactor again for normal stored blobs.
 
 ## Retention Boundaries
@@ -36,6 +37,12 @@ Invocation metrics:
 - May be recomputed or summarized into scoreboards.
 - Are not a transcript retention mechanism.
 
+Global process tracing:
+
+- Lives under `~/.orbit/state/logs/orbit.jsonl`.
+- Is append-only and unrotated in v1.
+- Is an operational log stream, not the canonical workflow envelope.
+
 ## Failure Modes
 
 - If a redactor misses an unknown secret shape, the audit layer may persist that value. Reviewers should treat new provider payload shapes as redaction-sensitive changes.
@@ -54,4 +61,4 @@ Future retention work should add:
 
 ## Agent Signature
 
-Last revised by codex / gpt-5 for [T20260426-0605].
+Last revised by codex / gpt-5.5 for [T20260426-2349].

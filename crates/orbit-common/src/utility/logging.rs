@@ -13,7 +13,9 @@
 //! JSONL retention is intentionally simple in v1: the file is append-only and
 //! has no rotation. Multiple Orbit processes may append to the same file at
 //! the same time; readers should tolerate malformed lines because writes
-//! larger than `PIPE_BUF` can interleave across processes.
+//! larger than `PIPE_BUF` can interleave across processes. JSONL timestamps are
+//! assigned when the formatter writes the event, which may lag event emission
+//! slightly when the non-blocking writer is under load.
 //!
 //! Replacement guidance: the 13+ stray `eprintln!`/`println!` calls in
 //! library crates (orbit-core, orbit-engine, orbit-store, orbit-knowledge)
@@ -21,31 +23,312 @@
 //! fields. A workspace-level `deny(clippy::print_stderr, clippy::print_stdout)`
 //! would enforce this but is left to follow-up.
 //!
-//! Redaction integration: today this module exposes [`redact_event_text`]
-//! for manual pre-emission scrubbing. A proper `tracing::Layer` that applies
-//! redaction to recorded fields is a TODO — the right shape is a
-//! `tracing_subscriber::Layer` with a `Visit`-implementing formatter that
-//! routes each value through [`super::redaction::redact_all`]. Landing that
-//! layer is the follow-up after migrating call sites off `eprintln!`. Until
-//! then, the JSONL file records fields as emitted by the call site; callers
-//! that need scrubbing must pre-redact with [`redact_event_text`].
+//! Redaction integration: both the stderr formatter and global JSONL formatter
+//! use [`RedactingFields`], which applies [`super::redaction::redact_all`] to
+//! string field values, `Debug`-formatted values, and unstructured `message`
+//! text before output is written. [`redact_event_text`] remains available for
+//! non-tracing surfaces that must scrub text before writing it elsewhere.
 
 use std::{
+    collections::BTreeMap,
+    fmt as std_fmt,
     fs::{self, OpenOptions},
     io,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
 
+use chrono::{SecondsFormat, Utc};
+use serde_json::Value;
+use tracing::{
+    Event, Subscriber,
+    field::{Field, Visit},
+    span,
+};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    EnvFilter, Layer, Registry, fmt, layer::SubscriberExt, registry::LookupSpan,
+    EnvFilter, Layer, Registry,
+    field::{RecordFields, VisitOutput},
+    fmt::{
+        self, FmtContext, FormattedFields,
+        format::{DefaultVisitor, FormatEvent, FormatFields, Writer},
+    },
+    layer::SubscriberExt,
+    registry::LookupSpan,
     util::SubscriberInitExt,
 };
 
 use super::redaction;
 
 static FILE_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
+
+/// Field formatter that redacts string-valued and `Debug`-formatted tracing
+/// event fields before they are written to stderr or the JSONL tracing feed.
+///
+/// Field names and typed numeric/boolean values are preserved. Span attributes
+/// use the same formatter for structural compatibility, but Orbit's redaction
+/// contract is intentionally scoped to event fields for now.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RedactingFields {
+    format: RedactingFieldFormat,
+}
+
+impl RedactingFields {
+    /// Human-readable field formatting for stderr.
+    pub fn text() -> Self {
+        Self {
+            format: RedactingFieldFormat::Text,
+        }
+    }
+
+    /// JSON-object field formatting for the global JSONL tracing feed.
+    pub fn json() -> Self {
+        Self {
+            format: RedactingFieldFormat::Json,
+        }
+    }
+}
+
+impl Default for RedactingFields {
+    fn default() -> Self {
+        Self::text()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RedactingFieldFormat {
+    Text,
+    Json,
+}
+
+impl<'writer> FormatFields<'writer> for RedactingFields {
+    fn format_fields<R: RecordFields>(
+        &self,
+        mut writer: Writer<'writer>,
+        fields: R,
+    ) -> std_fmt::Result {
+        match self.format {
+            RedactingFieldFormat::Text => {
+                let visitor = DefaultVisitor::new(writer, true);
+                let mut visitor = RedactingVisitor::new(visitor);
+                fields.record(&mut visitor);
+                visitor.finish()
+            }
+            RedactingFieldFormat::Json => {
+                let visitor = JsonFieldVisitor::new(&mut writer);
+                let mut visitor = RedactingVisitor::new(visitor);
+                fields.record(&mut visitor);
+                visitor.finish()
+            }
+        }
+    }
+
+    fn add_fields(
+        &self,
+        current: &'writer mut FormattedFields<Self>,
+        fields: &span::Record<'_>,
+    ) -> std_fmt::Result {
+        match self.format {
+            RedactingFieldFormat::Text => {
+                if !current.fields.is_empty() {
+                    current.fields.push(' ');
+                }
+                self.format_fields(current.as_writer(), fields)
+            }
+            RedactingFieldFormat::Json => {
+                let values = if current.fields.is_empty() {
+                    BTreeMap::new()
+                } else {
+                    serde_json::from_str(&current.fields).map_err(|_| std_fmt::Error)?
+                };
+                let mut updated = String::new();
+                let visitor = JsonFieldVisitor::with_values(&mut updated, values);
+                let mut visitor = RedactingVisitor::new(visitor);
+                fields.record(&mut visitor);
+                visitor.finish()?;
+                current.fields = updated;
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RedactingJsonEventFormat;
+
+impl<S, N> FormatEvent<S, N> for RedactingJsonEventFormat
+where
+    S: Subscriber + for<'lookup> LookupSpan<'lookup>,
+    N: for<'writer> FormatFields<'writer> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> std_fmt::Result {
+        let mut fields_json = String::new();
+        ctx.format_fields(Writer::new(&mut fields_json), event)?;
+        let fields: Value = serde_json::from_str(&fields_json).map_err(|_| std_fmt::Error)?;
+        let metadata = event.metadata();
+
+        let mut line = serde_json::Map::new();
+        line.insert(
+            "timestamp".to_string(),
+            Value::String(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true)),
+        );
+        line.insert(
+            "level".to_string(),
+            Value::String(metadata.level().as_str().to_string()),
+        );
+        line.insert("fields".to_string(), fields);
+        line.insert(
+            "target".to_string(),
+            Value::String(metadata.target().to_string()),
+        );
+
+        let line = serde_json::to_string(&line).map_err(|_| std_fmt::Error)?;
+        writeln!(writer, "{line}")
+    }
+}
+
+struct RedactingVisitor<V> {
+    inner: V,
+}
+
+impl<V> RedactingVisitor<V> {
+    fn new(inner: V) -> Self {
+        Self { inner }
+    }
+}
+
+impl<V> Visit for RedactingVisitor<V>
+where
+    V: Visit,
+{
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        self.inner.record_f64(field, value);
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.inner.record_i64(field, value);
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.inner.record_u64(field, value);
+    }
+
+    fn record_i128(&mut self, field: &Field, value: i128) {
+        self.inner.record_i128(field, value);
+    }
+
+    fn record_u128(&mut self, field: &Field, value: u128) {
+        self.inner.record_u128(field, value);
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.inner.record_bool(field, value);
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        let redacted = redaction::redact_all(value);
+        self.inner.record_str(field, &redacted);
+    }
+
+    fn record_bytes(&mut self, field: &Field, value: &[u8]) {
+        self.inner.record_bytes(field, value);
+    }
+
+    fn record_error(&mut self, field: &Field, value: &(dyn std::error::Error + 'static)) {
+        self.inner.record_error(field, value);
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std_fmt::Debug) {
+        let redacted = redaction::redact_all(&format!("{value:?}"));
+        self.inner.record_debug(field, &RedactedDebug(redacted));
+    }
+}
+
+impl<V> VisitOutput<std_fmt::Result> for RedactingVisitor<V>
+where
+    V: VisitOutput<std_fmt::Result>,
+{
+    fn finish(self) -> std_fmt::Result {
+        self.inner.finish()
+    }
+}
+
+struct RedactedDebug(String);
+
+impl std_fmt::Debug for RedactedDebug {
+    fn fmt(&self, f: &mut std_fmt::Formatter<'_>) -> std_fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+struct JsonFieldVisitor<'writer> {
+    values: BTreeMap<String, Value>,
+    writer: &'writer mut dyn std_fmt::Write,
+}
+
+impl<'writer> JsonFieldVisitor<'writer> {
+    fn new(writer: &'writer mut dyn std_fmt::Write) -> Self {
+        Self::with_values(writer, BTreeMap::new())
+    }
+
+    fn with_values(
+        writer: &'writer mut dyn std_fmt::Write,
+        values: BTreeMap<String, Value>,
+    ) -> Self {
+        Self { values, writer }
+    }
+
+    fn insert(&mut self, field: &Field, value: Value) {
+        self.values
+            .insert(json_field_name(field).to_string(), value);
+    }
+}
+
+impl Visit for JsonFieldVisitor<'_> {
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        self.insert(field, Value::from(value));
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.insert(field, Value::from(value));
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.insert(field, Value::from(value));
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.insert(field, Value::from(value));
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.insert(field, Value::String(value.to_string()));
+    }
+
+    fn record_bytes(&mut self, field: &Field, value: &[u8]) {
+        self.insert(field, Value::from(value));
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std_fmt::Debug) {
+        self.insert(field, Value::String(format!("{value:?}")));
+    }
+}
+
+impl VisitOutput<std_fmt::Result> for JsonFieldVisitor<'_> {
+    fn finish(self) -> std_fmt::Result {
+        let fields = serde_json::to_string(&self.values).map_err(|_| std_fmt::Error)?;
+        self.writer.write_str(&fields)
+    }
+}
+
+fn json_field_name(field: &Field) -> &str {
+    field.name().strip_prefix("r#").unwrap_or(field.name())
+}
 
 /// Install the default fmt + env-filter subscriber. Safe to call multiple
 /// times — subsequent calls are no-ops (mirrors the current behaviour in
@@ -55,7 +338,9 @@ static FILE_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 /// `"orbit=debug"`).
 pub fn init_default_subscriber(default_filter: &str) {
     let filter = env_filter(default_filter);
-    let stderr_layer = fmt::layer().with_writer(io::stderr);
+    let stderr_layer = fmt::layer()
+        .with_writer(io::stderr)
+        .fmt_fields(RedactingFields::default());
     let log_layer = global_jsonl_log_path()
         .map_err(|err| err.to_string())
         .and_then(|path| jsonl_layer_at_path(&path).map_err(|err| err.to_string()));
@@ -86,13 +371,14 @@ pub fn init_default_subscriber(default_filter: &str) {
     }
 }
 
-/// Pre-emission scrubber for callers that need to sanitise a message before
-/// handing it to `tracing::*!`. Applies env-value redaction plus the default
-/// HTTP header/JSON patterns.
+/// Pre-emission scrubber for callers that need to sanitize text before writing
+/// it outside the tracing pipeline. Applies env-value redaction plus the
+/// default HTTP header/JSON patterns.
 ///
-/// Prefer emitting structured fields and letting a future `RedactionLayer`
-/// handle scrubbing uniformly; this helper exists so call sites can adopt
-/// redaction today without blocking on the layer work.
+/// `init_default_subscriber` installs field-level tracing redaction
+/// automatically; prefer emitting raw structured fields to `tracing::*` and
+/// reserve this helper for non-tracing surfaces such as audit blobs written
+/// directly to disk.
 pub fn redact_event_text(message: &str) -> String {
     redaction::redact_all(message)
 }
@@ -148,7 +434,11 @@ where
             )
         })?;
     let (writer, guard) = tracing_appender::non_blocking(file);
-    let layer = fmt::layer().json().with_ansi(false).with_writer(writer);
+    let layer = fmt::layer()
+        .event_format(RedactingJsonEventFormat)
+        .fmt_fields(RedactingFields::json())
+        .with_ansi(false)
+        .with_writer(writer);
 
     Ok((layer, guard))
 }
@@ -256,6 +546,113 @@ mod tests {
     }
 
     #[test]
+    fn jsonl_redacting_fields_preserves_typed_values_and_redacts_strings() {
+        let _env = ENV_LOCK.lock().expect("lock env");
+        let _rust_log = EnvVarGuard::remove("RUST_LOG");
+        let dir = tempdir().expect("tempdir");
+        let log_path = dir.path().join("orbit.jsonl");
+
+        with_test_subscriber_at_path("info", &log_path, io::sink, || {
+            tracing::info!(count = 42, ok = true, secret = "Authorization: Bearer abc");
+        })
+        .expect("subscriber should run");
+
+        let values = read_jsonl_values(&log_path);
+        assert_eq!(values.len(), 1);
+        let fields = &values[0]["fields"];
+        assert_eq!(fields["count"], 42);
+        assert_eq!(fields["ok"], true);
+        assert!(
+            !fields["secret"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("abc")
+        );
+    }
+
+    #[test]
+    fn jsonl_redacting_fields_preserves_sensitive_field_names() {
+        let _env = ENV_LOCK.lock().expect("lock env");
+        let _rust_log = EnvVarGuard::remove("RUST_LOG");
+        let dir = tempdir().expect("tempdir");
+        let log_path = dir.path().join("orbit.jsonl");
+
+        with_test_subscriber_at_path("info", &log_path, io::sink, || {
+            tracing::info!(password = "plain-public-value");
+        })
+        .expect("subscriber should run");
+
+        let values = read_jsonl_values(&log_path);
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0]["fields"]["password"], "plain-public-value");
+    }
+
+    #[test]
+    fn jsonl_redacting_fields_redacts_unstructured_message() {
+        let _env = ENV_LOCK.lock().expect("lock env");
+        let _rust_log = EnvVarGuard::remove("RUST_LOG");
+        let dir = tempdir().expect("tempdir");
+        let log_path = dir.path().join("orbit.jsonl");
+
+        with_test_subscriber_at_path("info", &log_path, io::sink, || {
+            tracing::info!("Bearer abc123 leaked");
+        })
+        .expect("subscriber should run");
+
+        let values = read_jsonl_values(&log_path);
+        assert_eq!(values.len(), 1);
+        let message = values[0]["fields"]["message"]
+            .as_str()
+            .expect("message is string");
+        assert!(message.contains("[REDACTED_AUTH]"));
+        assert!(!message.contains("abc123"));
+    }
+
+    #[test]
+    fn jsonl_redacting_fields_redacts_debug_values() {
+        struct Payload {
+            header: &'static str,
+        }
+
+        impl std::fmt::Debug for Payload {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("Payload")
+                    .field("header", &self.header)
+                    .finish()
+            }
+        }
+
+        let _env = ENV_LOCK.lock().expect("lock env");
+        let _rust_log = EnvVarGuard::remove("RUST_LOG");
+        let dir = tempdir().expect("tempdir");
+        let log_path = dir.path().join("orbit.jsonl");
+
+        with_test_subscriber_at_path("info", &log_path, io::sink, || {
+            let payload = Payload {
+                header: "Authorization: Bearer abc456",
+            };
+            tracing::info!(payload = ?payload);
+        })
+        .expect("subscriber should run");
+
+        let values = read_jsonl_values(&log_path);
+        assert_eq!(values.len(), 1);
+        let payload = values[0]["fields"]["payload"]
+            .as_str()
+            .expect("payload is string");
+        assert!(payload.contains("[REDACTED_AUTH]"));
+        assert!(!payload.contains("abc456"));
+    }
+
+    #[test]
+    fn default_pattern_redactor_is_initialized_once() {
+        let first = redaction::default_pattern_redactor();
+        let second = redaction::default_pattern_redactor();
+
+        assert!(std::ptr::eq(first, second));
+    }
+
+    #[test]
     fn jsonl_file_appends_to_existing_content() {
         let _env = ENV_LOCK.lock().expect("lock env");
         let _rust_log = EnvVarGuard::remove("RUST_LOG");
@@ -320,7 +717,9 @@ mod tests {
         W: for<'writer> MakeWriter<'writer> + Send + Sync + 'static,
     {
         let filter = env_filter(default_filter);
-        let stderr_layer = fmt::layer().with_writer(stderr_writer);
+        let stderr_layer = fmt::layer()
+            .with_writer(stderr_writer)
+            .fmt_fields(RedactingFields::default());
         let (file_layer, guard) = jsonl_layer_at_path(log_path)?;
         let subscriber = Registry::default()
             .with(filter)
@@ -342,7 +741,9 @@ mod tests {
         W: for<'writer> MakeWriter<'writer> + Send + Sync + 'static,
     {
         let filter = env_filter(default_filter);
-        let stderr_layer = fmt::layer().with_writer(stderr_writer);
+        let stderr_layer = fmt::layer()
+            .with_writer(stderr_writer)
+            .fmt_fields(RedactingFields::default());
         match jsonl_layer_at_path(log_path) {
             Ok((file_layer, guard)) => {
                 let subscriber = Registry::default()

@@ -31,7 +31,6 @@ use std::time::{Duration, Instant};
 use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest, parse_and_validate_response};
 use orbit_common::types::activity_job::{AgentLoopSpec, V2AuditEventKind};
 use orbit_common::types::{ExecutionResult, InvocationTrace};
-use orbit_common::utility::logging::redact_event_text;
 use orbit_common::utility::redaction::PatternRedactor;
 use serde_json::Value;
 
@@ -391,7 +390,6 @@ fn emit_output_line(
     raw_line: &[u8],
 ) {
     let line = line_text(raw_line);
-    let line = redact_event_text(&line);
     tracing::info!(
         provider = provider,
         stream = stream,
@@ -412,15 +410,18 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fmt;
     use std::fs;
+    use std::io::{self, Write};
     use std::path::Path;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use orbit_agent::loop_engine::audit::{AuditSink, LoopAuditEvent};
     use orbit_common::types::activity_job::{Backend, OnDenial, Provider};
+    use orbit_common::utility::logging::RedactingFields;
     use orbit_tools::{FsAuditLogger, ToolContext};
     use tempfile::tempdir;
     use tracing::field::{Field, Visit};
     use tracing::{Event, Metadata, Subscriber, span};
+    use tracing_subscriber::{Registry, fmt as tracing_fmt, fmt::MakeWriter, layer::SubscriberExt};
 
     use super::*;
     use crate::activity_job::dispatcher::ResolvedCliExecutor;
@@ -461,12 +462,8 @@ mod tests {
 
     #[test]
     fn spawn_with_timeout_redacts_tracing_line_without_redacting_raw_stdout() {
-        let raw = "Authorization: Bearer abc123";
-        let expected = redact_event_text(raw);
-        assert_ne!(expected, raw);
-
         let args = sh_args("printf '%s\\n' 'Authorization: Bearer abc123'");
-        let (result, events) = capture_events(|| {
+        let (result, formatted_output) = capture_redacted_tracing_output(|| {
             spawn_with_timeout(
                 "/bin/sh",
                 &args,
@@ -483,9 +480,11 @@ mod tests {
         assert!(stderr.is_empty());
         assert_eq!(exit_code, Some(0));
         assert!(!timed_out);
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].field("line"), Some(expected.as_str()));
-        assert!(!events[0].field("line").unwrap().contains("abc123"));
+        assert!(formatted_output.contains("[REDACTED_AUTH]"));
+        assert!(
+            !formatted_output.contains("abc123"),
+            "formatted tracing output leaked secret: {formatted_output}"
+        );
     }
 
     #[test]
@@ -610,6 +609,25 @@ mod tests {
         (result, events)
     }
 
+    fn capture_redacted_tracing_output<F>(f: F) -> (Result<SpawnOutput, String>, String)
+    where
+        F: FnOnce() -> Result<SpawnOutput, String>,
+    {
+        let writer = BufferMakeWriter::default();
+        let buffer = writer.buffer();
+        let subscriber = Registry::default().with(
+            tracing_fmt::layer()
+                .with_ansi(false)
+                .with_writer(writer)
+                .fmt_fields(RedactingFields::default()),
+        );
+        let dispatch = tracing::Dispatch::new(subscriber);
+        let result = tracing::dispatcher::with_default(&dispatch, f);
+        let output = String::from_utf8(buffer.lock().expect("buffer lock").clone())
+            .expect("formatted output utf8");
+        (result, output)
+    }
+
     fn assert_event(events: &[CapturedEvent], stream: &str, line: &str) {
         assert!(
             events
@@ -679,6 +697,45 @@ mod tests {
         fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
             self.fields
                 .insert(field.name().to_string(), format!("{value:?}"));
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct BufferMakeWriter {
+        buffer: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl BufferMakeWriter {
+        fn buffer(&self) -> Arc<Mutex<Vec<u8>>> {
+            Arc::clone(&self.buffer)
+        }
+    }
+
+    impl<'writer> MakeWriter<'writer> for BufferMakeWriter {
+        type Writer = BufferWriter;
+
+        fn make_writer(&'writer self) -> Self::Writer {
+            BufferWriter {
+                buffer: Arc::clone(&self.buffer),
+            }
+        }
+    }
+
+    struct BufferWriter {
+        buffer: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl Write for BufferWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.buffer
+                .lock()
+                .expect("buffer lock")
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
         }
     }
 

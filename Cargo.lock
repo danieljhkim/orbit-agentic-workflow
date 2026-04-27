@@ -1618,6 +1618,7 @@ dependencies = [
  "thiserror",
  "tiktoken-rs",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

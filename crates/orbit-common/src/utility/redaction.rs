@@ -19,7 +19,7 @@
 //! - [`redact_all`] — env + default patterns in one pass (use when you don't
 //!   know what shape the input has and want maximum coverage)
 
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::OnceLock};
 
 use regex::Regex;
 use serde_json::Value;
@@ -27,6 +27,7 @@ use serde_json::Value;
 use crate::types::OrbitError;
 
 const REDACTED_ENV_VALUE: &str = "[REDACTED_ENV]";
+static DEFAULT_PATTERN_REDACTOR: OnceLock<PatternRedactor> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
 // Env-var value scrubbing
@@ -261,5 +262,9 @@ impl Default for PatternRedactor {
 /// the input shape is unknown (log lines, aggregated error messages).
 pub fn redact_all(input: &str) -> String {
     let env_scrubbed = redact_sensitive_env_text(input);
-    PatternRedactor::http_default().apply_str(&env_scrubbed)
+    default_pattern_redactor().apply_str(&env_scrubbed)
+}
+
+pub(crate) fn default_pattern_redactor() -> &'static PatternRedactor {
+    DEFAULT_PATTERN_REDACTOR.get_or_init(PatternRedactor::http_default)
 }
