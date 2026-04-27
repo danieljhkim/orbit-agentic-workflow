@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use orbit_common::types::normalize_optional_attribution_label;
+use orbit_common::types::{normalize_agent_family_for_model, normalize_optional_attribution_label};
 use orbit_core::{
     AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime, redact_sensitive_env_text,
 };
@@ -526,16 +526,21 @@ fn tool_run_actor_role(args: &crate::command::tool::ToolRunArgs) -> String {
     let env_model = std::env::var("ORBIT_AGENT_MODEL")
         .ok()
         .filter(|value| !value.trim().is_empty());
-    let agent = input_agent
-        .as_deref()
-        .or(args.agent.as_deref())
-        .or(env_agent.as_deref());
-    let model = input_model
-        .as_deref()
-        .or(args.model.as_deref())
-        .or(env_model.as_deref());
+    let has_input_identity = input_agent.is_some() || input_model.is_some();
+    let has_flag_identity = args.agent.is_some() || args.model.is_some();
+    let (agent, model) = if has_input_identity {
+        (input_agent, input_model)
+    } else if has_flag_identity {
+        (args.agent.clone(), args.model.clone())
+    } else {
+        (env_agent, env_model)
+    };
+    let agent = normalize_agent_family_for_model(agent.as_deref(), model.as_deref())
+        .ok()
+        .flatten()
+        .or(agent);
 
-    normalize_optional_attribution_label(model.or(agent), model)
+    normalize_optional_attribution_label(model.as_deref().or(agent.as_deref()), model.as_deref())
         .unwrap_or_else(|| "agent".to_string())
 }
 
@@ -644,6 +649,20 @@ mod tests {
             "orbit.graph.search",
             "--input",
             r#"{"query":"actor","agent":"codex","model":"gpt-5.5"}"#,
+        ]);
+
+        assert_eq!(meta.role, "gpt-5.5");
+    }
+
+    #[test]
+    fn tool_run_audit_meta_uses_model_only_input_for_role() {
+        let meta = meta_for(&[
+            "orbit",
+            "tool",
+            "run",
+            "orbit.graph.search",
+            "--input",
+            r#"{"query":"actor","model":"gpt-5.5"}"#,
         ]);
 
         assert_eq!(meta.role, "gpt-5.5");

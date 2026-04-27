@@ -44,7 +44,9 @@ pub mod task_show;
 pub mod task_start;
 pub mod task_update;
 
-use orbit_common::types::{OrbitError, ToolParam, normalize_optional_attribution_label};
+use orbit_common::types::{
+    OrbitError, ToolParam, normalize_agent_family_for_model, normalize_optional_attribution_label,
+};
 use orbit_knowledge::TaskGraphService;
 use orbit_knowledge::graph::nodes::CodebaseGraphV1;
 use serde::Serialize;
@@ -106,20 +108,33 @@ fn build_actor_label(agent: Option<&str>, model: Option<&str>) -> Option<String>
     normalize_optional_attribution_label(model.or(agent), model)
 }
 
+fn trimmed_optional(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub(super) fn resolve_identity(
     ctx: &ToolContext,
     input: &Value,
 ) -> Result<OrbitIdentity, OrbitError> {
-    let agent = optional_string_alias(input, &["agent"])?.or_else(|| {
-        ctx.agent_name
-            .clone()
-            .filter(|value| !value.trim().is_empty())
-    });
-    let model = optional_string_alias(input, &["model"])?.or_else(|| {
-        ctx.model_name
-            .clone()
-            .filter(|value| !value.trim().is_empty())
-    });
+    let input_agent = optional_string_alias(input, &["agent"])?;
+    let input_model = optional_string_alias(input, &["model"])?;
+    let input_has_identity = input_agent
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        || input_model
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+    let (agent, model) = if input_has_identity {
+        (trimmed_optional(input_agent), trimmed_optional(input_model))
+    } else {
+        (
+            trimmed_optional(ctx.agent_name.clone()),
+            trimmed_optional(ctx.model_name.clone()),
+        )
+    };
+    let agent = normalize_agent_family_for_model(agent.as_deref(), model.as_deref())?;
     let actor_label = build_actor_label(agent.as_deref(), model.as_deref());
     Ok(OrbitIdentity {
         agent,
@@ -132,14 +147,17 @@ pub(super) fn identity_params() -> Vec<ToolParam> {
     vec![
         ToolParam {
             name: "agent".to_string(),
-            description: "Agent CLI family (codex, claude, or gemini).".to_string(),
+            description:
+                "Deprecated compatibility field. Prefer `model`; Orbit infers the agent family from known model names."
+                    .to_string(),
             param_type: "string".to_string(),
             required: false,
         },
         ToolParam {
             name: "model".to_string(),
-            description: "LLM model identifier (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
-                .to_string(),
+            description:
+                "Preferred provenance field. Exact LLM model identifier used to infer agent family when possible (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
+                    .to_string(),
             param_type: "string".to_string(),
             required: false,
         },

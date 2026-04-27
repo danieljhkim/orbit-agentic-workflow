@@ -1,4 +1,7 @@
-use orbit_common::types::{AgentModelPair, agent_family_from_cli, resolve_agent_model_pair};
+use orbit_common::types::{
+    AgentModelPair, OrbitError, agent_family_from_cli, normalize_agent_family_for_model,
+    resolve_agent_model_pair,
+};
 
 use crate::OrbitRuntime;
 
@@ -61,6 +64,29 @@ impl OrbitRuntime {
     }
 
     pub(crate) fn canonical_agent_model_identity(
+        &self,
+        agent_cli: Option<&str>,
+        model: Option<&str>,
+    ) -> (Option<String>, Option<String>) {
+        self.try_canonical_agent_model_identity(agent_cli, model)
+            .unwrap_or_else(|_| self.legacy_canonical_agent_model_identity(agent_cli, model))
+    }
+
+    pub(crate) fn try_canonical_agent_model_identity(
+        &self,
+        agent_cli: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<(Option<String>, Option<String>), OrbitError> {
+        let agent = normalize_agent_family_for_model(agent_cli, model)?;
+        let requested_model = model.map(str::trim).filter(|value| !value.is_empty());
+        let model = agent
+            .as_deref()
+            .and_then(|agent| self.canonical_model_for_agent(agent, requested_model))
+            .or_else(|| requested_model.map(ToOwned::to_owned));
+        Ok((agent, model))
+    }
+
+    fn legacy_canonical_agent_model_identity(
         &self,
         agent_cli: Option<&str>,
         model: Option<&str>,

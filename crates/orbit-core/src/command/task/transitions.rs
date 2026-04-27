@@ -31,12 +31,17 @@ impl OrbitRuntime {
         agent: Option<String>,
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
+        let (canonical_agent, canonical_model) =
+            self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let effective_label =
-            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label = effective_actor_label(
+            &actor.label,
+            canonical_agent.as_deref(),
+            canonical_model.as_deref(),
+        );
         let implemented_by =
-            implementation_label(&task, effective_label.as_str(), model.as_deref());
+            implementation_label(&task, effective_label.as_str(), canonical_model.as_deref());
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         let result = match task.status {
@@ -147,7 +152,7 @@ impl OrbitRuntime {
         actor_label_override: Option<String>,
     ) -> Result<Task, OrbitError> {
         let (canonical_agent, canonical_model) =
-            self.canonical_agent_model_identity(agent.as_deref(), model.as_deref());
+            self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;
         let dependency_status_index = build_task_status_index(&self.list_tasks()?);
         let unmet_dependencies = unmet_task_dependencies(&task, &dependency_status_index);
@@ -273,10 +278,15 @@ impl OrbitRuntime {
         agent: Option<String>,
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
+        let (canonical_agent, canonical_model) =
+            self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;
         let actor = self.actor().clone();
-        let effective_label =
-            effective_actor_label(&actor.label, agent.as_deref(), model.as_deref());
+        let effective_label = effective_actor_label(
+            &actor.label,
+            canonical_agent.as_deref(),
+            canonical_model.as_deref(),
+        );
         let reason = note.trim();
         if reason.is_empty() {
             return Err(OrbitError::InvalidInput(

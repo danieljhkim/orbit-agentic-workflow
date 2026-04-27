@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27 (T20260427-44, T20260427-46)
+**Last updated:** 2026-04-27 (T20260427-52)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -184,6 +184,19 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Browser clients receive pre-rendered, escaped message HTML while keeping dynamic labels and classes outside formatter templates.
 - Cost: the backend stream still follows the v1 append-only file model; rotation/truncation handling is best-effort and the visual panel ships separately under the UI-owned task.
 
+## ADR-014 — Tool-call provenance is model-first
+
+**Status:** Accepted · 2026-04 · [T20260427-52]
+
+**Context.** Orbit task and workflow instructions told agents to provide both `agent` and `model` in every `orbit tool run` JSON payload. That duplicated information for the built-in providers and created a mismatch class where an exact model could be paired with the wrong agent family.
+
+**Decision.** Deprecate `agent` as a normal tool-call input and make exact `model` the preferred provenance field. Tool dispatch infers the agent family from known model names, persists both fields internally for compatibility and scoreboards, and rejects explicit legacy `agent` values when they contradict an inferable model family.
+
+**Consequences.**
+- Seeded skills and instructions can show shorter model-only tool calls while task records still retain `agent` and `model`.
+- Legacy callers that still pass `agent` continue to work when the pair is consistent.
+- Cost: unknown or ambiguous model names cannot infer an agent family; callers that need family-specific dispatch for those names must still provide a compatible legacy `agent` value.
+
 ---
 
 ## Task References
@@ -202,5 +215,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
 - **[T20260427-44]** — Add shared log formatter extraction and dashboard backend `/api/log` snapshot/SSE endpoints.
 - **[T20260427-46]** — Implement the Gemini-owned Tasks-tab `orbit.log` panel using the shared dashboard backend API.
+- **[T20260427-52]** — Deprecate `agent` in normal tool-call JSON, infer agent family from `model`, and reject inconsistent legacy pairs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use orbit_common::types::{OrbitError, OrbitEvent, Role, StoredTool, ToolParam};
+use orbit_common::types::{
+    OrbitError, OrbitEvent, Role, StoredTool, ToolParam, normalize_agent_family_for_model,
+};
 use orbit_tools::ToolContext;
 use serde_json::Value;
 
@@ -40,7 +42,7 @@ impl OrbitRuntime {
         model_override: Option<String>,
     ) -> Result<Value, OrbitError> {
         let allowed_tools = read_activity_tools_from_env();
-        let (agent_name, model_name) = resolve_agent_identity(agent_override, model_override);
+        let (agent_name, model_name) = resolve_agent_identity(agent_override, model_override)?;
         let proc_allowed_programs = read_proc_allowed_programs_from_env();
         let cwd = std::env::current_dir()
             .ok()
@@ -71,12 +73,21 @@ fn read_agent_identity_from_env() -> (Option<String>, Option<String>) {
 fn resolve_agent_identity(
     agent_override: Option<String>,
     model_override: Option<String>,
-) -> (Option<String>, Option<String>) {
+) -> Result<(Option<String>, Option<String>), OrbitError> {
     let (env_agent_name, env_model_name) = read_agent_identity_from_env();
-    (
-        agent_override.or(env_agent_name),
-        model_override.or(env_model_name),
-    )
+    let has_override = agent_override
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        || model_override
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+    let (agent, model) = if has_override {
+        (agent_override, model_override)
+    } else {
+        (env_agent_name, env_model_name)
+    };
+    let agent = normalize_agent_family_for_model(agent.as_deref(), model.as_deref())?;
+    Ok((agent, model))
 }
 
 fn read_proc_allowed_programs_from_env() -> Vec<String> {

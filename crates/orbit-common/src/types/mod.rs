@@ -59,7 +59,7 @@ pub use activity_job::{
 pub use actor::{ActorIdentity, normalize_attribution_label, normalize_optional_attribution_label};
 pub use agent_pair::{
     AgentModelPair, agent_family_from_cli, all_agent_families, infer_agent_family_from_model,
-    resolve_agent_model_pair,
+    normalize_agent_family_for_model, resolve_agent_model_pair,
 };
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};

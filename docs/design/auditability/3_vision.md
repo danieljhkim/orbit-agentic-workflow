@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-27
 
 This document captures the questions that need to be answered before Orbit's auditability story matches its product promise end to end. It is intentionally forward-looking: [2_design.md](./2_design.md) is the current implementation, while this file names the pressure points that should drive future tasks and ADRs.
 
@@ -13,7 +13,7 @@ This document captures the questions that need to be answered before Orbit's aud
 1. **What is the canonical audit query surface?** Should `orbit audit` remain command-row-only, or should it grow a run-centric view that joins command audit rows, job-run state, v2 envelope JSONL, loop JSONL, blobs, and invocation metrics?
 2. **How should tamper evidence work locally?** Options include per-file hash chains, SQLite append proofs, signed manifests, git-backed checkpoints, or export-time attestations. The answer must preserve Orbit's self-hosted/no-cloud constraint.
 3. **Should audit-log reads and prunes be audited?** `orbit audit` is currently outside the normal command guard. That avoids recursion but weakens accountability for audit export and prune operations.
-4. **What is the stable identity key?** Orbit needs a joinable identity story across human CLI usage, `agent`/`model` tool inputs, task attribution fields, v2 `agent_identity`, invocation metrics, commits, and PR metadata.
+4. **What is the stable identity key?** Orbit needs a joinable identity story across human CLI usage, model-first tool inputs that infer an agent family, task attribution fields, v2 `agent_identity`, invocation metrics, commits, and PR metadata.
 5. **How complete should stdout/stderr capture be?** The command-audit schema has truncated stdout/stderr fields, but most paths do not populate them. Orbit needs a retention policy before filling them broadly.
 6. **How should file-backed JSONL migrate?** [T20260426-0519] moved run traces to `.orbit/state/audit/`; any future reader should decide whether old `.orbit/audit/` files are migrated, ignored, or read through a legacy fallback.
 7. **How much payload should be replayable?** Faithful reproducibility argues for storing prompts and responses. Secret minimization argues for smaller, redacted payloads. The long-term contract needs to say when summaries are enough and when verbatim redacted payloads are required.

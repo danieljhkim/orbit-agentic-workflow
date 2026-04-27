@@ -14,6 +14,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::OrbitError;
+
 /// A resolved (orchestrator, helper) duo for a given agent family.
 ///
 /// - `orchestrator` owns plan, review, and integration responsibilities.
@@ -82,6 +84,36 @@ pub fn infer_agent_family_from_model(model: &str) -> Option<String> {
     }
 
     None
+}
+
+/// Normalize an optional legacy agent family and optional model into the agent
+/// family implied by the pair.
+///
+/// `model` is the preferred provenance field for tool calls. When it names a
+/// known Orbit provider family, this helper infers the agent family from the
+/// model. Legacy callers may still pass `agent`; if both are present and the
+/// model maps to a different family, Orbit rejects the inconsistent identity
+/// instead of recording contradictory attribution.
+pub fn normalize_agent_family_for_model(
+    agent_cli: Option<&str>,
+    model: Option<&str>,
+) -> Result<Option<String>, OrbitError> {
+    let agent = agent_cli
+        .map(agent_family_from_cli)
+        .filter(|value| !value.trim().is_empty());
+    let model = model.map(str::trim).filter(|value| !value.is_empty());
+    let inferred = model.and_then(infer_agent_family_from_model);
+
+    if let (Some(agent), Some(inferred)) = (agent.as_deref(), inferred.as_deref())
+        && agent != inferred
+    {
+        return Err(OrbitError::InvalidInput(format!(
+            "`agent` '{agent}' does not match `model` '{}' (inferred agent family '{inferred}')",
+            model.unwrap_or_default()
+        )));
+    }
+
+    Ok(agent.or(inferred))
 }
 
 /// Resolve the orchestrator/helper model pair for an `agent_cli`.

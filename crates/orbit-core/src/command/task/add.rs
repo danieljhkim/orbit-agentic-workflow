@@ -27,7 +27,7 @@ impl OrbitRuntime {
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
         let (canonical_agent, canonical_model) =
-            self.canonical_agent_model_identity(agent.as_deref(), model.as_deref());
+            self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let actor = self.actor().clone();
         let effective_label = effective_actor_label(
             &actor.label,

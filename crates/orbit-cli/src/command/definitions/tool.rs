@@ -189,10 +189,10 @@ pub struct ToolRunArgs {
     /// Path to a JSON file to use as input (bypasses shell escaping; preferred for markdown or multi-line content)
     #[arg(long, conflicts_with = "input")]
     pub input_file: Option<String>,
-    /// Explicit agent name for provenance attribution (overrides ORBIT_AGENT_NAME)
+    /// Deprecated explicit agent family for provenance attribution (prefer --model)
     #[arg(long)]
     pub agent: Option<String>,
-    /// Explicit agent model for provenance attribution (overrides ORBIT_AGENT_MODEL)
+    /// Exact agent model for provenance attribution (overrides ORBIT_AGENT_MODEL)
     #[arg(long)]
     pub model: Option<String>,
     /// Execution timeout (e.g. "30s", "5000ms")

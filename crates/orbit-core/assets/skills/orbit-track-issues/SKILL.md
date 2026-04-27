@@ -44,7 +44,6 @@ orbit tool run orbit.task.add --input '{
   "type": "friction",
   "priority": "<low|medium|high|critical>",
   "workspace": ".",
-  "agent": "<claude|codex|gemini>",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
 ```

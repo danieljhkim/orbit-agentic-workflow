@@ -64,7 +64,7 @@ impl OrbitRuntime {
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
         let (canonical_agent, canonical_model) =
-            self.canonical_agent_model_identity(agent.as_deref(), model.as_deref());
+            self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;
         let prune_root =
             context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
@@ -182,6 +182,8 @@ impl OrbitRuntime {
                     actor: effective_label.clone(),
                     planned_by,
                     implemented_by,
+                    agent: canonical_agent.clone().map(Some),
+                    model: canonical_model.clone().map(Some),
                     status_note,
                     append_comments: append_comments.clone(),
                     append_history: append_history.clone(),

@@ -15,7 +15,7 @@ Create an Orbit task another engineer or agent can execute without guessing. Foc
 2. Inspect codebase context before creating the task.
 3. Write clear acceptance criteria that define observable success.
 4. Add assumptions, risks, and rollback notes to the description when they matter.
-5. Run `orbit tool run orbit.task.add` with the description, acceptance criteria, workspace, and explicit `agent` / `model` fields in the JSON input. Leave `plan` blank unless you have a compelling reason to pre-seed it.
+5. Run `orbit tool run orbit.task.add` with the description, acceptance criteria, workspace, and exact `model` field in the JSON input. Orbit infers the agent family from known model names. Leave `plan` blank unless you have a compelling reason to pre-seed it.
 6. Use the `orbit.task.add` result as the default confirmation. If you need to confirm the canonical stored task record, run `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'`.
 
 ## Selector-First Context
@@ -79,7 +79,6 @@ orbit tool run orbit.task.add --input '{
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
   "type": "<task|feature|epic|issue|bug|chore|refactor>",
-  "agent": "<claude|codex|gemini>",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
 ```

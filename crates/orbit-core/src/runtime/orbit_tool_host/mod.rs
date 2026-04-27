@@ -61,6 +61,9 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
         agent: Option<String>,
         model: Option<String>,
     ) -> Result<Value, OrbitError> {
+        let (agent, model) = self
+            .runtime
+            .try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         match action {
             OrbitBuiltinAction::PipelineInvoke => {
                 let job_name = required_string(&input, &["job_name"], "job_name")?;
@@ -1032,5 +1035,85 @@ mod tests {
             output.get("status").and_then(Value::as_str),
             Some("proposed")
         );
+    }
+
+    #[test]
+    fn task_add_tool_infers_agent_from_model_only_input() {
+        let (_root, runtime, _repo_root) = test_runtime();
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.add",
+                json!({
+                    "title": "Propose model-only task",
+                    "description": "Exercise model-first provenance.",
+                    "workspace": ".",
+                    "model": "gpt-5.5",
+                }),
+                None,
+                None,
+            )
+            .expect("task add tool succeeds");
+
+        assert_eq!(output.get("agent").and_then(Value::as_str), Some("codex"));
+        assert_eq!(output.get("model").and_then(Value::as_str), Some("gpt-5.5"));
+        assert_eq!(
+            output.get("created_by").and_then(Value::as_str),
+            Some("gpt-5.5")
+        );
+    }
+
+    #[test]
+    fn task_update_tool_infers_agent_from_model_only_input() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            "Update model-only task",
+            "Exercise model-first update provenance.",
+            TaskStatus::Backlog,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id,
+                    "comment": "record model-only update",
+                    "model": "gemini-3.1-pro-preview",
+                }),
+                None,
+                None,
+            )
+            .expect("task update tool succeeds");
+
+        assert_eq!(output.get("agent").and_then(Value::as_str), Some("gemini"));
+        assert_eq!(
+            output.get("model").and_then(Value::as_str),
+            Some("gemini-3.1-pro-preview")
+        );
+    }
+
+    #[test]
+    fn task_tool_rejects_mismatched_agent_and_model() {
+        let (_root, runtime, _repo_root) = test_runtime();
+
+        let error = runtime
+            .execute_tool_command(
+                "orbit.task.add",
+                json!({
+                    "title": "Reject mismatched identity",
+                    "description": "Exercise explicit mismatch validation.",
+                    "workspace": ".",
+                    "agent": "claude",
+                    "model": "gpt-5.5",
+                }),
+                None,
+                None,
+            )
+            .expect_err("mismatched identity should fail");
+
+        assert!(error.to_string().contains("does not match `model`"));
     }
 }

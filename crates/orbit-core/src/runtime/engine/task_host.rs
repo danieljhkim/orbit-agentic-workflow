@@ -80,9 +80,9 @@ impl TaskWriteHost for OrbitRuntime {
                 existing_task.plan.as_str(),
             )?;
         }
+        let (agent, model) = self
+            .try_canonical_agent_model_identity(update.agent.as_deref(), update.model.as_deref())?;
         let _ = self.with_mutation(|| {
-            let (agent, model) = self
-                .canonical_agent_model_identity(update.agent.as_deref(), update.model.as_deref());
             let actor_label = SYSTEM_ACTOR_LABEL.to_string();
             let explicit_attribution_label = normalize_optional_attribution_label(
                 update

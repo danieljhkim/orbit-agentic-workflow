@@ -9,11 +9,10 @@ description: Entry point for Orbit workflow. Covers lifecycle, invocation patter
 
 This skill orients agents working with Orbit. Orbit operations should go through the registered Orbit tool surface.
 
-When invoking `orbit tool run` directly, include `agent` and `model` in the input JSON:
+When invoking `orbit tool run` directly, include the exact `model` in the input JSON. Orbit infers the agent family from known model names. The legacy `agent` field is still accepted for compatibility, but do not include it in normal examples.
 
 ```json
 {
-  "agent": "<claude|codex|gemini>",
   "model": "<model_name>"
 }
 ```
@@ -24,24 +23,24 @@ When invoking `orbit tool run` directly, include `agent` and `model` in the inpu
 
 **Inside `agent_implement` or any activity that injects `task` into the execution envelope:** use the injected `task.*` fields directly. Do not call `orbit.task.show` unless the activity instructions explicitly require it and the tool appears in the activity allowlist.
 
-1. If the activity did not preload `task`, load the task: `orbit tool run orbit.task.show --full --input '{"id": "<task-id>", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
+1. If the activity did not preload `task`, load the task: `orbit tool run orbit.task.show --full --input '{"id": "<task-id>", "model": "<model_name>"}'`
 2. Read the `description` and `acceptance_criteria` first — they define the required outcome.
 3. If the `plan` field is blank or placeholder text, author a fresh plan with `orbit.task.update`.
 4. Treat `context_files` as selector-first task context. Prefer canonical selectors (`file:`, `dir:`, `symbol:`), use `orbit.graph.pack` when available, and only fall back to direct file reads for unresolved selectors or when the graph is unavailable.
-5. Start the task: `orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
+5. Start the task: `orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "...", "model": "<model_name>"}'`
 6. Implement following the plan. Validate using the plan's verification steps.
-7. Move to review: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
+7. Move to review: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "model": "<model_name>"}'`
 
 ### Reporting progress or problems
 
-- Add a comment: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "comment": "what happened", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
+- Add a comment: `orbit tool run orbit.task.update --input '{"id": "<task-id>", "comment": "what happened", "model": "<model_name>"}'`
 - If execution fails, comment with what went wrong before stopping. The next agent needs this context.
 
 ### Finding work
 
 - List backlog: `orbit tool run orbit.task.list --input '{"status": "backlog"}'`
 - List in review: `orbit tool run orbit.task.list --input '{"status": "review"}'`
-- Search by text: `orbit tool run orbit.task.search --input '{"query": "search text", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'`
+- Search by text: `orbit tool run orbit.task.search --input '{"query": "search text", "model": "<model_name>"}'`
 
 ### Passing state between steps
 
@@ -93,19 +92,19 @@ If an activity already injected `task` into the execution envelope, use that sna
 
 ```bash
 # Task commands
-orbit tool run orbit.task.show --full --input '{"id": "<id>", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'                    # Load full task
-orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'     # Load only comments
-orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'         # Load only plan
+orbit tool run orbit.task.show --full --input '{"id": "<id>", "model": "<model_name>"}'                    # Load full task
+orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments", "model": "<model_name>"}'     # Load only comments
+orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "model": "<model_name>"}'         # Load only plan
 # Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
-orbit tool run orbit.task.list --input '{"status": "backlog", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'       # List by status
-orbit tool run orbit.task.search --input '{"query": "search text", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'  # Search title/description text
-orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": ".", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
-orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
-orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}' # backlog -> in-progress
-orbit tool run orbit.task.update --input '{"id": "<id>", "status": "review", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
-orbit tool run orbit.task.update --input '{"id": "<id>", "comment": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
-orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}' # proposed/friction -> backlog, review -> done
-orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'   # proposed/friction -> rejected, review -> rejected
+orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<model_name>"}'       # List by status
+orbit tool run orbit.task.search --input '{"query": "search text", "model": "<model_name>"}'  # Search title/description text
+orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": ".", "model": "<model_name>"}'
+orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "model": "<model_name>"}'
+orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "model": "<model_name>"}' # backlog -> in-progress
+orbit tool run orbit.task.update --input '{"id": "<id>", "status": "review", "model": "<model_name>"}'
+orbit tool run orbit.task.update --input '{"id": "<id>", "comment": "...", "model": "<model_name>"}'
+orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "...", "model": "<model_name>"}' # proposed/friction -> backlog, review -> done
+orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "...", "model": "<model_name>"}'   # proposed/friction -> rejected
 orbit tool run orbit.task.locks --input '{}'                         # View active file locks
 orbit tool run orbit.task.review_thread.add --input '{"id": "<id>", "body": "..."}'
 orbit tool run orbit.task.review_thread.list --input '{"id": "<id>", "status": "open"}'

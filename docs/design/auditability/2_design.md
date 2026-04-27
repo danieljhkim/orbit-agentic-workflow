@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27 (T20260427-43)
+**Last updated:** 2026-04-27 (T20260427-52)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and the current limitations that still need design attention. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -42,7 +42,7 @@ The table and indexes live in `crates/orbit-store/migrations/0001_init.sql`, and
 
 The CLI path is an RAII guard in `crates/orbit-cli/src/audit_middleware.rs`. `AuditGuard` defaults to failure, marks success or denial explicitly, and writes one row in `Drop`. This means early returns still write an audit record as long as stack unwinding reaches the guard.
 
-For `orbit tool run`, the command-audit role is resolved from `agent` / `model` fields in `--input` or `--input-file`, then explicit `--agent` / `--model` flags, then `ORBIT_AGENT_NAME` / `ORBIT_AGENT_MODEL`. If none are present, the row uses `agent` as the fallback role because the tool-dispatch command surface is agent-facing by default. Direct non-tool CLI commands continue to use `admin`.
+For `orbit tool run`, command-audit role attribution is model-first after [T20260427-52]. Orbit resolves one identity source at a time: `--input` or `--input-file` fields first, then explicit `--agent` / `--model` flags, then `ORBIT_AGENT_NAME` / `ORBIT_AGENT_MODEL`. When a source provides `model`, Orbit uses that exact model as the role label and infers the agent family from known model names for downstream task provenance. The legacy `agent` field and `--agent` flag remain accepted for compatibility, but if an explicit agent contradicts an inferable model family, the tool execution rejects the input instead of recording inconsistent provenance. If no identity source is present, the row uses `agent` as the fallback role because the tool-dispatch command surface is agent-facing by default. Direct non-tool CLI commands continue to use `admin`.
 
 `crates/orbit-cli/src/main.rs` wraps non-audit commands in that guard after runtime initialization. Direct `orbit audit ...` commands are deliberately outside the guard today, so querying the audit log does not itself emit another command audit row.
 
@@ -131,7 +131,7 @@ The smoke example `crates/orbit-agent/examples/redaction_smoke.rs` verifies that
 Orbit currently carries identity through several related fields:
 
 - CLI runtime actor identity defaults direct CLI commands to `human`.
-- `orbit tool run` paths carry explicit `agent` and `model` inputs for provenance, and command audit rows project that identity into the `role` column for audit filtering.
+- `orbit tool run` paths prefer exact `model` inputs for provenance; known model names infer the task `agent` family, while legacy explicit `agent` inputs are compatibility hints that must agree with the model.
 - `V2AuditEnvelope.agent_identity` records the workflow-envelope actor. CLI-launched v2 runs use `system`; concrete agent activity is recorded in provider-specific event bodies and invocation metrics.
 - Task records carry `created_by`, `planned_by`, `implemented_by`, `agent`, and `model` fields.
 - Invocation metrics record agent and model beside job run and activity ids.
