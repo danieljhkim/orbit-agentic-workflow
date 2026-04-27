@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27 (T20260427-27)
+**Last updated:** 2026-04-27 (T20260427-43)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -158,6 +158,19 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - The audit store and JSONL feed stay independent: schema and bytes-level shape of `V2AuditEnvelope` records are unchanged, the tracing feed is purely additive.
 - Cost: scheduler-event semantics from the mockup remain aspirational (Orbit has no scheduler), follow mode does not handle file rotation or truncation, and the CLI reader currently keeps the entire file in memory before applying `-n` (acceptable for the v1 unrotated file).
 
+## ADR-012 — Friction scorekeeping derives from lifecycle history
+
+**Status:** Accepted · 2026-04 · [T20260427-43]
+
+**Context.** Friction reports already used `type: friction`, but untriaged reports shared `status: proposed` with human-authored proposals. That made the friction bounty scoreboard depend on ambiguous proposed-state transitions and made MCP filing harder to express.
+
+**Decision.** Add `status: friction` as the creation status for agent self-reported friction, infer the paired type/status at creation, and rebuild `friction_bounty.json` from task history. Reported counts come from `type: friction`; accepted and rejected counts come only from exits out of `status: friction`.
+
+**Consequences.**
+- Friction inbox items are separated from human proposals without losing the lifetime `type: friction` category.
+- Scoreboard refreshes can repair stale increment files because task history is the source of truth for triage outcomes.
+- Cost: legacy untriaged friction tasks need a file-store migration from `proposed/` to `friction/`, and already-triaged legacy histories remain dependent on their existing transition records.
+
 ---
 
 ## Task References
@@ -173,5 +186,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
 - **[T20260427-27]** — Close out the unified-log story: job lifecycle dual-write, library print migration with workspace lint gate, and `orbit log tail` reader CLI.
+- **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

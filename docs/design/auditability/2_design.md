@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-27 (T20260427-43)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and the current limitations that still need design attention. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -163,6 +163,8 @@ These are intentionally separate from `orbit audit`, which remains the compact S
 
 Invocation metrics are surfaced through metrics and scoreboard commands. They are useful for cost and usage analysis, but they do not replace the audit trail because they summarize rather than preserve transcript structure.
 
+After [T20260427-43], the friction bounty scoreboard is refreshed from task history rather than trusted only as an increment log. `type: friction` tasks are counted as reported, `status: friction` exits to `backlog`, `in-progress`, or `done` count as accepted, and `status: friction` exits to `rejected` count as rejected. The task store migration that moves legacy untriaged friction reports from `proposed/` into `friction/` keeps the scoreboard derivation tied to lifecycle history instead of current status alone.
+
 ---
 
 ## 9. Global Process Tracing JSONL
@@ -203,5 +205,6 @@ This channel is global rather than workspace-local because `orbit-cli` initializ
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
+- **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

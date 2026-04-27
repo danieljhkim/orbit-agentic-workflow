@@ -40,13 +40,18 @@ impl OrbitRuntime {
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         let result = match task.status {
-            TaskStatus::Proposed => self.with_mutation(|| {
+            TaskStatus::Proposed | TaskStatus::Friction => self.with_mutation(|| {
+                let status_event = if task.status == TaskStatus::Friction {
+                    "friction_accepted"
+                } else {
+                    "proposal_approved"
+                };
                 let task = self.stores().tasks().update(
                     id,
                     StoreTaskUpdateParams {
                         actor: effective_label.clone(),
                         status: Some(TaskStatus::Backlog),
-                        status_event: Some("proposal_approved".to_string()),
+                        status_event: Some(status_event.to_string()),
                         status_note: note.clone(),
                         append_comments: append_comments.clone(),
                         ..Default::default()
@@ -82,19 +87,16 @@ impl OrbitRuntime {
                 ))
             }),
             other => Err(OrbitError::InvalidInput(format!(
-                "task '{id}' is in status '{other}'; approve requires 'proposed' or 'review'"
+                "task '{id}' is in status '{other}'; approve requires 'proposed', 'friction', or 'review'"
             ))),
         }?;
 
-        self.try_record_friction_transition(
-            &task,
-            task.status,
-            if task.status == TaskStatus::Proposed {
-                TaskStatus::Backlog
-            } else {
-                TaskStatus::Done
-            },
-        );
+        let approved_to = if matches!(task.status, TaskStatus::Proposed | TaskStatus::Friction) {
+            TaskStatus::Backlog
+        } else {
+            TaskStatus::Done
+        };
+        self.try_record_friction_transition(&task, task.status, approved_to);
 
         Ok(result)
     }
@@ -177,10 +179,15 @@ impl OrbitRuntime {
         };
 
         match task.status {
-            TaskStatus::Proposed => {
+            TaskStatus::Proposed | TaskStatus::Friction => {
                 warn_unmet_dependencies();
                 let result = self.with_mutation(|| {
                     let at = chrono::Utc::now();
+                    let acceptance_event = if task.status == TaskStatus::Friction {
+                        "friction_accepted"
+                    } else {
+                        "proposal_approved"
+                    };
                     let task = self.stores().tasks().update(
                         id,
                         StoreTaskUpdateParams {
@@ -192,9 +199,9 @@ impl OrbitRuntime {
                             append_history: vec![TaskHistoryEntry {
                                 at,
                                 by: effective_label.clone(),
-                                event: "proposal_approved".to_string(),
+                                event: acceptance_event.to_string(),
                                 note: note.clone(),
-                                from_status: Some(TaskStatus::Proposed),
+                                from_status: Some(task.status),
                                 to_status: Some(TaskStatus::Backlog),
                             }],
                             append_comments: append_comments.clone(),
@@ -206,15 +213,11 @@ impl OrbitRuntime {
                         OrbitEvent::TaskStarted {
                             id: id.to_string(),
                             started_by: effective_label.clone(),
-                            approved_from_proposed: true,
+                            approved_from_proposed: task.status == TaskStatus::Proposed,
                         },
                     ))
                 })?;
-                self.try_record_friction_transition(
-                    &task,
-                    TaskStatus::Proposed,
-                    TaskStatus::InProgress,
-                );
+                self.try_record_friction_transition(&task, task.status, TaskStatus::InProgress);
                 Ok(result)
             }
             TaskStatus::Backlog | TaskStatus::Someday | TaskStatus::Blocked => {
@@ -248,7 +251,7 @@ impl OrbitRuntime {
                 "task '{id}' is already in-progress"
             ))),
             other => Err(OrbitError::InvalidInput(format!(
-                "task '{id}' is in status '{other}'; start requires 'proposed', 'backlog', 'someday', or 'blocked'"
+                "task '{id}' is in status '{other}'; start requires 'proposed', 'friction', 'backlog', 'someday', or 'blocked'"
             ))),
         }
     }
@@ -284,13 +287,18 @@ impl OrbitRuntime {
         let append_comments = build_task_comments(comment, effective_label.as_str())?;
 
         let result = match task.status {
-            TaskStatus::Proposed => self.with_mutation(|| {
+            TaskStatus::Proposed | TaskStatus::Friction => self.with_mutation(|| {
+                let status_event = if task.status == TaskStatus::Friction {
+                    "friction_rejected"
+                } else {
+                    "proposal_rejected"
+                };
                 let task = self.stores().tasks().update(
                     id,
                     StoreTaskUpdateParams {
                         actor: effective_label.clone(),
                         status: Some(TaskStatus::Rejected),
-                        status_event: Some("proposal_rejected".to_string()),
+                        status_event: Some(status_event.to_string()),
                         status_note: Some(reason.clone()),
                         append_comments: append_comments.clone(),
                         ..Default::default()
@@ -365,7 +373,7 @@ impl OrbitRuntime {
                 ))
             }),
             other => Err(OrbitError::InvalidInput(format!(
-                "task '{id}' is in status '{other}'; reject requires 'proposed', 'review', 'backlog', or 'in-progress'"
+                "task '{id}' is in status '{other}'; reject requires 'proposed', 'friction', 'review', 'backlog', or 'in-progress'"
             ))),
         }?;
 
@@ -466,14 +474,14 @@ impl OrbitRuntime {
 
         let is_approval = matches!(
             (from, to),
-            (TaskStatus::Proposed, TaskStatus::Backlog)
-                | (TaskStatus::Proposed, TaskStatus::InProgress)
-                | (TaskStatus::Review, TaskStatus::Done)
+            (TaskStatus::Friction, TaskStatus::Backlog)
+                | (TaskStatus::Friction, TaskStatus::InProgress)
+                | (TaskStatus::Friction, TaskStatus::Done)
         );
 
         if is_approval {
             let _ = friction_bounty::record_friction_accepted(scoreboard_dir, &model);
-        } else if to == TaskStatus::Rejected {
+        } else if from == TaskStatus::Friction && to == TaskStatus::Rejected {
             let _ = friction_bounty::record_friction_rejected(scoreboard_dir, &model);
         }
     }

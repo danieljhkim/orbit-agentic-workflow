@@ -58,6 +58,14 @@ orbit-common → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → o
 
 For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs), invoke the relevant `orbit-*` skill. The `orbit` skill is the entry point and router.
 
+## Friction Reports
+
+Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems. File them with `type: friction`; Orbit auto-sets `status: friction` at creation. Passing only `status: friction` also infers `type: friction`, and passing both is valid.
+
+The type/status coupling exists only at creation. The task type remains `friction` for the record's lifetime, while triage moves status forward through normal lifecycle transitions such as `backlog`, `in-progress`, `done`, or `rejected`. A task that leaves `status: friction` must not return to it.
+
+The friction bounty scoreboard binds to that lifecycle history: reported counts come from tasks created with `type: friction`, accepted counts come from `friction → backlog | in-progress | done`, and rejected counts come from `friction → rejected`.
+
 ## Activity / Job Model
 
 The full design lives under [docs/design/activity-job/](./docs/design/activity-job/), with the current implementation in [docs/design/activity-job/2_design.md](./docs/design/activity-job/2_design.md).

@@ -908,7 +908,9 @@ fn epic_state_for_task_status(status: TaskStatus) -> &'static str {
         TaskStatus::Done | TaskStatus::Archived => "done",
         TaskStatus::Blocked | TaskStatus::Rejected => "blocked",
         TaskStatus::InProgress | TaskStatus::Review => "in_flight",
-        TaskStatus::Proposed | TaskStatus::Backlog | TaskStatus::Someday => "pending",
+        TaskStatus::Proposed | TaskStatus::Friction | TaskStatus::Backlog | TaskStatus::Someday => {
+            "pending"
+        }
     }
 }
 

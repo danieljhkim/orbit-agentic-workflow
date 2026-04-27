@@ -99,6 +99,7 @@ impl TaskFileStore {
     }
 
     pub(crate) fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
+        self.migrate_legacy_proposed_friction_tasks()?;
         let mut tasks = Vec::new();
         for state in TaskStateDir::all() {
             for task_dir in self.task_dirs_for_state(state)? {
@@ -118,6 +119,7 @@ impl TaskFileStore {
         parent_id: Option<&str>,
         batch_id: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
+        self.migrate_legacy_proposed_friction_tasks()?;
         let mut tasks = if let Some(status) = status {
             let state = TaskStateDir::from_status(status);
             let mut tasks = Vec::new();

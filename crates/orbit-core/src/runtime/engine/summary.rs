@@ -7,6 +7,7 @@ impl OrbitRuntime {
         &self,
     ) -> Result<orbit_store::scoreboard_summary::ScoreboardSummary, OrbitError> {
         let tasks = self.list_tasks()?;
+        orbit_store::friction_bounty::refresh_from_tasks(&self.paths().scoreboard_dir, &tasks)?;
         let summary = orbit_store::scoreboard_summary::generate_summary(
             &self.paths().scoreboard_dir,
             &tasks,

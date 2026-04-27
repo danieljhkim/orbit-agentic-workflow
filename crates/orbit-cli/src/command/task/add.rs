@@ -1,6 +1,6 @@
 use clap::Args;
 use orbit_core::command::task::TaskAddParams;
-use orbit_core::{OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskType};
+use orbit_core::{OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskStatus, TaskType};
 
 use crate::command::Execute;
 
@@ -46,8 +46,11 @@ pub struct TaskAddArgs {
     #[arg(long, value_enum)]
     pub complexity: Option<TaskComplexity>,
     /// Task type
-    #[arg(long = "type", value_enum, default_value_t = TaskType::Task)]
-    pub task_type: TaskType,
+    #[arg(long = "type", value_enum)]
+    pub task_type: Option<TaskType>,
+    /// Initial task status
+    #[arg(long, value_enum)]
+    pub status: Option<TaskStatus>,
     /// For bug tasks: the originating task whose implementation introduced the defect
     #[arg(long = "source-task")]
     pub source_task: Option<String>,
@@ -91,11 +94,7 @@ impl Execute for TaskAddArgs {
             } else {
                 self.priority
             };
-            let task_type = if self.task_type == TaskType::Task {
-                tpl.task_type
-            } else {
-                self.task_type
-            };
+            let task_type = self.task_type.or(Some(tpl.task_type));
             (description, plan, priority, task_type)
         } else {
             (self.description, self.plan, self.priority, self.task_type)
@@ -115,6 +114,7 @@ impl Execute for TaskAddArgs {
                 priority,
                 complexity: self.complexity,
                 task_type,
+                status: self.status,
                 system_created: false,
                 source_task_id: self.source_task.clone(),
             },

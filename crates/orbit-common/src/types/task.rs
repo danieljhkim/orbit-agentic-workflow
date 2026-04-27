@@ -3,19 +3,22 @@
 //! ## Task Status Lifecycle
 //!
 //! Transitions are **permissive by default** — any move is allowed unless it
-//! violates one of the three invariants below.
+//! violates one of the four invariants below.
 //!
 //! ### Invariants (blocklist)
 //! 1. **Done is terminal** — no transitions out of done.
 //! 2. **Archived requires dedicated command** — use `orbit task archive`; the
 //!    bare `--status archived` path is rejected.
-//! 3. **InProgress → Review requires execution_summary** — enforced at the
+//! 3. **Friction is creation-only** — untriaged friction reports start in this
+//!    status and cannot return to it after triage.
+//! 4. **InProgress → Review requires execution_summary** — enforced at the
 //!    command layer, not in [`TaskStatus::validate_transition`].
 //!
 //! ### Statuses
 //! | Status       | Purpose |
 //! |--------------|---------|
 //! | Proposed     | Awaiting human approval before entering the backlog. |
+//! | Friction     | Agent self-reported friction awaiting triage. |
 //! | Backlog      | Approved and queued for work. |
 //! | Someday      | Future-scoped — wanted but not yet actionable. Agents skip someday tasks. |
 //! | InProgress   | Actively being worked on. |
@@ -47,6 +50,8 @@ use crate::utility::selector::exists_in_workspace;
 pub enum TaskStatus {
     /// Awaiting human approval before entering the backlog.
     Proposed,
+    /// Agent self-reported friction awaiting triage.
+    Friction,
     /// Approved and queued for work; not yet started.
     Backlog,
     /// Actively being worked on.
@@ -78,6 +83,7 @@ impl FromStr for TaskStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "proposed" => Ok(TaskStatus::Proposed),
+            "friction" => Ok(TaskStatus::Friction),
             "backlog" => Ok(TaskStatus::Backlog),
             "in-progress" => Ok(TaskStatus::InProgress),
             "in_progress" => Ok(TaskStatus::InProgress),
@@ -96,6 +102,7 @@ impl TaskStatus {
     pub fn cli_name(self) -> &'static str {
         match self {
             TaskStatus::Proposed => "proposed",
+            TaskStatus::Friction => "friction",
             TaskStatus::Backlog => "backlog",
             TaskStatus::InProgress => "in-progress",
             TaskStatus::Review => "review",
@@ -120,7 +127,9 @@ impl TaskStatus {
     /// 1. **Done is terminal** — no transitions out of done.
     /// 2. **Archived requires dedicated command** — use `orbit task archive`, not a
     ///    bare status update (enforced upstream; blocked here as defense-in-depth).
-    /// 3. **InProgress → Review requires execution_summary** — enforced upstream in
+    /// 3. **Friction is creation-only** — enforced here and enriched upstream
+    ///    with prior-transition details when possible.
+    /// 4. **InProgress → Review requires execution_summary** — enforced upstream in
     ///    `update_task_with_status_note`, not here (we lack the task data).
     ///
     /// Everything else is allowed.
@@ -142,6 +151,15 @@ impl TaskStatus {
         if target == TaskStatus::Archived {
             return Err(format!(
                 "invalid status transition: {} -> {} (use the archive command)",
+                self, target
+            ));
+        }
+
+        // Friction is an entry status for newly filed agent self-reports. It
+        // cannot be entered later without corrupting friction-bounty history.
+        if target == TaskStatus::Friction {
+            return Err(format!(
+                "invalid status transition: {} -> {} (friction can only be set at task creation)",
                 self, target
             ));
         }

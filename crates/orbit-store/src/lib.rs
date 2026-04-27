@@ -42,6 +42,7 @@ pub mod skill_store {
 pub mod friction_bounty {
     pub use crate::file::friction_bounty::{
         record_friction_accepted, record_friction_rejected, record_friction_reported,
+        refresh_from_tasks,
     };
 }
 

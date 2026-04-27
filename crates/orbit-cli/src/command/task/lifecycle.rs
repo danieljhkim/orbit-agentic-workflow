@@ -46,6 +46,7 @@ impl Execute for TaskStartArgs {
 }
 
 #[derive(Args)]
+#[command(about = "Approve a task (proposed/friction -> backlog, or review -> done)")]
 pub struct TaskApproveArgs {
     /// Task ID(s) to approve (one or more)
     #[arg(num_args = 1.., required_unless_present = "all_proposed", conflicts_with = "all_proposed")]
@@ -116,6 +117,7 @@ impl Execute for TaskApproveArgs {
 }
 
 #[derive(Args)]
+#[command(about = "Reject a task (proposed/friction/review/backlog/in-progress -> rejected)")]
 pub struct TaskRejectArgs {
     /// Task ID(s) to reject (one or more)
     #[arg(num_args = 1.., required_unless_present = "all_proposed", conflicts_with = "all_proposed")]
@@ -236,7 +238,7 @@ pub struct TaskDeleteArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
-    /// Force deletion without status guard (required for non-proposed/rejected tasks)
+    /// Force deletion without status guard (required for non-proposed/friction/rejected tasks)
     #[arg(long)]
     pub force: bool,
 }
@@ -244,9 +246,14 @@ pub struct TaskDeleteArgs {
 impl Execute for TaskDeleteArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let task = runtime.get_task(&self.id)?;
-        if !self.force && !matches!(task.status, TaskStatus::Proposed | TaskStatus::Rejected) {
+        if !self.force
+            && !matches!(
+                task.status,
+                TaskStatus::Proposed | TaskStatus::Friction | TaskStatus::Rejected
+            )
+        {
             return Err(OrbitError::InvalidInput(format!(
-                "task '{}' is in status '{}'; use --force to delete tasks not in proposed or rejected status",
+                "task '{}' is in status '{}'; use --force to delete tasks not in proposed, friction, or rejected status",
                 self.id, task.status
             )));
         }

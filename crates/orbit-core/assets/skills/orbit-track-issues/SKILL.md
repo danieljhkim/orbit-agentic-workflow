@@ -26,11 +26,11 @@ If Orbit tooling or Orbit-authored guidance slows the agent down, it should be t
 
 ## Scoreboard
 
-Every self-reported friction task is tracked in `.orbit/state/scoreboard/friction_bounty.json`. Your score increments when you create one:
+Every self-reported friction task is tracked in `.orbit/state/scoreboard/friction_bounty.json`. Filing with `type: friction` automatically creates the task in `status: friction`; passing `status: friction` instead also infers `type: friction`.
 
-- **issues-reported** — incremented when you create the task
-- **issues-accepted** — incremented when the issue is approved (moved to backlog or done)
-- **issues-rejected** — incremented when the issue is rejected as invalid
+- **issues-reported** — counted for each task created with `type: friction`
+- **issues-accepted** — counted when triage moves the task from `friction` to `backlog`, `in-progress`, or `done`
+- **issues-rejected** — counted when triage moves the task from `friction` to `rejected`
 
 Report real friction, not noise. Rejected reports count against you.
 Do **not ignore friction**. Always create a task.

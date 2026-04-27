@@ -64,6 +64,14 @@ impl TaskWriteHost for OrbitRuntime {
         update: TaskAutomationUpdate,
     ) -> Result<(), OrbitError> {
         let existing_task = self.get_task(task_id)?;
+        if update.status == Some(TaskStatus::Friction)
+            && existing_task.status != TaskStatus::Friction
+        {
+            return Err(OrbitError::InvalidInput(format!(
+                "status 'friction' can only be set at creation; task '{task_id}' is currently '{}'",
+                existing_task.status
+            )));
+        }
         if update.status == Some(TaskStatus::InProgress)
             && crate::command::task::in_progress_transition_requires_plan(existing_task.status)
         {

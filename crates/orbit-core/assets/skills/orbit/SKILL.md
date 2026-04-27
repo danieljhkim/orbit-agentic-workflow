@@ -104,8 +104,8 @@ orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "agent":
 orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}' # backlog -> in-progress
 orbit tool run orbit.task.update --input '{"id": "<id>", "status": "review", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "comment": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'
-orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}' # proposed -> backlog, review -> done
-orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'   # proposed -> rejected, review -> rejected
+orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}' # proposed/friction -> backlog, review -> done
+orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "...", "agent": "<claude|codex|gemini>", "model": "<model_name>"}'   # proposed/friction -> rejected, review -> rejected
 orbit tool run orbit.task.locks --input '{}'                         # View active file locks
 orbit tool run orbit.task.review_thread.add --input '{"id": "<id>", "body": "..."}'
 orbit tool run orbit.task.review_thread.list --input '{"id": "<id>", "status": "open"}'
@@ -134,6 +134,8 @@ orbit tool run orbit.state.set --input '{"data": {"threads": [], "summary": "Loo
 
 ```text
 proposed → backlog → in-progress → review → done
+         ↘ rejected
+friction → backlog | in-progress | done
          ↘ rejected
 
 someday → in-progress

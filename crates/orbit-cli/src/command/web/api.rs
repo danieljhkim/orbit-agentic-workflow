@@ -36,6 +36,7 @@ const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
     TaskStatus::Review,
     TaskStatus::Blocked,
     TaskStatus::Proposed,
+    TaskStatus::Friction,
     TaskStatus::Backlog,
     TaskStatus::Someday,
     TaskStatus::Rejected,
@@ -229,8 +230,10 @@ pub(super) struct CreateTaskBody {
     priority: TaskPriority,
     #[serde(default)]
     complexity: Option<TaskComplexity>,
-    #[serde(default = "default_task_type")]
-    task_type: TaskType,
+    #[serde(default)]
+    task_type: Option<TaskType>,
+    #[serde(default)]
+    status: Option<TaskStatus>,
     #[serde(default)]
     parent_id: Option<String>,
     #[serde(default)]
@@ -239,10 +242,6 @@ pub(super) struct CreateTaskBody {
 
 fn default_priority() -> TaskPriority {
     TaskPriority::Medium
-}
-
-fn default_task_type() -> TaskType {
-    TaskType::Task
 }
 
 /// Partial-update body for `PATCH /tasks/:id`. Each field is `Option<...>`;
@@ -336,6 +335,7 @@ async fn create_task_action(
         priority: body.priority,
         complexity: body.complexity,
         task_type: body.task_type,
+        status: body.status,
         system_created: false,
         source_task_id: body.source_task_id,
     };

@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orbit_common::types::{
-    AuditEventStatus, OrbitError, ReviewThreadStatus, Task, TaskPriority, TaskStatus, TaskType,
+    AuditEventStatus, OrbitError, ReviewThreadStatus, Task, TaskPriority, TaskStatus,
     build_task_status_index, normalize_optional_attribution_label,
     optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
     optional_string_list_alias, optional_u32_alias, prune_missing_context_files, required_string,
@@ -225,8 +225,10 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                             &["type", "task_type", "taskType"],
                         )?
                         .map(|value| parse_task_type("type", &value))
-                        .transpose()?
-                        .unwrap_or(TaskType::Task),
+                        .transpose()?,
+                        status: optional_string(&input, "status")?
+                            .map(|value| parse_task_status("status", &value))
+                            .transpose()?,
                         system_created: false,
                         source_task_id: optional_string_alias(
                             &input,
@@ -795,6 +797,7 @@ fn record_task_lock_audit_event(
 mod tests {
     use super::*;
 
+    use orbit_common::types::TaskType;
     use orbit_store::TaskCreateParams;
     use serde_json::json;
     use tempfile::tempdir;

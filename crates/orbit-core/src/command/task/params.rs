@@ -17,7 +17,8 @@ pub struct TaskAddParams {
     pub workspace_path: Option<String>,
     pub priority: TaskPriority,
     pub complexity: Option<TaskComplexity>,
-    pub task_type: TaskType,
+    pub task_type: Option<TaskType>,
+    pub status: Option<TaskStatus>,
     /// When true, the task metadata attributes creation to `system`.
     /// Used for auto-generated tasks such as job failure follow-ups.
     pub system_created: bool,
@@ -38,7 +39,8 @@ impl Default for TaskAddParams {
             workspace_path: None,
             priority: TaskPriority::Medium,
             complexity: None,
-            task_type: TaskType::Task,
+            task_type: None,
+            status: None,
             system_created: false,
             source_task_id: None,
         }

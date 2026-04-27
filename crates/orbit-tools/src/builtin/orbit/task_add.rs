@@ -89,6 +89,12 @@ impl Tool for OrbitTaskAddTool {
                 required: false,
             },
             ToolParam {
+                name: "status".to_string(),
+                description: "Optional initial task status".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "source_task_id".to_string(),
                 description: "For bug tasks: originating task ID that introduced the defect"
                     .to_string(),

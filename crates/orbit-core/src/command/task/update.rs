@@ -113,6 +113,9 @@ impl OrbitRuntime {
                         .to_string(),
                 ));
             }
+            if target_status == TaskStatus::Friction && task.status != TaskStatus::Friction {
+                return Err(OrbitError::InvalidInput(friction_reentry_error(id, &task)));
+            }
             task.status
                 .validate_transition(target_status)
                 .map_err(OrbitError::TaskStatusTransition)?;
@@ -196,4 +199,26 @@ impl OrbitRuntime {
 
         Ok(updated)
     }
+}
+
+fn friction_reentry_error(id: &str, task: &Task) -> String {
+    if let Some(entry) = task
+        .history
+        .iter()
+        .rev()
+        .find(|entry| entry.from_status == Some(TaskStatus::Friction))
+    {
+        let to_status = entry
+            .to_status
+            .map(|status| status.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        return format!(
+            "status 'friction' can only be set at creation; task '{id}' previously transitioned out of friction (friction -> {to_status})"
+        );
+    }
+
+    format!(
+        "status 'friction' can only be set at creation; task '{id}' is currently '{}'",
+        task.status
+    )
 }

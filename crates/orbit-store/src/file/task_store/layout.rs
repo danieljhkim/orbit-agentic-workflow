@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_common::types::{OrbitError, TaskStatus};
+use orbit_common::types::{OrbitError, TaskStatus, TaskType};
 
 use super::TaskFileStore;
 use crate::file::layout::{ensure_dirs, read_child_dirs as list_child_dirs};
@@ -10,6 +10,7 @@ use crate::file::layout::{ensure_dirs, read_child_dirs as list_child_dirs};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TaskStateDir {
     Proposed,
+    Friction,
     Backlog,
     Someday,
     InProgress,
@@ -24,6 +25,7 @@ impl TaskStateDir {
     pub(super) fn as_dir(self) -> &'static str {
         match self {
             TaskStateDir::Proposed => "proposed",
+            TaskStateDir::Friction => "friction",
             TaskStateDir::Backlog => "backlog",
             TaskStateDir::Someday => "someday",
             TaskStateDir::InProgress => "in_progress",
@@ -38,6 +40,7 @@ impl TaskStateDir {
     pub(super) fn to_status(self) -> TaskStatus {
         match self {
             TaskStateDir::Proposed => TaskStatus::Proposed,
+            TaskStateDir::Friction => TaskStatus::Friction,
             TaskStateDir::Backlog => TaskStatus::Backlog,
             TaskStateDir::Someday => TaskStatus::Someday,
             TaskStateDir::InProgress => TaskStatus::InProgress,
@@ -52,6 +55,7 @@ impl TaskStateDir {
     pub(super) fn from_status(status: TaskStatus) -> Self {
         match status {
             TaskStatus::Proposed => TaskStateDir::Proposed,
+            TaskStatus::Friction => TaskStateDir::Friction,
             TaskStatus::Backlog => TaskStateDir::Backlog,
             TaskStatus::Someday => TaskStateDir::Someday,
             TaskStatus::InProgress => TaskStateDir::InProgress,
@@ -63,9 +67,10 @@ impl TaskStateDir {
         }
     }
 
-    pub(super) fn all() -> [TaskStateDir; 9] {
+    pub(super) fn all() -> [TaskStateDir; 10] {
         [
             TaskStateDir::Proposed,
+            TaskStateDir::Friction,
             TaskStateDir::Backlog,
             TaskStateDir::Someday,
             TaskStateDir::InProgress,
@@ -156,6 +161,12 @@ impl TaskFileStore {
 
             let task_dir = self.task_dir(state, id);
             if task_dir.is_dir() {
+                if state == TaskStateDir::Proposed
+                    && let Some(migrated) =
+                        self.migrate_legacy_proposed_friction_task_dir(task_dir.clone())?
+                {
+                    return Ok(Some((TaskStateDir::Friction, migrated)));
+                }
                 return Ok(Some((state, task_dir)));
             }
         }
@@ -195,6 +206,10 @@ impl TaskFileStore {
         &self,
         state: TaskStateDir,
     ) -> Result<Vec<PathBuf>, OrbitError> {
+        if state == TaskStateDir::Friction {
+            self.migrate_legacy_proposed_friction_tasks()?;
+        }
+
         let state_dir = self.state_dir_path(state);
         if !state_dir.exists() {
             return Ok(Vec::new());
@@ -221,6 +236,49 @@ impl TaskFileStore {
         }
 
         Ok(task_dirs)
+    }
+
+    pub(super) fn migrate_legacy_proposed_friction_tasks(&self) -> Result<(), OrbitError> {
+        let proposed_dir = self.state_dir_path(TaskStateDir::Proposed);
+        if !proposed_dir.exists() {
+            return Ok(());
+        }
+
+        for task_dir in list_child_dirs(&proposed_dir)? {
+            let _ = self.migrate_legacy_proposed_friction_task_dir(task_dir)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn migrate_legacy_proposed_friction_task_dir(
+        &self,
+        task_dir: PathBuf,
+    ) -> Result<Option<PathBuf>, OrbitError> {
+        if !self.task_doc_path(&task_dir).is_file() {
+            return Ok(None);
+        }
+        let mut bundle = self.read_bundle_at(&task_dir)?;
+        if bundle.doc.task_type != TaskType::Friction {
+            return Ok(None);
+        }
+
+        let task_id = bundle.doc.id.clone();
+        let target_dir = self.task_dir(TaskStateDir::Friction, &task_id);
+        if target_dir == task_dir {
+            return Ok(Some(task_dir));
+        }
+        if target_dir.exists() {
+            return Err(OrbitError::Store(format!(
+                "cannot migrate friction task directory {} because {} already exists",
+                task_dir.display(),
+                target_dir.display()
+            )));
+        }
+
+        rewrite_legacy_proposed_friction_history(&mut bundle.doc.history);
+        self.write_bundle_at(&task_dir, &bundle)?;
+        self.move_task_dir(&task_dir, &target_dir)?;
+        Ok(Some(target_dir))
     }
 
     pub(super) fn partition_dirs(&self, state: TaskStateDir) -> Result<Vec<PathBuf>, OrbitError> {
@@ -270,6 +328,18 @@ impl TaskFileStore {
             fs::create_dir_all(parent).map_err(|e| OrbitError::Io(e.to_string()))?;
         }
         fs::rename(from, to).map_err(|e| OrbitError::Io(e.to_string()))
+    }
+}
+
+fn rewrite_legacy_proposed_friction_history(history: &mut [orbit_common::types::TaskHistoryEntry]) {
+    for entry in history {
+        if entry.event == "created"
+            && entry.from_status.is_none()
+            && entry.to_status == Some(TaskStatus::Proposed)
+        {
+            entry.to_status = Some(TaskStatus::Friction);
+            return;
+        }
     }
 }
 

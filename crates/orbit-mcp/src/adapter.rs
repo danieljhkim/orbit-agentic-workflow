@@ -85,16 +85,27 @@ impl ServerHandler for OrbitToolServer {
 
 fn schema_to_tool(schema: ToolSchema) -> Tool {
     let description = schema.description.clone();
-    let input_schema = build_input_schema(&schema.parameters);
+    let input_schema = build_input_schema(&schema.name, &schema.parameters);
     Tool::new(schema.name, description, Arc::new(input_schema))
 }
 
-fn build_input_schema(params: &[ToolParam]) -> JsonObject {
+fn build_input_schema(tool_name: &str, params: &[ToolParam]) -> JsonObject {
     let mut properties = Map::new();
     let mut required: Vec<Value> = Vec::new();
 
     for param in params {
         let mut prop = property_for(&param.param_type);
+        if let Some(values) = enum_values_for(tool_name, &param.name) {
+            prop.insert(
+                "enum".to_string(),
+                Value::Array(
+                    values
+                        .iter()
+                        .map(|value| Value::String((*value).to_string()))
+                        .collect(),
+                ),
+            );
+        }
         if !param.description.is_empty() {
             prop.insert(
                 "description".to_string(),
@@ -120,6 +131,30 @@ fn build_input_schema(params: &[ToolParam]) -> JsonObject {
     // schema validator.
     schema.insert("additionalProperties".to_string(), Value::Bool(true));
     schema
+}
+
+const TASK_TYPE_ENUM: &[&str] = &[
+    "task", "feature", "epic", "friction", "issue", "bug", "chore", "refactor",
+];
+
+const TASK_STATUS_ENUM: &[&str] = &[
+    "proposed",
+    "friction",
+    "backlog",
+    "someday",
+    "in-progress",
+    "review",
+    "done",
+    "blocked",
+    "rejected",
+];
+
+fn enum_values_for(tool_name: &str, param_name: &str) -> Option<&'static [&'static str]> {
+    match (tool_name, param_name) {
+        ("orbit.task.add", "type") => Some(TASK_TYPE_ENUM),
+        ("orbit.task.add" | "orbit.task.update", "status") => Some(TASK_STATUS_ENUM),
+        _ => None,
+    }
 }
 
 /// Build the JSON-Schema fragment for a single parameter.
@@ -168,4 +203,48 @@ fn property_for(param_type: &str) -> Map<String, Value> {
         }
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn param(name: &str) -> ToolParam {
+        ToolParam {
+            name: name.to_string(),
+            description: String::new(),
+            param_type: "string".to_string(),
+            required: false,
+        }
+    }
+
+    #[test]
+    fn task_add_schema_advertises_type_and_status_enums() {
+        let schema = build_input_schema("orbit.task.add", &[param("type"), param("status")]);
+        let properties = schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .expect("properties");
+
+        let type_enum = properties["type"]["enum"].as_array().expect("type enum");
+        assert!(type_enum.iter().any(|value| value == "friction"));
+
+        let status_enum = properties["status"]["enum"]
+            .as_array()
+            .expect("status enum");
+        assert!(status_enum.iter().any(|value| value == "friction"));
+    }
+
+    #[test]
+    fn task_update_schema_advertises_friction_status_enum() {
+        let schema = build_input_schema("orbit.task.update", &[param("status")]);
+        let properties = schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .expect("properties");
+        let status_enum = properties["status"]["enum"]
+            .as_array()
+            .expect("status enum");
+        assert!(status_enum.iter().any(|value| value == "friction"));
+    }
 }
