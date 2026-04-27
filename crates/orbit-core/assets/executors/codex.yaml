@@ -10,6 +10,6 @@ spec:
     - --json
   stdout_format: envelope
   models:
-    strong: gpt-5.4
+    strong: gpt-5.5
     weak: gpt-5.4-mini
   env: {}

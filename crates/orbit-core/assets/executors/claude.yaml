@@ -13,8 +13,10 @@ spec:
     - json
     - --debug-file
     - .orbit/state/logs/claude-debug.log
+    - --fallback-model
+    - claude-sonnet-4-6
     - --tools
-    - Write,Edit,Grep,Glob,Bash,TodoWrite
+    - Read,Write,Edit,Grep,Glob,Bash,TodoWrite,Agent
   stdout_format: envelope
   models:
     strong: claude-opus-4-7
