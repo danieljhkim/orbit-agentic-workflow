@@ -174,29 +174,17 @@ const TASK_META_FIELDS = [
 ];
 
 function buildTaskDetail(task) {
-  const detail = el("div", { class: "row-detail" });
+  const detail = el("div", { class: "row-detail split-layout" });
   detail.addEventListener("click", (e) => e.stopPropagation());
 
-  const meta = el("div", { class: "meta-line" });
-  let metaCount = 0;
-  for (const [key, label] of TASK_META_FIELDS) {
-    const v = task[key];
-    if (v == null || v === "") continue;
-    const display = key.endsWith("_at") ? fmtAbsTime(v) : String(v);
-    const span = el("span", {}, [
-      el("span", { class: "label", text: `${label}:` }),
-      el("span", { class: "value", text: display }),
-    ]);
-    meta.appendChild(span);
-    metaCount++;
-  }
-  if (metaCount > 0) detail.appendChild(meta);
+  const leftCol = el("div", { class: "detail-main" });
+  const rightCol = el("div", { class: "detail-side" });
 
-  const addField = (title, child) => {
+  const addField = (parent, title, child) => {
     const block = el("div", { class: "field-block" });
     block.appendChild(el("h4", { text: title }));
     block.appendChild(child);
-    detail.appendChild(block);
+    parent.appendChild(block);
   };
 
   if (task.description && task.description.trim()) {
@@ -206,7 +194,7 @@ function buildTaskDetail(task) {
     } else {
       view.textContent = task.description;
     }
-    addField("description", view);
+    addField(leftCol, "description", view);
   }
 
   if (Array.isArray(task.acceptance_criteria) && task.acceptance_criteria.length > 0) {
@@ -220,7 +208,7 @@ function buildTaskDetail(task) {
         ul.appendChild(el("li", { text: ac }));
       }
     }
-    addField("acceptance criteria", ul);
+    addField(leftCol, "acceptance criteria", ul);
   }
 
   if (task.plan && task.plan.trim()) {
@@ -230,7 +218,7 @@ function buildTaskDetail(task) {
     } else {
       view.textContent = task.plan;
     }
-    addField("plan", view);
+    addField(leftCol, "plan", view);
   }
 
   if (task.execution_summary && task.execution_summary.trim()) {
@@ -240,28 +228,30 @@ function buildTaskDetail(task) {
     } else {
       view.textContent = task.execution_summary;
     }
-    addField("execution summary", view);
+    addField(leftCol, "execution summary", view);
   }
 
-  if (Array.isArray(task.comments) && task.comments.length > 0) {
-    const wrap = el("div");
-    for (const c of task.comments) {
-      const line = el("div", { class: "comment-line" }, [
-        document.createTextNode(`[${fmtAbsTime(c.at)}] `),
-        el("span", { class: "author", text: c.by || "?" }),
-        document.createTextNode(`: ${c.message || ""}`),
-      ]);
-      wrap.appendChild(line);
-    }
-    addField("comments", wrap);
+  const meta = el("div", { class: "meta-list" });
+  let metaCount = 0;
+  for (const [key, label] of TASK_META_FIELDS) {
+    const v = task[key];
+    if (v == null || v === "") continue;
+    const display = key.endsWith("_at") ? fmtAbsTime(v) : String(v);
+    const span = el("div", { class: "meta-item" }, [
+      el("span", { class: "label", text: `${label}` }),
+      el("span", { class: "value", text: display }),
+    ]);
+    meta.appendChild(span);
+    metaCount++;
   }
+  if (metaCount > 0) addField(rightCol, "details", meta);
 
   if (Array.isArray(task.context_files) && task.context_files.length > 0) {
     const ul = el("ul", { class: "file-list" });
     for (const path of task.context_files) {
       ul.appendChild(el("li", { text: path }));
     }
-    addField("context", ul);
+    addField(rightCol, "context files", ul);
   }
 
   if (Array.isArray(task.history) && task.history.length > 0) {
@@ -276,9 +266,24 @@ function buildTaskDetail(task) {
       ]);
       wrap.appendChild(line);
     }
-    addField("recent history", wrap);
+    addField(rightCol, "recent history", wrap);
   }
 
+  if (Array.isArray(task.comments) && task.comments.length > 0) {
+    const wrap = el("div");
+    for (const c of task.comments) {
+      const line = el("div", { class: "comment-line" }, [
+        document.createTextNode(`[${fmtAbsTime(c.at)}] `),
+        el("span", { class: "author", text: c.by || "?" }),
+        document.createTextNode(`: ${c.message || ""}`),
+      ]);
+      wrap.appendChild(line);
+    }
+    addField(rightCol, "comments", wrap);
+  }
+
+  detail.appendChild(leftCol);
+  detail.appendChild(rightCol);
   detail.appendChild(buildActionsRow(task, detail));
 
   return detail;

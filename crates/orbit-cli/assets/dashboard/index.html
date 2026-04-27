@@ -347,6 +347,58 @@
         to { opacity: 1; transform: translateY(0); }
       }
       
+      .row-detail.split-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 12px;
+        align-items: start;
+      }
+      @media (max-width: 1000px) {
+        .row-detail.split-layout { grid-template-columns: 1fr; }
+      }
+      .detail-main {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+      }
+      .detail-side {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+      }
+      .detail-side .meta-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 0;
+      }
+      .detail-side .meta-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 16px;
+        border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+        padding-bottom: 4px;
+      }
+      .detail-side .meta-item:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+      .detail-side .meta-item .label {
+        color: var(--fg-dim);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-transform: lowercase;
+      }
+      .detail-side .meta-item .value {
+        color: var(--fg);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-align: right;
+      }
+      
       .row-detail .meta-line {
         font-family: var(--font-mono);
         font-size: 11px;
@@ -368,7 +420,7 @@
       }
       
       .field-block {
-        margin-bottom: 20px;
+        margin-bottom: 0;
         padding: 16px 20px;
         background: var(--bg-elev);
         border: 1px solid var(--border);
@@ -454,6 +506,8 @@
         margin: 0;
         padding-left: 24px;
         line-height: 1.6;
+        overflow-wrap: anywhere;
+        word-break: break-all;
       }
       
       .row-detail .history-line,
@@ -464,6 +518,7 @@
         line-height: 1.6;
         padding: 4px 8px;
         border-radius: 4px;
+        overflow-wrap: anywhere;
       }
       .row-detail .history-line:nth-child(odd),
       .row-detail .comment-line:nth-child(odd) {
@@ -478,6 +533,7 @@
         gap: 8px;
         padding-top: 8px;
         flex-wrap: wrap;
+        grid-column: 1 / -1;
       }
       
       .action {
