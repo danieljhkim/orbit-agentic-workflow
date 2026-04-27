@@ -1685,6 +1685,7 @@ dependencies = [
  "fs2",
  "jsonschema",
  "orbit-common",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

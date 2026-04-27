@@ -95,19 +95,35 @@ impl TaskFileStore {
     }
 
     pub(super) fn next_task_id(&self, now: DateTime<Utc>) -> Result<String, OrbitError> {
-        let base = format!("T{}", now.format("%Y%m%d-%H%M"));
-        if self.locate_task(&base)?.is_none() {
-            return Ok(base);
-        }
-        for suffix in 2..1024_u32 {
-            let candidate = format!("{base}-{suffix}");
-            if self.locate_task(&candidate)?.is_none() {
-                return Ok(candidate);
+        // Caller must hold acquire_task_allocation_lock while scanning and then creating the task
+        // directory, so the scan-then-allocate window remains serialized.
+        let task_date = now.format("%Y%m%d").to_string();
+        let today_prefix = format!("T{task_date}-");
+        let current_partition = now.format("%Y-%m").to_string();
+        let mut max_suffix = 0_u32;
+
+        for state in TaskStateDir::all() {
+            let state_dir = self.state_dir_path(state);
+            if !state_dir.exists() {
+                continue;
+            }
+
+            if state.is_partitioned() {
+                update_max_suffix_from_child_dirs(&state_dir, &today_prefix, &mut max_suffix)?;
+                update_max_suffix_from_child_dirs(
+                    &state_dir.join(&current_partition),
+                    &today_prefix,
+                    &mut max_suffix,
+                )?;
+            } else {
+                update_max_suffix_from_child_dirs(&state_dir, &today_prefix, &mut max_suffix)?;
             }
         }
-        Err(OrbitError::Execution(
-            "unable to allocate unique task id".to_string(),
-        ))
+
+        let next_suffix = max_suffix
+            .checked_add(1)
+            .ok_or_else(|| OrbitError::Execution("task id counter overflow".to_string()))?;
+        Ok(format!("T{task_date}-{next_suffix}"))
     }
 
     pub(super) fn locate_task(
@@ -264,6 +280,38 @@ fn partition_key(id: &str) -> Option<String> {
     is_valid_year_month(year, month).then(|| format!("{year}-{month}"))
 }
 
+fn update_max_suffix_from_child_dirs(
+    dir: &Path,
+    today_prefix: &str,
+    max_suffix: &mut u32,
+) -> Result<(), OrbitError> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for child in list_child_dirs(dir)? {
+        let Some(name) = child.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let Some(tail) = name.strip_prefix(today_prefix) else {
+            continue;
+        };
+        *max_suffix = (*max_suffix).max(extract_max_suffix_component(tail));
+    }
+    Ok(())
+}
+
+/// Parse the suffix portion of a task ID (everything after `T{YYYYMMDD}-`).
+///
+/// Compound legacy IDs contribute their largest integer component, not their
+/// trailing one, so `2313-2` advances the next counter to `2314`.
+fn extract_max_suffix_component(tail: &str) -> u32 {
+    tail.split('-')
+        .filter_map(|component| component.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0)
+}
+
 fn is_partition_dir_name(name: &str) -> bool {
     let Some((year, month)) = name.split_once('-') else {
         return false;
@@ -277,4 +325,169 @@ fn is_valid_year_month(year: &str, month: &str) -> bool {
             month,
             "01" | "02" | "03" | "04" | "05" | "06" | "07" | "08" | "09" | "10" | "11" | "12"
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashSet,
+        fs,
+        sync::{Arc, Barrier},
+        thread,
+    };
+
+    use chrono::TimeZone;
+    use regex::Regex;
+    use tempfile::{TempDir, tempdir};
+
+    use super::*;
+
+    fn fixture() -> (TempDir, TaskFileStore, DateTime<Utc>) {
+        let tempdir = tempdir().expect("task store tempdir");
+        let store = TaskFileStore::new(tempdir.path().to_path_buf());
+        let now = Utc.with_ymd_and_hms(2026, 4, 26, 12, 0, 0).unwrap();
+        (tempdir, store, now)
+    }
+
+    fn create_task_dir(store: &TaskFileStore, state: TaskStateDir, id: &str) -> PathBuf {
+        let task_dir = store.task_dir(state, id);
+        fs::create_dir_all(&task_dir).expect("create task dir");
+        task_dir
+    }
+
+    #[test]
+    fn next_task_id_fresh_workspace_returns_one() {
+        let (_tempdir, store, now) = fixture();
+
+        let id = store.next_task_id(now).expect("next task id");
+
+        assert_eq!(id, "T20260426-1");
+    }
+
+    #[test]
+    fn next_task_id_format_matches_regex() {
+        let (_tempdir, store, now) = fixture();
+
+        let id = store.next_task_id(now).expect("next task id");
+        let pattern = Regex::new(r"^T\d{8}-[1-9]\d*$").expect("valid regex");
+
+        assert!(pattern.is_match(&id), "{id} should match task id format");
+    }
+
+    #[test]
+    fn next_task_id_sequential_increments() {
+        let (_tempdir, store, now) = fixture();
+        let mut ids = Vec::new();
+
+        for _ in 0..5 {
+            let id = store.next_task_id(now).expect("next task id");
+            create_task_dir(&store, TaskStateDir::Backlog, &id);
+            ids.push(id);
+        }
+
+        assert_eq!(
+            ids,
+            vec![
+                "T20260426-1",
+                "T20260426-2",
+                "T20260426-3",
+                "T20260426-4",
+                "T20260426-5",
+            ]
+        );
+    }
+
+    #[test]
+    fn next_task_id_with_legacy_hhmm_continues_from_max() {
+        let (_tempdir, store, now) = fixture();
+        create_task_dir(&store, TaskStateDir::Backlog, "T20260426-2313");
+
+        let id = store.next_task_id(now).expect("next task id");
+
+        assert_eq!(id, "T20260426-2314");
+    }
+
+    #[test]
+    fn next_task_id_with_compound_legacy_id_continues_from_largest_component() {
+        let (_tempdir, store, now) = fixture();
+        create_task_dir(&store, TaskStateDir::Backlog, "T20260426-2313-2");
+
+        let id = store.next_task_id(now).expect("next task id");
+
+        assert_eq!(id, "T20260426-2314");
+    }
+
+    #[test]
+    fn next_task_id_ignores_other_days() {
+        let (_tempdir, store, now) = fixture();
+        create_task_dir(&store, TaskStateDir::Backlog, "T20260425-9999");
+        create_task_dir(&store, TaskStateDir::Backlog, "T20260427-1");
+
+        let id = store.next_task_id(now).expect("next task id");
+
+        assert_eq!(id, "T20260426-1");
+    }
+
+    #[test]
+    fn next_task_id_scans_all_states() {
+        let (_tempdir, store, now) = fixture();
+        create_task_dir(&store, TaskStateDir::Done, "T20260426-5");
+        create_task_dir(&store, TaskStateDir::Proposed, "T20260426-3");
+
+        let id = store.next_task_id(now).expect("next task id");
+
+        assert_eq!(id, "T20260426-6");
+    }
+
+    #[test]
+    fn locate_task_resolves_all_three_id_forms() {
+        let (_tempdir, store, _now) = fixture();
+        let task_ids = ["T20260426-1", "T20260426-2313", "T20260426-2313-2"];
+
+        for id in task_ids {
+            let expected_dir = create_task_dir(&store, TaskStateDir::Done, id);
+            let located = store.locate_task(id).expect("locate task");
+
+            assert_eq!(located, Some((TaskStateDir::Done, expected_dir)));
+        }
+    }
+
+    #[test]
+    fn partition_key_uniform_across_id_forms() {
+        let partition = Some("2026-04".to_string());
+
+        assert_eq!(partition_key("T20260426-1"), partition);
+        assert_eq!(partition_key("T20260426-2313"), partition);
+        assert_eq!(partition_key("T20260426-2313-2"), partition);
+    }
+
+    #[test]
+    fn next_task_id_concurrent_allocation_lock_yields_distinct_ids() {
+        let (_tempdir, store, now) = fixture();
+        let store = Arc::new(store);
+        let barrier = Arc::new(Barrier::new(16));
+
+        let handles = (0..16)
+            .map(|_| {
+                let store = Arc::clone(&store);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    let _allocation_lock = store
+                        .acquire_task_allocation_lock()
+                        .expect("task allocation lock");
+                    let id = store.next_task_id(now).expect("next task id");
+                    create_task_dir(&store, TaskStateDir::Backlog, &id);
+                    id
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let ids = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("allocation thread"))
+            .collect::<HashSet<_>>();
+
+        assert_eq!(ids.len(), 16);
+    }
 }

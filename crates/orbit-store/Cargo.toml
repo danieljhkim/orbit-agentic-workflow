@@ -16,4 +16,5 @@ serde_yaml.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+regex.workspace = true
 tempfile = "3"
