@@ -83,8 +83,20 @@ Follow the `## Task Quality Standards` section in `orbit-create-task` skill: exp
 - Use your model name (e.g. `claude-opus-4-7`, `gpt-5.4`, `gemini-3.1-pro`) when authoring tasks or docs.
 - Preserve the exact model version in all task provenance fields and tool inputs. Do not shorten versioned OpenAI model names: if the running model is `gpt-5.5`, record `model: gpt-5.5` and attribution values like `created_by: gpt-5.5`, never `gpt-5`.
 - When writing docs, cite relevant task IDs in the doc itself.
-- Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape). Feature leads: `claude` owns `knowledge-graph/`; `codex` owns `activity-job/` and `groundhog/`.
 - When your change touches an owned feature's implementation, update that feature's design docs in the same PR: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, and add a new ADR for any non-obvious decision the change embodies. Stale docs are treated as a review blocker.
+
+## Feature Ownership
+
+Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
+
+| Feature | Folder | Lead |
+|---------|--------|------|
+| Knowledge graph | `knowledge-graph/` | `claude` |
+| Policy & Sandboxing | `policy-sandbox/` | `claude` |
+| Activity / Job | `activity-job/` | `codex` |
+| Auditability | `auditability/` | `codex` |
+| Groundhog | `groundhog/` | `codex` |
+| User Interface | `user-interface/` | `gemini` |
 
 ## Scoreboards
 
