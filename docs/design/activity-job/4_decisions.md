@@ -308,6 +308,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - The pipeline has fewer moving parts before dispatching child gate runs.
 - Cost: the auto-dispatch audit trail no longer contains a model-authored advisory grouping note.
 
+## ADR-024 — Shipping worktrees default to fetched remote base refs
+
+**Status:** Accepted · 2026-04 · [T20260427-45]
+
+**Context.** `task_pr_pipeline`, `task_local_pipeline`, and `task_auto_pipeline` create task worktrees from a configured base branch. The earlier automation tried a best-effort `git pull --rebase origin <base>` from the repo root checkout, then preferred the local branch when choosing the worktree start point. A stale local base branch could therefore seed new or reused worktrees even when `origin/<base>` had moved.
+
+**Decision.** Make `base_sync: remote` the default workflow contract. Remote mode fetches `origin/<base>` and uses that fetched remote-tracking ref for worktree creation/reset, PR freshness checks, branch rebases, and local merge retry rebases. Keep `base_sync: local` as an explicit direct-job escape hatch for local-only repositories or unpublished base branches.
+
+**Consequences.**
+- `orbit run ship` and `orbit run ship-auto` no longer silently create task branches from stale local base state.
+- The automation no longer mutates whichever branch happens to be checked out in the repo root just to refresh base state.
+- Cost: default shipping workflows now require the configured base branch to be fetchable from `origin`; callers that intentionally operate without a remote must opt into `base_sync: local`.
+
 ---
 
 ## Task References
@@ -340,5 +353,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events while retaining the existing audit/blob path.
 - **[T20260426-2349]** — Move CLI tracing output redaction from `cli_runner` call sites into the default tracing formatter layer.
 - **[T20260427-33]** — Remove the audit-only `dispatch_agent` step from `task_auto_pipeline`.
+- **[T20260427-45]** — Use freshly fetched remote base refs for default task-shipping worktrees.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

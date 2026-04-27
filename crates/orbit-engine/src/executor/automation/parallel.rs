@@ -8,8 +8,7 @@ use orbit_common::utility::selector::overlaps;
 use serde_json::{Value, json};
 
 use super::git::{
-    base_sync_mode_from_input, git_output, git_success, refresh_local_base_branch,
-    resolve_worktree_start_point,
+    base_sync_mode_from_input, git_output, git_success, resolve_worktree_start_point,
 };
 use crate::context::{
     RuntimeHost, TaskAutomationUpdate, TaskHost, blocked_workflow_failure_update,
@@ -142,9 +141,9 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
     // Set up the shared worktree before spawning workers.
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
-    refresh_local_base_branch(repo_root, &base, base_sync_mode);
+    let start_point = resolve_worktree_start_point(repo_root, &base, base_sync_mode)?;
     let shared_worktree = resolve_shared_worktree_path(repo_root, &run_id)?;
-    ensure_shared_worktree(repo_root, &shared_worktree, &base, &run_id)?;
+    ensure_shared_worktree(repo_root, &shared_worktree, &start_point, &run_id)?;
     let shared_worktree_str = shared_worktree.to_string_lossy().to_string();
     prepare_tasks_for_worker_launch(host, &selected_tasks, &shared_worktree_str)?;
 
@@ -351,7 +350,7 @@ pub(super) fn resolve_shared_worktree_path(
 fn ensure_shared_worktree(
     repo_root: &Path,
     worktree_path: &Path,
-    base_branch: &str,
+    start_point: &str,
     run_id: &str,
 ) -> Result<(), OrbitError> {
     let worktree_branch = shared_worktree_branch_name(run_id)?;
@@ -359,7 +358,7 @@ fn ensure_shared_worktree(
 
     if worktree_path.exists() {
         // Worktree already exists — reset it to the base branch tip so it's fresh.
-        let target = git_output(repo_root, &["rev-parse", base_branch])?;
+        let target = git_output(repo_root, &["rev-parse", start_point])?;
         git_success(
             worktree_path,
             &["checkout", "-B", worktree_branch, target.trim()],
@@ -376,8 +375,6 @@ fn ensure_shared_worktree(
             ))
         })?;
     }
-
-    let start_point = resolve_worktree_start_point(repo_root, base_branch)?;
 
     // Create the worktree on its own branch, based off the base branch.
     // This avoids "branch already checked out" errors.

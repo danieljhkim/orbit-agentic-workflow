@@ -2,9 +2,7 @@ use std::path::Path;
 
 use orbit_common::types::OrbitError;
 
-use super::git::{
-    fetch_remote_base, git_command_success, git_output, resolve_worktree_start_point,
-};
+use super::git::{BaseSyncMode, git_command_success, git_output, resolve_worktree_start_point};
 
 #[derive(Debug, Clone)]
 pub(super) struct BranchFreshness {
@@ -38,8 +36,9 @@ pub(super) fn ensure_branch_rebased_onto_base(
     repo_root: &Path,
     head: &str,
     base: &str,
+    sync_mode: BaseSyncMode,
 ) -> Result<RebaseOutcome, OrbitError> {
-    let original_error = match ensure_branch_fresh_against_base(repo_root, head, base) {
+    let original_error = match ensure_branch_fresh_against_base(repo_root, head, base, sync_mode) {
         Ok(freshness) => {
             return Ok(RebaseOutcome {
                 freshness,
@@ -50,8 +49,7 @@ pub(super) fn ensure_branch_rebased_onto_base(
     };
 
     // Recompute divergence directly — do NOT parse the original error string.
-    fetch_remote_base(repo_root, base);
-    let base_ref = match resolve_worktree_start_point(repo_root, base) {
+    let base_ref = match resolve_worktree_start_point(repo_root, base, sync_mode) {
         Ok(value) => value,
         Err(_) => return Err(original_error),
     };
@@ -90,7 +88,7 @@ pub(super) fn ensure_branch_rebased_onto_base(
         return Err(original_error);
     }
 
-    let freshness = ensure_branch_fresh_against_base(repo_root, head, base)?;
+    let freshness = ensure_branch_fresh_against_base(repo_root, head, base, sync_mode)?;
     Ok(RebaseOutcome {
         freshness,
         rebased: true,
@@ -101,9 +99,9 @@ pub(super) fn ensure_branch_fresh_against_base(
     repo_root: &Path,
     head: &str,
     base: &str,
+    sync_mode: BaseSyncMode,
 ) -> Result<BranchFreshness, OrbitError> {
-    fetch_remote_base(repo_root, base);
-    let base_ref = resolve_worktree_start_point(repo_root, base)?;
+    let base_ref = resolve_worktree_start_point(repo_root, base, sync_mode)?;
     let divergence = git_output(
         repo_root,
         &[

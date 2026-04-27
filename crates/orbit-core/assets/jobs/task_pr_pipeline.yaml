@@ -16,6 +16,7 @@ spec:
   default_input:
     task_ids: []
     base_branch: agent-main
+    base_sync: remote
     title: null
     body: null
   
@@ -25,6 +26,7 @@ spec:
       default_input:
         task_ids: "{{ input.task_ids }}"
         base: "{{ input.base_branch }}"
+        base_sync: "{{ input.base_sync }}"
 
     - id: implement_bundle
       loop:
@@ -47,6 +49,7 @@ spec:
       default_input:
         batch_id: "{{ steps.worktree.output.batch_id }}"
         base: "{{ input.base_branch }}"
+        base_sync: "{{ input.base_sync }}"
         body: "{{ input.body }}"
         completed_task_ids: "{{ input.task_ids }}"
         title: "{{ input.title }}"

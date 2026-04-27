@@ -36,6 +36,7 @@ spec:
     task_ids: []
     mode: pr
     base_branch: agent-main
+    base_sync: remote
     max_wait_seconds: 3600
     poll_interval_seconds: 30
     ttl_seconds: 1800
@@ -74,6 +75,7 @@ spec:
         run_input:
           task_ids: "{{ input.task_ids }}"
           base_branch: "{{ input.base_branch }}"
+          base_sync: "{{ input.base_sync }}"
         timeout_seconds: "{{ input.dispatch_timeout_seconds }}"
 
     - id: dispatch_local
@@ -84,5 +86,6 @@ spec:
         run_input:
           task_ids: "{{ input.task_ids }}"
           base_branch: "{{ input.base_branch }}"
+          base_sync: "{{ input.base_sync }}"
           auto_push: true
         timeout_seconds: "{{ input.dispatch_timeout_seconds }}"

@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 use crate::context::RuntimeHost;
 
 use super::git::{
-    base_sync_mode_from_input, git_command_success, git_output, git_success,
-    refresh_local_base_branch, resolve_worktree_start_point,
+    BaseSyncMode, base_sync_mode_from_input, git_command_success, git_output, git_success,
+    resolve_worktree_start_point,
 };
 use super::input::{canonicalize_existing_dir, input_string_field};
 
@@ -55,17 +55,24 @@ pub(super) fn merge_batch_worktree_into_base<H: RuntimeHost + ?Sized>(
     }))
 }
 
-fn checkout_base_branch(repo_root: &Path, base: &str) -> Result<(), OrbitError> {
+fn checkout_base_branch(
+    repo_root: &Path,
+    base: &str,
+    start_point: &str,
+    base_sync_mode: BaseSyncMode,
+) -> Result<(), OrbitError> {
     if git_command_success(
         repo_root,
         &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
     )? {
         git_success(repo_root, &["checkout", base])?;
+        if base_sync_mode == BaseSyncMode::Remote {
+            fast_forward_local_base_to_remote(repo_root, base, start_point)?;
+        }
         return Ok(());
     }
 
-    let start_point = resolve_worktree_start_point(repo_root, base)?;
-    git_success(repo_root, &["checkout", "-B", base, &start_point])?;
+    git_success(repo_root, &["checkout", "-B", base, start_point])?;
     Ok(())
 }
 
@@ -77,8 +84,8 @@ fn merge_with_rebase_retry(
     base_sync_mode: super::git::BaseSyncMode,
 ) -> Result<(), OrbitError> {
     for attempt in 0..=MAX_REBASE_RETRY_ATTEMPTS {
-        refresh_local_base_branch(repo_root, base, base_sync_mode);
-        checkout_base_branch(repo_root, base)?;
+        let start_point = resolve_worktree_start_point(repo_root, base, base_sync_mode)?;
+        checkout_base_branch(repo_root, base, &start_point, base_sync_mode)?;
         if git_command_success(repo_root, &["merge", "--ff-only", workspace_branch])? {
             return Ok(());
         }
@@ -89,7 +96,7 @@ fn merge_with_rebase_retry(
             )));
         }
 
-        let updated_base = resolve_worktree_start_point(repo_root, base)?;
+        let updated_base = resolve_worktree_start_point(repo_root, base, base_sync_mode)?;
         if let Err(error) = git_success(workspace_path, &["rebase", &updated_base]) {
             let _ = git_success(workspace_path, &["rebase", "--abort"]);
             return Err(error);
@@ -98,6 +105,60 @@ fn merge_with_rebase_retry(
     }
 
     Ok(())
+}
+
+fn fast_forward_local_base_to_remote(
+    repo_root: &Path,
+    base: &str,
+    remote_base: &str,
+) -> Result<(), OrbitError> {
+    let divergence = git_output(
+        repo_root,
+        &[
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("{remote_base}...{base}"),
+        ],
+    )?;
+    let mut parts = divergence.split_whitespace();
+    let remote_only = parse_divergence_count(parts.next(), "remote-only", remote_base, base)?;
+    let local_only = parse_divergence_count(parts.next(), "local-only", remote_base, base)?;
+    if parts.next().is_some() {
+        return Err(OrbitError::Execution(format!(
+            "unexpected git divergence output while comparing '{base}' to '{remote_base}': {divergence}"
+        )));
+    }
+
+    if local_only > 0 {
+        return Err(OrbitError::Execution(format!(
+            "local base branch '{base}' has {local_only} commit(s) not present in '{remote_base}'; reconcile it or run with base_sync=local"
+        )));
+    }
+
+    if remote_only > 0 {
+        git_success(repo_root, &["merge", "--ff-only", remote_base])?;
+    }
+
+    Ok(())
+}
+
+fn parse_divergence_count(
+    value: Option<&str>,
+    label: &str,
+    left: &str,
+    right: &str,
+) -> Result<u64, OrbitError> {
+    let raw = value.ok_or_else(|| {
+        OrbitError::Execution(format!(
+            "missing {label} divergence count while comparing '{left}' to '{right}'"
+        ))
+    })?;
+    raw.parse::<u64>().map_err(|error| {
+        OrbitError::Execution(format!(
+            "invalid {label} divergence count '{raw}' while comparing '{left}' to '{right}': {error}"
+        ))
+    })
 }
 
 fn ensure_clean_checkout(path: &Path, label: &str) -> Result<(), OrbitError> {

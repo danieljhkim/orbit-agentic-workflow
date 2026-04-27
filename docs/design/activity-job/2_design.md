@@ -293,6 +293,12 @@ After [T20260426-0705], `orbit run events <run>` reads the v2 envelope chronolog
 
 The CLI does not own the envelope storage layout. `orbit-core` exposes runtime accessors for v2 audit events and CLI invocation records, including derived step IDs and blob-backed stdout/stderr. This keeps `.orbit/state/audit/v2_loop/` and `.orbit/state/audit/blobs/` knowledge with the runtime layer that also builds the activity/job audit sinks.
 
+### 8.9 Workflow worktree base synchronization
+
+Task-shipping workflows that create worktrees (`task_pr_pipeline`, `task_local_pipeline`, and callers such as `task_auto_pipeline`) default `base_sync` to `remote` after [T20260427-45]. In that mode the deterministic worktree automation fetches `origin/<base_branch>` and creates, resets, compares, and rebases task branches against that fetched remote-tracking ref. It does not run `git pull --rebase` from the repo root checkout, and it does not silently prefer a stale local base branch.
+
+Direct job callers can set `base_sync: local` when they intentionally need a local-only repository or an unpublished base branch. That mode resolves the local base ref and skips the origin fetch; it is an explicit escape hatch rather than the default shipping behavior.
+
 ---
 
 ## 9. Filesystem Policy and `fsProfile`

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
 use super::freshness::{ensure_branch_fresh_against_base, ensure_branch_rebased_onto_base};
-use super::git::git_output;
+use super::git::{base_sync_mode_from_input, git_output};
 use super::input::{
     canonicalize_existing_dir, input_string_field, json_number_to_string, required_batch_id,
     required_input_string,
@@ -77,6 +77,7 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     let head = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let head = head.trim().to_string();
     let base = input_string_field(input, "base").unwrap_or_else(|| "main".to_string());
+    let base_sync_mode = base_sync_mode_from_input(input)?;
 
     // Check that ALL tasks have APPROVED pr_status
     for task in &batch_tasks {
@@ -100,7 +101,7 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         }
     }
 
-    ensure_branch_fresh_against_base(&workspace_path, &head, &base)?;
+    ensure_branch_fresh_against_base(&workspace_path, &head, &base, base_sync_mode)?;
 
     let tool_context = ToolContext {
         cwd: Some(workspace_path.to_string_lossy().to_string()),
@@ -202,14 +203,20 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     let head = git_output(&workspace_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let head = head.trim().to_string();
     let base = input_string_field(input, "base").unwrap_or_else(|| "main".to_string());
+    let base_sync_mode = base_sync_mode_from_input(input)?;
 
-    let rebase_outcome = ensure_branch_rebased_onto_base(&workspace_path, &head, &base)?;
+    let rebase_outcome =
+        ensure_branch_rebased_onto_base(&workspace_path, &head, &base, base_sync_mode)?;
     let freshness = rebase_outcome.freshness;
     let branch_was_rebased = rebase_outcome.rebased;
 
     let diff_output = git_output(
         &workspace_path,
-        &["diff", "--name-only", &format!("{base}...{head}")],
+        &[
+            "diff",
+            "--name-only",
+            &format!("{}...{head}", freshness.base_ref),
+        ],
     )
     .unwrap_or_default();
     let changed_files: Vec<&str> = diff_output

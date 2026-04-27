@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
 use super::git::{
-    base_sync_mode_from_input, git_success, refresh_local_base_branch,
-    resolve_worktree_path_from_prefix, resolve_worktree_start_point,
+    base_sync_mode_from_input, git_success, resolve_worktree_path_from_prefix,
+    resolve_worktree_start_point,
 };
 use super::input::{input_string_field, required_input_string};
 
@@ -39,13 +39,13 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
 
-    refresh_local_base_branch(repo_root, &base, base_sync_mode);
+    let start_point = resolve_worktree_start_point(repo_root, &base, base_sync_mode)?;
 
     let branch_name = branch_name_for_tasks(&branch_prefix, &task_ids);
 
     let worktree_path = resolve_worktree_path_from_prefix(repo_root, &branch_prefix, &run_id)?;
 
-    ensure_worktree(repo_root, &worktree_path, &base, &branch_name)?;
+    ensure_worktree(repo_root, &worktree_path, &start_point, &branch_name)?;
 
     let workspace_path_str = worktree_path.to_string_lossy().to_string();
 
@@ -65,18 +65,18 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
         "batch_id": run_id,
         "workspace_path": workspace_path_str,
         "head_ref": branch_name,
-        "base_ref": base,
+        "base_ref": start_point,
     }))
 }
 
 fn ensure_worktree(
     repo_root: &Path,
     worktree_path: &Path,
-    base: &str,
+    start_point: &str,
     branch_name: &str,
 ) -> Result<(), OrbitError> {
     if worktree_path.exists() {
-        let target = super::git::git_output(repo_root, &["rev-parse", base])?;
+        let target = super::git::git_output(repo_root, &["rev-parse", start_point])?;
         git_success(
             worktree_path,
             &["checkout", "-B", branch_name, target.trim()],
@@ -94,8 +94,6 @@ fn ensure_worktree(
         })?;
     }
 
-    let start_point = resolve_worktree_start_point(repo_root, base)?;
-
     git_success(
         repo_root,
         &[
@@ -104,7 +102,7 @@ fn ensure_worktree(
             "-B",
             branch_name,
             &worktree_path.to_string_lossy(),
-            &start_point,
+            start_point,
         ],
     )
 }
@@ -162,4 +160,64 @@ fn fallback_run_id_for_tasks(task_ids: &[String]) -> String {
     sorted_ids.sort();
     let digest = Sha256::digest(sorted_ids.join(","));
     format!("bundle-{}", &format!("{digest:x}")[..8])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn ensure_worktree_resets_existing_checkout_to_supplied_start_point() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let worktree = temp.path().join("worktree");
+        init_repo(&repo, "agent-main");
+        let first_base = commit_file(&repo, "base.txt", "v1");
+
+        ensure_worktree(&repo, &worktree, &first_base, "orbit/test").unwrap();
+        assert_eq!(git(&worktree, &["rev-parse", "HEAD"]), first_base);
+
+        let second_base = commit_file(&repo, "base.txt", "v2");
+        ensure_worktree(&repo, &worktree, &second_base, "orbit/test").unwrap();
+
+        assert_eq!(git(&worktree, &["rev-parse", "HEAD"]), second_base);
+    }
+
+    fn init_repo(path: &Path, branch: &str) {
+        fs::create_dir_all(path).unwrap();
+        git(path, &["init"]);
+        git(path, &["checkout", "-b", branch]);
+        git(path, &["config", "user.name", "Orbit Test"]);
+        git(path, &["config", "user.email", "orbit-test@example.com"]);
+    }
+
+    fn commit_file(repo: &Path, file_name: &str, contents: &str) -> String {
+        fs::write(repo.join(file_name), contents).unwrap();
+        git(repo, &["add", file_name]);
+        git(repo, &["commit", "-m", &format!("write {file_name}")]);
+        git(repo, &["rev-parse", "HEAD"])
+    }
+
+    fn git(current_dir: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(current_dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed in {}:\nstdout: {}\nstderr: {}",
+            args.join(" "),
+            current_dir.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
 }

@@ -30,6 +30,7 @@ spec:
     task_ids: []
     mode: pr
     base_branch: agent-main
+    base_sync: remote
     max_bundles: 10
     concurrency: 3
     max_bundle_size: 5
@@ -62,6 +63,7 @@ spec:
               task_ids: "{{ item }}"
               mode: "{{ input.mode }}"
               base_branch: "{{ input.base_branch }}"
+              base_sync: "{{ input.base_sync }}"
       fan_in:
         join:
           mode: all

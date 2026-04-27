@@ -23,6 +23,9 @@ spec:
         type: string
       base_branch:
         type: string
+      base_sync:
+        type: string
+        enum: [remote, local]
       branch_prefix:
         type: string
   output_schema_json:
