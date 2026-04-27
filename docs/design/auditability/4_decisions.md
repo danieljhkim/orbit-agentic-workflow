@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-27
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -125,6 +125,19 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - CLI subprocess tracing can emit raw line fields while the retained stdout/stderr audit blobs preserve original bytes.
 - Cost: span attribute redaction, binary payload redaction, and user-configurable redaction policies remain separate follow-up concerns.
 
+## ADR-010 — Canonical audit stores project high-signal events to tracing
+
+**Status:** Accepted · 2026-04 · [T20260427-0023]
+
+**Context.** The global JSONL tracing feed existed, but policy denials and friction submissions still only reached their canonical stores or return paths. Operators tailing the live feed could miss the highest-signal safety and agent-friction events.
+
+**Decision.** Emit structured `tracing::warn!` projections beside the existing canonical side effects for filesystem policy denials, proc-spawn allowlist denials, and friction task submissions. Keep the SQLite audit rows, FS audit events, `OrbitError::PolicyDenied` returns, and scoreboard updates authoritative.
+
+**Consequences.**
+- Dashboards and operators can watch `orbit.policy.deny` and `orbit.friction.reported` without querying the canonical stores.
+- New producers can follow the same dual-write pattern: persist to the source of truth first, then project a redacted live event.
+- Cost: the tracing feed is lossy and filterable, so readers must not treat missing live events as proof that the canonical store has no matching record.
+
 ---
 
 ## Task References
@@ -138,5 +151,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events.
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
+- **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

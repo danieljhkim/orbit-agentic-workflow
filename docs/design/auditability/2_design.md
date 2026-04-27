@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-27
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and the current limitations that still need design attention. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -56,6 +56,8 @@ Command audit records do not only come from the top-level CLI guard. Some runtim
 These records use the same SQLite schema so `orbit audit list` and export commands can see them. The current design implication is important: audit producers are allowed below the CLI layer, but they must still use `AuditEventInsertParams` and preserve the same status, target, actor, and redaction expectations.
 
 The prescriptive coverage expectations live in [specs/coverage-matrix.md](./specs/coverage-matrix.md).
+
+After [T20260427-0023], selected high-signal runtime paths also emit live tracing projections without changing their canonical stores. Filesystem policy denials still write `FsCallEventKind::Denied` audit events, proc-spawn allowlist denials still return `OrbitError::PolicyDenied`, and friction task creation still increments the friction bounty scoreboard. The added tracing targets are `orbit.policy.deny` for FS/proc denials and `orbit.friction.reported` for friction submissions.
 
 ---
 
@@ -169,7 +171,7 @@ Invocation metrics are surfaced through metrics and scoreboard commands. They ar
 
 The file layer opens `~/.orbit/state/logs/orbit.jsonl` in append mode and writes through `tracing_appender::non_blocking`. The associated `WorkerGuard` is retained for the process lifetime inside `logging.rs`, so routine event emission does not synchronously block on disk writes.
 
-Each JSONL record contains timestamp, level, target, and a `fields` object containing the structured event fields. After [T20260426-2349], `logging.rs` routes JSONL events through the same `RedactingFields` formatter used by stderr, so string field values, `Debug`-formatted field values, and unstructured messages are scrubbed before serialization while typed numeric and boolean values keep their JSON types. The timestamp is assigned when the formatter writes the record, so a non-blocking writer under load may introduce a small lag from event emission. This is the durable landing zone for live `tracing` events such as the CLI subprocess stdout/stderr events added in [T20260426-2313].
+Each JSONL record contains timestamp, level, target, and a `fields` object containing the structured event fields. After [T20260426-2349], `logging.rs` routes JSONL events through the same `RedactingFields` formatter used by stderr, so string field values, `Debug`-formatted field values, and unstructured messages are scrubbed before serialization while typed numeric and boolean values keep their JSON types. The timestamp is assigned when the formatter writes the record, so a non-blocking writer under load may introduce a small lag from event emission. This is the durable landing zone for live `tracing` events such as the CLI subprocess stdout/stderr events added in [T20260426-2313], the `orbit.policy.deny` events added for FS/proc policy denials in [T20260427-0023], and the `orbit.friction.reported` events added for friction submissions in [T20260427-0023].
 
 This channel is global rather than workspace-local because `orbit-cli` initializes logging before clap parsing and before `OrbitRuntime` can resolve workspace roots. It is not a replacement for command audit rows or run traces: readers should treat it as an operational log stream, not the canonical workflow envelope.
 
@@ -200,5 +202,6 @@ This channel is global rather than workspace-local because `orbit-cli` initializ
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events while retaining the existing audit/blob path.
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
+- **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

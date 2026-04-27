@@ -17,6 +17,8 @@ Every Orbit operation that touches code, task state, persistent runtime state, e
 | Activity/job run | V2 envelope JSONL | run id, agent identity, run start/finish |
 | Activity/job step | V2 envelope JSONL | run id, step id, outcome or skip/retry reason |
 | Filesystem policy decision inside v2 run | V2 envelope JSONL | profile, op, path, allowed, matched rule |
+| Filesystem or proc-spawn policy denial live projection | Global tracing JSONL | target, tool, path, profile, matched_rule |
+| Friction task submission live projection | Global tracing JSONL | target, task_id, agent, model, summary |
 | HTTP provider turn | Loop audit JSONL plus blob store | run id, session id, provider, model, request/response blob hashes |
 | Tool call inside HTTP loop | Loop audit JSONL plus blob store | run id, session id, tool name, input/output blob hashes, outcome |
 | CLI backend provider invocation | V2 envelope JSONL | provider, redacted argv, stdin/stdout/stderr blob refs, timeout, exit code |
@@ -28,6 +30,7 @@ Every Orbit operation that touches code, task state, persistent runtime state, e
 - A mutation path must not rely only on stdout text for auditability.
 - A provider request or response must not be stored inline in a command audit row.
 - A policy or allowlist denial must record both the denied subject and the reason.
+- Live tracing projections must be additional to canonical audit, error, log, or scoreboard writes.
 - A task-state mutation must leave task history or document metadata in addition to any audit row.
 - New operation classes must update this matrix in the same PR that introduces the operation.
 
@@ -51,4 +54,4 @@ When reviewing a change that mutates code or state, ask:
 
 ## Agent Signature
 
-Last revised by codex / gpt-5 for [T20260426-0605].
+Last revised by codex / gpt-5.5 for [T20260427-0023].

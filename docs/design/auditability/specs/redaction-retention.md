@@ -42,6 +42,7 @@ Global process tracing:
 - Lives under `~/.orbit/state/logs/orbit.jsonl`.
 - Is append-only and unrotated in v1.
 - Is an operational log stream, not the canonical workflow envelope.
+- Carries policy-denial path/resource strings and friction summaries after [T20260427-0023], so default tracing redaction is part of its durability boundary.
 
 ## Failure Modes
 
@@ -61,4 +62,4 @@ Future retention work should add:
 
 ## Agent Signature
 
-Last revised by codex / gpt-5.5 for [T20260426-2349].
+Last revised by codex / gpt-5.5 for [T20260427-0023].

@@ -1,3 +1,4 @@
+use orbit_common::tracing;
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
 use serde_json::Value;
@@ -46,6 +47,14 @@ impl Tool for ProcSpawnTool {
         if !ctx.proc_allowed_programs.is_empty()
             && !ctx.proc_allowed_programs.iter().any(|p| p == &program)
         {
+            let matched_rule = ctx.proc_allowed_programs.join(", ");
+            tracing::warn!(
+                target: "orbit.policy.deny",
+                tool = "shell.spawn",
+                path = program.as_str(),
+                profile = "proc.allowed_programs",
+                matched_rule = matched_rule.as_str(),
+            );
             return Err(OrbitError::PolicyDenied(format!(
                 "program '{}' is not in the allowed list: [{}]",
                 program,

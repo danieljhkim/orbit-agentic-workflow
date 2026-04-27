@@ -99,6 +99,14 @@ impl OrbitRuntime {
             && params.task_type.counts_toward_friction_bounty()
             && let Some(model) = &canonical_model
         {
+            emit_friction_reported_trace(
+                &task.id,
+                canonical_agent
+                    .as_deref()
+                    .unwrap_or(effective_label.as_str()),
+                model,
+                &task.title,
+            );
             let _ = friction_bounty::record_friction_reported(&self.paths().scoreboard_dir, model);
         }
 
@@ -122,12 +130,28 @@ impl OrbitRuntime {
     }
 }
 
+fn emit_friction_reported_trace(task_id: &str, agent: &str, model: &str, summary: &str) {
+    tracing::warn!(
+        target: "orbit.friction.reported",
+        task_id,
+        agent,
+        model,
+        summary,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use orbit_common::types::TaskStatus;
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use orbit_common::types::{TaskStatus, TaskType};
     use tempfile::tempdir;
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Metadata, Subscriber};
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime) {
         let root = tempdir().expect("create tempdir");
@@ -170,5 +194,111 @@ mod tests {
             .start_task(&task.id, Some("start backlog task".to_string()), None)
             .expect("backlog task starts directly");
         assert_eq!(started.status, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn friction_task_submission_emits_one_tracing_event() {
+        let (_root, runtime) = test_runtime();
+        let subscriber = RecordingSubscriber::default();
+        let recorder = subscriber.clone();
+        let dispatch = tracing::Dispatch::new(subscriber);
+
+        let task = tracing::dispatcher::with_default(&dispatch, || {
+            runtime
+                .add_task_with_identity(
+                    TaskAddParams {
+                        title: "Friction reported on ORB-1011".to_string(),
+                        description: "Tooling got stuck.".to_string(),
+                        acceptance_criteria: vec!["Report is visible.".to_string()],
+                        task_type: TaskType::Friction,
+                        workspace_path: Some(".".to_string()),
+                        ..Default::default()
+                    },
+                    Some("codex".to_string()),
+                    Some("gpt-5.5".to_string()),
+                )
+                .expect("friction task add succeeds")
+        });
+
+        let events = recorder.events_for_target("orbit.friction.reported");
+        assert_eq!(events.len(), 1, "expected exactly one friction event");
+        let fields = &events[0].fields;
+        assert_eq!(fields.get("task_id"), Some(&task.id));
+        assert_eq!(fields.get("agent"), Some(&"codex".to_string()));
+        assert_eq!(fields.get("model"), Some(&"gpt-5.5".to_string()));
+        assert_eq!(
+            fields.get("summary"),
+            Some(&"Friction reported on ORB-1011".to_string())
+        );
+    }
+
+    #[derive(Clone, Default)]
+    struct RecordingSubscriber {
+        events: Arc<Mutex<Vec<RecordedEvent>>>,
+    }
+
+    impl RecordingSubscriber {
+        fn events_for_target(&self, target: &str) -> Vec<RecordedEvent> {
+            self.events
+                .lock()
+                .expect("events lock")
+                .iter()
+                .filter(|event| event.target == target)
+                .cloned()
+                .collect()
+        }
+    }
+
+    impl Subscriber for RecordingSubscriber {
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            true
+        }
+
+        fn new_span(&self, _span: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+        fn event(&self, event: &Event<'_>) {
+            let mut visitor = FieldRecorder::default();
+            event.record(&mut visitor);
+            self.events
+                .lock()
+                .expect("events lock")
+                .push(RecordedEvent {
+                    target: event.metadata().target().to_string(),
+                    fields: visitor.fields,
+                });
+        }
+
+        fn enter(&self, _span: &Id) {}
+
+        fn exit(&self, _span: &Id) {}
+    }
+
+    #[derive(Clone, Debug)]
+    struct RecordedEvent {
+        target: String,
+        fields: BTreeMap<String, String>,
+    }
+
+    #[derive(Default)]
+    struct FieldRecorder {
+        fields: BTreeMap<String, String>,
+    }
+
+    impl Visit for FieldRecorder {
+        fn record_str(&mut self, field: &Field, value: &str) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.fields
+                .insert(field.name().to_string(), format!("{value:?}"));
+        }
     }
 }

@@ -10,6 +10,7 @@ pub mod write;
 
 use std::path::{Path, PathBuf};
 
+use orbit_common::tracing;
 use orbit_common::types::{FsOperation, OrbitError};
 
 use crate::{FsCallEvent, FsCallEventKind, ToolContext, ToolRegistry};
@@ -156,6 +157,14 @@ fn enforce_fs_policy(
     }
 
     emit_fs_event(ctx, FsCallEventKind::Denied, &allowance, false)?;
+    let tool = format!("fs.{}", allowance.op.as_str());
+    tracing::warn!(
+        target: "orbit.policy.deny",
+        tool = tool.as_str(),
+        path = allowance.path.as_str(),
+        profile = allowance.profile.as_str(),
+        matched_rule = allowance.matched_rule.as_str(),
+    );
     Err(OrbitError::PolicyDenied(format!(
         "fs.{} denied for `{}` under fsProfile `{}` (matched rule `{}`)",
         allowance.op.as_str(),
