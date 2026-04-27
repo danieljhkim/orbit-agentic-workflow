@@ -12,7 +12,9 @@ use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 use crate::executor::automation::input::required_input_string;
 
 use super::roles::parse_planning_duel_roles;
-use super::types::{PlanningDuelPlanArtifact, PlanningDuelWinnerArtifact};
+use super::types::{
+    PlanningDuelPlanArtifact, PlanningDuelWinnerArtifact, PlanningDuelWinnerMarker,
+};
 
 const PLANNING_DUEL_ARTIFACT_PREFIX: &str = "planning-duel/";
 const PLANNING_DUEL_PLAN_EXTENSION: &str = ".md";
@@ -127,8 +129,130 @@ pub(super) fn plan_artifact_by_path<'a>(
     }
 }
 
+fn required_winner_marker_field(value: &str, field: &str) -> Result<String, OrbitError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(OrbitError::InvalidInput(format!(
+            "planning duel winner marker field `{field}` must not be empty"
+        )));
+    }
+    Ok(value.to_string())
+}
+
+fn optional_winner_marker_field(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, OrbitError> {
+    value
+        .map(|value| required_winner_marker_field(&value, field))
+        .transpose()
+}
+
+fn arbiter_identity_from_marker(
+    marker_agent: Option<String>,
+    marker_model: Option<String>,
+    roles: Option<&PlanningRoles>,
+) -> Result<PlanningRoleAssignment, OrbitError> {
+    match roles {
+        Some(roles) => {
+            if let Some(agent) = marker_agent.as_deref()
+                && agent != roles.arbiter.agent.as_str()
+            {
+                return Err(OrbitError::InvalidInput(format!(
+                    "winner artifact arbiter {}/{} does not match recorded arbiter {}/{}",
+                    agent,
+                    marker_model.as_deref().unwrap_or("<unspecified>"),
+                    roles.arbiter.agent,
+                    roles.arbiter.model
+                )));
+            }
+            if let Some(model) = marker_model.as_deref()
+                && model != roles.arbiter.model.as_str()
+            {
+                return Err(OrbitError::InvalidInput(format!(
+                    "winner artifact arbiter {}/{} does not match recorded arbiter {}/{}",
+                    marker_agent.as_deref().unwrap_or("<unspecified>"),
+                    model,
+                    roles.arbiter.agent,
+                    roles.arbiter.model
+                )));
+            }
+            Ok(roles.arbiter.clone())
+        }
+        None => Ok(PlanningRoleAssignment {
+            agent: marker_agent.ok_or_else(|| {
+                OrbitError::InvalidInput(
+                    "planning duel winner marker requires `arbiter_agent_cli` when `planning_duel_roles` are unavailable".to_string(),
+                )
+            })?,
+            model: marker_model.ok_or_else(|| {
+                OrbitError::InvalidInput(
+                    "planning duel winner marker requires `arbiter_model` when `planning_duel_roles` are unavailable".to_string(),
+                )
+            })?,
+        }),
+    }
+}
+
+fn normalize_winner_marker(
+    marker: PlanningDuelWinnerMarker,
+    plan_artifacts: &[PlanningDuelPlanArtifact],
+    roles: Option<&PlanningRoles>,
+) -> Result<PlanningDuelWinnerArtifact, OrbitError> {
+    let PlanningDuelWinnerMarker {
+        winner_agent_cli,
+        winner_model,
+        artifact_path,
+        arbiter_agent_cli,
+        arbiter_model,
+        arbiter_rationale,
+    } = marker;
+
+    let winner_agent_cli = required_winner_marker_field(&winner_agent_cli, "winner_agent_cli")?;
+    let winner_model = required_winner_marker_field(&winner_model, "winner_model")?;
+    let arbiter_rationale = required_winner_marker_field(&arbiter_rationale, "arbiter_rationale")?;
+    let winner_assignment = PlanningRoleAssignment {
+        agent: winner_agent_cli.clone(),
+        model: winner_model.clone(),
+    };
+
+    let artifact_path = match optional_winner_marker_field(artifact_path, "artifact_path")? {
+        Some(artifact_path) => {
+            let winning_artifact = plan_artifact_by_path(plan_artifacts, &artifact_path)?;
+            if winning_artifact.author != winner_assignment {
+                return Err(OrbitError::InvalidInput(format!(
+                    "winner artifact `{}` is authored by {}/{} instead of declared winner {}/{}",
+                    artifact_path,
+                    winning_artifact.author.agent,
+                    winning_artifact.author.model,
+                    winner_assignment.agent,
+                    winner_assignment.model
+                )));
+            }
+            artifact_path
+        }
+        None => plan_artifact_for_assignment(plan_artifacts, &winner_assignment)?
+            .path
+            .clone(),
+    };
+
+    let arbiter_agent_cli = optional_winner_marker_field(arbiter_agent_cli, "arbiter_agent_cli")?;
+    let arbiter_model = optional_winner_marker_field(arbiter_model, "arbiter_model")?;
+    let arbiter = arbiter_identity_from_marker(arbiter_agent_cli, arbiter_model, roles)?;
+
+    Ok(PlanningDuelWinnerArtifact {
+        winner_agent_cli,
+        winner_model,
+        artifact_path,
+        arbiter_agent_cli: arbiter.agent,
+        arbiter_model: arbiter.model,
+        arbiter_rationale,
+    })
+}
+
 pub(super) fn winner_artifact_from_artifacts(
     artifacts: &[TaskArtifact],
+    roles: Option<&PlanningRoles>,
 ) -> Result<PlanningDuelWinnerArtifact, OrbitError> {
     let winner_artifact = artifacts
         .iter()
@@ -138,9 +262,14 @@ pub(super) fn winner_artifact_from_artifacts(
                 "missing required task artifact `{WINNER_ARTIFACT_PATH}`"
             ))
         })?;
-    serde_json::from_str::<PlanningDuelWinnerArtifact>(&winner_artifact.content).map_err(|err| {
-        OrbitError::InvalidInput(format!("invalid `{WINNER_ARTIFACT_PATH}` payload: {err}"))
-    })
+    let marker = serde_json::from_str::<PlanningDuelWinnerMarker>(&winner_artifact.content)
+        .map_err(|err| {
+            OrbitError::InvalidInput(format!(
+                "invalid `{WINNER_ARTIFACT_PATH}` marker payload: {err}"
+            ))
+        })?;
+    let plan_artifacts = planning_duel_plan_artifacts(artifacts)?;
+    normalize_winner_marker(marker, &plan_artifacts, roles)
 }
 
 pub(super) fn winner_assignment(winner: &PlanningDuelWinnerArtifact) -> PlanningRoleAssignment {
@@ -267,7 +396,11 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
 ) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
     let artifacts = host.get_task_artifacts(task_id)?;
-    let winner = winner_artifact_from_artifacts(&artifacts)?;
+    let roles = input
+        .get("planning_duel_roles")
+        .map(|_| parse_planning_duel_roles(input))
+        .transpose()?;
+    let winner = winner_artifact_from_artifacts(&artifacts, roles.as_ref())?;
     let winner_assignment = winner_assignment(&winner);
     let plan_artifacts = planning_duel_plan_artifacts(&artifacts)?;
     let winning_artifact = plan_artifact_by_path(&plan_artifacts, &winner.artifact_path)?;
@@ -281,20 +414,8 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
             winner_assignment.model
         )));
     }
-    let winner_slot = if input.get("planning_duel_roles").is_some() {
-        let roles = parse_planning_duel_roles(input)?;
-        if winner.arbiter_agent_cli != roles.arbiter.agent
-            || winner.arbiter_model != roles.arbiter.model
-        {
-            return Err(OrbitError::InvalidInput(format!(
-                "winner artifact arbiter {}/{} does not match recorded arbiter {}/{}",
-                winner.arbiter_agent_cli,
-                winner.arbiter_model,
-                roles.arbiter.agent,
-                roles.arbiter.model
-            )));
-        }
-        Some(winner_slot_for_assignment(&roles, &winner_assignment)?)
+    let winner_slot = if let Some(roles) = roles.as_ref() {
+        Some(winner_slot_for_assignment(roles, &winner_assignment)?)
     } else {
         None
     };
@@ -341,4 +462,161 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
         "winner_agent_cli": winner_assignment.agent,
         "winner_model": winner_assignment.model,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orbit_common::types::{PlanningRoleAssignment, PlanningRoles, TaskArtifact};
+    use serde_json::{Value, json};
+
+    fn task_artifact(path: &str, content: String) -> TaskArtifact {
+        TaskArtifact {
+            path: path.to_string(),
+            content,
+        }
+    }
+
+    fn plan_artifact(path: &str, agent: &str, model: &str) -> TaskArtifact {
+        task_artifact(
+            path,
+            format!("*authored by: {agent} / {model}*\n## Plan\nDo the thing.\n"),
+        )
+    }
+
+    fn winner_marker(payload: Value) -> TaskArtifact {
+        task_artifact(WINNER_ARTIFACT_PATH, payload.to_string())
+    }
+
+    fn planning_roles() -> PlanningRoles {
+        PlanningRoles {
+            planner_a: PlanningRoleAssignment {
+                agent: "codex".to_string(),
+                model: "gpt-5.5".to_string(),
+            },
+            planner_b: PlanningRoleAssignment {
+                agent: "claude".to_string(),
+                model: "claude-opus-4-7".to_string(),
+            },
+            arbiter: PlanningRoleAssignment {
+                agent: "gemini".to_string(),
+                model: "gemini-3.1-pro".to_string(),
+            },
+        }
+    }
+
+    fn planning_duel_artifacts(winner_payload: Value) -> Vec<TaskArtifact> {
+        vec![
+            plan_artifact("planning-duel/codex-gpt-5.5.md", "codex", "gpt-5.5"),
+            plan_artifact(
+                "planning-duel/claude-claude-opus-4-7.md",
+                "claude",
+                "claude-opus-4-7",
+            ),
+            winner_marker(winner_payload),
+        ]
+    }
+
+    fn invalid_input_message(error: OrbitError) -> String {
+        match error {
+            OrbitError::InvalidInput(message) => message,
+            other => panic!("expected invalid input, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn planning_duel_winner_marker_omits_derived_fields_when_roles_available() {
+        let roles = planning_roles();
+        let artifacts = planning_duel_artifacts(json!({
+            "id": "T20260427-47",
+            "winner_agent_cli": "claude",
+            "winner_model": "claude-opus-4-7",
+            "arbiter_rationale": "Claude provided a more comprehensive diagnosis."
+        }));
+
+        let winner = winner_artifact_from_artifacts(&artifacts, Some(&roles))
+            .expect("minimal winner marker should normalize");
+
+        assert_eq!(winner.winner_agent_cli, "claude");
+        assert_eq!(winner.winner_model, "claude-opus-4-7");
+        assert_eq!(
+            winner.artifact_path,
+            "planning-duel/claude-claude-opus-4-7.md"
+        );
+        assert_eq!(winner.arbiter_agent_cli, "gemini");
+        assert_eq!(winner.arbiter_model, "gemini-3.1-pro");
+        assert_eq!(
+            winner.arbiter_rationale,
+            "Claude provided a more comprehensive diagnosis."
+        );
+    }
+
+    #[test]
+    fn planning_duel_winner_marker_rejects_explicit_arbiter_mismatch() {
+        let roles = planning_roles();
+        let artifacts = planning_duel_artifacts(json!({
+            "winner_agent_cli": "claude",
+            "winner_model": "claude-opus-4-7",
+            "arbiter_agent_cli": "codex",
+            "arbiter_model": "gpt-5.5",
+            "arbiter_rationale": "Claude provided a more comprehensive diagnosis."
+        }));
+
+        let message = invalid_input_message(
+            winner_artifact_from_artifacts(&artifacts, Some(&roles))
+                .expect_err("arbiter mismatch should be rejected"),
+        );
+
+        assert!(
+            message.contains(
+                "winner artifact arbiter codex/gpt-5.5 does not match recorded arbiter gemini/gemini-3.1-pro"
+            ),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn planning_duel_winner_marker_requires_arbiter_identity_without_roles() {
+        let artifacts = planning_duel_artifacts(json!({
+            "winner_agent_cli": "claude",
+            "winner_model": "claude-opus-4-7",
+            "arbiter_rationale": "Claude provided a more comprehensive diagnosis."
+        }));
+
+        let message = invalid_input_message(
+            winner_artifact_from_artifacts(&artifacts, None)
+                .expect_err("arbiter identity cannot be inferred without roles"),
+        );
+
+        assert!(
+            message.contains(
+                "planning duel winner marker requires `arbiter_agent_cli` when `planning_duel_roles` are unavailable"
+            ),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn planning_duel_winner_marker_accepts_legacy_full_payload_without_roles() {
+        let artifacts = planning_duel_artifacts(json!({
+            "winner_agent_cli": "claude",
+            "winner_model": "claude-opus-4-7",
+            "artifact_path": "planning-duel/claude-claude-opus-4-7.md",
+            "arbiter_agent_cli": "gemini",
+            "arbiter_model": "gemini-3.1-pro",
+            "arbiter_rationale": "Claude provided a more comprehensive diagnosis."
+        }));
+
+        let winner = winner_artifact_from_artifacts(&artifacts, None)
+            .expect("legacy full winner payload should still normalize");
+
+        assert_eq!(winner.winner_agent_cli, "claude");
+        assert_eq!(winner.winner_model, "claude-opus-4-7");
+        assert_eq!(
+            winner.artifact_path,
+            "planning-duel/claude-claude-opus-4-7.md"
+        );
+        assert_eq!(winner.arbiter_agent_cli, "gemini");
+        assert_eq!(winner.arbiter_model, "gemini-3.1-pro");
+    }
 }

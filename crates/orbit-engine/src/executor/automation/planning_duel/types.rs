@@ -32,6 +32,19 @@ pub(super) struct PlanningDuelWinnerArtifact {
     pub arbiter_rationale: String,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(super) struct PlanningDuelWinnerMarker {
+    pub winner_agent_cli: String,
+    pub winner_model: String,
+    #[serde(default)]
+    pub artifact_path: Option<String>,
+    #[serde(default)]
+    pub arbiter_agent_cli: Option<String>,
+    #[serde(default)]
+    pub arbiter_model: Option<String>,
+    pub arbiter_rationale: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PlanningDuelPlanArtifact {
     pub path: String,

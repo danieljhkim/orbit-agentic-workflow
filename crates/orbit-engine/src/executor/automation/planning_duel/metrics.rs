@@ -241,7 +241,7 @@ pub(super) fn record_planning_duel_scores<H: RuntimeHost + TaskHost + ?Sized>(
     };
     let artifacts = host.get_task_artifacts(task_id)?;
     let plan_artifacts = planning_duel_plan_artifacts(&artifacts)?;
-    let winner = winner_artifact_from_artifacts(&artifacts)?;
+    let winner = winner_artifact_from_artifacts(&artifacts, Some(&roles))?;
     let winner_assignment = winner_assignment(&winner);
     let winner_plan = plan_artifact_by_path(&plan_artifacts, &winner.artifact_path)?;
     if winner_plan.author != winner_assignment {

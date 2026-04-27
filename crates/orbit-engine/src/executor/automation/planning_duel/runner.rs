@@ -85,7 +85,8 @@ pub(crate) fn run_planning_duel<H: RuntimeHost + TaskHost + Sync + ?Sized>(
     )?;
 
     let artifacts_after_arbiter = host.get_task_artifacts(task_id)?;
-    let winner = artifacts::winner_artifact_from_artifacts(&artifacts_after_arbiter)?;
+    let winner =
+        artifacts::winner_artifact_from_artifacts(&artifacts_after_arbiter, Some(&planning_roles))?;
 
     let role_metrics = BTreeMap::from([
         (
