@@ -75,6 +75,15 @@ fn main() {
             }
             return;
         }
+        Commands::Mcp(McpCommand {
+            command: McpSubcommand::Serve(args),
+        }) => {
+            if let Err(err) = args.execute_without_runtime(root_override.as_deref()) {
+                print_error(&err, tool_run_json_output);
+                std::process::exit(1);
+            }
+            return;
+        }
         _ => {}
     }
 

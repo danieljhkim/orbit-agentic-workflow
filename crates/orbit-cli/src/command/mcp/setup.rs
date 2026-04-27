@@ -2,12 +2,21 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use orbit_core::OrbitError;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use toml::{Table as TomlTable, Value as TomlValue};
 
 use super::{ORBIT_MCP_SERVER_ID, safe_mcp_tool_names};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum ScopeArg {
+    /// Write to user-level config (~/.claude, ~/.codex, ~/.gemini). Default.
+    #[default]
+    Home,
+    /// Write to repo-local config (.mcp.json, .codex/, .gemini/).
+    Workspace,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum McpProvider {
@@ -107,6 +116,9 @@ enum ProviderSelectionMode {
 pub struct InitArgs {
     #[command(flatten)]
     pub providers: ProviderSelectionArgs,
+    /// Scope for written config files (home: user-level, workspace: repo-local).
+    #[arg(long, value_enum, default_value_t = ScopeArg::Home)]
+    pub scope: ScopeArg,
 }
 
 impl InitArgs {
@@ -118,6 +130,7 @@ impl InitArgs {
             &layout.orbit_root,
             self.providers.resolve_mode()?,
             env_home_dir(),
+            self.scope,
         )?;
         print_action_summary(McpAction::Init, &providers);
         Ok(())
@@ -129,6 +142,9 @@ impl InitArgs {
 pub struct RemoveArgs {
     #[command(flatten)]
     pub providers: ProviderSelectionArgs,
+    /// Scope for config files to remove (home: user-level, workspace: repo-local).
+    #[arg(long, value_enum, default_value_t = ScopeArg::Home)]
+    pub scope: ScopeArg,
 }
 
 impl RemoveArgs {
@@ -140,6 +156,7 @@ impl RemoveArgs {
             &layout.orbit_root,
             self.providers.resolve_mode()?,
             env_home_dir(),
+            self.scope,
         )?;
         print_action_summary(McpAction::Remove, &providers);
         Ok(())
@@ -150,12 +167,16 @@ pub(crate) fn init_auto_for_workspace(
     repo_root: &Path,
     orbit_root: &Path,
 ) -> Result<Vec<String>, OrbitError> {
+    // `orbit workspace init` is a per-workspace setup, so its auto-MCP path
+    // writes repo-local files. `orbit mcp init` separately defaults to home
+    // scope for users who want a single global registration.
     run_action(
         McpAction::Init,
         repo_root,
         orbit_root,
         ProviderSelectionMode::Auto,
         env_home_dir(),
+        ScopeArg::Workspace,
     )
     .map(|providers| {
         providers
@@ -219,21 +240,86 @@ fn run_action(
     orbit_root: &Path,
     selection: ProviderSelectionMode,
     home_dir: Option<PathBuf>,
+    scope: ScopeArg,
 ) -> Result<Vec<McpProvider>, OrbitError> {
     let providers = resolve_providers(selection, repo_root, home_dir.as_deref());
     for provider in &providers {
+        let target = ConfigTarget::resolve(scope, provider, repo_root, home_dir.as_deref())?;
         match (action, provider) {
-            (McpAction::Init, McpProvider::Claude) => apply_claude_init(repo_root, orbit_root)?,
-            (McpAction::Remove, McpProvider::Claude) => {
-                apply_claude_remove(repo_root, orbit_root)?
-            }
-            (McpAction::Init, McpProvider::Codex) => apply_codex_init(repo_root, orbit_root)?,
-            (McpAction::Remove, McpProvider::Codex) => apply_codex_remove(repo_root)?,
-            (McpAction::Init, McpProvider::Gemini) => apply_gemini_init(repo_root, orbit_root)?,
-            (McpAction::Remove, McpProvider::Gemini) => apply_gemini_remove(repo_root)?,
+            (McpAction::Init, McpProvider::Claude) => apply_claude_init(&target)?,
+            (McpAction::Remove, McpProvider::Claude) => apply_claude_remove(&target)?,
+            (McpAction::Init, McpProvider::Codex) => apply_codex_init(&target)?,
+            (McpAction::Remove, McpProvider::Codex) => apply_codex_remove(&target)?,
+            (McpAction::Init, McpProvider::Gemini) => apply_gemini_init(&target)?,
+            (McpAction::Remove, McpProvider::Gemini) => apply_gemini_remove(&target)?,
         }
     }
+    let _ = orbit_root;
     Ok(providers)
+}
+
+/// Resolved file targets for a single provider+scope.
+///
+/// Each provider has at most two writable files: the MCP server registry
+/// (`mcp_path`) and an optional permissions/settings file (`settings_path`,
+/// only used by Claude today). Scope determines whether they live in HOME
+/// or in the repo.
+struct ConfigTarget {
+    mcp_path: PathBuf,
+    settings_path: Option<PathBuf>,
+}
+
+impl ConfigTarget {
+    fn resolve(
+        scope: ScopeArg,
+        provider: &McpProvider,
+        repo_root: &Path,
+        home_dir: Option<&Path>,
+    ) -> Result<Self, OrbitError> {
+        match (scope, provider) {
+            (ScopeArg::Home, McpProvider::Claude) => {
+                let home = require_home_dir(home_dir)?;
+                Ok(Self {
+                    mcp_path: home.join(".claude").join(".mcp.json"),
+                    settings_path: Some(home.join(".claude").join("settings.json")),
+                })
+            }
+            (ScopeArg::Workspace, McpProvider::Claude) => Ok(Self {
+                mcp_path: repo_root.join(".mcp.json"),
+                settings_path: Some(repo_root.join(".claude").join("settings.json")),
+            }),
+            (ScopeArg::Home, McpProvider::Codex) => {
+                let home = require_home_dir(home_dir)?;
+                Ok(Self {
+                    mcp_path: home.join(".codex").join("config.toml"),
+                    settings_path: None,
+                })
+            }
+            (ScopeArg::Workspace, McpProvider::Codex) => Ok(Self {
+                mcp_path: repo_root.join(".codex").join("config.toml"),
+                settings_path: None,
+            }),
+            (ScopeArg::Home, McpProvider::Gemini) => {
+                let home = require_home_dir(home_dir)?;
+                Ok(Self {
+                    mcp_path: home.join(".gemini").join("settings.json"),
+                    settings_path: None,
+                })
+            }
+            (ScopeArg::Workspace, McpProvider::Gemini) => Ok(Self {
+                mcp_path: repo_root.join(".gemini").join("settings.json"),
+                settings_path: None,
+            }),
+        }
+    }
+}
+
+fn require_home_dir(home_dir: Option<&Path>) -> Result<&Path, OrbitError> {
+    home_dir.ok_or_else(|| {
+        OrbitError::InvalidInput(
+            "cannot resolve HOME/USERPROFILE for MCP integration files".to_string(),
+        )
+    })
 }
 
 fn resolve_providers(
@@ -282,28 +368,24 @@ fn print_action_summary(action: McpAction, providers: &[McpProvider]) {
     println!("mcp {}: {}", action.label(), labels);
 }
 
-fn apply_claude_init(repo_root: &Path, orbit_root: &Path) -> Result<(), OrbitError> {
-    let mcp_path = repo_root.join(".mcp.json");
-    let mut root = load_json_object(&mcp_path)?;
+fn apply_claude_init(target: &ConfigTarget) -> Result<(), OrbitError> {
+    let mut root = load_json_object(&target.mcp_path)?;
     let mcp_servers = ensure_json_object(&mut root, "mcpServers")?;
-    mcp_servers.insert(
-        ORBIT_MCP_SERVER_ID.to_string(),
-        claude_mcp_server_value(orbit_root),
-    );
-    write_json_object(&mcp_path, &root)?;
+    mcp_servers.insert(ORBIT_MCP_SERVER_ID.to_string(), claude_mcp_server_value());
+    write_json_object(&target.mcp_path, &root)?;
 
-    let settings_path = repo_root.join(".claude").join("settings.json");
-    let mut settings = load_json_object(&settings_path)?;
-    let permissions = ensure_json_object(&mut settings, "permissions")?;
-    let allow = ensure_json_string_array(permissions, "allow")?;
-    merge_unique_strings(allow, claude_safe_permissions());
-    write_json_object(&settings_path, &settings)?;
+    if let Some(settings_path) = &target.settings_path {
+        let mut settings = load_json_object(settings_path)?;
+        let permissions = ensure_json_object(&mut settings, "permissions")?;
+        let allow = ensure_json_string_array(permissions, "allow")?;
+        merge_unique_strings(allow, claude_safe_permissions());
+        write_json_object(settings_path, &settings)?;
+    }
     Ok(())
 }
 
-fn apply_claude_remove(repo_root: &Path, _orbit_root: &Path) -> Result<(), OrbitError> {
-    let mcp_path = repo_root.join(".mcp.json");
-    let mut root = load_json_object(&mcp_path)?;
+fn apply_claude_remove(target: &ConfigTarget) -> Result<(), OrbitError> {
+    let mut root = load_json_object(&target.mcp_path)?;
     if let Some(mcp_servers) = root
         .get_mut("mcpServers")
         .and_then(JsonValue::as_object_mut)
@@ -313,49 +395,48 @@ fn apply_claude_remove(repo_root: &Path, _orbit_root: &Path) -> Result<(), Orbit
             root.remove("mcpServers");
         }
     }
-    write_or_remove_json_object(&mcp_path, &root)?;
+    write_or_remove_json_object(&target.mcp_path, &root)?;
 
-    let settings_path = repo_root.join(".claude").join("settings.json");
-    let mut settings = load_json_object(&settings_path)?;
-    let mut remove_keys = Vec::new();
-    if let Some(permissions) = settings
-        .get_mut("permissions")
-        .and_then(JsonValue::as_object_mut)
-    {
-        if let Some(allow) = permissions
-            .get_mut("allow")
-            .and_then(JsonValue::as_array_mut)
+    if let Some(settings_path) = &target.settings_path {
+        let mut settings = load_json_object(settings_path)?;
+        let mut remove_keys = Vec::new();
+        if let Some(permissions) = settings
+            .get_mut("permissions")
+            .and_then(JsonValue::as_object_mut)
         {
-            remove_known_strings(allow, &claude_safe_permissions());
-            if allow.is_empty() {
-                permissions.remove("allow");
+            if let Some(allow) = permissions
+                .get_mut("allow")
+                .and_then(JsonValue::as_array_mut)
+            {
+                remove_known_strings(allow, &claude_safe_permissions());
+                if allow.is_empty() {
+                    permissions.remove("allow");
+                }
+            }
+            if permissions.is_empty() {
+                remove_keys.push("permissions".to_string());
             }
         }
-        if permissions.is_empty() {
-            remove_keys.push("permissions".to_string());
+        for key in remove_keys {
+            settings.remove(&key);
         }
+        write_or_remove_json_object(settings_path, &settings)?;
     }
-    for key in remove_keys {
-        settings.remove(&key);
-    }
-    write_or_remove_json_object(&settings_path, &settings)?;
     Ok(())
 }
 
-fn apply_codex_init(repo_root: &Path, orbit_root: &Path) -> Result<(), OrbitError> {
-    let config_path = repo_root.join(".codex").join("config.toml");
-    let mut root = load_toml_table(&config_path)?;
+fn apply_codex_init(target: &ConfigTarget) -> Result<(), OrbitError> {
+    let mut root = load_toml_table(&target.mcp_path)?;
     let mcp_servers = ensure_toml_table(&mut root, "mcp_servers")?;
     mcp_servers.insert(
         ORBIT_MCP_SERVER_ID.to_string(),
-        TomlValue::Table(codex_mcp_server_table(repo_root, orbit_root)),
+        TomlValue::Table(codex_mcp_server_table()),
     );
-    write_toml_table(&config_path, &root)
+    write_toml_table(&target.mcp_path, &root)
 }
 
-fn apply_codex_remove(repo_root: &Path) -> Result<(), OrbitError> {
-    let config_path = repo_root.join(".codex").join("config.toml");
-    let mut root = load_toml_table(&config_path)?;
+fn apply_codex_remove(target: &ConfigTarget) -> Result<(), OrbitError> {
+    let mut root = load_toml_table(&target.mcp_path)?;
     if let Some(mcp_servers) = root
         .get_mut("mcp_servers")
         .and_then(TomlValue::as_table_mut)
@@ -365,23 +446,18 @@ fn apply_codex_remove(repo_root: &Path) -> Result<(), OrbitError> {
             root.remove("mcp_servers");
         }
     }
-    write_or_remove_toml_table(&config_path, &root)
+    write_or_remove_toml_table(&target.mcp_path, &root)
 }
 
-fn apply_gemini_init(repo_root: &Path, orbit_root: &Path) -> Result<(), OrbitError> {
-    let settings_path = repo_root.join(".gemini").join("settings.json");
-    let mut settings = load_json_object(&settings_path)?;
+fn apply_gemini_init(target: &ConfigTarget) -> Result<(), OrbitError> {
+    let mut settings = load_json_object(&target.mcp_path)?;
     let mcp_servers = ensure_json_object(&mut settings, "mcpServers")?;
-    mcp_servers.insert(
-        ORBIT_MCP_SERVER_ID.to_string(),
-        gemini_mcp_server_value(repo_root, orbit_root),
-    );
-    write_json_object(&settings_path, &settings)
+    mcp_servers.insert(ORBIT_MCP_SERVER_ID.to_string(), gemini_mcp_server_value());
+    write_json_object(&target.mcp_path, &settings)
 }
 
-fn apply_gemini_remove(repo_root: &Path) -> Result<(), OrbitError> {
-    let settings_path = repo_root.join(".gemini").join("settings.json");
-    let mut settings = load_json_object(&settings_path)?;
+fn apply_gemini_remove(target: &ConfigTarget) -> Result<(), OrbitError> {
+    let mut settings = load_json_object(&target.mcp_path)?;
     if let Some(mcp_servers) = settings
         .get_mut("mcpServers")
         .and_then(JsonValue::as_object_mut)
@@ -391,10 +467,14 @@ fn apply_gemini_remove(repo_root: &Path) -> Result<(), OrbitError> {
             settings.remove("mcpServers");
         }
     }
-    write_or_remove_json_object(&settings_path, &settings)
+    write_or_remove_json_object(&target.mcp_path, &settings)
 }
 
-fn claude_mcp_server_value(orbit_root: &Path) -> JsonValue {
+fn server_args() -> Vec<String> {
+    vec!["mcp".to_string(), "serve".to_string()]
+}
+
+fn claude_mcp_server_value() -> JsonValue {
     JsonValue::Object(JsonMap::from_iter([
         (
             "command".to_string(),
@@ -402,17 +482,12 @@ fn claude_mcp_server_value(orbit_root: &Path) -> JsonValue {
         ),
         (
             "args".to_string(),
-            JsonValue::Array(vec![
-                JsonValue::String("mcp".to_string()),
-                JsonValue::String("serve".to_string()),
-                JsonValue::String("--root".to_string()),
-                JsonValue::String(orbit_root.display().to_string()),
-            ]),
+            JsonValue::Array(server_args().into_iter().map(JsonValue::String).collect()),
         ),
     ]))
 }
 
-fn gemini_mcp_server_value(repo_root: &Path, orbit_root: &Path) -> JsonValue {
+fn gemini_mcp_server_value() -> JsonValue {
     JsonValue::Object(JsonMap::from_iter([
         (
             "command".to_string(),
@@ -420,21 +495,12 @@ fn gemini_mcp_server_value(repo_root: &Path, orbit_root: &Path) -> JsonValue {
         ),
         (
             "args".to_string(),
-            JsonValue::Array(vec![
-                JsonValue::String("mcp".to_string()),
-                JsonValue::String("serve".to_string()),
-                JsonValue::String("--root".to_string()),
-                JsonValue::String(orbit_root.display().to_string()),
-            ]),
-        ),
-        (
-            "cwd".to_string(),
-            JsonValue::String(repo_root.display().to_string()),
+            JsonValue::Array(server_args().into_iter().map(JsonValue::String).collect()),
         ),
     ]))
 }
 
-fn codex_mcp_server_table(repo_root: &Path, orbit_root: &Path) -> TomlTable {
+fn codex_mcp_server_table() -> TomlTable {
     TomlTable::from_iter([
         (
             "command".to_string(),
@@ -442,16 +508,7 @@ fn codex_mcp_server_table(repo_root: &Path, orbit_root: &Path) -> TomlTable {
         ),
         (
             "args".to_string(),
-            TomlValue::Array(vec![
-                TomlValue::String("mcp".to_string()),
-                TomlValue::String("serve".to_string()),
-                TomlValue::String("--root".to_string()),
-                TomlValue::String(orbit_root.display().to_string()),
-            ]),
-        ),
-        (
-            "cwd".to_string(),
-            TomlValue::String(repo_root.display().to_string()),
+            TomlValue::Array(server_args().into_iter().map(TomlValue::String).collect()),
         ),
         ("enabled".to_string(), TomlValue::Boolean(true)),
     ])
@@ -639,9 +696,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        McpAction, McpProvider, ProviderSelectionArgs, ProviderSelectionMode,
-        auto_detected_providers, claude_permission_name, codex_mcp_server_table,
-        gemini_mcp_server_value, run_action,
+        McpAction, McpProvider, ProviderSelectionArgs, ProviderSelectionMode, ScopeArg,
+        auto_detected_providers, claude_mcp_server_value, claude_permission_name,
+        codex_mcp_server_table, gemini_mcp_server_value, run_action,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -710,19 +767,17 @@ mod tests {
         let repo = tempdir().expect("repo tempdir");
         let home = tempdir().expect("home tempdir");
         std::fs::create_dir_all(home.path().join(".gemini")).expect("create gemini home dir");
-        std::fs::write(
-            home.path().join(".gemini").join("settings.json"),
-            "{}\n",
-        )
-        .expect("write global gemini settings");
+        std::fs::write(home.path().join(".gemini").join("settings.json"), "{}\n")
+            .expect("write global gemini settings");
 
         let providers = auto_detected_providers(repo.path(), Some(home.path()));
         assert_eq!(providers, vec![McpProvider::Gemini]);
     }
 
     #[test]
-    fn claude_init_and_remove_preserve_unrelated_entries() {
+    fn claude_workspace_scope_init_and_remove_preserve_unrelated_entries() {
         let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
         std::fs::create_dir_all(repo.path().join(".claude")).expect("create .claude");
         std::fs::write(
             repo.path().join(".mcp.json"),
@@ -743,7 +798,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Claude]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init claude");
         assert_eq!(providers, vec![McpProvider::Claude]);
@@ -754,6 +810,12 @@ mod tests {
         .expect("parse mcp");
         assert!(mcp["mcpServers"]["orbit"].is_object());
         assert!(mcp["mcpServers"]["other"].is_object());
+        let args = mcp["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("args array");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
 
         let settings: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(repo.path().join(".claude").join("settings.json"))
@@ -776,7 +838,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Claude]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("remove claude");
 
@@ -786,25 +849,154 @@ mod tests {
         .expect("parse mcp");
         assert!(mcp["mcpServers"]["orbit"].is_null());
         assert!(mcp["mcpServers"]["other"].is_object());
-
-        let settings: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(repo.path().join(".claude").join("settings.json"))
-                .expect("read settings"),
-        )
-        .expect("parse settings");
-        let allow = settings["permissions"]["allow"]
-            .as_array()
-            .expect("allow array");
-        assert_eq!(
-            allow,
-            &vec![serde_json::Value::String("OtherTool".to_string())]
-        );
-        assert_eq!(settings["theme"], "light");
     }
 
     #[test]
-    fn codex_init_and_remove_preserve_unrelated_entries() {
+    fn home_scope_writes_to_home_paths_and_skips_repo_files() {
         let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![
+                McpProvider::Claude,
+                McpProvider::Codex,
+                McpProvider::Gemini,
+            ]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Home,
+        )
+        .expect("init home scope");
+
+        let claude_mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".claude").join(".mcp.json"))
+                .expect("read claude home mcp"),
+        )
+        .expect("parse claude mcp");
+        let claude_args = claude_mcp["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("claude args");
+        assert_eq!(claude_args.len(), 2);
+        assert_eq!(claude_args[0].as_str(), Some("mcp"));
+        assert_eq!(claude_args[1].as_str(), Some("serve"));
+        assert!(claude_mcp["mcpServers"]["orbit"]["cwd"].is_null());
+
+        let claude_settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".claude").join("settings.json"))
+                .expect("read claude home settings"),
+        )
+        .expect("parse claude settings");
+        let allow = claude_settings["permissions"]["allow"]
+            .as_array()
+            .expect("allow array");
+        assert!(
+            allow
+                .iter()
+                .any(|item| item == &claude_permission_name("orbit.task.show"))
+        );
+
+        let codex_config = std::fs::read_to_string(home.path().join(".codex").join("config.toml"))
+            .expect("read codex home config");
+        let codex_parsed: toml::Value = toml::from_str(&codex_config).expect("parse codex");
+        let codex_args = codex_parsed["mcp_servers"]["orbit"]["args"]
+            .as_array()
+            .expect("codex args");
+        assert_eq!(codex_args.len(), 2);
+        assert_eq!(codex_args[0].as_str(), Some("mcp"));
+        assert_eq!(codex_args[1].as_str(), Some("serve"));
+        assert!(codex_parsed["mcp_servers"]["orbit"].get("cwd").is_none());
+
+        let gemini_settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".gemini").join("settings.json"))
+                .expect("read gemini home settings"),
+        )
+        .expect("parse gemini");
+        let gemini_args = gemini_settings["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("gemini args");
+        assert_eq!(gemini_args.len(), 2);
+        assert!(gemini_settings["mcpServers"]["orbit"]["cwd"].is_null());
+
+        // Repo-local files should not have been touched.
+        assert!(!repo.path().join(".mcp.json").exists());
+        assert!(!repo.path().join(".codex").join("config.toml").exists());
+        assert!(!repo.path().join(".gemini").join("settings.json").exists());
+        assert!(!repo.path().join(".claude").join("settings.json").exists());
+    }
+
+    #[test]
+    fn home_scope_remove_strips_only_orbit_entries() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(home.path().join(".codex")).expect("create codex home");
+        std::fs::write(
+            home.path().join(".codex").join("config.toml"),
+            "model = \"gpt-5.4\"\n[mcp_servers.other]\ncommand = \"demo\"\n",
+        )
+        .expect("write codex config");
+        std::fs::create_dir_all(home.path().join(".gemini")).expect("create gemini home");
+        std::fs::write(
+            home.path().join(".gemini").join("settings.json"),
+            "{\n  \"theme\": \"dark\",\n  \"mcpServers\": {\n    \"other\": {\"command\": \"demo\"}\n  }\n}\n",
+        )
+        .expect("write gemini settings");
+
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Codex, McpProvider::Gemini]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Home,
+        )
+        .expect("init home scope");
+
+        run_action(
+            McpAction::Remove,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Codex, McpProvider::Gemini]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Home,
+        )
+        .expect("remove home scope");
+
+        let codex_config = std::fs::read_to_string(home.path().join(".codex").join("config.toml"))
+            .expect("read codex");
+        let codex_parsed: toml::Value = toml::from_str(&codex_config).expect("parse codex");
+        assert_eq!(codex_parsed["model"].as_str(), Some("gpt-5.4"));
+        assert_eq!(
+            codex_parsed["mcp_servers"]["other"]["command"].as_str(),
+            Some("demo")
+        );
+        assert!(
+            codex_parsed["mcp_servers"]
+                .as_table()
+                .and_then(|t| t.get("orbit"))
+                .is_none()
+        );
+
+        let gemini_settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".gemini").join("settings.json"))
+                .expect("read gemini"),
+        )
+        .expect("parse gemini");
+        assert_eq!(gemini_settings["theme"], "dark");
+        assert!(gemini_settings["mcpServers"]["orbit"].is_null());
+        assert!(gemini_settings["mcpServers"]["other"].is_object());
+    }
+
+    #[test]
+    fn codex_workspace_scope_init_and_remove_preserve_unrelated_entries() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
         std::fs::create_dir_all(repo.path().join(".codex")).expect("create .codex");
         std::fs::write(
             repo.path().join(".codex").join("config.toml"),
@@ -819,7 +1011,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Codex]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init codex");
 
@@ -831,10 +1024,13 @@ mod tests {
             parsed["mcp_servers"]["orbit"]["command"].as_str(),
             Some("orbit")
         );
-        assert_eq!(
-            parsed["mcp_servers"]["orbit"]["cwd"].as_str(),
-            Some(repo.path().display().to_string().as_str())
-        );
+        let args = parsed["mcp_servers"]["orbit"]["args"]
+            .as_array()
+            .expect("args array");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+        assert!(parsed["mcp_servers"]["orbit"].get("cwd").is_none());
         assert_eq!(
             parsed["mcp_servers"]["other"]["command"].as_str(),
             Some("demo")
@@ -845,7 +1041,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Codex]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("remove codex");
 
@@ -866,8 +1063,9 @@ mod tests {
     }
 
     #[test]
-    fn gemini_init_and_remove_preserve_unrelated_entries() {
+    fn gemini_workspace_scope_init_and_remove_preserve_unrelated_entries() {
         let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
         std::fs::create_dir_all(repo.path().join(".gemini")).expect("create .gemini");
         std::fs::write(
             repo.path().join(".gemini").join("settings.json"),
@@ -882,7 +1080,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Gemini]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init gemini");
 
@@ -894,17 +1093,21 @@ mod tests {
         assert_eq!(settings["theme"], "dark");
         assert!(settings["mcpServers"]["orbit"].is_object());
         assert!(settings["mcpServers"]["other"].is_object());
-        assert_eq!(
-            settings["mcpServers"]["orbit"]["cwd"].as_str(),
-            Some(repo.path().display().to_string().as_str())
-        );
+        assert!(settings["mcpServers"]["orbit"]["cwd"].is_null());
+        let args = settings["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("args array");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
 
         run_action(
             McpAction::Remove,
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Gemini]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("remove gemini");
 
@@ -919,8 +1122,9 @@ mod tests {
     }
 
     #[test]
-    fn explicit_codex_init_is_idempotent() {
+    fn workspace_scope_codex_init_is_idempotent() {
         let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
         let orbit_root = repo.path().join(".orbit");
         std::fs::create_dir_all(&orbit_root).expect("create orbit root");
 
@@ -929,7 +1133,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Codex]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init codex");
         let first = std::fs::read_to_string(repo.path().join(".codex").join("config.toml"))
@@ -940,7 +1145,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Codex]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init codex again");
         let second = std::fs::read_to_string(repo.path().join(".codex").join("config.toml"))
@@ -950,8 +1156,9 @@ mod tests {
     }
 
     #[test]
-    fn explicit_gemini_init_is_idempotent() {
+    fn workspace_scope_gemini_init_is_idempotent() {
         let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
         let orbit_root = repo.path().join(".orbit");
         std::fs::create_dir_all(&orbit_root).expect("create orbit root");
 
@@ -960,7 +1167,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Gemini]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init gemini");
         let first = std::fs::read_to_string(repo.path().join(".gemini").join("settings.json"))
@@ -971,7 +1179,8 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Gemini]),
-            None,
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
         )
         .expect("init gemini again");
         let second = std::fs::read_to_string(repo.path().join(".gemini").join("settings.json"))
@@ -981,39 +1190,45 @@ mod tests {
     }
 
     #[test]
-    fn codex_server_table_targets_workspace_root() {
-        let repo = tempdir().expect("repo tempdir");
-        let orbit_root = repo.path().join(".orbit");
-        let table = codex_mcp_server_table(repo.path(), &orbit_root);
-        let args = table["args"].as_array().expect("args array");
-        assert_eq!(args.len(), 4);
-        assert_eq!(args[0].as_str(), Some("mcp"));
-        assert_eq!(args[1].as_str(), Some("serve"));
-        assert_eq!(args[2].as_str(), Some("--root"));
-        assert_eq!(
-            args[3].as_str(),
-            Some(orbit_root.display().to_string().as_str())
-        );
+    fn server_value_builders_emit_mcp_serve_only() {
+        let claude = claude_mcp_server_value();
+        let claude_args = claude["args"].as_array().expect("claude args");
+        assert_eq!(claude_args.len(), 2);
+        assert_eq!(claude_args[0].as_str(), Some("mcp"));
+        assert_eq!(claude_args[1].as_str(), Some("serve"));
+
+        let gemini = gemini_mcp_server_value();
+        let gemini_args = gemini["args"].as_array().expect("gemini args");
+        assert_eq!(gemini_args.len(), 2);
+        assert!(gemini.get("cwd").is_none());
+
+        let codex = codex_mcp_server_table();
+        let codex_args = codex["args"].as_array().expect("codex args");
+        assert_eq!(codex_args.len(), 2);
+        assert!(codex.get("cwd").is_none());
+        assert_eq!(codex["enabled"].as_bool(), Some(true));
     }
 
     #[test]
-    fn gemini_server_value_targets_workspace_root_and_repo_cwd() {
+    fn home_scope_without_home_dir_errors() {
         let repo = tempdir().expect("repo tempdir");
         let orbit_root = repo.path().join(".orbit");
-        let value = gemini_mcp_server_value(repo.path(), &orbit_root);
-        let args = value["args"].as_array().expect("args array");
-        assert_eq!(args.len(), 4);
-        assert_eq!(args[0].as_str(), Some("mcp"));
-        assert_eq!(args[1].as_str(), Some("serve"));
-        assert_eq!(args[2].as_str(), Some("--root"));
-        assert_eq!(
-            args[3].as_str(),
-            Some(orbit_root.display().to_string().as_str())
-        );
-        assert_eq!(
-            value["cwd"].as_str(),
-            Some(repo.path().display().to_string().as_str())
-        );
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        let err = run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Claude]),
+            None,
+            ScopeArg::Home,
+        )
+        .expect_err("home scope without home dir should fail");
+
+        assert!(matches!(
+            err,
+            orbit_core::OrbitError::InvalidInput(message) if message.contains("HOME")
+        ));
     }
 
     #[test]

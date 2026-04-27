@@ -39,6 +39,7 @@ use crate::context::OrbitStores;
 pub(crate) use orbit_tool_host::build_orbit_tool_host;
 pub(crate) use resolve::{
     resolve_bootstrap_data_root, resolve_global_root, resolve_initialize_data_root,
+    try_resolve_initialized_data_root,
 };
 pub(crate) use store_delegates::TaskRecordUpdateParams;
 
@@ -60,6 +61,24 @@ impl OrbitRuntime {
         let (global_root, workspace_root) = Self::resolve_roots_for_cwd(&cwd, root_override)?;
         ensure_orbit_root_initialized(&global_root, &workspace_root)?;
         Self::from_roots(&global_root, &workspace_root)
+    }
+
+    /// Initialize a runtime against an already-initialized workspace, returning
+    /// `Ok(None)` when no initialized workspace is discovered from cwd.
+    ///
+    /// Unlike [`Self::initialize_with_root_override`], this does not bootstrap
+    /// a new `.orbit/` directory. Intended for long-running services like
+    /// `orbit mcp serve` that may be invoked from arbitrary directories and
+    /// must not silently materialize workspace state.
+    pub fn try_initialize_existing(
+        root_override: Option<&Path>,
+    ) -> Result<Option<Self>, OrbitError> {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let Some(workspace_root) = try_resolve_initialized_data_root(&cwd, root_override)? else {
+            return Ok(None);
+        };
+        let global_root = resolve_global_root()?;
+        Ok(Some(Self::from_roots(&global_root, &workspace_root)?))
     }
 
     pub fn resolve_roots_for_cwd(

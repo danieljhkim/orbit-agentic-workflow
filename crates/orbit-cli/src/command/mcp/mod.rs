@@ -7,6 +7,7 @@
 
 mod setup;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use clap::{Args, Subcommand};
@@ -101,15 +102,15 @@ pub enum McpSubcommand {
 }
 
 impl Execute for McpSubcommand {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+    fn execute(self, _runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
-            // `init` and `remove` are dispatched runtime-free via main.rs's
+            // All MCP subcommands are dispatched runtime-free via main.rs's
             // pattern match before runtime initialization. They reach this
             // path only if invoked indirectly (currently never), so use the
             // same runtime-less call chain for safety.
             Self::Init(args) => args.execute_without_runtime(None),
             Self::Remove(args) => args.execute_without_runtime(None),
-            Self::Serve(args) => args.execute(runtime),
+            Self::Serve(args) => args.execute_without_runtime(None),
         }
     }
 }
@@ -118,11 +119,20 @@ impl Execute for McpSubcommand {
 #[command(about = "Serve the Orbit tool registry over Model Context Protocol")]
 pub struct ServeArgs {}
 
-impl Execute for ServeArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let host: Arc<dyn McpHost> = Arc::new(RuntimeMcpHost {
-            runtime: runtime.clone(),
-        });
+impl ServeArgs {
+    pub fn execute_without_runtime(self, root_override: Option<&Path>) -> Result<(), OrbitError> {
+        let host: Arc<dyn McpHost> = match OrbitRuntime::try_initialize_existing(root_override)? {
+            Some(runtime) => Arc::new(RuntimeMcpHost { runtime }),
+            None => {
+                let cwd = std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "<unknown>".to_string());
+                eprintln!(
+                    "orbit mcp serve: no initialized Orbit workspace discovered from {cwd}; serving empty tool surface"
+                );
+                Arc::new(EmptyMcpHost)
+            }
+        };
 
         let tokio_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -163,6 +173,21 @@ impl McpHost for RuntimeMcpHost {
     fn call_tool(&self, name: &str, input: Value) -> Result<Value, OrbitError> {
         ensure_mcp_tool_exposed(name)?;
         self.runtime.execute_tool_command(name, input, None, None)
+    }
+}
+
+/// MCP host returned when no initialized Orbit workspace is discoverable.
+/// Keeps the stdio transport alive so clients see an empty `tools/list`
+/// instead of a connection error.
+struct EmptyMcpHost;
+
+impl McpHost for EmptyMcpHost {
+    fn list_tool_schemas(&self) -> Vec<ToolSchema> {
+        Vec::new()
+    }
+
+    fn call_tool(&self, name: &str, _input: Value) -> Result<Value, OrbitError> {
+        Err(OrbitError::ToolNotFound(name.to_string()))
     }
 }
 

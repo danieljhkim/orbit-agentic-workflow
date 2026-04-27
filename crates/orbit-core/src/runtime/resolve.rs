@@ -231,6 +231,57 @@ fn resolve_root_path_value(raw: &str, base_dir: &Path) -> Result<PathBuf, OrbitE
     paths::resolve_path_value(raw, base_dir, "root path")
 }
 
+/// Like [`resolve_initialize_data_root`] but never falls through to the
+/// `<cwd>/.orbit` bootstrap fallback. Returns `Ok(None)` when no initialized
+/// workspace is discovered anywhere in the chain.
+///
+/// Explicit roots (`--root`, `ORBIT_ROOT`) keep their `RequireInitialized`
+/// semantics: pointing at an uninitialized path is still a hard error, since
+/// the user explicitly asked for that root.
+pub(crate) fn try_resolve_initialized_data_root(
+    cwd: &Path,
+    root_override: Option<&Path>,
+) -> Result<Option<PathBuf>, OrbitError> {
+    if let Some(root) = root_override {
+        let root = resolve_explicit_root_path_value(
+            &root.to_string_lossy(),
+            cwd,
+            ExplicitRootMode::RequireInitialized,
+        )?;
+        return Ok(Some(log_resolved_data_root(cwd, "explicit_root", root)));
+    }
+
+    if let Ok(explicit) = std::env::var("ORBIT_ROOT")
+        && !explicit.trim().is_empty()
+    {
+        let root =
+            resolve_explicit_root_path_value(&explicit, cwd, ExplicitRootMode::RequireInitialized)?;
+        return Ok(Some(log_resolved_data_root(cwd, "orbit_root_env", root)));
+    }
+
+    if let Some(orbit_dir) = find_main_worktree_orbit_dir(cwd)
+        && is_initialized_orbit_root(&orbit_dir)
+    {
+        let root = resolve_orbit_dir_candidate(&orbit_dir)?;
+        return Ok(Some(log_resolved_data_root(cwd, "git_worktree_main", root)));
+    }
+
+    if let Some(ws) = resolve_from_path_override(cwd)
+        && is_initialized_orbit_root(&ws)
+    {
+        return Ok(Some(log_resolved_data_root(cwd, "path_override", ws)));
+    }
+
+    if let Some(orbit_dir) = find_orbit_dir_walk_up(cwd)
+        && is_initialized_orbit_root(&orbit_dir)
+    {
+        let root = resolve_orbit_dir_candidate(&orbit_dir)?;
+        return Ok(Some(log_resolved_data_root(cwd, "walk_up", root)));
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
@@ -397,6 +448,102 @@ mod tests {
         let resolved = resolve_initialize_data_root(&nested, None).expect("resolve walk-up root");
 
         assert_eq!(resolved, orbit_root);
+    }
+
+    #[test]
+    fn try_resolve_returns_none_outside_orbit_workspace() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let nowhere = tempdir().expect("nowhere tempdir");
+
+        let resolved = try_resolve_initialized_data_root(nowhere.path(), None)
+            .expect("try_resolve completes without error");
+
+        assert!(resolved.is_none());
+        assert!(!nowhere.path().join(".orbit").exists());
+    }
+
+    #[test]
+    fn try_resolve_finds_initialized_workspace_via_walk_up() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let repo = tempdir().expect("repo tempdir");
+        let nested = repo.path().join("a").join("b");
+        fs::create_dir_all(&nested).expect("create nested dir");
+        let orbit_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&orbit_root);
+
+        let resolved = try_resolve_initialized_data_root(&nested, None)
+            .expect("try_resolve completes without error");
+
+        assert_eq!(resolved, Some(orbit_root));
+    }
+
+    #[test]
+    fn try_resolve_finds_main_worktree_orbit_for_linked_worktree() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let main_repo = tempdir().expect("main repo tempdir");
+        let worktree = tempdir().expect("worktree tempdir");
+        seed_fake_git_worktree(main_repo.path(), worktree.path());
+        let main_orbit = main_repo.path().join(".orbit");
+        seed_initialized_workspace_root(&main_orbit);
+
+        let resolved = try_resolve_initialized_data_root(worktree.path(), None)
+            .expect("try_resolve completes without error");
+
+        assert_eq!(resolved, Some(main_orbit));
+    }
+
+    #[test]
+    fn try_resolve_returns_none_when_main_worktree_orbit_is_uninitialized() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let main_repo = tempdir().expect("main repo tempdir");
+        let worktree = tempdir().expect("worktree tempdir");
+        seed_fake_git_worktree(main_repo.path(), worktree.path());
+        // No `.orbit/` exists at all — main worktree resolution finds the
+        // path but it's uninitialized, so try_resolve falls through.
+
+        let resolved = try_resolve_initialized_data_root(worktree.path(), None)
+            .expect("try_resolve completes without error");
+
+        assert!(resolved.is_none());
+        assert!(!main_repo.path().join(".orbit").exists());
+        assert!(!worktree.path().join(".orbit").exists());
+    }
+
+    #[test]
+    fn try_resolve_honors_initialized_root_override() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let repo = tempdir().expect("repo tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        seed_initialized_workspace_root(&orbit_root);
+        let elsewhere = tempdir().expect("elsewhere tempdir");
+
+        let resolved = try_resolve_initialized_data_root(elsewhere.path(), Some(repo.path()))
+            .expect("try_resolve completes without error");
+
+        assert_eq!(resolved, Some(orbit_root));
+    }
+
+    #[test]
+    fn try_resolve_rejects_uninitialized_root_override() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let _env = EnvVarGuard::remove("ORBIT_ROOT");
+        let parent = tempdir().expect("parent tempdir");
+        let bogus = parent.path().join("not-an-orbit-root");
+        fs::create_dir_all(&bogus).expect("create bogus dir");
+
+        let err = try_resolve_initialized_data_root(parent.path(), Some(&bogus))
+            .expect_err("uninitialized override should error");
+
+        assert!(matches!(
+            err,
+            OrbitError::InvalidInput(message) if message.contains("not an Orbit workspace")
+        ));
+        assert!(!bogus.join(".orbit").exists());
     }
 
     fn seed_initialized_workspace_root(path: &Path) {
