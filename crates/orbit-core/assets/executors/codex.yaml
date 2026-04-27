@@ -9,6 +9,7 @@ spec:
     - exec
     - --json
   stdout_format: envelope
+  sandbox: macos-sandbox-exec
   models:
     strong: gpt-5.5
     weak: gpt-5.4-mini

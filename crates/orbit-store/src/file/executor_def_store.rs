@@ -68,6 +68,8 @@ impl ExecutorDefFileStore {
                 models: def.models.clone(),
                 timeout_seconds: def.timeout_seconds,
                 env: def.env.clone(),
+                sandbox: def.sandbox,
+                allow_fallback: def.allow_fallback,
                 created_at: def.created_at,
                 updated_at: def.updated_at,
             },
@@ -101,7 +103,89 @@ fn parse_executor_def(content: &str, label: String) -> Result<ExecutorDef, Orbit
         models: doc.spec.models,
         timeout_seconds: doc.spec.timeout_seconds,
         env: doc.spec.env,
+        sandbox: doc.spec.sandbox,
+        allow_fallback: doc.spec.allow_fallback,
         created_at: doc.spec.created_at,
         updated_at: doc.spec.updated_at,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use orbit_common::types::ExecutorSandboxKind;
+    use orbit_common::types::ExecutorType;
+    use std::collections::HashMap;
+    use tempfile::tempdir;
+
+    fn baseline_def(name: &str) -> ExecutorDef {
+        let now = Utc::now();
+        ExecutorDef {
+            name: name.to_string(),
+            executor_type: ExecutorType::DirectAgent,
+            command: Some(name.to_string()),
+            args: vec!["--flag".to_string()],
+            stdout_format: None,
+            models: HashMap::new(),
+            timeout_seconds: None,
+            env: HashMap::new(),
+            sandbox: None,
+            allow_fallback: false,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn roundtrips_sandbox_and_allow_fallback_fields() {
+        let dir = tempdir().expect("tempdir");
+        let store = ExecutorDefFileStore::new(dir.path().to_path_buf());
+
+        let mut def = baseline_def("claude");
+        def.sandbox = Some(ExecutorSandboxKind::MacosSandboxExec);
+        def.allow_fallback = true;
+        store.upsert_executor_def(&def).expect("upsert");
+
+        let loaded = store
+            .get_executor_def("claude")
+            .expect("get")
+            .expect("present");
+        assert_eq!(loaded.sandbox, Some(ExecutorSandboxKind::MacosSandboxExec));
+        assert!(loaded.allow_fallback);
+    }
+
+    #[test]
+    fn omits_sandbox_fields_when_default() {
+        let dir = tempdir().expect("tempdir");
+        let store = ExecutorDefFileStore::new(dir.path().to_path_buf());
+
+        let def = baseline_def("codex");
+        store.upsert_executor_def(&def).expect("upsert");
+
+        let on_disk = std::fs::read_to_string(dir.path().join("codex.yaml")).expect("read");
+        assert!(
+            !on_disk.contains("sandbox"),
+            "sandbox should be omitted when None: {on_disk}"
+        );
+        assert!(
+            !on_disk.contains("allow_fallback"),
+            "allow_fallback should be omitted when false: {on_disk}"
+        );
+    }
+
+    #[test]
+    fn loads_executor_yaml_with_explicit_sandbox_kind() {
+        let dir = tempdir().expect("tempdir");
+        let yaml = "schemaVersion: 2\nkind: Executor\nmetadata:\n  name: gemini\nspec:\n  executor_type: direct_agent\n  command: gemini\n  args: []\n  sandbox: macos-sandbox-exec\n  allow_fallback: true\n";
+        std::fs::write(dir.path().join("gemini.yaml"), yaml).expect("seed");
+
+        let store = ExecutorDefFileStore::new(dir.path().to_path_buf());
+        let loaded = store
+            .get_executor_def("gemini")
+            .expect("get")
+            .expect("present");
+        assert_eq!(loaded.sandbox, Some(ExecutorSandboxKind::MacosSandboxExec));
+        assert!(loaded.allow_fallback);
+    }
 }

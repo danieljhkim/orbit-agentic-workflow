@@ -128,6 +128,8 @@ fn apply_executor(
         models: doc.spec.models,
         timeout_seconds: doc.spec.timeout_seconds,
         env: doc.spec.env,
+        sandbox: doc.spec.sandbox,
+        allow_fallback: doc.spec.allow_fallback,
         created_at: existing
             .as_ref()
             .map(|executor| executor.created_at)

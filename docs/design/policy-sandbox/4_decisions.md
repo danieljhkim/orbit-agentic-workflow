@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-27
 
 This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by ADR number. New entries follow the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -140,6 +140,24 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 - Today's safety story is "policy at the tool layer" — explicit and documented, but not OS-enforced.
 - Cost: a tool that performs fs work without `enforce_fs_policy` (or a future non-builtin tool) has no exec-level isolation backstop. This is the structural reason §1.1 of [3_vision.md](./3_vision.md) lists real sandboxing as the top open question.
 
+## ADR-011 — `sandbox-exec` wraps cli-backend agent invocations on macOS
+
+**Status:** Accepted · 2026-04 · [T20260427-51]
+
+**Context.** ADR-006 carved CLI backends out of the policy enforcement seam: `tool_allowlist.harness_delegated` is emitted, but the agent's built-in tools (`claude` `Edit` / `Write` / `Bash`, `codex`'s tools, `gemini`'s tools) execute under the orbit process's filesystem rights. Each agent CLI ships its own native isolation primitive — codex `--sandbox`, gemini `-s`, claude nothing — so the architecture's stated "`orbit-exec` owns sandboxing under an `FsProfile`" guarantee was honored asymmetrically and not honored at all for claude. A prompt-injected claude in a worktree could `Bash(rm -rf ...)` outside its declared `fsProfile` and orbit had no answer.
+
+**Decision.** Build `orbit-exec::macos_sandbox` as the single declarative seam: compile a `ResolvedFsProfile` to SBPL and wrap the cli invocation in `sandbox-exec -f <profile>`. Apply uniformly to claude, codex, and gemini via a new `spec.sandbox: macos-sandbox-exec` knob on the executor YAML. When orbit-exec is authoritative, neutralize each cli's native sandbox flag (codex pinned to `--sandbox danger-full-access`, gemini's `-s` / `--sandbox` dropped) so the same constraint isn't double-encoded. Default `allow_fallback: false` (fail-closed when `sandbox-exec` is missing). Layering inner CLI flags alongside the outer sandbox (defense-in-depth) is deferred — v1 picks "one source of truth" first.
+
+The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_executor_sandbox` and compiled to SBPL by orbit-engine just before spawn. orbit-core has no direct edge to orbit-exec; orbit-engine already imports orbit-exec, so SBPL compilation lives close to the spawn site.
+
+**Consequences.**
+- claude now has OS-enforced filesystem narrowing under macOS — not just in-process gates.
+- All three providers share one declarative source of truth (`FsProfile` → SBPL via orbit-exec); operators read one rule set, not three CLI-specific syntaxes.
+- The `allow_fallback` knob lets operators degrade gracefully when `sandbox-exec` is unavailable, but the safe default is fail-closed.
+- Linux (`bwrap`), Docker, network restriction, and activity-level sandbox overrides are explicitly out of scope for v1; the `ExecutorSandboxKind` enum and orbit-exec module layout leave room for `linux-bwrap` to land alongside.
+- SBPL is Apple-deprecated-but-still-shipping (codex itself uses it). v1 accepts that risk.
+- Cost: SBPL writes are static text; complex `denyRead` / `denyModify` rule combinations don't always translate cleanly. The compiler emits a best-effort `subpath` root for each glob, falling back to the longest non-glob prefix. Activities that need precise glob semantics under sandbox should declare profiles with explicit subpath roots.
+
 ---
 
 ## Task References
@@ -150,5 +168,6 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 - **[T20260417-0558-4]** / **[T20260417-0558-5]** — Hardened `orbit-exec` supervision (process-group reaping, signal-pipe handler).
 - **[T20260419-0503]** — Enforced `fsProfiles` across runtime and CLI; introduced `tool_context_for_activity`.
 - **[T20260426-0622]** — Add this design folder and record the initial ADR set.
+- **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS with inner-flag neutralization for codex/gemini.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

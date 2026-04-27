@@ -250,6 +250,8 @@ mod tests {
                 models: HashMap::new(),
                 timeout_seconds: None,
                 env: HashMap::new(),
+                sandbox: None,
+                allow_fallback: false,
                 created_at: now,
                 updated_at: now,
             })

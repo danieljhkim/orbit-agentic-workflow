@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ExecutorType, FsProfile, OrbitError, StdoutFormat};
+use crate::types::{ExecutorSandboxKind, ExecutorType, FsProfile, OrbitError, StdoutFormat};
 
 pub const EXECUTOR_RESOURCE_SCHEMA_VERSION: u32 = 2;
 pub const POLICY_RESOURCE_SCHEMA_VERSION: u32 = 2;
@@ -132,10 +132,18 @@ pub struct ExecutorResourceSpec {
     pub timeout_seconds: Option<u64>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<ExecutorSandboxKind>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub allow_fallback: bool,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 pub type PolicyResource = ResourceEnvelope<PolicyResourceSpec>;

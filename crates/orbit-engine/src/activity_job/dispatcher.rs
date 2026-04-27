@@ -7,7 +7,9 @@ use orbit_common::types::activity_job::V2AuditEventKind;
 use orbit_common::types::activity_job::{
     ActivityV2Spec, AgentLoopSpec, Backend, DeterministicSpec, ShellSpec,
 };
-use orbit_common::types::{InvocationTrace, OrbitError, TokenUsage, ToolCallTrace};
+use orbit_common::types::{
+    ExecutorSandboxKind, InvocationTrace, OrbitError, ResolvedFsProfile, TokenUsage, ToolCallTrace,
+};
 use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, ToolContext};
 use serde_json::Value;
 use thiserror::Error;
@@ -21,6 +23,22 @@ use super::groundhog::run_groundhog_activity;
 pub struct ResolvedCliExecutor {
     pub command: String,
     pub args: Vec<String>,
+}
+
+/// Sandbox descriptor for a CLI invocation. The host resolves the executor's
+/// `sandbox` declaration and the activity's `fsProfile` against the active
+/// policy and workspace root; the engine compiles the OS-specific payload
+/// just before spawn (keeping the orbit-exec dependency local to orbit-engine).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSandbox {
+    /// OS sandbox primitive selected by the executor declaration.
+    pub kind: ExecutorSandboxKind,
+    /// Workspace-absolute resolved `read` / `modify` rules from the activity's
+    /// `FsProfile`. The engine passes this to `orbit_exec::compile_*_profile`
+    /// to produce a kernel-shaped payload.
+    pub fs_profile: ResolvedFsProfile,
+    /// Whether to fall back to bare exec if the OS primitive is unavailable.
+    pub allow_fallback: bool,
 }
 
 /// Orbit-core-owned responsibilities the v2 dispatcher delegates back across
@@ -63,6 +81,21 @@ pub trait V2RuntimeHost: Send + Sync {
     /// rather than living in the static executor definition.
     fn provider_cli_config(&self, _provider: &str) -> HashMap<String, String> {
         HashMap::new()
+    }
+
+    /// Resolve the OS sandbox payload for a CLI invocation. The host reads
+    /// the executor's `sandbox` declaration, materializes the activity's
+    /// `fs_profile` against the active policy, and compiles the result via
+    /// `orbit-exec`. Returns `Ok(None)` when the executor has no sandbox
+    /// declared (today's behavior). Returns a structured error on
+    /// platform mismatch (e.g. `macos-sandbox-exec` on Linux) so the
+    /// activity fails closed at dispatch time.
+    fn resolve_executor_sandbox(
+        &self,
+        _provider: &str,
+        _fs_profile: Option<&str>,
+    ) -> Result<Option<ResolvedSandbox>, DispatchError> {
+        Ok(None)
     }
 
     fn tool_context_for_activity(
@@ -333,7 +366,7 @@ fn run_agent_loop_activity(
             }
             run_agent_loop_via_driver(host, spec, run_id, audit, input, fs_profile)
         }
-        Backend::Cli => run_cli_backend(host, spec, run_id, audit, input),
+        Backend::Cli => run_cli_backend(host, spec, run_id, audit, input, fs_profile),
     }
 }
 

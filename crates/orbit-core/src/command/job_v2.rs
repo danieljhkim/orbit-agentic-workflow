@@ -478,6 +478,8 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
                 models: HashMap::new(),
                 timeout_seconds: None,
                 env: HashMap::new(),
+                sandbox: None,
+                allow_fallback: false,
                 created_at: now,
                 updated_at: now,
             })

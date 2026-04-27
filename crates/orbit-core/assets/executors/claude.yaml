@@ -18,6 +18,7 @@ spec:
     - --tools
     - Read,Write,Edit,Grep,Glob,Bash,TodoWrite,Agent
   stdout_format: envelope
+  sandbox: macos-sandbox-exec
   models:
     strong: claude-opus-4-7
     weak: claude-sonnet-4-6

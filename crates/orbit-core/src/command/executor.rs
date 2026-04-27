@@ -90,6 +90,8 @@ fn parse_default_executor(name: &str, yaml: &str) -> Result<ExecutorDef, OrbitEr
         models: resource.spec.models,
         timeout_seconds: resource.spec.timeout_seconds,
         env: resource.spec.env,
+        sandbox: resource.spec.sandbox,
+        allow_fallback: resource.spec.allow_fallback,
         created_at: resource.spec.created_at,
         updated_at: resource.spec.updated_at,
     })

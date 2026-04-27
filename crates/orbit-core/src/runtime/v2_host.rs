@@ -14,13 +14,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use orbit_common::types::{
-    AuditEventStatus, ExecutorType, Role, TaskStatus, TaskType, UNRESTRICTED_FS_PROFILE,
-    prune_missing_context_files,
+    AuditEventStatus, ExecutorSandboxKind, ExecutorType, ResolvedFsProfile, Role, TaskStatus,
+    TaskType, UNRESTRICTED_FS_PROFILE, prune_missing_context_files,
 };
 use orbit_common::types::{InvocationTrace, Task};
 use orbit_common::utility::path::workspace_relative_paths_overlap;
 use orbit_common::utility::selector::canonical_selector_in_workspace;
-use orbit_engine::activity_job::{DispatchError, ResolvedCliExecutor, V2RuntimeHost};
+use orbit_engine::activity_job::{
+    DispatchError, ResolvedCliExecutor, ResolvedSandbox, V2RuntimeHost,
+};
 use orbit_engine::{EnvironmentHost, StateExecutionContext, execute_deterministic_action};
 use orbit_store::{AuditEventInsertParams, InvocationInsertParams, Store, token_scoreboard};
 use orbit_tools::{FsAuditLogger, ToolContext};
@@ -697,6 +699,49 @@ impl V2RuntimeHost for OrbitRuntime {
         EnvironmentHost::agent_provider_config(self)
     }
 
+    fn resolve_executor_sandbox(
+        &self,
+        provider: &str,
+        fs_profile: Option<&str>,
+    ) -> Result<Option<ResolvedSandbox>, DispatchError> {
+        let executor = self.get_executor_def(provider).map_err(|err| {
+            DispatchError::CliInvocationFailed(format!(
+                "load executor `{provider}` for sandbox resolution: {err}"
+            ))
+        })?;
+        let Some(executor) = executor else {
+            return Ok(None);
+        };
+        let Some(kind) = executor.sandbox else {
+            return Ok(None);
+        };
+        match kind {
+            ExecutorSandboxKind::MacosSandboxExec => {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    return Err(DispatchError::CliInvocationFailed(format!(
+                        "executor `{provider}` declares sandbox `macos-sandbox-exec` but current platform is `{}`",
+                        std::env::consts::OS
+                    )));
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    let resolved =
+                        resolve_fs_profile_absolute(self, fs_profile).map_err(|err| {
+                            DispatchError::CliInvocationFailed(format!(
+                                "resolve fsProfile for sandbox: {err}"
+                            ))
+                        })?;
+                    Ok(Some(ResolvedSandbox {
+                        kind,
+                        fs_profile: resolved,
+                        allow_fallback: executor.allow_fallback,
+                    }))
+                }
+            }
+        }
+    }
+
     fn tool_context_for_activity(
         &self,
         fs_profile: Option<&str>,
@@ -945,6 +990,62 @@ fn existing_lock_context_files(task: &Task) -> Vec<String> {
     kept
 }
 
+/// Resolve the activity's fsProfile against the active policy, then expand
+/// every workspace-relative `read` / `modify` rule to an absolute path under
+/// the workspace root. The kernel's `subpath` predicate is meaningless for
+/// relative paths, so this is the layer that turns Orbit's policy into a
+/// payload `sandbox-exec` can enforce.
+fn resolve_fs_profile_absolute(
+    runtime: &OrbitRuntime,
+    fs_profile: Option<&str>,
+) -> Result<ResolvedFsProfile, orbit_common::types::OrbitError> {
+    let profile_name = fs_profile.unwrap_or(UNRESTRICTED_FS_PROFILE);
+    let resolved = runtime
+        .policy_engine()
+        .def()
+        .effective_profile(profile_name)?;
+    let workspace_root = runtime
+        .paths()
+        .repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| runtime.paths().repo_root.clone());
+    let workspace_str = workspace_root.display().to_string();
+
+    Ok(ResolvedFsProfile {
+        name: resolved.name,
+        read: resolved
+            .read
+            .into_iter()
+            .map(|rule| absolutize_rule(&workspace_str, &rule))
+            .collect(),
+        modify: resolved
+            .modify
+            .into_iter()
+            .map(|rule| absolutize_rule(&workspace_str, &rule))
+            .collect(),
+    })
+}
+
+fn absolutize_rule(workspace_root: &str, rule: &str) -> String {
+    let (negated, body) = rule
+        .strip_prefix('!')
+        .map(|rest| (true, rest))
+        .unwrap_or((false, rule));
+    let trimmed = body.trim_start_matches("./");
+    let absolute = if PathBuf::from(trimmed).is_absolute() {
+        trimmed.to_string()
+    } else if trimmed.is_empty() || trimmed == "." {
+        workspace_root.to_string()
+    } else {
+        format!("{}/{}", workspace_root.trim_end_matches('/'), trimmed)
+    };
+    if negated {
+        format!("!{absolute}")
+    } else {
+        absolute
+    }
+}
+
 fn task_root_id(task: &Task, task_lookup: &BTreeMap<String, Task>) -> String {
     let mut path = vec![task.id.clone()];
     let mut root_id = task.id.clone();
@@ -1005,6 +1106,84 @@ mod tests {
         }
     }
 
+    fn seeded_runtime_with_executor(
+        sandbox: Option<orbit_common::types::ExecutorSandboxKind>,
+    ) -> OrbitRuntime {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let now = Utc::now();
+        runtime
+            .upsert_executor_def(&ExecutorDef {
+                name: "codex".to_string(),
+                executor_type: ExecutorType::DirectAgent,
+                command: Some("codex".to_string()),
+                args: vec!["exec".to_string(), "--json".to_string()],
+                stdout_format: None,
+                models: HashMap::new(),
+                timeout_seconds: None,
+                env: HashMap::new(),
+                sandbox,
+                allow_fallback: false,
+                created_at: now,
+                updated_at: now,
+            })
+            .expect("seed executor");
+        runtime
+    }
+
+    #[test]
+    fn resolve_executor_sandbox_returns_none_when_executor_has_no_sandbox() {
+        let runtime = seeded_runtime_with_executor(None);
+        let resolved = runtime
+            .resolve_executor_sandbox("codex", None)
+            .expect("resolve");
+        assert!(resolved.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_executor_sandbox_returns_descriptor_with_absolutized_modify_paths() {
+        let runtime = seeded_runtime_with_executor(Some(
+            orbit_common::types::ExecutorSandboxKind::MacosSandboxExec,
+        ));
+        let resolved = runtime
+            .resolve_executor_sandbox("codex", None)
+            .expect("resolve")
+            .expect("descriptor");
+        assert_eq!(
+            resolved.kind,
+            orbit_common::types::ExecutorSandboxKind::MacosSandboxExec
+        );
+        let workspace_root = runtime
+            .paths()
+            .repo_root
+            .canonicalize()
+            .unwrap_or_else(|_| runtime.paths().repo_root.clone());
+        let workspace_str = workspace_root.display().to_string();
+        for entry in &resolved.fs_profile.modify {
+            let body = entry.strip_prefix('!').unwrap_or(entry);
+            assert!(
+                body.starts_with('/') || body == workspace_str,
+                "modify entry must be absolutized: {entry}"
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn resolve_executor_sandbox_errors_on_non_macos_platform() {
+        let runtime = seeded_runtime_with_executor(Some(
+            orbit_common::types::ExecutorSandboxKind::MacosSandboxExec,
+        ));
+        let err = runtime
+            .resolve_executor_sandbox("codex", None)
+            .expect_err("expected platform-mismatch error");
+        let message = format!("{err}");
+        assert!(
+            message.contains("macos-sandbox-exec"),
+            "error must name the sandbox kind: {message}"
+        );
+    }
+
     #[test]
     fn cli_executor_resolution_preserves_registered_static_args() {
         let runtime = OrbitRuntime::in_memory().expect("build runtime");
@@ -1019,6 +1198,8 @@ mod tests {
                 models: HashMap::new(),
                 timeout_seconds: None,
                 env: HashMap::new(),
+                sandbox: None,
+                allow_fallback: false,
                 created_at: now,
                 updated_at: now,
             })

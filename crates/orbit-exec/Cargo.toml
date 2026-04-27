@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 orbit-common = { path = "../orbit-common" }
+tempfile = "3"
 wait-timeout.workspace = true
 
 [target.'cfg(unix)'.dependencies]

@@ -21,6 +21,7 @@
 //! pattern covering provider keys that may appear in argv when a user
 //! mis-configures a provider.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -29,12 +30,18 @@ use std::time::{Duration, Instant};
 
 use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest, parse_and_validate_response};
 use orbit_common::types::activity_job::{AgentLoopSpec, V2AuditEventKind};
-use orbit_common::types::{ExecutionResult, InvocationTrace};
+use orbit_common::types::{ExecutionResult, ExecutorSandboxKind, InvocationTrace, OrbitError};
 use orbit_common::utility::redaction::PatternRedactor;
+use orbit_exec::{
+    compile_macos_sandbox_profile, sandbox_exec_available, spawn_under_macos_sandbox,
+};
 use serde_json::Value;
+use tempfile::NamedTempFile;
 
 use super::audit_writer::V2AuditWriter;
-use super::dispatcher::{DispatchError, DispatchInvocationTrace, DispatchOutcome, V2RuntimeHost};
+use super::dispatcher::{
+    DispatchError, DispatchInvocationTrace, DispatchOutcome, ResolvedSandbox, V2RuntimeHost,
+};
 
 /// Default wall-clock timeout when `AgentLoopSpec::wall_clock_timeout_seconds`
 /// is zero. Matches §7.6 guidance: CLI subprocesses must have a mandatory
@@ -47,9 +54,11 @@ pub fn run_cli_backend(
     run_id: &str,
     audit: Arc<V2AuditWriter>,
     input: &Value,
+    fs_profile: Option<&str>,
 ) -> Result<DispatchOutcome, DispatchError> {
     let provider = spec.provider.as_str().to_string();
-    let cli_executor = host.resolve_cli_executor(&provider)?;
+    let mut cli_executor = host.resolve_cli_executor(&provider)?;
+    let sandbox = host.resolve_executor_sandbox(&provider, fs_profile)?;
     let prompt = user_prompt_from_input(input)?;
     let timeout_seconds = if spec.wall_clock_timeout_seconds == 0 {
         DEFAULT_WALL_CLOCK_TIMEOUT_SECONDS
@@ -74,7 +83,20 @@ pub fn run_cli_backend(
     let envelope_json = serde_json::to_vec(&envelope)
         .map_err(|err| DispatchError::CliInvocationFailed(format!("serialize envelope: {err}")))?;
 
-    let provider_config = host.provider_cli_config(&provider);
+    let mut provider_config = host.provider_cli_config(&provider);
+
+    // Inner-sandbox neutralization. When orbit-exec wraps the CLI we are the
+    // single source of truth for filesystem enforcement; the agent's own
+    // sandbox flag would either double-encode the same constraint or
+    // contradict it. We neutralize per-provider rather than layering:
+    //   - codex: pin `--sandbox danger-full-access` so codex behaves
+    //     transparently inside our outer sandbox.
+    //   - gemini: drop `-s` / `--sandbox` from the executor's static args.
+    //   - claude: nothing to do; claude has no OS-level sandbox flag.
+    if sandbox.is_some() {
+        neutralize_inner_sandbox(&provider, &mut provider_config, &mut cli_executor.args);
+    }
+
     let config = AgentConfig::from_cli_config(
         cli_executor.command.clone(),
         spec.model.as_deref(),
@@ -101,12 +123,14 @@ pub fn run_cli_backend(
     subprocess_args.extend(cli_executor.args.iter().cloned());
     subprocess_args.extend(invocation.args.iter().cloned());
 
-    let mut argv = Vec::with_capacity(subprocess_args.len() + 1);
-    argv.push(invocation.program.clone());
-    argv.extend(subprocess_args.iter().cloned());
-
+    // The audit argv reflects what actually runs. Under sandbox-exec the
+    // parent is `sandbox-exec -f <profile.sb> <program> <args...>`; under
+    // bare exec it's `<program> <args...>`. The redactor still scrubs the
+    // child's program name + args so secrets in argv stay redacted.
     let redaction = PatternRedactor::with_argv_secrets();
-    let argv_redacted: Vec<String> = argv.iter().map(|a| redaction.apply_str(a)).collect();
+    let audit_argv =
+        audit_argv_for_dispatch(&invocation.program, &subprocess_args, sandbox.as_ref());
+    let argv_redacted: Vec<String> = audit_argv.iter().map(|a| redaction.apply_str(a)).collect();
 
     let stdin_blob_ref = audit.write_blob(&invocation.stdin);
 
@@ -127,6 +151,7 @@ pub fn run_cli_backend(
         &provider,
         run_id,
         task_id_from_input(input),
+        sandbox.as_ref(),
     )
     .map_err(|err| DispatchError::CliInvocationFailed(err.to_string()))?;
 
@@ -250,6 +275,154 @@ pub(super) fn task_id_from_input(input: &Value) -> Option<&str> {
 
 type SpawnOutput = (Vec<u8>, Vec<u8>, Option<i32>, Duration, bool);
 
+/// Build the argv we audit-log. When wrapped, the parent process the kernel
+/// sees is `sandbox-exec`, so we prepend `sandbox-exec -f <profile_path>` to
+/// the child program. The profile path is the literal `<profile.sb>` because
+/// the real path is a tempfile created at spawn time and only meaningful to
+/// the kernel — the placeholder keeps the audit record stable across runs.
+fn audit_argv_for_dispatch(
+    program: &str,
+    args: &[String],
+    sandbox: Option<&ResolvedSandbox>,
+) -> Vec<String> {
+    match sandbox {
+        Some(sb) if sb.kind == ExecutorSandboxKind::MacosSandboxExec => {
+            let mut out = Vec::with_capacity(args.len() + 4);
+            out.push("sandbox-exec".to_string());
+            out.push("-f".to_string());
+            out.push("<profile.sb>".to_string());
+            out.push(program.to_string());
+            out.extend(args.iter().cloned());
+            out
+        }
+        _ => {
+            let mut out = Vec::with_capacity(args.len() + 1);
+            out.push(program.to_string());
+            out.extend(args.iter().cloned());
+            out
+        }
+    }
+}
+
+/// Pin codex's `--sandbox` to `danger-full-access` and drop gemini's `-s` /
+/// `--sandbox` flag so the inner CLI sandbox does not double-encode the
+/// outer orbit-exec sandbox. Claude has no native sandbox flag — nothing to
+/// neutralize.
+fn neutralize_inner_sandbox(
+    provider: &str,
+    provider_config: &mut HashMap<String, String>,
+    static_args: &mut Vec<String>,
+) {
+    match provider {
+        "codex" => {
+            provider_config.insert("sandbox".to_string(), "danger-full-access".to_string());
+        }
+        "gemini" => {
+            *static_args = filter_gemini_inner_sandbox_args(static_args);
+        }
+        _ => {}
+    }
+}
+
+/// Strip gemini's sandbox flags from a static-args vector. `-s` and
+/// `--sandbox` are toggle flags (no value); `--sandbox-image` would take a
+/// value but gemini's sandbox-image is not currently used by orbit and is
+/// out of scope.
+fn filter_gemini_inner_sandbox_args(args: &[String]) -> Vec<String> {
+    args.iter()
+        .filter(|a| a.as_str() != "-s" && a.as_str() != "--sandbox")
+        .cloned()
+        .collect()
+}
+
+#[derive(Debug)]
+struct SpawnedChild {
+    child: Child,
+    /// Sandbox profile tempfile, if any. Held until the supervisor returns
+    /// so the kernel can keep reading the SBPL profile while the child runs.
+    _profile_temp: Option<NamedTempFile>,
+}
+
+fn spawn_child_with_optional_sandbox(
+    program: &str,
+    args: &[String],
+    sandbox: Option<&ResolvedSandbox>,
+) -> Result<SpawnedChild, OrbitError> {
+    match sandbox {
+        Some(sb) if sb.kind == ExecutorSandboxKind::MacosSandboxExec => {
+            spawn_macos_sandboxed(program, args, sb)
+        }
+        Some(_) | None => spawn_bare(program, args),
+    }
+}
+
+fn spawn_bare(program: &str, args: &[String]) -> Result<SpawnedChild, OrbitError> {
+    let child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| OrbitError::Execution(format!("failed to spawn `{program}`: {err}")))?;
+    Ok(SpawnedChild {
+        child,
+        _profile_temp: None,
+    })
+}
+
+fn spawn_macos_sandboxed(
+    program: &str,
+    args: &[String],
+    sandbox: &ResolvedSandbox,
+) -> Result<SpawnedChild, OrbitError> {
+    spawn_macos_sandboxed_with(program, args, sandbox, sandbox_exec_available())
+}
+
+/// Test-friendly variant of [`spawn_macos_sandboxed`]: callers pass an
+/// explicit availability flag instead of probing `PATH`. Production routes
+/// through the public wrapper which always reads the live `PATH`; tests
+/// can assert the fail-closed and fallback branches without mutating
+/// process-global state.
+fn spawn_macos_sandboxed_with(
+    program: &str,
+    args: &[String],
+    sandbox: &ResolvedSandbox,
+    sandbox_exec_present: bool,
+) -> Result<SpawnedChild, OrbitError> {
+    if !sandbox_exec_present {
+        if sandbox.allow_fallback {
+            tracing::warn!(
+                target: "orbit.engine.cli_runner",
+                program = program,
+                "sandbox-exec not available on PATH; falling back to bare exec because executor declares allow_fallback"
+            );
+            return spawn_bare(program, args);
+        }
+        return Err(OrbitError::Execution(
+            "sandbox-exec not available on PATH; declare allow_fallback: true to permit bare exec"
+                .to_string(),
+        ));
+    }
+
+    // SBPL compilation happens at spawn time so the orbit-exec dependency
+    // stays scoped to this crate. The host returns only a descriptor
+    // (`fs_profile` + `kind` + `allow_fallback`) so orbit-core has no
+    // direct edge to orbit-exec.
+    let profile_text = compile_macos_sandbox_profile(&sandbox.fs_profile)?;
+    let (child, profile_temp) = spawn_under_macos_sandbox(
+        &profile_text,
+        program,
+        args,
+        Stdio::piped(),
+        Stdio::piped(),
+        Stdio::piped(),
+    )?;
+    Ok(SpawnedChild {
+        child,
+        _profile_temp: Some(profile_temp),
+    })
+}
+
 fn spawn_with_timeout(
     program: &str,
     args: &[String],
@@ -258,14 +431,14 @@ fn spawn_with_timeout(
     provider: &str,
     job_run_id: &str,
     task_id: Option<&str>,
+    sandbox: Option<&ResolvedSandbox>,
 ) -> Result<SpawnOutput, String> {
     let started = Instant::now();
-    let mut child: Child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    let SpawnedChild {
+        mut child,
+        // The temp profile must outlive the child — drop it after wait.
+        _profile_temp,
+    } = spawn_child_with_optional_sandbox(program, args, sandbox)
         .map_err(|err| format!("spawn {program}: {err}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
@@ -439,6 +612,7 @@ mod tests {
                 "codex",
                 "job-123",
                 Some("T123"),
+                None,
             )
         });
         let (stdout, stderr, exit_code, _duration, timed_out) = result.expect("spawn succeeds");
@@ -473,6 +647,7 @@ mod tests {
                 "codex",
                 "job-redact",
                 Some("TRED"),
+                None,
             )
         });
         let (stdout, stderr, exit_code, _duration, timed_out) = result.expect("spawn succeeds");
@@ -504,17 +679,14 @@ mod tests {
             "codex:gpt-5.5",
             sink_for_writer,
         ));
-        let host = TestHost {
-            command: script.display().to_string(),
-            provider_config: HashMap::new(),
-        };
+        let host = TestHost::with_command(script.display().to_string());
         let spec = test_agent_loop_spec(Duration::from_secs(5));
         let input = serde_json::json!({
             "prompt": "do it",
             "task_id": "TAUDIT"
         });
 
-        let outcome = run_cli_backend(&host, &spec, "job-audit", audit.clone(), &input)
+        let outcome = run_cli_backend(&host, &spec, "job-audit", audit.clone(), &input, None)
             .expect("run succeeds");
 
         assert!(outcome.success);
@@ -575,7 +747,9 @@ mod tests {
         );
         let host = TestHost {
             command: script.display().to_string(),
+            executor_args: Vec::new(),
             provider_config,
+            sandbox: None,
         };
         let spec = test_agent_loop_spec(Duration::from_secs(5));
 
@@ -585,6 +759,7 @@ mod tests {
             "job-config",
             audit.clone(),
             &serde_json::json!({ "prompt": "do it" }),
+            None,
         )
         .expect("run succeeds");
 
@@ -626,6 +801,7 @@ mod tests {
                 "codex",
                 "job-timeout",
                 Some("TTIME"),
+                None,
             )
         });
         let (stdout, stderr, exit_code, _duration, timed_out) = result.expect("spawn succeeds");
@@ -637,6 +813,393 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].field("stream"), Some("stdout"));
         assert_eq!(events[0].field("line"), Some("before timeout"));
+    }
+
+    fn sandbox_for_test() -> ResolvedSandbox {
+        ResolvedSandbox {
+            kind: ExecutorSandboxKind::MacosSandboxExec,
+            fs_profile: orbit_common::types::ResolvedFsProfile {
+                name: "default".to_string(),
+                read: vec!["/tmp".to_string()],
+                modify: vec!["/tmp".to_string()],
+            },
+            allow_fallback: false,
+        }
+    }
+
+    #[test]
+    fn audit_argv_for_dispatch_prepends_sandbox_exec_when_sandbox_active() {
+        let argv = audit_argv_for_dispatch(
+            "/usr/bin/claude",
+            &["-p".to_string(), "hello".to_string()],
+            Some(&sandbox_for_test()),
+        );
+        assert_eq!(
+            argv,
+            vec![
+                "sandbox-exec",
+                "-f",
+                "<profile.sb>",
+                "/usr/bin/claude",
+                "-p",
+                "hello"
+            ]
+        );
+    }
+
+    #[test]
+    fn audit_argv_for_dispatch_returns_bare_when_no_sandbox() {
+        let argv = audit_argv_for_dispatch(
+            "/usr/bin/claude",
+            &["-p".to_string(), "hello".to_string()],
+            None,
+        );
+        assert_eq!(argv, vec!["/usr/bin/claude", "-p", "hello"]);
+    }
+
+    #[test]
+    fn neutralize_inner_sandbox_pins_codex_to_danger_full_access() {
+        let mut config = HashMap::new();
+        config.insert("sandbox".to_string(), "workspace-write".to_string());
+        let mut args = vec!["exec".to_string(), "--json".to_string()];
+        neutralize_inner_sandbox("codex", &mut config, &mut args);
+        assert_eq!(
+            config.get("sandbox").map(String::as_str),
+            Some("danger-full-access"),
+            "codex sandbox should be pinned to danger-full-access when outer sandbox is active"
+        );
+        // Static args are untouched for codex; the sandbox flag flows
+        // through provider_config.
+        assert_eq!(args, vec!["exec", "--json"]);
+    }
+
+    #[test]
+    fn neutralize_inner_sandbox_drops_gemini_sandbox_flags() {
+        let mut config = HashMap::new();
+        let mut args = vec![
+            "--approval-mode".to_string(),
+            "yolo".to_string(),
+            "--sandbox".to_string(),
+            "-s".to_string(),
+            "-o".to_string(),
+            "json".to_string(),
+        ];
+        neutralize_inner_sandbox("gemini", &mut config, &mut args);
+        assert!(
+            !args.iter().any(|a| a == "--sandbox" || a == "-s"),
+            "gemini sandbox flags should be removed: {args:?}"
+        );
+        assert!(args.iter().any(|a| a == "--approval-mode"));
+        assert!(args.iter().any(|a| a == "json"));
+    }
+
+    #[test]
+    fn neutralize_inner_sandbox_leaves_claude_args_unchanged() {
+        let mut config = HashMap::new();
+        let mut args = vec![
+            "-p".to_string(),
+            "--permission-mode".to_string(),
+            "bypassPermissions".to_string(),
+            "--tools".to_string(),
+            "Read,Write,Edit,Bash".to_string(),
+        ];
+        let original = args.clone();
+        neutralize_inner_sandbox("claude", &mut config, &mut args);
+        assert_eq!(
+            args, original,
+            "claude args must be unchanged by neutralization"
+        );
+        assert!(
+            config.is_empty(),
+            "claude provider_config must remain untouched"
+        );
+    }
+
+    #[test]
+    fn spawn_macos_sandboxed_returns_error_when_sandbox_exec_missing_and_fallback_disabled() {
+        let sandbox = sandbox_for_test();
+        let err = spawn_macos_sandboxed_with("/bin/sh", &[], &sandbox, false)
+            .expect_err("expected fallback-disabled error");
+        match err {
+            OrbitError::Execution(msg) => {
+                assert!(
+                    msg.contains("sandbox-exec not available"),
+                    "unexpected error message: {msg}"
+                );
+            }
+            other => panic!("expected Execution error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn spawn_macos_sandboxed_falls_back_to_bare_exec_when_allow_fallback_set() {
+        let sandbox = ResolvedSandbox {
+            allow_fallback: true,
+            ..sandbox_for_test()
+        };
+        let mut spawned = spawn_macos_sandboxed_with(
+            "/bin/sh",
+            &["-c".to_string(), "exit 0".to_string()],
+            &sandbox,
+            false,
+        )
+        .expect("fallback should succeed");
+        // The fallback path returns a SpawnedChild with no profile tempfile
+        // because the sandbox-exec wrapper was bypassed.
+        assert!(spawned._profile_temp.is_none());
+        let _ = spawned.child.wait();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn run_cli_backend_audit_argv_starts_with_sandbox_exec_for_each_provider() {
+        for provider_name in ["claude", "codex", "gemini"] {
+            let temp = tempdir().expect("tempdir");
+            let script = temp.path().join(provider_name);
+            write_executable(
+                &script,
+                "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+            );
+
+            let sink = Arc::new(RecordingSink::default());
+            let sink_for_writer: Arc<dyn AuditSink> = sink;
+            let audit = Arc::new(V2AuditWriter::new(
+                "job-sandbox-shape",
+                &format!("{provider_name}:m"),
+                sink_for_writer,
+            ));
+            let host = TestHost {
+                command: script.display().to_string(),
+                executor_args: Vec::new(),
+                provider_config: HashMap::new(),
+                sandbox: Some(sandbox_for_test()),
+            };
+            let spec = test_agent_loop_spec_for(provider_name, Duration::from_secs(5));
+
+            let outcome = run_cli_backend(
+                &host,
+                &spec,
+                "job-sandbox-shape",
+                audit.clone(),
+                &serde_json::json!({"prompt": "hi"}),
+                None,
+            )
+            .expect("run cli backend");
+            assert!(
+                outcome.success,
+                "provider {provider_name} cli backend failed"
+            );
+
+            let events = audit.events_snapshot().expect("events snapshot");
+            let argv = events
+                .iter()
+                .find_map(|event| match &event.kind {
+                    V2AuditEventKind::CliInvocationStarted { argv_redacted, .. } => {
+                        Some(argv_redacted.clone())
+                    }
+                    _ => None,
+                })
+                .expect("cli.invocation.started event");
+            assert_eq!(
+                &argv[..3],
+                &[
+                    "sandbox-exec".to_string(),
+                    "-f".to_string(),
+                    "<profile.sb>".to_string()
+                ],
+                "provider {provider_name} should log sandbox-exec prefix; argv={argv:?}"
+            );
+            assert_eq!(
+                argv[3],
+                script.display().to_string(),
+                "provider {provider_name} should log program after sandbox prefix"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn run_cli_backend_pins_codex_sandbox_under_outer_wrapper() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("codex");
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+        );
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-codex-pin",
+            "codex:gpt-5.5",
+            sink_for_writer,
+        ));
+        let mut provider_config = HashMap::new();
+        provider_config.insert("sandbox".to_string(), "workspace-write".to_string());
+        let host = TestHost {
+            command: script.display().to_string(),
+            executor_args: Vec::new(),
+            provider_config,
+            sandbox: Some(sandbox_for_test()),
+        };
+        let spec = test_agent_loop_spec_for("codex", Duration::from_secs(5));
+
+        let outcome = run_cli_backend(
+            &host,
+            &spec,
+            "job-codex-pin",
+            audit.clone(),
+            &serde_json::json!({"prompt": "hi"}),
+            None,
+        )
+        .expect("run cli backend");
+        assert!(outcome.success);
+
+        let events = audit.events_snapshot().expect("events snapshot");
+        let argv = events
+            .iter()
+            .find_map(|event| match &event.kind {
+                V2AuditEventKind::CliInvocationStarted { argv_redacted, .. } => {
+                    Some(argv_redacted.clone())
+                }
+                _ => None,
+            })
+            .expect("cli.invocation.started event");
+        let mut idx = None;
+        for (i, value) in argv.iter().enumerate() {
+            if value == "--sandbox" {
+                idx = Some(i);
+                break;
+            }
+        }
+        let i = idx.expect("argv must include --sandbox");
+        assert_eq!(
+            argv.get(i + 1).map(String::as_str),
+            Some("danger-full-access"),
+            "codex --sandbox must be pinned to danger-full-access; argv={argv:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn run_cli_backend_drops_gemini_sandbox_flag_under_outer_wrapper() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("gemini");
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+        );
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-gemini-drop",
+            "gemini:gemini-3.1-pro",
+            sink_for_writer,
+        ));
+        let host = TestHost {
+            command: script.display().to_string(),
+            executor_args: vec![
+                "--approval-mode".to_string(),
+                "yolo".to_string(),
+                "--sandbox".to_string(),
+                "-o".to_string(),
+                "json".to_string(),
+            ],
+            provider_config: HashMap::new(),
+            sandbox: Some(sandbox_for_test()),
+        };
+        let spec = test_agent_loop_spec_for("gemini", Duration::from_secs(5));
+
+        let outcome = run_cli_backend(
+            &host,
+            &spec,
+            "job-gemini-drop",
+            audit.clone(),
+            &serde_json::json!({"prompt": "hi"}),
+            None,
+        )
+        .expect("run cli backend");
+        assert!(outcome.success);
+
+        let events = audit.events_snapshot().expect("events snapshot");
+        let argv = events
+            .iter()
+            .find_map(|event| match &event.kind {
+                V2AuditEventKind::CliInvocationStarted { argv_redacted, .. } => {
+                    Some(argv_redacted.clone())
+                }
+                _ => None,
+            })
+            .expect("cli.invocation.started event");
+        // Skip `sandbox-exec -f <profile.sb> <program>` prefix so the
+        // assertion targets the gemini-side argv.
+        let suffix = &argv[4..];
+        assert!(
+            !suffix.iter().any(|a| a == "--sandbox" || a == "-s"),
+            "gemini argv suffix must not contain --sandbox / -s: {suffix:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn run_cli_backend_leaves_claude_argv_suffix_unchanged_under_sandbox() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("claude");
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+        );
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-claude-passthrough",
+            "claude:claude-opus-4-7",
+            sink_for_writer,
+        ));
+        let claude_static_args = vec![
+            "-p".to_string(),
+            "--permission-mode".to_string(),
+            "bypassPermissions".to_string(),
+            "--output-format".to_string(),
+            "json".to_string(),
+        ];
+        let host = TestHost {
+            command: script.display().to_string(),
+            executor_args: claude_static_args.clone(),
+            provider_config: HashMap::new(),
+            sandbox: Some(sandbox_for_test()),
+        };
+        let spec = test_agent_loop_spec_for("claude", Duration::from_secs(5));
+
+        let outcome = run_cli_backend(
+            &host,
+            &spec,
+            "job-claude-passthrough",
+            audit.clone(),
+            &serde_json::json!({"prompt": "hi"}),
+            None,
+        )
+        .expect("run cli backend");
+        assert!(outcome.success);
+
+        let events = audit.events_snapshot().expect("events snapshot");
+        let argv = events
+            .iter()
+            .find_map(|event| match &event.kind {
+                V2AuditEventKind::CliInvocationStarted { argv_redacted, .. } => {
+                    Some(argv_redacted.clone())
+                }
+                _ => None,
+            })
+            .expect("cli.invocation.started event");
+        let suffix = &argv[4..4 + claude_static_args.len()];
+        assert_eq!(
+            suffix,
+            claude_static_args.as_slice(),
+            "claude static args must pass through unchanged"
+        );
     }
 
     #[test]
@@ -842,7 +1405,20 @@ mod tests {
 
     struct TestHost {
         command: String,
+        executor_args: Vec<String>,
         provider_config: HashMap<String, String>,
+        sandbox: Option<ResolvedSandbox>,
+    }
+
+    impl TestHost {
+        fn with_command(command: String) -> Self {
+            Self {
+                command,
+                executor_args: Vec::new(),
+                provider_config: HashMap::new(),
+                sandbox: None,
+            }
+        }
     }
 
     impl V2RuntimeHost for TestHost {
@@ -866,12 +1442,20 @@ mod tests {
         ) -> Result<ResolvedCliExecutor, DispatchError> {
             Ok(ResolvedCliExecutor {
                 command: self.command.clone(),
-                args: Vec::new(),
+                args: self.executor_args.clone(),
             })
         }
 
         fn provider_cli_config(&self, _provider: &str) -> HashMap<String, String> {
             self.provider_config.clone()
+        }
+
+        fn resolve_executor_sandbox(
+            &self,
+            _provider: &str,
+            _fs_profile: Option<&str>,
+        ) -> Result<Option<ResolvedSandbox>, DispatchError> {
+            Ok(self.sandbox.clone())
         }
 
         fn tool_context_for_activity(
@@ -892,6 +1476,25 @@ mod tests {
             max_iterations: 1,
             backend: Backend::Cli,
             provider: Provider::Codex,
+            wall_clock_timeout_seconds: timeout.as_secs(),
+        }
+    }
+
+    fn test_agent_loop_spec_for(provider: &str, timeout: Duration) -> AgentLoopSpec {
+        let provider = match provider {
+            "claude" => Provider::Claude,
+            "codex" => Provider::Codex,
+            "gemini" => Provider::Gemini,
+            other => panic!("unsupported provider for test: {other}"),
+        };
+        AgentLoopSpec {
+            instruction: String::new(),
+            tools: Vec::new(),
+            on_denial: OnDenial::Terminate,
+            model: None,
+            max_iterations: 1,
+            backend: Backend::Cli,
+            provider,
             wall_clock_timeout_seconds: timeout.as_secs(),
         }
     }

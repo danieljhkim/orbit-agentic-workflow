@@ -28,6 +28,32 @@ impl fmt::Display for ExecutorType {
     }
 }
 
+/// Sandbox primitive applied to a CLI-backend agent invocation. The variant
+/// names a concrete OS primitive; `orbit-exec` selects the implementation.
+///
+/// Today only `macos-sandbox-exec` is wired; a future Linux variant
+/// (`linux-bwrap` or similar) can land alongside without changing the
+/// schema shape.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutorSandboxKind {
+    MacosSandboxExec,
+}
+
+impl ExecutorSandboxKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MacosSandboxExec => "macos-sandbox-exec",
+        }
+    }
+}
+
+impl fmt::Display for ExecutorSandboxKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum StdoutFormat {
@@ -71,8 +97,23 @@ pub struct ExecutorDef {
     pub timeout_seconds: Option<u64>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// OS sandbox primitive to wrap the CLI invocation in. When `None`, the
+    /// CLI is spawned bare (today's behavior). When `Some`, `orbit-exec`
+    /// translates the activity's `FsProfile` into a sandbox payload and
+    /// wraps the spawn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<ExecutorSandboxKind>,
+    /// When `sandbox` is set but the platform's sandbox primitive is
+    /// unavailable (e.g. `sandbox-exec` not on PATH), should the runner
+    /// degrade to bare exec? Default `false` (fail-closed).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub allow_fallback: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl ExecutorDef {

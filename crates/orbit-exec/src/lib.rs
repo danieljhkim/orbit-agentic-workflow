@@ -20,12 +20,16 @@
 //! # Dependency direction
 //! `orbit-types` → `orbit-exec` → orbit-tools
 
+pub mod macos_sandbox;
 pub mod process;
 pub mod result;
 pub mod runner;
 pub mod sandbox;
 mod supervision;
 
+pub use macos_sandbox::{
+    compile_macos_sandbox_profile, sandbox_exec_available, spawn_under_macos_sandbox,
+};
 pub use result::ExecutionResult;
 pub use runner::{EnvironmentMode, ExecRequest, StdinMode, run_process};
 pub use sandbox::{NoSandbox, Sandbox};
