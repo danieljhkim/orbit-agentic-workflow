@@ -223,16 +223,10 @@ fn run_action(
     let providers = resolve_providers(selection, repo_root, home_dir.as_deref());
     for provider in &providers {
         match (action, provider) {
-            (McpAction::Init, McpProvider::Claude) => apply_claude_init(
-                repo_root,
-                orbit_root,
-                require_home_dir(home_dir.as_deref())?,
-            )?,
-            (McpAction::Remove, McpProvider::Claude) => apply_claude_remove(
-                repo_root,
-                orbit_root,
-                require_home_dir(home_dir.as_deref())?,
-            )?,
+            (McpAction::Init, McpProvider::Claude) => apply_claude_init(repo_root, orbit_root)?,
+            (McpAction::Remove, McpProvider::Claude) => {
+                apply_claude_remove(repo_root, orbit_root)?
+            }
             (McpAction::Init, McpProvider::Codex) => apply_codex_init(repo_root, orbit_root)?,
             (McpAction::Remove, McpProvider::Codex) => apply_codex_remove(repo_root)?,
             (McpAction::Init, McpProvider::Gemini) => apply_gemini_init(repo_root, orbit_root)?,
@@ -264,18 +258,14 @@ fn auto_detected_providers(repo_root: &Path, home_dir: Option<&Path>) -> Vec<Mcp
     {
         providers.push(McpProvider::Codex);
     }
-    if repo_root.join(".gemini").is_dir() {
+    let gemini_repo = repo_root.join(".gemini").is_dir();
+    let gemini_home = home_dir
+        .map(|home| home.join(".gemini").join("settings.json").is_file())
+        .unwrap_or(false);
+    if gemini_repo || gemini_home {
         providers.push(McpProvider::Gemini);
     }
     providers
-}
-
-fn require_home_dir(home_dir: Option<&Path>) -> Result<&Path, OrbitError> {
-    home_dir.ok_or_else(|| {
-        OrbitError::InvalidInput(
-            "cannot resolve HOME/USERPROFILE for MCP integration files".to_string(),
-        )
-    })
 }
 
 fn print_action_summary(action: McpAction, providers: &[McpProvider]) {
@@ -292,12 +282,8 @@ fn print_action_summary(action: McpAction, providers: &[McpProvider]) {
     println!("mcp {}: {}", action.label(), labels);
 }
 
-fn apply_claude_init(
-    repo_root: &Path,
-    orbit_root: &Path,
-    home_dir: &Path,
-) -> Result<(), OrbitError> {
-    let mcp_path = home_dir.join(".claude").join(".mcp.json");
+fn apply_claude_init(repo_root: &Path, orbit_root: &Path) -> Result<(), OrbitError> {
+    let mcp_path = repo_root.join(".mcp.json");
     let mut root = load_json_object(&mcp_path)?;
     let mcp_servers = ensure_json_object(&mut root, "mcpServers")?;
     mcp_servers.insert(
@@ -315,12 +301,8 @@ fn apply_claude_init(
     Ok(())
 }
 
-fn apply_claude_remove(
-    repo_root: &Path,
-    _orbit_root: &Path,
-    home_dir: &Path,
-) -> Result<(), OrbitError> {
-    let mcp_path = home_dir.join(".claude").join(".mcp.json");
+fn apply_claude_remove(repo_root: &Path, _orbit_root: &Path) -> Result<(), OrbitError> {
+    let mcp_path = repo_root.join(".mcp.json");
     let mut root = load_json_object(&mcp_path)?;
     if let Some(mcp_servers) = root
         .get_mut("mcpServers")
@@ -724,13 +706,26 @@ mod tests {
     }
 
     #[test]
-    fn claude_init_and_remove_preserve_unrelated_entries() {
+    fn auto_detects_gemini_from_home_when_repo_lacks_dotgemini() {
         let repo = tempdir().expect("repo tempdir");
         let home = tempdir().expect("home tempdir");
-        std::fs::create_dir_all(repo.path().join(".claude")).expect("create .claude");
-        std::fs::create_dir_all(home.path().join(".claude")).expect("create global .claude");
+        std::fs::create_dir_all(home.path().join(".gemini")).expect("create gemini home dir");
         std::fs::write(
-            home.path().join(".claude").join(".mcp.json"),
+            home.path().join(".gemini").join("settings.json"),
+            "{}\n",
+        )
+        .expect("write global gemini settings");
+
+        let providers = auto_detected_providers(repo.path(), Some(home.path()));
+        assert_eq!(providers, vec![McpProvider::Gemini]);
+    }
+
+    #[test]
+    fn claude_init_and_remove_preserve_unrelated_entries() {
+        let repo = tempdir().expect("repo tempdir");
+        std::fs::create_dir_all(repo.path().join(".claude")).expect("create .claude");
+        std::fs::write(
+            repo.path().join(".mcp.json"),
             "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"demo\"}\n  }\n}\n",
         )
         .expect("write mcp file");
@@ -748,14 +743,13 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Claude]),
-            Some(home.path().to_path_buf()),
+            None,
         )
         .expect("init claude");
         assert_eq!(providers, vec![McpProvider::Claude]);
 
         let mcp: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(home.path().join(".claude").join(".mcp.json"))
-                .expect("read mcp"),
+            &std::fs::read_to_string(repo.path().join(".mcp.json")).expect("read mcp"),
         )
         .expect("parse mcp");
         assert!(mcp["mcpServers"]["orbit"].is_object());
@@ -782,13 +776,12 @@ mod tests {
             repo.path(),
             &orbit_root,
             ProviderSelectionMode::Explicit(vec![McpProvider::Claude]),
-            Some(home.path().to_path_buf()),
+            None,
         )
         .expect("remove claude");
 
         let mcp: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(home.path().join(".claude").join(".mcp.json"))
-                .expect("read mcp"),
+            &std::fs::read_to_string(repo.path().join(".mcp.json")).expect("read mcp"),
         )
         .expect("parse mcp");
         assert!(mcp["mcpServers"]["orbit"].is_null());

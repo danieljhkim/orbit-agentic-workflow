@@ -8,10 +8,13 @@ spec:
   args:
     - --approval-mode
     - yolo
+    - --sandbox
+    - --allowed-mcp-server-names
+    - orbit
     - -o
     - json
   stdout_format: envelope
   models:
-    strong: gemini-2.5-pro
-    weak: gemini-2.5-flash
+    strong: gemini-3.1-pro
+    weak: gemini-3-flash
   env: {}
