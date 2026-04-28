@@ -526,11 +526,34 @@ function renderRuns(runs) {
     ])]);
     return;
   }
+  const header = el("div", { class: "runs-row runs-header" }, [
+    el("span", { text: "when" }),
+    el("span", { text: "job" }),
+    el("span", { text: "run id" }),
+    el("span", { text: "duration", style: { textAlign: "right" } }),
+    el("span", { text: "state", style: { textAlign: "right" } }),
+  ]);
+  header.dataset.key = "runs-header";
+  header.dataset.hash = "header";
+  frag.appendChild(header);
   for (const r of top) {
     const ts = r.finished_at || r.started_at || r.scheduled_at || r.created_at;
+    const runIdSpan = el("span", { class: "run-id", text: r.run_id, title: "Click to copy run ID" });
+    runIdSpan.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(r.run_id).catch(() => {});
+      const oldText = runIdSpan.textContent;
+      runIdSpan.textContent = "copied!";
+      runIdSpan.style.color = "var(--state-success)";
+      setTimeout(() => {
+        runIdSpan.textContent = oldText;
+        runIdSpan.style.color = "";
+      }, 1000);
+    });
     const row = el("div", { class: "runs-row", title: `${r.run_id} (click to inspect)` }, [
       el("span", { class: "when", text: fmtTimestamp(ts) }),
       el("span", { class: "id", text: r.job_id }),
+      runIdSpan,
       el("span", { class: "duration", text: fmtDuration(r.duration_ms) }),
       el("span", { class: "state" }, [stateCell(r.state)]),
     ]);
@@ -554,13 +577,8 @@ const SCOREBOARD_COLUMNS = [
   { key: "friction.reported", label: "frict r", num: true },
   { key: "friction.accepted", label: "frict a", num: true },
   { key: "friction.rejected", label: "frict rej", num: true },
-  { key: "pr.merged_clean", label: "pr clean", num: true },
-  { key: "pr.merged_with_revision", label: "pr w/rev", num: true },
-  { key: "pr.review_comments", label: "pr cmts", num: true },
   { key: "avg_step_duration_ms", label: "avg step", num: true, format: "duration" },
   { key: "p95_wall_clock_ms", label: "p95 wall", num: true, format: "duration" },
-  { key: "retries", label: "retries", num: true },
-  { key: "denials", label: "denials", num: true },
 ];
 
 function readPath(obj, path) {

@@ -161,7 +161,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background: rgba(24, 24, 27, 0.8);
+        background: #18181b;
       }
       
       .panel > header .count {
@@ -684,7 +684,7 @@
       
       .runs-row {
         display: grid;
-        grid-template-columns: 80px 1fr 70px 80px;
+        grid-template-columns: 80px 1fr minmax(100px, 0.6fr) 70px 80px;
         gap: 12px;
         padding: 8px 16px;
         font-family: var(--font-mono);
@@ -699,8 +699,30 @@
       
       .runs-row .when { color: var(--fg-dim); }
       .runs-row .id { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .runs-row .run-id {
+        color: var(--fg-dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: color 0.15s ease;
+      }
+      .runs-row .run-id:hover { color: var(--accent); }
       .runs-row .duration { color: var(--fg-dim); text-align: right; }
       .runs-row .state { text-align: right; }
+      .runs-row.runs-header {
+        color: var(--fg-dim);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid var(--border);
+        cursor: default;
+        position: sticky;
+        top: 0;
+        background: var(--bg-elev);
+        z-index: 1;
+      }
       
       .scoreboard-row {
         display: grid;
@@ -753,7 +775,7 @@
       }
       
       .tab-pane { display: none; animation: fadeIn 0.3s ease; }
-      .tab-pane.active { display: block; }
+      .tab-pane.active { display: block; position: relative; z-index: 0; }
       
       .scoreboard-table-wrap {
         padding: 0;
