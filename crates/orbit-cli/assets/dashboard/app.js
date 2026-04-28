@@ -180,9 +180,19 @@ function buildTaskDetail(task) {
   const leftCol = el("div", { class: "detail-main" });
   const rightCol = el("div", { class: "detail-side" });
 
-  const addField = (parent, title, child) => {
-    const block = el("div", { class: "field-block" });
-    block.appendChild(el("h4", { text: title }));
+  const addField = (parent, title, child, collapsible = false, collapsed = false) => {
+    let classes = "field-block";
+    if (collapsible) classes += " collapsible";
+    if (collapsed) classes += " collapsed";
+    const block = el("div", { class: classes });
+    const h4 = el("h4", { text: title });
+    if (collapsible) {
+      h4.addEventListener("click", (e) => {
+        e.stopPropagation();
+        block.classList.toggle("collapsed");
+      });
+    }
+    block.appendChild(h4);
     block.appendChild(child);
     parent.appendChild(block);
   };
@@ -208,7 +218,7 @@ function buildTaskDetail(task) {
         ul.appendChild(el("li", { text: ac }));
       }
     }
-    addField(leftCol, "acceptance criteria", ul);
+    addField(leftCol, "acceptance criteria", ul, true, true);
   }
 
   if (task.plan && task.plan.trim()) {
@@ -218,7 +228,7 @@ function buildTaskDetail(task) {
     } else {
       view.textContent = task.plan;
     }
-    addField(leftCol, "plan", view);
+    addField(leftCol, "plan", view, true, true);
   }
 
   if (task.execution_summary && task.execution_summary.trim()) {
@@ -228,7 +238,7 @@ function buildTaskDetail(task) {
     } else {
       view.textContent = task.execution_summary;
     }
-    addField(leftCol, "execution summary", view);
+    addField(leftCol, "execution summary", view, true, true);
   }
 
   const meta = el("div", { class: "meta-list" });
@@ -1974,7 +1984,7 @@ function renderLogEvent(ev, isFresh) {
   const row = el("div", { class: "log-line" + (isFresh ? " fresh" : "") });
   row.dataset.code = ev.code || "";
   row.dataset.level = ev.level || "info";
-  
+
   let timeStr = ev.ts || "";
   if (timeStr && timeStr.includes("T")) {
     const d = new Date(timeStr);
@@ -1982,18 +1992,22 @@ function renderLogEvent(ev, isFresh) {
       timeStr = d.toLocaleTimeString("en-US", {hour12: false});
     }
   }
-  
+
   const tSpan = el("span", { class: "t", text: timeStr });
   const agSpan = el("span", { class: "ag", text: ev.source || "" });
   const lvClass = getLogClass(ev.level, ev.code);
   const lvSpan = el("span", { class: `lv ${lvClass}`, text: ev.code || "" });
   const mSpan = el("span", { class: "m" });
   mSpan.innerHTML = ev.message_html || "";
-  
+
   row.appendChild(tSpan);
   row.appendChild(agSpan);
   row.appendChild(lvSpan);
   row.appendChild(mSpan);
+
+  // Click to expand/collapse the full message
+  row.addEventListener("click", () => row.classList.toggle("expanded"));
+
   return row;
 }
 
