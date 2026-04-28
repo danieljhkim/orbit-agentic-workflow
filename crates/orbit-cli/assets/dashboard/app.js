@@ -1557,19 +1557,17 @@ function buildAuditDetailRow(ev) {
   };
   addMeta("execution_id", ev.execution_id);
   addMeta("session_id", ev.session_id);
-  if (ev.task_id) {
-    addMeta("task_id", ev.task_id);
-  }
+  addMeta("task_id", ev.task_id || "-");
   if (ev.job_run_id) {
     addMetaLink(
       "job_run_id",
       ev.job_run_id,
       `#runs/${encodeURIComponent(ev.job_run_id)}`,
     );
+  } else {
+    addMeta("job_run_id", "-");
   }
-  if (ev.activity_id) {
-    addMeta("activity_id", ev.activity_id);
-  }
+  addMeta("activity_id", ev.activity_id || "-");
   if (ev.step_index != null) {
     addMeta("step_index", ev.step_index);
   }
