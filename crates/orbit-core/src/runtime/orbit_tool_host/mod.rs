@@ -556,6 +556,10 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                         status: optional_string(&input, "status")?
                             .map(|value| parse_task_status("status", &value))
                             .transpose()?,
+                        planned_by: optional_raw_string(&input, "planned_by")?
+                            .map(empty_string_to_none),
+                        implemented_by: optional_raw_string(&input, "implemented_by")?
+                            .map(empty_string_to_none),
                         pr_number: optional_raw_string(&input, "pr_number")?
                             .map(empty_string_to_none),
                         pr_status: optional_raw_string(&input, "pr_status")?
@@ -1092,6 +1096,91 @@ mod tests {
         assert_eq!(
             output.get("model").and_then(Value::as_str),
             Some("gemini-3.1-pro-preview")
+        );
+    }
+
+    #[test]
+    fn task_update_tool_allows_explicit_attribution_updates() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            "Update explicit attribution",
+            "Exercise explicit provenance correction.",
+            TaskStatus::Backlog,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id.clone(),
+                    "planned_by": "manual-planner",
+                    "implemented_by": "manual-implementer",
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task update tool succeeds");
+
+        assert_eq!(
+            output.get("planned_by").and_then(Value::as_str),
+            Some("manual-planner")
+        );
+        assert_eq!(
+            output.get("implemented_by").and_then(Value::as_str),
+            Some("manual-implementer")
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id,
+                    "planned_by": "",
+                    "implemented_by": "",
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task update tool clears attribution");
+
+        assert_eq!(output.get("planned_by"), Some(&Value::Null));
+        assert_eq!(output.get("implemented_by"), Some(&Value::Null));
+    }
+
+    #[test]
+    fn task_update_tool_explicit_implemented_by_overrides_review_stamp() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            "Review explicit attribution",
+            "Exercise explicit provenance correction on review transition.",
+            TaskStatus::InProgress,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id,
+                    "status": "review",
+                    "execution_summary": "Implemented and validated.",
+                    "implemented_by": "manual-implementer",
+                    "model": "gemini-3.1-pro-preview",
+                }),
+                None,
+                None,
+            )
+            .expect("task update tool succeeds");
+
+        assert_eq!(output.get("status").and_then(Value::as_str), Some("review"));
+        assert_eq!(
+            output.get("implemented_by").and_then(Value::as_str),
+            Some("manual-implementer")
         );
     }
 

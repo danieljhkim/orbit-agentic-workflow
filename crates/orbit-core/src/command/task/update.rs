@@ -153,15 +153,20 @@ impl OrbitRuntime {
             .map(ToOwned::to_owned);
         let append_comments =
             build_task_comments(params.comment.clone(), effective_label.as_str())?;
-        let planned_by = params.plan.as_ref().map(|_| Some(effective_label.clone()));
+        let planned_by = params
+            .planned_by
+            .clone()
+            .or_else(|| params.plan.as_ref().map(|_| Some(effective_label.clone())));
         let implementation_label =
             implementation_label(&task, effective_label.as_str(), canonical_model.as_deref());
-        let implemented_by = params.status.and_then(|status| {
-            if matches!(status, TaskStatus::Review | TaskStatus::Done) {
-                implementation_label.clone().map(Some)
-            } else {
-                None
-            }
+        let implemented_by = params.implemented_by.clone().or_else(|| {
+            params.status.and_then(|status| {
+                if matches!(status, TaskStatus::Review | TaskStatus::Done) {
+                    implementation_label.clone().map(Some)
+                } else {
+                    None
+                }
+            })
         });
 
         let old_status = task.status;

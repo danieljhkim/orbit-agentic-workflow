@@ -48,6 +48,20 @@ impl Tool for OrbitTaskUpdateTool {
                 required: false,
             },
             ToolParam {
+                name: "planned_by".to_string(),
+                description: "Explicit planning attribution label (empty string clears)"
+                    .to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
+                name: "implemented_by".to_string(),
+                description: "Explicit implementation attribution label (empty string clears)"
+                    .to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "execution_summary".to_string(),
                 description: "Replacement execution summary text".to_string(),
                 param_type: "string".to_string(),

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27 (T20260427-52)
+**Last updated:** 2026-04-28 (T20260427-47)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -197,6 +197,19 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Legacy callers that still pass `agent` continue to work when the pair is consistent.
 - Cost: unknown or ambiguous model names cannot infer an agent family; callers that need family-specific dispatch for those names must still provide a compatible legacy `agent` value.
 
+## ADR-015 — Task attribution can be corrected explicitly
+
+**Status:** Accepted · 2026-04 · [T20260427-47]
+
+**Context.** Automatic task attribution keeps routine lifecycle updates low-friction, but it can leave stale `planned_by` or `implemented_by` values when a task is started by one actor and finished by another.
+
+**Decision.** Keep automatic stamping for plan writes and review/done transitions, but let task update callers provide explicit `planned_by` and `implemented_by` values. Explicit attribution values override automatic stamps within the same update, and empty strings clear the corresponding field.
+
+**Consequences.**
+- Agents can correct split or stale task provenance without editing task files directly.
+- Existing lifecycle automation keeps working when explicit attribution fields are omitted.
+- Cost: attribution fields become intentionally editable metadata, so reviewers must read task history and audit rows when they need stronger authorship evidence than the latest field value.
+
 ---
 
 ## Task References
@@ -215,6 +228,7 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
 - **[T20260427-44]** — Add shared log formatter extraction and dashboard backend `/api/log` snapshot/SSE endpoints.
 - **[T20260427-46]** — Implement the Gemini-owned Tasks-tab `orbit.log` panel using the shared dashboard backend API.
+- **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
 - **[T20260427-52]** — Deprecate `agent` in normal tool-call JSON, infer agent family from `model`, and reject inconsistent legacy pairs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -393,6 +393,8 @@ async fn update_task_action(
         execution_summary: body.execution_summary,
         comment: body.comment,
         status: body.status,
+        planned_by: None,
+        implemented_by: None,
         pr_number: None,
         pr_status: None,
         batch_id: None,

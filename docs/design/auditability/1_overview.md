@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-28 (T20260427-47)
 
 Auditability is Orbit's answer to the operator question that matters after an agent touches a real repository: what happened, why did it happen, and who is accountable? It is not one log file. It is a set of structured audit channels that cover CLI commands, Orbit tool mutations, activity/job runs, provider turns, tool calls, filesystem denials, task attribution, and metrics side effects. [2_design.md](./2_design.md) describes the current implementation; [3_vision.md](./3_vision.md) captures the gaps between the current audit channels and Orbit's longer-term audit promise.
 
@@ -80,7 +80,7 @@ After [T20260427-0023], high-signal non-subprocess producers also project into t
 | Global tracing JSONL feed | `crates/orbit-common/src/utility/logging.rs`, `~/.orbit/state/logs/orbit.jsonl` | [T20260426-2343], [T20260426-2349], [T20260427-0023] |
 | Live tracing producers | `crates/orbit-tools/src/builtin/fs/mod.rs`, `crates/orbit-tools/src/builtin/proc/spawn.rs`, `crates/orbit-core/src/command/task/add.rs` | [T20260427-0023] |
 | V2 invocation metrics persistence | `crates/orbit-store/src/sqlite/invocation_store.rs`, `crates/orbit-core/src/runtime/v2_host.rs` | [T20260426-0526] |
-| Task attribution fields | `crates/orbit-common/src/types/task.rs`, task update/runtime host paths | [T20260426-0605] |
+| Task attribution fields | `crates/orbit-common/src/types/task.rs`, task update/runtime host paths | [T20260426-0605], [T20260427-47] |
 
 ---
 
@@ -95,5 +95,6 @@ After [T20260427-0023], high-signal non-subprocess producers also project into t
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
+- **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

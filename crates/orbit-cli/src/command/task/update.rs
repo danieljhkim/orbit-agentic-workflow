@@ -35,6 +35,12 @@ pub struct TaskUpdateArgs {
     /// New status
     #[arg(long, value_enum)]
     pub status: Option<TaskUpdateStatusArg>,
+    /// Explicit planning attribution label (empty string clears)
+    #[arg(long)]
+    pub planned_by: Option<String>,
+    /// Explicit implementation attribution label (empty string clears)
+    #[arg(long)]
+    pub implemented_by: Option<String>,
     /// Pull request number (empty string clears)
     #[arg(long)]
     pub pr_number: Option<String>,
@@ -74,6 +80,8 @@ impl Execute for TaskUpdateArgs {
             execution_summary,
             comment,
             status,
+            planned_by,
+            implemented_by,
             pr_number,
             pr_status,
             batch_id,
@@ -105,6 +113,20 @@ impl Execute for TaskUpdateArgs {
                 Some(value)
             }
         });
+        let planned_by = planned_by.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
+        let implemented_by = implemented_by.map(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
         let acceptance_criteria = (!acceptance_criteria.is_empty()).then_some(acceptance_criteria);
         let dependencies = dependencies.map(|value| crate::parse::csv_to_vec(&value));
         let upsert_artifacts = parse_artifact_args(&artifacts)?;
@@ -120,6 +142,8 @@ impl Execute for TaskUpdateArgs {
                 execution_summary,
                 comment,
                 status: status.map(Into::into),
+                planned_by,
+                implemented_by,
                 pr_number,
                 pr_status,
                 batch_id,

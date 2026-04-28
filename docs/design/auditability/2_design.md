@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27 (T20260427-52)
+**Last updated:** 2026-04-28 (T20260427-47)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and the current limitations that still need design attention. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -136,6 +136,8 @@ Orbit currently carries identity through several related fields:
 - Task records carry `created_by`, `planned_by`, `implemented_by`, `agent`, and `model` fields.
 - Invocation metrics record agent and model beside job run and activity ids.
 
+Task attribution remains automatic by default. Non-empty plan writes stamp `planned_by` from the effective actor label, and transitions into `review` or `done` stamp `implemented_by` from the task/model identity path. After [T20260427-47], `orbit.task.update` and the direct `orbit task update` CLI also accept explicit `planned_by` and `implemented_by` values for corrective provenance edits; explicit values win over automatic stamping for the same update, and empty strings clear the fields.
+
 The core design requirement is not that all of these fields collapse into one value. It is that a reviewer can follow the chain from task state, command rows, v2 run envelope, provider/tool trace, and metrics record back to a concrete human or model identity.
 
 This area is still uneven. Direct command rows still store role strings such as `admin`; agent-facing tool rows store resolved actor labels; some task paths normalize model names into attribution labels. The design intent is clear, but a unified identity glossary and query join story remain open.
@@ -208,5 +210,6 @@ This channel is global rather than workspace-local because `orbit-cli` initializ
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
 - **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
+- **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
