@@ -1,4 +1,5 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema, optional_raw_string};
+use orbit_knowledge::ORBIT_TASK_ID_PATTERN;
 use orbit_knowledge::graph::navigator::GraphNodeRef;
 use orbit_knowledge::service::{GraphContextService, SearchHit};
 use regex::Regex;
@@ -10,7 +11,6 @@ pub struct OrbitKnowledgeSearchTool;
 
 const DEFAULT_LIMIT: usize = 20;
 const SOURCE_REGEX_UNBOUNDED_LIMIT_MAX: usize = 200;
-const TASK_ID_PATTERN: &str = r"T\d{8}-\d{4}";
 
 impl Tool for OrbitKnowledgeSearchTool {
     fn schema(&self) -> ToolSchema {
@@ -227,19 +227,41 @@ fn validate_task_id(task_id: Option<&str>) -> Result<(), OrbitError> {
     let Some(task_id) = task_id else {
         return Ok(());
     };
-    let bytes = task_id.as_bytes();
-    let valid = bytes.len() == 14
-        && bytes[0] == b'T'
-        && bytes[1..9].iter().all(u8::is_ascii_digit)
-        && bytes[9] == b'-'
-        && bytes[10..14].iter().all(u8::is_ascii_digit);
 
-    if valid {
+    if matches_orbit_task_id(task_id) {
         Ok(())
     } else {
         Err(OrbitError::InvalidInput(format!(
-            "`task_id` must match {TASK_ID_PATTERN}"
+            "`task_id` must match {ORBIT_TASK_ID_PATTERN}"
         )))
+    }
+}
+
+fn matches_orbit_task_id(task_id: &str) -> bool {
+    let bytes = task_id.as_bytes();
+    if bytes.len() < 11 || bytes[0] != b'T' {
+        return false;
+    }
+    if !bytes[1..9].iter().all(u8::is_ascii_digit) || bytes[9] != b'-' {
+        return false;
+    }
+
+    let mut index = 10;
+    loop {
+        let segment_start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if segment_start == index {
+            return false;
+        }
+        if index == bytes.len() {
+            return true;
+        }
+        if bytes[index] != b'-' {
+            return false;
+        }
+        index += 1;
     }
 }
 

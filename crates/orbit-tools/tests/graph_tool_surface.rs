@@ -223,6 +223,41 @@ fn search_task_id_filter_plumbs_json_input() {
 }
 
 #[test]
+fn search_task_id_filter_accepts_current_short_suffix() {
+    let mut touched = leaf_node(
+        "src/runtime.rs",
+        "AgentRuntime",
+        LeafKind::Trait,
+        "pub trait AgentRuntime {}",
+    );
+    touched.base.task_ids = vec!["T20260428-1".to_string()];
+    let fixture = write_graph_fixture(graph_with_root(
+        vec![attach_leaf(
+            file_node("src/runtime.rs", "rust", Some("rs"), vec![]),
+            &touched,
+        )],
+        vec![touched],
+    ));
+
+    let response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({
+            "query": "Runtime",
+            "type": "symbol",
+            "task_id": "T20260428-1",
+            "limit": 10
+        }),
+    );
+
+    assert_eq!(response["total"], 1);
+    assert_eq!(
+        response["results"][0]["selector"],
+        "symbol:src/runtime.rs#AgentRuntime:trait"
+    );
+}
+
+#[test]
 fn search_task_id_filter_rejects_malformed_input() {
     let fixture = write_graph_fixture(graph_with_root(Vec::new(), Vec::new()));
 
@@ -234,7 +269,7 @@ fn search_task_id_filter_rejects_malformed_input() {
     .unwrap_err()
     .to_string();
 
-    assert!(error.contains("`task_id` must match T\\d{8}-\\d{4}"));
+    assert!(error.contains("`task_id` must match T\\d{8}-\\d+(?:-\\d+)*"));
 }
 
 #[test]

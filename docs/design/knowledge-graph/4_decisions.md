@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (ADR-020)
+**Last updated:** 2026-04-28 (ADR-022)
 
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -337,6 +337,21 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-022 — Align graph task-ID grammar with task-store IDs
+
+**Status:** Accepted · 2026-04 · [T20260428-1]
+
+**Context.** `orbit.graph.search` added an exact `task_id` filter in [T20260426-0220], but its input validator hardcoded `T\d{8}-\d{4}`. The task store now creates unpadded daily suffixes such as `T20260428-1`, while historical graph/task references also include amended numeric suffixes such as `T20260412-0645-2`. The graph attribution default still only matched the older four-digit base suffix, so a selector-first task lookup could fail before search, or miss current task IDs after a rebuild.
+
+**Decision.** Treat the bare Orbit task-ID body accepted by graph attribution/search as `T\d{8}-\d+(?:-\d+)*`. Keep the configurable `TaskIdPattern` mechanism from ADR-020; this change only updates Orbit's default pattern and the agent-facing `orbit.graph.search` input validator.
+
+**Consequences.**
+- Current task-store IDs, historical four-digit IDs, and amended numeric IDs all share one graph default.
+- A workspace with a manifest written under the older default will see the existing manifest-pattern mismatch path and get a full-history backfill on the next graph build.
+- Cost: the default is intentionally more permissive about leading zeros and amendment depth so existing historical IDs stay queryable; task creation remains governed by the task store.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -369,5 +384,6 @@ Tasks cited by ADRs above:
 - **[T20260426-0453]** — Remove graph write operations from the public tool/MCP surface and standardize on task lock reservations as preflight write guards.
 - **[T20260426-0507]** — Move `orbit task history` to `orbit graph history`; add configurable task-ID regex with manifest-recorded pattern, mismatch warning, and forced full backfill on pattern change; expose `orbit.graph.history` agent tool.
 - **[T20260426-2042]** — Move graph CLI behavior behind the `orbit-tools::graph` facade and remove the direct `orbit-knowledge` dependency from `orbit-cli`.
+- **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -13,9 +13,15 @@ use regex::Regex;
 
 use crate::error::KnowledgeError;
 
-/// Default Orbit task-ID pattern. Capture group 1 is the bare ID
-/// (`T20260421-0528` rather than `[T20260421-0528]`).
-pub const DEFAULT_TASK_ID_PATTERN: &str = r"\[(T\d{8}-\d{4}(?:-\d+)?)\]";
+/// Bare Orbit task-ID body pattern.
+///
+/// Accepts current unpadded suffixes (`T20260428-1`) and historical amended
+/// suffixes (`T20260412-0645-2`).
+pub const ORBIT_TASK_ID_PATTERN: &str = r"T\d{8}-\d+(?:-\d+)*";
+
+/// Default Orbit task-ID extraction pattern. Capture group 1 is the bare ID
+/// (`T20260428-1` rather than `[T20260428-1]`).
+pub const DEFAULT_TASK_ID_PATTERN: &str = r"\[(T\d{8}-\d+(?:-\d+)*)\]";
 
 /// Validated task-ID extraction pattern.
 ///
@@ -86,6 +92,15 @@ mod tests {
         assert_eq!(
             pattern.extract_ids("[T20260421-0528] add task_ids"),
             vec!["T20260421-0528"]
+        );
+    }
+
+    #[test]
+    fn default_pattern_handles_current_unpadded_suffix() {
+        let pattern = TaskIdPattern::default();
+        assert_eq!(
+            pattern.extract_ids("[T20260428-1] short suffix"),
+            vec!["T20260428-1"]
         );
     }
 

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (read-only public graph surface, [T20260426-0453])
+**Last updated:** 2026-04-28 (current task-ID suffixes in graph attribution, [T20260428-1])
 
 > *"Grep finds strings. An LSP finds symbols. A knowledge graph remembers what those symbols are, where they live, who touched them, and how they relate — in a form an agent can page into a 200k context window."*
 
@@ -76,7 +76,7 @@ The in-memory **working graph** (`crates/orbit-knowledge/src/working_graph`) rem
 
 ### 2.5 Attribution
 
-Each node carries a `task_ids` list. These are populated by the history-walker stage (`pipeline::history`, introduced in [T20260421-0528]) which parses `\[T\d{8}-\d{4}(?:-\d+)?\]` tags out of commit messages, maps hunks to symbols at the commit's tree, and accumulates the result onto the current graph. A merge commit where both sides touched the same symbol sets `structural_conflict: true` — informational only; git already resolved the textual conflict.
+Each node carries a `task_ids` list. These are populated by the history-walker stage (`pipeline::history`, introduced in [T20260421-0528]) which parses `\[T\d{8}-\d+(?:-\d+)*\]` tags out of commit messages, maps hunks to symbols at the commit's tree, and accumulates the result onto the current graph. A merge commit where both sides touched the same symbol sets `structural_conflict: true` — informational only; git already resolved the textual conflict.
 
 ---
 
@@ -109,5 +109,6 @@ Each node carries a `task_ids` list. These are populated by the history-walker s
 - **[T20260421-0528]** — `task_ids` schema on every node + git history walker for attribution.
 - **[T20260426-0139]** — Parallelize per-file hashing and leaf extraction while preserving deterministic graph output.
 - **[T20260426-0453]** — Remove graph write operations from the public tool/MCP surface and use task lock reservations as preflight write guards.
+- **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -38,7 +38,7 @@ orbit tool run orbit.graph.search --input '{"type":"file","prefix":"crates/","so
 
 ## Task-ID Filtering
 
-When the prompt asks what a task touched, or gives an Orbit task ID as the main lookup key, call `orbit.graph.search` with `task_id`. The filter exact-matches node `task_ids`, composes with query/type/kind/prefix/source-regex filters, and expects the `TYYYYMMDD-NNNN` shape.
+When the prompt asks what a task touched, or gives an Orbit task ID as the main lookup key, call `orbit.graph.search` with `task_id`. The filter exact-matches node `task_ids`, composes with query/type/kind/prefix/source-regex filters, and accepts numeric Orbit IDs shaped like `TYYYYMMDD-N[-N...]`.
 
 ```bash
 # Return selectors touched by a task

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (configurable task-ID pattern + `orbit graph history` surface, [T20260426-0507])
+**Last updated:** 2026-04-28 (current task-ID suffixes in graph attribution/search, [T20260428-1])
 
 This document specifies the knowledge graph as it exists today: on-disk layout, build pipeline, query services, Orbit integration, locking, and honest limitations. See [1_overview.md](./1_overview.md) for the "why" and [3_vision.md](./3_vision.md) for where it is headed. Task IDs are cited inline and collected at the end.
 
@@ -83,13 +83,13 @@ The walker shells out to `git` via `orbit_common::utility::git::run_git`. There 
 
 ### 2.3 Configurable task-ID extraction ([T20260426-0507])
 
-The attribution pass and the history fallback share a single extraction pattern. The pattern is a `TaskIdPattern` (validated regex wrapper in `orbit-knowledge/src/task_id_pattern.rs`) with a capture-group convention: when the regex has at least one capture group, group 1 is the task ID; otherwise the whole match is the ID. This lets the Orbit default `\[(T\d{8}-\d{4}(?:-\d+)?)\]` strip surrounding brackets via the regex itself rather than bespoke string slicing, and keeps stored task IDs byte-identical to pre-T20260426-0507 graphs.
+The attribution pass and the history fallback share a single extraction pattern. The pattern is a `TaskIdPattern` (validated regex wrapper in `orbit-knowledge/src/task_id_pattern.rs`) with a capture-group convention: when the regex has at least one capture group, group 1 is the task ID; otherwise the whole match is the ID. This lets the Orbit default `\[(T\d{8}-\d+(?:-\d+)*)\]` strip surrounding brackets via the regex itself rather than bespoke string slicing. The default accepts current unpadded task-store IDs like `T20260428-1` and historical amended IDs like `T20260412-0645-2` ([T20260428-1]).
 
 Pattern resolution at `orbit graph build` / `orbit graph history` time follows a strict precedence:
 
 1. CLI flag `--task-id-pattern <regex>`.
 2. Workspace config field `knowledge.task_id_pattern` in `config.toml` (validated at `RuntimeConfig::load_layered`; invalid regex or empty string is rejected at startup with `OrbitError::InvalidInput`).
-3. Orbit default `\[(T\d{8}-\d{4}(?:-\d+)?)\]`.
+3. Orbit default `\[(T\d{8}-\d+(?:-\d+)*)\]`.
 
 The active pattern is recorded in `manifest.json` under `task_id_pattern`. Two consequences:
 
@@ -156,7 +156,7 @@ All tool inputs that reference a node accept a selector string.
 
 All services are read-only against a resolved snapshot. Graph mutation code remains internal/deferred; the current public surface does not expose graph write tools.
 
-Search accepts an optional task-id filter that exact-matches against the `task_ids` vector stored on every node ([T20260426-0220]). The filter composes with query text, node type, kind, prefix, and source regex by logical AND. When present, it is applied before source-regex matching so task-scoped regex searches do not spend their candidate budget on unrelated nodes. Missing or null `task_id` preserves the pre-existing search behavior.
+Search accepts an optional task-id filter that exact-matches against the `task_ids` vector stored on every node ([T20260426-0220]). The filter validates the bare Orbit ID shape as `T\d{8}-\d+(?:-\d+)*`, so it accepts current unpadded IDs and historical amended IDs ([T20260428-1]). It composes with query text, node type, kind, prefix, and source regex by logical AND. When present, it is applied before source-regex matching so task-scoped regex searches do not spend their candidate budget on unrelated nodes. Missing or null `task_id` preserves the pre-existing search behavior.
 
 ### 3.3 Object/blob read cache
 
@@ -188,7 +188,7 @@ The CLI does not import `orbit-knowledge` directly. `orbit-tools::graph` owns th
 The knowledge graph is exposed through `orbit-mcp` as a stable, read-only tool surface. Each tool accepts an optional `ref` and delegates to the services above:
 
 - `orbit.graph.overview`
-- `orbit.graph.search` (optional `task_id`, validated as `T\d{8}-\d{4}`)
+- `orbit.graph.search` (optional `task_id`, validated as `T\d{8}-\d+(?:-\d+)*`)
 - `orbit.graph.show`
 - `orbit.graph.pack`
 - `orbit.graph.callers`
@@ -288,5 +288,6 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 - **[T20260426-0236]** — Add `make bench` graph build benchmark and `.orbit/state/scoreboard/graph_bench.json`.
 - **[T20260426-0453]** — Remove graph write operations from the public tool/MCP surface; use task lock reservations as preflight write guards.
 - **[T20260426-2042]** — Move graph CLI behavior behind the `orbit-tools::graph` facade and remove the direct `orbit-knowledge` dependency from `orbit-cli`.
+- **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
