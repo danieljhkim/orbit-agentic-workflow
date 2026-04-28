@@ -9,13 +9,32 @@ description: Entry point for Orbit workflow. Covers lifecycle, invocation patter
 
 This skill orients agents working with Orbit. Orbit operations should go through the registered Orbit tool surface.
 
-When invoking `orbit tool run` directly, include the exact `model` in the input JSON.
+## Tool Invocation
+
+Orbit tools are reachable via two surfaces. Both accept identical JSON arguments.
+
+| Surface | When to use | Form |
+|---------|-------------|------|
+| **MCP** | Claude Code with the orbit plugin (or any MCP client connected to `orbit mcp serve`); look for `orbit_*` tools in your toolbox | `orbit_task_add({"title": "...", "model": "<model_name>"})` |
+| **CLI** | Shell access (inside an activity step, or with the `orbit` binary on `PATH`) | `orbit tool run orbit.task.add --input '{"title": "...", "model": "<model_name>"}'` |
+
+**Mapping rule**: `orbit.<group>.<action>` ↔ `orbit_<group>_<action>` (dots become underscores; JSON args identical). For multi-segment names like `orbit.task.review_thread.add`, every dot becomes an underscore: `orbit_task_review_thread_add`.
+
+**Surface coverage:**
+
+- Task lifecycle (`orbit.task.*`): both surfaces.
+- Graph read tools (`search`, `show`, `pack`, `callers`, `refs`, `implementors`, `deps`, `overview`, `history`): both surfaces.
+- State handoff (`orbit.state.*`), graph writes, and duel/scoreboard tools: **CLI only** — used inside activity steps where the agent has shell access.
+
+**Always include `model` in the JSON** (both surfaces) so Orbit can attribute the call to the right agent family:
 
 ```json
-{
-  "model": "<model_name>"
-}
+{ "model": "<model_name>" }
 ```
+
+**CLI-flag → JSON mapping:** the CLI exposes some flags (e.g. `orbit tool run orbit.task.show --full ...`) that don't appear over MCP. The MCP equivalent is the default behavior when the corresponding JSON field is omitted (e.g. `orbit_task_show({"id": "<id>"})` returns the full task; pass `field` or `fields` to project).
+
+Examples below use CLI form for readability; substitute the MCP form using the mapping above when MCP tools are loaded.
 
 ## Common Workflows
 
@@ -127,7 +146,7 @@ orbit tool run orbit.state.set --input '{"data": {"threads": [], "summary": "Loo
 | `cargo run -- tool run ...` | Agents must use the installed `orbit` binary, not rebuild from source | `orbit tool run ...` |
 | `orbit task show <id>` | Direct CLI subcommands skip agent provenance tracking | `orbit tool run orbit.task.show --full --input '{"id":"<id>"}'` |
 
-**Rule:** The command reference above is intentionally common, not exhaustive. Never guess. Run `orbit tool list` to see the full registered tool surface.
+**Rule:** The command reference above is intentionally common, not exhaustive. Never guess. Run `orbit tool list` (CLI) or call `tools/list` (MCP) to see the full registered tool surface.
 
 ## Lifecycle
 

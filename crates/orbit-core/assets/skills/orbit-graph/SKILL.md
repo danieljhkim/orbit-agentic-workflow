@@ -7,7 +7,16 @@ description: Use when navigating and inspecting codebase via the knowledge graph
 
 Use `orbit.graph.*` as your default way to navigate code. Start with the smallest tool that can answer the question.
 
-When MCP graph tools are available, call them directly (`orbit_graph_search`, `orbit_graph_show`, `orbit_graph_pack`, etc.). When only shell access is available, use the equivalent `orbit tool run orbit.graph.* --input ...` form shown in examples below. Do not prefer shell just because the examples use CLI syntax.
+## Tool Invocation
+
+Graph **read** tools are available via two surfaces; both accept identical JSON.
+
+- **MCP** (plugin path): `orbit_graph_search`, `orbit_graph_show`, `orbit_graph_pack`, `orbit_graph_callers`, `orbit_graph_refs`, `orbit_graph_implementors`, `orbit_graph_deps`, `orbit_graph_overview`. Call them directly when loaded.
+- **CLI**: `orbit tool run orbit.graph.<action> --input '<json>'`.
+
+Mapping rule: `orbit.graph.<action>` ↔ `orbit_graph_<action>`. See the `orbit` skill for the full reference. Do not prefer shell just because the examples below use CLI syntax.
+
+Graph **write** tools (build/update) are CLI-only — not exposed over MCP.
 
 ## Default Workflow
 

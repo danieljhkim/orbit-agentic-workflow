@@ -11,18 +11,21 @@ Handle a human-requested engineering task or existing Orbit task from intent to 
 
 ## Command Reference
 
-All agent Orbit interactions go through `orbit tool run`. Never use `orbit task ...` directly — it skips agent provenance. Never guess tool names — run `orbit tool list` to see all registered tools.
+Orbit task tools are available via two surfaces; both accept identical JSON. **Always include `model` in the JSON args.**
 
-When invoking `orbit tool run` directly, include the exact `model` in the input JSON.
+- **MCP** (plugin path): call `orbit_task_show`, `orbit_task_start`, `orbit_task_update`, `orbit_task_list` directly.
+- **CLI**: `orbit tool run orbit.task.<action> --input '<json>'` — never use `orbit task ...` directly, it skips agent provenance.
+
+Mapping rule: `orbit.<group>.<action>` ↔ `orbit_<group>_<action>`. See the `orbit` skill for full coverage. Never guess tool names — run `orbit tool list` (CLI) or `tools/list` (MCP) to see all registered tools.
 
 ```json
-{
-  "model": "<model_name>"
-}
+{ "model": "<model_name>" }
 ```
 
+CLI examples (substitute the MCP form using the mapping above):
+
 ```bash
-# Load a full task
+# Load a full task (MCP: omit `field`/`fields` → returns full task)
 orbit tool run orbit.task.show --full --input '{"id": "<task-id>", "model": "<model_name>"}'
 
 # Load a specific field only

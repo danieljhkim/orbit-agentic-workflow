@@ -37,6 +37,10 @@ Do **not ignore friction**. Always create a task.
 
 ## How to Create the Task
 
+Two surfaces, identical JSON args. See the `orbit` skill for the full mapping.
+
+CLI form:
+
 ```bash
 orbit tool run orbit.task.add --input '{
   "title": "<short, specific problem statement>",
@@ -46,6 +50,19 @@ orbit tool run orbit.task.add --input '{
   "workspace": ".",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
+```
+
+MCP form (same JSON, called as `orbit_task_add`):
+
+```text
+orbit_task_add({
+  "title": "<short, specific problem statement>",
+  "description": "<what happened, where, and why it caused friction>",
+  "type": "friction",
+  "priority": "<low|medium|high|critical>",
+  "workspace": ".",
+  "model": "<model_name>"
+})
 ```
 
 Keep the description concrete — name the command, file, or workflow that broke.

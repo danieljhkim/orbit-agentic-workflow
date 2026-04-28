@@ -9,14 +9,23 @@ description: Use this when you need to create an Orbit task.
 
 Create an Orbit task another engineer or agent can execute without guessing. Focus task creation on a crisp description of the problem and strong acceptance criteria; the execution plan is authored later when the task is picked up.
 
+## Tool Invocation
+
+Two surfaces, identical JSON args:
+
+- **MCP**: `orbit_task_add({...})` when the orbit plugin is connected.
+- **CLI**: `orbit tool run orbit.task.add --input '{...}'` from the shell.
+
+See the `orbit` skill for the full mapping rule and surface coverage. Examples below use CLI form; substitute `orbit_task_add` with the same JSON when MCP tools are loaded.
+
 ## Workflow
 
 1. Confirm objective, constraints, and done criteria.
 2. Inspect codebase context before creating the task.
 3. Write clear acceptance criteria that define observable success.
 4. Add assumptions, risks, and rollback notes to the description when they matter.
-5. Run `orbit tool run orbit.task.add` with the description, acceptance criteria, workspace, and exact `model` field in the JSON input. Orbit infers the agent family from known model names. Leave `plan` blank unless you have a compelling reason to pre-seed it.
-6. Use the `orbit.task.add` result as the default confirmation. If you need to confirm the canonical stored task record, run `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'`.
+5. Call the task-add tool (`orbit_task_add` over MCP, or `orbit tool run orbit.task.add` from the shell) with the description, acceptance criteria, workspace, and exact `model` field in the JSON input. Orbit infers the agent family from known model names. Leave `plan` blank unless you have a compelling reason to pre-seed it.
+6. Use the result as the default confirmation. If you need to re-fetch the canonical stored record, call `orbit_task_show({"id": "<returned-id>"})` (MCP) or `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'` (CLI).
 
 ## Selector-First Context
 
@@ -66,6 +75,8 @@ Create an Orbit task another engineer or agent can execute without guessing. Foc
 
 ## Command
 
+CLI form:
+
 ```bash
 orbit tool run orbit.task.add --input '{
   "title": "<title>",
@@ -81,6 +92,21 @@ orbit tool run orbit.task.add --input '{
   "type": "<task|feature|epic|issue|bug|chore|refactor>",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
+```
+
+MCP form (same JSON, called as `orbit_task_add`):
+
+```text
+orbit_task_add({
+  "title": "<title>",
+  "description": "<multi-line markdown>",
+  "acceptance_criteria": ["<observable outcome 1>", "<observable outcome 2>"],
+  "context_files": ["file:src/lib.rs", "symbol:src/lib.rs#run:function"],
+  "workspace": "<absolute_or_relative_repo_path>",
+  "priority": "<low|medium|high|critical>",
+  "type": "<task|feature|epic|issue|bug|chore|refactor>",
+  "model": "<model_name>"
+})
 ```
 
 ## Description Template
