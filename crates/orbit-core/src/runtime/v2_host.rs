@@ -1037,6 +1037,13 @@ fn append_provider_side_write_roots(
     provider: &str,
     resolved: &mut ResolvedFsProfile,
 ) -> Result<(), DispatchError> {
+    // Codex is the only `backend: cli` provider that ships its own writable
+    // root surface (`--add-dir` fed from `writable_dirs_json`). Claude and
+    // Gemini have no analogous CLI flag — their startup-time writes are
+    // confined to their state directories, which `compile_macos_sandbox_profile`
+    // already grants via the per-provider state-dir allowances. If a future
+    // provider gains a side-root surface, generalize this branch rather than
+    // duplicating it. See T20260428-14.
     if provider != "codex" {
         return Ok(());
     }

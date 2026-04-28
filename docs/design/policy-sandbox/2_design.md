@@ -135,9 +135,9 @@ The compiled macOS profile denies by default, allows broad reads required by age
 
 - scratch/cache roots (`/tmp`, `/private/tmp`, `/private/var/folders`, `/dev`, and `$HOME/Library/Caches`)
 - `$HOME/.orbit`, so inherited `orbit mcp serve` and other Orbit subprocesses can persist audit/state
-- the Codex state directory, resolved as `$CODEX_HOME` when set and `$HOME/.codex` otherwise ([T20260428-10])
+- per-provider state directories: Codex (`$CODEX_HOME` when set, otherwise `$HOME/.codex` — [T20260428-10]), Claude (`$CLAUDE_CONFIG_DIR` when set, otherwise `$HOME/.claude` — [T20260428-14]), and Gemini (`$HOME/.gemini` — [T20260428-14]). All three are emitted unconditionally because the active provider is not threaded through SBPL compilation; per-provider allowances are narrow and do not widen attack surface
 - every positive `modify` root from the resolved profile
-- Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`), appended after policy denies so workflow state remains writable under the outer sandbox ([T20260428-10])
+- Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`), appended after policy denies so workflow state remains writable under the outer sandbox ([T20260428-10]). This branch stays Codex-specific because Claude and Gemini have no analogous CLI surface — neither accepts `--add-dir`-style flags, and their startup-time writes are confined to the per-provider state directories listed above ([T20260428-14])
 
 Negated `read` / `modify` rules become explicit SBPL deny clauses after ordinary profile allows so they retain last-match-wins semantics. Simple path denials and `/**` subtree denials compile to `subpath`; non-subpath globs such as `**/*.env` compile to `regex` so they do not collapse into a repo-wide deny. Host-owned provider side roots are the explicit exception: Orbit appends those write roots after the policy-derived denials because the provider CLI and inherited Orbit subprocesses need the same workflow-state roots to be writable.
 
@@ -174,7 +174,7 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 
 1. **OS-level CLI sandboxing is macOS-only.** `backend: cli` executors can be wrapped by `sandbox-exec` on macOS. Linux (`bwrap`), Docker, and other sandbox implementations remain future work, and non-agent `run_process` callers still use the `Sandbox` trait's `NoSandbox` default unless they add their own guard.
 2. **Tool allowlists are still delegated for CLI backends.** The macOS wrapper narrows filesystem writes, but Orbit still does not enforce declared `tools:` inside Claude/Codex/Gemini CLI harnesses. The `tool_allowlist.harness_delegated` event remains the audit signal for that gap.
-3. **Provider state directories are trusted write roots.** `$HOME/.orbit` and the Codex state directory are allowed so the provider and inherited Orbit subprocesses can initialize and persist state. Those allowances are intentionally narrow, but they are outside the activity workspace.
+3. **Provider state directories are trusted write roots.** `$HOME/.orbit`, the Codex state directory, the Claude state directory, and the Gemini state directory are allowed so each provider CLI and inherited Orbit subprocesses can initialize and persist state. Those allowances are intentionally narrow, but they are outside the activity workspace, and they are emitted unconditionally rather than gated on the active provider.
 4. **Codex side-root appends are config-coupled.** The extra workspace/global `.orbit` side roots come from Codex `writable_dirs_json`, which Orbit currently populates for the default `execution.codex.sandbox = "workspace-write"` mode. If an operator configures Codex itself to `danger-full-access` while keeping the outer `macos-sandbox-exec` wrapper, those side roots are absent and inherited Orbit subprocesses may again hit workspace `.orbit` write denials.
 5. **macOS provenance syscall allowances are private.** The `vnguard` and `Sandbox`/67 MAC-syscall allowances mirror Codex's own seatbelt profile and unblock current macOS startup behavior. They are Apple-internal details; if Codex startup returns a bare `Operation not permitted` after an OS update, inspect those clauses first.
 6. **Pipeline env-fallback can leave `fs_profile = None`.** `crates/orbit-core/src/runtime/pipeline.rs` reads `ORBIT_ACTIVITY_FS_PROFILE` to fill a missing `fs_profile`. If the env var is unset, the `ToolContext` keeps `fs_profile: None`, `enforce_fs_policy` returns `Ok(None)`, and fs work proceeds unguarded. This diverges from the v2 host's `tool_context_for_activity`, which always materializes `unrestricted`. Callers that construct contexts outside the v2 dispatcher must set `fs_profile` explicitly or accept the unguarded path.
@@ -201,5 +201,6 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 - **[T20260426-0622]** — Add this policy & sandboxing design folder and document the current contract.
 - **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
+- **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude (`~/.claude` / `$CLAUDE_CONFIG_DIR`) and Gemini (`~/.gemini`), and document why side-write roots remain Codex-only.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

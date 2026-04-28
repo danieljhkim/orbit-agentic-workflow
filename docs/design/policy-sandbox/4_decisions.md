@@ -172,6 +172,20 @@ The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_execu
 - Inherited Orbit subprocesses can persist workflow lifecycle state under the same side roots Codex receives as CLI arguments.
 - Cost: the Codex state directory and provider side roots are trusted writable state outside ordinary project-content policy, similar to the existing `$HOME/.orbit` allowance for inherited Orbit subprocesses.
 
+## ADR-013 — Per-provider state-dir allowances are emitted unconditionally for every supported CLI
+
+**Status:** Accepted · 2026-04 · [T20260428-14]
+
+**Context.** ADR-012 fixed Codex CLI startup under `sandbox-exec` by adding `$CODEX_HOME` / `$HOME/.codex` to the SBPL allow set. The same fix was not applied to the other `backend: cli` providers: Claude writes settings/sessions/projects/file-history/todos under `$HOME/.claude` (or `$CLAUDE_CONFIG_DIR`) and Gemini writes state under `$HOME/.gemini` during startup. Both fail with `Operation not permitted` under the same outer profile that ADR-012 unblocked for Codex. The active provider is not threaded through SBPL compilation — the profile is built from `ResolvedFsProfile` plus host env, with no provider parameter — so adding per-provider conditionals would require either threading provider through the compile API or branching at the engine layer.
+
+**Decision.** Extend the macOS sandbox state-dir allowance to all three supported CLI providers and emit allows for `$CODEX_HOME` / `$HOME/.codex`, `$CLAUDE_CONFIG_DIR` / `$HOME/.claude`, and `$HOME/.gemini` unconditionally regardless of which provider is actually running. Honor `CLAUDE_CONFIG_DIR` (documented by Claude Code) as the env override for the Claude state dir; Gemini does not document a stable env override, so only the hardcoded fallback is honored. Keep `append_provider_side_write_roots` Codex-only because Claude and Gemini have no `--add-dir`-equivalent CLI surface, and document that constraint in the function so a future provider that does ship one is generalized rather than branched.
+
+**Consequences.**
+- Claude- and Gemini-backed `agent_loop` activities reach past CLI startup under `macos-sandbox-exec` with the same defense story Codex has.
+- The compiled profile has three narrow per-provider state-dir allowances instead of one. None of those allowances widen the attack surface meaningfully — they target documented per-CLI state roots, not broad `$HOME` writes — and emitting all three avoids per-provider conditional compilation that would otherwise need to thread provider through `compile_macos_sandbox_profile`.
+- The runtime continues to thread Codex's `writable_dirs_json` into the profile via `append_provider_side_write_roots`. Adding a new provider that ships a side-root surface should generalize that branch rather than duplicate it.
+- Cost: every macOS sandbox profile carries three state-dir allow clauses regardless of which provider runs. If a future provider's state dir overlaps with another sensitive root, this design needs revisiting.
+
 ---
 
 ## Task References
@@ -184,5 +198,6 @@ The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_execu
 - **[T20260426-0622]** — Add this design folder and record the initial ADR set.
 - **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS with inner-flag neutralization for codex/gemini.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
+- **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude and Gemini, and document why side-write roots remain Codex-only.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

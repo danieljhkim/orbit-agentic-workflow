@@ -52,14 +52,36 @@ use tempfile::NamedTempFile;
 pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String, OrbitError> {
     let home = std::env::var_os("HOME");
     let codex_home = std::env::var_os("CODEX_HOME");
-    compile_macos_sandbox_profile_with_env(rules, home.as_deref(), codex_home.as_deref())
+    let claude_config_dir = std::env::var_os("CLAUDE_CONFIG_DIR");
+    compile_macos_sandbox_profile_with_env(
+        rules,
+        SandboxCompileEnv {
+            home: home.as_deref(),
+            codex_home: codex_home.as_deref(),
+            claude_config_dir: claude_config_dir.as_deref(),
+        },
+    )
+}
+
+/// Env inputs that influence per-provider state-directory allowances in the
+/// compiled SBPL profile. Threaded through a struct so tests can pin every
+/// override without juggling a long parameter list.
+#[derive(Default, Clone, Copy)]
+struct SandboxCompileEnv<'a> {
+    home: Option<&'a OsStr>,
+    codex_home: Option<&'a OsStr>,
+    claude_config_dir: Option<&'a OsStr>,
 }
 
 fn compile_macos_sandbox_profile_with_env(
     rules: &ResolvedFsProfile,
-    home: Option<&OsStr>,
-    codex_home: Option<&OsStr>,
+    env: SandboxCompileEnv<'_>,
 ) -> Result<String, OrbitError> {
+    let SandboxCompileEnv {
+        home,
+        codex_home,
+        claude_config_dir,
+    } = env;
     let mut out = String::new();
     out.push_str("(version 1)\n");
     out.push_str("(deny default)\n");
@@ -104,12 +126,16 @@ fn compile_macos_sandbox_profile_with_env(
             sbpl_escape(&home)
         ));
     }
-    if let Some(codex_dir) = codex_state_dir(home, codex_home) {
-        // Codex initializes local state before it reads Orbit's envelope. Keep
-        // this provider allowance narrow instead of granting broad HOME writes.
+    // Per-provider state directories. Each `backend: cli` agent CLI writes
+    // setup state (sessions, settings, history, etc.) before it reads
+    // Orbit's envelope. Active provider is not threaded through SBPL
+    // compilation, and per-provider allowances do not widen attack surface,
+    // so emit narrow allows for every supported provider's state dir
+    // unconditionally.
+    for state_dir in provider_state_dirs(home, codex_home, claude_config_dir) {
         out.push_str(&format!(
             "(allow file-write* (subpath \"{}\"))\n",
-            sbpl_escape(&codex_dir.display().to_string())
+            sbpl_escape(&state_dir.display().to_string())
         ));
     }
 
@@ -140,9 +166,42 @@ fn compile_macos_sandbox_profile_with_env(
     Ok(out)
 }
 
+fn provider_state_dirs(
+    home: Option<&OsStr>,
+    codex_home: Option<&OsStr>,
+    claude_config_dir: Option<&OsStr>,
+) -> Vec<PathBuf> {
+    let mut dirs = Vec::with_capacity(3);
+    if let Some(dir) = codex_state_dir(home, codex_home) {
+        dirs.push(dir);
+    }
+    if let Some(dir) = claude_state_dir(home, claude_config_dir) {
+        dirs.push(dir);
+    }
+    if let Some(dir) = gemini_state_dir(home) {
+        dirs.push(dir);
+    }
+    dirs
+}
+
 fn codex_state_dir(home: Option<&OsStr>, codex_home: Option<&OsStr>) -> Option<PathBuf> {
     non_empty_env_path(codex_home)
         .or_else(|| non_empty_env_path(home).map(|path| path.join(".codex")))
+}
+
+/// Claude Code documents `CLAUDE_CONFIG_DIR` as the override; otherwise the
+/// CLI writes settings, sessions, projects, file-history, and todos under
+/// `$HOME/.claude`.
+fn claude_state_dir(home: Option<&OsStr>, claude_config_dir: Option<&OsStr>) -> Option<PathBuf> {
+    non_empty_env_path(claude_config_dir)
+        .or_else(|| non_empty_env_path(home).map(|path| path.join(".claude")))
+}
+
+/// Gemini CLI does not document a stable env override — it writes state
+/// under `$HOME/.gemini`. If a future CLI release surfaces an override, plumb
+/// it through `SandboxCompileEnv` here.
+fn gemini_state_dir(home: Option<&OsStr>) -> Option<PathBuf> {
+    non_empty_env_path(home).map(|path| path.join(".gemini"))
 }
 
 fn non_empty_env_path(value: Option<&OsStr>) -> Option<PathBuf> {
@@ -350,15 +409,21 @@ mod tests {
         }
     }
 
-    fn compile_with_env(
-        resolved: &ResolvedFsProfile,
-        home: Option<&str>,
-        codex_home: Option<&str>,
-    ) -> String {
+    #[derive(Default)]
+    struct EnvOverrides<'a> {
+        home: Option<&'a str>,
+        codex_home: Option<&'a str>,
+        claude_config_dir: Option<&'a str>,
+    }
+
+    fn compile_with_env(resolved: &ResolvedFsProfile, env: EnvOverrides<'_>) -> String {
         compile_macos_sandbox_profile_with_env(
             resolved,
-            home.map(OsStr::new),
-            codex_home.map(OsStr::new),
+            SandboxCompileEnv {
+                home: env.home.map(OsStr::new),
+                codex_home: env.codex_home.map(OsStr::new),
+                claude_config_dir: env.claude_config_dir.map(OsStr::new),
+            },
         )
         .expect("compile")
     }
@@ -382,7 +447,13 @@ mod tests {
         // events, SQLite stores, run state). Without this clause the
         // inherited child fails with `readonly database`.
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
-        let text = compile_with_env(&resolved, Some("/Users/test"), None);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
         assert!(
             text.contains("(allow file-write* (subpath \"/Users/test/.orbit\"))"),
             "missing ~/.orbit write allow: {text}"
@@ -394,8 +465,11 @@ mod tests {
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
         let text = compile_with_env(
             &resolved,
-            Some("/Users/test"),
-            Some("/var/folders/test/codex-home"),
+            EnvOverrides {
+                home: Some("/Users/test"),
+                codex_home: Some("/var/folders/test/codex-home"),
+                ..Default::default()
+            },
         );
         assert!(
             text.contains("(allow file-write* (subpath \"/var/folders/test/codex-home\"))"),
@@ -410,7 +484,13 @@ mod tests {
     #[test]
     fn compile_grants_write_access_to_home_codex_when_codex_home_missing() {
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
-        let text = compile_with_env(&resolved, Some("/Users/test"), None);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
         assert!(
             text.contains("(allow file-write* (subpath \"/Users/test/.codex\"))"),
             "missing HOME/.codex write allow: {text}"
@@ -418,9 +498,90 @@ mod tests {
     }
 
     #[test]
+    fn compile_grants_write_access_to_claude_config_dir_when_set() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                claude_config_dir: Some("/var/folders/test/claude-config"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/var/folders/test/claude-config\"))"),
+            "missing CLAUDE_CONFIG_DIR write allow: {text}"
+        );
+        assert!(
+            !text.contains("(allow file-write* (subpath \"/Users/test/.claude\"))"),
+            "CLAUDE_CONFIG_DIR should take precedence over HOME fallback: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_grants_write_access_to_home_claude_when_claude_config_dir_missing() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/Users/test/.claude\"))"),
+            "missing HOME/.claude write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_grants_write_access_to_home_gemini() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/Users/test/.gemini\"))"),
+            "missing HOME/.gemini write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_emits_all_provider_state_dirs() {
+        // Active provider is not threaded through SBPL compilation; emitting
+        // all three keeps the profile symmetric and avoids per-provider
+        // branching at compile time.
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
+        for dir in [".codex", ".claude", ".gemini"] {
+            let needle = format!("(allow file-write* (subpath \"/Users/test/{dir}\"))");
+            assert!(
+                text.contains(&needle),
+                "missing provider state dir allow `{needle}`: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_allows_macos_sandbox_provenance_syscall() {
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
-        let text = compile_with_env(&resolved, Some("/Users/test"), None);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
         assert!(
             text.contains("(allow system-mac-syscall (mac-policy-name \"vnguard\"))"),
             "missing vnguard mac syscall allow: {text}"
@@ -655,6 +816,78 @@ mod tests {
             !env_target.exists(),
             "env file should not exist: {env_target:?}"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn compiled_profile_allows_writes_to_claude_and_gemini_state_dirs() {
+        // Documented equivalent for AC #2 / #3 of T20260428-14: rather than
+        // executing real provider binaries, exercise the same SBPL allow
+        // clause Claude/Gemini rely on at startup. If the kernel permits a
+        // write under the synthetic `.claude` / `.gemini` subpaths, the same
+        // mechanism unblocks the real CLIs writing settings/sessions there.
+        use std::process::Command;
+
+        let home_root = std::env::var("HOME").expect("HOME set on macOS");
+        let parent = std::path::PathBuf::from(home_root)
+            .join(format!(".orbit-sandbox-test-{}", std::process::id()));
+        std::fs::create_dir_all(&parent).expect("parent dir");
+        let _cleanup = ScopeGuard(parent.clone());
+        let synthetic_home = tempfile::Builder::new()
+            .prefix("synthetic-home-")
+            .tempdir_in(&parent)
+            .expect("synthetic home tempdir");
+        let claude_dir = synthetic_home.path().join(".claude");
+        let gemini_dir = synthetic_home.path().join(".gemini");
+        std::fs::create_dir_all(&claude_dir).expect("claude dir");
+        std::fs::create_dir_all(&gemini_dir).expect("gemini dir");
+
+        let resolved = ResolvedFsProfile {
+            name: "default".to_string(),
+            read: vec![synthetic_home.path().display().to_string()],
+            modify: vec![],
+        };
+        let profile_text = compile_macos_sandbox_profile_with_env(
+            &resolved,
+            SandboxCompileEnv {
+                home: Some(synthetic_home.path().as_os_str()),
+                codex_home: None,
+                claude_config_dir: None,
+            },
+        )
+        .expect("compile sbpl");
+        let mut profile_file = tempfile::Builder::new()
+            .prefix("orbit-sandbox-test-")
+            .suffix(".sb")
+            .tempfile()
+            .expect("tempfile");
+        use std::io::Write;
+        profile_file
+            .write_all(profile_text.as_bytes())
+            .expect("write profile");
+        profile_file.flush().expect("flush");
+
+        for (label, target) in [
+            ("claude", claude_dir.join("ok")),
+            ("gemini", gemini_dir.join("ok")),
+        ] {
+            let status = Command::new("sandbox-exec")
+                .arg("-f")
+                .arg(profile_file.path())
+                .arg("/bin/sh")
+                .arg("-c")
+                .arg(format!("echo ok > {}", shell_escape(&target)))
+                .status()
+                .expect("run sandbox-exec");
+            assert!(
+                status.success(),
+                "expected write under synthetic ~/.{label} to succeed; status={status:?}"
+            );
+            assert!(
+                target.exists(),
+                "{label} target file was not written: {target:?}"
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
