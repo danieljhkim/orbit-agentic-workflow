@@ -1,20 +1,20 @@
 ---
 title: Agents
-description: "How Orbit runs coding agents through HTTP and CLI-backed runtimes."
+description: "How Orbit invokes coding agents in v1 — CLI subprocesses under a supervised runtime."
 sidebar:
   order: 6
 ---
 
 ## Runtime Paths
 
-Orbit supports agent execution through two backend families:
+**v1 ships CLI backends only.** Orbit invokes coding agents by spawning their official CLIs (Codex, Claude Code, Gemini CLI, etc.) as supervised subprocesses under an `FsProfile` and policy guardrails. The agent CLI is responsible for talking to its provider; Orbit does not need a separate provider API key for the v1 path.
 
-| Backend | Role |
-|---------|------|
-| `http` | Programmatic provider communication for multi-turn agent loops. This is the primary path. |
-| `cli` | Subprocess-backed provider CLIs retained for experimentation and compatibility. |
+| Backend | v1 status | Role |
+|---------|-----------|------|
+| `cli`   | Supported | Subprocess-backed provider CLIs. The only release-supported invocation path in v1. |
+| `http`  | Preview / not in v1 release surface | Programmatic provider communication via `LoopTransport`. Wired in code and exercised in tests, but not covered by the v1 release contract. Slated to become primary in v2. |
 
-`backend: auto` resolves before dispatch. Downstream execution sees a concrete backend.
+`backend: auto` resolves before dispatch and folds to the configured default. Downstream execution always sees a concrete backend.
 
 ## Providers
 
@@ -26,7 +26,7 @@ Schema v2 provider values include:
 - `ollama`
 - `openai_compat`
 
-HTTP transport support is provider-specific. A provider without a wired HTTP transport must fail structurally instead of silently falling back to CLI.
+In v1 each provider runs through its CLI runtime under `orbit-agent::providers/<name>/`. HTTP transport support is provider-specific and not part of the v1 release surface; an HTTP attempt against an unwired provider fails structurally rather than silently falling back to CLI.
 
 ## Tool Allowlists
 
@@ -40,4 +40,4 @@ spec:
     - orbit.graph.search
 ```
 
-`on_denial` controls whether a denied tool call terminates the loop or returns a structured error for the agent to handle.
+`on_denial` controls whether a denied tool call terminates the loop or returns a structured error for the agent to handle. In v1 (CLI backend) the agent CLI executes inside a supervised subprocess; tool allowlist enforcement is delegated to the harness and recorded as a `tool_allowlist.harness_delegated` envelope event in the audit trail.

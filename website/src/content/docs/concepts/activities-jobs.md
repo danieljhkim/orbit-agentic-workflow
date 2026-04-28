@@ -13,8 +13,8 @@ Supported activity types:
 
 | Type | Use |
 |------|-----|
-| `agent_loop` | Run an agent with an instruction, provider, backend, and tool allowlist. |
-| `groundhog` | Run checkpointed HTTP agent attempts with reset and retry behavior. |
+| `agent_loop` | Run an agent with an instruction, provider, backend, and tool allowlist. v1 only supports `backend: cli`. |
+| `groundhog` | Run checkpointed HTTP agent attempts with reset and retry behavior. *Not part of the v1 release surface — depends on the HTTP transport.* |
 | `deterministic` | Run a registered deterministic action. |
 | `shell` | Run an allowlisted shell program. |
 

@@ -1,5 +1,7 @@
 # Spec: Backend Resolution and Session Constraints
 
+> **v1 release scope.** v1 ships `backend: cli` as the only supported agent invocation path. The `backend: http` resolution rules below are still load-bearing in code (the resolver still runs, and HTTP-only constraints are still enforced for `loop`/`session:`), but `backend: http` is **not** part of the v1 release surface. Treat any HTTP-related rule below as preview-only until v2.
+
 Activity / Job assets must never reach dispatch with unresolved backend intent. Orbit resolves `backend: auto` to a concrete backend once per run, then validates the concrete shape before execution begins. This keeps backend choice, provider wiring, and session semantics auditable instead of implicit.
 
 ## Why This Exists

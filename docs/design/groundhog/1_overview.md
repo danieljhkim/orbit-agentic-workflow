@@ -8,6 +8,8 @@
 
 Groundhog is Orbit's checkpoint-oriented execution mode for HTTP-backed coding agents. It takes a structured task plan, runs one checkpoint at a time, and gives each attempt a fresh agent session plus a git-backed workspace snapshot. The intended payoff is smaller prompt state, cleaner retries, and higher confidence that "success" means the workspace really satisfies the requested checkpoint.
 
+> **v1 release scope.** Groundhog is **not** part of the v1 release surface. v1 ships `backend: cli` as the only supported agent invocation path; Groundhog requires the HTTP `LoopTransport` and is therefore preview-only in v1. This document continues to describe Groundhog for design continuity — expect it to land as a supported surface in a v2 release once HTTP coverage is complete.
+
 Today Groundhog exists as a partial but load-bearing implementation across `orbit-common`, `orbit-engine`, and `orbit-tools`. [2_design.md](./2_design.md) describes that implementation as it exists now, including the places where the current runner still carries legacy shapes. [implementation_status.md](./implementation_status.md) tracks the remaining cleanup and implementation gaps. [3_vision.md](./3_vision.md) captures the next design questions and the longer arc.
 
 ---

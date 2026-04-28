@@ -8,6 +8,8 @@
 
 Activity / Job is Orbit's current execution substrate. An activity describes one runnable unit. A job describes how activities compose: sequentially, in parallel, across collections, or through bounded loops. Orbit's product story is moving upward toward goals, graphs, sessions, and locks, but this layer remains the load-bearing runtime underneath. [2_design.md](./2_design.md) describes the current implementation; [3_vision.md](./3_vision.md) captures the open questions and the likely simplifications ahead.
 
+> **v1 release scope.** v1 ships `backend: cli` as the only supported agent invocation path. The HTTP `LoopTransport` (`backend: http`) and the Groundhog activity kind exist in this design and in code, and are exercised in tests, but are **not** part of the v1 release surface. This document continues to describe both for architectural completeness; treat HTTP/Groundhog references as preview-only until v2.
+
 ---
 
 ## 1. Motivation

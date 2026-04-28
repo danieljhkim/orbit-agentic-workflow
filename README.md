@@ -34,7 +34,8 @@ Full contract below in the [Auditability](#auditability) section. Design docs: [
 
 The substrate also hosts work that is not yet a front-door product surface but signals where Orbit is headed:
 
-- **Groundhog** — a checkpoint-oriented execution mode for HTTP-backend agents. Work runs as a sequence of checkpoints; each attempt starts with a fresh agent context and a clean git-backed workspace snapshot, then either rewinds on failure or persists a small stable memory on success. Today it exists as an `ActivityV2Spec::Groundhog` activity behind the job layer, not as an `orbit run` subcommand. Status: [docs/design/groundhog/](docs/design/groundhog/).
+- **Programmatic (HTTP/SDK) provider transport** — direct provider communication for multi-turn agent loops, replacing CLI subprocess execution as the primary path. Wired in code today (`backend: http`, `LoopTransport`) but not part of the v1 release surface; v1 ships CLI backends only.
+- **Groundhog** — a checkpoint-oriented execution mode for HTTP-backend agents. Work runs as a sequence of checkpoints; each attempt starts with a fresh agent context and a clean git-backed workspace snapshot, then either rewinds on failure or persists a small stable memory on success. Today it exists as an `ActivityV2Spec::Groundhog` activity behind the job layer, not as an `orbit run` subcommand. Depends on the HTTP transport above and is therefore also out of scope for v1. Status: [docs/design/groundhog/](docs/design/groundhog/).
 
 ---
 
@@ -44,7 +45,7 @@ Tablestakes for the primary audience. Orbit will not ship anything that breaks t
 
 - **Self-hostable, no cloud dependency.** Single binary, runs on a laptop, in a container, in a CI runner, behind a firewall. Orbit never phones home.
 - **Bring-your-own-credentials.** Your Anthropic / OpenAI / local-model keys, never Orbit's. Orbit is a pass-through.
-- **HTTP/SDK-first provider communication.** Programmatic multi-turn is the backbone. CLI subprocess execution (Codex, Claude Code, Gemini CLI) is retained as an escape hatch for experimentation, not the default path.
+- **CLI-backend agent execution (v1).** v1 invokes coding agents through their official CLIs (Codex, Claude Code, Gemini CLI) as supervised subprocesses. Programmatic HTTP/SDK transport (`backend: http`, `LoopTransport`) exists in the codebase and is exercised in tests, but is not a supported release surface in v1 — treat it as preview-only. v2 will flip the default once HTTP coverage is complete.
 - **Fleet primitives.** Parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent commit identity. Single-assistant assumptions are incorrect.
 - **Git- and GitHub-native.** Branches, worktrees, PRs, CI status. No custom version control abstractions.
 - **Cost-visible.** You know what each run cost in tokens and wall-clock — see `orbit audit stats` and `orbit metrics`.
@@ -67,7 +68,7 @@ Supporting primitives (`activity`, `job`, `policy`, `executor`, `tool`) are the 
 
 ## Quick Start
 
-**Prerequisites**: an LLM provider API key (Anthropic / OpenAI / local model), plus optional agent CLIs (Codex, Claude Code, Gemini CLI) if you want to experiment with the CLI backend.
+**Prerequisites**: at least one supported agent CLI installed and authenticated (Codex, Claude Code, or Gemini CLI). v1 invokes these CLIs as subprocesses — the agent CLI is responsible for talking to the model provider, so Orbit does not need a separate provider API key.
 
 Orbit itself can be installed without Rust. Only source builds require a Rust toolchain.
 
@@ -331,7 +332,7 @@ flowchart LR
 Two details matter most:
 
 - **`orbit-knowledge`** provides the graph substrate. Design docs in [docs/design/knowledge-graph/](docs/design/knowledge-graph/).
-- **`orbit-engine`** and **`orbit-agent`** provide the execution substrate. HTTP `LoopTransport` is primary; CLI subprocess providers are retained as the `backend: cli` path. Design docs in [docs/design/activity-job/](docs/design/activity-job/) and [docs/design/groundhog/](docs/design/groundhog/).
+- **`orbit-engine`** and **`orbit-agent`** provide the execution substrate. v1 ships `backend: cli` as the only supported agent invocation path: CLI subprocess providers (Codex, Claude Code, Gemini CLI, etc.) under `orbit-agent::providers/*`. The HTTP `LoopTransport` and `backend: http` exist in the codebase for v2 work but are not covered by the v1 release contract. Design docs in [docs/design/activity-job/](docs/design/activity-job/) and [docs/design/groundhog/](docs/design/groundhog/).
 
 That is the center of gravity for Orbit.
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Release scope
+
+- **CLI backends only.** v1 ships `backend: cli` as the only supported agent invocation path. v1 invokes coding agents through their official CLIs (Codex, Claude Code, Gemini CLI, etc.) as supervised subprocesses. The HTTP `LoopTransport` (`backend: http`) and Groundhog checkpoint runner exist in the codebase and are exercised in tests, but they are not part of the v1 release surface — treat them as preview-only and expect API churn until v2.
+
 ### Breaking Changes
 
 - **Activity/job v1 retired**: `schemaVersion: 1` activity/job assets are rejected at load time, the old v1 reconcile/runtime/store paths were removed, and `schemaVersion: 2` is now the canonical activity/job surface ([T20260419-2156], [T20260420-0036])

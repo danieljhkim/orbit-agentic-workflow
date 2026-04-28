@@ -38,13 +38,15 @@ orbit job run task_auto_pipeline --input mode=local
 
 ## Choose a Backend
 
-For `agent_loop` activities, backend resolution follows this order:
+**v1 supports `backend: cli` only.** For `agent_loop` activities, backend resolution follows this order:
 
 1. `--backend`
 2. `ORBIT_BACKEND`
 3. `[runtime] backend` in config
-4. `http`
+4. hard-coded fallback (subject to change between releases — pin `cli` explicitly in v1)
 
 ```bash
 orbit job run task_auto_pipeline --backend cli
 ```
+
+`backend: http` is wired in code but is not part of the v1 release surface. Treat it as preview only and expect API churn until v2.

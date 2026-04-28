@@ -46,7 +46,7 @@ timeout_seconds: 10
 expected_exit_codes: [0]
 ```
 
-For an agent loop, declare instruction, tools, provider, and backend:
+For an agent loop, declare instruction, tools, provider, and backend. v1 supports `backend: cli` only:
 
 ```yaml
 type: agent_loop
@@ -55,9 +55,11 @@ tools:
   - orbit.task.show
   - orbit.graph.search
 provider: claude
-backend: http
+backend: cli
 max_iterations: 25
 ```
+
+`backend: http` is wired in code for v2 but is not part of the v1 release surface — do not pin it in shipped activity assets.
 
 ## Use It
 

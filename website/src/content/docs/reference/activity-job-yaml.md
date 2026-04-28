@@ -27,12 +27,12 @@ spec:
 
 ## Activity Types
 
-| Type | Required fields |
-|------|-----------------|
-| `agent_loop` | `instruction`, optional `tools`, `provider`, `backend`, `model`, `max_iterations`, `wall_clock_timeout_seconds` |
-| `groundhog` | `instruction`, optional `tools`, `provider`, `model`, `max_iterations`, `attempt_budget_default` |
-| `deterministic` | `action`, optional `config` |
-| `shell` | `program`, `allowed_programs`, optional `args`, `timeout_seconds`, `expected_exit_codes` |
+| Type | Required fields | v1 status |
+|------|-----------------|-----------|
+| `agent_loop` | `instruction`, optional `tools`, `provider`, `backend`, `model`, `max_iterations`, `wall_clock_timeout_seconds` | Supported. v1 only supports `backend: cli`; `backend: http` is preview-only. |
+| `groundhog` | `instruction`, optional `tools`, `provider`, `model`, `max_iterations`, `attempt_budget_default` | Not in v1 release surface — depends on the HTTP transport. |
+| `deterministic` | `action`, optional `config` | Supported. |
+| `shell` | `program`, `allowed_programs`, optional `args`, `timeout_seconds`, `expected_exit_codes` | Supported. |
 
 ## Job Envelope
 

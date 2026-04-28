@@ -17,21 +17,32 @@ orbit --root /path/to/orbit-root task list
 
 For `agent_loop` execution, backend selection resolves once before dispatch.
 
-1. command flag
+1. command flag (`--backend`)
 2. `ORBIT_BACKEND`
 3. `[runtime] backend`
-4. `http`
+4. hard-coded fallback
+
+**v1 release scope.** v1 supports `backend: cli` only. Pin it explicitly so the resolution is deterministic regardless of build-internal defaults:
+
+```toml
+# orbit.toml
+[runtime]
+backend = "cli"
+```
+
+…or via environment for one-off invocations:
 
 ```bash
-ORBIT_BACKEND=cli orbit job run task_auto_pipeline
-orbit job run task_auto_pipeline --backend http
+ORBIT_BACKEND=cli orbit run job task_auto_pipeline
 ```
 
 Accepted backend values:
 
-- `http`
-- `cli`
-- `auto`
+| Value | v1 status |
+|-------|-----------|
+| `cli` | Supported. The v1 release path. |
+| `http` | Preview / not in v1 release surface. Wired in code for v2; do not depend on its behavior in v1. |
+| `auto` | Resolves to a concrete backend at load time. Always pin `cli` explicitly in v1 instead of relying on `auto`. |
 
 ## Workspace State
 

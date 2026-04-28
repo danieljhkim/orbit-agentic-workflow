@@ -26,6 +26,6 @@ sidebar:
   </a>
   <a class="orbit-card" href="./agents/">
     <h3>Agents</h3>
-    <p>HTTP and CLI-backed execution runtimes.</p>
+    <p>CLI-backed agent execution (the v1 release path).</p>
   </a>
 </div>
