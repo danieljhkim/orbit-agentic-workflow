@@ -45,6 +45,7 @@ use crate::command::run::job_run_to_json;
 use crate::command::task::output::task_to_json;
 use crate::parse::parse_since;
 
+const SQLITE_DENIAL_SCAN_LIMIT: usize = 1000;
 const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
     TaskStatus::InProgress,
     TaskStatus::Review,
@@ -74,6 +75,8 @@ const DEFAULT_DENIAL_THRESHOLD: i64 = 10;
 /// are sync, so we bound iteration to keep the endpoint within budget on
 /// long-lived workspaces.
 const V2_LOOP_FILE_SCAN_CAP: usize = 1500;
+const SQLITE_FS_BOUNDARY_PROFILE: &str = "workspace-boundary";
+const SQLITE_TOOL_DENIAL_PROFILE: &str = "tool";
 
 #[derive(Deserialize, Default)]
 pub(super) struct LimitQuery {
@@ -925,6 +928,98 @@ mod tests {
         assert_eq!(steps[0]["state"], "success");
         assert_eq!(steps[0]["duration_ms"], 2_000);
     }
+
+    #[test]
+    fn denials_payload_combines_v2_and_sqlite_denials() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let audit_dir = runtime.data_root().join("state/audit/v2_loop");
+        std::fs::create_dir_all(&audit_dir).expect("create audit dir");
+        let now = Utc::now();
+        write_lines(
+            &audit_dir.join("run-v2-denials.jsonl"),
+            &[
+                json!({
+                    "schemaVersion": 1,
+                    "event_type": "fs.call.denied",
+                    "event_id": "evt-fs-denied",
+                    "ts": now.to_rfc3339(),
+                    "run_id": "run-v2-denials",
+                    "agent_identity": "codex / gpt-5",
+                    "body_kind": "fs_call_denied",
+                    "profile": "restricted",
+                    "path": "./secret.txt"
+                })
+                .to_string(),
+                json!({
+                    "schemaVersion": 1,
+                    "event_type": "tool.denied",
+                    "event_id": "evt-tool-denied",
+                    "ts": now.to_rfc3339(),
+                    "run_id": "run-v2-denials",
+                    "agent_identity": "codex / gpt-5",
+                    "body_kind": "tool_denied",
+                    "tool_name": "github.pr.merge"
+                })
+                .to_string(),
+            ],
+        );
+        runtime
+            .record_audit_event(&orbit_core::AuditEventInsertParams {
+                execution_id: "exec-sqlite-fs".to_string(),
+                command: "tool".to_string(),
+                subcommand: Some("fs.read".to_string()),
+                tool_name: Some("fs.read".to_string()),
+                target_type: Some("tool".to_string()),
+                target_id: Some("fs.read".to_string()),
+                role: "codex".to_string(),
+                status: AuditEventStatus::Denied,
+                exit_code: 1,
+                duration_ms: 5,
+                working_directory: "/workspace".to_string(),
+                arguments_json: None,
+                stdout_truncated: None,
+                stderr_truncated: None,
+                error_message: Some("path is outside workspace: /usr/bin/false".to_string()),
+                host: None,
+                pid: 123,
+                session_id: None,
+                task_id: None,
+                job_run_id: None,
+                activity_id: None,
+                step_index: None,
+            })
+            .expect("record sqlite denial");
+
+        let since = now - Duration::minutes(5);
+        let rows = collect_denial_rows(&runtime, Some(since), None, None).expect("collect denials");
+        let payload = denials_payload(&rows, None, Some(since));
+        assert_eq!(payload["total"], 3);
+        assert!(payload["by_target"].to_string().contains("/usr/bin/false"));
+        assert!(payload["by_target"].to_string().contains("./secret.txt"));
+        assert!(payload["by_target"].to_string().contains("github.pr.merge"));
+
+        let fs_payload = denials_payload(&rows, Some("fs"), Some(since));
+        assert_eq!(fs_payload["total"], 2);
+        assert!(
+            fs_payload["by_profile"]
+                .to_string()
+                .contains(SQLITE_FS_BOUNDARY_PROFILE)
+        );
+        assert!(fs_payload["by_profile"].to_string().contains("restricted"));
+
+        let tool_payload = denials_payload(&rows, Some("tool"), Some(since));
+        assert_eq!(tool_payload["total"], 1);
+
+        let sqlite_only = collect_denial_rows(
+            &runtime,
+            Some(since),
+            Some(SQLITE_FS_BOUNDARY_PROFILE),
+            Some("codex"),
+        )
+        .expect("collect filtered sqlite denials");
+        assert_eq!(sqlite_only.len(), 1);
+        assert_eq!(sqlite_only[0].target, "/usr/bin/false");
+    }
 }
 
 async fn get_run(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
@@ -1385,6 +1480,173 @@ fn scan_v2_loop_denials(
     Ok(out)
 }
 
+fn collect_denial_rows(
+    runtime: &OrbitRuntime,
+    since: Option<DateTime<Utc>>,
+    profile_filter: Option<&str>,
+    agent_filter: Option<&str>,
+) -> Result<Vec<DenialRow>, orbit_core::OrbitError> {
+    let mut rows = scan_v2_loop_denials(runtime, since, profile_filter, agent_filter)?;
+    rows.extend(scan_sqlite_denials(
+        runtime,
+        since,
+        profile_filter,
+        agent_filter,
+    )?);
+    Ok(rows)
+}
+
+fn scan_sqlite_denials(
+    runtime: &OrbitRuntime,
+    since: Option<DateTime<Utc>>,
+    profile_filter: Option<&str>,
+    agent_filter: Option<&str>,
+) -> Result<Vec<DenialRow>, orbit_core::OrbitError> {
+    let events = runtime.list_audit_events(
+        since,
+        None,
+        Some(AuditEventStatus::Denied),
+        agent_filter.map(ToOwned::to_owned),
+        SQLITE_DENIAL_SCAN_LIMIT,
+    )?;
+
+    let rows = events
+        .into_iter()
+        .map(|event| sqlite_denial_row(&event))
+        .filter(|row| {
+            profile_filter
+                .map(|want| want.is_empty() || row.profile == want)
+                .unwrap_or(true)
+        })
+        .collect();
+    Ok(rows)
+}
+
+fn sqlite_denial_row(event: &orbit_core::AuditEvent) -> DenialRow {
+    let kind = sqlite_denial_kind(event);
+    DenialRow {
+        kind,
+        profile: sqlite_denial_profile(event, kind),
+        target: sqlite_denial_target(event, kind),
+        run_id: event
+            .job_run_id
+            .clone()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| event.execution_id.clone()),
+        agent: event.role.clone(),
+    }
+}
+
+fn sqlite_denial_kind(event: &orbit_core::AuditEvent) -> &'static str {
+    let tool_name = event.tool_name.as_deref().unwrap_or("");
+    if tool_name.starts_with("fs.") {
+        "fs"
+    } else {
+        "tool"
+    }
+}
+
+fn sqlite_denial_profile(event: &orbit_core::AuditEvent, kind: &str) -> String {
+    if kind != "fs" {
+        return SQLITE_TOOL_DENIAL_PROFILE.to_string();
+    }
+    if let Some(profile) = arguments_json_profile(event.arguments_json.as_deref()) {
+        return profile;
+    }
+    if let Some(profile) = extract_fs_profile_from_policy_message(event.error_message.as_deref()) {
+        return profile;
+    }
+    SQLITE_FS_BOUNDARY_PROFILE.to_string()
+}
+
+fn sqlite_denial_target(event: &orbit_core::AuditEvent, kind: &str) -> String {
+    if kind == "fs"
+        && let Some(path) = extract_fs_path_from_policy_message(event.error_message.as_deref())
+    {
+        return path;
+    }
+    event
+        .target_id
+        .clone()
+        .or_else(|| event.tool_name.clone())
+        .or_else(|| event.subcommand.clone())
+        .unwrap_or_else(|| event.command.clone())
+}
+
+fn arguments_json_profile(raw: Option<&str>) -> Option<String> {
+    let raw = raw?;
+    let value = serde_json::from_str::<Value>(raw).ok()?;
+    const KEYS: &[&str] = &["fsProfile", "fs_profile", "profile"];
+    let obj = value.as_object()?;
+    for key in KEYS {
+        if let Some(Value::String(found)) = obj.get(*key)
+            && !found.is_empty()
+        {
+            return Some(found.clone());
+        }
+    }
+    None
+}
+
+fn extract_fs_profile_from_policy_message(message: Option<&str>) -> Option<String> {
+    extract_between(message?, "under fsProfile `", "`")
+}
+
+fn extract_fs_path_from_policy_message(message: Option<&str>) -> Option<String> {
+    let message = message?;
+    if let Some(path) = extract_denied_for_path(message) {
+        return Some(path);
+    }
+    extract_after_prefix(message, "path is outside workspace: ")
+}
+
+fn extract_denied_for_path(message: &str) -> Option<String> {
+    let marker = " denied for `";
+    let marker_idx = message.find(marker)?;
+    let prefix = &message[..marker_idx];
+    if !prefix.ends_with("fs.read")
+        && !prefix.ends_with("fs.modify")
+        && !prefix.ends_with("fs.delete")
+    {
+        return None;
+    }
+    let rest = &message[marker_idx + marker.len()..];
+    let end = rest.find('`')?;
+    let path = rest[..end].trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn extract_between(message: &str, start: &str, end: &str) -> Option<String> {
+    let start_idx = message.find(start)? + start.len();
+    let rest = &message[start_idx..];
+    let end_idx = rest.find(end)?;
+    let value = rest[..end_idx].trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn extract_after_prefix(message: &str, prefix: &str) -> Option<String> {
+    let start_idx = message.find(prefix)? + prefix.len();
+    let value = message[start_idx..]
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_end_matches('.');
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
 async fn list_denials(
     State(runtime): State<Arc<OrbitRuntime>>,
     Query(q): Query<DenialsQuery>,
@@ -1413,26 +1675,23 @@ async fn list_denials(
         .filter(|s| !s.is_empty());
     let agent_filter = q.agent.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
-    let rows = match scan_v2_loop_denials(&runtime, since, profile_filter, agent_filter) {
+    let rows = match collect_denial_rows(&runtime, since, profile_filter, agent_filter) {
         Ok(rows) => rows,
         Err(e) => return server_error(e),
     };
 
-    // Apply optional kind filter post-scan; scan returns both varieties.
-    let filtered: Vec<&DenialRow> = rows
-        .iter()
-        .filter(|r| match kind.as_deref() {
-            None => true,
-            Some(k) => r.kind == k,
-        })
-        .collect();
+    Json(denials_payload(&rows, kind.as_deref(), since)).into_response()
+}
+
+fn denials_payload(rows: &[DenialRow], kind: Option<&str>, since: Option<DateTime<Utc>>) -> Value {
+    let filtered = filter_denial_rows(rows, kind);
 
     let by_profile = aggregate_by(&filtered, |r| r.profile.clone());
     let by_target = aggregate_by(&filtered, |r| r.target.clone());
     let by_run = aggregate_by(&filtered, |r| r.run_id.clone());
     let by_agent = aggregate_by(&filtered, |r| r.agent.clone());
 
-    Json(json!({
+    json!({
         "by_profile": rows_to_value(&by_profile, "name"),
         "by_target": rows_to_value(&by_target, "name"),
         "by_run": rows_to_value(&by_run, "run_id"),
@@ -1440,8 +1699,16 @@ async fn list_denials(
         "total": filtered.len(),
         "kind": kind,
         "since": since.map(|s| s.to_rfc3339()),
-    }))
-    .into_response()
+    })
+}
+
+fn filter_denial_rows<'a>(rows: &'a [DenialRow], kind: Option<&str>) -> Vec<&'a DenialRow> {
+    rows.iter()
+        .filter(|r| match kind {
+            None => true,
+            Some(k) => r.kind == k,
+        })
+        .collect()
 }
 
 fn aggregate_by<F>(rows: &[&DenialRow], key: F) -> Vec<(String, i64)>
