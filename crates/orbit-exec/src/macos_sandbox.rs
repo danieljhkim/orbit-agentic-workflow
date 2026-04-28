@@ -20,7 +20,8 @@
 //! `(deny file-read* (subpath ...))` / `(deny file-write* (subpath ...))`
 //! clauses appended after the broad allows so they win in last-match-wins.
 
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use orbit_common::types::{OrbitError, ResolvedFsProfile};
@@ -49,6 +50,16 @@ use tempfile::NamedTempFile;
 /// workspace-relative globs to absolute paths before invoking this
 /// function — a relative `subpath` is meaningless to the kernel.
 pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String, OrbitError> {
+    let home = std::env::var_os("HOME");
+    let codex_home = std::env::var_os("CODEX_HOME");
+    compile_macos_sandbox_profile_with_env(rules, home.as_deref(), codex_home.as_deref())
+}
+
+fn compile_macos_sandbox_profile_with_env(
+    rules: &ResolvedFsProfile,
+    home: Option<&OsStr>,
+    codex_home: Option<&OsStr>,
+) -> Result<String, OrbitError> {
     let mut out = String::new();
     out.push_str("(version 1)\n");
     out.push_str("(deny default)\n");
@@ -60,6 +71,14 @@ pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String
     out.push_str("(allow mach*)\n");
     out.push_str("(allow system-fsctl)\n");
     out.push_str("(allow system-socket)\n");
+    // Codex's own seatbelt profile allows these provenance-related MAC
+    // syscalls. Without them, macOS can fail Codex startup with a bare
+    // `Operation not permitted`; revisit this if future macOS versions move
+    // or rename the private Sandbox/67 operation.
+    out.push_str("(allow system-mac-syscall (mac-policy-name \"vnguard\"))\n");
+    out.push_str(
+        "(allow system-mac-syscall (require-all (mac-policy-name \"Sandbox\") (mac-syscall-number 67)))\n",
+    );
     out.push_str("(allow network*)\n");
     out.push_str("(allow sysctl*)\n");
     out.push_str("(allow iokit*)\n");
@@ -68,8 +87,8 @@ pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String
     out.push_str("(allow file-write* (subpath \"/private/tmp\"))\n");
     out.push_str("(allow file-write* (subpath \"/private/var/folders\"))\n");
     out.push_str("(allow file-write* (subpath \"/dev\"))\n");
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = home.to_string_lossy();
+    if let Some(home) = non_empty_env_path(home) {
+        let home = home.display().to_string();
         out.push_str(&format!(
             "(allow file-write* (subpath \"{}/Library/Caches\"))\n",
             sbpl_escape(&home)
@@ -85,13 +104,20 @@ pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String
             sbpl_escape(&home)
         ));
     }
+    if let Some(codex_dir) = codex_state_dir(home, codex_home) {
+        // Codex initializes local state before it reads Orbit's envelope. Keep
+        // this provider allowance narrow instead of granting broad HOME writes.
+        out.push_str(&format!(
+            "(allow file-write* (subpath \"{}\"))\n",
+            sbpl_escape(&codex_dir.display().to_string())
+        ));
+    }
 
     for rule in &rules.modify {
         if let Some(deny_path) = rule.strip_prefix('!') {
-            let path = subpath_root(deny_path);
             out.push_str(&format!(
-                "(deny file-write* (subpath \"{}\"))\n",
-                sbpl_escape(&path)
+                "(deny file-write* {})\n",
+                sbpl_filter_for_deny_rule(deny_path)
             ));
             continue;
         }
@@ -104,15 +130,27 @@ pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String
 
     for rule in &rules.read {
         if let Some(deny_path) = rule.strip_prefix('!') {
-            let path = subpath_root(deny_path);
             out.push_str(&format!(
-                "(deny file-read* (subpath \"{}\"))\n",
-                sbpl_escape(&path)
+                "(deny file-read* {})\n",
+                sbpl_filter_for_deny_rule(deny_path)
             ));
         }
     }
 
     Ok(out)
+}
+
+fn codex_state_dir(home: Option<&OsStr>, codex_home: Option<&OsStr>) -> Option<PathBuf> {
+    non_empty_env_path(codex_home)
+        .or_else(|| non_empty_env_path(home).map(|path| path.join(".codex")))
+}
+
+fn non_empty_env_path(value: Option<&OsStr>) -> Option<PathBuf> {
+    let value = value?;
+    if value.to_string_lossy().is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(value))
 }
 
 /// Spawn `program` under `sandbox-exec -f <profile>`. Returns the running
@@ -209,6 +247,74 @@ fn sbpl_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+fn sbpl_filter_for_deny_rule(rule: &str) -> String {
+    if deny_rule_can_use_subpath(rule) {
+        let path = subpath_root(rule);
+        format!("(subpath \"{}\")", sbpl_escape(&path))
+    } else {
+        let regex = glob_rule_to_regex(rule);
+        format!("(regex \"{}\")", sbpl_escape(&regex))
+    }
+}
+
+fn deny_rule_can_use_subpath(rule: &str) -> bool {
+    let trimmed = rule.trim_end_matches('/');
+    if !contains_glob(trimmed) {
+        return true;
+    }
+    let Some(prefix) = trimmed.strip_suffix("/**") else {
+        return false;
+    };
+    !contains_glob(prefix)
+}
+
+fn contains_glob(value: &str) -> bool {
+    value.contains('*') || value.contains('?')
+}
+
+fn glob_rule_to_regex(rule: &str) -> String {
+    let mut out = String::from("^");
+    let chars: Vec<char> = rule.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '*' if chars.get(i + 1) == Some(&'*') => {
+                if chars.get(i + 2) == Some(&'/') {
+                    out.push_str("(?:.*/)?");
+                    i += 3;
+                } else {
+                    out.push_str(".*");
+                    i += 2;
+                }
+            }
+            '*' => {
+                out.push_str("[^/]*");
+                i += 1;
+            }
+            '?' => {
+                out.push_str("[^/]");
+                i += 1;
+            }
+            c => {
+                push_regex_escaped(&mut out, c);
+                i += 1;
+            }
+        }
+    }
+    out.push('$');
+    out
+}
+
+fn push_regex_escaped(out: &mut String, c: char) {
+    if matches!(
+        c,
+        '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' | '\\'
+    ) {
+        out.push('\\');
+    }
+    out.push(c);
+}
+
 /// Strip glob suffixes from a rule so it can be used as a `subpath` root.
 /// `subpath` matches a directory and everything beneath, so `**` wildcards
 /// are redundant and `*` segments cannot be expressed in SBPL — we collapse
@@ -244,6 +350,19 @@ mod tests {
         }
     }
 
+    fn compile_with_env(
+        resolved: &ResolvedFsProfile,
+        home: Option<&str>,
+        codex_home: Option<&str>,
+    ) -> String {
+        compile_macos_sandbox_profile_with_env(
+            resolved,
+            home.map(OsStr::new),
+            codex_home.map(OsStr::new),
+        )
+        .expect("compile")
+    }
+
     #[test]
     fn compile_emits_deny_default_and_broad_read_with_modify_subpath() {
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
@@ -262,14 +381,55 @@ mod tests {
         // other `orbit ...` calls; those need to write to ~/.orbit (audit
         // events, SQLite stores, run state). Without this clause the
         // inherited child fails with `readonly database`.
-        unsafe {
-            std::env::set_var("HOME", "/Users/test");
-        }
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
-        let text = compile_macos_sandbox_profile(&resolved).expect("compile");
+        let text = compile_with_env(&resolved, Some("/Users/test"), None);
         assert!(
             text.contains("(allow file-write* (subpath \"/Users/test/.orbit\"))"),
             "missing ~/.orbit write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_grants_write_access_to_codex_home_when_set() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            Some("/Users/test"),
+            Some("/var/folders/test/codex-home"),
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/var/folders/test/codex-home\"))"),
+            "missing CODEX_HOME write allow: {text}"
+        );
+        assert!(
+            !text.contains("(allow file-write* (subpath \"/Users/test/.codex\"))"),
+            "CODEX_HOME should take precedence over HOME fallback: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_grants_write_access_to_home_codex_when_codex_home_missing() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(&resolved, Some("/Users/test"), None);
+        assert!(
+            text.contains("(allow file-write* (subpath \"/Users/test/.codex\"))"),
+            "missing HOME/.codex write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_allows_macos_sandbox_provenance_syscall() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(&resolved, Some("/Users/test"), None);
+        assert!(
+            text.contains("(allow system-mac-syscall (mac-policy-name \"vnguard\"))"),
+            "missing vnguard mac syscall allow: {text}"
+        );
+        assert!(
+            text.contains(
+                "(allow system-mac-syscall (require-all (mac-policy-name \"Sandbox\") (mac-syscall-number 67)))"
+            ),
+            "missing Sandbox mac syscall allow: {text}"
         );
     }
 
@@ -309,6 +469,25 @@ mod tests {
         assert!(
             allow_pos < deny_pos,
             "deny clause must come after allow for last-match-wins: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_uses_regex_for_non_subpath_negated_modify_glob() {
+        let mut resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo"]);
+        resolved
+            .modify
+            .push("!/Users/test/repo/**/*.env".to_string());
+        let text = compile_macos_sandbox_profile(&resolved).expect("compile");
+        assert!(
+            text.contains(
+                "(deny file-write* (regex \"^/Users/test/repo/(?:.*/)?[^/]*\\\\.env$\"))"
+            ),
+            "missing regex deny for env glob: {text}"
+        );
+        assert!(
+            !text.contains("(deny file-write* (subpath \"/Users/test/repo\"))"),
+            "env glob must not collapse to a repo-wide deny: {text}"
         );
     }
 
@@ -407,6 +586,74 @@ mod tests {
         assert!(
             !blocked_target.exists(),
             "blocked file should not exist: {blocked_target:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn compiled_profile_denies_env_glob_without_blocking_other_writes() {
+        use std::process::Command;
+
+        let home = std::env::var("HOME").expect("HOME set on macOS");
+        let parent = std::path::PathBuf::from(home)
+            .join(format!(".orbit-sandbox-test-{}", std::process::id()));
+        std::fs::create_dir_all(&parent).expect("parent dir");
+        let _cleanup = ScopeGuard(parent.clone());
+        let dir = tempfile::Builder::new()
+            .prefix("compile-env-")
+            .tempdir_in(&parent)
+            .expect("tempdir in parent");
+
+        let resolved = ResolvedFsProfile {
+            name: "default".to_string(),
+            read: vec![dir.path().display().to_string()],
+            modify: vec![
+                dir.path().display().to_string(),
+                format!("!{}/**/*.env", dir.path().display()),
+            ],
+        };
+        let profile_text = compile_macos_sandbox_profile(&resolved).expect("compile sbpl");
+        let mut profile_file = tempfile::Builder::new()
+            .prefix("orbit-sandbox-test-")
+            .suffix(".sb")
+            .tempfile()
+            .expect("tempfile");
+        use std::io::Write;
+        profile_file
+            .write_all(profile_text.as_bytes())
+            .expect("write profile");
+        profile_file.flush().expect("flush");
+
+        let allowed_target = dir.path().join("ok.txt");
+        let allow_status = Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/bin/sh")
+            .arg("-c")
+            .arg(format!("echo ok > {}", shell_escape(&allowed_target)))
+            .status()
+            .expect("run sandbox-exec");
+        assert!(
+            allow_status.success(),
+            "env glob deny should not block non-env writes; status={allow_status:?}"
+        );
+
+        let env_target = dir.path().join("blocked.env");
+        let deny_status = Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/bin/sh")
+            .arg("-c")
+            .arg(format!("echo bad > {}", shell_escape(&env_target)))
+            .status()
+            .expect("run sandbox-exec");
+        assert!(
+            !deny_status.success(),
+            "expected env glob write to fail; status={deny_status:?}"
+        );
+        assert!(
+            !env_target.exists(),
+            "env file should not exist: {env_target:?}"
         );
     }
 

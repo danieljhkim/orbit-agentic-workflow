@@ -203,9 +203,11 @@ The CLI path is driven by `cli_runner.rs`, added in [T20260419-0104]. The flow i
 
 After [T20260426-2313], the subprocess stdout/stderr readers stream line-level `tracing::info!` events while the child is still running. Each event carries `provider`, `stream`, `job_run_id`, `task_id`, and `line`; after [T20260426-2349], the reader emits the raw newline-stripped line and the default tracing subscriber redacts string field values and `Debug`-formatted field values before stderr or JSONL output is written. The readers still retain the original stdout/stderr byte buffers and hand those buffers to the existing audit/blob path when `CliInvocationFinished` is emitted, so run-log readers keep following blob refs rather than the live tracing feed.
 
-Executor args are prepended before provider runtime args. For the seeded Codex executor, that means the subprocess starts as `codex exec --json --sandbox workspace-write ...`, not as the interactive `codex` TUI with piped stdin. This was tightened after a local ship run for [T20260423-0114] exposed that the earlier command-only boundary ignored executor args.
+Executor args are prepended before provider runtime args. For the seeded Codex executor, that means the subprocess starts as `codex exec --json ...`, not as the interactive `codex` TUI with piped stdin. This was tightened after a local ship run for [T20260423-0114] exposed that the earlier command-only boundary ignored executor args.
 
 After [T20260427-48], provider runtime args also receive the runtime's provider config through the same `V2RuntimeHost` boundary. Static executor definitions keep command-shape flags such as `exec --json`; dynamic provider settings such as Codex sandbox mode, writable side directories, and approval policy stay in the retained provider runtime. Codex approval policy is passed as an exec-compatible config override rather than as the interactive-only `--ask-for-approval` flag after `exec`.
+
+After [T20260427-51], macOS CLI invocations whose executor declares `sandbox: macos-sandbox-exec` are wrapped as `sandbox-exec -f <profile.sb> <provider> ...`. In that mode Orbit treats the outer SBPL profile as the filesystem authority and neutralizes provider-native sandbox flags: Codex is pinned to `--sandbox danger-full-access`, and Gemini's sandbox toggle is removed. After [T20260428-10], the generated profile also grants the Codex state directory (`$CODEX_HOME`, or `$HOME/.codex` when unset) so Codex can initialize before reading Orbit's envelope. Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`) are appended after policy denies so inherited Orbit subprocesses can persist workflow state while ordinary project-content writes remain governed by the resolved `fsProfile`.
 
 The important retention boundary is that the older `AgentRuntime` trait and `providers/*_cli.rs` files are not deprecated leftovers. They are the shipped implementation of `backend: cli`.
 
@@ -431,6 +433,8 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260426-2349]** — Move CLI tracing output redaction from `cli_runner` call sites into the default tracing formatter layer.
 - **[T20260427-45]** — Use freshly fetched remote base refs for default task-shipping worktrees.
 - **[T20260427-48]** — Thread provider config into the v2 CLI backend and keep Codex dynamic flags exec-compatible.
+- **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS.
 - **[T20260428-8]** — Add explicit workflow admission for task-starting workflows and remove the plan prerequisite from those workflow starts.
+- **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

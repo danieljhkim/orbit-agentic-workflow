@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-28
 
 This document describes Orbit's shipped policy and sandboxing implementation: the v2 `PolicyDef` schema, profile resolution and the implicit `unrestricted` fallback, deny-rule injection, last-match-wins path evaluation, the `orbit-policy` engine facade, tool-layer enforcement in `orbit-tools`, the activity/job binding that threads an `fsProfile` through every dispatcher path, the `orbit-exec` spawn primitive, and the process supervision layer that handles timeouts, signals, and orphan reaping. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for forward-looking gaps.
 
@@ -91,7 +91,7 @@ The audit emission goes through `ctx.fs_audit: Option<Arc<dyn FsAuditLogger>>` (
 
 The exec layer does not consult the policy engine at all. There is no `proc.spawn` policy gate today — exec is sandboxed only by what the calling tool has already validated and by the supervision contract in §8.
 
-**Backend scope.** Tool-layer enforcement only fires when an activity runs under `backend: http` and reaches an Orbit fs builtin. `backend: cli` activities spawn an external CLI agent (Claude Code, Codex CLI, etc.) via `cli_runner.rs`; that path emits a `tool_allowlist.harness_delegated` envelope event and trusts the harness for fs behavior. The `fsProfile:` field is still recorded on the activity, but it does not gate fs access for CLI-backed runs because no Orbit fs builtin executes inside that subprocess. See [§9](#9-concerns--honest-limitations) for the resulting coverage gap.
+**Backend scope.** Tool-layer enforcement only fires when an activity runs under `backend: http` and reaches an Orbit fs builtin. `backend: cli` activities spawn an external CLI agent (Claude Code, Codex CLI, etc.) via `cli_runner.rs`; that path emits a `tool_allowlist.harness_delegated` envelope event and trusts the harness for tool allowlist behavior. On macOS, executors that declare `sandbox: macos-sandbox-exec` are additionally wrapped by the OS-level profile described in §7, so `fsProfile:` narrows CLI filesystem writes even though no Orbit fs builtin runs inside that subprocess.
 
 ---
 
@@ -129,7 +129,17 @@ This is the implicit-`unrestricted` rule from §2.2 in code form. Every dispatch
 
 `ExecutionResult { success, stdout, stderr, exit_code, duration_ms, output }` is the result shape (defined in `orbit-common`). The runner converts captured bytes via `String::from_utf8_lossy`, so non-UTF-8 output is preserved as replacement characters rather than failing the call.
 
-The `Sandbox` trait is the seam where future kernel-level isolation (bubblewrap, sandbox-exec, container) would attach. Today the only impl is `NoSandbox`. Tools that do not pre-validate their work get whatever isolation the host OS provides for the orbit process itself.
+The `Sandbox` trait is still the seam for `run_process` callers and its default impl remains `NoSandbox`. CLI-backed `agent_loop` invocations use a separate executor-level wrapper when the executor declares `sandbox: macos-sandbox-exec` (shipped in [T20260427-51]). The v2 host resolves the activity `fsProfile`, converts workspace-relative rules to absolute roots under the workspace, and the engine compiles those roots to SBPL just before spawning the provider CLI.
+
+The compiled macOS profile denies by default, allows broad reads required by agent CLIs and system libraries, allows process/signal/ipc/network/sysctl/iokit operations, and allows writes to:
+
+- scratch/cache roots (`/tmp`, `/private/tmp`, `/private/var/folders`, `/dev`, and `$HOME/Library/Caches`)
+- `$HOME/.orbit`, so inherited `orbit mcp serve` and other Orbit subprocesses can persist audit/state
+- the Codex state directory, resolved as `$CODEX_HOME` when set and `$HOME/.codex` otherwise ([T20260428-10])
+- every positive `modify` root from the resolved profile
+- Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`), appended after policy denies so workflow state remains writable under the outer sandbox ([T20260428-10])
+
+Negated `read` / `modify` rules become explicit SBPL deny clauses after ordinary profile allows so they retain last-match-wins semantics. Simple path denials and `/**` subtree denials compile to `subpath`; non-subpath globs such as `**/*.env` compile to `regex` so they do not collapse into a repo-wide deny. Host-owned provider side roots are the explicit exception: Orbit appends those write roots after the policy-derived denials because the provider CLI and inherited Orbit subprocesses need the same workflow-state roots to be writable.
 
 ---
 
@@ -162,17 +172,20 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 
 ## 9. Concerns & Honest Limitations
 
-1. **`NoSandbox` is the only Sandbox impl.** The trait has shipped, but no kernel-level or container-level isolation is wired in. A malicious or buggy tool that bypasses the policy layer can still touch the host filesystem. The policy/tool layer is the load-bearing safety surface today.
-2. **Policy enforcement is HTTP-backend-only.** `backend: cli` activities spawn an external CLI agent that owns its own filesystem behavior; `enforce_fs_policy` never runs for them. `fsProfile:` is recorded on the activity and surfaces in audit, but it does not gate fs access during a CLI-backed run. The harness-delegated allowlist event documents the gap rather than closing it. Closing this requires either ending CLI-backed dispatch, wrapping CLI runtimes in an OS-level sandbox, or routing CLI fs through a trapping shim.
-3. **Pipeline env-fallback can leave `fs_profile = None`.** `crates/orbit-core/src/runtime/pipeline.rs` reads `ORBIT_ACTIVITY_FS_PROFILE` to fill a missing `fs_profile`. If the env var is unset, the `ToolContext` keeps `fs_profile: None`, `enforce_fs_policy` returns `Ok(None)`, and fs work proceeds unguarded. This diverges from the v2 host's `tool_context_for_activity`, which always materializes `unrestricted`. Callers that construct contexts outside the v2 dispatcher must set `fs_profile` explicitly or accept the unguarded path.
-4. **Policy enforcement is not centralized within HTTP-backed runs either.** `enforce_fs_policy` is called from `orbit-tools::builtin::fs`, but a future tool (or a non-builtin tool) that performs fs work without going through that helper would not be guarded. There is no fs-trait-level policy interception.
-5. **Exec has no policy hook.** `proc.spawn` and similar shell-invoking tools do not consult the `PolicyEngine`. Program allowlists are recorded at the activity layer (`activity.rs` notes that `spec.allowed_programs` is consulted by the proc.spawn tool), but those allowlists are not part of the `PolicyDef` and do not flow through `effective_profile`.
-4. **Symlink semantics are not specified.** `workspace_relative_path` canonicalizes via `Path::canonicalize`, which follows symlinks and rejects out-of-workspace targets. The deny semantics for a symlink that points outside the workspace are "denied because the resolved path is not workspace-relative," but this is not currently spelled out as an invariant.
-5. **Glob translator is narrow.** It supports `*`, `**`, `?`, and `<prefix>/**`. It does not support character classes (`[abc]`), brace expansion (`{a,b}`), or POSIX bracket expressions. New profile shapes that need richer matching will hit translator gaps before they hit the evaluator.
-6. **`PolicyDecision` and `FsPolicyEvaluation` are parallel surfaces.** The fs path uses the evaluation struct; the broader RBAC plumbing uses the simple Allow/Deny enum. There is no current bridge that converts one to the other, which means future non-fs policy evaluators have to pick a return shape rather than reuse one.
-7. **Empty-rule-set semantics are conservative but non-obvious.** A profile with no `read` rules denies every read with `matched_rule = "[]"`. This is the safe default, but a user who declares a profile with only `denyRead` rules and no positive rules will see "[]" denials, not the "matched the deny rule" denial they may expect.
-8. **Signal handler installation is process-global.** `SignalHandlerGuard` uses a global `Mutex` to serialize installs, so two concurrent `run_process` calls in the same process must take turns installing handlers. This is currently fine because v2 dispatch is single-threaded per process, but it is a real constraint if exec ever moves into a worker pool.
-9. **Workspace canonicalization can deny legitimate paths.** If `workspace_root.canonicalize()` fails (e.g., the directory was just deleted), the helper falls back to the non-canonical root, which can cause `strip_prefix` to fail and surface as a `PolicyDenied("path is outside workspace")` error rather than a clearer "workspace missing" error.
+1. **OS-level CLI sandboxing is macOS-only.** `backend: cli` executors can be wrapped by `sandbox-exec` on macOS. Linux (`bwrap`), Docker, and other sandbox implementations remain future work, and non-agent `run_process` callers still use the `Sandbox` trait's `NoSandbox` default unless they add their own guard.
+2. **Tool allowlists are still delegated for CLI backends.** The macOS wrapper narrows filesystem writes, but Orbit still does not enforce declared `tools:` inside Claude/Codex/Gemini CLI harnesses. The `tool_allowlist.harness_delegated` event remains the audit signal for that gap.
+3. **Provider state directories are trusted write roots.** `$HOME/.orbit` and the Codex state directory are allowed so the provider and inherited Orbit subprocesses can initialize and persist state. Those allowances are intentionally narrow, but they are outside the activity workspace.
+4. **Codex side-root appends are config-coupled.** The extra workspace/global `.orbit` side roots come from Codex `writable_dirs_json`, which Orbit currently populates for the default `execution.codex.sandbox = "workspace-write"` mode. If an operator configures Codex itself to `danger-full-access` while keeping the outer `macos-sandbox-exec` wrapper, those side roots are absent and inherited Orbit subprocesses may again hit workspace `.orbit` write denials.
+5. **macOS provenance syscall allowances are private.** The `vnguard` and `Sandbox`/67 MAC-syscall allowances mirror Codex's own seatbelt profile and unblock current macOS startup behavior. They are Apple-internal details; if Codex startup returns a bare `Operation not permitted` after an OS update, inspect those clauses first.
+6. **Pipeline env-fallback can leave `fs_profile = None`.** `crates/orbit-core/src/runtime/pipeline.rs` reads `ORBIT_ACTIVITY_FS_PROFILE` to fill a missing `fs_profile`. If the env var is unset, the `ToolContext` keeps `fs_profile: None`, `enforce_fs_policy` returns `Ok(None)`, and fs work proceeds unguarded. This diverges from the v2 host's `tool_context_for_activity`, which always materializes `unrestricted`. Callers that construct contexts outside the v2 dispatcher must set `fs_profile` explicitly or accept the unguarded path.
+7. **Policy enforcement is not centralized within HTTP-backed runs either.** `enforce_fs_policy` is called from `orbit-tools::builtin::fs`, but a future tool (or a non-builtin tool) that performs fs work without going through that helper would not be guarded. There is no fs-trait-level policy interception.
+8. **Exec has no policy hook.** `proc.spawn` and similar shell-invoking tools do not consult the `PolicyEngine`. Program allowlists are recorded at the activity layer (`activity.rs` notes that `spec.allowed_programs` is consulted by the proc.spawn tool), but those allowlists are not part of the `PolicyDef` and do not flow through `effective_profile`.
+9. **Symlink semantics are not specified.** `workspace_relative_path` canonicalizes via `Path::canonicalize`, which follows symlinks and rejects out-of-workspace targets. The deny semantics for a symlink that points outside the workspace are "denied because the resolved path is not workspace-relative," but this is not currently spelled out as an invariant.
+10. **Glob translator is narrow.** It supports `*`, `**`, `?`, and `<prefix>/**`. It does not support character classes (`[abc]`), brace expansion (`{a,b}`), or POSIX bracket expressions. New profile shapes that need richer matching will hit translator gaps before they hit the evaluator.
+11. **`PolicyDecision` and `FsPolicyEvaluation` are parallel surfaces.** The fs path uses the evaluation struct; the broader RBAC plumbing uses the simple Allow/Deny enum. There is no current bridge that converts one to the other, which means future non-fs policy evaluators have to pick a return shape rather than reuse one.
+12. **Empty-rule-set semantics are conservative but non-obvious.** A profile with no `read` rules denies every read with `matched_rule = "[]"`. This is the safe default, but a user who declares a profile with only `denyRead` rules and no positive rules will see "[]" denials, not the "matched the deny rule" denial they may expect.
+13. **Signal handler installation is process-global.** `SignalHandlerGuard` uses a global `Mutex` to serialize installs, so two concurrent `run_process` calls in the same process must take turns installing handlers. This is currently fine because v2 dispatch is single-threaded per process, but it is a real constraint if exec ever moves into a worker pool.
+14. **Workspace canonicalization can deny legitimate paths.** If `workspace_root.canonicalize()` fails (e.g., the directory was just deleted), the helper falls back to the non-canonical root, which can cause `strip_prefix` to fail and surface as a `PolicyDenied("path is outside workspace")` error rather than a clearer "workspace missing" error.
 
 ---
 
@@ -186,5 +199,7 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 - **[T20260328-221810]** — Agent subprocess termination on Ctrl+C / job-run cancel; predecessor of the current signal-pipe design.
 - **[T20260426-0605]** — Auditability design folder cross-linked from §5.
 - **[T20260426-0622]** — Add this policy & sandboxing design folder and document the current contract.
+- **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS.
+- **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

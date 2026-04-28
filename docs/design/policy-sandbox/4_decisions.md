@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-28
 
 This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by ADR number. New entries follow the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -156,7 +156,21 @@ The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_execu
 - The `allow_fallback` knob lets operators degrade gracefully when `sandbox-exec` is unavailable, but the safe default is fail-closed.
 - Linux (`bwrap`), Docker, network restriction, and activity-level sandbox overrides are explicitly out of scope for v1; the `ExecutorSandboxKind` enum and orbit-exec module layout leave room for `linux-bwrap` to land alongside.
 - SBPL is Apple-deprecated-but-still-shipping (codex itself uses it). v1 accepts that risk.
-- Cost: SBPL writes are static text; complex `denyRead` / `denyModify` rule combinations don't always translate cleanly. The compiler emits a best-effort `subpath` root for each glob, falling back to the longest non-glob prefix. Activities that need precise glob semantics under sandbox should declare profiles with explicit subpath roots.
+- Cost: SBPL writes are static text; complex `denyRead` / `denyModify` rule combinations don't always translate cleanly. Simple subtree denials use `subpath`; non-subpath deny globs use SBPL `regex` to avoid over-denying the containing directory. Activities that need precise allow-side glob semantics under sandbox should declare profiles with explicit subpath roots.
+
+## ADR-012 — Codex state and side roots are narrow sandbox write allowances
+
+**Status:** Accepted · 2026-04 · [T20260428-10]
+
+**Context.** After workflow admission was fixed in [T20260428-8], `orbit run ship T20260428-5` reached the Codex-backed `agent_implement` step, but Codex exited during startup under `sandbox-exec` with `Operation not permitted`. The outer profile allowed task worktree writes, temp/cache writes, and `$HOME/.orbit`, but not Codex's own state directory. Codex initializes state before it reads Orbit's envelope, so the provider could not start. Once Codex state was allowed, the same run still failed because the default policy's workspace `.orbit/**` write deny overrode the Codex `--add-dir` side root that Orbit passed for workflow state, and because the `**/*.env` deny glob collapsed to a repo-wide `subpath` deny.
+
+**Decision.** Keep `sandbox-exec` as the filesystem authority and add two narrow Codex allowances. First, allow provider state writes to `$CODEX_HOME` when set, otherwise `$HOME/.codex`. Second, append Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`) after policy-derived denials. Compile non-subpath deny globs such as `**/*.env` as SBPL `regex` clauses instead of reducing them to their containing directory. Do not grant broad `$HOME` writes and do not disable the outer sandbox.
+
+**Consequences.**
+- Codex-backed `backend: cli` runs can initialize under the macOS sandbox while project writes remain constrained by the resolved `fsProfile`.
+- Operators can relocate Codex state with `CODEX_HOME`, and the compiled profile follows that location.
+- Inherited Orbit subprocesses can persist workflow lifecycle state under the same side roots Codex receives as CLI arguments.
+- Cost: the Codex state directory and provider side roots are trusted writable state outside ordinary project-content policy, similar to the existing `$HOME/.orbit` allowance for inherited Orbit subprocesses.
 
 ---
 
@@ -169,5 +183,6 @@ The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_execu
 - **[T20260419-0503]** — Enforced `fsProfiles` across runtime and CLI; introduced `tool_context_for_activity`.
 - **[T20260426-0622]** — Add this design folder and record the initial ADR set.
 - **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS with inner-flag neutralization for codex/gemini.
+- **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

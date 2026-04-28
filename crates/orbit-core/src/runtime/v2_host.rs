@@ -730,12 +730,13 @@ impl V2RuntimeHost for OrbitRuntime {
                 }
                 #[cfg(target_os = "macos")]
                 {
-                    let resolved =
+                    let mut resolved =
                         resolve_fs_profile_absolute(self, fs_profile).map_err(|err| {
                             DispatchError::CliInvocationFailed(format!(
                                 "resolve fsProfile for sandbox: {err}"
                             ))
                         })?;
+                    append_provider_side_write_roots(self, provider, &mut resolved)?;
                     Ok(Some(ResolvedSandbox {
                         kind,
                         fs_profile: resolved,
@@ -1030,6 +1031,67 @@ fn resolve_fs_profile_absolute(
     })
 }
 
+#[cfg(target_os = "macos")]
+fn append_provider_side_write_roots(
+    runtime: &OrbitRuntime,
+    provider: &str,
+    resolved: &mut ResolvedFsProfile,
+) -> Result<(), DispatchError> {
+    if provider != "codex" {
+        return Ok(());
+    }
+
+    let config = EnvironmentHost::agent_provider_config(runtime);
+    let Some(raw_dirs) = config.get("writable_dirs_json") else {
+        return Ok(());
+    };
+    let writable_dirs: Vec<String> = serde_json::from_str(raw_dirs).map_err(|err| {
+        DispatchError::CliInvocationFailed(format!(
+            "parse codex writable_dirs_json for sandbox: {err}"
+        ))
+    })?;
+    if writable_dirs.is_empty() {
+        return Ok(());
+    }
+
+    let workspace_root = runtime
+        .paths()
+        .repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| runtime.paths().repo_root.clone());
+    let workspace_str = workspace_root.display().to_string();
+    for dir in writable_dirs {
+        let Some(root) = absolutize_side_write_root(&workspace_str, &dir) else {
+            continue;
+        };
+        // Append even when the root already appears earlier: SBPL is
+        // last-match-wins, and these host-owned roots must land after
+        // policy-derived denies such as `.orbit/**`.
+        resolved.modify.push(root);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn absolutize_side_write_root(workspace_root: &str, path: &str) -> Option<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let absolute = if PathBuf::from(trimmed).is_absolute() {
+        PathBuf::from(trimmed)
+    } else {
+        let trimmed = trimmed.trim_start_matches("./");
+        if trimmed.is_empty() || trimmed == "." {
+            PathBuf::from(workspace_root)
+        } else {
+            PathBuf::from(workspace_root).join(trimmed)
+        }
+    };
+    let normalized = absolute.canonicalize().unwrap_or(absolute);
+    Some(normalized.display().to_string())
+}
+
 fn absolutize_rule(workspace_root: &str, rule: &str) -> String {
     let (negated, body) = rule
         .strip_prefix('!')
@@ -1085,6 +1147,8 @@ mod tests {
     use orbit_tools::ToolContext;
     use serde_json::json;
     use std::collections::HashMap;
+    #[cfg(target_os = "macos")]
+    use tempfile::tempdir;
 
     #[test]
     fn run_planning_duel_is_registered_for_v2_deterministic_dispatch() {
@@ -1110,16 +1174,17 @@ mod tests {
         }
     }
 
-    fn seeded_runtime_with_executor(
+    fn seed_executor(
+        runtime: &OrbitRuntime,
+        name: &str,
         sandbox: Option<orbit_common::types::ExecutorSandboxKind>,
-    ) -> OrbitRuntime {
-        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+    ) {
         let now = Utc::now();
         runtime
             .upsert_executor_def(&ExecutorDef {
-                name: "codex".to_string(),
+                name: name.to_string(),
                 executor_type: ExecutorType::DirectAgent,
-                command: Some("codex".to_string()),
+                command: Some(name.to_string()),
                 args: vec!["exec".to_string(), "--json".to_string()],
                 stdout_format: None,
                 models: HashMap::new(),
@@ -1131,7 +1196,25 @@ mod tests {
                 updated_at: now,
             })
             .expect("seed executor");
+    }
+
+    fn seeded_runtime_with_executor(
+        sandbox: Option<orbit_common::types::ExecutorSandboxKind>,
+    ) -> OrbitRuntime {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        seed_executor(&runtime, "codex", sandbox);
         runtime
+    }
+
+    #[cfg(target_os = "macos")]
+    fn runtime_with_workspace_layout() -> (tempfile::TempDir, OrbitRuntime) {
+        let root = tempdir().expect("create tempdir");
+        let global = root.path().join("home/.orbit");
+        let workspace = root.path().join("repo/.orbit");
+        std::fs::create_dir_all(&global).expect("global orbit dir");
+        std::fs::create_dir_all(&workspace).expect("workspace orbit dir");
+        let runtime = OrbitRuntime::from_roots(&global, &workspace).expect("build runtime");
+        (root, runtime)
     }
 
     #[test]
@@ -1170,6 +1253,59 @@ mod tests {
                 "modify entry must be absolutized: {entry}"
             );
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_executor_sandbox_appends_codex_side_write_roots_after_policy_denies() {
+        let (_root, runtime) = runtime_with_workspace_layout();
+        seed_executor(
+            &runtime,
+            "codex",
+            Some(orbit_common::types::ExecutorSandboxKind::MacosSandboxExec),
+        );
+
+        let resolved = runtime
+            .resolve_executor_sandbox("codex", None)
+            .expect("resolve")
+            .expect("descriptor");
+        let modify = &resolved.fs_profile.modify;
+        let workspace_orbit = runtime
+            .paths()
+            .orbit_dir
+            .canonicalize()
+            .unwrap_or_else(|_| runtime.paths().orbit_dir.clone())
+            .display()
+            .to_string();
+        let workspace_orbit_deny = format!("!{workspace_orbit}/**");
+        let deny_pos = modify
+            .iter()
+            .position(|entry| entry == &workspace_orbit_deny)
+            .unwrap_or_else(|| {
+                panic!(
+                    "default policy should deny workspace .orbit writes via {workspace_orbit_deny}; modify={modify:?}"
+                )
+            });
+        let allow_pos = modify
+            .iter()
+            .rposition(|entry| entry == &workspace_orbit)
+            .expect("codex side write root should re-allow workspace .orbit");
+
+        assert!(
+            deny_pos < allow_pos,
+            "codex side write root must be appended after policy deny: {modify:?}"
+        );
+        let global_orbit = runtime
+            .paths()
+            .global_dir
+            .canonicalize()
+            .unwrap_or_else(|_| runtime.paths().global_dir.clone())
+            .display()
+            .to_string();
+        assert!(
+            modify.iter().any(|entry| entry == &global_orbit),
+            "codex side write roots should include global .orbit: {modify:?}"
+        );
     }
 
     #[cfg(not(target_os = "macos"))]
