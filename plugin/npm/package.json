@@ -1,0 +1,48 @@
+{
+  "name": "@orbit-dev/cli",
+  "version": "0.0.0",
+  "description": "npm proxy for the Orbit CLI. Downloads the matching native binary from GitHub Releases on install and forwards all invocations.",
+  "bin": {
+    "orbit": "bin/orbit.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-binary.js",
+    "test": "node bin/orbit.js --version"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danieljhkim/orbit.git",
+    "directory": "plugin/npm"
+  },
+  "homepage": "https://github.com/danieljhkim/orbit",
+  "bugs": "https://github.com/danieljhkim/orbit/issues",
+  "license": "MIT",
+  "keywords": [
+    "orbit",
+    "mcp",
+    "code-intelligence",
+    "knowledge-graph"
+  ],
+  "config": {
+    "orbit": {
+      "binaryRepo": "danieljhkim/orbit"
+    }
+  }
+}

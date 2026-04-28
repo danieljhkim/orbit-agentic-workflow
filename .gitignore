@@ -7,6 +7,8 @@
 .agents
 agentspace
 .mcp.json
+# ...except the published plugin's MCP registration, which ships in the package.
+!plugin/.mcp.json
 
 # OS / editor
 .DS_Store

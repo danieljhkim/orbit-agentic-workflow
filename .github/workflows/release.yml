@@ -134,6 +134,42 @@ jobs:
             dist/orbit-checksums.txt
           generate_release_notes: true
 
+  publish-npm:
+    name: Publish @orbit-dev/cli to npm
+    needs: publish-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Set package version from tag
+        shell: bash
+        working-directory: plugin/npm
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.publish-release.outputs.version }}"
+          [ -n "$VERSION" ] || { echo "missing version"; exit 1; }
+          npm version --no-git-tag-version --allow-same-version "$VERSION"
+          jq '.version' package.json
+
+      - name: Publish
+        shell: bash
+        working-directory: plugin/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm publish --access public --provenance
+
   bump-homebrew-tap:
     name: Update Homebrew tap
     needs: publish-release
