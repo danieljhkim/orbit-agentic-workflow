@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-28
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -334,6 +334,20 @@ This ADR log records the decisions that define the current Activity / Job substr
 - Codex approval policy no longer depends on an interactive-only flag position after `exec`.
 - Cost: the v2 host boundary exposes a provider-config map, so backend CLI dispatch remains aware of provider-specific runtime settings.
 
+## ADR-026 — Workflow admission is distinct from generic task updates
+
+**Status:** Accepted · 2026-04 · [T20260428-8]
+
+**Context.** Task-starting workflows such as `orbit run ship` and `orbit run duel-plan` are the intended entrypoints for accepting and beginning work, but the generic task update guard could fail them before implementation or planning began when a selected task had no plan. Removing that guard globally would also let unrelated deterministic metadata updates resurrect archived tasks.
+
+**Decision.** Add a workflow-admission path for `worktree_setup` and `run_planning_duel` that accepts `proposed`, `friction`, `backlog`, `rejected`, and `archived` tasks into `in-progress`, with `in-progress` treated as idempotent retry input. Keep direct `orbit.task.update` and generic `apply_task_automation_update` behavior separate from this broader workflow permission.
+
+**Consequences.**
+- `orbit run ship`, `orbit run ship --mode local`, and `orbit run duel-plan` can start intentionally selected tasks without a pre-authored execution plan.
+- Friction reports accepted directly into workflow execution still record the `friction -> in-progress` acceptance path for lifecycle history and friction-bounty scoring.
+- Planning-duel output now reports `task_status: "in-progress"` instead of claiming the task status stayed unchanged.
+- Cost: task lifecycle semantics are no longer uniform across all status mutation surfaces; reviewers must distinguish workflow admission from ordinary task updates.
+
 ---
 
 ## Task References
@@ -368,5 +382,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260427-33]** — Remove the audit-only `dispatch_agent` step from `task_auto_pipeline`.
 - **[T20260427-45]** — Use freshly fetched remote base refs for default task-shipping worktrees.
 - **[T20260427-48]** — Thread provider config into the v2 CLI backend and keep Codex dynamic flags exec-compatible.
+- **[T20260428-8]** — Add workflow-specific task admission for task-starting workflows.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

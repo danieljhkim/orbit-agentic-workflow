@@ -269,6 +269,7 @@ pub trait TaskWriteHost {
         note: Option<String>,
         comment: Option<String>,
     ) -> Result<Task, OrbitError>;
+    fn admit_task_for_workflow(&self, task_id: &str, workflow: &str) -> Result<Task, OrbitError>;
     fn update_task_from_activity(
         &self,
         task_id: &str,
@@ -662,6 +663,10 @@ impl TaskWriteHost for AutomationExecutorHost<'_> {
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
         self.task_writer.start_task(task_id, note, comment)
+    }
+
+    fn admit_task_for_workflow(&self, task_id: &str, workflow: &str) -> Result<Task, OrbitError> {
+        self.task_writer.admit_task_for_workflow(task_id, workflow)
     }
 
     fn update_task_from_activity(

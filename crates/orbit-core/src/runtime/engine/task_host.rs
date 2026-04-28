@@ -40,6 +40,10 @@ impl TaskWriteHost for OrbitRuntime {
         OrbitRuntime::start_task_as_system(self, task_id, note, comment)
     }
 
+    fn admit_task_for_workflow(&self, task_id: &str, workflow: &str) -> Result<Task, OrbitError> {
+        OrbitRuntime::admit_task_for_workflow_as_system(self, task_id, workflow)
+    }
+
     fn update_task_from_activity(
         &self,
         task_id: &str,
@@ -155,9 +159,13 @@ mod tests {
     use super::*;
 
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
 
     use crate::command::task::{TaskAddParams, TaskUpdateParams};
-    use serde_json::json;
+    use orbit_common::types::TaskType;
+    use serde_json::{Value, json};
     use tempfile::tempdir;
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime) {
@@ -180,6 +188,50 @@ mod tests {
                 None,
             )
             .expect("approve task")
+    }
+
+    fn init_git_repo(repo: &Path) {
+        git(repo, &["init"]);
+        git(repo, &["checkout", "-b", "main"]);
+        git(repo, &["config", "user.name", "Orbit Test"]);
+        git(repo, &["config", "user.email", "orbit-test@example.com"]);
+        fs::write(repo.join("README.md"), "test repo\n").expect("write README");
+        git(repo, &["add", "README.md"]);
+        git(repo, &["commit", "-m", "initial commit"]);
+    }
+
+    fn git(current_dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(current_dir)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {} failed in {}:\nstdout: {}\nstderr: {}",
+            args.join(" "),
+            current_dir.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn run_worktree_setup(runtime: &OrbitRuntime, task_ids: &[String], run_id: &str) -> Value {
+        orbit_engine::execute_deterministic_action(
+            runtime,
+            "worktree_setup",
+            &json!({
+                "run_id": run_id,
+                "task_ids": task_ids,
+                "base": "main",
+                "base_sync": "local",
+                "branch_prefix": "orbit-test"
+            }),
+            false,
+            &HashMap::new(),
+            None,
+        )
+        .expect("run worktree setup")
     }
 
     #[test]
@@ -220,6 +272,225 @@ mod tests {
             updated.workspace_path.as_deref(),
             Some("/tmp/orbit-worktree")
         );
+    }
+
+    #[test]
+    fn worktree_setup_admits_unplanned_workflow_statuses_and_counts_friction_once() {
+        let (root, runtime) = test_runtime();
+        let repo = root.path().join("repo");
+        init_git_repo(&repo);
+        let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
+        fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
+
+        let proposed = runtime
+            .add_task(TaskAddParams {
+                title: "Proposed workflow task".to_string(),
+                description: "Starts from proposed without a plan.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create proposed task");
+        let friction = runtime
+            .add_task_with_identity(
+                TaskAddParams {
+                    title: "Friction workflow task".to_string(),
+                    description: "Starts from friction without a plan.".to_string(),
+                    task_type: Some(TaskType::Friction),
+                    workspace_path: Some(".".to_string()),
+                    ..Default::default()
+                },
+                Some("codex".to_string()),
+                Some("gpt-fixture".to_string()),
+            )
+            .expect("create friction task");
+        let backlog = approve_for_execution(
+            &runtime,
+            &runtime
+                .add_task(TaskAddParams {
+                    title: "Backlog workflow task".to_string(),
+                    description: "Starts from backlog without a plan.".to_string(),
+                    workspace_path: Some(".".to_string()),
+                    ..Default::default()
+                })
+                .expect("create backlog candidate"),
+        );
+        let rejected = runtime
+            .add_task(TaskAddParams {
+                title: "Rejected workflow task".to_string(),
+                description: "Starts from rejected without a plan.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create rejected candidate");
+        let rejected = runtime
+            .reject_task(
+                &rejected.id,
+                "exercise workflow admission".to_string(),
+                None,
+            )
+            .expect("reject task");
+        let archived = runtime
+            .add_task(TaskAddParams {
+                title: "Archived workflow task".to_string(),
+                description: "Starts from archived without a plan.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create archived candidate");
+        runtime.archive_task(&archived.id).expect("archive task");
+
+        let task_ids = vec![
+            proposed.id.clone(),
+            friction.id.clone(),
+            backlog.id.clone(),
+            rejected.id.clone(),
+            archived.id.clone(),
+        ];
+        let output = run_worktree_setup(&runtime, &task_ids, "jrun-admit");
+        let workspace_path = output["workspace_path"]
+            .as_str()
+            .expect("workspace path output")
+            .to_string();
+
+        for task_id in &task_ids {
+            let task = runtime.get_task(task_id).expect("reload admitted task");
+            assert_eq!(task.status, TaskStatus::InProgress, "{task_id}");
+            assert_eq!(task.batch_id.as_deref(), Some("jrun-admit"));
+            assert_eq!(
+                task.workspace_path.as_deref(),
+                Some(workspace_path.as_str())
+            );
+        }
+
+        let scoreboard = read_friction_scoreboard(&scoreboard_dir);
+        assert_eq!(scoreboard["issues-accepted"]["gpt-fixture"], 1);
+
+        let friction_task = runtime
+            .get_task(&friction.id)
+            .expect("reload friction task");
+        let admitted_again = runtime
+            .admit_task_for_workflow_as_system(&friction_task.id, "worktree_setup")
+            .expect("idempotent workflow admission");
+        assert_eq!(admitted_again.status, TaskStatus::InProgress);
+        let scoreboard = read_friction_scoreboard(&scoreboard_dir);
+        assert_eq!(scoreboard["issues-accepted"]["gpt-fixture"], 1);
+    }
+
+    #[test]
+    fn direct_update_to_in_progress_still_requires_plan_for_unapproved_statuses() {
+        let (_root, runtime) = test_runtime();
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Direct update remains gated".to_string(),
+                description: "A direct update is not workflow admission.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create proposed task");
+
+        let err = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    status: Some(TaskStatus::InProgress),
+                    ..Default::default()
+                },
+            )
+            .expect_err("direct update should still require a plan");
+        assert!(
+            err.to_string()
+                .contains("requires a non-empty execution plan"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn generic_automation_update_does_not_unarchive_empty_plan_tasks() {
+        let (_root, runtime) = test_runtime();
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Archived generic automation".to_string(),
+                description: "Generic metadata stamping is not workflow admission.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create task");
+        runtime.archive_task(&task.id).expect("archive task");
+
+        let err = runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    status: Some(TaskStatus::InProgress),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect_err("generic automation update should not admit archived task");
+        assert!(
+            err.to_string()
+                .contains("requires a non-empty execution plan"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn duel_plan_admission_accepts_all_workflow_start_statuses() {
+        let (_root, runtime) = test_runtime();
+        let proposed = runtime
+            .add_task(TaskAddParams {
+                title: "Duel proposed".to_string(),
+                description: "Planning duel starts proposed.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create proposed task");
+        let friction = runtime
+            .add_task(TaskAddParams {
+                title: "Duel friction".to_string(),
+                description: "Planning duel starts friction.".to_string(),
+                status: Some(TaskStatus::Friction),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create friction task");
+        let backlog = approve_for_execution(
+            &runtime,
+            &runtime
+                .add_task(TaskAddParams {
+                    title: "Duel backlog".to_string(),
+                    description: "Planning duel starts backlog.".to_string(),
+                    workspace_path: Some(".".to_string()),
+                    ..Default::default()
+                })
+                .expect("create backlog candidate"),
+        );
+        let rejected = runtime
+            .add_task(TaskAddParams {
+                title: "Duel rejected".to_string(),
+                description: "Planning duel starts rejected.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create rejected candidate");
+        let rejected = runtime
+            .reject_task(&rejected.id, "exercise duel admission".to_string(), None)
+            .expect("reject task");
+        let archived = runtime
+            .add_task(TaskAddParams {
+                title: "Duel archived".to_string(),
+                description: "Planning duel starts archived.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create archived candidate");
+        runtime.archive_task(&archived.id).expect("archive task");
+
+        for task in [proposed, friction, backlog, rejected, archived] {
+            let admitted = runtime
+                .admit_task_for_workflow_as_system(&task.id, "duel-plan")
+                .expect("duel-plan admits workflow-startable status");
+            assert_eq!(admitted.status, TaskStatus::InProgress, "{}", task.id);
+        }
     }
 
     #[test]
@@ -273,6 +544,38 @@ mod tests {
         assert_eq!(
             status_entry.note.as_deref(),
             Some("automation: update_task \u{2192} review")
+        );
+    }
+
+    #[test]
+    fn review_transition_still_requires_execution_summary() {
+        let (_root, runtime) = test_runtime();
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Review guard".to_string(),
+                description: "Exercise review summary requirement.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("add task");
+        let task = approve_for_execution(&runtime, &task);
+        runtime
+            .start_task(&task.id, Some("start task".to_string()), None)
+            .expect("start task");
+
+        let err = runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    status: Some(TaskStatus::Review),
+                    ..Default::default()
+                },
+            )
+            .expect_err("review without execution summary should fail");
+        assert!(
+            err.to_string()
+                .contains("requires non-empty execution_summary"),
+            "{err}"
         );
     }
 
@@ -425,5 +728,11 @@ mod tests {
             .find(|comment| comment.message.starts_with("Batch dispatched:"))
             .expect("batch dispatch comment");
         assert_eq!(batch_comment.by, SYSTEM_ACTOR_LABEL);
+    }
+
+    fn read_friction_scoreboard(scoreboard_dir: &Path) -> Value {
+        let raw = fs::read_to_string(scoreboard_dir.join("friction_bounty.json"))
+            .expect("read friction scoreboard");
+        serde_json::from_str(&raw).expect("parse friction scoreboard")
     }
 }

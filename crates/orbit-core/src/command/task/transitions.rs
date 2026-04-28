@@ -261,6 +261,84 @@ impl OrbitRuntime {
         }
     }
 
+    pub(crate) fn admit_task_for_workflow_as_system(
+        &self,
+        id: &str,
+        workflow: &str,
+    ) -> Result<Task, OrbitError> {
+        let task = self.get_task(id)?;
+        let workflow = workflow.trim();
+        let workflow = if workflow.is_empty() {
+            "workflow"
+        } else {
+            workflow
+        };
+
+        if task.status == TaskStatus::InProgress {
+            return Ok(task);
+        }
+
+        if !matches!(
+            task.status,
+            TaskStatus::Proposed
+                | TaskStatus::Friction
+                | TaskStatus::Backlog
+                | TaskStatus::Rejected
+                | TaskStatus::Archived
+        ) {
+            return Err(OrbitError::InvalidInput(format!(
+                "task '{id}' is in status '{}'; workflow admission for '{workflow}' requires 'proposed', 'friction', 'backlog', 'rejected', 'archived', or 'in-progress'",
+                task.status
+            )));
+        }
+
+        let note = Some(format!("workflow admission: {workflow}"));
+        let append_history = if matches!(task.status, TaskStatus::Proposed | TaskStatus::Friction) {
+            let acceptance_event = if task.status == TaskStatus::Friction {
+                "friction_accepted"
+            } else {
+                "proposal_approved"
+            };
+            vec![TaskHistoryEntry {
+                at: chrono::Utc::now(),
+                by: SYSTEM_ACTOR_LABEL.to_string(),
+                event: acceptance_event.to_string(),
+                note: note.clone(),
+                from_status: Some(task.status),
+                to_status: Some(TaskStatus::Backlog),
+            }]
+        } else {
+            Vec::new()
+        };
+
+        let approved_from_proposed = task.status == TaskStatus::Proposed;
+        let updated = self.with_mutation(|| {
+            let task = self.stores().tasks().update(
+                id,
+                StoreTaskUpdateParams {
+                    actor: SYSTEM_ACTOR_LABEL.to_string(),
+                    status: Some(TaskStatus::InProgress),
+                    status_event: Some("started".to_string()),
+                    status_note: note.clone(),
+                    append_history: append_history.clone(),
+                    ..Default::default()
+                },
+            )?;
+            Ok((
+                task.clone(),
+                OrbitEvent::TaskStarted {
+                    id: id.to_string(),
+                    started_by: SYSTEM_ACTOR_LABEL.to_string(),
+                    approved_from_proposed,
+                },
+            ))
+        })?;
+
+        self.try_record_friction_transition(&task, task.status, TaskStatus::InProgress);
+
+        Ok(updated)
+    }
+
     pub fn reject_task(
         &self,
         id: &str,

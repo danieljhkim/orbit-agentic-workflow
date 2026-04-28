@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-27
+**Last updated:** 2026-04-28
 
 This document describes the shipped Activity / Job substrate as it exists today across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, load-time normalization, dispatch boundaries, backend semantics, DAG execution, audit, and the legacy edges that still matter. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -301,6 +301,14 @@ Task-shipping workflows that create worktrees (`task_pr_pipeline`, `task_local_p
 
 Direct job callers can set `base_sync: local` when they intentionally need a local-only repository or an unpublished base branch. That mode resolves the local base ref and skips the origin fetch; it is an explicit escape hatch rather than the default shipping behavior.
 
+### 8.10 Workflow task admission
+
+After [T20260428-8], task-starting workflows own an explicit admission step instead of relying on generic task update semantics. `worktree_setup` and `run_planning_duel` accept tasks in `proposed`, `friction`, `backlog`, `rejected`, and `archived`, and move them to `in-progress` before implementation or planner activity runs. Existing `in-progress` tasks are treated as idempotent retry inputs.
+
+This admission path is intentionally narrower than `orbit.task.update` or generic deterministic metadata stamping. Direct task updates still keep their non-empty-plan guard when moving unplanned non-backlog work to `in-progress`, and `apply_task_automation_update` does not become a blanket archived-task resurrection surface. Workflow admission records the lifecycle transition under the system actor and preserves friction-bounty accounting for `friction -> in-progress`.
+
+Planning-duel writeback now reports `task_status: "in-progress"` rather than the former `status_unchanged` signal. The task plan artifact still lands through `planning_duel_resolved`; only the lifecycle expectation changed.
+
 ---
 
 ## 9. Filesystem Policy and `fsProfile`
@@ -421,6 +429,8 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260426-0742]** — Remove duplicate job-level run inspection aliases and keep run inspection under `orbit run`.
 - **[T20260426-2313]** — Stream CLI subprocess stdout/stderr through structured tracing events while retaining the existing audit/blob path.
 - **[T20260426-2349]** — Move CLI tracing output redaction from `cli_runner` call sites into the default tracing formatter layer.
+- **[T20260427-45]** — Use freshly fetched remote base refs for default task-shipping worktrees.
 - **[T20260427-48]** — Thread provider config into the v2 CLI backend and keep Codex dynamic flags exec-compatible.
+- **[T20260428-8]** — Add explicit workflow admission for task-starting workflows and remove the plan prerequisite from those workflow starts.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

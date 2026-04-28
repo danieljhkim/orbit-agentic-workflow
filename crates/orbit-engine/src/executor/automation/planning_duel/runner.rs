@@ -29,6 +29,8 @@ pub(crate) fn run_planning_duel<H: RuntimeHost + TaskHost + Sync + ?Sized>(
         .or_else(|| input_string_field(input, "run_id"))
         .ok_or_else(|| OrbitError::InvalidInput("missing required input.run_id".to_string()))?;
 
+    host.admit_task_for_workflow(task_id, "duel-plan")?;
+
     artifacts::cleanup_stale_planning_duel_artifacts(host, task_id)?;
 
     let roles_output = roles::select_planning_duel_roles(host, &json!({ "task_id": task_id }))?;
@@ -134,6 +136,7 @@ pub(crate) fn run_planning_duel<H: RuntimeHost + TaskHost + Sync + ?Sized>(
     Ok(json!({
         "task_id": task_id,
         "run_id": job_run_id,
+        "task_status": "in-progress",
         "winner_agent_cli": winner.winner_agent_cli,
         "winner_model": winner.winner_model,
         "recorded": true,

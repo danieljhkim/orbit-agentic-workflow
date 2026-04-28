@@ -432,7 +432,7 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
         winner_assignment.agent, winner_assignment.model
     );
     let comment_message = format!(
-        "Planning duel resolved.\n\nWinner: {winner_label} ({}/{})\n\nRationale: {}\n\nWinning plan persisted to task.plan. Task status was left unchanged.",
+        "Planning duel resolved.\n\nWinner: {winner_label} ({}/{})\n\nRationale: {}\n\nWinning plan persisted to task.plan. Task status is in-progress for workflow execution.",
         winner_assignment.agent, winner_assignment.model, winner.arbiter_rationale
     );
 
@@ -458,7 +458,7 @@ pub(super) fn writeback_planning_duel_task<H: TaskHost + ?Sized>(
 
     Ok(json!({
         "task_id": task_id,
-        "status_unchanged": true,
+        "task_status": "in-progress",
         "winner_agent_cli": winner_assignment.agent,
         "winner_model": winner_assignment.model,
     }))

@@ -25,6 +25,8 @@ spec:
         type: string
       run_id:
         type: string
+      task_status:
+        type: string
       winner_agent_cli:
         type: string
       winner_model:

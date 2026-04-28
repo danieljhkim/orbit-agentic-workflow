@@ -39,6 +39,10 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
 
+    for task_id in &task_ids {
+        ensure_task_can_enter_workflow(host, task_id, "worktree_setup")?;
+    }
+
     let start_point = resolve_worktree_start_point(repo_root, &base, base_sync_mode)?;
 
     let branch_name = branch_name_for_tasks(&branch_prefix, &task_ids);
@@ -50,12 +54,12 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     let workspace_path_str = worktree_path.to_string_lossy().to_string();
 
     for task_id in &task_ids {
+        host.admit_task_for_workflow(task_id, "worktree_setup")?;
         host.apply_task_automation_update(
             task_id,
             TaskAutomationUpdate {
                 batch_id: Some(run_id.clone()),
                 workspace_path: Some(Some(workspace_path_str.clone())),
-                status: Some(TaskStatus::InProgress),
                 ..TaskAutomationUpdate::default()
             },
         )?;
@@ -67,6 +71,30 @@ pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
         "head_ref": branch_name,
         "base_ref": start_point,
     }))
+}
+
+fn ensure_task_can_enter_workflow<H: TaskHost + ?Sized>(
+    host: &H,
+    task_id: &str,
+    workflow: &str,
+) -> Result<(), OrbitError> {
+    let task = host.get_task(task_id)?;
+    if matches!(
+        task.status,
+        TaskStatus::Proposed
+            | TaskStatus::Friction
+            | TaskStatus::Backlog
+            | TaskStatus::Rejected
+            | TaskStatus::Archived
+            | TaskStatus::InProgress
+    ) {
+        return Ok(());
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "task '{}' is in status '{}'; workflow admission for '{workflow}' requires 'proposed', 'friction', 'backlog', 'rejected', 'archived', or 'in-progress'",
+        task.id, task.status
+    )))
 }
 
 fn ensure_worktree(
