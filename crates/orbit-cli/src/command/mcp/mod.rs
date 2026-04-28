@@ -1,7 +1,7 @@
 //! `orbit mcp` — MCP client integration and server.
 //!
-//! `orbit mcp init/remove` manages local client integration for Claude Code
-//! and Codex. `orbit mcp serve` serves the Orbit tool surface over MCP so
+//! `orbit mcp init/remove` manages local client integration for Claude Code,
+//! Codex, and Gemini. `orbit mcp serve` serves the Orbit tool surface over MCP so
 //! external clients can discover and invoke Orbit operations with typed JSON
 //! schemas.
 
@@ -47,6 +47,7 @@ pub(crate) const TASK_TOOL_NAMES: &[&str] = &[
 pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
     "orbit.graph.callers",
     "orbit.graph.deps",
+    "orbit.graph.history",
     "orbit.graph.implementors",
     "orbit.graph.overview",
     "orbit.graph.pack",
@@ -196,8 +197,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use orbit_core::OrbitRuntime;
+    use orbit_mcp::McpHost;
 
-    use super::{GRAPH_READ_TOOL_NAMES, TASK_TOOL_NAMES, is_mcp_tool_exposed, safe_mcp_tool_names};
+    use super::{
+        GRAPH_READ_TOOL_NAMES, RuntimeMcpHost, TASK_TOOL_NAMES, is_mcp_tool_exposed,
+        safe_mcp_tool_names,
+    };
 
     #[test]
     fn safe_surface_matches_runtime_graph_and_task_tools() {
@@ -245,5 +250,35 @@ mod tests {
 
         assert!(!is_mcp_tool_exposed("orbit.state.get"));
         assert!(!is_mcp_tool_exposed("demo.hello"));
+    }
+
+    #[test]
+    fn runtime_mcp_host_lists_safe_graph_tools_for_clients() {
+        let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+        let host = RuntimeMcpHost { runtime };
+        let listed: BTreeSet<String> = host
+            .list_tool_schemas()
+            .into_iter()
+            .map(|schema| schema.name)
+            .collect();
+
+        for name in GRAPH_READ_TOOL_NAMES {
+            assert!(
+                listed.contains(*name),
+                "client-visible MCP tool list missing graph read tool: {name}"
+            );
+        }
+
+        for name in [
+            "orbit.graph.add",
+            "orbit.graph.delete",
+            "orbit.graph.move",
+            "orbit.graph.write",
+        ] {
+            assert!(
+                !listed.contains(name),
+                "client-visible MCP tool list exposes graph write tool: {name}"
+            );
+        }
     }
 }

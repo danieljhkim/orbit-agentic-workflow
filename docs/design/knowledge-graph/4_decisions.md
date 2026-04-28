@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-28 (ADR-022)
+**Last updated:** 2026-04-28 (ADR-023)
 
 ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -352,6 +352,21 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-023 — Keep MCP graph exposure equal to the read-only graph tool set
+
+**Status:** Accepted · 2026-04 · [T20260428-3]
+
+**Context.** The MCP safe list exposed the original eight read-only graph tools, but `orbit.graph.history` later joined the registered graph tool surface as a read-only history/query tool. That left Codex and Gemini MCP discovery dependent on a stale client-visible safe list even though the runtime registry had the tool.
+
+**Decision.** Treat the MCP graph surface as the full read-only graph tool set: callers, deps, history, implementors, overview, pack, refs, search, and show. Continue excluding graph mutation tools (`add`, `delete`, `move`, `write`) from the public MCP surface.
+
+**Consequences.**
+- Codex, Gemini, and other MCP clients discover the same read-only graph capabilities that `orbit tool list` reports as active.
+- The history tool no longer requires a shell fallback when agents need task-ID attribution by selector.
+- Cost: the MCP schema payload gains one more graph tool, so the provider-dependent schema-cache caveat from ADR-018 still applies.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -385,5 +400,6 @@ Tasks cited by ADRs above:
 - **[T20260426-0507]** — Move `orbit task history` to `orbit graph history`; add configurable task-ID regex with manifest-recorded pattern, mismatch warning, and forced full backfill on pattern change; expose `orbit.graph.history` agent tool.
 - **[T20260426-2042]** — Move graph CLI behavior behind the `orbit-tools::graph` facade and remove the direct `orbit-knowledge` dependency from `orbit-cli`.
 - **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
+- **[T20260428-3]** — Expose the full read-only graph tool set through the MCP safe surface for Codex and Gemini.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

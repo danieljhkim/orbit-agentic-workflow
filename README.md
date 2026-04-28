@@ -274,7 +274,7 @@ spec:
 
 ### MCP integration
 
-Orbit exposes a safe MCP surface by default: `orbit.task.*` tools and graph read tools (`orbit.graph.search`, `orbit.graph.show`, `orbit.graph.pack`). No graph write tools — write coordination flows through task lock reservations such as `orbit.task.locks.reserve`.
+Orbit exposes a safe MCP surface by default: `orbit.task.*` tools and read-only `orbit.graph.*` tools, including `search`, `show`, `pack`, `refs`, `callers`, `implementors`, `deps`, `overview`, and `history`. No graph write tools — write coordination flows through task lock reservations such as `orbit.task.locks.reserve`.
 
 ```bash
 orbit mcp init --auto    # detects .claude/, .gemini/, ~/.codex/config.toml
