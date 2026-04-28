@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-28 (T20260428-4)
+**Last updated:** 2026-04-28 (T20260428-7)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -225,6 +225,21 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - `duration_ms` is clamped to `>= 1` at the audit-write site so sub-millisecond invocations cannot record `0` and false-trigger downstream alerts that key on `duration_ms > 0`.
 - Cost: the dedup signal is a per-thread one-shot. Async or multi-threaded entry points that span thread boundaries between dispatch and the higher-level audit writer will need to re-evaluate this seam if they emerge; today, the CLI is sync and `orbit mcp serve` runs without a CLI guard at all, so the constraint is a non-issue.
 
+## ADR-017 — Command-audit rows carry task / run / activity correlation IDs
+
+**Status:** Accepted · 2026-04 · [T20260428-7]
+
+**Context.** The SQLite `audit_events` table records every CLI- and MCP-originated tool invocation but stored no link back to the Orbit task, job run, or activity that triggered it. The dashboard's command-audit view rendered rows like `claude-opus-4-7 → orbit.task.approve → success` with no way to drill back to the surrounding execution context. The v2 audit envelope (`V2AuditEnvelope`, ADR-003) already carries `run_id`, `parent_event_id`, and activity context as workspace-local JSONL, but the two streams were unjoined: command-audit rows had no foreign-key into v2 events, and v2 events had no `execution_id` back-reference to the SQLite row. Operator drilldown stopped at the row.
+
+**Decision.** Add four nullable correlation columns to `audit_events` — `task_id`, `job_run_id`, `activity_id`, `step_index` — and populate them at the runtime tool-dispatch seam established in ADR-016. The runtime resolves each field with the same precedence used for agent/model identity: caller-asserted value from the tool input JSON wins, falling back to the runtime-asserted env vars (`ORBIT_TASK_ID`, `ORBIT_RUN_ID`, `ORBIT_ACTIVITY_ID`, `ORBIT_STEP_INDEX`) exported by the engine when it spawned the agent subprocess. The engine's `state_env_vars` is extended to emit `ORBIT_TASK_ID` (sourced from activity input by the same convention as `execution_working_directory_with_task`) and `ORBIT_ACTIVITY_ID` (sourced from `execution.activity.id`) alongside the existing `ORBIT_RUN_ID`. Indexes on `(task_id)` and `(job_run_id)` keep correlation queries cheap. The dashboard surfaces the four fields in the audit detail row and renders `job_run_id` as a deep link to the existing `#runs/<id>` view.
+
+**Consequences.**
+- An operator clicking through a command-audit row can immediately see "this `orbit.task.approve` ran under task `T...` inside run `jrun-...` step `2`," and the run id is one click away from the run-detail page.
+- Failure triage for MCP tool calls — denials, validation failures, sandbox rejections — gains the surrounding context without out-of-band correlation.
+- The two audit streams (SQLite command rows + workspace-local v2 envelope) remain separate, consistent with ADR-003. ADR-002's "compact rows" principle is preserved: the new columns are short identifiers, not transcript payloads.
+- Trust boundary: input-JSON values can be asserted by an MCP client and should be treated as caller-claimed; env-supplied values are the engine's ground truth. Code comments on `resolve_audit_context` document the precedence so future call sites do not invert it.
+- Cost: a one-time SQLite migration (`ALTER TABLE audit_events ADD COLUMN ...`). Historical rows render with NULL correlation cells; backfill is intentionally out of scope.
+
 ---
 
 ## Task References
@@ -246,5 +261,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
 - **[T20260427-52]** — Deprecate `agent` in normal tool-call JSON, infer agent family from `model`, and reject inconsistent legacy pairs.
 - **[T20260428-4]** — Record audit events for MCP tool invocations: move tool-invocation audit into the runtime, add the `ToolEntryPoint` discriminator, and bracket MCP preflight + dispatch in `audited_mcp_call`.
+- **[T20260428-7]** — Correlate command-audit rows with originating run/task/activity: add nullable `task_id` / `job_run_id` / `activity_id` / `step_index` columns, thread context through engine env vars, populate at the runtime dispatch seam, surface on the dashboard.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -239,6 +239,29 @@ fn record_mcp_preflight_failure(
         host: std::env::var("HOSTNAME").ok(),
         pid: std::process::id(),
         session_id: None,
+        task_id: input
+            .get("task_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| std::env::var("ORBIT_TASK_ID").ok())
+            .filter(|s| !s.is_empty()),
+        job_run_id: input
+            .get("job_run_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| std::env::var("ORBIT_RUN_ID").ok())
+            .filter(|s| !s.is_empty()),
+        activity_id: input
+            .get("activity_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| std::env::var("ORBIT_ACTIVITY_ID").ok())
+            .filter(|s| !s.is_empty()),
+        step_index: input.get("step_index").and_then(Value::as_i64).or_else(|| {
+            std::env::var("ORBIT_STEP_INDEX")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        }),
     };
 
     if let Err(write_err) = runtime.record_audit_event(&params) {

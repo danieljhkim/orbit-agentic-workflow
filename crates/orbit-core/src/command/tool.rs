@@ -125,6 +125,7 @@ impl OrbitRuntime {
         let working_directory = std::env::current_dir()
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_else(|_| ".".to_string());
+        let audit_context = resolve_audit_context(&input);
 
         // Closure boundary so any setup failure (e.g. an inconsistent
         // `agent`/`model` rejected by `resolve_agent_identity`) becomes a
@@ -191,6 +192,10 @@ impl OrbitRuntime {
             host: std::env::var("HOSTNAME").ok(),
             pid: std::process::id(),
             session_id: None,
+            task_id: audit_context.task_id,
+            job_run_id: audit_context.job_run_id,
+            activity_id: audit_context.activity_id,
+            step_index: audit_context.step_index,
         };
 
         let audit_recorded = match self.record_audit_event(&params) {
@@ -209,6 +214,53 @@ impl OrbitRuntime {
             value,
             audit_recorded,
         })
+    }
+}
+
+/// Audit-correlation context resolved at the tool-dispatch seam.
+///
+/// Each field follows the same precedence: caller-asserted value from the
+/// tool input JSON (`task_id`, `job_run_id`, `activity_id`, `step_index`)
+/// wins, falling back to the runtime-asserted env vars exported by the
+/// engine when it spawned the agent (`ORBIT_TASK_ID`, `ORBIT_RUN_ID`,
+/// `ORBIT_ACTIVITY_ID`, `ORBIT_STEP_INDEX`).
+///
+/// Treat input-supplied values as caller-asserted (an MCP client could lie).
+/// Env-supplied values are the engine's ground truth.
+#[derive(Debug, Default, Clone)]
+struct AuditContext {
+    task_id: Option<String>,
+    job_run_id: Option<String>,
+    activity_id: Option<String>,
+    step_index: Option<i64>,
+}
+
+fn resolve_audit_context(input: &Value) -> AuditContext {
+    fn input_str(input: &Value, key: &str) -> Option<String> {
+        input
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    }
+    fn env_str(name: &str) -> Option<String> {
+        std::env::var(name)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    AuditContext {
+        task_id: input_str(input, "task_id").or_else(|| env_str("ORBIT_TASK_ID")),
+        job_run_id: input_str(input, "job_run_id")
+            .or_else(|| input_str(input, "run_id"))
+            .or_else(|| env_str("ORBIT_RUN_ID")),
+        activity_id: input_str(input, "activity_id").or_else(|| env_str("ORBIT_ACTIVITY_ID")),
+        step_index: input
+            .get("step_index")
+            .and_then(Value::as_i64)
+            .or_else(|| env_str("ORBIT_STEP_INDEX").and_then(|s| s.parse().ok())),
     }
 }
 
@@ -788,5 +840,106 @@ mod audit_tests {
         clear_identity_env();
         let role = audit_role_label(&json!({}), None, None);
         assert_eq!(role, "agent");
+    }
+
+    fn clear_audit_context_env() {
+        // SAFETY: tests serialize through `env_guard()` before calling this.
+        unsafe {
+            std::env::remove_var("ORBIT_TASK_ID");
+            std::env::remove_var("ORBIT_RUN_ID");
+            std::env::remove_var("ORBIT_ACTIVITY_ID");
+            std::env::remove_var("ORBIT_STEP_INDEX");
+        }
+    }
+
+    fn set_audit_context_env(task: &str, run: &str, activity: &str, step: &str) {
+        // SAFETY: tests serialize through `env_guard()` before calling this.
+        unsafe {
+            std::env::set_var("ORBIT_TASK_ID", task);
+            std::env::set_var("ORBIT_RUN_ID", run);
+            std::env::set_var("ORBIT_ACTIVITY_ID", activity);
+            std::env::set_var("ORBIT_STEP_INDEX", step);
+        }
+    }
+
+    #[test]
+    fn audit_context_input_wins_over_env() {
+        let _g = env_guard();
+        set_audit_context_env("env-task", "env-run", "env-activity", "9");
+        let ctx = resolve_audit_context(&json!({
+            "task_id": "T-input",
+            "job_run_id": "jrun-input",
+            "activity_id": "act-input",
+            "step_index": 3,
+        }));
+        clear_audit_context_env();
+
+        assert_eq!(ctx.task_id.as_deref(), Some("T-input"));
+        assert_eq!(ctx.job_run_id.as_deref(), Some("jrun-input"));
+        assert_eq!(ctx.activity_id.as_deref(), Some("act-input"));
+        assert_eq!(ctx.step_index, Some(3));
+    }
+
+    #[test]
+    fn audit_context_falls_back_to_env_when_input_absent() {
+        let _g = env_guard();
+        set_audit_context_env("T20260428-7", "jrun-from-env", "agent_implement", "2");
+        let ctx = resolve_audit_context(&json!({}));
+        clear_audit_context_env();
+
+        assert_eq!(ctx.task_id.as_deref(), Some("T20260428-7"));
+        assert_eq!(ctx.job_run_id.as_deref(), Some("jrun-from-env"));
+        assert_eq!(ctx.activity_id.as_deref(), Some("agent_implement"));
+        assert_eq!(ctx.step_index, Some(2));
+    }
+
+    #[test]
+    fn audit_context_treats_run_id_alias_as_job_run_id_input() {
+        let _g = env_guard();
+        clear_audit_context_env();
+        let ctx = resolve_audit_context(&json!({ "run_id": "jrun-aliased" }));
+        assert_eq!(ctx.job_run_id.as_deref(), Some("jrun-aliased"));
+    }
+
+    #[test]
+    fn audit_context_returns_none_when_neither_source_supplies_values() {
+        let _g = env_guard();
+        clear_audit_context_env();
+        let ctx = resolve_audit_context(&json!({}));
+        assert!(ctx.task_id.is_none());
+        assert!(ctx.job_run_id.is_none());
+        assert!(ctx.activity_id.is_none());
+        assert!(ctx.step_index.is_none());
+    }
+
+    #[test]
+    fn dispatch_records_correlation_fields_from_env() {
+        let _g = env_guard();
+        let runtime = fresh_runtime();
+        set_audit_context_env("T20260428-7", "jrun-corr", "agent_implement", "5");
+
+        let outcome = runtime
+            .execute_tool_command_dispatch(
+                "orbit.task.search",
+                json!({ "query": "anything", "model": "gpt-5.5" }),
+                None,
+                None,
+                ToolEntryPoint::Cli,
+            )
+            .expect("dispatch ok");
+        clear_audit_context_env();
+        assert!(outcome.audit_recorded);
+
+        let events = runtime
+            .list_audit_events(None, Some("orbit.task.search".to_string()), None, None, 16)
+            .expect("list audit events");
+        let row = events
+            .iter()
+            .find(|e| e.execution_id.starts_with("exec-"))
+            .expect("at least one row");
+        assert_eq!(row.task_id.as_deref(), Some("T20260428-7"));
+        assert_eq!(row.job_run_id.as_deref(), Some("jrun-corr"));
+        assert_eq!(row.activity_id.as_deref(), Some("agent_implement"));
+        assert_eq!(row.step_index, Some(5));
     }
 }

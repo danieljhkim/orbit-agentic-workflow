@@ -930,23 +930,45 @@ pub fn apply_env_set(
 }
 
 pub fn state_env_vars(execution: &ExecutionContext) -> Vec<(String, String)> {
-    let Some(run_id) = execution.run_id.as_ref() else {
-        return Vec::new();
-    };
-    let Some(step_index) = execution.step_index else {
-        return Vec::new();
-    };
-    let Some(state_dir) = execution.state_dir.as_ref() else {
-        return Vec::new();
-    };
-    vec![
-        ("ORBIT_RUN_ID".to_string(), run_id.clone()),
-        ("ORBIT_STEP_INDEX".to_string(), step_index.to_string()),
-        (
+    let mut vars: Vec<(String, String)> = Vec::new();
+
+    // Always export the activity identifier when we have one — it survives
+    // even when the run/state vars are absent (e.g. ad-hoc activity invocation
+    // outside a job run). Audit consumers use this to attribute tool calls.
+    if !execution.activity.id.is_empty() {
+        vars.push((
+            "ORBIT_ACTIVITY_ID".to_string(),
+            execution.activity.id.clone(),
+        ));
+    }
+
+    // Task ID is sourced from the activity input by convention (see
+    // `execution_working_directory_with_task` for the same pattern).
+    if let Some(task_id) = execution
+        .input
+        .get("task_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        vars.push(("ORBIT_TASK_ID".to_string(), task_id.to_string()));
+    }
+
+    // Run-state vars only exist for steps inside a real job run, so they
+    // share a guarded block.
+    if let (Some(run_id), Some(step_index), Some(state_dir)) = (
+        execution.run_id.as_ref(),
+        execution.step_index,
+        execution.state_dir.as_ref(),
+    ) {
+        vars.push(("ORBIT_RUN_ID".to_string(), run_id.clone()));
+        vars.push(("ORBIT_STEP_INDEX".to_string(), step_index.to_string()));
+        vars.push((
             "ORBIT_STATE_DIR".to_string(),
             state_dir.to_string_lossy().into_owned(),
-        ),
-    ]
+        ));
+    }
+
+    vars
 }
 
 pub fn inject_state_env(mode: EnvironmentMode, execution: &ExecutionContext) -> EnvironmentMode {
@@ -983,4 +1005,93 @@ pub fn redact_attempt_outcome(mut outcome: AttemptOutcome) -> AttemptOutcome {
     outcome.response_json = outcome.response_json.map(redact_sensitive_env_json);
     outcome.error_message = redact_sensitive_env_option(outcome.error_message);
     outcome
+}
+
+#[cfg(test)]
+mod state_env_var_tests {
+    use super::*;
+    use chrono::Utc;
+    use orbit_common::types::Activity;
+    use serde_json::json;
+
+    fn activity_with_id(id: &str) -> Activity {
+        let now = Utc::now();
+        Activity {
+            id: id.to_string(),
+            spec_type: "agent_invoke".to_string(),
+            description: String::new(),
+            input_schema_json: json!({}),
+            output_schema_json: json!({}),
+            spec_config: json!({}),
+            tools: Vec::new(),
+            proc_allowed_programs: Vec::new(),
+            executor: None,
+            workspace_path: None,
+            created_by: None,
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn execution_with(input: Value, run_id: Option<&str>) -> ExecutionContext {
+        ExecutionContext {
+            activity: activity_with_id("agent_implement"),
+            job: None,
+            agent_cli: "claude".to_string(),
+            model: None,
+            model_tier: None,
+            timeout_seconds: 60,
+            env_extra: Vec::new(),
+            env_set: HashMap::new(),
+            input,
+            debug: false,
+            steps_outputs: HashMap::new(),
+            run_id: run_id.map(ToOwned::to_owned),
+            step_index: run_id.map(|_| 2),
+            state_dir: run_id.map(|_| PathBuf::from("/tmp/state")),
+        }
+    }
+
+    #[test]
+    fn state_env_vars_emits_activity_and_task_ids_without_run_state() {
+        let exec = execution_with(json!({ "task_id": "T20260428-7" }), None);
+        let vars: HashMap<String, String> = state_env_vars(&exec).into_iter().collect();
+        assert_eq!(
+            vars.get("ORBIT_ACTIVITY_ID").map(String::as_str),
+            Some("agent_implement")
+        );
+        assert_eq!(
+            vars.get("ORBIT_TASK_ID").map(String::as_str),
+            Some("T20260428-7")
+        );
+        assert!(!vars.contains_key("ORBIT_RUN_ID"));
+    }
+
+    #[test]
+    fn state_env_vars_emits_full_set_inside_a_run() {
+        let exec = execution_with(json!({ "task_id": "T-abc" }), Some("jrun-42"));
+        let vars: HashMap<String, String> = state_env_vars(&exec).into_iter().collect();
+        assert_eq!(vars.get("ORBIT_TASK_ID").map(String::as_str), Some("T-abc"));
+        assert_eq!(
+            vars.get("ORBIT_RUN_ID").map(String::as_str),
+            Some("jrun-42")
+        );
+        assert_eq!(vars.get("ORBIT_STEP_INDEX").map(String::as_str), Some("2"));
+        assert_eq!(
+            vars.get("ORBIT_ACTIVITY_ID").map(String::as_str),
+            Some("agent_implement")
+        );
+    }
+
+    #[test]
+    fn state_env_vars_omits_task_id_when_input_lacks_it() {
+        let exec = execution_with(json!({}), None);
+        let vars: HashMap<String, String> = state_env_vars(&exec).into_iter().collect();
+        assert_eq!(
+            vars.get("ORBIT_ACTIVITY_ID").map(String::as_str),
+            Some("agent_implement")
+        );
+        assert!(!vars.contains_key("ORBIT_TASK_ID"));
+    }
 }

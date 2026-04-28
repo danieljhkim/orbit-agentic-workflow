@@ -257,6 +257,10 @@ pub(crate) fn audit_event_to_json(event: &AuditEvent) -> Value {
         "host": event.host,
         "pid": event.pid,
         "session_id": event.session_id,
+        "task_id": event.task_id,
+        "job_run_id": event.job_run_id,
+        "activity_id": event.activity_id,
+        "step_index": event.step_index,
     })
 }
 

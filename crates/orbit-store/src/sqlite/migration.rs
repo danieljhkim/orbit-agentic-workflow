@@ -52,7 +52,11 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 error_message TEXT,
                 host TEXT,
                 pid INTEGER NOT NULL,
-                session_id TEXT
+                session_id TEXT,
+                task_id TEXT,
+                job_run_id TEXT,
+                activity_id TEXT,
+                step_index INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS task_reservations (
@@ -269,7 +273,11 @@ fn ensure_audit_events_schema(conn: &Connection) -> Result<(), OrbitError> {
                 error_message TEXT,
                 host TEXT,
                 pid INTEGER NOT NULL,
-                session_id TEXT
+                session_id TEXT,
+                task_id TEXT,
+                job_run_id TEXT,
+                activity_id TEXT,
+                step_index INTEGER
             );
 
             CREATE INDEX IF NOT EXISTS idx_audit_events_timestamp
@@ -291,7 +299,28 @@ fn ensure_audit_events_schema(conn: &Connection) -> Result<(), OrbitError> {
             ON audit_events(execution_id);
         "#,
     )
-    .map_err(|e| OrbitError::Store(e.to_string()))
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    add_column_if_missing(conn, "ALTER TABLE audit_events ADD COLUMN task_id TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE audit_events ADD COLUMN job_run_id TEXT")?;
+    add_column_if_missing(conn, "ALTER TABLE audit_events ADD COLUMN activity_id TEXT")?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE audit_events ADD COLUMN step_index INTEGER",
+    )?;
+
+    conn.execute_batch(
+        r#"
+            CREATE INDEX IF NOT EXISTS idx_audit_events_task_id
+            ON audit_events(task_id);
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_job_run_id
+            ON audit_events(job_run_id);
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    Ok(())
 }
 
 fn ensure_invocation_schema(conn: &Connection) -> Result<(), OrbitError> {

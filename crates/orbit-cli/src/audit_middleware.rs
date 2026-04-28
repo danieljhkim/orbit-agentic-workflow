@@ -119,6 +119,16 @@ impl Drop for AuditGuard<'_> {
             host: std::env::var("HOSTNAME").ok(),
             pid: std::process::id(),
             session_id: None,
+            task_id: std::env::var("ORBIT_TASK_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            job_run_id: std::env::var("ORBIT_RUN_ID").ok().filter(|s| !s.is_empty()),
+            activity_id: std::env::var("ORBIT_ACTIVITY_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            step_index: std::env::var("ORBIT_STEP_INDEX")
+                .ok()
+                .and_then(|s| s.parse().ok()),
         };
 
         let write_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

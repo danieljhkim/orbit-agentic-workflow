@@ -65,6 +65,22 @@ pub struct AuditEvent {
     pub host: Option<String>,
     pub pid: u32,
     pub session_id: Option<String>,
+    /// Orbit task ID (e.g. `T20260428-7`) the invocation was executed under, if
+    /// known. Sourced from the tool input JSON when supplied by the caller, or
+    /// from `ORBIT_TASK_ID` in the agent subprocess env when the engine
+    /// launched the agent.
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Job run ID (the engine's `run_id`) the invocation was executed under.
+    /// Mirrors `ORBIT_RUN_ID` in the agent subprocess env.
+    #[serde(default)]
+    pub job_run_id: Option<String>,
+    /// Activity name the invocation was executed under (e.g. `agent_implement`).
+    #[serde(default)]
+    pub activity_id: Option<String>,
+    /// Zero-based step index within the enclosing job run, when known.
+    #[serde(default)]
+    pub step_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

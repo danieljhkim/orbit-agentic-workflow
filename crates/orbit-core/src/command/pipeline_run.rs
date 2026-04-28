@@ -502,6 +502,10 @@ impl OrbitRuntime {
             host: actor.map(ToOwned::to_owned),
             pid: std::process::id(),
             session_id: None,
+            task_id: None,
+            job_run_id: target_id.map(ToOwned::to_owned),
+            activity_id: None,
+            step_index: None,
         })
     }
 }

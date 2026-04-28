@@ -1478,8 +1478,33 @@ function buildAuditDetailRow(ev) {
       el("span", { class: "value", text: String(value) }),
     ]));
   };
+  const addMetaLink = (label, value, href) => {
+    if (value == null || value === "") return;
+    const link = el("a", { class: "value audit-detail-link", text: String(value) });
+    link.href = href;
+    meta.appendChild(el("span", {}, [
+      el("span", { class: "label", text: `${label}:` }),
+      link,
+    ]));
+  };
   addMeta("execution_id", ev.execution_id);
   addMeta("session_id", ev.session_id);
+  if (ev.task_id) {
+    addMeta("task_id", ev.task_id);
+  }
+  if (ev.job_run_id) {
+    addMetaLink(
+      "job_run_id",
+      ev.job_run_id,
+      `#runs/${encodeURIComponent(ev.job_run_id)}`,
+    );
+  }
+  if (ev.activity_id) {
+    addMeta("activity_id", ev.activity_id);
+  }
+  if (ev.step_index != null) {
+    addMeta("step_index", ev.step_index);
+  }
   addMeta("host", ev.host);
   addMeta("pid", ev.pid);
   addMeta("cwd", ev.working_directory);

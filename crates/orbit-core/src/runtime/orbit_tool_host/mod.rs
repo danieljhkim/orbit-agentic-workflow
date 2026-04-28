@@ -797,6 +797,14 @@ fn record_task_lock_audit_event(
         host: std::env::var("HOSTNAME").ok(),
         pid: std::process::id(),
         session_id: None,
+        task_id: target_id.map(ToOwned::to_owned),
+        job_run_id: std::env::var("ORBIT_RUN_ID").ok().filter(|s| !s.is_empty()),
+        activity_id: std::env::var("ORBIT_ACTIVITY_ID")
+            .ok()
+            .filter(|s| !s.is_empty()),
+        step_index: std::env::var("ORBIT_STEP_INDEX")
+            .ok()
+            .and_then(|s| s.parse().ok()),
     })
 }
 

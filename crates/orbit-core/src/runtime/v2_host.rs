@@ -670,6 +670,10 @@ impl V2RuntimeHost for OrbitRuntime {
                     host: std::env::var("HOSTNAME").ok(),
                     pid: std::process::id(),
                     session_id: None,
+                    task_id: task_ids_vec.first().cloned(),
+                    job_run_id: None,
+                    activity_id: None,
+                    step_index: None,
                 })
                 .map_err(|err| DispatchError::DeterministicActionFailed {
                     action: action.to_string(),
