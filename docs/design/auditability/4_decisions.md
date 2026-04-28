@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-28 (T20260427-47)
+**Last updated:** 2026-04-28 (T20260428-4)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -210,6 +210,21 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Existing lifecycle automation keeps working when explicit attribution fields are omitted.
 - Cost: attribution fields become intentionally editable metadata, so reviewers must read task history and audit rows when they need stronger authorship evidence than the latest field value.
 
+## ADR-016 — Tool-invocation audit is owned by the runtime, with MCP preflight bracketing
+
+**Status:** Accepted · 2026-04 · [T20260428-4]
+
+**Context.** Tool-invocation audit was historically written by `AuditGuard` in `orbit-cli`, an RAII wrapper around CLI command dispatch. MCP `tools/call` requests entered through `orbit mcp serve`, which executes outside any `AuditGuard`, and called `OrbitRuntime::execute_tool_command` directly. The runtime emitted only an in-memory `OrbitEvent::ToolExecuted`, so MCP-originated tool calls were missing from the SQLite command-audit trail entirely. A second gap sat at the MCP preflight check (`ensure_mcp_tool_exposed` in `orbit-cli/src/command/mcp/mod.rs`): unknown or unexposed tool names were rejected before runtime dispatch, so even a runtime-level audit-write would not cover the failure path that the acceptance criteria for the fix called out as the sharpest case.
+
+**Decision.** Move tool-invocation audit recording into the runtime layer (`OrbitRuntime::execute_tool_command_dispatch`), so every entry point — CLI tool-run, MCP, future HTTP — produces an audit row from a single seam. Tag each dispatch with a `ToolEntryPoint` discriminator (`Cli`, `Mcp`) encoded in the audit `subcommand` field (`"run"` vs `"run-mcp"`) to avoid an audit-table schema migration. Bracket the MCP path with `audited_mcp_call`, which records a failure-status audit row when preflight rejects an unknown or unexposed tool name and otherwise delegates to the runtime for the dispatch audit. To prevent the legacy CLI `AuditGuard` from double-emitting on the `orbit tool run` path, expose a per-thread `mark_tool_audit_recorded` / `take_tool_audit_recorded` signal that the runtime sets after writing and the guard checks during `Drop`. CLI paths that bail before the runtime is reached (invalid JSON, missing input, `--dry-run`) leave the signal clear and continue to produce their existing guard-side audit row.
+
+**Consequences.**
+- MCP-originated tool calls now show up in `orbit audit list` with full agent/model identity resolved from the same input-JSON → CLI-flags → env-vars precedence the CLI uses.
+- Preflight failures for unknown / unexposed tool names are auditable in their own right; the failure layer is no longer silent.
+- Adding another entry point (HTTP, IPC) can reuse `execute_tool_command_dispatch` without re-implementing audit-write.
+- `duration_ms` is clamped to `>= 1` at the audit-write site so sub-millisecond invocations cannot record `0` and false-trigger downstream alerts that key on `duration_ms > 0`.
+- Cost: the dedup signal is a per-thread one-shot. Async or multi-threaded entry points that span thread boundaries between dispatch and the higher-level audit writer will need to re-evaluate this seam if they emerge; today, the CLI is sync and `orbit mcp serve` runs without a CLI guard at all, so the constraint is a non-issue.
+
 ---
 
 ## Task References
@@ -230,5 +245,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260427-46]** — Implement the Gemini-owned Tasks-tab `orbit.log` panel using the shared dashboard backend API.
 - **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
 - **[T20260427-52]** — Deprecate `agent` in normal tool-call JSON, infer agent family from `model`, and reject inconsistent legacy pairs.
+- **[T20260428-4]** — Record audit events for MCP tool invocations: move tool-invocation audit into the runtime, add the `ToolEntryPoint` discriminator, and bracket MCP preflight + dispatch in `audited_mcp_call`.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

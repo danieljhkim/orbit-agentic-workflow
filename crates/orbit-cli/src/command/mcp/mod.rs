@@ -9,10 +9,12 @@ mod setup;
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use clap::{Args, Subcommand};
-use orbit_common::types::ToolSchema;
-use orbit_core::{OrbitError, OrbitRuntime};
+use orbit_common::types::{AuditEventStatus, ToolSchema};
+use orbit_core::command::tool::{ToolEntryPoint, audit_role_label};
+use orbit_core::{AuditEventInsertParams, OrbitError, OrbitRuntime, redact_sensitive_env_text};
 use orbit_mcp::McpHost;
 use serde_json::Value;
 
@@ -149,9 +151,11 @@ impl ServeArgs {
 ///
 /// Listing is sourced from [`OrbitRuntime::list_tools`], which already filters
 /// disabled tools and merges external (non-builtin) entries. Execution is
-/// routed through [`OrbitRuntime::execute_tool_command`], which applies the
-/// same policy evaluation, workspace sandboxing, and audit event emission as
-/// the CLI `orbit tool run` path.
+/// routed through [`OrbitRuntime::execute_tool_command_dispatch`] tagged with
+/// [`ToolEntryPoint::Mcp`], so the runtime persists an audit row for every
+/// dispatch with the same identity-resolution rules as the CLI path. The
+/// `tools/call` preflight (see [`audited_mcp_call`]) wraps the dispatch so
+/// rejected names also produce a failure-status audit row.
 struct RuntimeMcpHost {
     runtime: OrbitRuntime,
 }
@@ -172,8 +176,73 @@ impl McpHost for RuntimeMcpHost {
     }
 
     fn call_tool(&self, name: &str, input: Value) -> Result<Value, OrbitError> {
-        ensure_mcp_tool_exposed(name)?;
-        self.runtime.execute_tool_command(name, input, None, None)
+        audited_mcp_call(&self.runtime, name, input)
+    }
+}
+
+/// Bracket the MCP `tools/call` preflight + dispatch with a single audit
+/// boundary so that **both** rejected unknown / unexposed tool names and
+/// dispatch failures land in the SQLite audit trail.
+///
+/// Preflight failures never reach
+/// [`OrbitRuntime::execute_tool_command_dispatch`], so the runtime's own audit
+/// write is bypassed. This wrapper records that failure path explicitly and
+/// then short-circuits. On the success path it delegates to the runtime,
+/// which owns the audit row (no dedup needed because `orbit mcp serve` is
+/// invoked outside any CLI [`crate::audit_middleware::AuditGuard`]).
+fn audited_mcp_call(runtime: &OrbitRuntime, name: &str, input: Value) -> Result<Value, OrbitError> {
+    if let Err(err) = ensure_mcp_tool_exposed(name) {
+        record_mcp_preflight_failure(runtime, name, &input, &err);
+        return Err(err);
+    }
+
+    runtime
+        .execute_tool_command_dispatch(name, input, None, None, ToolEntryPoint::Mcp)
+        .map(|outcome| outcome.value)
+}
+
+fn record_mcp_preflight_failure(
+    runtime: &OrbitRuntime,
+    name: &str,
+    input: &Value,
+    err: &OrbitError,
+) {
+    let start = Instant::now();
+    let role = audit_role_label(input, None, None);
+    let duration_ms = (start.elapsed().as_millis() as i64).max(1);
+    let working_directory = std::env::current_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| ".".to_string());
+
+    let params = AuditEventInsertParams {
+        execution_id: format!(
+            "exec-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ),
+        command: "tool".to_string(),
+        subcommand: Some(ToolEntryPoint::Mcp.audit_subcommand().to_string()),
+        tool_name: Some(name.to_string()),
+        target_type: Some("tool".to_string()),
+        target_id: Some(name.to_string()),
+        role,
+        status: AuditEventStatus::Failure,
+        exit_code: 1,
+        duration_ms,
+        working_directory,
+        arguments_json: None,
+        stdout_truncated: None,
+        stderr_truncated: None,
+        error_message: Some(redact_sensitive_env_text(&err.to_string())),
+        host: std::env::var("HOSTNAME").ok(),
+        pid: std::process::id(),
+        session_id: None,
+    };
+
+    if let Err(write_err) = runtime.record_audit_event(&params) {
+        eprintln!("warning: failed to persist MCP preflight audit event: {write_err}");
     }
 }
 
@@ -279,6 +348,63 @@ mod tests {
                 !listed.contains(name),
                 "client-visible MCP tool list exposes graph write tool: {name}"
             );
+        }
+    }
+
+    mod audited_mcp_call_tests {
+        use orbit_common::types::AuditEventStatus;
+        use orbit_core::OrbitRuntime;
+        use orbit_mcp::McpHost;
+        use serde_json::json;
+
+        use super::super::{RuntimeMcpHost, audited_mcp_call};
+
+        #[test]
+        fn preflight_failure_for_unknown_tool_records_failure_audit_row() {
+            let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+            // The runtime is the source of truth for the audit store; the
+            // wrapper writes to the same backing store the MCP host shares.
+            let result = audited_mcp_call(&runtime, "orbit.state.get", json!({}));
+            assert!(
+                result.is_err(),
+                "preflight rejects unknown / unexposed tool"
+            );
+
+            let events = runtime
+                .list_audit_events(None, Some("orbit.state.get".to_string()), None, None, 16)
+                .expect("list audit events");
+            assert_eq!(events.len(), 1, "preflight failure produced one audit row");
+            let row = &events[0];
+            assert_eq!(row.command, "tool");
+            assert_eq!(row.subcommand.as_deref(), Some("run-mcp"));
+            assert_eq!(row.tool_name.as_deref(), Some("orbit.state.get"));
+            assert_eq!(row.status, AuditEventStatus::Failure);
+            assert_eq!(row.exit_code, 1);
+            assert!(row.error_message.is_some());
+            assert!(
+                row.duration_ms >= 1,
+                "duration_ms clamped to >= 1 (got {})",
+                row.duration_ms
+            );
+        }
+
+        #[test]
+        fn happy_path_dispatch_records_one_audit_row_via_runtime() {
+            let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+            let host = RuntimeMcpHost {
+                runtime: runtime.clone(),
+            };
+            let value = host
+                .call_tool("orbit.task.search", json!({ "query": "anything" }))
+                .expect("dispatch ok");
+            assert!(value.is_array(), "task search returns an array");
+
+            let events = runtime
+                .list_audit_events(None, Some("orbit.task.search".to_string()), None, None, 16)
+                .expect("list audit events");
+            assert_eq!(events.len(), 1, "exactly one audit row for happy path");
+            assert_eq!(events[0].subcommand.as_deref(), Some("run-mcp"));
+            assert_eq!(events[0].status, AuditEventStatus::Success);
         }
     }
 }

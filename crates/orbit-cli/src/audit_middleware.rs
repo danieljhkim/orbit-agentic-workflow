@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use orbit_common::types::{normalize_agent_family_for_model, normalize_optional_attribution_label};
+use orbit_core::command::tool::take_tool_audit_recorded;
 use orbit_core::{
     AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime, redact_sensitive_env_text,
 };
@@ -82,6 +83,17 @@ impl<'a> AuditGuard<'a> {
 
 impl Drop for AuditGuard<'_> {
     fn drop(&mut self) {
+        // If `OrbitRuntime::execute_tool_command_dispatch` already persisted an
+        // audit row for this thread (the runtime now owns tool-invocation audit
+        // for both CLI and MCP entry points), suppress the guard's own emission
+        // so we never double-audit a single `orbit tool run` invocation. Paths
+        // that bail before the runtime is reached — invalid JSON, missing
+        // input, `--dry-run` — leave the flag clear and still get a guard-side
+        // row.
+        if take_tool_audit_recorded() {
+            return;
+        }
+
         let duration_ms = self.start.elapsed().as_millis() as i64;
 
         let working_directory = std::env::current_dir()
@@ -691,5 +703,117 @@ mod tests {
         let meta = meta_for(&["orbit", "tool", "run", "orbit.graph.search"]);
 
         assert_eq!(meta.role, "agent");
+    }
+
+    /// Integration tests that exercise the real `AuditGuard::Drop` against an
+    /// in-memory runtime, covering the four CLI `tool run` paths the
+    /// dedup mechanism must handle: success-via-runtime (suppress guard
+    /// emission), failure-via-runtime (suppress guard emission), invalid
+    /// JSON / missing input (guard records its own row), and `--dry-run`
+    /// (guard records its own row). All four must produce exactly one
+    /// audit row.
+    mod cli_dedup_invariant {
+        use super::*;
+        use orbit_core::command::tool::take_tool_audit_recorded;
+        use serde_json::json;
+
+        fn fresh_runtime() -> OrbitRuntime {
+            // Reset the dedup signal so cross-test thread-local leakage
+            // cannot mask a real bug in the per-call set/clear cycle.
+            let _ = take_tool_audit_recorded();
+            OrbitRuntime::in_memory().expect("build in-memory runtime")
+        }
+
+        fn tool_run_meta(tool_name: &str) -> CommandMeta {
+            CommandMeta {
+                command: "tool".to_string(),
+                subcommand: Some("run".to_string()),
+                tool_name: Some(tool_name.to_string()),
+                target_type: Some("tool".to_string()),
+                target_id: Some(tool_name.to_string()),
+                role: "agent".to_string(),
+                arguments_json: None,
+            }
+        }
+
+        fn count_rows(runtime: &OrbitRuntime, tool_name: &str) -> usize {
+            runtime
+                .list_audit_events(None, Some(tool_name.to_string()), None, None, 16)
+                .expect("list audit events")
+                .len()
+        }
+
+        #[test]
+        fn success_via_runtime_yields_exactly_one_row() {
+            let runtime = fresh_runtime();
+            {
+                let mut guard = AuditGuard::new(&runtime, tool_run_meta("orbit.task.search"));
+                let result = runtime.execute_tool_command(
+                    "orbit.task.search",
+                    json!({ "query": "anything" }),
+                    None,
+                    None,
+                );
+                assert!(result.is_ok());
+                guard.mark_success();
+            }
+            assert_eq!(
+                count_rows(&runtime, "orbit.task.search"),
+                1,
+                "runtime owns the row, guard suppressed"
+            );
+        }
+
+        #[test]
+        fn dispatch_failure_via_runtime_yields_exactly_one_row() {
+            let runtime = fresh_runtime();
+            {
+                let mut guard = AuditGuard::new(&runtime, tool_run_meta("orbit.task.show"));
+                let result = runtime.execute_tool_command("orbit.task.show", json!({}), None, None);
+                match &result {
+                    Ok(_) => panic!("expected dispatch failure"),
+                    Err(err) => guard.mark_failure(err),
+                }
+            }
+            assert_eq!(
+                count_rows(&runtime, "orbit.task.show"),
+                1,
+                "runtime owns the row even on dispatch failure"
+            );
+        }
+
+        #[test]
+        fn invalid_json_bail_before_runtime_yields_exactly_one_row() {
+            let runtime = fresh_runtime();
+            {
+                let mut guard = AuditGuard::new(&runtime, tool_run_meta("orbit.task.search"));
+                // Simulate a CLI invalid-JSON parse failure that happens
+                // before `execute_tool_command` is reached.
+                let parse_err = OrbitError::InvalidInput("invalid JSON input: ...".to_string());
+                guard.mark_failure(&parse_err);
+                // Guard drops here without the runtime ever recording an
+                // audit row.
+            }
+            assert_eq!(
+                count_rows(&runtime, "orbit.task.search"),
+                1,
+                "guard records its own row when runtime is never reached"
+            );
+        }
+
+        #[test]
+        fn dry_run_bail_before_runtime_yields_exactly_one_row() {
+            let runtime = fresh_runtime();
+            {
+                let mut guard = AuditGuard::new(&runtime, tool_run_meta("orbit.task.search"));
+                // `--dry-run` returns Ok without invoking the runtime.
+                guard.mark_success();
+            }
+            assert_eq!(
+                count_rows(&runtime, "orbit.task.search"),
+                1,
+                "guard records its own row for the dry-run short-circuit"
+            );
+        }
     }
 }

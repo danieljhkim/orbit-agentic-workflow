@@ -5,9 +5,15 @@
 //! The crate is a thin transport adapter between rmcp's server runtime and an
 //! Orbit-supplied [`McpHost`]. `orbit-mcp` itself performs no tool dispatch,
 //! no policy evaluation, and no audit logging — it delegates each
-//! `tools/call` to the host, which in the default `orbit-cli` wiring routes
-//! through `OrbitRuntime::execute_tool_command` and therefore honors the same
-//! policy chain, disabled-tool flag, and audit events as the CLI path.
+//! `tools/call` to the host. In the default `orbit-cli` wiring the host is
+//! `RuntimeMcpHost`, which brackets every call with an audit boundary
+//! (`audited_mcp_call`): the wrapper records a failure-status audit row when
+//! preflight rejects an unknown / unexposed tool name, and otherwise dispatches
+//! through `OrbitRuntime::execute_tool_command_dispatch` tagged with
+//! `ToolEntryPoint::Mcp`, where the runtime persists a success-or-failure
+//! audit row with the same identity-resolution rules and policy chain as the
+//! CLI path. Audit rows from MCP calls carry `subcommand = "run-mcp"` so they
+//! can be filtered apart from CLI tool runs (which carry `"run"`).
 //!
 //! # Role
 //! Depends on `orbit-types` and `orbit-tools` only (for [`orbit_common::types::ToolSchema`]

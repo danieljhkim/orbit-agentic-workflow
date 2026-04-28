@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-28 (T20260427-47)
+**Last updated:** 2026-04-28 (T20260428-4)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and the current limitations that still need design attention. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -46,12 +46,18 @@ For `orbit tool run`, command-audit role attribution is model-first after [T2026
 
 `crates/orbit-cli/src/main.rs` wraps non-audit commands in that guard after runtime initialization. Direct `orbit audit ...` commands are deliberately outside the guard today, so querying the audit log does not itself emit another command audit row.
 
+After [T20260428-4], **tool-invocation audit ownership moved into the runtime layer** ([ADR-016](./4_decisions.md#adr-016--tool-invocation-audit-is-owned-by-the-runtime-with-mcp-preflight-bracketing)). `OrbitRuntime::execute_tool_command_dispatch` now writes the audit row for every tool dispatch — CLI tool-run, MCP `tools/call`, and any future entry point — with identical identity-resolution rules and policy chain. The dispatch carries a `ToolEntryPoint` discriminator (`Cli` | `Mcp`) that surfaces in the audit `subcommand` field as `"run"` (CLI) or `"run-mcp"` (MCP), so the same SQLite table can attribute calls back to their origin without a schema migration. Setup failures inside dispatch (e.g. an inconsistent `agent`/`model` rejected by `normalize_agent_family_for_model`) are wrapped into the same audit-write block so they too produce a failure-status row. `duration_ms` is clamped to `>= 1` at the audit-write site.
+
+To prevent the legacy CLI `AuditGuard` from double-emitting on the `orbit tool run` path, the runtime sets a per-thread `mark_tool_audit_recorded` signal after writing, and the guard's `Drop` calls `take_tool_audit_recorded()` and skips its own emission when the flag is set. Paths that bail before the runtime is reached — invalid JSON, missing input, `--dry-run` short-circuit — leave the flag clear and continue to produce their existing guard-side audit row, so the per-invocation row count remains exactly one in every case.
+
 ---
 
 ## 3. Tool-Driven and Runtime Audit Records
 
 Command audit records do not only come from the top-level CLI guard. Some runtime paths write targeted rows directly:
 
+- `crates/orbit-core/src/command/tool.rs` (`execute_tool_command_dispatch`) records every tool invocation — CLI and MCP — as `command: tool` with `subcommand` set to `"run"` for CLI dispatch and `"run-mcp"` for MCP dispatch ([ADR-016](./4_decisions.md#adr-016--tool-invocation-audit-is-owned-by-the-runtime-with-mcp-preflight-bracketing)).
+- `crates/orbit-cli/src/command/mcp/mod.rs` (`audited_mcp_call`) brackets the MCP `tools/call` preflight and dispatch so a rejected unknown / unexposed tool name (`ensure_mcp_tool_exposed` returning `Err`) produces a failure-status row tagged with `subcommand: "run-mcp"` even though the runtime is never reached.
 - `crates/orbit-core/src/runtime/orbit_tool_host/mod.rs` records task lock reservation checks, reservations, releases, and denials with `target_type: task_reservation`.
 - `crates/orbit-core/src/runtime/v2_host.rs` records gate-starvation failures for task bundles with `command: gate.starvation`.
 
@@ -211,5 +217,6 @@ This channel is global rather than workspace-local because `orbit-cli` initializ
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
 - **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
 - **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
+- **[T20260428-4]** — Move tool-invocation audit ownership into the runtime, add the `ToolEntryPoint` discriminator (`run` / `run-mcp`), bracket MCP preflight + dispatch in `audited_mcp_call`, and add the per-thread CLI dedup signal so every tool invocation produces exactly one audit row from the right origin.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
