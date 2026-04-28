@@ -75,6 +75,26 @@ fn workflow_critical_tools_remain_registered() {
     }
 }
 
+#[test]
+fn task_dependency_params_remain_in_agent_tool_schemas() {
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    for tool_name in ["orbit.task.add", "orbit.task.update"] {
+        let schema = registry
+            .get_schema(tool_name)
+            .unwrap_or_else(|| panic!("{tool_name} schema"));
+        let dependency_param = schema
+            .parameters
+            .iter()
+            .find(|param| param.name == "dependencies")
+            .unwrap_or_else(|| panic!("{tool_name} dependencies param"));
+
+        assert_eq!(dependency_param.param_type, "string_list");
+        assert!(!dependency_param.required);
+    }
+}
+
 fn registered_tool_names() -> BTreeSet<String> {
     let mut registry = ToolRegistry::new();
     registry.register_builtins();

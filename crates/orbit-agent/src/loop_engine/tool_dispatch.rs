@@ -150,13 +150,17 @@ mod tests {
     use super::*;
     use orbit_common::types::ToolParam;
 
-    fn param(name: &str) -> ToolParam {
+    fn param_with_type(name: &str, param_type: &str) -> ToolParam {
         ToolParam {
             name: name.to_string(),
             description: String::new(),
-            param_type: "string".to_string(),
+            param_type: param_type.to_string(),
             required: false,
         }
+    }
+
+    fn param(name: &str) -> ToolParam {
+        param_with_type(name, "string")
     }
 
     #[test]
@@ -200,5 +204,32 @@ mod tests {
                 .iter()
                 .any(|value| value == "friction")
         );
+    }
+
+    #[test]
+    fn task_tool_specs_advertise_dependencies_as_string_list() {
+        for tool_name in ["orbit.task.add", "orbit.task.update"] {
+            let schema = ToolSchema {
+                name: tool_name.to_string(),
+                description: String::new(),
+                parameters: vec![param_with_type("dependencies", "string_list")],
+                builtin: true,
+            };
+            let spec = schema_to_tool_spec(&schema);
+            let any_of = spec.input_schema["properties"]["dependencies"]["anyOf"]
+                .as_array()
+                .expect("string-list union");
+
+            assert!(
+                any_of.iter().any(|schema| {
+                    schema["type"] == "array" && schema["items"]["type"] == "string"
+                }),
+                "{tool_name} dependencies must accept an array of strings"
+            );
+            assert!(
+                any_of.iter().any(|schema| schema["type"] == "string"),
+                "{tool_name} dependencies must accept a string"
+            );
+        }
     }
 }

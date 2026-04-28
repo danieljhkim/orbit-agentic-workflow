@@ -1050,6 +1050,38 @@ mod tests {
     }
 
     #[test]
+    fn task_add_tool_persists_dependencies() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let dependency = create_task(
+            &runtime,
+            &repo_root,
+            "Dependency task",
+            "Existing task that must finish first.",
+            TaskStatus::Backlog,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.add",
+                json!({
+                    "title": "Dependent task from tool",
+                    "description": "Exercise dependency input on the agent-facing task creation path.",
+                    "workspace": ".",
+                    "dependencies": [dependency.id.clone()],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task add tool succeeds");
+
+        assert_eq!(
+            output.get("dependencies"),
+            Some(&json!([dependency.id.as_str()]))
+        );
+    }
+
+    #[test]
     fn task_add_tool_infers_agent_from_model_only_input() {
         let (_root, runtime, _repo_root) = test_runtime();
 
@@ -1104,6 +1136,69 @@ mod tests {
         assert_eq!(
             output.get("model").and_then(Value::as_str),
             Some("gemini-3.1-pro-preview")
+        );
+    }
+
+    #[test]
+    fn task_update_tool_replaces_dependencies() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let first_dependency = create_task(
+            &runtime,
+            &repo_root,
+            "First dependency",
+            "Existing task that must finish first.",
+            TaskStatus::Backlog,
+            &[],
+        );
+        let second_dependency = create_task(
+            &runtime,
+            &repo_root,
+            "Second dependency",
+            "Replacement prerequisite.",
+            TaskStatus::Backlog,
+            &[],
+        );
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            "Update dependency task",
+            "Exercise dependency replacement through tool input.",
+            TaskStatus::Backlog,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id.clone(),
+                    "dependencies": [first_dependency.id.clone()],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task update tool sets dependency");
+
+        assert_eq!(
+            output.get("dependencies"),
+            Some(&json!([first_dependency.id.as_str()]))
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id,
+                    "dependencies": [second_dependency.id.clone()],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task update tool replaces dependency");
+
+        assert_eq!(
+            output.get("dependencies"),
+            Some(&json!([second_dependency.id.as_str()]))
         );
     }
 

@@ -209,13 +209,17 @@ fn property_for(param_type: &str) -> Map<String, Value> {
 mod tests {
     use super::*;
 
-    fn param(name: &str) -> ToolParam {
+    fn param_with_type(name: &str, param_type: &str) -> ToolParam {
         ToolParam {
             name: name.to_string(),
             description: String::new(),
-            param_type: "string".to_string(),
+            param_type: param_type.to_string(),
             required: false,
         }
+    }
+
+    fn param(name: &str) -> ToolParam {
+        param_with_type(name, "string")
     }
 
     #[test]
@@ -246,5 +250,43 @@ mod tests {
             .as_array()
             .expect("status enum");
         assert!(status_enum.iter().any(|value| value == "friction"));
+    }
+
+    #[test]
+    fn task_dependency_schemas_accept_string_or_string_array() {
+        for tool_name in ["orbit.task.add", "orbit.task.update"] {
+            let schema =
+                build_input_schema(tool_name, &[param_with_type("dependencies", "string_list")]);
+            let properties = schema
+                .get("properties")
+                .and_then(Value::as_object)
+                .expect("properties");
+            let dependencies = properties
+                .get("dependencies")
+                .and_then(Value::as_object)
+                .expect("dependencies property");
+            let any_of = dependencies
+                .get("anyOf")
+                .and_then(Value::as_array)
+                .expect("string-list union");
+
+            assert!(
+                any_of.iter().any(|schema| {
+                    schema.get("type").and_then(Value::as_str) == Some("array")
+                        && schema
+                            .get("items")
+                            .and_then(|items| items.get("type"))
+                            .and_then(Value::as_str)
+                            == Some("string")
+                }),
+                "{tool_name} dependencies must accept an array of strings"
+            );
+            assert!(
+                any_of
+                    .iter()
+                    .any(|schema| schema.get("type").and_then(Value::as_str) == Some("string")),
+                "{tool_name} dependencies must accept a string"
+            );
+        }
     }
 }
