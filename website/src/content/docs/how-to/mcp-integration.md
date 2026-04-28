@@ -7,7 +7,7 @@ sidebar:
 
 ## Claude Code (plugin path)
 
-For Claude Code, the simplest setup is the official plugin — it registers the MCP server, skills, and subagents in one step and pulls the native binary via the `@orbit-dev/cli` npm proxy:
+For Claude Code, the simplest setup is the official plugin — it registers the MCP server, skills, and subagents in one step and pulls the native binary via the `@orbit-tools/cli` npm proxy:
 
 ```text
 /plugin marketplace add danieljhkim/orbit

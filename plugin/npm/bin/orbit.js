@@ -16,11 +16,11 @@ function resolveBinary() {
   if (process.env.ORBIT_BINARY) return process.env.ORBIT_BINARY;
   if (fs.existsSync(DEFAULT_BIN)) return DEFAULT_BIN;
   // Lazy install path: handles `npm install --ignore-scripts`.
-  process.stderr.write('@orbit-dev/cli: binary not found, attempting download...\n');
+  process.stderr.write('@orbit-tools/cli: binary not found, attempting download...\n');
   const installer = path.join(PKG_ROOT, 'scripts', 'install-binary.js');
   const result = spawnSync(process.execPath, [installer], { stdio: 'inherit' });
   if (result.status !== 0 || !fs.existsSync(DEFAULT_BIN)) {
-    process.stderr.write('@orbit-dev/cli: binary install failed. Set ORBIT_BINARY to point at a local orbit binary, or reinstall the package.\n');
+    process.stderr.write('@orbit-tools/cli: binary install failed. Set ORBIT_BINARY to point at a local orbit binary, or reinstall the package.\n');
     process.exit(result.status || 1);
   }
   return DEFAULT_BIN;
@@ -38,6 +38,6 @@ child.on('exit', (code, signal) => {
 });
 
 child.on('error', (err) => {
-  process.stderr.write(`@orbit-dev/cli: failed to launch ${binary}: ${err.message}\n`);
+  process.stderr.write(`@orbit-tools/cli: failed to launch ${binary}: ${err.message}\n`);
   process.exit(1);
 });

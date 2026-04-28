@@ -1,4 +1,4 @@
-# @orbit-dev/cli
+# @orbit-tools/cli
 
 npm proxy for the [Orbit](https://github.com/danieljhkim/orbit) CLI.
 
@@ -11,11 +11,11 @@ SHA-256 against the published `orbit-checksums.txt`, and exposes it as the
 
 ```bash
 # Install globally
-npm install -g @orbit-dev/cli
+npm install -g @orbit-tools/cli
 orbit --version
 
 # One-shot via npx (used by the orbit Claude plugin)
-npx -y @orbit-dev/cli mcp serve
+npx -y @orbit-tools/cli mcp serve
 ```
 
 All arguments are forwarded to the native `orbit` binary.

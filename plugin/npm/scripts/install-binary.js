@@ -18,11 +18,11 @@ const BIN_DIR = path.join(PKG_ROOT, 'binaries');
 const BIN_PATH = path.join(BIN_DIR, process.platform === 'win32' ? 'orbit.exe' : 'orbit');
 
 function log(msg) {
-  process.stderr.write(`@orbit-dev/cli: ${msg}\n`);
+  process.stderr.write(`@orbit-tools/cli: ${msg}\n`);
 }
 
 function fail(msg) {
-  process.stderr.write(`@orbit-dev/cli: ${msg}\n`);
+  process.stderr.write(`@orbit-tools/cli: ${msg}\n`);
   process.exit(1);
 }
 
@@ -46,7 +46,7 @@ function resolveTarget() {
 function fetchBuffer(url, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     https
-      .get(url, { headers: { 'user-agent': '@orbit-dev/cli installer' } }, (res) => {
+      .get(url, { headers: { 'user-agent': '@orbit-tools/cli installer' } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (redirectsLeft <= 0) return reject(new Error(`too many redirects fetching ${url}`));
           res.resume();

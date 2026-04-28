@@ -30,7 +30,7 @@ Claude Code plugin (skips the install script, downloads the binary on first MCP 
 /plugin install orbit
 ```
 
-The plugin registers Orbit's MCP server, skills, and orchestration subagents in Claude Code, and pulls the matching native `orbit` binary through the [`@orbit-dev/cli`](https://www.npmjs.com/package/@orbit-dev/cli) npm proxy on first invocation. Requires Node 18+ on `PATH`. To get the `orbit` CLI on your shell as well: `npm install -g @orbit-dev/cli`.
+The plugin registers Orbit's MCP server, skills, and orchestration subagents in Claude Code, and pulls the matching native `orbit` binary through the [`@orbit-tools/cli`](https://www.npmjs.com/package/@orbit-tools/cli) npm proxy on first invocation. Requires Node 18+ on `PATH`. To get the `orbit` CLI on your shell as well: `npm install -g @orbit-tools/cli`.
 
 From source (requires Rust toolchain):
 

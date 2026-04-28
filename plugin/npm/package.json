@@ -1,5 +1,5 @@
 {
-  "name": "@orbit-dev/cli",
+  "name": "@orbit-tools/cli",
   "version": "0.0.0",
   "description": "npm proxy for the Orbit CLI. Downloads the matching native binary from GitHub Releases on install and forwards all invocations.",
   "bin": {
