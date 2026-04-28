@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-28 (T20260428-7)
+**Last updated:** 2026-04-28 (T20260428-11)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -240,6 +240,20 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Trust boundary: input-JSON values can be asserted by an MCP client and should be treated as caller-claimed; env-supplied values are the engine's ground truth. Code comments on `resolve_audit_context` document the precedence so future call sites do not invert it.
 - Cost: a one-time SQLite migration (`ALTER TABLE audit_events ADD COLUMN ...`). Historical rows render with NULL correlation cells; backfill is intentionally out of scope.
 
+## ADR-018 — Scoreboard tool-call totals project from command audit
+
+**Status:** Accepted · 2026-04 · [T20260428-11]
+
+**Context.** `summary.json` previously sourced `tool_calls` from the token/invocation scoreboard, which can be empty or zero for providers that do not emit invocation traces. At the same time, the SQLite command-audit trail now records every CLI and MCP tool-run attempt, including runtime failures, pre-runtime CLI failures, and denials.
+
+**Decision.** Treat command-audit rows as the source for scoreboard all/failed tool-run attempt counts. `summary.json` counts `command: tool` rows whose `subcommand` is `"run"` or `"run-mcp"` and whose `tool_name` is present, groups them by normalized role/model, writes the all-attempt count to the existing `tool_calls` field, and adds `failed_tool_calls` for non-success rows (`failure` and `denied`). Token totals continue to come from the token/invocation scoreboard. Legacy token-scoreboard `total_tool_calls` remains a fallback through a max overlay instead of being added to audit counts.
+
+**Consequences.**
+- Failed and denied tool runs become visible in the compact scoreboard summary rather than only in `orbit audit list`.
+- Non-Claude or trace-sparse providers can still show tool activity because command audit does not depend on provider usage traces.
+- The existing `tool_calls` JSON field keeps its name and now represents all known tool-run attempts rather than only invocation-trace tool-call summaries.
+- Cost: the max overlay is conservative, not a perfect dedupe. If invocation traces contain tool calls that are genuinely absent from command audit while audit rows also exist for the same model, the summary may undercount the mathematical union until both streams share a common invocation id.
+
 ---
 
 ## Task References
@@ -262,5 +276,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260427-52]** — Deprecate `agent` in normal tool-call JSON, infer agent family from `model`, and reject inconsistent legacy pairs.
 - **[T20260428-4]** — Record audit events for MCP tool invocations: move tool-invocation audit into the runtime, add the `ToolEntryPoint` discriminator, and bracket MCP preflight + dispatch in `audited_mcp_call`.
 - **[T20260428-7]** — Correlate command-audit rows with originating run/task/activity: add nullable `task_id` / `job_run_id` / `activity_id` / `step_index` columns, thread context through engine env vars, populate at the runtime dispatch seam, surface on the dashboard.
+- **[T20260428-11]** — Derive compact scoreboard all/failed tool-call counts from command-audit tool-run rows.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

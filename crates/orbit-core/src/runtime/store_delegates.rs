@@ -485,6 +485,13 @@ impl AuditEventRecords<'_> {
         self.store.get_audit_denials_by_role(since)
     }
 
+    pub(crate) fn tool_call_counts_by_role(
+        &self,
+        since: Option<&chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Vec<orbit_store::AuditToolCallCountsByRole>, OrbitError> {
+        self.store.get_audit_tool_call_counts_by_role(since)
+    }
+
     pub(crate) fn insert(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {
         self.store.insert_audit_event_record(params)
     }

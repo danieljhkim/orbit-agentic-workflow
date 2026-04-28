@@ -39,6 +39,13 @@ pub struct AuditEventFilter {
     pub limit: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditToolCallCountsByRole {
+    pub role: String,
+    pub total: u64,
+    pub failed: u64,
+}
+
 impl Store {
     pub fn insert_audit_event_record(
         &self,
@@ -435,6 +442,63 @@ impl Store {
         rows.map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    pub fn get_audit_tool_call_counts_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<AuditToolCallCountsByRole>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let sql = if since.is_some() {
+            "SELECT role, COUNT(*), \
+             COALESCE(SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END), 0) \
+             FROM audit_events \
+             WHERE command = 'tool' \
+               AND subcommand IN ('run', 'run-mcp') \
+               AND tool_name IS NOT NULL \
+               AND timestamp >= ?1 \
+             GROUP BY role ORDER BY COUNT(*) DESC, role ASC"
+        } else {
+            "SELECT role, COUNT(*), \
+             COALESCE(SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END), 0) \
+             FROM audit_events \
+             WHERE command = 'tool' \
+               AND subcommand IN ('run', 'run-mcp') \
+               AND tool_name IS NOT NULL \
+             GROUP BY role ORDER BY COUNT(*) DESC, role ASC"
+        };
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = if let Some(s) = since {
+            stmt.query_map(params![s.to_rfc3339()], |row| {
+                Ok(AuditToolCallCountsByRole {
+                    role: row.get(0)?,
+                    total: row.get::<_, i64>(1)? as u64,
+                    failed: row.get::<_, i64>(2)? as u64,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+        } else {
+            stmt.query_map([], |row| {
+                Ok(AuditToolCallCountsByRole {
+                    role: row.get(0)?,
+                    total: row.get::<_, i64>(1)? as u64,
+                    failed: row.get::<_, i64>(2)? as u64,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+        };
+
+        rows.map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
     pub fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         let conn = self
             .conn
@@ -483,6 +547,19 @@ mod tests {
             job_run_id: Some("jrun-xyz".to_string()),
             activity_id: Some("agent_implement".to_string()),
             step_index: Some(2),
+        }
+    }
+
+    fn sample_params_with(
+        execution_id: &str,
+        role: &str,
+        status: AuditEventStatus,
+    ) -> AuditEventInsertParams {
+        AuditEventInsertParams {
+            execution_id: execution_id.to_string(),
+            role: role.to_string(),
+            status,
+            ..sample_params()
         }
     }
 
@@ -603,6 +680,41 @@ mod tests {
         assert!(
             task_id.is_none(),
             "legacy row should have NULL task_id post-migration",
+        );
+    }
+
+    #[test]
+    fn tool_call_counts_by_role_include_failed_and_denied_runs() {
+        let store = Store::open_in_memory().expect("open store");
+
+        for params in [
+            sample_params_with("exec-success", "codex / gpt-5", AuditEventStatus::Success),
+            sample_params_with("exec-failure", "codex / gpt-5", AuditEventStatus::Failure),
+            sample_params_with("exec-denied", "codex / gpt-5", AuditEventStatus::Denied),
+        ] {
+            store
+                .insert_audit_event_record(&params)
+                .expect("insert audit event");
+        }
+
+        let mut non_run =
+            sample_params_with("exec-show", "codex / gpt-5", AuditEventStatus::Failure);
+        non_run.subcommand = Some("show".to_string());
+        store
+            .insert_audit_event_record(&non_run)
+            .expect("insert non-run audit event");
+
+        let rows = store
+            .get_audit_tool_call_counts_by_role(None)
+            .expect("load tool call counts");
+
+        assert_eq!(
+            rows,
+            vec![AuditToolCallCountsByRole {
+                role: "codex / gpt-5".to_string(),
+                total: 3,
+                failed: 2,
+            }]
         );
     }
 }

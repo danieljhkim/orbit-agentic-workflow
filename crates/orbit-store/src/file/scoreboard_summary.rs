@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::planning_duel_scoreboard;
+use crate::AuditToolCallCountsByRole;
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 const SUMMARY_FILENAME: &str = "summary.json";
@@ -53,6 +54,8 @@ pub struct AgentSummary {
     pub duels: DuelSummary,
     pub pr: PrSummary,
     pub tool_calls: u64,
+    #[serde(default)]
+    pub failed_tool_calls: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -85,6 +88,14 @@ struct TokenAgentEntry {
 pub fn generate_summary(
     scoreboard_dir: &Path,
     tasks: &[Task],
+) -> Result<ScoreboardSummary, OrbitError> {
+    generate_summary_with_audit_tool_calls(scoreboard_dir, tasks, &[])
+}
+
+pub fn generate_summary_with_audit_tool_calls(
+    scoreboard_dir: &Path,
+    tasks: &[Task],
+    audit_tool_calls: &[AuditToolCallCountsByRole],
 ) -> Result<ScoreboardSummary, OrbitError> {
     let mut agents: BTreeMap<String, AgentSummary> = BTreeMap::new();
 
@@ -154,6 +165,8 @@ pub fn generate_summary(
             .tool_calls
             .saturating_add(token_row.total_tool_calls);
     }
+
+    overlay_audit_tool_calls(&mut agents, audit_tool_calls);
 
     for run in planning_duel_scoreboard::load_runs(scoreboard_dir)? {
         let planner_a = agents
@@ -278,6 +291,29 @@ fn overlay_nested_metric(
     }
 }
 
+fn overlay_audit_tool_calls(
+    agents: &mut BTreeMap<String, AgentSummary>,
+    audit_tool_calls: &[AuditToolCallCountsByRole],
+) {
+    let mut by_model: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    for row in audit_tool_calls {
+        let model = model_key(&row.role);
+        if model.is_empty() {
+            continue;
+        }
+        let entry = by_model.entry(model).or_default();
+        entry.0 = entry.0.saturating_add(row.total);
+        entry.1 = entry.1.saturating_add(row.failed);
+    }
+
+    for (model, (total, failed)) in by_model {
+        let summary = agents.entry(model).or_default();
+        // Total competes with token scoreboard data; failures only exist in audit rows.
+        summary.tool_calls = summary.tool_calls.max(total);
+        summary.failed_tool_calls = summary.failed_tool_calls.saturating_add(failed);
+    }
+}
+
 fn model_key(model: &str) -> String {
     normalize_attribution_label(model, None)
 }
@@ -320,4 +356,112 @@ fn normalize_model_scoreboard(parsed: Value) -> Result<ModelScoreboard, OrbitErr
     }
 
     Ok(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_overlays_audit_tool_call_counts_by_normalized_model() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+
+        let summary = generate_summary_with_audit_tool_calls(
+            temp.path(),
+            &[],
+            &[
+                AuditToolCallCountsByRole {
+                    role: "codex / gpt-5".to_string(),
+                    total: 2,
+                    failed: 1,
+                },
+                AuditToolCallCountsByRole {
+                    role: "gpt-5".to_string(),
+                    total: 1,
+                    failed: 1,
+                },
+            ],
+        )
+        .expect("generate summary");
+
+        let gpt5 = summary.agents.get("gpt-5").expect("gpt-5 summary");
+        assert_eq!(gpt5.tool_calls, 3);
+        assert_eq!(gpt5.failed_tool_calls, 2);
+    }
+
+    #[test]
+    fn audit_tool_calls_do_not_double_count_token_scoreboard_tool_calls() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(temp.path()).expect("create scoreboard dir");
+        fs::write(
+            temp.path().join("tokens.json"),
+            r#"{
+              "agents": [
+                {
+                  "agent": "codex",
+                  "model": "gpt-5",
+                  "total_tokens": 10,
+                  "total_output_tokens": 4,
+                  "total_tool_calls": 5
+                }
+              ]
+            }"#,
+        )
+        .expect("write tokens scoreboard");
+
+        let summary = generate_summary_with_audit_tool_calls(
+            temp.path(),
+            &[],
+            &[AuditToolCallCountsByRole {
+                role: "gpt-5".to_string(),
+                total: 3,
+                failed: 2,
+            }],
+        )
+        .expect("generate summary");
+
+        let gpt5 = summary.agents.get("gpt-5").expect("gpt-5 summary");
+        assert_eq!(gpt5.tokens.total, 10);
+        assert_eq!(gpt5.tokens.output, 4);
+        assert_eq!(gpt5.tool_calls, 5);
+        assert_eq!(gpt5.failed_tool_calls, 2);
+    }
+
+    #[test]
+    fn audit_tool_calls_win_when_larger_than_token_scoreboard_tool_calls() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(temp.path()).expect("create scoreboard dir");
+        fs::write(
+            temp.path().join("tokens.json"),
+            r#"{
+              "agents": [
+                {
+                  "agent": "codex",
+                  "model": "gpt-5",
+                  "total_tokens": 10,
+                  "total_output_tokens": 4,
+                  "total_tool_calls": 2
+                }
+              ]
+            }"#,
+        )
+        .expect("write tokens scoreboard");
+
+        let summary = generate_summary_with_audit_tool_calls(
+            temp.path(),
+            &[],
+            &[AuditToolCallCountsByRole {
+                role: "gpt-5".to_string(),
+                total: 7,
+                failed: 3,
+            }],
+        )
+        .expect("generate summary");
+
+        let gpt5 = summary.agents.get("gpt-5").expect("gpt-5 summary");
+        assert_eq!(gpt5.tokens.total, 10);
+        assert_eq!(gpt5.tokens.output, 4);
+        assert_eq!(gpt5.tool_calls, 7);
+        assert_eq!(gpt5.failed_tool_calls, 3);
+    }
 }

@@ -55,7 +55,7 @@ pub mod pr_scoreboard {
 pub mod scoreboard_summary {
     pub use crate::file::scoreboard_summary::{
         AgentSummary, DuelSummary, FrictionSummary, PrSummary, ScoreboardSummary, TokenSummary,
-        generate_summary, summary_path, write_summary,
+        generate_summary, generate_summary_with_audit_tool_calls, summary_path, write_summary,
     };
 }
 
@@ -110,7 +110,9 @@ pub use invocation_store_impl::{
     InvocationRecord, InvocationToolCallRecord, TaskInvocationMetrics, ToolInvocationMetrics,
 };
 pub use json_schema::{validate_instance_against_schema, validate_schema_document};
-pub use sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
+pub use sqlite::audit_event_store::{
+    AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
+};
 pub use sqlite::connection::{Store, StoreTx};
 
 pub(crate) fn parse_timestamp(raw: &str) -> rusqlite::Result<DateTime<Utc>> {

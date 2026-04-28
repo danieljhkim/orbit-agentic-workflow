@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{AuditEvent, AuditEventStatus, AuditStats, OrbitError};
-use orbit_store::{AuditEventFilter, AuditEventInsertParams};
+use orbit_store::{AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole};
 
 use crate::OrbitRuntime;
 
@@ -85,6 +85,15 @@ impl OrbitRuntime {
         since: Option<&DateTime<Utc>>,
     ) -> Result<Vec<(String, i64)>, OrbitError> {
         self.stores().audit_events().denials_by_role(since)
+    }
+
+    /// Per-role counts for audited tool invocations. `failed` counts every
+    /// non-success tool run (`failure` and `denied` statuses).
+    pub fn audit_tool_call_counts_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<AuditToolCallCountsByRole>, OrbitError> {
+        self.stores().audit_events().tool_call_counts_by_role(since)
     }
 }
 

@@ -8,9 +8,11 @@ impl OrbitRuntime {
     ) -> Result<orbit_store::scoreboard_summary::ScoreboardSummary, OrbitError> {
         let tasks = self.list_tasks()?;
         orbit_store::friction_bounty::refresh_from_tasks(&self.paths().scoreboard_dir, &tasks)?;
-        let summary = orbit_store::scoreboard_summary::generate_summary(
+        let audit_tool_calls = self.audit_tool_call_counts_by_role(None)?;
+        let summary = orbit_store::scoreboard_summary::generate_summary_with_audit_tool_calls(
             &self.paths().scoreboard_dir,
             &tasks,
+            &audit_tool_calls,
         )?;
         let _ =
             orbit_store::scoreboard_summary::write_summary(&self.paths().scoreboard_dir, &summary)?;

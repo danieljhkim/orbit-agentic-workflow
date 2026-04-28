@@ -7,7 +7,9 @@ use orbit_common::types::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::sqlite::audit_event_store::{AuditEventFilter, AuditEventInsertParams};
+use crate::sqlite::audit_event_store::{
+    AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
+};
 
 #[derive(Debug, Clone)]
 pub struct TaskCreateParams {
@@ -337,6 +339,10 @@ pub trait AuditEventStoreBackend: Send + Sync {
         &self,
         since: Option<&DateTime<Utc>>,
     ) -> Result<Vec<(String, i64)>, OrbitError>;
+    fn get_audit_tool_call_counts_by_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<AuditToolCallCountsByRole>, OrbitError>;
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError>;
 }
 
