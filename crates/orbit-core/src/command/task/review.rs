@@ -58,7 +58,7 @@ impl OrbitRuntime {
             canonical_model.clone(),
         )?;
 
-        self.record_task_review_message_score(canonical_model.as_deref());
+        self.record_task_review_thread_score(canonical_model.as_deref());
         Ok(thread)
     }
 
@@ -136,7 +136,6 @@ impl OrbitRuntime {
             canonical_model.clone(),
         )?;
 
-        self.record_task_review_message_score(canonical_model.as_deref());
         let updated_task = self.get_task(task_id)?;
         updated_task
             .review_threads
@@ -194,7 +193,7 @@ impl OrbitRuntime {
             })
     }
 
-    fn record_task_review_message_score(&self, model: Option<&str>) {
+    fn record_task_review_thread_score(&self, model: Option<&str>) {
         if !self.scoring_enabled() {
             return;
         }
@@ -205,13 +204,13 @@ impl OrbitRuntime {
             return;
         };
         if let Err(error) =
-            task_review_scoreboard::record_task_review_message(&self.paths().scoreboard_dir, &model)
+            task_review_scoreboard::record_task_review_thread(&self.paths().scoreboard_dir, &model)
         {
             tracing::warn!(
                 target: "orbit.scoreboard.task_review",
                 model = %model,
                 error = %error,
-                "failed to record task review scoreboard message",
+                "failed to record task review scoreboard thread",
             );
         }
     }
@@ -270,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn add_and_reply_review_threads_score_local_review_messages() {
+    fn add_and_reply_review_threads_score_local_review_threads_once() {
         let (_root, runtime) = test_runtime();
         let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
         fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
@@ -304,10 +303,7 @@ mod tests {
             .expect("reply review thread");
 
         let scoreboard = read_task_review_scoreboard(&runtime);
-        assert_eq!(
-            scoreboard["task-review-messages"]["gpt-5.4"],
-            Value::from(2)
-        );
+        assert_eq!(scoreboard["task-review-threads"]["gpt-5.4"], Value::from(1));
         let updated = runtime.get_task(&task.id).expect("reload task");
         let first_message = updated.review_threads[0]
             .messages
@@ -320,12 +316,12 @@ mod tests {
             .generate_scoreboard_summary()
             .expect("generate scoreboard summary");
         let reviewer = summary.agents.get("gpt-5.4").expect("reviewer summary");
-        assert_eq!(reviewer.task_review.messages, 2);
+        assert_eq!(reviewer.task_review.threads, 1);
         assert_eq!(reviewer.pr.review_comments, 0);
     }
 
     #[test]
-    fn typo_prefixed_models_do_not_score_local_review_messages() {
+    fn typo_prefixed_models_do_not_score_local_review_threads() {
         let (_root, runtime) = test_runtime();
         let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
         fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
@@ -373,16 +369,13 @@ mod tests {
             .expect("add review thread with configured model");
 
         let scoreboard = read_task_review_scoreboard(&runtime);
-        assert_eq!(
-            scoreboard["task-review-messages"]["gpt-5.4"],
-            Value::from(1)
-        );
-        assert!(scoreboard["task-review-messages"]["gpt-typo"].is_null());
-        assert!(scoreboard["task-review-messages"]["opus-handle"].is_null());
+        assert_eq!(scoreboard["task-review-threads"]["gpt-5.4"], Value::from(1));
+        assert!(scoreboard["task-review-threads"]["gpt-typo"].is_null());
+        assert!(scoreboard["task-review-threads"]["opus-handle"].is_null());
     }
 
     #[test]
-    fn human_review_threads_do_not_score_local_review_messages() {
+    fn human_review_threads_do_not_score_local_review_threads() {
         let (_root, runtime) = test_runtime();
         let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
         fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
@@ -410,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn non_model_labels_do_not_score_local_review_messages() {
+    fn non_model_labels_do_not_score_local_review_threads() {
         let (_root, runtime) = test_runtime();
         let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
         fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");

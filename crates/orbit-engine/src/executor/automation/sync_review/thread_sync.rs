@@ -629,7 +629,7 @@ mod tests {
         // orbit-core covers `add_review_thread` persisting this model-only,
         // pending-sync shape. orbit-engine starts from the persisted shape to
         // avoid a reverse dependency on orbit-core in this crate.
-        task_review_scoreboard::record_task_review_message(&scoreboard_dir, "gpt-5.4")
+        task_review_scoreboard::record_task_review_thread(&scoreboard_dir, "gpt-5.4")
             .expect("seed local review score");
 
         let task = fixture_task(temp.path());
@@ -642,7 +642,7 @@ mod tests {
 
         let task_review = read_scoreboard(&scoreboard_dir, "task_review.json");
         assert_eq!(
-            task_review["task-review-messages"]["gpt-5.4"],
+            task_review["task-review-threads"]["gpt-5.4"],
             Value::from(1)
         );
         let pr = read_scoreboard(&scoreboard_dir, "pr.json");
@@ -653,7 +653,7 @@ mod tests {
         assert_eq!(synced_again, 0);
         let task_review = read_scoreboard(&scoreboard_dir, "task_review.json");
         assert_eq!(
-            task_review["task-review-messages"]["gpt-5.4"],
+            task_review["task-review-threads"]["gpt-5.4"],
             Value::from(1)
         );
         let pr = read_scoreboard(&scoreboard_dir, "pr.json");

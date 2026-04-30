@@ -53,7 +53,7 @@ pub mod pr_scoreboard {
 }
 
 pub mod task_review_scoreboard {
-    pub use crate::file::task_review_scoreboard::record_task_review_message;
+    pub use crate::file::task_review_scoreboard::record_task_review_thread;
 }
 
 pub mod scoreboard_summary {

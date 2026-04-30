@@ -593,7 +593,7 @@ function renderRuns(runs) {
 const SCOREBOARD_COLUMNS = [
   { key: "agent", label: "agent", num: false },
   { key: "tasks_completed", label: "tasks", num: true },
-  { key: "task_review.messages", label: "task rev", num: true },
+  { key: "task_review.threads", label: "review threads", num: true },
   { key: "pr.review_comments", label: "pr rev", num: true },
   {
     key: "tokens",

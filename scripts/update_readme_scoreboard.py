@@ -22,7 +22,7 @@ markdown += "|---|---|---|---|---|---|---|\n"
 for name, metrics in sorted_agents:
     tasks = metrics.get("tasks_completed", 0)
     task_review = metrics.get("task_review", {})
-    t_task_review = task_review.get("messages", 0)
+    t_task_review = task_review.get("threads", 0)
 
     frict = metrics.get("friction", {})
     t_frict = f"{frict.get('reported', 0)}/{frict.get('accepted', 0)}/{frict.get('rejected', 0)}"

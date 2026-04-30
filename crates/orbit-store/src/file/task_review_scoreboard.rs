@@ -2,7 +2,7 @@
 //!
 //! Updates `.orbit/state/scoreboard/task_review.json` when local Orbit review
 //! feedback is created:
-//! - **review thread message**: increment `task-review-messages`
+//! - **review thread creation**: increment `task-review-threads`
 
 use std::collections::HashMap;
 use std::fs;
@@ -17,9 +17,12 @@ use orbit_common::utility::fs::{
 type ModelScores = HashMap<String, u64>;
 type Scoreboard = HashMap<String, ModelScores>;
 
-/// Increment the `task-review-messages` counter for the given model.
-pub fn record_task_review_message(scoreboard_dir: &Path, model: &str) -> Result<(), OrbitError> {
-    increment(scoreboard_dir, "task-review-messages", model)
+const TASK_REVIEW_THREADS_METRIC: &str = "task-review-threads";
+const LEGACY_TASK_REVIEW_MESSAGES_METRIC: &str = "task-review-messages";
+
+/// Increment the `task-review-threads` counter for the given model.
+pub fn record_task_review_thread(scoreboard_dir: &Path, model: &str) -> Result<(), OrbitError> {
+    increment(scoreboard_dir, TASK_REVIEW_THREADS_METRIC, model)
 }
 
 fn increment(scoreboard_dir: &Path, metric: &str, model: &str) -> Result<(), OrbitError> {
@@ -35,6 +38,8 @@ fn increment(scoreboard_dir: &Path, metric: &str, model: &str) -> Result<(), Orb
             HashMap::new()
         };
 
+        migrate_legacy_messages_metric(&mut scoreboard);
+
         let model_map = scoreboard.entry(metric.to_string()).or_default();
         let counter = model_map.entry(normalized_model.clone()).or_insert(0);
         *counter += 1;
@@ -43,4 +48,45 @@ fn increment(scoreboard_dir: &Path, metric: &str, model: &str) -> Result<(), Orb
             .map_err(|e| OrbitError::Io(format!("serialize task_review.json: {e}")))?;
         write_atomic(&path, &format!("{json}\n")).map_err(Into::into)
     })
+}
+
+fn migrate_legacy_messages_metric(scoreboard: &mut Scoreboard) {
+    let Some(legacy_scores) = scoreboard.remove(LEGACY_TASK_REVIEW_MESSAGES_METRIC) else {
+        return;
+    };
+
+    let thread_scores = scoreboard
+        .entry(TASK_REVIEW_THREADS_METRIC.to_string())
+        .or_default();
+    for (model, count) in legacy_scores {
+        let counter = thread_scores.entry(model).or_insert(0);
+        *counter = counter.saturating_add(count);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn record_task_review_thread_migrates_legacy_message_metric() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(temp.path()).expect("create scoreboard dir");
+        fs::write(
+            temp.path().join("task_review.json"),
+            r#"{"task-review-messages":{"gpt-5.4":2}}"#,
+        )
+        .expect("write legacy scoreboard");
+
+        record_task_review_thread(temp.path(), "gpt-5.4").expect("record thread score");
+
+        let raw = fs::read_to_string(temp.path().join("task_review.json"))
+            .expect("read migrated scoreboard");
+        let scoreboard: Value = serde_json::from_str(&raw).expect("parse migrated scoreboard");
+        assert!(scoreboard["task-review-messages"].is_null());
+        assert_eq!(scoreboard["task-review-threads"]["gpt-5.4"], Value::from(3));
+    }
 }

@@ -15,8 +15,10 @@ use crate::AuditToolCallCountsByRole;
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 const SUMMARY_FILENAME: &str = "summary.json";
-// v2 adds `task_review.messages`; v1 readers can ignore the extra field.
+// v2 adds `task_review.threads`; v1 readers can ignore the extra field.
 const CURRENT_SCHEMA_VERSION: u32 = 2;
+const TASK_REVIEW_THREADS_METRIC: &str = "task-review-threads";
+const LEGACY_TASK_REVIEW_MESSAGES_METRIC: &str = "task-review-messages";
 
 type ModelScoreboard = BTreeMap<String, BTreeMap<String, u64>>;
 
@@ -49,7 +51,8 @@ pub struct PrSummary {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskReviewSummary {
-    pub messages: u64,
+    #[serde(default, alias = "messages")]
+    pub threads: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -158,9 +161,9 @@ pub fn generate_summary_with_audit_tool_calls(
     overlay_nested_metric(
         &mut agents,
         &task_review,
-        "task-review-messages",
+        TASK_REVIEW_THREADS_METRIC,
         |summary, value| {
-            summary.task_review.messages = summary.task_review.messages.saturating_add(value);
+            summary.task_review.threads = summary.task_review.threads.saturating_add(value);
         },
     );
 
@@ -348,7 +351,9 @@ fn normalize_model_scoreboard(parsed: Value) -> Result<ModelScoreboard, OrbitErr
         let Value::Object(entries) = metric_value else {
             continue;
         };
-        let model_entries = normalized.entry(metric).or_default();
+        let model_entries = normalized
+            .entry(canonical_scoreboard_metric(&metric).to_string())
+            .or_default();
         for (first_key, first_value) in entries {
             match first_value {
                 Value::Number(number) => {
@@ -374,6 +379,13 @@ fn normalize_model_scoreboard(parsed: Value) -> Result<ModelScoreboard, OrbitErr
     }
 
     Ok(normalized)
+}
+
+fn canonical_scoreboard_metric(metric: &str) -> &str {
+    match metric {
+        LEGACY_TASK_REVIEW_MESSAGES_METRIC => TASK_REVIEW_THREADS_METRIC,
+        _ => metric,
+    }
 }
 
 #[cfg(test)]
@@ -484,12 +496,12 @@ mod tests {
     }
 
     #[test]
-    fn summary_exposes_task_review_messages_separately_from_pr_comments() {
+    fn summary_exposes_task_review_threads_separately_from_pr_comments() {
         let temp = tempfile::tempdir().expect("create tempdir");
         fs::create_dir_all(temp.path()).expect("create scoreboard dir");
         fs::write(
             temp.path().join("task_review.json"),
-            r#"{"task-review-messages":{"gpt-reviewer":2}}"#,
+            r#"{"task-review-threads":{"gpt-reviewer":2}}"#,
         )
         .expect("write task review scoreboard");
         fs::write(
@@ -505,7 +517,26 @@ mod tests {
             .agents
             .get("gpt-reviewer")
             .expect("reviewer summary");
-        assert_eq!(reviewer.task_review.messages, 2);
+        assert_eq!(reviewer.task_review.threads, 2);
         assert_eq!(reviewer.pr.review_comments, 1);
+    }
+
+    #[test]
+    fn summary_reads_legacy_task_review_messages_as_threads() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(temp.path()).expect("create scoreboard dir");
+        fs::write(
+            temp.path().join("task_review.json"),
+            r#"{"task-review-messages":{"gpt-reviewer":2}}"#,
+        )
+        .expect("write legacy task review scoreboard");
+
+        let summary = generate_summary(temp.path(), &[]).expect("generate summary");
+
+        let reviewer = summary
+            .agents
+            .get("gpt-reviewer")
+            .expect("reviewer summary");
+        assert_eq!(reviewer.task_review.threads, 2);
     }
 }
