@@ -23,6 +23,9 @@ enum McpProvider {
     Claude,
     Codex,
     Gemini,
+    Cursor,
+    Vscode,
+    Windsurf,
 }
 
 impl McpProvider {
@@ -31,6 +34,9 @@ impl McpProvider {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
+            Self::Cursor => "cursor",
+            Self::Vscode => "vscode",
+            Self::Windsurf => "windsurf",
         }
     }
 }
@@ -64,24 +70,37 @@ pub struct ProviderSelectionArgs {
     /// Target Gemini CLI integration only.
     #[arg(long)]
     pub gemini: bool,
+    /// Target Cursor integration only.
+    #[arg(long)]
+    pub cursor: bool,
+    /// Target VS Code integration only.
+    #[arg(long)]
+    pub vscode: bool,
+    /// Target Windsurf integration only.
+    #[arg(long)]
+    pub windsurf: bool,
     /// Target all supported MCP client integrations.
     #[arg(long)]
     pub all: bool,
 }
 
 impl ProviderSelectionArgs {
+    fn any_explicit_provider(&self) -> bool {
+        self.claude || self.codex || self.gemini || self.cursor || self.vscode || self.windsurf
+    }
+
     fn resolve_mode(&self) -> Result<ProviderSelectionMode, OrbitError> {
-        if self.auto && (self.claude || self.codex || self.gemini || self.all) {
+        if self.auto && (self.any_explicit_provider() || self.all) {
             return Err(OrbitError::InvalidInput(
-                "--auto cannot be combined with --claude, --codex, --gemini, or --all".to_string(),
+                "--auto cannot be combined with --claude, --codex, --gemini, --cursor, --vscode, --windsurf, or --all".to_string(),
             ));
         }
-        if self.all && (self.claude || self.codex || self.gemini) {
+        if self.all && self.any_explicit_provider() {
             return Err(OrbitError::InvalidInput(
-                "--all cannot be combined with --claude, --codex, or --gemini".to_string(),
+                "--all cannot be combined with --claude, --codex, --gemini, --cursor, --vscode, or --windsurf".to_string(),
             ));
         }
-        if self.auto || (!self.claude && !self.codex && !self.gemini && !self.all) {
+        if self.auto || (!self.any_explicit_provider() && !self.all) {
             return Ok(ProviderSelectionMode::Auto);
         }
         if self.all {
@@ -89,6 +108,9 @@ impl ProviderSelectionArgs {
                 McpProvider::Claude,
                 McpProvider::Codex,
                 McpProvider::Gemini,
+                McpProvider::Cursor,
+                McpProvider::Vscode,
+                McpProvider::Windsurf,
             ]));
         }
 
@@ -101,6 +123,15 @@ impl ProviderSelectionArgs {
         }
         if self.gemini {
             providers.push(McpProvider::Gemini);
+        }
+        if self.cursor {
+            providers.push(McpProvider::Cursor);
+        }
+        if self.vscode {
+            providers.push(McpProvider::Vscode);
+        }
+        if self.windsurf {
+            providers.push(McpProvider::Windsurf);
         }
         Ok(ProviderSelectionMode::Explicit(providers))
     }
@@ -252,6 +283,22 @@ fn run_action(
             (McpAction::Remove, McpProvider::Codex) => apply_codex_remove(&target)?,
             (McpAction::Init, McpProvider::Gemini) => apply_gemini_init(&target)?,
             (McpAction::Remove, McpProvider::Gemini) => apply_gemini_remove(&target)?,
+            (McpAction::Init, McpProvider::Cursor) => {
+                apply_simple_json_init(&target, "mcpServers")?
+            }
+            (McpAction::Remove, McpProvider::Cursor) => {
+                apply_simple_json_remove(&target, "mcpServers")?
+            }
+            (McpAction::Init, McpProvider::Vscode) => apply_simple_json_init(&target, "servers")?,
+            (McpAction::Remove, McpProvider::Vscode) => {
+                apply_simple_json_remove(&target, "servers")?
+            }
+            (McpAction::Init, McpProvider::Windsurf) => {
+                apply_simple_json_init(&target, "mcpServers")?
+            }
+            (McpAction::Remove, McpProvider::Windsurf) => {
+                apply_simple_json_remove(&target, "mcpServers")?
+            }
         }
     }
     let _ = orbit_root;
@@ -310,7 +357,74 @@ impl ConfigTarget {
                 mcp_path: repo_root.join(".gemini").join("settings.json"),
                 settings_path: None,
             }),
+            (ScopeArg::Home, McpProvider::Cursor) => {
+                let home = require_home_dir(home_dir)?;
+                Ok(Self {
+                    mcp_path: home.join(".cursor").join("mcp.json"),
+                    settings_path: None,
+                })
+            }
+            (ScopeArg::Workspace, McpProvider::Cursor) => Ok(Self {
+                mcp_path: repo_root.join(".cursor").join("mcp.json"),
+                settings_path: None,
+            }),
+            (ScopeArg::Home, McpProvider::Vscode) => {
+                let home = require_home_dir(home_dir)?;
+                Ok(Self {
+                    mcp_path: vscode_home_user_dir(home).join("mcp.json"),
+                    settings_path: None,
+                })
+            }
+            (ScopeArg::Workspace, McpProvider::Vscode) => Ok(Self {
+                mcp_path: repo_root.join(".vscode").join("mcp.json"),
+                settings_path: None,
+            }),
+            (ScopeArg::Home, McpProvider::Windsurf) => {
+                let home = require_home_dir(home_dir)?;
+                Ok(Self {
+                    mcp_path: home
+                        .join(".codeium")
+                        .join("windsurf")
+                        .join("mcp_config.json"),
+                    settings_path: None,
+                })
+            }
+            (ScopeArg::Workspace, McpProvider::Windsurf) => Ok(Self {
+                mcp_path: repo_root
+                    .join(".codeium")
+                    .join("windsurf")
+                    .join("mcp_config.json"),
+                settings_path: None,
+            }),
         }
+    }
+}
+
+/// Resolve the platform-specific VS Code "User" config directory under `home`.
+///
+/// VS Code stores its global `mcp.json` in this user-config folder, which
+/// differs across operating systems. Centralizing the branching here keeps
+/// `cfg(target_os = ...)` out of `ConfigTarget::resolve`.
+fn vscode_home_user_dir(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        return home
+            .join("Library")
+            .join("Application Support")
+            .join("Code")
+            .join("User");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return home
+            .join("AppData")
+            .join("Roaming")
+            .join("Code")
+            .join("User");
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        home.join(".config").join("Code").join("User")
     }
 }
 
@@ -350,6 +464,31 @@ fn auto_detected_providers(repo_root: &Path, home_dir: Option<&Path>) -> Vec<Mcp
         .unwrap_or(false);
     if gemini_repo || gemini_home {
         providers.push(McpProvider::Gemini);
+    }
+    let cursor_repo = repo_root.join(".cursor").is_dir();
+    let cursor_home = home_dir
+        .map(|home| home.join(".cursor").join("mcp.json").is_file())
+        .unwrap_or(false);
+    if cursor_repo || cursor_home {
+        providers.push(McpProvider::Cursor);
+    }
+    let vscode_repo = repo_root.join(".vscode").is_dir();
+    let vscode_home = home_dir
+        .map(|home| vscode_home_user_dir(home).join("mcp.json").is_file())
+        .unwrap_or(false);
+    if vscode_repo || vscode_home {
+        providers.push(McpProvider::Vscode);
+    }
+    let windsurf_home = home_dir
+        .map(|home| {
+            home.join(".codeium")
+                .join("windsurf")
+                .join("mcp_config.json")
+                .is_file()
+        })
+        .unwrap_or(false);
+    if windsurf_home {
+        providers.push(McpProvider::Windsurf);
     }
     providers
 }
@@ -450,24 +589,35 @@ fn apply_codex_remove(target: &ConfigTarget) -> Result<(), OrbitError> {
 }
 
 fn apply_gemini_init(target: &ConfigTarget) -> Result<(), OrbitError> {
-    let mut settings = load_json_object(&target.mcp_path)?;
-    let mcp_servers = ensure_json_object(&mut settings, "mcpServers")?;
-    mcp_servers.insert(ORBIT_MCP_SERVER_ID.to_string(), gemini_mcp_server_value());
-    write_json_object(&target.mcp_path, &settings)
+    apply_simple_json_init(target, "mcpServers")
 }
 
 fn apply_gemini_remove(target: &ConfigTarget) -> Result<(), OrbitError> {
-    let mut settings = load_json_object(&target.mcp_path)?;
-    if let Some(mcp_servers) = settings
-        .get_mut("mcpServers")
+    apply_simple_json_remove(target, "mcpServers")
+}
+
+/// Generic JSON applier shared by providers whose registration is a single
+/// JSON object containing one orbit server entry under a given top-level key.
+/// Used by Gemini, Cursor, VS Code (key `servers`), and Windsurf.
+fn apply_simple_json_init(target: &ConfigTarget, top_level_key: &str) -> Result<(), OrbitError> {
+    let mut root = load_json_object(&target.mcp_path)?;
+    let servers = ensure_json_object(&mut root, top_level_key)?;
+    servers.insert(ORBIT_MCP_SERVER_ID.to_string(), simple_mcp_server_value());
+    write_json_object(&target.mcp_path, &root)
+}
+
+fn apply_simple_json_remove(target: &ConfigTarget, top_level_key: &str) -> Result<(), OrbitError> {
+    let mut root = load_json_object(&target.mcp_path)?;
+    if let Some(servers) = root
+        .get_mut(top_level_key)
         .and_then(JsonValue::as_object_mut)
     {
-        mcp_servers.remove(ORBIT_MCP_SERVER_ID);
-        if mcp_servers.is_empty() {
-            settings.remove("mcpServers");
+        servers.remove(ORBIT_MCP_SERVER_ID);
+        if servers.is_empty() {
+            root.remove(top_level_key);
         }
     }
-    write_or_remove_json_object(&target.mcp_path, &settings)
+    write_or_remove_json_object(&target.mcp_path, &root)
 }
 
 fn server_args() -> Vec<String> {
@@ -487,7 +637,11 @@ fn claude_mcp_server_value() -> JsonValue {
     ]))
 }
 
-fn gemini_mcp_server_value() -> JsonValue {
+/// Server-entry value shared by every JSON provider that maps a single
+/// `{ "command", "args" }` object under a top-level key. Used by Gemini,
+/// Cursor, VS Code, and Windsurf. Claude reuses this shape via
+/// `claude_mcp_server_value()`; Codex has its own TOML table builder.
+fn simple_mcp_server_value() -> JsonValue {
     JsonValue::Object(JsonMap::from_iter([
         (
             "command".to_string(),
@@ -698,7 +852,7 @@ mod tests {
     use super::{
         McpAction, McpProvider, ProviderSelectionArgs, ProviderSelectionMode, ScopeArg,
         auto_detected_providers, claude_mcp_server_value, claude_permission_name,
-        codex_mcp_server_table, gemini_mcp_server_value, run_action,
+        codex_mcp_server_table, run_action, simple_mcp_server_value, vscode_home_user_dir,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -717,28 +871,50 @@ mod tests {
         let args = ProviderSelectionArgs {
             auto: true,
             claude: true,
-            codex: false,
-            gemini: false,
-            all: false,
+            ..ProviderSelectionArgs::default()
         };
         assert!(args.resolve_mode().is_err());
     }
 
     #[test]
-    fn provider_selection_all_includes_gemini() {
+    fn provider_selection_all_includes_every_supported_provider() {
         let args = ProviderSelectionArgs {
-            auto: false,
-            claude: false,
-            codex: false,
-            gemini: false,
             all: true,
+            ..ProviderSelectionArgs::default()
         };
         match args.resolve_mode().expect("resolve mode") {
             ProviderSelectionMode::Explicit(providers) => assert_eq!(
                 providers,
-                vec![McpProvider::Claude, McpProvider::Codex, McpProvider::Gemini]
+                vec![
+                    McpProvider::Claude,
+                    McpProvider::Codex,
+                    McpProvider::Gemini,
+                    McpProvider::Cursor,
+                    McpProvider::Vscode,
+                    McpProvider::Windsurf,
+                ]
             ),
             ProviderSelectionMode::Auto => panic!("expected explicit provider set"),
+        }
+    }
+
+    #[test]
+    fn provider_selection_rejects_auto_combined_with_new_flags() {
+        for flag in ["cursor", "vscode", "windsurf"] {
+            let mut args = ProviderSelectionArgs {
+                auto: true,
+                ..ProviderSelectionArgs::default()
+            };
+            match flag {
+                "cursor" => args.cursor = true,
+                "vscode" => args.vscode = true,
+                "windsurf" => args.windsurf = true,
+                _ => unreachable!(),
+            }
+            assert!(
+                args.resolve_mode().is_err(),
+                "--auto + --{flag} should error"
+            );
         }
     }
 
@@ -1197,7 +1373,7 @@ mod tests {
         assert_eq!(claude_args[0].as_str(), Some("mcp"));
         assert_eq!(claude_args[1].as_str(), Some("serve"));
 
-        let gemini = gemini_mcp_server_value();
+        let gemini = simple_mcp_server_value();
         let gemini_args = gemini["args"].as_array().expect("gemini args");
         assert_eq!(gemini_args.len(), 2);
         assert!(gemini.get("cwd").is_none());
@@ -1234,5 +1410,481 @@ mod tests {
     #[test]
     fn env_lock_smoke() {
         let _guard = ENV_LOCK.lock().expect("lock env");
+    }
+
+    #[test]
+    fn vscode_home_user_dir_resolves_for_host_platform() {
+        let home = std::path::PathBuf::from("/tmp/orbit-test-home");
+        let resolved = vscode_home_user_dir(&home);
+        // Tail must always be `Code/User`; the rest is platform-specific.
+        let mut components = resolved
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let user = components.pop().expect("user segment");
+        let code = components.pop().expect("code segment");
+        assert_eq!(user, "User");
+        assert_eq!(code, "Code");
+        assert!(
+            resolved.starts_with(&home),
+            "resolved path {} should start with home dir {}",
+            resolved.display(),
+            home.display(),
+        );
+    }
+
+    // --- Cursor ---------------------------------------------------------
+
+    #[test]
+    fn cursor_workspace_scope_init_and_remove_preserve_unrelated_entries() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(repo.path().join(".cursor")).expect("create .cursor");
+        std::fs::write(
+            repo.path().join(".cursor").join("mcp.json"),
+            "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"demo\"}\n  }\n}\n",
+        )
+        .expect("write cursor mcp file");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Cursor]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init cursor");
+
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(repo.path().join(".cursor").join("mcp.json"))
+                .expect("read cursor mcp"),
+        )
+        .expect("parse cursor mcp");
+        assert!(mcp["mcpServers"]["orbit"].is_object());
+        assert!(mcp["mcpServers"]["other"].is_object());
+        assert!(mcp["mcpServers"]["orbit"]["cwd"].is_null());
+        let args = mcp["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("args array");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+
+        run_action(
+            McpAction::Remove,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Cursor]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("remove cursor");
+
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(repo.path().join(".cursor").join("mcp.json"))
+                .expect("read cursor mcp"),
+        )
+        .expect("parse cursor mcp");
+        assert!(mcp["mcpServers"]["orbit"].is_null());
+        assert!(mcp["mcpServers"]["other"].is_object());
+    }
+
+    #[test]
+    fn cursor_home_scope_init_writes_resolved_home_path() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Cursor]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Home,
+        )
+        .expect("init cursor home");
+
+        let cursor_path = home.path().join(".cursor").join("mcp.json");
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&cursor_path).expect("read cursor home mcp"),
+        )
+        .expect("parse cursor home mcp");
+        let args = mcp["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("cursor args");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+        assert!(mcp["mcpServers"]["orbit"]["cwd"].is_null());
+        assert!(!repo.path().join(".cursor").join("mcp.json").exists());
+    }
+
+    #[test]
+    fn auto_detects_cursor_from_repo_marker() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(repo.path().join(".cursor")).expect("create .cursor");
+
+        let providers = auto_detected_providers(repo.path(), Some(home.path()));
+        assert!(providers.contains(&McpProvider::Cursor));
+    }
+
+    #[test]
+    fn auto_detects_cursor_from_home_marker() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(home.path().join(".cursor")).expect("create cursor home dir");
+        std::fs::write(home.path().join(".cursor").join("mcp.json"), "{}\n")
+            .expect("write cursor home file");
+
+        let providers = auto_detected_providers(repo.path(), Some(home.path()));
+        assert!(providers.contains(&McpProvider::Cursor));
+    }
+
+    #[test]
+    fn workspace_scope_cursor_init_is_idempotent() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Cursor]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init cursor");
+        let first = std::fs::read_to_string(repo.path().join(".cursor").join("mcp.json"))
+            .expect("read first cursor");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Cursor]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init cursor again");
+        let second = std::fs::read_to_string(repo.path().join(".cursor").join("mcp.json"))
+            .expect("read second cursor");
+
+        assert_eq!(first, second);
+    }
+
+    // --- VS Code --------------------------------------------------------
+
+    #[test]
+    fn vscode_workspace_scope_init_and_remove_preserve_unrelated_entries() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(repo.path().join(".vscode")).expect("create .vscode");
+        std::fs::write(
+            repo.path().join(".vscode").join("mcp.json"),
+            "{\n  \"servers\": {\n    \"other\": {\"command\": \"demo\"}\n  }\n}\n",
+        )
+        .expect("write vscode mcp file");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Vscode]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init vscode");
+
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(repo.path().join(".vscode").join("mcp.json"))
+                .expect("read vscode mcp"),
+        )
+        .expect("parse vscode mcp");
+        assert!(mcp["servers"]["orbit"].is_object());
+        assert!(mcp["servers"]["other"].is_object());
+        assert!(
+            mcp.get("mcpServers").is_none(),
+            "vscode must not write a mcpServers key"
+        );
+        assert!(mcp["servers"]["orbit"]["cwd"].is_null());
+        let args = mcp["servers"]["orbit"]["args"]
+            .as_array()
+            .expect("args array");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+
+        run_action(
+            McpAction::Remove,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Vscode]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("remove vscode");
+
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(repo.path().join(".vscode").join("mcp.json"))
+                .expect("read vscode mcp"),
+        )
+        .expect("parse vscode mcp");
+        assert!(mcp["servers"]["orbit"].is_null());
+        assert!(mcp["servers"]["other"].is_object());
+    }
+
+    #[test]
+    fn vscode_home_scope_init_writes_resolved_home_path() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Vscode]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Home,
+        )
+        .expect("init vscode home");
+
+        let resolved = vscode_home_user_dir(home.path()).join("mcp.json");
+        assert!(
+            resolved.is_file(),
+            "expected vscode home mcp at {}",
+            resolved.display()
+        );
+        let mcp: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&resolved).expect("read vscode home"))
+                .expect("parse vscode home");
+        let args = mcp["servers"]["orbit"]["args"]
+            .as_array()
+            .expect("vscode args");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+        assert!(mcp.get("mcpServers").is_none());
+        assert!(mcp["servers"]["orbit"]["cwd"].is_null());
+        assert!(!repo.path().join(".vscode").join("mcp.json").exists());
+    }
+
+    #[test]
+    fn auto_detects_vscode_from_repo_marker() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(repo.path().join(".vscode")).expect("create .vscode");
+
+        let providers = auto_detected_providers(repo.path(), Some(home.path()));
+        assert!(providers.contains(&McpProvider::Vscode));
+    }
+
+    #[test]
+    fn auto_detects_vscode_from_home_marker() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let user_dir = vscode_home_user_dir(home.path());
+        std::fs::create_dir_all(&user_dir).expect("create vscode user dir");
+        std::fs::write(user_dir.join("mcp.json"), "{}\n").expect("write vscode home mcp");
+
+        let providers = auto_detected_providers(repo.path(), Some(home.path()));
+        assert!(providers.contains(&McpProvider::Vscode));
+    }
+
+    #[test]
+    fn workspace_scope_vscode_init_is_idempotent() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Vscode]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init vscode");
+        let first = std::fs::read_to_string(repo.path().join(".vscode").join("mcp.json"))
+            .expect("read first vscode");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Vscode]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init vscode again");
+        let second = std::fs::read_to_string(repo.path().join(".vscode").join("mcp.json"))
+            .expect("read second vscode");
+
+        assert_eq!(first, second);
+    }
+
+    // --- Windsurf -------------------------------------------------------
+
+    #[test]
+    fn windsurf_workspace_scope_init_and_remove_preserve_unrelated_entries() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let windsurf_dir = repo.path().join(".codeium").join("windsurf");
+        std::fs::create_dir_all(&windsurf_dir).expect("create windsurf dir");
+        std::fs::write(
+            windsurf_dir.join("mcp_config.json"),
+            "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"demo\"}\n  }\n}\n",
+        )
+        .expect("write windsurf config");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Windsurf]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init windsurf");
+
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(windsurf_dir.join("mcp_config.json"))
+                .expect("read windsurf config"),
+        )
+        .expect("parse windsurf config");
+        assert!(mcp["mcpServers"]["orbit"].is_object());
+        assert!(mcp["mcpServers"]["other"].is_object());
+        assert!(mcp["mcpServers"]["orbit"]["cwd"].is_null());
+        let args = mcp["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("args array");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+
+        run_action(
+            McpAction::Remove,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Windsurf]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("remove windsurf");
+
+        let mcp: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(windsurf_dir.join("mcp_config.json"))
+                .expect("read windsurf config"),
+        )
+        .expect("parse windsurf config");
+        assert!(mcp["mcpServers"]["orbit"].is_null());
+        assert!(mcp["mcpServers"]["other"].is_object());
+    }
+
+    #[test]
+    fn windsurf_home_scope_init_writes_resolved_home_path() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Windsurf]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Home,
+        )
+        .expect("init windsurf home");
+
+        let path = home
+            .path()
+            .join(".codeium")
+            .join("windsurf")
+            .join("mcp_config.json");
+        let mcp: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read windsurf home"))
+                .expect("parse windsurf home");
+        let args = mcp["mcpServers"]["orbit"]["args"]
+            .as_array()
+            .expect("windsurf args");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].as_str(), Some("mcp"));
+        assert_eq!(args[1].as_str(), Some("serve"));
+        assert!(mcp["mcpServers"]["orbit"]["cwd"].is_null());
+        assert!(
+            !repo
+                .path()
+                .join(".codeium")
+                .join("windsurf")
+                .join("mcp_config.json")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn auto_detects_windsurf_from_home_marker() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let windsurf_dir = home.path().join(".codeium").join("windsurf");
+        std::fs::create_dir_all(&windsurf_dir).expect("create windsurf home dir");
+        std::fs::write(windsurf_dir.join("mcp_config.json"), "{}\n")
+            .expect("write windsurf home file");
+
+        let providers = auto_detected_providers(repo.path(), Some(home.path()));
+        assert!(providers.contains(&McpProvider::Windsurf));
+    }
+
+    #[test]
+    fn workspace_scope_windsurf_init_is_idempotent() {
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let orbit_root = repo.path().join(".orbit");
+        std::fs::create_dir_all(&orbit_root).expect("create orbit root");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Windsurf]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init windsurf");
+        let path = repo
+            .path()
+            .join(".codeium")
+            .join("windsurf")
+            .join("mcp_config.json");
+        let first = std::fs::read_to_string(&path).expect("read first windsurf");
+
+        run_action(
+            McpAction::Init,
+            repo.path(),
+            &orbit_root,
+            ProviderSelectionMode::Explicit(vec![McpProvider::Windsurf]),
+            Some(home.path().to_path_buf()),
+            ScopeArg::Workspace,
+        )
+        .expect("init windsurf again");
+        let second = std::fs::read_to_string(&path).expect("read second windsurf");
+
+        assert_eq!(first, second);
     }
 }
