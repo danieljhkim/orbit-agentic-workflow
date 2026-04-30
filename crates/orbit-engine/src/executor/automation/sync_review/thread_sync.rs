@@ -99,17 +99,16 @@ fn sync_task_review_to_github_with_client<
 
         if host.scoring_enabled() {
             for label in pending_labels {
-                if let Some(model) = scoreable_review_model(host, &label) {
-                    if let Err(error) =
+                if let Some(model) = scoreable_review_model(host, &label)
+                    && let Err(error) =
                         pr_scoreboard::record_pr_review_comment(host.scoreboard_dir(), &model)
-                    {
-                        tracing::warn!(
-                            target: "orbit.scoreboard.pr",
-                            model = %model,
-                            error = %error,
-                            "failed to record PR review comment scoreboard message",
-                        );
-                    }
+                {
+                    tracing::warn!(
+                        target: "orbit.scoreboard.pr",
+                        model = %model,
+                        error = %error,
+                        "failed to record PR review comment scoreboard message",
+                    );
                 }
             }
         }

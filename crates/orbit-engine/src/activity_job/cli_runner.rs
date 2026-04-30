@@ -148,9 +148,11 @@ pub fn run_cli_backend(
         &subprocess_args,
         &invocation.stdin,
         wall_clock_timeout,
-        &provider,
-        run_id,
-        task_id_from_input(input),
+        SpawnTraceContext {
+            provider: &provider,
+            job_run_id: run_id,
+            task_id: task_id_from_input(input),
+        },
         sandbox.as_ref(),
     )
     .map_err(|err| DispatchError::CliInvocationFailed(err.to_string()))?;
@@ -423,14 +425,18 @@ fn spawn_macos_sandboxed_with(
     })
 }
 
+struct SpawnTraceContext<'a> {
+    provider: &'a str,
+    job_run_id: &'a str,
+    task_id: Option<&'a str>,
+}
+
 fn spawn_with_timeout(
     program: &str,
     args: &[String],
     stdin_bytes: &[u8],
     timeout: Duration,
-    provider: &str,
-    job_run_id: &str,
-    task_id: Option<&str>,
+    trace: SpawnTraceContext<'_>,
     sandbox: Option<&ResolvedSandbox>,
 ) -> Result<SpawnOutput, String> {
     let started = Instant::now();
@@ -456,10 +462,10 @@ fn spawn_with_timeout(
         spawn_output_reader(
             handle,
             Arc::clone(&stdout_buf),
-            provider.to_string(),
+            trace.provider.to_string(),
             "stdout",
-            job_run_id.to_string(),
-            task_id.map(ToString::to_string),
+            trace.job_run_id.to_string(),
+            trace.task_id.map(ToString::to_string),
             dispatch.clone(),
         )
     });
@@ -467,10 +473,10 @@ fn spawn_with_timeout(
         spawn_output_reader(
             handle,
             Arc::clone(&stderr_buf),
-            provider.to_string(),
+            trace.provider.to_string(),
             "stderr",
-            job_run_id.to_string(),
-            task_id.map(ToString::to_string),
+            trace.job_run_id.to_string(),
+            trace.task_id.map(ToString::to_string),
             dispatch,
         )
     });
@@ -609,9 +615,11 @@ mod tests {
                 &args,
                 b"",
                 Duration::from_secs(5),
-                "codex",
-                "job-123",
-                Some("T123"),
+                SpawnTraceContext {
+                    provider: "codex",
+                    job_run_id: "job-123",
+                    task_id: Some("T123"),
+                },
                 None,
             )
         });
@@ -644,9 +652,11 @@ mod tests {
                 &args,
                 b"",
                 Duration::from_secs(5),
-                "codex",
-                "job-redact",
-                Some("TRED"),
+                SpawnTraceContext {
+                    provider: "codex",
+                    job_run_id: "job-redact",
+                    task_id: Some("TRED"),
+                },
                 None,
             )
         });
@@ -798,9 +808,11 @@ mod tests {
                 &args,
                 b"",
                 Duration::from_millis(75),
-                "codex",
-                "job-timeout",
-                Some("TTIME"),
+                SpawnTraceContext {
+                    provider: "codex",
+                    job_run_id: "job-timeout",
+                    task_id: Some("TTIME"),
+                },
                 None,
             )
         });
@@ -965,7 +977,7 @@ mod tests {
             let sink_for_writer: Arc<dyn AuditSink> = sink;
             let audit = Arc::new(V2AuditWriter::new(
                 "job-sandbox-shape",
-                &format!("{provider_name}:m"),
+                format!("{provider_name}:m"),
                 sink_for_writer,
             ));
             let host = TestHost {

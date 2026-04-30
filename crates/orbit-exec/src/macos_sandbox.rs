@@ -381,7 +381,7 @@ fn push_regex_escaped(out: &mut String, c: char) {
 fn subpath_root(rule: &str) -> String {
     let trimmed = rule.trim_end_matches('/');
     let trimmed = trimmed.trim_end_matches("/**");
-    if let Some(idx) = trimmed.find(|c: char| c == '*' || c == '?') {
+    if let Some(idx) = trimmed.find(['*', '?']) {
         let prefix = &trimmed[..idx];
         let prefix = prefix.trim_end_matches('/');
         if prefix.is_empty() {
