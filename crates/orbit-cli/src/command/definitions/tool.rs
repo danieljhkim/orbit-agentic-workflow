@@ -96,13 +96,19 @@ impl Execute for ToolListArgs {
                         "description": t.description,
                         "enabled": t.enabled,
                         "builtin": t.builtin,
+                        "parameters": &t.parameters,
                     })
                 })
                 .collect();
             crate::output::json::print_pretty(&Value::Array(json_tools))
         } else {
-            let mut table =
-                crate::output::table::build_table(&["NAME", "ENABLED", "BUILTIN", "DESCRIPTION"]);
+            let mut table = crate::output::table::build_table(&[
+                "NAME",
+                "ENABLED",
+                "BUILTIN",
+                "REQUIRED INPUT",
+                "DESCRIPTION",
+            ]);
             for tool in &tools {
                 use comfy_table::Cell;
                 table.add_row(vec![
@@ -113,12 +119,42 @@ impl Execute for ToolListArgs {
                         "disabled"
                     }),
                     Cell::new(if tool.builtin { "yes" } else { "no" }),
+                    Cell::new(format_required_tool_input_summary(&tool.parameters)),
                     Cell::new(&tool.description),
                 ]);
             }
             println!("{table}");
             Ok(())
         }
+    }
+}
+
+fn format_required_tool_input_summary(parameters: &[ToolParam]) -> String {
+    let required_inputs = parameters
+        .iter()
+        .filter(|param| param.required)
+        .map(format_tool_param_signature)
+        .collect::<Vec<_>>();
+
+    if required_inputs.is_empty() {
+        "-".to_string()
+    } else {
+        required_inputs.join(", ")
+    }
+}
+
+fn format_tool_param_signature(param: &ToolParam) -> String {
+    if param.param_type.trim().is_empty() {
+        param.name.clone()
+    } else {
+        format!("{}:{}", param.name, display_param_type(&param.param_type))
+    }
+}
+
+fn display_param_type(param_type: &str) -> &str {
+    match param_type {
+        "string_list" => "string|string[]",
+        other => other,
     }
 }
 
