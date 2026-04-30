@@ -48,6 +48,16 @@ impl ShipAutoStatus {
             Self::Completed => "completed",
         }
     }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::EmptyBacklog => "Empty backlog",
+            Self::GatedNoop => "Gated no-op",
+            Self::GateWaiting => "Gate waiting",
+            Self::GateFailed => "Gate failed",
+            Self::Completed => "Completed",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -236,28 +246,16 @@ fn workflow_dispatch_result_to_json(run: &WorkflowDispatchResult) -> Value {
 }
 
 fn workflow_dispatch_result_lines(run: &WorkflowDispatchResult) -> Vec<String> {
+    if let Some(summary) = &run.ship_auto {
+        return ship_auto_dispatch_result_lines(run, summary);
+    }
+
     let error_code = run.error_code.clone().unwrap_or_else(|| "-".to_string());
     let error_message = single_line(run.error_message.as_deref().unwrap_or("-"));
     let mut first = format!(
         "workflow={};job_id={};run_id={};state={};attempt={}",
         run.workflow_alias, run.job_id, run.run_id, run.state, run.attempt
     );
-    if let Some(summary) = &run.ship_auto {
-        let reasons = if summary.exclusion_reasons.is_empty() {
-            "-".to_string()
-        } else {
-            summary.exclusion_reasons.join(",")
-        };
-        let _ = write!(
-            first,
-            ";workflow_status={};candidate_tasks={};dispatched_bundles={};excluded_tasks={};exclusion_reasons={}",
-            summary.status.as_str(),
-            summary.candidate_task_count,
-            summary.dispatched_bundle_count,
-            summary.excluded_task_count,
-            reasons
-        );
-    }
     let _ = write!(
         first,
         ";error_code={};error_message={}",
@@ -265,38 +263,96 @@ fn workflow_dispatch_result_lines(run: &WorkflowDispatchResult) -> Vec<String> {
         error_message
     );
 
-    let mut lines = vec![first];
-    if let Some(summary) = &run.ship_auto {
+    vec![first]
+}
+
+fn ship_auto_dispatch_result_lines(
+    run: &WorkflowDispatchResult,
+    summary: &ShipAutoDispatchSummary,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("Workflow: {}", run.workflow_alias),
+        format!("Job ID: {}", run.job_id),
+        format!("Run ID: {}", run.run_id),
+        format!("Parent state: {}", run.state),
+        format!("Attempt: {}", run.attempt),
+        format!("Status: {}", summary.status.label()),
+        format!("Candidate tasks: {}", summary.candidate_task_count),
+        format!("Dispatched bundles: {}", summary.dispatched_bundle_count),
+        format!("Excluded tasks: {}", summary.excluded_task_count),
+    ];
+
+    if !summary.exclusion_reasons.is_empty() {
+        lines.push(format!(
+            "Exclusion reasons: {}",
+            summary
+                .exclusion_reasons
+                .iter()
+                .map(|reason| display_token(reason))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if let Some(error_code) = &run.error_code {
+        lines.push(format!("Error code: {}", single_line(error_code)));
+    }
+    if let Some(error_message) = &run.error_message {
+        lines.push(format!("Error message: {}", single_line(error_message)));
+    }
+
+    let has_blockers = summary
+        .exclusions
+        .iter()
+        .any(|exclusion| !exclusion.conflicts.is_empty());
+    if has_blockers {
+        lines.push("Blockers:".to_string());
         for exclusion in &summary.exclusions {
             for conflict in &exclusion.conflicts {
+                lines.push(format!("  - Task: {}", single_line(&exclusion.task_id)));
+                lines.push(format!("    Reason: {}", display_token(&exclusion.reason)));
                 lines.push(format!(
-                    "blocker workflow={};run_id={};task_id={};reason={};requested_selector={};holder_type={};holder_id={}",
-                    run.workflow_alias,
-                    run.run_id,
-                    single_line(&exclusion.task_id),
-                    single_line(&exclusion.reason),
-                    single_line(&conflict.requested_selector),
-                    single_line(&conflict.holder_type),
+                    "    Requested selector: {}",
+                    single_line(&conflict.requested_selector)
+                ));
+                lines.push(format!(
+                    "    Holder type: {}",
+                    single_line(&conflict.holder_type)
+                ));
+                lines.push(format!(
+                    "    Holder ID: {}",
                     single_line(&conflict.holder_id)
                 ));
             }
         }
-        for child in summary
-            .child_gate_runs
-            .iter()
-            .filter(|child| child.is_waiting())
-        {
+    }
+
+    let notable_child_runs = summary
+        .child_gate_runs
+        .iter()
+        .filter(|child| match summary.status {
+            ShipAutoStatus::GateWaiting => child.is_waiting(),
+            ShipAutoStatus::GateFailed => child.is_failed(),
+            _ => false,
+        })
+        .collect::<Vec<_>>();
+    if !notable_child_runs.is_empty() {
+        lines.push("Child gate runs:".to_string());
+        for child in notable_child_runs {
+            lines.push(format!("  - Child run ID: {}", single_line(&child.run_id)));
             lines.push(format!(
-                "gate_child workflow={};run_id={};child_run_id={};wait_status={};current_status={};activity={}",
-                run.workflow_alias,
-                run.run_id,
-                single_line(&child.run_id),
-                single_line(&child.wait_status),
-                single_line(&child.current_status),
-                single_line(child.activity.as_deref().unwrap_or("-"))
+                "    Wait status: {}",
+                single_line(&child.wait_status)
             ));
+            lines.push(format!(
+                "    Current status: {}",
+                single_line(&child.current_status)
+            ));
+            if let Some(activity) = &child.activity {
+                lines.push(format!("    Activity: {}", single_line(activity)));
+            }
         }
     }
+
     lines
 }
 
@@ -486,6 +542,10 @@ fn single_line(value: &str) -> String {
     value.replace(['\n', '\r'], " ")
 }
 
+fn display_token(value: &str) -> String {
+    single_line(value).replace('_', " ")
+}
+
 impl ShipAutoGateRun {
     fn is_waiting(&self) -> bool {
         matches!(self.wait_status.as_str(), "pending" | "running")
@@ -602,6 +662,29 @@ mod tests {
         }
     }
 
+    fn assert_ship_auto_json_contract(value: &Value) {
+        for key in [
+            "workflow",
+            "job_id",
+            "run_id",
+            "state",
+            "attempt",
+            "workflow_status",
+            "dispatched_bundle_count",
+            "excluded_task_count",
+            "exclusion_reasons",
+            "conflict_holders",
+            "ship_auto",
+        ] {
+            assert!(value.get(key).is_some(), "missing json key {key}");
+        }
+        assert_eq!(value["workflow"], json!("ship-auto"));
+        assert_eq!(value["job_id"], json!("task_auto_pipeline"));
+        assert_eq!(value["run_id"], json!("jrun-parent"));
+        assert_eq!(value["state"], json!("succeeded"));
+        assert_eq!(value["attempt"], json!(1));
+    }
+
     #[test]
     fn ship_auto_summary_reports_true_empty_backlog() {
         let pipeline = json!({
@@ -629,12 +712,28 @@ mod tests {
 
         let run = ship_auto_run(summary);
         let lines = workflow_dispatch_result_lines(&run);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("workflow_status=empty_backlog"));
-        assert!(lines[0].contains("candidate_tasks=0"));
-        assert!(lines[0].contains("excluded_tasks=0"));
+        assert_eq!(
+            lines,
+            vec![
+                "Workflow: ship-auto",
+                "Job ID: task_auto_pipeline",
+                "Run ID: jrun-parent",
+                "Parent state: succeeded",
+                "Attempt: 1",
+                "Status: Empty backlog",
+                "Candidate tasks: 0",
+                "Dispatched bundles: 0",
+                "Excluded tasks: 0",
+            ]
+        );
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("error_code=-") || line.contains("error_message=-"))
+        );
 
         let value = workflow_dispatch_result_to_json(&run);
+        assert_ship_auto_json_contract(&value);
         assert_eq!(value["workflow_status"], json!("empty_backlog"));
         assert_eq!(value["dispatched_bundle_count"], json!(0));
         assert_eq!(value["excluded_task_count"], json!(0));
@@ -677,17 +776,35 @@ mod tests {
 
         let run = ship_auto_run(summary);
         let lines = workflow_dispatch_result_lines(&run);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].contains("workflow_status=gated_noop"));
-        assert!(lines[0].contains("dispatched_bundles=0"));
-        assert!(lines[0].contains("excluded_tasks=1"));
-        assert!(lines[1].contains("blocker workflow=ship-auto"));
-        assert!(lines[1].contains("task_id=T20260430-blocked"));
-        assert!(lines[1].contains("requested_selector=file:crates/foo/src/lib.rs"));
-        assert!(lines[1].contains("holder_type=task"));
-        assert!(lines[1].contains("holder_id=T20260430-locking"));
+        assert!(lines.iter().any(|line| line == "Status: Gated no-op"));
+        assert!(lines.iter().any(|line| line == "Dispatched bundles: 0"));
+        assert!(lines.iter().any(|line| line == "Excluded tasks: 1"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "Exclusion reasons: context lock conflict")
+        );
+        assert!(lines.iter().any(|line| line == "Blockers:"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "  - Task: T20260430-blocked")
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "    Requested selector: file:crates/foo/src/lib.rs")
+        );
+        assert!(lines.iter().any(|line| line == "    Holder type: task"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "    Holder ID: T20260430-locking")
+        );
+        assert!(!lines.iter().any(|line| line.contains("blocker workflow=")));
 
         let value = workflow_dispatch_result_to_json(&run);
+        assert_ship_auto_json_contract(&value);
         assert_eq!(value["workflow_status"], json!("gated_noop"));
         assert_eq!(value["dispatched_bundle_count"], json!(0));
         assert_eq!(value["excluded_task_count"], json!(1));
@@ -737,16 +854,29 @@ mod tests {
 
         let run = ship_auto_run(summary);
         let lines = workflow_dispatch_result_lines(&run);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].contains("workflow_status=gate_waiting"));
-        assert!(lines[0].contains("dispatched_bundles=1"));
-        assert!(lines[1].contains("gate_child workflow=ship-auto"));
-        assert!(lines[1].contains("child_run_id=jrun-child"));
-        assert!(lines[1].contains("wait_status=timeout"));
-        assert!(lines[1].contains("current_status=running"));
-        assert!(lines[1].contains("activity=reserve"));
+        assert!(lines.iter().any(|line| line == "Status: Gate waiting"));
+        assert!(lines.iter().any(|line| line == "Dispatched bundles: 1"));
+        assert!(lines.iter().any(|line| line == "Child gate runs:"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "  - Child run ID: jrun-child")
+        );
+        assert!(lines.iter().any(|line| line == "    Wait status: timeout"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "    Current status: running")
+        );
+        assert!(lines.iter().any(|line| line == "    Activity: reserve"));
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("gate_child workflow="))
+        );
 
         let value = workflow_dispatch_result_to_json(&run);
+        assert_ship_auto_json_contract(&value);
         assert_eq!(value["workflow_status"], json!("gate_waiting"));
         assert_eq!(
             value["ship_auto"]["child_gate_runs"][0]["run_id"],
