@@ -76,6 +76,10 @@ pub fn resolve_job_backends(job: &mut JobV2, resolved: Backend) {
 }
 
 fn resolve_step_backends(step: &mut JobV2Step, resolved: Backend) {
+    if let Some(activity) = &mut step.resolved_recovery_activity {
+        resolve_activity_backends(activity, resolved);
+    }
+
     match &mut step.body {
         JobV2StepBody::Target(target) => {
             if let ActivityV2Spec::AgentLoop(spec) = &mut target.spec

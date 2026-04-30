@@ -241,7 +241,9 @@ fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
             Some(other) => serde_json::to_string(other).map_err(|err| {
                 DispatchError::CliInvocationFailed(format!("serialize prompt: {err}"))
             }),
-            None => Ok(String::new()),
+            None => serde_json::to_string(input).map_err(|err| {
+                DispatchError::CliInvocationFailed(format!("serialize prompt: {err}"))
+            }),
         },
         Value::String(text) => Ok(text.clone()),
         Value::Null => Ok(String::new()),
@@ -605,6 +607,33 @@ mod tests {
 
     use super::*;
     use crate::activity_job::dispatcher::ResolvedCliExecutor;
+
+    #[test]
+    fn user_prompt_from_object_input_without_prompt_serializes_full_input() {
+        let input = serde_json::json!({
+            "failed_step_id": "push",
+            "activity_name": "git_push",
+            "error_message": "network timeout",
+            "attempt": 2,
+            "max_attempts": 2,
+        });
+
+        let prompt = user_prompt_from_input(&input).expect("prompt serializes");
+        let parsed: serde_json::Value = serde_json::from_str(&prompt).expect("prompt is json");
+
+        assert_eq!(parsed, input);
+    }
+
+    #[test]
+    fn user_prompt_from_object_input_prefers_explicit_prompt() {
+        let prompt = user_prompt_from_input(&serde_json::json!({
+            "prompt": "do only this",
+            "failed_step_id": "push",
+        }))
+        .expect("prompt resolves");
+
+        assert_eq!(prompt, "do only this");
+    }
 
     #[test]
     fn spawn_with_timeout_emits_structured_stdout_and_stderr_events() {

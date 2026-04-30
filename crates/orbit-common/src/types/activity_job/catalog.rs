@@ -64,6 +64,8 @@ pub enum ResolveError {
     ActivityNotInCatalog { step_id: String, name: String },
     #[error("job recovery_activity `{name}` not found in catalog")]
     RecoveryActivityNotInCatalog { name: String },
+    #[error("step `{step_id}`: recovery_activity `{name}` not found in catalog")]
+    StepRecoveryActivityNotInCatalog { step_id: String, name: String },
 }
 
 impl V2ActivityCatalog {
@@ -239,6 +241,16 @@ pub fn resolve_job_target_refs(
 }
 
 fn resolve_step(step: &mut JobV2Step, catalog: &V2ActivityCatalog) -> Result<(), ResolveError> {
+    step.resolved_recovery_activity = match step.recovery_activity.as_deref() {
+        Some(name) => Some(catalog.get(name).cloned().ok_or_else(|| {
+            ResolveError::StepRecoveryActivityNotInCatalog {
+                step_id: step.id.clone(),
+                name: name.to_string(),
+            }
+        })?),
+        None => None,
+    };
+
     match &mut step.body {
         JobV2StepBody::Target(_) => Ok(()),
         JobV2StepBody::TargetRef(_) => {

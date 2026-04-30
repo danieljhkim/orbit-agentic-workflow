@@ -348,6 +348,7 @@ pub(crate) fn seed_default_jobs(jobs_dir: &Path, overwrite: bool) -> Result<usiz
 mod tests {
     use super::*;
 
+    use orbit_common::types::activity_job::{V2ActivityCatalog, resolve_job_target_refs};
     use orbit_common::types::{ActivityV2Spec, JobV2Step, JobV2StepBody, load_activity_asset};
     use serde_json::Value;
     use std::collections::BTreeSet;
@@ -388,6 +389,17 @@ spec:
         std::fs::create_dir_all(path.parent().expect("job path has parent"))
             .expect("create job dir");
         std::fs::write(path, yaml).expect("write job yaml");
+    }
+
+    fn default_activity_catalog() -> V2ActivityCatalog {
+        let mut catalog = V2ActivityCatalog::new();
+        for (name, yaml) in DEFAULT_ACTIVITY_FILES {
+            let asset = load_activity_asset(yaml)
+                .unwrap_or_else(|err| panic!("default activity {name} should parse: {err}"));
+            assert_eq!(&asset.name, name);
+            catalog.insert(*name, asset.spec);
+        }
+        catalog
     }
 
     fn assert_condition_tokens_are_paths(condition: &str) {
@@ -525,6 +537,62 @@ spec:
         }
     }
 
+    #[test]
+    fn task_shipment_jobs_resolve_default_recovery_activity() {
+        let catalog = default_activity_catalog();
+
+        for job_name in ["task_local_pipeline", "task_pr_pipeline"] {
+            let yaml = DEFAULT_JOB_FILES
+                .iter()
+                .find_map(|(name, yaml)| (*name == job_name).then_some(*yaml))
+                .unwrap_or_else(|| panic!("default job {job_name} exists"));
+            let mut asset = load_job_asset(yaml)
+                .unwrap_or_else(|err| panic!("default job {job_name} should parse: {err}"));
+
+            assert_eq!(asset.spec.recovery_activity.as_deref(), None);
+            resolve_job_target_refs(&mut asset.spec, &catalog)
+                .unwrap_or_else(|err| panic!("default job {job_name} refs resolve: {err}"));
+            let recovery_steps = step_recovery_activities(&asset.spec);
+            assert!(
+                !recovery_steps.is_empty(),
+                "default job {job_name} should wire recovery on direct shipment steps"
+            );
+            for (step_id, recovery_activity, resolved) in recovery_steps {
+                assert_eq!(
+                    recovery_activity.as_deref(),
+                    Some("step_failure_recovery"),
+                    "step {step_id} should use default recovery activity"
+                );
+                assert!(
+                    resolved,
+                    "step {step_id} should cache its recovery activity"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn orchestration_jobs_do_not_enable_generic_recovery() {
+        for job_name in [
+            "job_duel_plan_pipeline",
+            "task_auto_pipeline",
+            "task_epic_pipeline",
+            "task_gate_pipeline",
+        ] {
+            let yaml = DEFAULT_JOB_FILES
+                .iter()
+                .find_map(|(name, yaml)| (*name == job_name).then_some(*yaml))
+                .unwrap_or_else(|| panic!("default job {job_name} exists"));
+            let asset = load_job_asset(yaml)
+                .unwrap_or_else(|err| panic!("default job {job_name} should parse: {err}"));
+
+            assert_eq!(
+                asset.spec.recovery_activity, None,
+                "default job {job_name} should not generically recover child orchestration"
+            );
+        }
+    }
+
     fn collect_agent_loop_step_ids<'a>(
         step: &'a JobV2Step,
         agent_activity_names: &BTreeSet<&str>,
@@ -556,6 +624,43 @@ spec:
                     collect_agent_loop_step_ids(child, agent_activity_names, out);
                 }
             }
+        }
+    }
+
+    fn step_recovery_activities(job: &JobV2) -> Vec<(&str, &Option<String>, bool)> {
+        let mut out = Vec::new();
+        for step in &job.steps {
+            collect_step_recovery_activities(step, &mut out);
+        }
+        out
+    }
+
+    fn collect_step_recovery_activities<'a>(
+        step: &'a JobV2Step,
+        out: &mut Vec<(&'a str, &'a Option<String>, bool)>,
+    ) {
+        if step.recovery_activity.is_some() {
+            out.push((
+                step.id.as_str(),
+                &step.recovery_activity,
+                step.resolved_recovery_activity.is_some(),
+            ));
+        }
+        match &step.body {
+            JobV2StepBody::Parallel { parallel } => {
+                for child in &parallel.branches {
+                    collect_step_recovery_activities(child, out);
+                }
+            }
+            JobV2StepBody::FanOut { fan_out, .. } => {
+                collect_step_recovery_activities(&fan_out.worker, out);
+            }
+            JobV2StepBody::Loop { loop_ } => {
+                for child in &loop_.steps {
+                    collect_step_recovery_activities(child, out);
+                }
+            }
+            JobV2StepBody::TargetRef(_) | JobV2StepBody::Target(_) => {}
         }
     }
 

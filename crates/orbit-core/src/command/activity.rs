@@ -66,6 +66,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
     ),
     ("sleep", include_str!("../../assets/activities/sleep.yaml")),
     (
+        "step_failure_recovery",
+        include_str!("../../assets/activities/step_failure_recovery.yaml"),
+    ),
+    (
         "summarize_epic",
         include_str!("../../assets/activities/summarize_epic.yaml"),
     ),
@@ -109,6 +113,7 @@ pub(crate) fn seed_default_activities(
 
 #[cfg(test)]
 mod tests {
+    use orbit_common::types::activity_job::{Backend, Provider};
     use orbit_common::types::{ActivityV2Spec, load_activity_asset};
     use tempfile::tempdir;
 
@@ -147,6 +152,43 @@ mod tests {
                 assert_eq!(spec.action, "git_commit");
             }
             other => panic!("expected deterministic activity, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn seeded_activities_include_step_failure_recovery() {
+        let root = tempdir().expect("create tempdir");
+        let activities_dir = root.path().join("resources/activities");
+        seed_default_activities(&activities_dir, true).expect("seed default activities");
+
+        let yaml = std::fs::read_to_string(activities_dir.join("step_failure_recovery.yaml"))
+            .expect("read step failure recovery activity");
+        let asset = load_activity_asset(&yaml).expect("parse step failure recovery activity");
+        assert_eq!(asset.name, "step_failure_recovery");
+        assert_eq!(
+            asset.spec.input_schema_json["required"],
+            serde_json::json!([
+                "failed_step_id",
+                "activity_name",
+                "error_message",
+                "attempt",
+                "max_attempts"
+            ])
+        );
+        assert_eq!(
+            asset.spec.input_schema_json["additionalProperties"],
+            serde_json::json!(false)
+        );
+        match asset.spec.spec {
+            ActivityV2Spec::AgentLoop(spec) => {
+                assert_eq!(spec.backend, Backend::Cli);
+                assert_eq!(spec.provider, Provider::Codex);
+                assert!(
+                    spec.instruction
+                        .contains("You are Orbit's step-failure recovery agent.")
+                );
+            }
+            other => panic!("expected agent_loop activity, got {other:?}"),
         }
     }
 }

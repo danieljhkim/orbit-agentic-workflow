@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (ADR-028 added)
+**Last updated:** 2026-04-30 (ADR-030 added)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -385,6 +385,43 @@ This ADR log records the decisions that define the current Activity / Job substr
 - Recovery activities use the existing activity dispatch, audit, run-trace, and policy plumbing.
 - Cost: job authors must make the recovery activity generic enough for every retryable step in that job.
 
+## ADR-029 — Ship default task-step recovery only on direct shipment workflows
+
+**Status:** Superseded by ADR-030 · 2026-04 · [T20260430-12]
+
+**Context.** [T20260430-9] added the executor hook but deliberately left recovery policy to job authors. Orbit's seeded task workflows still needed a concrete default so transient agent, git, and PR orchestration failures get one bounded remediation point before the run fails.
+
+**Decision.** Seed `step_failure_recovery` as a deterministic activity with the exact recovery-hook input fields: `failed_step_id`, `activity_name`, `error_message`, `attempt`, and `max_attempts`. The action validates those fields, emits compact diagnostic output, and waits for a short fixed cooldown before the executor performs its single post-recovery attempt. Enable it via `recovery_activity: step_failure_recovery` on `task_local_pipeline` and `task_pr_pipeline`.
+
+**Scope.** Do not enable the generic recovery activity on `task_gate_pipeline`, `task_auto_pipeline`, `task_epic_pipeline`, or `job_duel_plan_pipeline`. Those workflows orchestrate child runs, fan-out dispatch, epic-level agent planning, or planning-duel execution; a job-level generic recovery there would tend to rerun orchestration rather than repair one direct task-shipment step.
+
+**Consequences.**
+- Direct local and PR task shipment now gets one cooldown-backed recovery attempt for retryable step failures without changing the executor's five-field recovery contract.
+- The seeded activity is deterministic and cheap, so it does not require provider credentials and works in the same runtime environments as the deterministic git/task actions.
+- Cost: this is intentionally conservative; it does not perform semantic git cleanup, task mutation, or child-run reconciliation until a more specific recovery policy is justified.
+
+## ADR-030 — Default recovery is step-scoped and agent-driven
+
+**Status:** Accepted · 2026-04 · [T20260430-14]
+
+**Context.** The first seeded recovery policy in [T20260430-12] was too weak: a deterministic cooldown could only help timing flakes, and wiring recovery at the workflow root made every retryable step inherit the same recovery policy. The intended default is for an agent to manually inspect the failed step and make bounded repairs only where that specific step benefits.
+
+**Decision.** Add optional step-level `recovery_activity: <name>` to `JobV2Step`. Catalog resolution validates each step-level recovery name and caches the resolved activity spec before dispatch; backend resolution also normalizes those cached specs. During retry exhaustion, the executor prefers a step-level recovery activity and falls back to the existing job-level recovery activity only when the step does not declare one.
+
+Seed `step_failure_recovery` as a CLI-backed `agent_loop` activity using provider `codex`. Its instruction tells the agent to inspect the five recovery-hook fields, perform conservative manual recovery, avoid rerunning the failed step, and return before the executor performs the single post-recovery attempt. The recovery input contract from ADR-028 remains unchanged: `failed_step_id`, `activity_name`, `error_message`, `attempt`, and `max_attempts`.
+
+**Workflow wiring.** Attach `recovery_activity: step_failure_recovery` to direct task-shipment steps that benefit from manual recovery:
+- `task_local_pipeline`: `implement_one`, `commit`, `merge`, and conditional `push`.
+- `task_pr_pipeline`: `implement_one`, `push`, and `pr_open`.
+
+Do not attach it to `worktree_setup`, task lifecycle marking, or higher-level orchestration workflows (`task_gate_pipeline`, `task_auto_pipeline`, `task_epic_pipeline`, `job_duel_plan_pipeline`). Those surfaces either lack enough established context for safe repair or dispatch child orchestration where a generic recovery agent could duplicate work.
+
+**Consequences.**
+- Recovery policy is explicit at the step that needs it instead of inherited by the whole workflow.
+- The default recovery pass can perform real inspection and bounded repair while preserving the executor's single-retry safety rail.
+- CLI-backed agent loops now serialize object input as the prompt when no explicit `prompt` is present, matching the HTTP path and letting recovery agents see the five input fields without expanding the recovery hook.
+- Cost: default recovery now depends on a CLI agent runtime being available, and authors must decide which steps deserve recovery rather than flipping one workflow-level switch.
+
 ---
 
 ## Task References
@@ -422,5 +459,7 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260428-8]** — Add workflow-specific task admission for task-starting workflows.
 - **[T20260428-9]** — `orbit init` writes per-role agent settings to `[agent.<role>]` in `config.toml`.
 - **[T20260430-9]** — Add a job-level recovery activity hook for retry-exhausted v2 step failures.
+- **[T20260430-12]** — Ship a generic deterministic recovery activity for direct task shipment workflows.
+- **[T20260430-14]** — Make default step recovery agent-driven and step-scoped.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -49,6 +49,10 @@ pub struct JobV2Step {
     pub when: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<RetrySpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_activity: Option<String>,
+    #[serde(skip)]
+    pub resolved_recovery_activity: Option<ActivityV2>,
     #[serde(flatten)]
     pub body: JobV2StepBody,
 }
@@ -101,6 +105,9 @@ impl<'de> Deserialize<'de> for JobV2Step {
             ),
             None => None,
         };
+        let recovery_activity = obj
+            .remove("recovery_activity")
+            .and_then(|x| x.as_str().map(String::from));
 
         let has_parallel = obj.contains_key("parallel");
         let has_fan_out = obj.contains_key("fan_out");
@@ -153,6 +160,8 @@ impl<'de> Deserialize<'de> for JobV2Step {
             id,
             when,
             retry,
+            recovery_activity,
+            resolved_recovery_activity: None,
             body,
         })
     }
