@@ -2,35 +2,37 @@
 
 **Status:** Draft
 **Owner:** gemini
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-30
 
-This document scopes the forward-looking evolution of the Orbit UI. While the current implementation establishes the "Canon Refined" aesthetic, the long-term vision aims to enhance dynamic interactivity, elevate the branding through motion, and build a unified design system that bridges the local CLI tooling with the public project presence.
+This document scopes forward-looking UI work beyond the current dashboard: richer interactivity, careful motion, and a reusable design system that can span local runtime views and public project pages.
 
 ## 1. Open Questions
 
-1. **Framework Adoption**: As the dashboard grows to handle complex state (e.g., interactive graph visualization, live agent duel debugging), do we migrate from vanilla HTML/JS to a lightweight framework (e.g., Preact or Svelte), and at what cost to bundle size and build complexity?
-2. **Logo Animation**: How do we evolve the static "two orbiting circles" logo into a dynamic, interactive element that responds to actual system load or telemetry while adhering to the monochromatic aesthetic?
-3. **Component Unification**: How do we share UI components between the Rust-served local dashboard and the static website without introducing heavy Node.js build steps?
+1. **Framework adoption:** When dashboard state outgrows vanilla HTML/JS, is Preact, Svelte, or another small runtime worth the build complexity?
+2. **Motion:** Can the mark or status surfaces respond to real telemetry without becoming decorative noise?
+3. **Component sharing:** How do dashboard and static-site UI share tokens and components without a heavy Node.js pipeline?
 
 ## 2. Prior Work
 
 ### Terminal and TUI Tools
-- **k9s & htop**: Excellent examples of data-dense, keyboard-driven terminal interfaces. They validate the utility of high-contrast text and tabular density but lack the graphical fidelity we can achieve in a web view.
-- **Bloomberg Terminal**: The industry standard for high-density, high-stakes data presentation. It proves that users tolerate steep learning curves if the interface maximizes raw data throughput.
+- **k9s and htop:** Dense, keyboard-driven system views that validate compact tables and high-contrast status.
+- **Bloomberg Terminal:** A proof point for high-stakes density, fast recognition, and tolerated learning curves.
 
 ### Modern Pro-Tools
-- **Linear & Vercel**: High watermarks for modern, keyboard-centric web design. The Canon Refined aesthetic draws heavily from their principles of layered dark modes, subtle borders, and precise typography, while dialing up the data density required for our specific use case.
+- **Linear and Vercel:** Benchmarks for quiet dark surfaces, precise typography, and keyboard-friendly interaction.
 
 ## 3. What May Be Distinctive
 
-Orbit's UI approach is distinct because it deliberately pairs cutting-edge autonomous agent technology with a high-density, modern "pro-tool" visual language. Instead of abstracting away the complexity behind friendly chatbots, Orbit leans into the complexity, surfacing raw graphs, execution traces, and telemetry in a stark, uncompromising dashboard. The "Canon Refined" aesthetic signals to users that Orbit is a serious tool for engineers, not a toy.
+Orbit can be distinctive by showing agent work as inspectable operations rather than hiding it behind chat. Graphs, traces, policy denials, scoreboards, and live logs should stay visible enough for engineering judgment while Canon Refined keeps the surface controlled [T20260427-29].
 
 ## 4. References
 
-- [Canon Refined Theme Spec](./specs/theme.md) (Internal)
+- Orbit-internal: [Canon Refined Theme Spec](./specs/theme.md)
+- External: k9s, htop, Bloomberg Terminal, Linear, and Vercel remain comparison points for density, polish, and operator trust.
 
 ## Task References
 
-- [T20260427-29]
+- [T20260427-29] introduced the Canon Refined UI direction.
+- [T20260430-24] tightened this vision doc around open questions and references.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
