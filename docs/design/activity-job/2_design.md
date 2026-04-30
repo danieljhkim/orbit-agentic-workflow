@@ -129,6 +129,8 @@ Seeded direct shipment workflows (`task_local_pipeline` and `task_pr_pipeline`) 
 
 The seeded `list_backlog_tasks` deterministic activity is the first `task_auto_pipeline` step. In automatic mode it emits `task_count`, `task_ids`, `tasks`, singleton `bundles`, and an `excluded` array for backlog tasks filtered before gate dispatch because their context files overlap `in-progress` or `review` task locks. The exclusion entries are only for that lock-overlap filter: friction filtering and `max_tasks` truncation remain silent, and explicit `task_ids` override mode omits `excluded` because it skips the filter entirely. This attribution contract was added in [T20260421-0542-2].
 
+`task_gate_pipeline` reserves a bundle's context files before it dispatches `task_pr_pipeline` or `task_local_pipeline` through `invoke_and_wait`. The reservation remains active for the whole child run, so another gate run with overlapping selectors continues to receive a `reservation` conflict while the child is running. After `invoke_and_wait` returns a terminal child-run status (`succeeded`, `failed`, or `cancelled`), the seeded deterministic `release_locks` activity calls `orbit.task.locks.release` with the recorded reservation id. A wait-side `timeout` does not release the reservation because the child run may still be active; the original TTL remains the abandoned/crashed-run cleanup path. This lifecycle was tightened in [T20260430-26].
+
 ---
 
 ## 5. Backend Resolution and Constraint Rules
@@ -444,5 +446,6 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260428-8]** — Add explicit workflow admission for task-starting workflows and remove the plan prerequisite from those workflow starts.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 - **[T20260430-15]** — Embed task-aware input and run context in backend: cli agent envelopes.
+- **[T20260430-26]** — Release task-gate reservations after terminal child shipment runs and expose active reservations through the lock view.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
