@@ -113,7 +113,7 @@ For a job run:
 1. Read YAML from disk.
 2. Parse via `load_job_asset(...)`.
 3. Build the activity catalog from seeded/workspace activity directories.
-4. Resolve every `target: activity:<name>` into a concrete `TargetStep`.
+4. Resolve every `target: activity:<name>` into a concrete `TargetStep` and resolve any job-level or step-level `recovery_activity` into a cached activity spec.
 5. Resolve every `backend: auto` in the now-concrete step tree.
 6. Reject loop-body `session:` bindings that resolve to `backend: cli`.
 7. Build audit sinks and run id with `system` as the v2 envelope `agent_identity`.
@@ -124,6 +124,8 @@ The target-ref pass was added in [T20260418-2019]. The concrete backend resoluti
 The public CLI now executes activity assets through jobs rather than exposing a standalone `orbit activity run` subcommand. `orbit activity` is an inspection/catalog surface; `orbit job run` and workflow aliases under `orbit run` are the public execution surfaces after [T20260426-0047].
 
 One nuance worth naming: some module comments still describe older Phase ordering. The authoritative behavior is the orbit-core call path above in `crates/orbit-core/src/command/job_v2.rs`.
+
+Seeded direct shipment workflows (`task_local_pipeline` and `task_pr_pipeline`) opt into `recovery_activity: step_failure_recovery` on specific steps after [T20260430-14]. That default activity is a CLI-backed `agent_loop`: it receives only the executor-provided recovery keys, manually inspects the failed step, makes bounded repairs when safe, and returns before the executor makes its single post-recovery attempt. Higher-level orchestration workflows (`task_gate_pipeline`, `task_auto_pipeline`, `task_epic_pipeline`, and `job_duel_plan_pipeline`) do not enable the generic hook because replaying child-run dispatch or planning orchestration is not a safe default recovery action.
 
 ---
 

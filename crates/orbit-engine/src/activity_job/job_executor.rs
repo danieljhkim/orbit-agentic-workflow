@@ -580,11 +580,11 @@ fn recover_or_return_original(
     attempt: u32,
     max_attempts: u32,
 ) -> Result<StepOutcome, DispatchError> {
-    let Some(recovery) = &ctx.recovery_activity else {
+    let Some(recovery) = recovery_activity_for_step(step, ctx) else {
         return Err(original_err);
     };
 
-    if attempt_recovery_activity(step, ctx, recovery, &original_err, attempt, max_attempts) {
+    if attempt_recovery_activity(step, ctx, &recovery, &original_err, attempt, max_attempts) {
         match run_step_body(step, ctx) {
             Ok(outcome) if outcome.success => return Ok(outcome),
             Ok(_) | Err(_) => {}
@@ -592,6 +592,23 @@ fn recover_or_return_original(
     }
 
     Err(original_err)
+}
+
+fn recovery_activity_for_step(
+    step: &JobV2Step,
+    ctx: &ExecCtx<'_>,
+) -> Option<ResolvedRecoveryActivity> {
+    match (
+        step.recovery_activity.as_ref(),
+        step.resolved_recovery_activity.as_ref(),
+    ) {
+        (Some(name), Some(activity)) => Some(ResolvedRecoveryActivity {
+            name: name.clone(),
+            spec: activity.spec.clone(),
+        }),
+        (Some(_), None) => None,
+        _ => ctx.recovery_activity.clone(),
+    }
 }
 
 fn attempt_recovery_activity(
@@ -1413,6 +1430,16 @@ pub fn validate_job(job: &JobV2) -> Result<(), DispatchError> {
 }
 
 fn validate_step(step: &JobV2Step) -> Result<(), DispatchError> {
+    if let Some(name) = &step.recovery_activity
+        && step.resolved_recovery_activity.is_none()
+    {
+        return Err(DispatchError::JobValidation(format!(
+            "step `{}` recovery_activity `{name}` was not resolved — caller must run \
+             `resolve_job_catalog_refs_for_execution` at load time before dispatch",
+            step.id
+        )));
+    }
+
     match &step.body {
         JobV2StepBody::Parallel { parallel } => {
             let mut seen: HashMap<&str, &str> = HashMap::new();
@@ -2033,6 +2060,77 @@ mod tests {
     }
 
     #[test]
+    fn step_level_recovery_activity_runs_without_job_level_recovery() {
+        let original_error = retryable_error("flaky", "dirty checkout");
+        let host = RecoveryHost::new([
+            (
+                "flaky",
+                vec![Err(original_error.clone()), Ok(json!({"fixed": true}))],
+            ),
+            ("recover_step", vec![Ok(json!({"recovered": true}))]),
+        ]);
+        let mut job = recovery_job(None, None, "flaky", Some("narrow"), 1);
+        job.steps[0].recovery_activity = Some("recover_step".to_string());
+        job.steps[0].resolved_recovery_activity =
+            Some(deterministic_activity("recover_step", Some("wide")));
+        let writer = std::sync::Arc::new(test_writer("run-step-recovery-success"));
+
+        let outcome = execute_job(
+            &job,
+            Value::Null,
+            "run-step-recovery-success",
+            writer.clone(),
+            &host,
+        )
+        .expect("job should recover through step-level activity");
+
+        assert!(outcome.success);
+        assert_eq!(host.actions(), vec!["flaky", "recover_step", "flaky"]);
+        assert_eq!(host.action_count("recover_step"), 1);
+        assert_eq!(
+            host.fs_profile_for_action("recover_step"),
+            Some(Some("narrow".to_string()))
+        );
+        let events = writer.events_snapshot().expect("audit snapshot");
+        assert!(matches!(
+            recovery_events(&events)[0].kind,
+            V2AuditEventKind::StepRecoveryAttempted {
+                ref recovery_activity,
+                ..
+            } if recovery_activity == "recover_step"
+        ));
+    }
+
+    #[test]
+    fn unknown_step_recovery_activity_name_is_job_validation_during_catalog_resolution() {
+        let yaml = r#"
+schemaVersion: 2
+kind: Job
+metadata:
+  name: missing_step_recovery
+spec:
+  state: enabled
+  steps:
+    - id: build
+      recovery_activity: missing
+      spec:
+        type: deterministic
+        action: flaky
+"#;
+        let mut job = load_job_asset(yaml).expect("job yaml").spec;
+        let catalog = V2ActivityCatalog::new();
+
+        let err = resolve_job_catalog_refs_for_execution(&mut job, &catalog)
+            .expect_err("missing step recovery activity should fail resolution");
+
+        assert!(matches!(
+            err,
+            DispatchError::JobValidation(ref message)
+                if message.contains("step `build`: recovery_activity `missing` not found")
+        ));
+    }
+
+    #[test]
     fn non_retryable_failure_skips_recovery_and_audit_event() {
         let host = RecoveryHost::new([
             (
@@ -2150,6 +2248,8 @@ spec:
                     backoff_cap_ms: 0,
                     backoff_strategy: BackoffStrategy::Linear,
                 }),
+                recovery_activity: None,
+                resolved_recovery_activity: None,
                 body: JobV2StepBody::Target(TargetStep {
                     spec: deterministic_activity(step_action, None).spec,
                     activity_name: None,

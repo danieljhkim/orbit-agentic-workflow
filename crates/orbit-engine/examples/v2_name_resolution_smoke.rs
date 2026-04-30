@@ -394,6 +394,8 @@ fn synthetic_job_using_ref(target_name: &str) -> JobV2 {
             id: "the_step".to_string(),
             when: None,
             retry: None,
+            recovery_activity: None,
+            resolved_recovery_activity: None,
             body: JobV2StepBody::TargetRef(TargetRef {
                 target: format!("activity:{}", target_name),
                 default_input: None,
@@ -409,6 +411,8 @@ fn pipeline_with_reviewer_loop() -> JobV2 {
         id: "review".to_string(),
         when: None,
         retry: None,
+        recovery_activity: None,
+        resolved_recovery_activity: None,
         body: JobV2StepBody::TargetRef(TargetRef {
             target: "activity:agent_review_diff".to_string(),
             default_input: None,
@@ -427,6 +431,8 @@ fn pipeline_with_reviewer_loop() -> JobV2 {
             id: "review_fix".to_string(),
             when: None,
             retry: None,
+            recovery_activity: None,
+            resolved_recovery_activity: None,
             body: JobV2StepBody::Loop {
                 loop_: LoopBlock {
                     items: None,

@@ -34,12 +34,14 @@ spec:
         max_iterations: 256
         steps:
           - id: implement_one
+            recovery_activity: step_failure_recovery
             target: activity:agent_implement
             default_input:
               task_id: "{{ item }}"
               workspace_path: "{{ steps.worktree.output.workspace_path }}"
 
     - id: commit
+      recovery_activity: step_failure_recovery
       target: activity:git_commit
       default_input:
         batch_id: "{{ steps.worktree.output.batch_id }}"
@@ -47,6 +49,7 @@ spec:
         workspace_path: "{{ steps.worktree.output.workspace_path }}"
 
     - id: merge
+      recovery_activity: step_failure_recovery
       target: activity:git_merge
       default_input:
         batch_id: "{{ steps.worktree.output.batch_id }}"
@@ -68,6 +71,7 @@ spec:
 
     - id: push
       when: "{{ input.auto_push }} == true"
+      recovery_activity: step_failure_recovery
       target: activity:git_push
       default_input:
         workspace_path: "{{ steps.worktree.output.workspace_path }}"

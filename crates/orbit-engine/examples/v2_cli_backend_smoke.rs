@@ -482,6 +482,8 @@ fn synthetic_loop_session_cli_job() -> JobV2 {
         id: "review".to_string(),
         when: None,
         retry: None,
+        recovery_activity: None,
+        resolved_recovery_activity: None,
         body: JobV2StepBody::Target(TargetStep {
             spec: ActivityV2Spec::AgentLoop(AgentLoopSpec {
                 instruction: String::new(),
@@ -504,6 +506,8 @@ fn synthetic_loop_session_cli_job() -> JobV2 {
         id: "review_fix".to_string(),
         when: None,
         retry: None,
+        recovery_activity: None,
+        resolved_recovery_activity: None,
         body: JobV2StepBody::Loop {
             loop_: LoopBlock {
                 items: None,
