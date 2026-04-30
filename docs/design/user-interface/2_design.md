@@ -20,7 +20,7 @@ The UI uses layered dark surfaces instead of flat black: base canvas, elevated p
 
 ## 4. Live Status
 
-Live processing is visible through pulsing dots, spinners, buffered-log counters, periodically refreshed tiles, and compact ticker-style values. Motion is functional: it points to active work without making the operator read raw logs first.
+Live processing is visible through pulsing dots, spinners, buffered-log counters, periodically refreshed tiles, and compact ticker-style values. The `orbit.log` panel is viewport-bounded; overflowing rows scroll inside the log stream so footer filters and follow-tail controls remain visible [T20260430-29]. Motion is functional: it points to active work without making the operator read raw logs first.
 
 ## 5. Dashboard Telemetry Consistency
 
@@ -36,5 +36,6 @@ Accessibility still needs a real WCAG pass; responsive behavior remains optimize
 - [T20260428-13] unified dashboard denial sources for the policy drill-down.
 - [T20260428-15] compacted scoreboard ratio columns.
 - [T20260430-24] shortened this design doc while preserving current behavior statements.
+- [T20260430-29] bounded the live `orbit.log` panel to the viewport.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
