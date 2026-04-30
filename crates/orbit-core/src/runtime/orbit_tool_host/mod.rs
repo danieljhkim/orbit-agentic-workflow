@@ -1094,6 +1094,38 @@ mod tests {
     }
 
     #[test]
+    fn task_add_tool_recovers_mcp_encoded_acceptance_and_context_arrays() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let src_dir = repo_root.join("src");
+        std::fs::create_dir_all(&src_dir).expect("create src dir");
+        std::fs::write(src_dir.join("lib.rs"), "pub fn ok() {}\n").expect("write source file");
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.add",
+                json!({
+                    "title": "Encoded list task",
+                    "description": "Exercise MCP single-element encoded array recovery.",
+                    "workspace": repo_root.to_string_lossy(),
+                    "acceptance_criteria": ["[\"Criterion A\", \"Criterion B\"]"],
+                    "context_files": ["[\"file:src/lib.rs\"]"],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task add tool succeeds");
+
+        assert_eq!(
+            output.get("acceptance_criteria"),
+            Some(&json!(["Criterion A", "Criterion B"]))
+        );
+        assert_eq!(
+            output.get("context_files"),
+            Some(&json!(["file:src/lib.rs"]))
+        );
+    }
+
+    #[test]
     fn task_add_tool_infers_agent_from_model_only_input() {
         let (_root, runtime, _repo_root) = test_runtime();
 
@@ -1211,6 +1243,69 @@ mod tests {
         assert_eq!(
             output.get("dependencies"),
             Some(&json!([second_dependency.id.as_str()]))
+        );
+    }
+
+    #[test]
+    fn task_update_tool_recovers_mcp_encoded_acceptance_array() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            "Update encoded list",
+            "Exercise replacement through MCP encoded array shape.",
+            TaskStatus::Backlog,
+            &[],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.update",
+                json!({
+                    "id": task.id,
+                    "acceptance_criteria": ["[\"Criterion A\", \"Criterion B\"]"],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task update tool succeeds");
+
+        assert_eq!(
+            output.get("acceptance_criteria"),
+            Some(&json!(["Criterion A", "Criterion B"]))
+        );
+    }
+
+    #[test]
+    fn task_show_tool_recovers_mcp_encoded_fields_array() {
+        let (_root, runtime, repo_root) = test_runtime();
+        let task = create_task(
+            &runtime,
+            &repo_root,
+            "Show encoded fields",
+            "Exercise field projection through MCP encoded array shape.",
+            TaskStatus::Backlog,
+            &["file:src/lib.rs"],
+        );
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.show",
+                json!({
+                    "id": task.id,
+                    "fields": ["[\"description\", \"context_files\"]"],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task show tool succeeds");
+
+        assert_eq!(
+            output,
+            json!({
+                "description": "Exercise field projection through MCP encoded array shape.",
+                "context_files": ["file:src/lib.rs"],
+            })
         );
     }
 

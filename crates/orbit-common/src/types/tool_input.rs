@@ -117,6 +117,11 @@ pub fn optional_string_list_alias(
                     }
                 }
                 Value::Array(items) => {
+                    if let [Value::String(raw)] = items.as_slice()
+                        && let Some(recovered) = decode_json_string_array(raw.trim())
+                    {
+                        return Ok(Some(recovered));
+                    }
                     let mut values = Vec::with_capacity(items.len());
                     for item in items {
                         let raw = item.as_str().ok_or_else(|| {
@@ -242,6 +247,14 @@ mod tests {
     }
 
     #[test]
+    fn optional_string_list_recovers_single_encoded_array_element() {
+        assert_eq!(
+            optional_string_list_alias(&json!({"values": ["[\"a\",\"b\"]"]}), &["values"]).unwrap(),
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
+    }
+
+    #[test]
     fn optional_string_list_keeps_plain_string_with_brackets() {
         assert_eq!(
             optional_string_list_alias(&json!({"values": "[draft] note"}), &["values"]).unwrap(),
@@ -269,6 +282,22 @@ mod tests {
     fn optional_csv_or_string_list_recovers_json_encoded_selectors() {
         let recovered = optional_csv_or_string_list_alias(
             &json!({"context_files": "[\"file:src/lib.rs\", \"file:src/main.rs\"]"}),
+            &["context_files"],
+        )
+        .unwrap();
+        assert_eq!(
+            recovered,
+            Some(vec![
+                "file:src/lib.rs".to_string(),
+                "file:src/main.rs".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn optional_csv_or_string_list_recovers_single_encoded_array_element() {
+        let recovered = optional_csv_or_string_list_alias(
+            &json!({"context_files": ["[\"file:src/lib.rs\", \"file:src/main.rs\"]"]}),
             &["context_files"],
         )
         .unwrap();
