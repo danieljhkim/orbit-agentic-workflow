@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-28
+**Last updated:** 2026-04-30
 
 This document describes the shipped Activity / Job substrate as it exists today across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, load-time normalization, dispatch boundaries, backend semantics, DAG execution, audit, and the legacy edges that still matter. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -210,6 +210,8 @@ Executor args are prepended before provider runtime args. For the seeded Codex e
 After [T20260427-48], provider runtime args also receive the runtime's provider config through the same `V2RuntimeHost` boundary. Static executor definitions keep command-shape flags such as `exec --json`; dynamic provider settings such as Codex sandbox mode, writable side directories, and approval policy stay in the retained provider runtime. Codex approval policy is passed as an exec-compatible config override rather than as the interactive-only `--ask-for-approval` flag after `exec`.
 
 After [T20260427-51], macOS CLI invocations whose executor declares `sandbox: macos-sandbox-exec` are wrapped as `sandbox-exec -f <profile.sb> <provider> ...`. In that mode Orbit treats the outer SBPL profile as the filesystem authority and neutralizes provider-native sandbox flags: Codex is pinned to `--sandbox danger-full-access`, and Gemini's sandbox toggle is removed. After [T20260428-10], the generated profile also grants the Codex state directory (`$CODEX_HOME`, or `$HOME/.codex` when unset) so Codex can initialize before reading Orbit's envelope. Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`) are appended after policy denies so inherited Orbit subprocesses can persist workflow state while ordinary project-content writes remain governed by the resolved `fsProfile`.
+
+After [T20260430-15], the CLI agent stdin envelope carries the rendered activity input and durable `run_id` alongside the activity instruction, prompt, tools, and model. When that input identifies a single task, orbit-core also embeds a canonical task snapshot (`id`, title, description, acceptance criteria, plan, pr number, and context files) with `input.workspace_path` / `input.repo_root` taking precedence over the stored task paths. This keeps task executors from having to infer the target task from ambient run history when the human-facing prompt string is empty or generic.
 
 The important retention boundary is that the older `AgentRuntime` trait and `providers/*_cli.rs` files are not deprecated leftovers. They are the shipped implementation of `backend: cli`.
 
@@ -438,5 +440,6 @@ Read-only history surfaces do not always have the same dependency shape as live 
 - **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS.
 - **[T20260428-8]** — Add explicit workflow admission for task-starting workflows and remove the plan prerequisite from those workflow starts.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
+- **[T20260430-15]** — Embed task-aware input and run context in backend: cli agent envelopes.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

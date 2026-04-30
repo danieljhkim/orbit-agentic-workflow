@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (ADR-031 added)
+**Last updated:** 2026-04-30 (ADR-032 added)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -447,6 +447,19 @@ Do not attach it to `worktree_setup`, task lifecycle marking, or higher-level or
 - Cost: dispatch now has one more clone-and-mutate path per role-tagged step. The same role might get queried multiple times within one job run; if that ever shows up in profiles, memoize at the executor level rather than in the host trait.
 - Cost: the `V2RuntimeHost` seam now has a method that is purely a config-config concern. Tests that build their own mock host get a free `None` default, but a host that wants to exercise the override path has to opt in explicitly.
 
+## ADR-032 — CLI agent envelopes carry durable task and run context
+
+**Status:** Accepted · 2026-04 · [T20260430-15]
+
+**Context.** The v2 `backend: cli` path used a compact stdin envelope containing the activity instruction, prompt string, declared tools, and model. That was enough for generic prompt-shaped activities, but task implementers depend on structured context: task id, worktree path, plan, acceptance criteria, and run id. When the prompt string was empty or only indirectly populated, an agent following the `agent_implement` instructions could be told to recover with `orbit.task.show` without any authoritative id to pass. Concurrent task pipeline runs made timestamp-based recovery unsafe.
+
+**Decision.** Keep the retained provider CLI runtimes, but make the v2 CLI envelope task-aware. Every CLI agent invocation now receives the rendered activity `input` object and top-level `run_id`. When that input names exactly one task (`task_id`, `task.id`, or a single-entry `task_ids` array), orbit-core embeds a canonical task snapshot with description, acceptance criteria, plan, pr number, pruned context files, and path fields. Input-supplied `workspace_path` and `repo_root` override the stored task paths in that snapshot.
+
+**Consequences.**
+- Task implementers can recover deterministically from the envelope itself and only call `orbit.task.show` as a refresh path, not as a guessing game.
+- The engine/core boundary stays primitive: orbit-engine asks for optional JSON task context through `V2RuntimeHost`, and orbit-core owns task loading and context-file pruning.
+- Cost: CLI stdin blobs now contain more task prose, so audit blob readers should continue treating those blobs as diagnostic artifacts rather than small control messages.
+
 ---
 
 ## Task References
@@ -487,5 +500,6 @@ Do not attach it to `worktree_setup`, task lifecycle marking, or higher-level or
 - **[T20260430-9]** — Add a job-level recovery activity hook for retry-exhausted v2 step failures.
 - **[T20260430-12]** — Ship a generic deterministic recovery activity for direct task shipment workflows.
 - **[T20260430-14]** — Make default step recovery agent-driven and step-scoped.
+- **[T20260430-15]** — Embed task-aware input and run context in backend: cli agent envelopes.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

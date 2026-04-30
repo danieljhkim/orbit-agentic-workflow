@@ -100,6 +100,14 @@ pub trait V2RuntimeHost: Send + Sync {
         Ok(None)
     }
 
+    /// Optional task snapshot to embed in a backend: cli agent envelope.
+    ///
+    /// The engine keeps this as untyped JSON so orbit-core can source task data
+    /// without leaking store or task-query details into orbit-engine.
+    fn task_context_for_agent_input(&self, _input: &Value) -> Result<Option<Value>, DispatchError> {
+        Ok(None)
+    }
+
     fn tool_context_for_activity(
         &self,
         fs_profile: Option<&str>,

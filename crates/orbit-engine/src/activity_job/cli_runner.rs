@@ -59,7 +59,6 @@ pub fn run_cli_backend(
     let provider = spec.provider.as_str().to_string();
     let mut cli_executor = host.resolve_cli_executor(&provider)?;
     let sandbox = host.resolve_executor_sandbox(&provider, fs_profile)?;
-    let prompt = user_prompt_from_input(input)?;
     let timeout_seconds = if spec.wall_clock_timeout_seconds == 0 {
         DEFAULT_WALL_CLOCK_TIMEOUT_SECONDS
     } else {
@@ -74,14 +73,7 @@ pub fn run_cli_backend(
         tools: spec.tools.clone(),
     });
 
-    let envelope = serde_json::json!({
-        "instruction": spec.instruction,
-        "prompt": prompt,
-        "tools": spec.tools,
-        "model": spec.model,
-    });
-    let envelope_json = serde_json::to_vec(&envelope)
-        .map_err(|err| DispatchError::CliInvocationFailed(format!("serialize envelope: {err}")))?;
+    let envelope_json = cli_agent_envelope_json(host, spec, run_id, input)?;
 
     let mut provider_config = host.provider_cli_config(&provider);
 
@@ -211,6 +203,43 @@ pub fn run_cli_backend(
             trace,
         }),
     })
+}
+
+fn cli_agent_envelope_json(
+    host: &dyn V2RuntimeHost,
+    spec: &AgentLoopSpec,
+    run_id: &str,
+    input: &Value,
+) -> Result<Vec<u8>, DispatchError> {
+    let mut envelope = serde_json::Map::new();
+    envelope.insert("schemaVersion".to_string(), Value::from(1));
+    envelope.insert(
+        "instruction".to_string(),
+        Value::String(spec.instruction.clone()),
+    );
+    envelope.insert(
+        "prompt".to_string(),
+        Value::String(user_prompt_from_input(input)?),
+    );
+    envelope.insert("input".to_string(), input.clone());
+    envelope.insert("run_id".to_string(), Value::String(run_id.to_string()));
+    envelope.insert(
+        "tools".to_string(),
+        serde_json::to_value(&spec.tools)
+            .map_err(|err| DispatchError::CliInvocationFailed(format!("serialize tools: {err}")))?,
+    );
+    envelope.insert(
+        "model".to_string(),
+        serde_json::to_value(&spec.model)
+            .map_err(|err| DispatchError::CliInvocationFailed(format!("serialize model: {err}")))?,
+    );
+
+    if let Some(task) = host.task_context_for_agent_input(input)? {
+        envelope.insert("task".to_string(), task);
+    }
+
+    serde_json::to_vec(&Value::Object(envelope))
+        .map_err(|err| DispatchError::CliInvocationFailed(format!("serialize envelope: {err}")))
 }
 
 fn parse_cli_invocation_trace(
@@ -789,6 +818,7 @@ mod tests {
             executor_args: Vec::new(),
             provider_config,
             sandbox: None,
+            task_context: None,
         };
         let spec = test_agent_loop_spec(Duration::from_secs(5));
 
@@ -826,6 +856,39 @@ mod tests {
                 "/tmp/orbit-b".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn cli_agent_envelope_carries_input_run_id_and_task_context() {
+        let host = TestHost {
+            command: "codex".to_string(),
+            executor_args: Vec::new(),
+            provider_config: HashMap::new(),
+            sandbox: None,
+            task_context: Some(serde_json::json!({
+                "id": "TCTX",
+                "workspace_path": "/tmp/orbit-worktree",
+                "plan": "implement it"
+            })),
+        };
+        let spec = test_agent_loop_spec(Duration::from_secs(5));
+        let input = serde_json::json!({
+            "prompt": "do it",
+            "task_id": "TCTX",
+            "workspace_path": "/tmp/orbit-worktree"
+        });
+
+        let raw = cli_agent_envelope_json(&host, &spec, "jrun-context", &input)
+            .expect("build cli agent envelope");
+        let envelope: Value = serde_json::from_slice(&raw).expect("parse envelope json");
+
+        assert_eq!(envelope["schemaVersion"], 1);
+        assert_eq!(envelope["prompt"], "do it");
+        assert_eq!(envelope["run_id"], "jrun-context");
+        assert_eq!(envelope["input"]["task_id"], "TCTX");
+        assert_eq!(envelope["input"]["workspace_path"], "/tmp/orbit-worktree");
+        assert_eq!(envelope["task"]["id"], "TCTX");
+        assert_eq!(envelope["task"]["workspace_path"], "/tmp/orbit-worktree");
     }
 
     #[test]
@@ -1014,6 +1077,7 @@ mod tests {
                 executor_args: Vec::new(),
                 provider_config: HashMap::new(),
                 sandbox: Some(sandbox_for_test()),
+                task_context: None,
             };
             let spec = test_agent_loop_spec_for(provider_name, Duration::from_secs(5));
 
@@ -1082,6 +1146,7 @@ mod tests {
             executor_args: Vec::new(),
             provider_config,
             sandbox: Some(sandbox_for_test()),
+            task_context: None,
         };
         let spec = test_agent_loop_spec_for("codex", Duration::from_secs(5));
 
@@ -1149,6 +1214,7 @@ mod tests {
             ],
             provider_config: HashMap::new(),
             sandbox: Some(sandbox_for_test()),
+            task_context: None,
         };
         let spec = test_agent_loop_spec_for("gemini", Duration::from_secs(5));
 
@@ -1211,6 +1277,7 @@ mod tests {
             executor_args: claude_static_args.clone(),
             provider_config: HashMap::new(),
             sandbox: Some(sandbox_for_test()),
+            task_context: None,
         };
         let spec = test_agent_loop_spec_for("claude", Duration::from_secs(5));
 
@@ -1449,6 +1516,7 @@ mod tests {
         executor_args: Vec<String>,
         provider_config: HashMap<String, String>,
         sandbox: Option<ResolvedSandbox>,
+        task_context: Option<Value>,
     }
 
     impl TestHost {
@@ -1458,6 +1526,7 @@ mod tests {
                 executor_args: Vec::new(),
                 provider_config: HashMap::new(),
                 sandbox: None,
+                task_context: None,
             }
         }
     }
@@ -1497,6 +1566,13 @@ mod tests {
             _fs_profile: Option<&str>,
         ) -> Result<Option<ResolvedSandbox>, DispatchError> {
             Ok(self.sandbox.clone())
+        }
+
+        fn task_context_for_agent_input(
+            &self,
+            _input: &Value,
+        ) -> Result<Option<Value>, DispatchError> {
+            Ok(self.task_context.clone())
         }
 
         fn tool_context_for_activity(
