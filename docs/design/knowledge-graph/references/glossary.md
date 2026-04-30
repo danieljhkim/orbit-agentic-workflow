@@ -4,7 +4,7 @@ Orbit-specific terms used across the knowledge-graph docs and `orbit-knowledge`.
 
 | Term | Meaning |
 |------|---------|
-| **`.orbitignore`** | Workspace-local, gitignore-compatible exclusion file consumed by the knowledge-graph scan stage. It controls graph inclusion at parse time and is distinct from runtime policy deny rules. See [2_design.md §2.3]. |
+| **`.orbitignore`** | Workspace-local, gitignore-compatible exclusion file consumed by the knowledge-graph scan stage. It controls graph inclusion at parse time and is distinct from runtime policy deny rules. See [2_design.md §2.4]. |
 | **Attribution** | Orbit-specific pipeline stage that parses `\[T\d{8}-\d+(?:-\d+)*\]` task IDs from commit messages, maps hunks to leaves by line-range overlap, and unions the IDs onto touched nodes. See [2_design.md §2.2]. |
 | **CodebaseGraphV1** | Top-level serialized graph shape: `{ root_dir_id, dirs, files, leaves }`. The `V1` is load-bearing — it pins the on-disk schema. |
 | **DirNode / FileNode / LeafNode** | The three Orbit node types. `LeafNode` is the in-code name for what the tool surface calls a "symbol" (renamed under [T20260411-0424]; the type name predates the rename). |
@@ -14,7 +14,7 @@ Orbit-specific terms used across the knowledge-graph docs and `orbit-knowledge`.
 | **Identity key** | Cross-build stable key distinct from `id` and `object_hash`. `id` is stable per-snapshot; `object_hash` changes on any field edit; `identity_key` is what the working graph uses to track a node's lineage across rebuilds. |
 | **is_locked / lineage_locked** | Two lock flags on every node. `is_locked` blocks body mutations; `lineage_locked` blocks identity changes (rename, re-identification). Both survive rebuilds because they live on the node body. |
 | **Leaf** | Internal vocabulary for an extracted symbol. "Symbol" is the public tool surface term ([T20260411-0424]); "leaf" persists in the Rust types. |
-| **LeafKind** | Fixed enum: `function`, `method`, `class`, `struct`, `interface`, `trait`, `impl`, `field`, `module`. Directly inherited from ctags' tag kinds. |
+| **LeafKind** | Extracted-node kind. Code variants include `function`, `method`, `class`, `struct`, `interface`, `trait`, `impl`, `field`, and `module`; non-code variants include markdown `Section`, config `ConfigKey`, and table `Column`. |
 | **Location** | Orbit's selector-friendly path format. Dirs end with `/`; files use the repo-relative path; leaves use `<file>:<qualified_name>`. |
 | **Pack** | Orbit-specific render: `pack_json` produces a token-budgeted bundle of selected nodes shaped for prompt consumption. Not a generic archive — the field projection is deliberately agent-friendly. |
 | **Ref fallback** | Orbit read-side rule: if `refs/heads/<current-branch>.json` does not exist, fall back to `refs/heads/<default>.json` and emit a stderr warning. Writes never fall back ([T20260421-0358]). |

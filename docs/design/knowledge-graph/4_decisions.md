@@ -2,11 +2,11 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-28 (ADR-023)
+**Last updated:** 2026-04-30
 
-ADR-style log of non-obvious design choices behind the knowledge graph. Each entry names the decision, the context that forced it, what we chose, and what we traded away. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
+ADR-style log of non-obvious knowledge-graph decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
-Format for each entry: **Status · Date · Task(s)**, then *Context → Decision → Consequences*. See [1_overview.md](./1_overview.md) and [2_design.md](./2_design.md) for the corresponding implementation; [3_vision.md](./3_vision.md) tracks questions that may trigger future ADRs.
+Format for each entry: **Status · Date · Task(s)**, then *Context → Decision → Consequences*. The [T20260430-22] cleanup folds the former top-level evidence log into ADR-018 so this folder keeps only the convention-approved numbered docs.
 
 ---
 
@@ -275,9 +275,9 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 **Status:** Accepted · 2026-04 · [T20260423-0524], [T20260426-0402]
 
-**Context.** Three rounds of evidence asked whether the eight-tool agent-facing `orbit_graph_*` MCP surface earns its token cost against `grep` + `read`. Full record in [`5_null_result.md`](./5_null_result.md). v3 (the disposition round) gave codex first-class MCP parity with the same backend it had only reached through shell-exec in v1/v2. Codex hybrid utilization moved from 0/30 → 23/30 on the same model, with hybrid token cost 0.65× no-graph (aggregate) and graph-only the best codex arm on accuracy (30/30). Claude utilization stayed at 0/30 because its baseline tool surface already includes `Read` / `Grep` / `Glob`, so the graph tools competed against specialized fs primitives carrying higher base-rate familiarity rather than against a generic `exec_command`. Pre-registered cull thresholds: hybrid utilization ≥ 20% on at least one provider AND graph-only ≤ 1.3× no-graph per provider × fixture cell. Utilization passes (codex). Cost is mixed per-cell: codex passes 4 / 10 fixtures, claude 1 / 10.
+**Context.** Three benchmark rounds asked whether the eight-tool agent-facing `orbit_graph_*` MCP surface earns its token cost against grep/read. v1/v2 first looked like a null result, but codex only had shell access to graph tools there; v3 gave codex MCP parity and hybrid utilization moved from 0/30 to 23/30, with hybrid aggregate tokens at 0.65× no-graph and graph-only accuracy at 30/30. Claude stayed at 0/30 hybrid graph use because its baseline already included specialized `Read` / `Grep` / `Glob`. The pre-registered keep threshold passed on utilization but remained mixed on per-cell cost: codex passed 4/10 fixtures, claude 1/10.
 
-**Decision.** Retain the agent-facing `orbit_graph_*` MCP surface. The retention rests primarily on criterion 1 (utilization), which codex carries decisively. The cost criterion is mixed even per-cell; the cells that pass include all four `locate` / `deps` / `trace` cases where graph is the structurally correct tool. This is a defensible product call, not a clean benchmark pass — see [`5_null_result.md`](./5_null_result.md) §"Decision" for the per-cell table and reasoning.
+**Decision.** Retain the agent-facing `orbit_graph_*` MCP surface. The decisive signal is provider-specific utilization when the graph tools are first-class; the cost signal is useful but not a clean pass. The duplicated top-level evidence log was folded into this ADR and removed under [T20260430-22].
 
 **Consequences.**
 - The eight-tool `orbit_graph_*` MCP surface stays shipped.
@@ -285,6 +285,8 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 - Future work on schema-cache overhead and payload size (pointer-only graph reads, [T20260423-0607]) is a measured-need item, not speculative.
 - Provider-dependent caveat: the surface earns its cost where the baseline tool list is generic (codex's `exec_command`-only). On providers whose baseline already includes specialized fs primitives that overlap in function (Claude), the data is consistent with "graph tools exist but don't get used" — a latent schema-cache tax paid without return. Whether eating that tax to keep codex happy is worth it is a product question, not a benchmark question.
 - Future tool-surface decisions for other specialized orbit tooling should examine the same question: is the new tool competing in a shell selector (win), a tool-list selector against a generic alternative (win), or a tool-list selector against a specialized alternative (likely loss).
+- Future benchmark thresholds must specify both a per-cell threshold and the aggregation rule before a sweep runs.
+- Cost: the MCP schema payload and prompt budget tax remain provider-dependent; retaining the surface deliberately accepts that overhead for providers that do use it.
 
 ---
 
@@ -401,5 +403,6 @@ Tasks cited by ADRs above:
 - **[T20260426-2042]** — Move graph CLI behavior behind the `orbit-tools::graph` facade and remove the direct `orbit-knowledge` dependency from `orbit-cli`.
 - **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
 - **[T20260428-3]** — Expose the full read-only graph tool set through the MCP safe surface for Codex and Gemini.
+- **[T20260430-22]** — Compact the knowledge-graph design docs and fold the obsolete evidence log into ADR-018.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

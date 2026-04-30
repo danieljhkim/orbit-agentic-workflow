@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-28 (current task-ID suffixes in graph attribution/search, [T20260428-1])
+**Last updated:** 2026-04-30
 
-This document specifies the knowledge graph as it exists today: on-disk layout, build pipeline, query services, Orbit integration, locking, and honest limitations. See [1_overview.md](./1_overview.md) for the "why" and [3_vision.md](./3_vision.md) for where it is headed. Task IDs are cited inline and collected at the end.
+This document specifies the current knowledge graph: storage, build pipeline, query services, Orbit integration, locking, and limitations. The [T20260430-22] cleanup removes duplicated rationale already covered by [1_overview.md](./1_overview.md), [3_vision.md](./3_vision.md), and ADRs.
 
 ---
 
@@ -31,7 +31,7 @@ The legacy `refs/current.json` layout is migrated to `refs/heads/<default-branch
 
 ## 2. Build Pipeline
 
-The pipeline is a straight-line sequence of plain functions operating on a shared `PipelineContext`:
+The pipeline is a straight-line sequence of functions over a shared `PipelineContext`:
 
 ```
 scan → hash → detect_changes → build_dirs → build_files → build_leaves → attribute_history → persist → write_manifest → save_hash_cache
@@ -50,7 +50,7 @@ scan → hash → detect_changes → build_dirs → build_files → build_leaves
 | `write_manifest` | `manifest.json` | Timestamp + commit + ref pointer |
 | `save_hash_cache` | `hashes.json` | Baseline for the next incremental `detect_changes` pass |
 
-Extraction is dispatched on `FileKind`. Each `FileExtractor` (renamed from `LanguageExtractor` in [T20260422-1540]) emits `ExtractedLeaf` records with a `qualified_name`, `kind`, source span, source hash, and child qualified names (methods inside classes, associated fns inside impls). Code extractors wrap tree-sitter grammars; the shallow doc/config/table extractors parse their formats directly (ATX headings for markdown, top-level map entries for YAML/JSON/TOML via the existing serde ecosystem, first-row cells for CSV/TSV with a 1 MiB size cap).
+Extraction dispatches on `FileKind`. Each `FileExtractor` emits `ExtractedLeaf` records with name, kind, span, hash, and child names. Code uses tree-sitter; shallow doc/config/table extractors handle markdown ATX headings, top-level YAML/JSON/TOML keys, and CSV/TSV header cells with a 1 MiB cap ([T20260422-1540]).
 
 Hashing and leaf extraction are parallelized only across independent file work. `compute_hashes` collects `(path, sha256)` worker results before replacing `ctx.new_hashes`; `build_graph_leaves` workers return either a reusable prior snapshot or freshly extracted file output, and the main thread applies those outputs sorted by original `FileNode` index. That merge discipline keeps `ctx.graph.leaves` and each `FileNode.leaf_children` byte-stable relative to the old sequential order while avoiding locks around `PipelineContext` ([T20260426-0139]). Individual file read failures remain non-fatal skips in both phases.
 
@@ -63,7 +63,7 @@ Hashing and leaf extraction are parallelized only across independent file work. 
 - **Rebuild** — incremental if a manifest exists, full otherwise.
 - **SkippedConcurrent** — another process already holds the refresh lock; wait briefly and reuse its result.
 
-The refresh lock is a `flock` on `.orbit/knowledge/refresh.lock`. Concurrent callers either wait for the in-flight build or fall through to the pre-existing graph once the lock-holder publishes a new ref. The debounce window is `ORBIT_KNOWLEDGE_REFRESH_DEBOUNCE_SECS` (default 5s).
+The refresh lock is a `flock` on `.orbit/knowledge/refresh.lock`. Concurrent callers wait for the in-flight build or reuse the pre-existing graph once the lock-holder publishes. The debounce window is `ORBIT_KNOWLEDGE_REFRESH_DEBOUNCE_SECS` (default 5s).
 
 Incremental rebuilds still rebuild the directory and file node skeleton from the current scan so deletes and `.orbitignore` changes take effect. The expensive leaf phase loads the previously persisted graph for the same branch ref and copies unchanged files' `source_blob_hash`, hydrated source, exports, re-exports, `leaf_children`, and leaf nodes when both the file source hash and every reused leaf's `file_hash_at_capture` match the new hash. Paths in `ctx.changed_paths`, new files, hash mismatches, absent refs, or unreadable prior graphs take the full extractor path instead ([T20260426-0140]).
 
@@ -105,24 +105,22 @@ The scan stage now evaluates two inclusion layers before a file ever reaches the
 1. Git's own ignore rules via `git check-ignore --stdin`.
 2. Orbit's scan-only `.orbitignore` matcher inside `orbit-knowledge`, implemented with the `ignore` crate and composed from built-in defaults plus any root or nested `.orbitignore` files ([T20260423-0452]).
 
-Those layers answer a different question than runtime policy. `.orbitignore` lives in `orbit-knowledge` and is evaluated at parse/scan time to decide whether a path becomes part of `ctx.file_paths` at all. Policy `denyRead` / `denyModify` lives in `orbit-policy` and is evaluated later, at tool-call time, when an activity asks to read or modify a path on disk. One is about graph inclusion; the other is about runtime filesystem access.
+Those layers answer a different question than runtime policy. `.orbitignore` decides whether a path enters `ctx.file_paths`; policy `denyRead` / `denyModify` decides whether a later tool call may read or modify that path. One is graph inclusion, the other runtime filesystem access.
 
 That split is structural on purpose. The knowledge-graph crate depends only on `orbit-common`; it does not depend on `orbit-policy`, and the scanner does not consult runtime policy while building the graph. This keeps graph refresh deterministic and keeps policy semantics out of the indexing hot path.
 
-The default `.orbitignore` baseline excludes common generated or runtime-owned trees (`.orbit/`, `node_modules/`, `target/`, `dist/`, `build/`, `.venv/`, `venv/`, `__pycache__/`, `*.egg-info/`). `orbit workspace init` seeds the same list into a visible workspace-root `.orbitignore` file so users can edit the defaults without discovering the behavior by reading source first.
-
-The same path may legitimately appear in both layers with different intent. For example, `benchmarks/graph_v1/runs/**` is excluded from graph indexing via `.orbitignore` so frozen benchmark transcripts do not pollute `orbit.graph.search`, while a policy profile could still allow or deny runtime reads to that subtree depending on the activity. Likewise, `.orbit/` is excluded from indexing because it is runtime state, and a policy may independently deny modification of `.orbit/**` during normal agent execution.
+The default `.orbitignore` baseline excludes common generated or runtime-owned trees (`.orbit/`, `node_modules/`, `target/`, `dist/`, `build/`, virtualenvs, caches, `*.egg-info/`). `orbit workspace init` seeds the list so users can edit it. A path can appear in both layers with different intent: benchmark transcripts may be excluded from indexing while policy still allows reads; `.orbit/` may be excluded from indexing while policy denies modification.
 
 ### 2.5 Build benchmark scoreboard
 
-`make bench` runs the `orbit-knowledge` example driver `examples/graph_build.rs` as an end-to-end benchmark for the build pipeline ([T20260426-0236]). The driver calls `pipeline::run_build` directly rather than shelling out to `orbit graph build`, so it measures the pipeline plus object persistence without CLI dispatch overhead.
+`make bench` runs the `orbit-knowledge` `examples/graph_build.rs` driver as an end-to-end pipeline benchmark ([T20260426-0236]). It calls `pipeline::run_build` directly, measuring pipeline plus object persistence without CLI dispatch overhead.
 
 Each invocation runs two scenarios against the workspace root by default:
 
 - **`cold_build`** — delete `.orbit/knowledge/`, run a full non-incremental build, and record wall time, best-effort peak RSS, file count, leaf count, and dir count.
 - **`warm_incremental_noop`** — reuse the cold build output, run an incremental build with no file changes, and record the same metrics.
 
-Results append to `.orbit/state/scoreboard/graph_bench.json` as an ordered JSON array capped at 200 records. Each record includes timestamp, git SHA, hostname, logical core count, and the per-scenario metrics. The scoreboard is a developer-machine trend aid, not a CI gate; shared runners are too noisy for absolute thresholds, and the default corpus grows as the repo grows.
+Results append to `.orbit/state/scoreboard/graph_bench.json` as a 200-record capped JSON array with timestamp, git SHA, host/core context, and per-scenario metrics. It is local trend data, not a CI gate.
 
 ---
 
@@ -179,9 +177,9 @@ orbit graph search --ref <name> <query>
 
 `show`/`search` subcommands and the `leaf` → `symbol` vocabulary rename landed under [T20260411-0424].
 
-Graph build/update writes without `--ref` resolve the current git branch; build/update writes fail on detached HEAD rather than inventing a branch label. Reads fall back to the default branch when the current-branch ref does not yet exist, with a single stderr warning ([T20260421-0358]).
+Graph build/update writes without `--ref` resolve the current git branch and fail on detached HEAD rather than inventing a label. Reads fall back to the default branch when the current-branch ref is missing, with one stderr warning ([T20260421-0358]).
 
-The CLI does not import `orbit-knowledge` directly. `orbit-tools::graph` owns the graph use-case facade for build/update, show/search, history payloads, and the default `.orbitignore` template; `orbit-core::command::graph` re-exports that facade for clap command handlers and workspace init ([T20260426-2042]). This keeps CLI code focused on argument parsing and human output while preserving the same JSON payload builders used by the agent tool surface.
+The CLI does not import `orbit-knowledge` directly. `orbit-tools::graph` owns build/update, show/search, history payloads, and the default `.orbitignore` template; `orbit-core::command::graph` re-exports that facade for clap and workspace init ([T20260426-2042]). CLI and agent tools therefore share JSON payload builders.
 
 ### 4.2 MCP tools
 
@@ -227,11 +225,11 @@ The leaf graph is only as good as each extractor. Code coverage (tree-sitter): R
 
 ### 6.2 No cross-file reference resolution
 
-The service computes callers and implementors from extracted symbol signatures, not from type-resolved references ([T20260412-0645-3]). A method call and a same-named variable deref look the same to the current indexer. This is a pragmatic choice — full type resolution would require a per-language type checker — but it means `find_references` is a superset of the truth, not the truth itself. Agents relying on callers/implementors for safety-critical refactors should verify.
+The service computes callers and implementors from extracted signatures, not type-resolved references ([T20260412-0645-3]). A method call and same-named variable deref can look identical, so `find_references` is a superset of the truth. Safety-critical refactors still require verification.
 
 ### 6.3 History attribution is best-effort
 
-Hunk-to-symbol mapping uses line-range overlap against the symbol's span *at the commit's tree* ([T20260421-0528]). Renames, moves, and reformatting confuse this. The walker deliberately does not try to track renames through `--follow` because the line-mapping cost compounds with every rename hop; we accept that a symbol moved across files gets attribution only from the post-move commits.
+Hunk-to-symbol mapping uses line-range overlap against the symbol span *at the commit's tree* ([T20260421-0528]). Renames, moves, and reformatting confuse this. The walker does not chase `--follow`; a moved symbol gets attribution only from post-move commits.
 
 ### 6.4 The graph is a snapshot, not a stream
 
@@ -289,5 +287,6 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 - **[T20260426-0453]** — Remove graph write operations from the public tool/MCP surface; use task lock reservations as preflight write guards.
 - **[T20260426-2042]** — Move graph CLI behavior behind the `orbit-tools::graph` facade and remove the direct `orbit-knowledge` dependency from `orbit-cli`.
 - **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
+- **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
