@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26 (read-only public graph surface, [T20260426-0453])
+**Last updated:** 2026-04-30
 
-This document captures where the knowledge graph is headed: open questions, where it fits relative to prior art, and what may turn out to be distinctive about Orbit's shape. See [1_overview.md](./1_overview.md) for the system's purpose and [2_design.md](./2_design.md) for what exists today.
+This document captures open questions, prior art, and what may be distinctive about Orbit's knowledge graph. The [T20260430-22] cleanup keeps it forward-looking; current contracts belong in [2_design.md](./2_design.md).
 
 Treat everything below as a hypothesis, not a commitment. Items here do not carry task IDs because they are not yet scheduled work; if an item lands, the task reference will appear in [2_design.md](./2_design.md) when that document is updated.
 
@@ -60,37 +60,37 @@ Today a modified file re-extracts every leaf. For large files (think 3000-line m
 
 ## 2. Prior Work
 
-The knowledge graph is a synthesis of well-known patterns, not a novel primitive. The components below exist in the 2023–2026 literature and in production tooling; Orbit's contribution is the specific combination tuned for agent prompt assembly and the git-native ref model.
+The graph combines known patterns tuned for agent prompt assembly and git-native refs.
 
 ### 2.1 Code graphs for static analysis
 
-- **GitHub CodeQL / Semmle** — queryable code graphs with a relational model. Strong semantic fidelity; heavy per-language extractor investment; queries are their own DSL.
-- **Sourcegraph SCIP / LSIF** — language-agnostic indexes produced by per-language tools, designed for cross-repo navigation. SCIP's design for diff-friendly incremental indexes informed Orbit's attribution pass ([T20260421-0528]).
+- **GitHub CodeQL / Semmle** — relational code graphs with strong semantic fidelity and heavy per-language extractor investment.
+- **Sourcegraph SCIP / LSIF** — language-agnostic indexes for cross-repo navigation; SCIP's diff-friendly index shape informed Orbit's attribution pass ([T20260421-0528]).
 - **Glean (Meta)** — production graph store for code facts over many languages. Shares the "content-addressed facts + query layer" shape.
 
 Orbit's graph is structurally simpler than any of these — directory/file/leaf with signatures, not full type-resolved references. The trade is extractor maintenance cost vs. query precision.
 
 ### 2.2 Tree-sitter extraction
 
-- **tree-sitter** (Brunsfeld et al.) — the de facto parser framework for editor and indexer tooling. Orbit's extractors are thin adapters over language-specific grammars.
+- **tree-sitter** — the parser framework Orbit wraps with thin language-specific extractors.
 - **ctags / universal-ctags** — the pre-tree-sitter analog. Still widely used; its tag kinds directly inspired Orbit's `LeafKind` vocabulary (function, method, class, struct, interface, field, module).
 
 Nothing in the extractor layer is novel; we use it as off-the-shelf infrastructure.
 
 ### 2.3 Content-addressed storage for code state
 
-- **git** — the direct model for objects/refs/index. Orbit deliberately uses the same split ([T20260421-0358]) to keep operator intuition correct.
+- **git** — the direct model for objects/refs/index ([T20260421-0358]).
 - **IPFS / dat** — content-addressed distribution. Not directly influential but confirms the pattern's generality.
 
 ### 2.4 Agent-oriented code indexes
 
-- **Cursor / Continue / Cline repo maps** — hand-rolled repo summarization for prompt injection. Generally one-shot; not branch-scoped, not incremental, not history-attributed.
+- **Cursor / Continue / Cline repo maps** — prompt-oriented repo summaries; generally one-shot rather than branch-scoped, incremental, or history-attributed.
 - **Aider repo map** — ranked file/symbol summary generated per request. Cheaper than a full graph, less precise; no persistence across sessions.
 - **Sweep / CodePlan / Agentless** — research agents that build ad-hoc code graphs before planning. Each rebuilds from scratch; none persist a ref model.
 - **Symbex / Chapter** — local semantic search over code. Symbol-level but embedding-first rather than structure-first.
-- **Graphify** ([safishamsi/graphify](https://github.com/safishamsi/graphify)) — agent-installable skill (Claude Code, Codex, Cursor, and others) that ingests a folder of code, docs, PDFs, images, and video/audio into a single queryable knowledge graph. Tree-sitter AST extraction across ~25 languages, Whisper for transcripts, Claude subagents for concept and relationship extraction, Leiden community detection for clustering, and explicit `EXTRACTED` / `INFERRED` / `AMBIGUOUS` edge tagging. Orbit's graph did not draw from Graphify's design — the two projects converged on tree-sitter independently — but the overlap is worth naming: Graphify is scoped at *"make any folder queryable for any assistant,"* Orbit is scoped at *"make one workspace queryable for one orchestrator across branches with a ref model."* Both choose graph topology over embeddings for similarity signal; neither needs a vector DB.
+- **Graphify** ([safishamsi/graphify](https://github.com/safishamsi/graphify)) — multimodal folder-to-graph tooling for many assistants. Orbit did not draw from it, but the contrast is useful: Graphify makes any folder queryable; Orbit makes one workspace queryable for one orchestrator across branches.
 
-Orbit's direction differs primarily in **persistence, branch-awareness, and scope**: the graph is a durable workspace artifact keyed to a git ref, not a per-session or per-folder computation, and it is the same artifact every tool and every activity reads from. Graphify's multimodal reach (videos, whiteboards, PDFs) is deliberately out of Orbit's scope today — Orbit indexes code and code-adjacent structure only.
+Orbit differs primarily in persistence, branch-awareness, and scope. It is a durable workspace artifact keyed to a git ref, not a per-session or per-folder computation.
 
 ### 2.5 LSP as a foil, not a target
 
@@ -151,7 +151,6 @@ Tasks cited in this document (all as forward pointers or historical context; non
 - **[T20260421-0358]** — Branch-scoped refs; foundation for §3's distinctiveness claim and §1.6.
 - **[T20260421-0528]** — History-walker + `task_ids` attribution; foundation for §1.2, §1.5, and §3.
 - **[T20260426-0453]** — Current public graph surface is read-only; write coordination uses task lock reservations.
-
-Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
+- **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
