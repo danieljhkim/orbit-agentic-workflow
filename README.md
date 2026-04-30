@@ -1,7 +1,7 @@
 # Orbit: Graph-Aware Parallel Execution For Coding Agents
 
 <p align="center">
-  <img src="docs/assets/orbit-dashboard-hero.gif" alt="Orbit dashboard: parallel coding agents executing tasks with a live audit log" width="900" />
+  <img src="docs/assets/orbit-dashboard-hero.gif" alt="Orbit dashboard: parallel coding agents executing tasks with a live audit log" width="600" />
 </p>
 
 <p align="center">
