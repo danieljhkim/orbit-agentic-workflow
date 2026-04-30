@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-30
 
-Policy & Sandboxing is the safety surface that decides what an agent is allowed to read, modify, and execute inside a workspace. It is two layers stitched together: a filesystem-scoping policy engine that resolves a named `FsProfile` plus global `denyRead` / `denyModify` rules into an allow/deny answer for every fs operation, and a process supervision layer that spawns shell commands with timeouts, signal handling, and process-group cleanup. [2_design.md](./2_design.md) describes the shipped implementation; [3_vision.md](./3_vision.md) names the gaps between today's policy/sandbox semantics and a defensible long-term contract.
+Policy & Sandboxing is Orbit's safety surface for filesystem access and process execution. It combines v2 `PolicyDef` profiles, global `denyRead` / `denyModify` rules, HTTP-tool fs enforcement, optional macOS `sandbox-exec` wrapping for CLI agents, and `orbit-exec` process supervision. [2_design.md](./2_design.md) documents what ships today; [3_vision.md](./3_vision.md) names the gaps to a fuller isolation contract.
 
 ---
 
@@ -12,37 +12,35 @@ Policy & Sandboxing is the safety surface that decides what an agent is allowed 
 
 Orbit runs agents against user repositories, so the safety boundary is a product feature rather than an internal hygiene concern.
 
-1. **Default-safe with explicit expansion.** When an activity does not declare an `fsProfile:`, runtime materializes an implicit `unrestricted` profile so the activity still runs against `./**`, but every read and modify still passes through the same evaluator and audits the same way. There is no silent bypass path.
-2. **Profiles are activity-scoped.** Each activity binds to one named profile. Two activities in the same job can run under different profiles, and the resolver re-evaluates per call. Profile switching happens at activity boundaries, not inside a tool call.
-3. **Deny rules are global, not profile-local.** `denyRead` and `denyModify` live on the policy itself and are injected into every resolved profile as negated rules. A workspace-level policy can only narrow the surface; it cannot widen past a global deny.
-4. **Sandboxing is shell supervision, not OS isolation.** `orbit-exec` ensures that every spawned process is reaped, time-bounded, and signal-aware. It is not a kernel-level sandbox today. The real isolation surface is the policy/tool layer, which means tool authors — not the exec runner — are responsible for routing fs work through the policy engine.
-5. **Denials must be auditable.** Filesystem denials emit through `FsAuditLogger` and surface as `V2AuditEvent` filesystem entries. Cross-link to [docs/design/auditability/](../auditability/) for how those records are stored.
+1. **Default paths stay explicit.** Omitting `fsProfile:` maps to `unrestricted`, then still runs through profile resolution and global denies.
+2. **Profiles are activity-scoped.** A job can mix profiles by activity; evaluation happens per call, not by mutating a process-global mode.
+3. **Deny rules are global.** `denyRead` and `denyModify` are injected into every resolved profile as negated rules, so workspace policy can narrow but not erase global denies.
+4. **Execution has two layers.** `orbit-exec` always supervises child processes; CLI-agent filesystem narrowing is OS-enforced only where the configured executor uses macOS `sandbox-exec`.
+5. **Denials are evidence.** HTTP fs denials emit through `FsAuditLogger` into `V2AuditEvent` filesystem entries; [auditability](../auditability/) owns durable storage.
 
 ---
 
 ## 2. Core Concepts
 
-### 2.1 Policy is a v2 schema with named profiles and global denies
+### 2.1 Policy is v2-only
 
-`PolicyDef` declares `denyRead`, `denyModify`, and a map of named `FsProfile` entries. Each profile lists `read` and `modify` glob rules. Schema version 1 is rejected at load time; only v2 with the three sections is accepted. Workspace policies override globals by name and concatenate global denies.
+`PolicyDef` accepts only schema v2: `denyRead`, `denyModify`, and named `FsProfile` entries with `read` / `modify` glob rules. Workspace profiles override globals by name; global denies accumulate.
 
 ### 2.2 Profile resolution materializes an implicit `unrestricted`
 
-When an activity omits `fsProfile:`, the v2 host substitutes the constant `UNRESTRICTED_FS_PROFILE`. If no policy defines `unrestricted`, the policy engine fills in `read: ["./**"]` and `modify: ["./**"]` so the lookup never fails. Global denies are then injected as negated rules, so even an unrestricted activity cannot read or modify a globally denied path.
+When an activity omits `fsProfile:`, the v2 host uses `UNRESTRICTED_FS_PROFILE`. If the policy does not define that profile, the resolver synthesizes `read: ["./**"]` and `modify: ["./**"]`, then injects global denies.
 
 ### 2.3 Path evaluation is last-match-wins over a normalized rule list
 
-`PolicyDef::check_path` walks the resolved rule list in order. Each rule is either positive (`./src/**`) or negated (`!./.git/**`). The last rule that matches the normalized workspace-relative path wins. If no positive rule exists, every path is denied with a sentinel `[]` matched-rule string. If positive rules exist but none match, the denial returns `<no matching rule>`.
+`PolicyDef::check_path` evaluates normalized workspace-relative paths against positive and negated rules. The last matching rule wins. Empty positive sets deny with `[]`; unmatched positive sets deny with `<no matching rule>`.
 
-### 2.4 Tool-layer enforcement applies to HTTP-backed activities only
+### 2.4 Enforcement depends on backend
 
-The `orbit-tools` `fs.*` builtins call `enforce_fs_policy` before every read or modify. The policy decision is rendered into an `FsCallEvent` (request, result, or denied) and emitted through the activity's `FsAuditLogger`. A denied call returns `OrbitError::PolicyDenied` and never reaches the filesystem. The exec layer does not consult policy directly — it trusts the calling tool to have already applied it.
+HTTP activities enforce policy in the `orbit-tools` `fs.*` builtins before any read or modify. Denials return `OrbitError::PolicyDenied` and emit audit events. CLI activities do not call those builtins; they rely on harness delegation plus the configured executor sandbox, currently macOS `sandbox-exec` for supported CLI agents.
 
-This enforcement reaches only the HTTP agent loop. `backend: cli` activities spawn an external CLI agent (Claude Code, Codex CLI, etc.) that owns its own filesystem behavior and does not route through `enforce_fs_policy`. For those activities, Orbit records a `tool_allowlist.harness_delegated` envelope event and trusts the harness; `fsProfile:` is informational, not enforced. See [2_design.md §9](./2_design.md#9-concerns--honest-limitations).
+### 2.5 Exec supervision is not default OS isolation
 
-### 2.5 Sandboxed exec is process supervision, not isolation
-
-`orbit-exec::run_process` spawns a child as a process-group leader, drains stdout/stderr in background threads to prevent pipe-fill deadlocks, installs SIGINT/SIGTERM handlers in the parent, and on timeout or signal sends SIGTERM to the entire process group with a 5 second grace period before SIGKILL. The default `Sandbox` impl is `NoSandbox`; the trait is in place for future kernel-level isolation but is not implemented today.
+`orbit-exec::run_process` spawns a process-group leader, drains stdout/stderr, installs SIGINT/SIGTERM handlers, and on timeout or signal sends SIGTERM to the group with a 5 second grace before SIGKILL. The default `Sandbox` impl remains `NoSandbox`; OS isolation is added by specific executor wrappers, not the default runner.
 
 ---
 
@@ -71,5 +69,6 @@ This enforcement reaches only the HTTP agent loop. `backend: cli` activities spa
 - **[T20260419-0503]** — Enforce `fsProfiles` across runtime and CLI.
 - **[T20260426-0605]** — Add the auditability design folder cross-linked from §3.
 - **[T20260426-0622]** — Add this policy & sandboxing design folder under claude ownership.
+- **[T20260430-23]** — Shorten the policy sandbox design docs while preserving the shipped contract and ADR history.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

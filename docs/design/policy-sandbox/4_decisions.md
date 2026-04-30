@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-28
+**Last updated:** 2026-04-30
 
 This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by ADR number. New entries follow the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -17,8 +17,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** Create `docs/design/policy-sandbox/` as the canonical design folder, with claude as owner. Auditability owns the recording of denials; this folder owns the *semantics* of allow/deny and the *contract* for how spawned processes are supervised.
 
 **Consequences.**
-- Policy and sandboxing decisions now have one ADR log and one glossary.
-- Future enforcement work can cite a feature-owned spec rather than re-deriving rules from code.
+- Policy and sandboxing decisions now have one ADR log, one glossary, and a feature-owned spec to cite.
 - Cost: this folder cross-links into auditability and activity-job, so when those folders change their cross-references must be kept in sync rather than this folder absorbing them.
 
 ## ADR-002 — Policy schema is v2-only with named profiles plus global denies
@@ -30,8 +29,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** Reject `schemaVersion: 1` at load time with an explicit migration message. v2 declares `denyRead`, `denyModify`, and `fsProfiles` and is the only accepted shape. Workspace policies override globals by profile name; global denies accumulate.
 
 **Consequences.**
-- Schema parsing has one supported branch.
-- Profile authoring becomes uniform: a profile is always a `{ read, modify }` declaration; denies are always global.
+- Schema parsing has one supported branch, and profile authoring is uniformly `{ read, modify }` with global denies.
 - Cost: existing v1 policy files require a manual migration; there is no automatic upgrader.
 
 ## ADR-003 — Implicit `unrestricted` profile materializes when an activity omits `fsProfile:`
@@ -43,9 +41,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** When an activity omits `fsProfile:`, the v2 host substitutes the constant `UNRESTRICTED_FS_PROFILE` ("unrestricted") at `tool_context_for_activity`. If the policy does not define a profile of that name, the resolver synthesizes `read: ["./**"]` and `modify: ["./**"]`. Global `denyRead` / `denyModify` rules still apply because they are injected after profile resolution.
 
 **Consequences.**
-- "Unrestricted" is the default, but it is still narrowed by global denies.
-- Policy authors can shadow the implicit fallback by declaring a profile named `unrestricted`, which is the supported way to narrow the default.
-- Audit emission still happens for unrestricted activities, so there is no silent unguarded path.
+- "Unrestricted" remains auditable and narrowed by global denies, while policy authors can shadow it with a real profile.
 - Cost: the word "unrestricted" carries different meaning depending on whether the policy defines a profile of that name, which is a learnable but real source of confusion.
 
 ## ADR-004 — Deny rules inject as negated profile rules with last-match-wins evaluation
@@ -57,8 +53,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** `effective_profile` appends every entry of `denyRead` to the profile's `read` list as `!<rule>` and every entry of `denyModify` to the profile's `modify` list as `!<rule>`. `check_path` walks the resolved list in order and the **last match wins**. There is no separate deny pass.
 
 **Consequences.**
-- Profile rules and deny rules are evaluated in one pass against one list.
-- Deny ordering is deterministic: denies are appended after profile rules, so they always win against an earlier positive match for the same path.
+- Profile rules and deny rules are evaluated in one deterministic pass; appended denies win over earlier positive matches.
 - Cost: a profile author cannot re-allow a globally denied path by ordering, which is the intended safety property but surprises authors who expect a simple allowlist with overrides.
 
 ## ADR-005 — Modify rules must be covered by a read rule in the same profile
@@ -70,8 +65,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** `PolicyDef::validate` rejects any profile whose positive `modify` rule is not covered by a positive `read` rule in the same profile. "Covered" is checked structurally (`rule_covers_path_rule`): exact match, `**`, or a `<prefix>/**` rule that prefixes the modify rule.
 
 **Consequences.**
-- Modify rules cannot exist without a corresponding read rule.
-- The audit story is consistent: every modify implies a prior allowed read for the same path.
+- Modify rules require corresponding read coverage, so read-modify-write audit stories stay consistent.
 - Cost: profile authors who *only* want to allow append-style writes cannot express that without granting a read rule. There is no "write-only" profile shape today.
 
 ## ADR-006 — Tool layer is the policy enforcement point for HTTP-backed activities
@@ -83,10 +77,8 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** Enforcement lives in `orbit-tools::builtin::fs::enforce_fs_policy`. Every fs builtin calls it before the underlying read or modify, and emits `FsCallEvent` through `FsAuditLogger`. The `Sandbox` trait in `orbit-exec` does not consult the policy engine; exec is supervised but not policy-gated. This applies only to `backend: http` activities — `backend: cli` runs spawn an external CLI agent and emit a `tool_allowlist.harness_delegated` event in lieu of enforcement.
 
 **Consequences.**
-- HTTP-backed activities have a single, auditable enforcement seam.
-- Tool authors are responsible for routing fs work through the helper. The contract is small, but it is a discipline rather than a structural invariant.
-- The audit story has one shape — every HTTP-backed fs decision flows through one helper that emits one event family.
-- Cost: CLI-backed activities are entirely unenforced by Orbit; a future tool (or a non-builtin tool inside HTTP) that performs fs work without using the helper is also unguarded. Both gaps are named in [2_design.md §9](./2_design.md#9-concerns--honest-limitations); closing them likely requires a `PolicyAwareFs` trait, an OS-level sandbox under CLI runtimes, or both.
+- HTTP-backed fs decisions have one auditable helper, but tool authors must route work through it.
+- Cost: CLI-backed activities still bypass this helper, and HTTP tools that skip it are also unguarded. Current macOS executors can narrow CLI filesystem writes with `sandbox-exec`, but closing the general gap likely requires a `PolicyAwareFs` trait, broader OS sandboxes, or both.
 
 ## ADR-007 — Children spawn as process-group leaders so orphan subprocesses are reapable
 
@@ -97,8 +89,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** On Unix, every spawned child calls `command.process_group(0)` so the child becomes a process-group leader (PGID = PID). The supervision layer kills the entire group via `killpg` when the child exits, when the parent receives SIGINT/SIGTERM, or when the deadline expires.
 
 **Consequences.**
-- Orphan subprocesses are reaped, so `wait_with_output` no longer hangs.
-- Signal handling can target the whole tree with one syscall.
+- Orphan subprocesses are reaped, and signal handling can target the whole tree with one syscall.
 - Cost: tools that intentionally fork detached helpers (e.g., long-running daemons) cannot do so under orbit-exec without explicitly creating their own process group inside the child.
 
 ## ADR-008 — SIGTERM with 5-second grace, then SIGKILL for the whole group
@@ -110,8 +101,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** `terminate_process_group` sends `SIGTERM` (or the supplied signal) to the group, polls `process_group_is_alive` for `TERMINATION_GRACE_PERIOD = 5 seconds`, and on expiry sends `SIGKILL` to the group plus a direct `child.kill()`/`child.wait()`. stderr is annotated with `process timed out` (deadline path) or `process interrupted by signal SIG…` (parent-signal path).
 
 **Consequences.**
-- Termination is deterministic: at most 5 seconds between intent and SIGKILL.
-- The annotated stderr lets audit consumers distinguish timeout vs. signal vs. clean exit without reading the exit code alone.
+- Termination is deterministic, and annotated stderr distinguishes timeout, signal, and clean-exit paths.
 - Cost: the 5-second constant is global. Activities that need a longer drain (database flush, large I/O cleanup) cannot extend it without code changes.
 
 ## ADR-009 — Signal handler installation is process-global and serialized
@@ -123,8 +113,7 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** `SignalHandlerGuard::install` acquires a `Mutex` from a `OnceLock`, creates a non-blocking pipe, calls `libc::sigaction` for SIGINT and SIGTERM, and stores the previous `sigaction` structs. Drop reverses the steps: restore previous handlers, close the pipe, release the mutex. The handler itself is async-signal-safe (atomic load + 1-byte `write`).
 
 **Consequences.**
-- Concurrent `run_process` calls in the same process serialize on the mutex during install/drop, but the wait loops themselves run concurrently.
-- A panic inside a wait loop still restores prior handlers via Drop.
+- Concurrent `run_process` calls serialize handler install/drop, and panics still restore prior handlers via Drop.
 - Cost: contention on the global mutex limits exec parallelism in a single process. Named as an open question in [3_vision.md §1.11](./3_vision.md#1-open-questions).
 
 ## ADR-010 — `NoSandbox` is the default `Sandbox` impl; real isolation is deferred
@@ -136,54 +125,46 @@ This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by 
 **Decision.** Ship `NoSandbox` as the default and only implementation. Defer kernel-level isolation (bubblewrap, sandbox-exec, container, seccomp) until policy enforcement at the tool layer is judged insufficient and the platform-coverage cost is understood. The trait surface is stable so a future impl can attach without changing the runner.
 
 **Consequences.**
-- The trait surface is stable for a future impl to attach to.
-- Today's safety story is "policy at the tool layer" — explicit and documented, but not OS-enforced.
+- The trait surface is stable for future isolation, while today's generic runner stays explicit about relying on tool-layer policy.
 - Cost: a tool that performs fs work without `enforce_fs_policy` (or a future non-builtin tool) has no exec-level isolation backstop. This is the structural reason §1.1 of [3_vision.md](./3_vision.md) lists real sandboxing as the top open question.
 
 ## ADR-011 — `sandbox-exec` wraps cli-backend agent invocations on macOS
 
 **Status:** Accepted · 2026-04 · [T20260427-51]
 
-**Context.** ADR-006 carved CLI backends out of the policy enforcement seam: `tool_allowlist.harness_delegated` is emitted, but the agent's built-in tools (`claude` `Edit` / `Write` / `Bash`, `codex`'s tools, `gemini`'s tools) execute under the orbit process's filesystem rights. Each agent CLI ships its own native isolation primitive — codex `--sandbox`, gemini `-s`, claude nothing — so the architecture's stated "`orbit-exec` owns sandboxing under an `FsProfile`" guarantee was honored asymmetrically and not honored at all for claude. A prompt-injected claude in a worktree could `Bash(rm -rf ...)` outside its declared `fsProfile` and orbit had no answer.
+**Context.** ADR-006 left CLI backends outside Orbit's tool-layer enforcement: the harness emits `tool_allowlist.harness_delegated`, but Claude/Codex/Gemini built-in tools run with the orbit process's filesystem rights. Provider-native sandboxes were inconsistent (`codex --sandbox`, `gemini -s`, no Claude equivalent), leaving `fsProfile` unenforced for some CLI runs.
 
-**Decision.** Build `orbit-exec::macos_sandbox` as the single declarative seam: compile a `ResolvedFsProfile` to SBPL and wrap the cli invocation in `sandbox-exec -f <profile>`. Apply uniformly to claude, codex, and gemini via a new `spec.sandbox: macos-sandbox-exec` knob on the executor YAML. When orbit-exec is authoritative, neutralize each cli's native sandbox flag (codex pinned to `--sandbox danger-full-access`, gemini's `-s` / `--sandbox` dropped) so the same constraint isn't double-encoded. Default `allow_fallback: false` (fail-closed when `sandbox-exec` is missing). Layering inner CLI flags alongside the outer sandbox (defense-in-depth) is deferred — v1 picks "one source of truth" first.
-
-The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_executor_sandbox` and compiled to SBPL by orbit-engine just before spawn. orbit-core has no direct edge to orbit-exec; orbit-engine already imports orbit-exec, so SBPL compilation lives close to the spawn site.
+**Decision.** Add `orbit-exec::macos_sandbox` as the declarative seam: compile a `ResolvedFsProfile` to SBPL and wrap Claude, Codex, and Gemini invocations with `sandbox-exec -f <profile>` when executor YAML declares `spec.sandbox: macos-sandbox-exec`. When Orbit owns the outer sandbox, neutralize provider-native sandbox flags so there is one filesystem authority. Resolve descriptors in `V2RuntimeHost::resolve_executor_sandbox` and compile SBPL in orbit-engine near the spawn site.
 
 **Consequences.**
-- claude now has OS-enforced filesystem narrowing under macOS — not just in-process gates.
-- All three providers share one declarative source of truth (`FsProfile` → SBPL via orbit-exec); operators read one rule set, not three CLI-specific syntaxes.
-- The `allow_fallback` knob lets operators degrade gracefully when `sandbox-exec` is unavailable, but the safe default is fail-closed.
-- Linux (`bwrap`), Docker, network restriction, and activity-level sandbox overrides are explicitly out of scope for v1; the `ExecutorSandboxKind` enum and orbit-exec module layout leave room for `linux-bwrap` to land alongside.
-- SBPL is Apple-deprecated-but-still-shipping (codex itself uses it). v1 accepts that risk.
+- All three providers share `FsProfile` compiled to SBPL as the macOS filesystem authority, giving Claude OS-enforced narrowing too.
+- `allow_fallback` can degrade gracefully, but the safe default is fail-closed; Linux, Docker, network restriction, and activity-level overrides stay out of scope for v1.
 - Cost: SBPL writes are static text; complex `denyRead` / `denyModify` rule combinations don't always translate cleanly. Simple subtree denials use `subpath`; non-subpath deny globs use SBPL `regex` to avoid over-denying the containing directory. Activities that need precise allow-side glob semantics under sandbox should declare profiles with explicit subpath roots.
 
 ## ADR-012 — Codex state and side roots are narrow sandbox write allowances
 
 **Status:** Accepted · 2026-04 · [T20260428-10]
 
-**Context.** After workflow admission was fixed in [T20260428-8], `orbit run ship T20260428-5` reached the Codex-backed `agent_implement` step, but Codex exited during startup under `sandbox-exec` with `Operation not permitted`. The outer profile allowed task worktree writes, temp/cache writes, and `$HOME/.orbit`, but not Codex's own state directory. Codex initializes state before it reads Orbit's envelope, so the provider could not start. Once Codex state was allowed, the same run still failed because the default policy's workspace `.orbit/**` write deny overrode the Codex `--add-dir` side root that Orbit passed for workflow state, and because the `**/*.env` deny glob collapsed to a repo-wide `subpath` deny.
+**Context.** Codex-backed `agent_implement` reached startup under `sandbox-exec` but failed with `Operation not permitted`: the profile allowed worktree, temp/cache, and `$HOME/.orbit` writes but not Codex state. After that, workflow state still failed because policy denied workspace `.orbit/**` after Orbit passed the same root via Codex `--add-dir`, and `**/*.env` over-denied when compiled as a containing-directory `subpath`.
 
-**Decision.** Keep `sandbox-exec` as the filesystem authority and add two narrow Codex allowances. First, allow provider state writes to `$CODEX_HOME` when set, otherwise `$HOME/.codex`. Second, append Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`) after policy-derived denials. Compile non-subpath deny globs such as `**/*.env` as SBPL `regex` clauses instead of reducing them to their containing directory. Do not grant broad `$HOME` writes and do not disable the outer sandbox.
+**Decision.** Keep `sandbox-exec` authoritative and add narrow Codex allowances: `$CODEX_HOME` or `$HOME/.codex`, plus Codex side-write roots from runtime provider config appended after policy-derived denials. Compile non-subpath deny globs such as `**/*.env` as SBPL `regex` clauses. Do not grant broad `$HOME` writes or disable the outer sandbox.
 
 **Consequences.**
-- Codex-backed `backend: cli` runs can initialize under the macOS sandbox while project writes remain constrained by the resolved `fsProfile`.
-- Operators can relocate Codex state with `CODEX_HOME`, and the compiled profile follows that location.
-- Inherited Orbit subprocesses can persist workflow lifecycle state under the same side roots Codex receives as CLI arguments.
+- Codex-backed `backend: cli` runs can initialize under the macOS sandbox while project writes stay constrained by the resolved `fsProfile`.
+- `CODEX_HOME` relocates state, and inherited Orbit subprocesses can persist workflow state through the same side roots Codex receives.
 - Cost: the Codex state directory and provider side roots are trusted writable state outside ordinary project-content policy, similar to the existing `$HOME/.orbit` allowance for inherited Orbit subprocesses.
 
 ## ADR-013 — Per-provider state-dir allowances are emitted unconditionally for every supported CLI
 
 **Status:** Accepted · 2026-04 · [T20260428-14]
 
-**Context.** ADR-012 fixed Codex CLI startup under `sandbox-exec` by adding `$CODEX_HOME` / `$HOME/.codex` to the SBPL allow set. The same fix was not applied to the other `backend: cli` providers: Claude writes settings/sessions/projects/file-history/todos under `$HOME/.claude` (or `$CLAUDE_CONFIG_DIR`) and Gemini writes state under `$HOME/.gemini` during startup. Both fail with `Operation not permitted` under the same outer profile that ADR-012 unblocked for Codex. The active provider is not threaded through SBPL compilation — the profile is built from `ResolvedFsProfile` plus host env, with no provider parameter — so adding per-provider conditionals would require either threading provider through the compile API or branching at the engine layer.
+**Context.** ADR-012 unblocked Codex state writes, but Claude writes startup state under `$HOME/.claude` or `$CLAUDE_CONFIG_DIR`, and Gemini writes under `$HOME/.gemini`. SBPL compilation receives `ResolvedFsProfile` plus host env, not the active provider, so provider-conditional allow clauses would require new plumbing.
 
-**Decision.** Extend the macOS sandbox state-dir allowance to all three supported CLI providers and emit allows for `$CODEX_HOME` / `$HOME/.codex`, `$CLAUDE_CONFIG_DIR` / `$HOME/.claude`, and `$HOME/.gemini` unconditionally regardless of which provider is actually running. Honor `CLAUDE_CONFIG_DIR` (documented by Claude Code) as the env override for the Claude state dir; Gemini does not document a stable env override, so only the hardcoded fallback is honored. Keep `append_provider_side_write_roots` Codex-only because Claude and Gemini have no `--add-dir`-equivalent CLI surface, and document that constraint in the function so a future provider that does ship one is generalized rather than branched.
+**Decision.** Emit state-dir allows for all supported CLI providers on every macOS sandbox profile: `$CODEX_HOME` / `$HOME/.codex`, `$CLAUDE_CONFIG_DIR` / `$HOME/.claude`, and `$HOME/.gemini`. Keep `append_provider_side_write_roots` Codex-only because Claude and Gemini have no `--add-dir` equivalent; document that a future provider with such a surface should generalize the branch.
 
 **Consequences.**
-- Claude- and Gemini-backed `agent_loop` activities reach past CLI startup under `macos-sandbox-exec` with the same defense story Codex has.
-- The compiled profile has three narrow per-provider state-dir allowances instead of one. None of those allowances widen the attack surface meaningfully — they target documented per-CLI state roots, not broad `$HOME` writes — and emitting all three avoids per-provider conditional compilation that would otherwise need to thread provider through `compile_macos_sandbox_profile`.
-- The runtime continues to thread Codex's `writable_dirs_json` into the profile via `append_provider_side_write_roots`. Adding a new provider that ships a side-root surface should generalize that branch rather than duplicate it.
+- Claude and Gemini reach past CLI startup under `macos-sandbox-exec` with the same state-dir defense story as Codex.
+- Emitting all three narrow state-dir allowances avoids provider plumbing; Codex side roots remain a separate branch until another provider ships an equivalent surface.
 - Cost: every macOS sandbox profile carries three state-dir allow clauses regardless of which provider runs. If a future provider's state dir overlaps with another sensitive root, this design needs revisiting.
 
 ---
@@ -199,5 +180,6 @@ The sandbox descriptor is resolved by orbit-core's `V2RuntimeHost::resolve_execu
 - **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS with inner-flag neutralization for codex/gemini.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 - **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude and Gemini, and document why side-write roots remain Codex-only.
+- **[T20260430-23]** — Shorten the policy sandbox design docs while preserving the shipped contract and ADR history.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
