@@ -805,6 +805,7 @@ function setActiveTab(raw, opts = {}) {
   for (const pane of document.querySelectorAll(".tab-pane")) {
     pane.classList.toggle("active", pane.dataset.tab === top);
   }
+  if (top === "tasks") requestAnimationFrame(fitLogPanelToViewport);
 
   const indicator = $("tab-indicator") || el("div", {id: "tab-indicator", class: "tab-indicator"});
   if (!indicator.parentNode) document.querySelector(".tabs").appendChild(indicator);
@@ -2047,6 +2048,7 @@ async function refreshDashboard() {
   }
   if (btn) btn.disabled = false;
   isRefreshing = false;
+  if (activeTab === "tasks") fitLogPanelToViewport();
   
   $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,scoreboard,diagnostics/{metrics,friction,denials?since|kind|profile|agent}}`;
 }
@@ -2064,6 +2066,26 @@ let logBuffered = [];
 let logFollowTail = true;
 let logRows = []; // Keep track to enforce max 200 after 250 limit
 let activeLogFilters = new Set(["all"]);
+let logPanelResizeWired = false;
+
+function fitLogPanelToViewport() {
+  const panel = $("log-panel");
+  if (!panel) return;
+  const top = panel.getBoundingClientRect().top;
+  const available = Math.floor(window.innerHeight - top - 24);
+  if (available <= 0) return;
+  panel.style.setProperty("--log-panel-height", `${available}px`);
+}
+
+function wireLogPanelResize() {
+  if (logPanelResizeWired) return;
+  logPanelResizeWired = true;
+  const scheduleFit = () => requestAnimationFrame(fitLogPanelToViewport);
+  window.addEventListener("resize", scheduleFit);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", scheduleFit);
+  }
+}
 
 function getLogClass(level, code) {
   if (code === "DENY") return "deny";
@@ -2105,6 +2127,8 @@ function renderLogEvent(ev, isFresh) {
 }
 
 function initLogTail() {
+  wireLogPanelResize();
+  fitLogPanelToViewport();
   fetchJson("/api/log?limit=50").then((events) => {
     const inner = $("logInner");
     if (!inner) return;
