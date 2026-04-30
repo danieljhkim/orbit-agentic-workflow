@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-26 (removed public deviation verb, [T20260426-0603])
+**Last updated:** 2026-04-30 (folded implementation status into numbered docs, [T20260430-21])
 
-This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose, [implementation_status.md](./implementation_status.md) for the active gap ledger, and [3_vision.md](./3_vision.md) for forward-looking questions.
+This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
 ---
 
@@ -147,6 +147,8 @@ So the codebase already contains the richer verifier surface, but the Groundhog 
 
 ## 7. Concerns & Honest Limitations
 
+This section is the active gap ledger. Keep shipped behavior in the mechanism sections above, and keep cleanup, drift, and decision pressure here until a task or ADR resolves them.
+
 ### 7.1 Persistence still reflects older Groundhog vocabulary
 
 The current runtime persists `Chronicle` + `groundhog/state.json`, not a cleanly separated `GroundhogMemory` + `GroundhogRun`. That is serviceable, but it mixes prompt-facing and audit concerns more than the intended v1 shape.
@@ -189,5 +191,7 @@ The runner can report success, blocked status, and checkpoint counts through its
 - **[T20260420-0509-4]** — Add Groundhog workspace snapshots and scratch-branch rewind mechanics.
 - **[T20260420-0510]** — Add the shared runtime checkpoint verifier.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260426-0603]** — Remove the public Groundhog checkpoint deviation verb from the tool surface.
+- **[T20260430-21]** — Shorten Groundhog design docs and fold the implementation status ledger into numbered docs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
