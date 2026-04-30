@@ -1,12 +1,18 @@
 # Orbit: Graph-Aware Parallel Execution For Coding Agents
 
+<p align="center">
+  <img src="docs/assets/orbit-dashboard-hero.gif" alt="Orbit dashboard: parallel coding agents executing tasks with a live audit log" width="900" />
+</p>
+
+<p align="center">
+  <em>The Orbit dashboard (<code>orbit web serve</code>) — task fleet, live audit log, per-agent scoreboard.</em>
+</p>
+
 **Orbit is a self-hosted runtime for running fleets of coding agents against your team's real codebase** — with an auditable trail, a code-aware graph, and explicit locks that keep parallel agent sessions from stepping on each other.
 
-It is built for the staff engineer or platform lead at a team of roughly 10–50 engineers who has decided that LLM-driven automation (PR review, refactor passes, backlog execution, cross-cutting migrations) is worth running at team scale and wants infrastructure they can actually rely on.
+It targets the gap between single-developer tooling (Claude Code, Cursor, Aider, Codex CLI) and enterprise agent platforms: running LLM-driven work — PR review, refactor passes, backlog execution, cross-cutting migrations — at team scale, on your own infrastructure, with the audit trail and parallel-execution safety that single-user tools don't try to provide.
 
-If you are a solo developer augmenting personal workflow, Claude Code / Cursor / Aider / Codex CLI already serve you well. If you are an enterprise procurement buyer, Orbit is the wrong product. Orbit sits in the middle — the team-scale space where individual-developer tooling breaks down and enterprise platforms are overkill.
-
-The full positioning — who Orbit is for, what it refuses to become, and the decision lens we use when design debates get stuck — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it if you're evaluating Orbit or contributing.
+The full positioning — what Orbit is for, what it refuses to become, and the decision lens we use when design debates get stuck — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it before contributing or evaluating fit.
 
 ---
 
@@ -41,7 +47,7 @@ The substrate also hosts work that is not yet a front-door product surface but s
 
 ## Non-negotiables
 
-Tablestakes for the primary audience. Orbit will not ship anything that breaks them.
+Tablestakes for what Orbit is for. Orbit will not ship anything that breaks them.
 
 - **Self-hostable, no cloud dependency.** Single binary, runs on a laptop, in a container, in a CI runner, behind a firewall. Orbit never phones home.
 - **Bring-your-own-credentials.** Your Anthropic / OpenAI / local-model keys, never Orbit's. Orbit is a pass-through.
