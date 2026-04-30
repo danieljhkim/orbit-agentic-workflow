@@ -401,6 +401,7 @@ fn synthetic_job_using_ref(target_name: &str) -> JobV2 {
                 default_input: None,
                 timeout_seconds: 0,
                 session: Some("reviewer".to_string()),
+                role: None,
             }),
         }],
     }
@@ -418,6 +419,7 @@ fn pipeline_with_reviewer_loop() -> JobV2 {
             default_input: None,
             timeout_seconds: 0,
             session: Some("reviewer".to_string()),
+            role: None,
         }),
     };
     JobV2 {
@@ -487,5 +489,6 @@ fn _type_gate() {
         backend: Backend::Http,
         provider: Provider::Claude,
         wall_clock_timeout_seconds: 60,
+        role: None,
     };
 }

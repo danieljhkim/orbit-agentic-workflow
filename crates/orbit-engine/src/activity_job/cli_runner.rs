@@ -1518,6 +1518,7 @@ mod tests {
             backend: Backend::Cli,
             provider: Provider::Codex,
             wall_clock_timeout_seconds: timeout.as_secs(),
+            role: None,
         }
     }
 
@@ -1537,6 +1538,7 @@ mod tests {
             backend: Backend::Cli,
             provider,
             wall_clock_timeout_seconds: timeout.as_secs(),
+            role: None,
         }
     }
 
