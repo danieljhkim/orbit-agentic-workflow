@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-05 (ADR-037 accepted friction backlog admission)
+**Last updated:** 2026-05-05 (ADR-038 accepted stale gate asset refresh)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -498,6 +498,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - The `excluded` array remains scoped to context-lock conflicts; it reports accepted friction tasks only when they are otherwise admitted backlog candidates and overlap active locks.
 - Cost: reviewers must read friction eligibility as a status rule, not a task-type rule.
 
+## ADR-038 — Stale gate defaults refresh before catalog use
+
+**Status:** Accepted · 2026-05 · [T20260505-3]
+
+**Context.** Workspace-local job assets can outlive newer embedded defaults and still win catalog precedence. A legacy `task_gate_pipeline` override that depended on reservation TTL for normal cleanup could therefore mask ADR-035's explicit release step and keep overlapping bundles blocked after child runs had already finished.
+
+**Decision.** Treat the embedded `task_gate_pipeline` as canonical for the reservation-release contract during default seeding and implicit initialization. Known legacy TTL-only gate assets are refreshed in place from the canonical asset; customized gate overrides that still lack `release_locks` fail with a stale-override error so operators can update or remove them deliberately.
+
+**Consequences.**
+- Existing workspaces seeded with the old default converge to terminal reservation release without manual `.orbit/resources` edits.
+- Custom gate overrides remain possible only when they preserve explicit reservation release.
+- Cost: a customized TTL-only gate override becomes a startup/configuration error instead of continuing to run with the old behavior.
+
 ---
 
 ## Task References
@@ -546,5 +559,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260430-30]** — Make `ship-auto` default text output human-readable while preserving JSON fields.
 - **[T20260430-31]** — Require populated execution summaries before opening task PRs.
 - **[T20260505-2]** — Admit accepted backlog friction reports in automatic backlog listing.
+- **[T20260505-3]** — Refresh legacy TTL-only task-gate resource assets or report stale custom overrides.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -8,7 +8,7 @@ use orbit_store::{global_executor_def_store, global_policy_def_store};
 use crate::OrbitRuntime;
 use crate::command::activity::seed_default_activities;
 use crate::command::executor::seed_default_executors;
-use crate::command::job::seed_default_jobs;
+use crate::command::job::{refresh_stale_default_job_assets, seed_default_jobs};
 use crate::command::policy::seed_default_policies;
 use crate::command::skill::{
     default_skill_ids, is_default_skill_file_for_root, seed_default_skills,
@@ -80,7 +80,8 @@ pub(crate) fn ensure_orbit_root_initialized(
             ..Default::default()
         },
     )?;
-    prepare_workspace_root_layout(workspace_root)?;
+    let workspace_layout = prepare_workspace_root_layout(workspace_root)?;
+    refresh_stale_default_job_assets(&workspace_layout.jobs_dir)?;
     if RuntimeConfig::load_layered(global_root, global_root)?.scoring_enabled {
         seed_scoreboard_templates(workspace_root)?;
     }
@@ -205,9 +206,10 @@ pub fn init_workspace_at_root(
         )?;
         refreshed_skill_files = global_result.refreshed_skill_files;
         created_skills_symlink = global_result.created_skills_symlink;
+        let refreshed_workspace_jobs = refresh_stale_default_job_assets(&layout.jobs_dir)?;
         (
             global_result.refreshed_default_activities,
-            global_result.refreshed_default_jobs,
+            global_result.refreshed_default_jobs + refreshed_workspace_jobs,
             global_result.refreshed_default_executors,
             global_result.refreshed_default_policies,
             RuntimeConfig::load_layered(&global_root, &orbit_root)?.scoring_enabled,
@@ -722,6 +724,26 @@ mod tests {
     }
 
     #[test]
+    fn implicit_init_refreshes_stale_workspace_task_gate_pipeline() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        let global_root = global.path().join(".orbit");
+        let workspace_root = workspace.path().join(".orbit");
+        let workspace_job = workspace_root
+            .join("resources")
+            .join("jobs")
+            .join("task_gate_pipeline.yaml");
+        write_legacy_ttl_task_gate_pipeline(&workspace_job);
+
+        ensure_orbit_root_initialized(&global_root, &workspace_root)
+            .expect("implicit init refreshes workspace resources");
+
+        let contents = fs::read_to_string(&workspace_job).expect("read refreshed job");
+        assert!(contents.contains("release_reservation"));
+        assert!(contents.contains("target: activity:release_locks"));
+    }
+
+    #[test]
     fn global_init_writes_role_settings_to_config_toml() {
         let _guard = ENV_LOCK.lock().expect("lock env");
         let home = tempdir().expect("home tempdir");
@@ -886,6 +908,40 @@ mod tests {
             path.display()
         );
         assert!(path.join("SKILL.md").exists());
+    }
+
+    fn write_legacy_ttl_task_gate_pipeline(path: &Path) {
+        let yaml = r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: task_gate_pipeline
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 10
+  steps:
+    - id: wait_for_window
+      loop:
+        max_iterations: 120
+        break_when: "{{ steps.reserve.output.reserved }} == true"
+        steps:
+          - id: reserve
+            target: activity:reserve_locks
+          - id: sleep_if_conflict
+            when: "{{ steps.reserve.output.reserved }} == false"
+            target: activity:sleep
+    - id: starvation_check
+      when: "{{ steps.reserve.output.reserved }} == false"
+      target: activity:gate_starvation_fail
+    - id: dispatch_pr
+      when: "{{ input.mode }} == pr && {{ steps.reserve.output.reserved }} == true"
+      target: activity:invoke_and_wait
+    - id: dispatch_local
+      when: "{{ input.mode }} == local && {{ steps.reserve.output.reserved }} == true"
+      target: activity:invoke_and_wait
+"#;
+        fs::create_dir_all(path.parent().expect("job path has parent")).expect("create job dir");
+        fs::write(path, yaml).expect("write legacy task gate pipeline");
     }
 
     fn restore_home(previous_home: Option<std::ffi::OsString>) {
