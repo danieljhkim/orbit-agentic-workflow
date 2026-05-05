@@ -1553,6 +1553,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+ "tower",
 ]
 
 [[package]]

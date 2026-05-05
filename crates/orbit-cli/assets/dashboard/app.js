@@ -25,6 +25,7 @@ const AUDIT_LIMIT = positiveIntParam("audit", 50);
 const RUN_EVENTS_LIMIT = positiveIntParam("events", 100);
 
 const AUDIT_STATUSES = ["success", "failure", "denied"];
+const CANCELLABLE_RUN_STATES = new Set(["pending", "running"]);
 
 const $ = (id) => document.getElementById(id);
 
@@ -112,6 +113,64 @@ function fetchJson(path) {
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
       return res.json();
     });
+}
+
+function postJson(path) {
+  return fetch(path, {
+    method: "POST",
+    headers: { accept: "application/json" },
+  }).then(async (res) => {
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new Error(body.error || `${path}: HTTP ${res.status}`);
+    }
+    return body;
+  });
+}
+
+function runIsCancellable(run) {
+  return CANCELLABLE_RUN_STATES.has(run && run.state);
+}
+
+function buildCancelRunButton(run, host) {
+  const btn = el("button", {
+    class: "action reject run-cancel",
+    text: "cancel",
+    title: `Cancel ${run.run_id}`,
+  });
+  btn.disabled = !runIsCancellable(run);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cancelRun(run.run_id, btn, host);
+  });
+  return btn;
+}
+
+async function cancelRun(runId, btn, host) {
+  if (!runId) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>cancel`;
+  if (host) {
+    for (const node of host.querySelectorAll(".action-error")) node.remove();
+  }
+  try {
+    await postJson(`/api/runs/${encodeURIComponent(runId)}/cancel`);
+    await Promise.all([
+      fetchAndRenderRuns(),
+      activeRunId === runId ? fetchAndRenderRunDetail() : Promise.resolve(),
+      activeRunId === runId ? fetchAndRenderRunEvents() : Promise.resolve(),
+    ]);
+  } catch (e) {
+    if (host) {
+      host.appendChild(el("div", { class: "action-error", text: e.message || "cancel failed" }));
+    }
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 }
 
 function syncNodes(container, newNodesArr) {
@@ -556,6 +615,7 @@ function renderRuns(runs) {
     el("span", { text: "run id" }),
     el("span", { text: "duration", style: { textAlign: "right" } }),
     el("span", { text: "state", style: { textAlign: "right" } }),
+    el("span", { text: "" }),
   ]);
   header.dataset.key = "runs-header";
   header.dataset.hash = "header";
@@ -580,6 +640,7 @@ function renderRuns(runs) {
       runIdSpan,
       el("span", { class: "duration", text: fmtDuration(r.duration_ms) }),
       el("span", { class: "state" }, [stateCell(r.state)]),
+      el("span", { class: "run-actions" }, runIsCancellable(r) ? [buildCancelRunButton(r, body)] : []),
     ]);
     row.dataset.key = `run-${r.run_id}`;
     row.dataset.hash = `${r.run_id}-${ts}-${r.duration_ms}-${r.state}`;
@@ -1138,42 +1199,16 @@ function activeRefreshJobs() {
       renderRunDetailEmpty("No run selected.");
       return jobs;
     }
-    jobs.push(
-      fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
-        activeRunDetail = data;
-        renderRunDetailMeta();
-        renderRunKnowledge();
-        renderRunGantt();
-        renderRunSteps();
-      }).catch((e) => {
-        renderRunDetailEmpty(`Run not found: ${activeRunId}`);
-        throw e;
-      }),
-    );
+    jobs.push(fetchAndRenderRunDetail());
     // Events power both the Events sub-tab and the Gantt's retry markers, so
     // they're fetched on every run-detail refresh regardless of which sub-tab
     // is active.
-    jobs.push(
-      fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
-        activeRunEvents = events;
-        renderRunEvents();
-        renderRunGantt();
-      }).catch(() => {
-        // Missing v2 events file is non-fatal — run detail still renders.
-        activeRunEvents = [];
-        renderRunGantt();
-      }),
-    );
+    jobs.push(fetchAndRenderRunEvents());
     return jobs;
   }
 
   if (activeDiagSubtab === "runs") {
-    jobs.push(
-      fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
-        lastRuns = runs;
-        renderRuns(runs);
-      }),
-    );
+    jobs.push(fetchAndRenderRuns());
     return jobs;
   }
 
@@ -1194,6 +1229,40 @@ function activeRefreshJobs() {
     }),
   );
   return jobs;
+}
+
+function fetchAndRenderRuns() {
+  return fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
+    lastRuns = runs;
+    renderRuns(runs);
+  });
+}
+
+function fetchAndRenderRunDetail() {
+  if (!activeRunId) return Promise.resolve();
+  return fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
+    activeRunDetail = data;
+    renderRunDetailMeta();
+    renderRunKnowledge();
+    renderRunGantt();
+    renderRunSteps();
+  }).catch((e) => {
+    renderRunDetailEmpty(`Run not found: ${activeRunId}`);
+    throw e;
+  });
+}
+
+function fetchAndRenderRunEvents() {
+  if (!activeRunId) return Promise.resolve();
+  return fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
+    activeRunEvents = events;
+    renderRunEvents();
+    renderRunGantt();
+  }).catch(() => {
+    // Missing v2 events file is non-fatal — run detail still renders.
+    activeRunEvents = [];
+    renderRunGantt();
+  });
 }
 
 function fetchAndRenderAudit() {
@@ -1657,7 +1726,9 @@ function renderRunDetailMeta() {
   const wrap = el("div");
   const back = el("button", { class: "back-action", text: "← back to runs" });
   back.addEventListener("click", () => setActiveTab("diagnostics/runs"));
-  wrap.appendChild(el("div", { style: { padding: "8px 16px 0 16px" } }, [back]));
+  const actions = el("div", { class: "run-detail-actions" }, [back]);
+  if (runIsCancellable(run)) actions.appendChild(buildCancelRunButton(run, wrap));
+  wrap.appendChild(actions);
   wrap.appendChild(grid);
   syncNodes(meta, [wrap]);
 }

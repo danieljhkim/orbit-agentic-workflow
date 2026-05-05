@@ -44,6 +44,7 @@
         --state-pending: #f59e0b;
         --state-failed: #ef4444;
         --state-error: #ef4444;
+        --state-cancelled: #f87171;
         --state-disabled: #52525b;
       }
       
@@ -684,7 +685,7 @@
       
       .runs-row {
         display: grid;
-        grid-template-columns: 80px 1fr minmax(100px, 0.6fr) 70px 80px;
+        grid-template-columns: 80px 1fr minmax(100px, 0.6fr) 70px 80px 72px;
         gap: 12px;
         padding: 8px 16px;
         font-family: var(--font-mono);
@@ -710,6 +711,17 @@
       .runs-row .run-id:hover { color: var(--accent); }
       .runs-row .duration { color: var(--fg-dim); text-align: right; }
       .runs-row .state { text-align: right; }
+      .runs-row .run-actions {
+        display: flex;
+        justify-content: flex-end;
+        min-height: 26px;
+      }
+      .runs-row .run-actions .action {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        padding: 4px 8px;
+        border-radius: 2px;
+      }
       .runs-row.runs-header {
         color: var(--fg-dim);
         font-size: 10px;
@@ -1009,6 +1021,14 @@
       .back-action:hover {
         color: var(--fg);
         border-color: var(--fg-dim);
+      }
+
+      .run-detail-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px 0 16px;
+        flex-wrap: wrap;
       }
       
       @keyframes highlight-changed {
