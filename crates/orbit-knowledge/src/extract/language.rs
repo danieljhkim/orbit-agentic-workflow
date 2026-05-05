@@ -13,6 +13,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     C,
+    CSharp,
     Rust,
     Python,
     Go,
@@ -28,6 +29,7 @@ impl Language {
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
             "c" | "h" => Some(Self::C),
+            "cs" => Some(Self::CSharp),
             "rs" => Some(Self::Rust),
             "py" => Some(Self::Python),
             "go" => Some(Self::Go),
@@ -46,6 +48,7 @@ impl Language {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::C => "c",
+            Self::CSharp => "csharp",
             Self::Rust => "rust",
             Self::Python => "python",
             Self::Go => "go",
@@ -137,6 +140,10 @@ mod tests {
         assert_eq!(FileKind::from_extension("c"), FileKind::Code(Language::C));
         assert_eq!(FileKind::from_extension("h"), FileKind::Code(Language::C));
         assert_eq!(
+            FileKind::from_extension("cs"),
+            FileKind::Code(Language::CSharp)
+        );
+        assert_eq!(
             FileKind::from_extension("rs"),
             FileKind::Code(Language::Rust)
         );
@@ -205,6 +212,7 @@ mod tests {
         assert_eq!(FileKind::from_extension("tsx").as_str(), "tsx");
         assert_eq!(FileKind::from_extension("kt").as_str(), "kotlin");
         assert_eq!(FileKind::from_extension("h").as_str(), "c");
+        assert_eq!(FileKind::from_extension("cs").as_str(), "csharp");
         assert_eq!(FileKind::from_extension("rb").as_str(), "ruby");
     }
 
@@ -250,6 +258,8 @@ mod tests {
 
     #[test]
     fn from_extension_returns_unknown_for_unrecognized() {
+        assert_eq!(FileKind::from_extension("csx"), FileKind::Unknown);
+        assert_eq!(FileKind::from_extension("cshtml"), FileKind::Unknown);
         assert_eq!(FileKind::from_extension("xyz"), FileKind::Unknown);
         assert_eq!(FileKind::from_extension(""), FileKind::Unknown);
     }

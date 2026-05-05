@@ -900,6 +900,13 @@ mod tests {
             leaf_kind_to_str(&LeafKind::SingletonClass),
             "singleton_class"
         );
+        assert_eq!(leaf_kind_to_str(&LeafKind::Namespace), "namespace");
+        assert_eq!(leaf_kind_to_str(&LeafKind::Record), "record");
+        assert_eq!(leaf_kind_to_str(&LeafKind::Interface), "interface");
+        assert_eq!(leaf_kind_to_str(&LeafKind::Property), "property");
+        assert_eq!(leaf_kind_to_str(&LeafKind::Field), "field");
+        assert_eq!(leaf_kind_to_str(&LeafKind::Event), "event");
+        assert_eq!(leaf_kind_to_str(&LeafKind::Delegate), "delegate");
         assert_eq!(leaf_kind_to_str(&LeafKind::Constant), "constant");
         assert_eq!(leaf_kind_to_str(&LeafKind::Global), "global");
         assert_eq!(leaf_kind_to_str(&LeafKind::Macro), "macro");

@@ -12,6 +12,7 @@
 mod c;
 mod common;
 mod config;
+mod csharp;
 mod go;
 mod java;
 mod javascript;
@@ -32,6 +33,7 @@ pub use language::{ConfigFormat, DocFormat, FileKind, Language, TableFormat};
 
 use c::CExtractor;
 use config::ConfigExtractor;
+use csharp::CSharpExtractor;
 use go::GoExtractor;
 use java::JavaExtractor;
 use javascript::JavaScriptExtractor;
@@ -64,6 +66,7 @@ impl ExtractorRegistry {
         Self {
             extractors: vec![
                 Box::new(CExtractor),
+                Box::new(CSharpExtractor),
                 Box::new(RustExtractor),
                 Box::new(PythonExtractor),
                 Box::new(RubyExtractor),
