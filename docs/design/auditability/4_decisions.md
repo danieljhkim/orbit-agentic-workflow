@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (T20260430-20)
+**Last updated:** 2026-05-05 (T20260505-6)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -236,6 +236,18 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Local review feedback earns immediate task-review credit while synced PR feedback remains a separate PR metric.
 - Cost: review productivity now has two counters, and aggregate views must label them clearly rather than adding them blindly.
 
+## ADR-020 — Command-audit execution ids are process-disambiguated
+
+**Status:** Accepted · 2026-05 · [T20260505-6]
+
+**Context.** Timestamp-only command-audit execution ids collided when concurrent `orbit tool run orbit.task.show` processes in one workspace generated ids at the same effective clock tick.
+
+**Decision.** Generate command-audit execution ids through one shared helper that combines a stable prefix, wall-clock nanoseconds, process id, and a per-process atomic sequence while keeping the SQLite unique index authoritative.
+
+**Consequences.**
+- Parallel CLI and runtime audit producers get deterministic collision resistance without weakening uniqueness constraints.
+- Cost: execution ids are longer and less visually compact than the old `exec-<nanos>` shape.
+
 ---
 
 ## Task References
@@ -263,5 +275,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260430-4]** — Count local task-review score by review-thread creations, not replies, and rename the task-review summary field to `threads`.
 - **[T20260430-5]** — Tighten task and PR review-message scoring so only exact configured orchestrator/helper model identities score; typo-prefixed labels are ignored.
 - **[T20260430-20]** — Shorten the auditability docs while preserving required guarantees.
+- **[T20260505-6]** — Replace timestamp-only command-audit execution ids with process-disambiguated generated ids for parallel tool runs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

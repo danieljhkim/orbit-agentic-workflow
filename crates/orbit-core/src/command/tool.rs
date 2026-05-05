@@ -3,7 +3,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use orbit_common::types::{
-    AuditEventStatus, OrbitError, OrbitEvent, Role, StoredTool, ToolParam,
+    AuditEventStatus, OrbitError, OrbitEvent, Role, StoredTool, ToolParam, audit_execution_id,
     normalize_agent_family_for_model, normalize_optional_attribution_label,
 };
 use orbit_store::AuditEventInsertParams;
@@ -171,13 +171,7 @@ impl OrbitRuntime {
         };
 
         let params = AuditEventInsertParams {
-            execution_id: format!(
-                "exec-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0)
-            ),
+            execution_id: audit_execution_id("exec"),
             command: "tool".to_string(),
             subcommand: Some(entry_point.audit_subcommand().to_string()),
             tool_name: Some(name.to_string()),
@@ -643,8 +637,11 @@ impl OrbitRuntime {
 #[cfg(test)]
 mod audit_tests {
     use super::*;
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Barrier, Mutex, MutexGuard, OnceLock};
+    use std::thread;
+
     use serde_json::json;
-    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     /// Serializes any test that mutates `ORBIT_AGENT_*` env vars or asserts on
     /// audit rows whose `role` depends on env-var precedence. Without this
@@ -798,6 +795,51 @@ mod audit_tests {
             .expect("list audit events");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].subcommand.as_deref(), Some("run"));
+    }
+
+    #[test]
+    fn concurrent_tool_dispatch_writes_distinct_execution_ids() {
+        let _g = env_guard();
+        let runtime = Arc::new(fresh_runtime());
+        let workers = 8;
+        let barrier = Arc::new(Barrier::new(workers));
+
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let runtime = Arc::clone(&runtime);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    runtime
+                        .execute_tool_command_dispatch(
+                            "orbit.task.search",
+                            json!({ "query": "anything", "model": "gpt-5.5" }),
+                            None,
+                            None,
+                            ToolEntryPoint::Cli,
+                        )
+                        .expect("dispatch ok");
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().expect("worker joined");
+        }
+
+        let events = runtime
+            .list_audit_events(
+                None,
+                Some("orbit.task.search".to_string()),
+                None,
+                None,
+                workers,
+            )
+            .expect("list audit events");
+        let execution_ids: BTreeSet<_> = events.iter().map(|event| &event.execution_id).collect();
+
+        assert_eq!(events.len(), workers);
+        assert_eq!(execution_ids.len(), workers);
     }
 
     #[test]

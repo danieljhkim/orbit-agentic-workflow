@@ -62,7 +62,7 @@ pub use agent_pair::{
     normalize_agent_family_for_model, resolve_agent_model_pair,
 };
 pub use audit::Audit;
-pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats};
+pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats, audit_execution_id};
 pub use duel::{
     Ambiguity, ArbiterVerdict, Cost, Decision, DuelRun, EfficiencyMetrics, ImplementerStats,
     Outcome, PerCommentVerdict, PlannerSlot, PlanningDuelRun, PlanningEfficiency, PlanningOutcome,

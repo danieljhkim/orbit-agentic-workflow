@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use orbit_common::types::{normalize_agent_family_for_model, normalize_optional_attribution_label};
+use orbit_common::types::{
+    audit_execution_id, normalize_agent_family_for_model, normalize_optional_attribution_label,
+};
 use orbit_core::command::tool::take_tool_audit_recorded;
 use orbit_core::{
     AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime, redact_sensitive_env_text,
@@ -46,14 +48,9 @@ pub struct AuditGuard<'a> {
 
 impl<'a> AuditGuard<'a> {
     pub fn new(runtime: &'a OrbitRuntime, meta: CommandMeta) -> Self {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-
         Self {
             runtime,
-            execution_id: format!("exec-{nanos}"),
+            execution_id: audit_execution_id("exec"),
             meta,
             start: Instant::now(),
             status: AuditEventStatus::Failure,

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::{Args, Subcommand};
-use orbit_common::types::{AuditEventStatus, ToolSchema};
+use orbit_common::types::{AuditEventStatus, ToolSchema, audit_execution_id};
 use orbit_core::command::tool::{ToolEntryPoint, audit_role_label};
 use orbit_core::{AuditEventInsertParams, OrbitError, OrbitRuntime, redact_sensitive_env_text};
 use orbit_mcp::McpHost;
@@ -215,13 +215,7 @@ fn record_mcp_preflight_failure(
         .unwrap_or_else(|_| ".".to_string());
 
     let params = AuditEventInsertParams {
-        execution_id: format!(
-            "exec-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ),
+        execution_id: audit_execution_id("exec"),
         command: "tool".to_string(),
         subcommand: Some(ToolEntryPoint::Mcp.audit_subcommand().to_string()),
         tool_name: Some(name.to_string()),

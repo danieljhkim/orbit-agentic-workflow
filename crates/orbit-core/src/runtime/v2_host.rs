@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use orbit_common::types::activity_job::AgentRole;
 use orbit_common::types::{
     AuditEventStatus, ExecutorSandboxKind, ExecutorType, ResolvedFsProfile, Role, TaskStatus,
-    TaskType, UNRESTRICTED_FS_PROFILE, prune_missing_context_files,
+    TaskType, UNRESTRICTED_FS_PROFILE, audit_execution_id, prune_missing_context_files,
 };
 use orbit_common::types::{InvocationTrace, Task};
 use orbit_common::utility::path::workspace_relative_paths_overlap;
@@ -708,13 +708,7 @@ impl V2RuntimeHost for OrbitRuntime {
                     "max_wait_seconds": max_wait_seconds,
                 });
 
-                let execution_id = format!(
-                    "audit-gate-starvation-{}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|duration| duration.as_nanos())
-                        .unwrap_or(0)
-                );
+                let execution_id = audit_execution_id("audit-gate-starvation");
                 let working_directory = self.paths().repo_root.to_string_lossy().into_owned();
                 self.record_audit_event(&AuditEventInsertParams {
                     execution_id,

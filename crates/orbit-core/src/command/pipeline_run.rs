@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use orbit_common::types::{
     AuditEventStatus, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
-    PipelineState,
+    PipelineState, audit_execution_id,
 };
 use orbit_store::{AuditEventInsertParams, JobRunStepParams, TaskReservationReleaseReason};
 use serde::Serialize;
@@ -483,10 +483,7 @@ impl OrbitRuntime {
         let arguments_json = serde_json::to_string(&arguments).map_err(|error| {
             OrbitError::Store(format!("serialize pipeline audit args: {error}"))
         })?;
-        let execution_id = format!(
-            "exec-{}",
-            Utc::now().timestamp_nanos_opt().unwrap_or_default()
-        );
+        let execution_id = audit_execution_id("exec");
         self.record_audit_event(&AuditEventInsertParams {
             execution_id,
             command: "tool".to_string(),

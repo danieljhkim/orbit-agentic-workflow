@@ -1,8 +1,29 @@
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+static AUDIT_EXECUTION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Generate a command-audit execution id that stays unique for concurrent
+/// processes on clocks with coarser-than-nanosecond resolution.
+pub fn audit_execution_id(prefix: &str) -> String {
+    let prefix = if prefix.trim().is_empty() {
+        "exec"
+    } else {
+        prefix.trim()
+    };
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let sequence = AUDIT_EXECUTION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{prefix}-{nanos}-{pid}-{sequence}")
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
@@ -92,4 +113,41 @@ pub struct AuditStats {
     pub avg_duration_ms: f64,
     pub p95_duration_ms: i64,
     pub max_duration_ms: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    #[test]
+    fn audit_execution_id_is_unique_under_concurrent_generation() {
+        let workers = 16;
+        let per_worker = 64;
+        let barrier = Arc::new(Barrier::new(workers));
+
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    (0..per_worker)
+                        .map(|_| audit_execution_id("exec"))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+
+        let ids: Vec<String> = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("worker thread joined"))
+            .collect();
+        let unique: BTreeSet<_> = ids.iter().cloned().collect();
+
+        assert_eq!(ids.len(), workers * per_worker);
+        assert_eq!(unique.len(), ids.len());
+        assert!(ids.iter().all(|id| id.starts_with("exec-")));
+    }
 }
