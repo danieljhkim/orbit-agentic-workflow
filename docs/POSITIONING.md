@@ -6,7 +6,7 @@ Use it as a decision lens. When a design debate feels like it's really about *wh
 
 ## What Orbit is for
 
-**Running coding-agent automation against a team's real production codebase, at single-team scale (~10–50 engineers).**
+**Running coding-agent automation against a team's real production codebase. v1 is per-operator: each member of a 10–50 engineer team runs Orbit on their own machine, coordinating through the team's existing git and GitHub primitives. v2 commits to a shared-host deployment shape that aggregates audit, tasks, and scoreboards across the team.**
 
 Not a demo. Not a solo-developer productivity boost. Not a Fortune-500 vendor pitch. The work in scope is PR review, refactor passes, backlog execution, and cross-cutting migrations against code that has reviewers, CI, and real consequences when an agent merges something wrong.
 
@@ -18,6 +18,7 @@ The deployment shape that fits:
 - **Audit trails, reproducibility, observability** as first-class requirements — not because compliance dictates, but because someone has to explain what happened when an agent goes sideways.
 - **Technical configuration surface.** Readable, debuggable, forkable YAML — not a UX patronizing toward non-technical users.
 - **Fleets, not a single assistant.** Multiple agents, possibly multiple providers, running in parallel.
+- **Per-operator install.** Orbit runs on each engineer's machine, not on a shared server. Provider credentials, audit DB, locks, and the dashboard are local to the operator. Cross-engineer coordination flows through git and GitHub.
 
 ## What Orbit is NOT for
 
@@ -54,7 +55,7 @@ When auditability conflicts with performance, ergonomics, or feature surface, au
 - **HTTP/SDK-first provider communication.** Programmatic multi-turn is the deployment shape. CLI shell-out is an escape hatch for experimentation, not the backbone.
 - **Audit trail for everything that touches code.** See the dedicated *Primary focus: auditability* section above. Non-negotiable and promoted to a product feature, not a compliance concession.
 - **Reproducibility where possible, recorded non-determinism where not.** Same task + same repo state should converge. When the provider introduces non-determinism, capture it rather than hide it.
-- **Fleet primitives.** Parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent identity in commits. Single-assistant assumptions are incorrect.
+- **Fleet primitives, per operator.** Parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent identity in commits — across many agents on one operator's machine. Single-assistant assumptions are incorrect. Shared-multi-operator assumptions are also incorrect for v1.
 - **Knowledge-graph–aware tooling.** Agents operate against a parsed graph of the codebase, not raw grep. This is the technical moat and the reason to pick Orbit over a generic agent framework.
 - **Cost-visible.** The operator knows what each run costs in tokens and wall-clock.
 - **Git- and GitHub-native.** Branches, worktrees, PRs, CI status. No custom version control abstractions.
@@ -91,5 +92,6 @@ This positioning is not permanent. We'd reconsider if:
 - Enterprise demand arrives with headcount or funding to serve it properly. The honest response is a commercial arm or partner, not a quiet pivot of the OSS core.
 - Individual-developer demand reaches a scale where a separate "Orbit Lite" makes sense. The honest response is a separate product, not feature-bloat on the core.
 - The team-scale deployment context itself stops being a coherent niche (e.g., team-scale agent automation collapses into solo tooling above and enterprise platforms below). Revisit the whole document in that case — don't patch around it.
+- The shared-host deployment shape (one Orbit serving multiple operators) ships in v2 and demand for it materializes. At that point the per-operator framing in this doc narrows from "what Orbit is" to "what v1 was" — reframe rather than maintain stale per-operator language once shared-host deployment lands.
 
 Until one of those happens, the framing above is the lens.

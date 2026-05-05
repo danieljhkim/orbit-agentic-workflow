@@ -8,9 +8,11 @@
   <em>The Orbit dashboard (<code>orbit web serve</code>) — task fleet, live audit log, per-agent scoreboard.</em>
 </p>
 
-**Orbit is a self-hosted runtime for running fleets of coding agents against your team's real codebase** — with an auditable trail, a code-aware graph, and explicit locks that keep parallel agent sessions from stepping on each other.
+**Orbit is a self-hosted runtime for running parallel coding agents against your team's real codebase** — with an auditable trail, a code-aware graph, and explicit locks that keep concurrent agent sessions from stepping on each other.
 
-It targets the gap between single-developer tooling (Claude Code, Cursor, Aider, Codex CLI) and enterprise agent platforms: running LLM-driven work — PR review, refactor passes, backlog execution, cross-cutting migrations — at team scale, on your own infrastructure, with the audit trail and parallel-execution safety that single-user tools don't try to provide.
+Each engineer on the team runs Orbit on their own machine. A "fleet" is many agents working in parallel on *one* engineer's laptop, not a shared multi-user instance. v1 is built for this shape; a shared-host deployment that aggregates audit and task state across the team is committed for v2 — see [Direction of travel](#direction-of-travel).
+
+It targets the gap between single-developer tooling (Claude Code, Cursor, Aider, Codex CLI) and enterprise agent platforms: running LLM-driven work — PR review, refactor passes, backlog execution, cross-cutting migrations — on each engineer's own infrastructure, with the audit trail and parallel-execution safety that single-user tools don't try to provide.
 
 The full positioning — what Orbit is for, what it refuses to become, and the decision lens we use when design debates get stuck — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it before contributing or evaluating fit.
 
@@ -42,6 +44,7 @@ The substrate also hosts work that is not yet a front-door product surface but s
 
 - **Programmatic (HTTP/SDK) provider transport** — direct provider communication for multi-turn agent loops, replacing CLI subprocess execution as the primary path. Wired in code today (`backend: http`, `LoopTransport`) but not part of the v1 release surface; v1 ships CLI backends only.
 - **Groundhog** — a checkpoint-oriented execution mode for HTTP-backend agents. Work runs as a sequence of checkpoints; each attempt starts with a fresh agent context and a clean git-backed workspace snapshot, then either rewinds on failure or persists a small stable memory on success. Today it exists as an `ActivityV2Spec::Groundhog` activity behind the job layer, not as an `orbit run` subcommand. Depends on the HTTP transport above and is therefore also out of scope for v1. Status: [docs/design/groundhog/](docs/design/groundhog/).
+- **Shared-host deployment** — a single Orbit instance serving multiple operators, with team-aggregated audit, tasks, and scoreboards, plus operator-identity-aware authentication on `orbit web serve`. v1 is per-engineer (each operator runs Orbit on their own machine); shared-host is a v2 commitment. Until then, do not expose `orbit web serve` to a non-localhost interface — it has no auth in v1.
 
 ---
 
@@ -50,6 +53,7 @@ The substrate also hosts work that is not yet a front-door product surface but s
 Tablestakes for what Orbit is for. Orbit will not ship anything that breaks them.
 
 - **Self-hostable, no cloud dependency.** Single binary, runs on a laptop, in a container, in a CI runner, behind a firewall. Orbit never phones home.
+- **Per-engineer deployment in v1.** Each engineer runs Orbit on their own machine. Tasks, locks, and the audit DB are local to that machine. Cross-engineer coordination flows through the primitives a team already uses — git branches, PRs, CI, GitHub. Shared-host deployment (one Orbit serving multiple engineers) is committed for v2.
 - **Bring-your-own-credentials.** Your Anthropic / OpenAI / local-model keys, never Orbit's. Orbit is a pass-through.
 - **CLI-backend agent execution (v1).** v1 invokes coding agents through their official CLIs (Codex, Claude Code, Gemini CLI) as supervised subprocesses. Programmatic HTTP/SDK transport (`backend: http`, `LoopTransport`) exists in the codebase and is exercised in tests, but is not a supported release surface in v1 — treat it as preview-only. v2 will flip the default once HTTP coverage is complete.
 - **Fleet primitives.** Parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent commit identity. Single-assistant assumptions are incorrect.
