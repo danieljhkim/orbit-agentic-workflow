@@ -114,11 +114,12 @@ fn run_build_inner(config: BuildConfig) -> Result<PipelineContext, KnowledgeErro
 
 /// Ensure the knowledge graph is up-to-date with the current checkout.
 ///
-/// Rebuilds when the checkout advances beyond the persisted manifest or when a
-/// dirty worktree fingerprint changes outside the debounce window. Dirty
-/// refreshes are debounced and concurrent refreshes are single-flighted through
-/// `refresh.lock` so read-side callers can reuse the current graph instead of
-/// stacking rebuilds.
+/// Rebuilds when the checkout advances beyond the persisted manifest, when the
+/// current branch does not have its own graph ref, or when a dirty worktree
+/// fingerprint changes outside the debounce window. Dirty refreshes are
+/// debounced and concurrent refreshes are single-flighted through `refresh.lock`
+/// so read-side callers can reuse the current graph instead of stacking
+/// rebuilds.
 pub fn ensure_fresh(
     knowledge_dir: &Path,
     repo_path: &Path,
@@ -262,6 +263,12 @@ fn compute_refresh_plan(
             .get("generated_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+        if !graph_available {
+            return Ok(RefreshPlan::Rebuild {
+                dirty_fingerprint: None,
+                incremental: true,
+            });
+        }
         return Ok(match (generated_at, head_ts) {
             (Some(generated), Some(head_ts)) if head_ts > generated => RefreshPlan::Rebuild {
                 dirty_fingerprint: None,

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-30
+**Last updated:** 2026-05-05
 
 ADR-style log of non-obvious knowledge-graph decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -27,7 +27,7 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-002 — Branch-scoped refs over a single shared ref
 
-**Status:** Accepted · 2026-04 · [T20260421-0358]
+**Status:** Accepted · 2026-04 · [T20260421-0358], [T20260505-1]
 
 **Context.** The original layout used `.orbit/knowledge/graph/refs/current.json` — one mutable ref shared across every branch and worktree. The last rebuild won globally. Multi-branch and multi-worktree workflows therefore saw graph reads for the wrong branch, and concurrent rebuilds raced on the single pointer.
 
@@ -35,7 +35,7 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 **Consequences.**
 - Two worktrees on different branches can rebuild concurrently without corruption.
-- A new branch is immediately usable via fallback — no forced rebuild.
+- A new branch remains readable via direct fallback, while auto-refresh materializes the current branch ref before treating the graph as fresh.
 - Migration path: legacy `refs/current.json` is moved to `refs/heads/<default>.json` on open.
 - Cost: two worktrees on the *same* branch still share a ref (see [2_design.md §6.5]).
 
@@ -132,11 +132,11 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-009 — Debounced, single-flighted refresh
 
-**Status:** Accepted · 2026-04 · [T20260417-0307], [T20260416-0719], [T20260417-0639]
+**Status:** Accepted · 2026-04 · [T20260417-0307], [T20260416-0719], [T20260417-0639], [T20260505-1]
 
 **Context.** Every read can trigger `ensure_fresh`. Without coordination, a dirty worktree plus many quick reads would stack rebuilds, and concurrent callers would duplicate work.
 
-**Decision.** Guard rebuilds with a `flock` on `refresh.lock`. Debounce dirty-worktree rebuilds against a fingerprint + timestamp in `refresh_state.json` (default 5s, `ORBIT_KNOWLEDGE_REFRESH_DEBOUNCE_SECS`). Concurrent callers wait briefly for the in-flight rebuild rather than starting their own.
+**Decision.** Guard rebuilds with a `flock` on `refresh.lock`. Debounce dirty-worktree rebuilds against a fingerprint + timestamp in `refresh_state.json` (default 5s, `ORBIT_KNOWLEDGE_REFRESH_DEBOUNCE_SECS`). Freshness also requires the current branch ref to exist, so debounce cannot suppress the first build for a missing branch ref. Concurrent callers wait briefly for the in-flight rebuild rather than starting their own.
 
 **Consequences.**
 - Steady-state read cost on a dirty worktree is one rebuild per debounce window, not one per read.
@@ -404,5 +404,6 @@ Tasks cited by ADRs above:
 - **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
 - **[T20260428-3]** — Expose the full read-only graph tool set through the MCP safe surface for Codex and Gemini.
 - **[T20260430-22]** — Compact the knowledge-graph design docs and fold the obsolete evidence log into ADR-018.
+- **[T20260505-1]** — Require auto-refresh freshness checks to materialize missing current-branch graph refs before returning fresh.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
