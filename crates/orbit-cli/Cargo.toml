@@ -33,3 +33,4 @@ serde_json.workspace = true
 serde_yaml.workspace = true
 tempfile = "3"
 toml.workspace = true
+tower = { version = "0.5", features = ["util"] }

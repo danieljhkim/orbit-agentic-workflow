@@ -62,6 +62,18 @@ pub enum OrbitEvent {
     JobRunCancelled {
         job_id: String,
         run_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_state: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        final_state: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal_attempted: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal_outcome: Option<String>,
     },
     JobRunDeleted {
         job_id: String,

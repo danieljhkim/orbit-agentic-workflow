@@ -283,6 +283,8 @@ This operator-surface repair keeps `orbit run ship --json`, direct `orbit job ru
 
 After [T20260430-27], `orbit run ship-auto` also interprets the parent `task_auto_pipeline` snapshot for operator output. Text and JSON modes keep the persisted run state and exit-code semantics, but add `workflow_status` labels: `empty_backlog`, `gated_noop`, `gate_waiting`, `gate_failed`, and `completed`. `empty_backlog` means no candidates and no exclusions. `gated_noop` means zero dispatched bundles with one or more `list_backlog.excluded` entries. `gate_waiting` means a child `task_gate_pipeline` run is still pending/running or the parent wait timed out while the child remains active. `gate_failed` means a child gate run reached a failed or cancelled state. The output also carries dispatched bundle count, excluded task count, exclusion reasons, blocker summaries, and child gate run status so operators do not have to run `orbit run show` merely to tell no backlog from lock-gated work. After [T20260430-30], default text renders that data as labeled multi-line operator output, while `--json` remains the stable machine-readable surface with raw status fields.
 
+After [T20260505-8], active job runs can be cancelled through the same durable run surface. `pending` and `running` runs transition to `cancelled`; terminal runs remain immutable. Pending cancellation only rewrites the run bundle and pipeline snapshot, so a later pipeline worker observes `cancelled` and exits without claiming the run. Running cancellation first validates the stored owner PID start-time token, then signals the owner process group on Unix with a bounded graceful period and `SIGKILL` escalation. `JobRunCancelled` audit payloads include run id, previous/final state, actor/source, whether signaling was attempted, and the signal outcome.
+
 The loop shares one pipeline map and session map across iterations, which makes cross-iteration `session:` meaningful.
 
 ### 8.7 Invocation metrics
@@ -454,5 +456,6 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260430-30]** — Make `ship-auto` default text output human-readable while preserving JSON fields.
 - **[T20260430-31]** — Require populated execution summaries before opening task PRs.
 - **[T20260505-2]** — Admit accepted backlog friction reports in automatic backlog listing.
+- **[T20260505-8]** — Add dashboard/runtime controls to cancel active job runs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

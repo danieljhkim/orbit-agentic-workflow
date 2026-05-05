@@ -218,6 +218,7 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
         .route("/jobs", get(list_jobs))
         .route("/job-runs", get(list_job_runs))
         .route("/runs/:id", get(get_run))
+        .route("/runs/:id/cancel", post(cancel_run_action))
         .route("/runs/:id/events", get(list_run_events))
         .route("/audit", get(list_audit))
         .route("/log", get(get_log))
@@ -744,9 +745,13 @@ impl Stream for ReceiverSseStream {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
+    use std::sync::Arc;
 
+    use axum::body::to_bytes;
+    use axum::http::Method;
     use serde_json::json;
     use tempfile::tempdir;
+    use tower::ServiceExt;
 
     use super::*;
 
@@ -757,6 +762,144 @@ mod tests {
             content.push('\n');
         }
         std::fs::write(path, content).expect("write fixture");
+    }
+
+    fn seed_run(runtime: &OrbitRuntime, run_id: &str, job_id: &str, state: JobRunState) -> JobRun {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct JobRunDoc<'a> {
+            schema_version: u8,
+            run: &'a JobRun,
+        }
+
+        let now = Utc::now();
+        let run = JobRun {
+            run_id: run_id.to_string(),
+            job_id: job_id.to_string(),
+            attempt: 1,
+            state,
+            scheduled_at: now,
+            started_at: matches!(
+                state,
+                JobRunState::Running
+                    | JobRunState::Success
+                    | JobRunState::Failed
+                    | JobRunState::Timeout
+                    | JobRunState::Cancelled
+            )
+            .then_some(now),
+            finished_at: state.is_terminal().then_some(now),
+            duration_ms: state.is_terminal().then_some(0),
+            created_at: now,
+            pid: None,
+            pid_start_time: None,
+            input: None,
+            retry_source_run_id: None,
+            knowledge_metrics: None,
+            steps: Vec::new(),
+        };
+        let run_dir = runtime
+            .data_root()
+            .join("state")
+            .join("job-runs")
+            .join(job_id)
+            .join(run_id);
+        std::fs::create_dir_all(&run_dir).expect("create run dir");
+        let content = serde_yaml::to_string(&JobRunDoc {
+            schema_version: 1,
+            run: &run,
+        })
+        .expect("serialize run yaml");
+        std::fs::write(run_dir.join("jrun.yaml"), content).expect("write run yaml");
+        run
+    }
+
+    async fn body_json(response: Response) -> Value {
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body");
+        serde_json::from_slice(&bytes).expect("json response")
+    }
+
+    async fn request_cancel(runtime: OrbitRuntime, run_id: &str, origin: Option<&str>) -> Response {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/runs/{run_id}/cancel"));
+        if let Some(origin) = origin {
+            builder = builder.header(header::ORIGIN, origin);
+        }
+        router()
+            .with_state(Arc::new(runtime))
+            .oneshot(builder.body(Body::empty()).expect("request"))
+            .await
+            .expect("response")
+    }
+
+    #[tokio::test]
+    async fn cancel_run_endpoint_cancels_pending_run() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let run = seed_run(
+            &runtime,
+            "jrun-web-cancel-pending",
+            "web_cancel_pending",
+            JobRunState::Pending,
+        );
+
+        let response =
+            request_cancel(runtime.clone(), &run.run_id, Some("http://localhost:3000")).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = body_json(response).await;
+        assert_eq!(payload["run_id"], run.run_id);
+        assert_eq!(payload["previous_state"], "pending");
+        assert_eq!(payload["final_state"], "cancelled");
+        assert_eq!(payload["signal_attempted"], false);
+        assert_eq!(payload["signal_outcome"], Value::Null);
+        let stored = runtime.show_job_run(&run.run_id).expect("show cancelled");
+        assert_eq!(stored.state, JobRunState::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn cancel_run_endpoint_rejects_terminal_run_without_mutating_bundle() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let run = seed_run(
+            &runtime,
+            "jrun-web-cancel-terminal",
+            "web_cancel_terminal",
+            JobRunState::Success,
+        );
+        let before = runtime.show_job_run(&run.run_id).expect("show before");
+
+        let response =
+            request_cancel(runtime.clone(), &run.run_id, Some("http://localhost:3000")).await;
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let payload = body_json(response).await;
+        assert!(
+            payload["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("cannot cancel job run"))
+        );
+        let after = runtime.show_job_run(&run.run_id).expect("show after");
+        assert_eq!(after, before);
+    }
+
+    #[tokio::test]
+    async fn cancel_run_endpoint_applies_localhost_origin_guard() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let run = seed_run(
+            &runtime,
+            "jrun-web-cancel-origin",
+            "web_cancel_origin",
+            JobRunState::Pending,
+        );
+
+        let response =
+            request_cancel(runtime.clone(), &run.run_id, Some("https://example.test")).await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let stored = runtime.show_job_run(&run.run_id).expect("show run");
+        assert_eq!(stored.state, JobRunState::Pending);
     }
 
     #[test]
@@ -1025,6 +1168,29 @@ mod tests {
 async fn get_run(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
     match runtime.show_job_run(&id) {
         Ok(run) => Json(job_run_detail_to_json(&runtime, &run)).into_response(),
+        Err(e) => map_runtime_error(e),
+    }
+}
+
+async fn cancel_run_action(
+    State(runtime): State<Arc<OrbitRuntime>>,
+    Path(id): Path<String>,
+) -> Response {
+    match runtime.cancel_job_run_with_context(&id, "dashboard", "web") {
+        Ok(result) => Json(json!({
+            "run_id": result.run_id,
+            "previous_state": result.previous_state,
+            "final_state": result.final_state,
+            "actor": result.actor,
+            "source": result.source,
+            "signal_attempted": result.signal_attempted,
+            "signal_outcome": result.signal_outcome,
+        }))
+        .into_response(),
+        Err(orbit_core::OrbitError::JobValidation(msg))
+        | Err(orbit_core::OrbitError::JobRunStateTransition(msg)) => {
+            (StatusCode::CONFLICT, Json(json!({ "error": msg }))).into_response()
+        }
         Err(e) => map_runtime_error(e),
     }
 }

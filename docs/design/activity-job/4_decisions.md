@@ -498,6 +498,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - The `excluded` array remains scoped to context-lock conflicts; it reports accepted friction tasks only when they are otherwise admitted backlog candidates and overlap active locks.
 - Cost: reviewers must read friction eligibility as a status rule, not a task-type rule.
 
+## ADR-038 — Dashboard cancellation is a durable job-run transition
+
+**Status:** Accepted · 2026-05 · [T20260505-8]
+
+**Context.** Dashboard Recent Runs exposed job-run status but no operator stop control. The runtime already had a cancellation entry point, but it signalled only the owner PID and returned no structured cancellation outcome, which was too weak for stuck CLI-backed workflows with provider subprocess trees.
+
+**Decision.** Treat cancellation as a first-class durable job-run transition. `pending` and `running` may become `cancelled`; terminal states reject cancellation. Pending cancellation does not signal. Running cancellation validates the stored PID start-time identity and, on Unix, terminates the run owner process group with graceful signal plus bounded `SIGKILL` escalation. The dashboard calls `POST /api/runs/:id/cancel`, and client cancellability is derived from `state` rather than a redundant server field.
+
+**Consequences.**
+- Operators can stop active work from Diagnostics while preserving coherent `orbit run show` and `orbit.pipeline.wait` state.
+- `JobRunCancelled` audit payloads carry previous/final state, actor/source, signal-attempted flag, and signal outcome.
+- Cost: direct in-process job runs still cannot safely self-signal; dashboard cancellation is primarily the durable pipeline-worker/operator path.
+
 ---
 
 ## Task References
@@ -546,5 +559,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260430-30]** — Make `ship-auto` default text output human-readable while preserving JSON fields.
 - **[T20260430-31]** — Require populated execution summaries before opening task PRs.
 - **[T20260505-2]** — Admit accepted backlog friction reports in automatic backlog listing.
+- **[T20260505-8]** — Add dashboard/runtime controls to cancel active job runs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

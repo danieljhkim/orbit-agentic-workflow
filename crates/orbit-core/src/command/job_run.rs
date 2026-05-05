@@ -1,11 +1,16 @@
 use chrono::{DateTime, Utc};
-use orbit_common::types::{JobRun, JobRunState, OrbitError, OrbitEvent};
+use orbit_common::types::{JobRun, JobRunState, OrbitError, OrbitEvent, PipelineState};
 use orbit_store::JobRunQuery;
+use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
+#[cfg(unix)]
+use std::thread;
+#[cfg(unix)]
+use std::time::{Duration, Instant};
 
 use crate::OrbitRuntime;
 
@@ -17,9 +22,31 @@ pub struct JobRunListParams {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct JobRunCancelResult {
+    pub run_id: String,
+    pub previous_state: String,
+    pub final_state: String,
+    pub actor: String,
+    pub source: String,
+    pub signal_attempted: bool,
+    pub signal_outcome: Option<String>,
+}
+
 impl OrbitRuntime {
-    pub fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
-        let run = self.show_job_run(run_id)?;
+    pub fn cancel_job_run(&self, run_id: &str) -> Result<JobRunCancelResult, OrbitError> {
+        self.cancel_job_run_with_context(run_id, "system", "runtime")
+    }
+
+    pub fn cancel_job_run_with_context(
+        &self,
+        run_id: &str,
+        actor: &str,
+        source: &str,
+    ) -> Result<JobRunCancelResult, OrbitError> {
+        let run = self
+            .get_job_run_backend(run_id)?
+            .ok_or_else(|| OrbitError::JobRunNotFound(run_id.to_string()))?;
         run.state
             .try_transition(orbit_common::types::RunEvent::Cancel)
             .map_err(|msg| {
@@ -29,21 +56,54 @@ impl OrbitRuntime {
         let duration_ms = run
             .started_at
             .map(|s| now.signed_duration_since(s).num_milliseconds().max(0) as u64);
-        let should_signal_owner = run_owner_identity_matches(&run);
-        let owner_pid = run.pid;
+        let signal_attempted = run.state == JobRunState::Running && run.pid.is_some();
         self.stores()
             .jobs()
             .finalize_run(run_id, JobRunState::Cancelled, now, duration_ms)?;
-        self.record_event(OrbitEvent::JobRunCancelled {
-            job_id: run.job_id,
-            run_id: run_id.to_string(),
-        })?;
-        if let Some(pid) = owner_pid
-            && should_signal_owner
-        {
-            signal_run_owner_process(pid)?;
+        let cancelled_run = self
+            .get_job_run_backend(run_id)?
+            .ok_or_else(|| OrbitError::JobRunNotFound(run_id.to_string()))?;
+        if cancelled_run.state != JobRunState::Cancelled {
+            let detail = cancelled_run
+                .state
+                .try_transition(orbit_common::types::RunEvent::Cancel)
+                .err()
+                .unwrap_or_else(|| {
+                    format!(
+                        "stored state remained {} after cancellation",
+                        cancelled_run.state
+                    )
+                });
+            return Err(OrbitError::JobValidation(format!(
+                "cannot cancel job run '{}': {}",
+                run_id, detail
+            )));
         }
-        Ok(())
+        self.mark_cancelled_pipeline_state(&cancelled_run)?;
+        let signal_outcome = if signal_attempted {
+            Some(signal_run_owner_process(&run)?)
+        } else {
+            None
+        };
+        self.record_event(OrbitEvent::JobRunCancelled {
+            job_id: run.job_id.clone(),
+            run_id: run_id.to_string(),
+            previous_state: Some(run.state.to_string()),
+            final_state: Some(JobRunState::Cancelled.to_string()),
+            actor: Some(actor.to_string()),
+            source: Some(source.to_string()),
+            signal_attempted: Some(signal_attempted),
+            signal_outcome: signal_outcome.clone(),
+        })?;
+        Ok(JobRunCancelResult {
+            run_id: run_id.to_string(),
+            previous_state: run.state.to_string(),
+            final_state: JobRunState::Cancelled.to_string(),
+            actor: actor.to_string(),
+            source: source.to_string(),
+            signal_attempted,
+            signal_outcome,
+        })
     }
 
     pub fn archive_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
@@ -85,6 +145,45 @@ impl OrbitRuntime {
         run_id: &str,
     ) -> Result<Option<orbit_common::types::PipelineState>, OrbitError> {
         self.stores().jobs().read_run_state(run_id)
+    }
+
+    fn mark_cancelled_pipeline_state(&self, run: &JobRun) -> Result<(), OrbitError> {
+        if let Some(mut state) = self.read_run_state(&run.run_id)? {
+            if let Some(object) = state.pipeline.as_object_mut() {
+                object.insert(
+                    "status".to_string(),
+                    Value::String(JobRunState::Cancelled.to_string()),
+                );
+                object.insert(
+                    "state".to_string(),
+                    Value::String(JobRunState::Cancelled.to_string()),
+                );
+                object.insert("cancelled".to_string(), Value::Bool(true));
+            }
+            state.updated_at = Utc::now();
+            self.stores().jobs().write_run_state(&run.run_id, &state)?;
+        } else if run.input.is_some() {
+            let mut state = PipelineState::new(
+                run.run_id.clone(),
+                run.job_id.clone(),
+                run.input
+                    .clone()
+                    .unwrap_or_else(|| Value::Object(Default::default())),
+            );
+            if let Some(object) = state.pipeline.as_object_mut() {
+                object.insert(
+                    "status".to_string(),
+                    Value::String(JobRunState::Cancelled.to_string()),
+                );
+                object.insert(
+                    "state".to_string(),
+                    Value::String(JobRunState::Cancelled.to_string()),
+                );
+                object.insert("cancelled".to_string(), Value::Bool(true));
+            }
+            self.stores().jobs().write_run_state(&run.run_id, &state)?;
+        }
+        Ok(())
     }
 
     pub fn job_history(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
@@ -298,31 +397,146 @@ impl OrbitRuntime {
 }
 
 #[cfg(unix)]
-fn signal_run_owner_process(pid: u32) -> Result<(), OrbitError> {
+const RUN_OWNER_TERMINATION_GRACE: Duration = Duration::from_secs(2);
+#[cfg(unix)]
+const RUN_OWNER_TERMINATION_POLL: Duration = Duration::from_millis(50);
+
+#[cfg(unix)]
+fn signal_run_owner_process(run: &JobRun) -> Result<String, OrbitError> {
+    let Some(pid) = run.pid else {
+        return Ok("no_pid".to_string());
+    };
     if pid == std::process::id() {
-        return Ok(());
+        return Ok("self_not_signalled".to_string());
+    }
+    if !run_owner_identity_matches(run) {
+        return Ok("owner_identity_mismatch".to_string());
     }
 
-    // Safety: `kill` only sends a signal to the run owner process so it can
-    // tear down its active child process tree.
-    let rc = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    let pgid = owner_process_group_id(pid);
+    if let Some(pgid) = pgid
+        && pgid > 1
+    {
+        if pgid == unsafe { libc::getpgrp() } {
+            return Ok("owner_process_group_matches_current_process".to_string());
+        }
+        match send_signal_to_process_group(pgid, libc::SIGTERM) {
+            Ok(()) => {}
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => {
+                return Ok("already_exited".to_string());
+            }
+            Err(error) => {
+                return Err(OrbitError::Execution(format!(
+                    "failed to signal job run owner process group {pgid} for pid {pid}: {error}"
+                )));
+            }
+        }
+
+        if wait_for_process_group_exit(pgid, RUN_OWNER_TERMINATION_GRACE) {
+            return Ok("terminated_process_group".to_string());
+        }
+
+        match send_signal_to_process_group(pgid, libc::SIGKILL) {
+            Ok(()) => {}
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => {
+                return Ok("terminated_process_group".to_string());
+            }
+            Err(error) => {
+                return Err(OrbitError::Execution(format!(
+                    "failed to kill job run owner process group {pgid} for pid {pid}: {error}"
+                )));
+            }
+        }
+        let _ = wait_for_process_group_exit(pgid, RUN_OWNER_TERMINATION_GRACE);
+        return Ok("killed_process_group".to_string());
+    }
+
+    // Fallback for platforms/configurations where the owner process group
+    // cannot be resolved. The PID identity guard above still protects against
+    // killing a reused PID.
+    send_signal_to_pid(pid, libc::SIGTERM)?;
+    if wait_for_owner_exit(pid, RUN_OWNER_TERMINATION_GRACE) {
+        Ok("terminated_owner".to_string())
+    } else {
+        send_signal_to_pid(pid, libc::SIGKILL)?;
+        let _ = wait_for_owner_exit(pid, RUN_OWNER_TERMINATION_GRACE);
+        Ok("killed_owner".to_string())
+    }
+}
+
+#[cfg(unix)]
+fn send_signal_to_pid(pid: u32, signal: libc::c_int) -> Result<(), OrbitError> {
+    let rc = unsafe { libc::kill(pid as libc::pid_t, signal) };
     if rc == 0 {
         return Ok(());
     }
-
     let err = std::io::Error::last_os_error();
     if err.raw_os_error() == Some(libc::ESRCH) {
         return Ok(());
     }
-
     Err(OrbitError::Execution(format!(
-        "failed to signal job run owner pid {pid}: {err}"
+        "failed to signal job run owner pid {pid}: {err}",
     )))
 }
 
 #[cfg(not(unix))]
-fn signal_run_owner_process(_pid: u32) -> Result<(), OrbitError> {
-    Ok(())
+fn signal_run_owner_process(_run: &JobRun) -> Result<String, OrbitError> {
+    Ok("unsupported_platform".to_string())
+}
+
+#[cfg(unix)]
+fn owner_process_group_id(pid: u32) -> Option<libc::pid_t> {
+    if pid == 0 || pid > i32::MAX as u32 {
+        return None;
+    }
+    let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
+    if pgid > 0 { Some(pgid) } else { None }
+}
+
+#[cfg(unix)]
+fn send_signal_to_process_group(pgid: libc::pid_t, signal: libc::c_int) -> std::io::Result<()> {
+    let rc = unsafe { libc::kill(-pgid, signal) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+fn wait_for_owner_exit(pid: u32, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if !process_is_alive(pid) {
+            return true;
+        }
+        thread::sleep(RUN_OWNER_TERMINATION_POLL);
+    }
+    !process_is_alive(pid)
+}
+
+#[cfg(unix)]
+fn wait_for_process_group_exit(pgid: libc::pid_t, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if !process_group_is_alive(pgid) {
+            return true;
+        }
+        thread::sleep(RUN_OWNER_TERMINATION_POLL);
+    }
+    !process_group_is_alive(pgid)
+}
+
+#[cfg(unix)]
+fn process_group_is_alive(pgid: libc::pid_t) -> bool {
+    if pgid <= 1 {
+        return false;
+    }
+    let rc = unsafe { libc::kill(-pgid, 0) };
+    if rc == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(unix)]
@@ -348,7 +562,7 @@ fn run_owner_identity_matches(run: &JobRun) -> bool {
     };
     match process_start_time_token(pid) {
         Some(actual) => actual == expected,
-        None => process_is_alive(pid),
+        None => false,
     }
 }
 
@@ -417,6 +631,10 @@ fn parse_audit_timestamp(event: &Value, path: &Path) -> Result<Option<DateTime<U
 mod tests {
     use super::*;
     use chrono::Duration;
+    #[cfg(unix)]
+    use std::process::Stdio;
+    #[cfg(unix)]
+    use std::time::{Duration as StdDuration, Instant as StdInstant};
     use tempfile::tempdir;
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime) {
@@ -477,6 +695,266 @@ mod tests {
         });
         std::fs::write(dir.join(format!("{run_id}.jsonl")), format!("{line}\n"))
             .expect("write audit event");
+    }
+
+    #[test]
+    fn cancel_job_run_marks_pending_cancelled_without_signal() {
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_cancel_pending");
+
+        let result = runtime
+            .cancel_job_run_with_context(&run.run_id, "tester", "unit")
+            .expect("cancel pending");
+
+        assert_eq!(result.previous_state, "pending");
+        assert_eq!(result.final_state, "cancelled");
+        assert!(!result.signal_attempted);
+        assert_eq!(result.signal_outcome, None);
+        let stored = runtime.show_job_run(&run.run_id).expect("show run");
+        assert_eq!(stored.state, JobRunState::Cancelled);
+        assert!(stored.finished_at.is_some());
+        assert_eq!(stored.duration_ms, None);
+
+        let audits = runtime.list_session_events(10).expect("events");
+        let payload = audits
+            .iter()
+            .find(|event| event.event_type == "JobRunCancelled")
+            .map(|event| &event.payload["data"])
+            .expect("cancel event");
+        assert_eq!(payload["run_id"], run.run_id);
+        assert_eq!(payload["previous_state"], "pending");
+        assert_eq!(payload["final_state"], "cancelled");
+        assert_eq!(payload["actor"], "tester");
+        assert_eq!(payload["source"], "unit");
+        assert_eq!(payload["signal_attempted"], false);
+    }
+
+    #[test]
+    fn cancelled_pending_run_is_not_claimed_by_pipeline_worker() {
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_cancel_worker_skip");
+        runtime
+            .cancel_job_run(&run.run_id)
+            .expect("cancel pending run");
+
+        runtime
+            .execute_pipeline_run_worker(&run.run_id)
+            .expect("worker exits without executing cancelled run");
+
+        let stored = runtime.show_job_run(&run.run_id).expect("show run");
+        assert_eq!(stored.state, JobRunState::Cancelled);
+        assert!(stored.started_at.is_none());
+        assert!(stored.steps.is_empty());
+    }
+
+    #[test]
+    fn cancelled_run_wait_status_reports_cancelled() {
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_cancel_wait");
+        runtime.cancel_job_run(&run.run_id).expect("cancel run");
+
+        let result = runtime
+            .wait_pipeline_runs(std::slice::from_ref(&run.run_id), 1, 1, Some("test"))
+            .expect("wait cancelled");
+
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].run_id, run.run_id);
+        assert_eq!(result.results[0].status, "cancelled");
+    }
+
+    #[test]
+    fn cancel_job_run_rejects_terminal_run_without_mutating_bundle() {
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_cancel_terminal");
+        let started_at = Utc::now() - Duration::seconds(2);
+        let finished_at = Utc::now();
+        runtime
+            .stores()
+            .jobs()
+            .mark_run_running(&run.run_id, started_at, std::process::id())
+            .expect("mark running");
+        runtime
+            .stores()
+            .jobs()
+            .finalize_run(&run.run_id, JobRunState::Success, finished_at, Some(2_000))
+            .expect("finalize success");
+        let before = runtime.show_job_run(&run.run_id).expect("show before");
+
+        let error = runtime
+            .cancel_job_run(&run.run_id)
+            .expect_err("terminal cancellation must fail");
+
+        assert!(
+            error.to_string().contains("cannot cancel job run"),
+            "{error}"
+        );
+        let after = runtime.show_job_run(&run.run_id).expect("show after");
+        assert_eq!(after, before);
+        let events = runtime.list_session_events(20).expect("events");
+        assert!(
+            events
+                .iter()
+                .all(|event| event.event_type != "JobRunCancelled")
+        );
+    }
+
+    #[cfg(unix)]
+    fn wait_until<F>(timeout: StdDuration, mut condition: F) -> bool
+    where
+        F: FnMut() -> bool,
+    {
+        let started = StdInstant::now();
+        while started.elapsed() < timeout {
+            if condition() {
+                return true;
+            }
+            std::thread::sleep(StdDuration::from_millis(50));
+        }
+        condition()
+    }
+
+    #[cfg(unix)]
+    fn read_pid_pair(path: &Path) -> (u32, u32) {
+        let raw = std::fs::read_to_string(path).expect("read pid file");
+        let mut parts = raw.split_whitespace();
+        let owner = parts
+            .next()
+            .expect("owner pid")
+            .parse()
+            .expect("parse owner pid");
+        let child = parts
+            .next()
+            .expect("child pid")
+            .parse()
+            .expect("parse child pid");
+        (owner, child)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancel_job_run_does_not_signal_reused_pid_identity_mismatch() {
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_cancel_reused_pid");
+        let mut sentinel = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sentinel");
+        let sentinel_pid = sentinel.id();
+        let started_at = Utc::now() - Duration::seconds(1);
+        runtime
+            .stores()
+            .jobs()
+            .mark_run_running(&run.run_id, started_at, sentinel_pid)
+            .expect("mark running");
+        let path = runtime
+            .data_root()
+            .join("state")
+            .join("job-runs")
+            .join(&run.job_id)
+            .join(&run.run_id)
+            .join("jrun.yaml");
+        let raw = std::fs::read_to_string(&path).expect("read run yaml");
+        let edited = if raw.contains("pid_start_time:") {
+            raw.lines()
+                .map(|line| {
+                    if line.trim_start().starts_with("pid_start_time:") {
+                        "  pid_start_time: definitely-not-the-sentinel-start-token".to_string()
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            raw.lines()
+                .map(|line| {
+                    if line.trim_start().starts_with("pid:") {
+                        format!("{line}\n  pid_start_time: definitely-not-the-sentinel-start-token")
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        std::fs::write(&path, format!("{edited}\n")).expect("write mismatched pid token");
+
+        let result = runtime.cancel_job_run(&run.run_id).expect("cancel run");
+
+        assert!(result.signal_attempted);
+        assert_eq!(
+            result.signal_outcome.as_deref(),
+            Some("owner_identity_mismatch")
+        );
+        assert!(
+            process_is_alive(sentinel_pid),
+            "sentinel process must not be killed by mismatched owner identity"
+        );
+        let _ = sentinel.kill();
+        let _ = sentinel.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancel_job_run_terminates_owner_process_group_and_child() {
+        use std::os::unix::process::CommandExt;
+
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_cancel_process_group");
+        let pid_dir = tempdir().expect("pid tempdir");
+        let pid_file = pid_dir.path().join("pids");
+        let script = format!(
+            "trap 'exit 0' TERM; (trap '' TERM; sleep 30) & child=$!; printf '%s %s\\n' $$ \"$child\" > {}; wait",
+            shell_quote(pid_file.to_string_lossy().as_ref())
+        );
+        let mut owner = Command::new("/bin/sh");
+        owner
+            .arg("-c")
+            .arg(script)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        unsafe {
+            owner.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut owner = owner.spawn().expect("spawn owner");
+        assert!(
+            wait_until(StdDuration::from_secs(2), || pid_file.exists()),
+            "owner did not write pid file"
+        );
+        let (owner_pid, child_pid) = read_pid_pair(&pid_file);
+        assert_eq!(owner.id(), owner_pid);
+        runtime
+            .stores()
+            .jobs()
+            .mark_run_running(&run.run_id, Utc::now(), owner_pid)
+            .expect("mark running");
+
+        let result = runtime.cancel_job_run(&run.run_id).expect("cancel run");
+        let _ = owner.wait();
+
+        assert!(result.signal_attempted);
+        assert_eq!(
+            result.signal_outcome.as_deref(),
+            Some("killed_process_group")
+        );
+        assert!(
+            wait_until(StdDuration::from_secs(3), || !process_is_alive(child_pid)),
+            "child process {child_pid} should be gone after process-group cancellation"
+        );
+    }
+
+    #[cfg(unix)]
+    fn shell_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 
     #[cfg(unix)]
