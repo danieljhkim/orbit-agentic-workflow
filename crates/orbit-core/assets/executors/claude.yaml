@@ -11,8 +11,10 @@ spec:
     - bypassPermissions
     - --output-format
     - json
+    # The dispatcher rewrites this to <claude_state_dir>/<basename> at spawn
+    # time so the log lands at a sandbox-allowed path (see T20260505-22).
     - --debug-file
-    - .orbit/state/logs/claude-debug.log
+    - claude-debug.log
     - --fallback-model
     - claude-sonnet-4-6
     - --tools

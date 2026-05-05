@@ -33,7 +33,8 @@ use orbit_common::types::activity_job::{AgentLoopSpec, V2AuditEventKind};
 use orbit_common::types::{ExecutionResult, ExecutorSandboxKind, InvocationTrace, OrbitError};
 use orbit_common::utility::redaction::PatternRedactor;
 use orbit_exec::{
-    compile_macos_sandbox_profile, sandbox_exec_available, spawn_under_macos_sandbox,
+    claude_state_dir_from_env, compile_macos_sandbox_profile, sandbox_exec_available,
+    spawn_under_macos_sandbox,
 };
 use serde_json::Value;
 use tempfile::NamedTempFile;
@@ -76,6 +77,13 @@ pub fn run_cli_backend(
     let envelope_json = cli_agent_envelope_json(host, spec, run_id, input)?;
 
     let mut provider_config = host.provider_cli_config(&provider);
+
+    // Provider-specific static-arg fixups that are independent of whether the
+    // outer sandbox is active. Today this only rewrites Claude's `--debug-file`
+    // value to an absolute path under the writable claude state dir, so the
+    // log lands somewhere `denyModify: .orbit/**` does not block. See
+    // T20260505-22.
+    apply_provider_static_arg_fixups(&provider, &mut cli_executor.args);
 
     // Inner-sandbox neutralization. When orbit-exec wraps the CLI we are the
     // single source of truth for filesystem enforcement; the agent's own
@@ -359,6 +367,45 @@ fn neutralize_inner_sandbox(
             *static_args = filter_gemini_inner_sandbox_args(static_args);
         }
         _ => {}
+    }
+}
+
+/// Sandbox-orthogonal arg fixups the dispatcher applies before spawn. Today
+/// this only normalizes Claude's `--debug-file` path so the log lands at a
+/// sandbox-allowed location regardless of how the executor YAML spelled it.
+fn apply_provider_static_arg_fixups(provider: &str, static_args: &mut [String]) {
+    if provider == "claude" {
+        rewrite_claude_debug_file_path(static_args);
+    }
+}
+
+/// Replace the value following any `--debug-file` token in `static_args`
+/// with `<claude_state_dir>/<basename>`. Falls back to leaving the args
+/// untouched when the state dir is unresolvable (e.g. `HOME` and
+/// `CLAUDE_CONFIG_DIR` both unset) — the original relative path still
+/// works in non-sandboxed runs, and the sandbox failure mode is what the
+/// caller is opting into.
+fn rewrite_claude_debug_file_path(static_args: &mut [String]) {
+    let Some(state_dir) = claude_state_dir_from_env() else {
+        return;
+    };
+    rewrite_debug_file_value(static_args, &state_dir);
+}
+
+fn rewrite_debug_file_value(static_args: &mut [String], state_dir: &std::path::Path) {
+    let mut idx = 0;
+    while idx + 1 < static_args.len() {
+        if static_args[idx] == "--debug-file" {
+            let basename = std::path::Path::new(&static_args[idx + 1])
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "claude-debug.log".to_string());
+            static_args[idx + 1] = state_dir.join(basename).display().to_string();
+            idx += 2;
+        } else {
+            idx += 1;
+        }
     }
 }
 
@@ -1013,6 +1060,80 @@ mod tests {
         );
         assert!(args.iter().any(|a| a == "--approval-mode"));
         assert!(args.iter().any(|a| a == "json"));
+    }
+
+    #[test]
+    fn rewrite_debug_file_value_replaces_relative_path() {
+        let mut args = vec![
+            "-p".to_string(),
+            "--debug-file".to_string(),
+            ".orbit/state/logs/claude-debug.log".to_string(),
+            "--tools".to_string(),
+            "Read".to_string(),
+        ];
+        rewrite_debug_file_value(&mut args, std::path::Path::new("/Users/test/.claude"));
+        assert_eq!(
+            args,
+            vec![
+                "-p".to_string(),
+                "--debug-file".to_string(),
+                "/Users/test/.claude/claude-debug.log".to_string(),
+                "--tools".to_string(),
+                "Read".to_string(),
+            ],
+            "claude --debug-file value should be rewritten to <state_dir>/<basename>"
+        );
+    }
+
+    #[test]
+    fn rewrite_debug_file_value_handles_bare_filename() {
+        let mut args = vec!["--debug-file".to_string(), "claude-debug.log".to_string()];
+        rewrite_debug_file_value(&mut args, std::path::Path::new("/Users/test/.claude"));
+        assert_eq!(args[1], "/Users/test/.claude/claude-debug.log");
+    }
+
+    #[test]
+    fn rewrite_debug_file_value_no_op_without_flag() {
+        let mut args = vec!["-p".to_string(), "--tools".to_string(), "Read".to_string()];
+        let original = args.clone();
+        rewrite_debug_file_value(&mut args, std::path::Path::new("/Users/test/.claude"));
+        assert_eq!(
+            args, original,
+            "args without --debug-file should be untouched"
+        );
+    }
+
+    #[test]
+    fn rewrite_debug_file_value_rewrites_every_occurrence() {
+        let mut args = vec![
+            "--debug-file".to_string(),
+            "first.log".to_string(),
+            "--other".to_string(),
+            "x".to_string(),
+            "--debug-file".to_string(),
+            "nested/dir/second.log".to_string(),
+        ];
+        rewrite_debug_file_value(&mut args, std::path::Path::new("/Users/test/.claude"));
+        assert_eq!(args[1], "/Users/test/.claude/first.log");
+        assert_eq!(args[5], "/Users/test/.claude/second.log");
+    }
+
+    #[test]
+    fn rewrite_debug_file_value_falls_back_when_value_has_no_basename() {
+        let mut args = vec!["--debug-file".to_string(), "/".to_string()];
+        rewrite_debug_file_value(&mut args, std::path::Path::new("/Users/test/.claude"));
+        assert_eq!(args[1], "/Users/test/.claude/claude-debug.log");
+    }
+
+    #[test]
+    fn rewrite_debug_file_value_ignores_dangling_flag() {
+        let mut args = vec!["-p".to_string(), "--debug-file".to_string()];
+        let original = args.clone();
+        rewrite_debug_file_value(&mut args, std::path::Path::new("/Users/test/.claude"));
+        assert_eq!(
+            args, original,
+            "trailing --debug-file with no value must not panic or rewrite"
+        );
     }
 
     #[test]

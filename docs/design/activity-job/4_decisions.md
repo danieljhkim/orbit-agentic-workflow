@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-05 (ADR-039 run-owned task-lock cleanup)
+**Last updated:** 2026-05-05 (ADR-040 provider static-arg fixups)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -525,6 +525,19 @@ This ADR log records the decisions that define the current Activity / Job substr
 - Release audit events stay on the existing task-lock audit surface and distinguish `explicit`, `run_terminal`, `stale_run_reconciled`, and TTL expiration reasons.
 - Cost: job-run finalization and reservation reserve paths are more coupled, so new terminal run paths must route through the cleanup helper rather than writing directly to the job-run store.
 
+## ADR-040 — Provider static-arg fixups apply before sandbox dispatch
+
+**Status:** Accepted · 2026-05 · [T20260505-22]
+
+**Context.** The seeded Claude executor passed `--debug-file .orbit/state/logs/claude-debug.log` as a static arg. With the default policy `denyModify: .orbit/**` in force, `sandbox-exec` rejected Claude's startup write before the review step even began (`EPERM`, ~414ms, empty stdout). Codex's `--add-dir` / `writable_dirs_json` side-write surface had papered over the same class of issue for Codex; Claude has no equivalent CLI surface to grant a workspace write back, and weakening the `.orbit/**` deny would carve a real hole in the sandbox.
+
+**Decision.** Treat provider static-arg massaging as a dispatch-time concern, separate from inner-sandbox neutralization. Before each `backend: cli` invocation the dispatcher runs `apply_provider_static_arg_fixups`, today populated only by Claude's `--debug-file` rewrite: every `--debug-file <value>` pair has its value replaced with `<claude_state_dir>/<basename(value)>`, where `claude_state_dir` is `$CLAUDE_CONFIG_DIR` or `$HOME/.claude` (the same path the SBPL profile already grants writes for). Inner-sandbox neutralization continues to run only when an outer sandbox is active. The fixup is a no-op when neither env var resolves, leaving bare-exec behavior untouched in those edge environments.
+
+**Consequences.**
+- Claude's debug log lands in the already-allowed claude state dir under both sandboxed and bare-exec runs, so the review step no longer fails with `EPERM` at startup.
+- The `.orbit/**` deny stays intact and no new write exception ships with the sandbox profile.
+- The executor YAML's `--debug-file` value is no longer honored verbatim — only the basename survives the rewrite. `claude.yaml` now carries a comment pointing at this ADR so a future maintainer reads the dispatcher rather than trusting the literal path.
+
 ---
 
 ## Task References
@@ -575,5 +588,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260505-2]** — Admit accepted backlog friction reports in automatic backlog listing.
 - **[T20260505-8]** — Add dashboard/runtime controls to cancel active job runs.
 - **[T20260505-10]** — Release run-owned task lock reservations through engine-owned terminal cleanup and reserve-pressure reconciliation.
+- **[T20260505-22]** — Rewrite Claude's `--debug-file` static arg at dispatch time so the log lands at a sandbox-allowed absolute path.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

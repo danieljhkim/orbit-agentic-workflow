@@ -197,6 +197,19 @@ fn claude_state_dir(home: Option<&OsStr>, claude_config_dir: Option<&OsStr>) -> 
         .or_else(|| non_empty_env_path(home).map(|path| path.join(".claude")))
 }
 
+/// Process-env wrapper around [`claude_state_dir`]. Returns the writable
+/// state directory Claude Code uses at runtime — `$CLAUDE_CONFIG_DIR` if
+/// set, otherwise `$HOME/.claude`. Returns `None` only when both env vars
+/// are unset or empty. Callers in `backend: cli` use this to land
+/// auxiliary CLI outputs (e.g. `--debug-file`) at a sandbox-allowed path
+/// instead of the workspace, where `denyModify: .orbit/**` would block
+/// startup-time writes.
+pub fn claude_state_dir_from_env() -> Option<PathBuf> {
+    let claude_config_dir = std::env::var_os("CLAUDE_CONFIG_DIR");
+    let home = std::env::var_os("HOME");
+    claude_state_dir(home.as_deref(), claude_config_dir.as_deref())
+}
+
 /// Gemini CLI does not document a stable env override — it writes state
 /// under `$HOME/.gemini`. If a future CLI release surfaces an override, plumb
 /// it through `SandboxCompileEnv` here.
