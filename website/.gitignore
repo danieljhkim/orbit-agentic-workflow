@@ -4,4 +4,5 @@ dist/
 .wrangler/
 src/content/docs/architecture/design/
 src/content/docs/benchmarks/
+src/content/docs/scoreboard.md
 !package-lock.json

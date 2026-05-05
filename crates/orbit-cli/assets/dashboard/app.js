@@ -585,8 +585,12 @@ function fmtScoreboardCount(value) {
 }
 
 function formatScoreboardPair(agent, col) {
-  const left = asScoreboardNumber(readPath(agent, col.left));
-  const right = asScoreboardNumber(readPath(agent, col.right));
+  const left = asScoreboardNumber(
+    col.leftCompute ? col.leftCompute(agent) : readPath(agent, col.left),
+  );
+  const right = asScoreboardNumber(
+    col.rightCompute ? col.rightCompute(agent) : readPath(agent, col.right),
+  );
   return {
     text: `${fmtScoreboardCount(left)}/${fmtScoreboardCount(right)}`,
     zero: left === 0 && right === 0,
@@ -680,8 +684,9 @@ const SCOREBOARD_COLUMNS = [
     num: true,
     format: "pair",
     left: "duels.wins",
-    right: "duels.participated",
-    title: "wins / participated duels",
+    rightCompute: (agent) =>
+      (agent?.duels?.wins ?? 0) + (agent?.duels?.losses ?? 0),
+    title: "wins / decided duels (wins + losses)",
   },
   { key: "friction.reported", label: "frict r", num: true },
   { key: "avg_step_duration_ms", label: "avg step", num: true, format: "duration" },

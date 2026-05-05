@@ -119,6 +119,10 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Scoreboard',
+          items: [{ slug: 'scoreboard', label: 'Per-agent metrics' }],
+        },
+        {
           label: 'Contributing',
           items: [
             { slug: 'contributing', label: 'Overview' },
