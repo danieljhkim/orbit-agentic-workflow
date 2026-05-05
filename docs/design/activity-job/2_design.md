@@ -129,6 +129,8 @@ The seeded `list_backlog_tasks` deterministic activity starts `task_auto_pipelin
 
 `task_gate_pipeline` reserves a bundle's context files before it dispatches `task_pr_pipeline` or `task_local_pipeline` through `invoke_and_wait`. The reservation remains active for the whole child run, so another gate run with overlapping selectors continues to receive a `reservation` conflict while the child is running. After `invoke_and_wait` returns a terminal child-run status (`succeeded`, `failed`, or `cancelled`), the seeded deterministic `release_locks` activity calls `orbit.task.locks.release` with the recorded reservation id. A wait-side `timeout` does not release the reservation because the child run may still be active; the original TTL remains the abandoned/crashed-run cleanup path. This lifecycle was tightened in [T20260430-26].
 
+Default seeding treats the embedded `crates/orbit-core/assets/jobs/task_gate_pipeline.yaml` as canonical for the reservation-release contract. After [T20260505-3], implicit initialization and default job seeding refresh the known legacy TTL-only `task_gate_pipeline` asset when it appears in a global or workspace resource directory; a customized override that still lacks `release_locks` fails with a stale-override error instead of silently preserving queue-latency behavior.
+
 ---
 
 ## 5. Backend Resolution and Constraint Rules
@@ -454,5 +456,6 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260430-30]** — Make `ship-auto` default text output human-readable while preserving JSON fields.
 - **[T20260430-31]** — Require populated execution summaries before opening task PRs.
 - **[T20260505-2]** — Admit accepted backlog friction reports in automatic backlog listing.
+- **[T20260505-3]** — Refresh legacy TTL-only task-gate resource assets or report stale custom overrides.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

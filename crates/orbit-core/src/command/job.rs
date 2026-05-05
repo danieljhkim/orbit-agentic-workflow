@@ -1,11 +1,16 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use orbit_common::types::{JobKind, JobRun, JobScheduleState, JobV2, OrbitError, load_job_asset};
+use orbit_common::types::{
+    JobKind, JobRun, JobScheduleState, JobV2, JobV2Step, JobV2StepBody, OrbitError, load_job_asset,
+};
 use orbit_common::utility::fs::write_text_with_parent;
 use serde_json::Value;
 
 use crate::OrbitRuntime;
+
+const TASK_GATE_PIPELINE_JOB: &str = "task_gate_pipeline";
+const TASK_GATE_PIPELINE_FILE: &str = "task_gate_pipeline.yaml";
 
 /// Shippable default workflow assets, seeded under
 /// `<orbit_root>/resources/jobs/<name>.yaml` on `orbit init`. The five
@@ -329,8 +334,10 @@ fn find_v2_job_asset_in_dir_inner(
 /// copied out on `orbit init` so the job loader can discover it without
 /// depending on a git checkout of this repo.
 ///
-/// When `overwrite` is false, existing files are preserved — users who've
-/// edited a previously-seeded workflow won't lose their changes on re-init.
+/// When `overwrite` is false, existing files are preserved unless they match a
+/// known stale default that must migrate to keep the shipped workflow contract.
+/// Custom task-gate overrides that violate the release contract are reported as
+/// stale rather than silently kept.
 pub(crate) fn seed_default_jobs(jobs_dir: &Path, overwrite: bool) -> Result<usize, OrbitError> {
     let mut count = 0usize;
     for (name, content) in DEFAULT_JOB_FILES {
@@ -341,7 +348,117 @@ pub(crate) fn seed_default_jobs(jobs_dir: &Path, overwrite: bool) -> Result<usiz
         write_text_with_parent(&path, content)?;
         count += 1;
     }
+    count += refresh_stale_default_job_assets(jobs_dir)?;
     Ok(count)
+}
+
+/// Refresh known stale job defaults that may live in a resource directory from
+/// older Orbit versions. This is intentionally narrow: custom overrides that
+/// violate the task-gate reservation-release contract are reported as stale
+/// instead of being silently rewritten.
+pub(crate) fn refresh_stale_default_job_assets(jobs_dir: &Path) -> Result<usize, OrbitError> {
+    refresh_stale_task_gate_pipeline_asset(&jobs_dir.join(TASK_GATE_PIPELINE_FILE))
+}
+
+fn refresh_stale_task_gate_pipeline_asset(path: &Path) -> Result<usize, OrbitError> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    if !path.is_file() {
+        return Err(OrbitError::InvalidInput(format!(
+            "expected task gate pipeline asset to be a file: {}",
+            path.display()
+        )));
+    }
+
+    let yaml = std::fs::read_to_string(path).map_err(|err| {
+        OrbitError::InvalidInput(format!("read stale-check asset {}: {err}", path.display()))
+    })?;
+    let asset = load_job_asset(&yaml).map_err(|err| {
+        OrbitError::InvalidInput(format!("parse stale-check asset {}: {err}", path.display()))
+    })?;
+    if asset.name != TASK_GATE_PIPELINE_JOB {
+        return Ok(0);
+    }
+    if task_gate_pipeline_releases_reservation(&asset.spec) {
+        return Ok(0);
+    }
+
+    if is_legacy_ttl_only_task_gate_pipeline(&asset.spec) {
+        let canonical = default_job_yaml(TASK_GATE_PIPELINE_JOB).ok_or_else(|| {
+            OrbitError::InvalidInput("missing canonical task_gate_pipeline asset".to_string())
+        })?;
+        write_text_with_parent(path, canonical)?;
+        return Ok(1);
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "stale task_gate_pipeline override at {} keeps reservations until TTL; update it from the canonical asset or remove the override so the release_locks step is used",
+        path.display()
+    )))
+}
+
+fn default_job_yaml(job_name: &str) -> Option<&'static str> {
+    DEFAULT_JOB_FILES
+        .iter()
+        .find_map(|(name, yaml)| (*name == job_name).then_some(*yaml))
+}
+
+fn task_gate_pipeline_releases_reservation(job: &JobV2) -> bool {
+    let mut saw_child_wait = false;
+    for step in &job.steps {
+        if step_targets_activity(step, "invoke_and_wait") {
+            saw_child_wait = true;
+        }
+        if saw_child_wait && step_targets_activity(step, "release_locks") {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_legacy_ttl_only_task_gate_pipeline(job: &JobV2) -> bool {
+    let root_step_ids = job
+        .steps
+        .iter()
+        .map(|step| step.id.as_str())
+        .collect::<Vec<_>>();
+    root_step_ids
+        == [
+            "wait_for_window",
+            "starvation_check",
+            "dispatch_pr",
+            "dispatch_local",
+        ]
+        && job
+            .steps
+            .iter()
+            .any(|step| step_targets_activity(step, "invoke_and_wait"))
+}
+
+fn step_targets_activity(step: &JobV2Step, activity_name: &str) -> bool {
+    match &step.body {
+        JobV2StepBody::TargetRef(target) => {
+            target.target.as_str().strip_prefix("activity:") == Some(activity_name)
+        }
+        JobV2StepBody::Target(target) => match &target.spec {
+            orbit_common::types::ActivityV2Spec::Deterministic(spec) => {
+                spec.action == activity_name
+            }
+            _ => false,
+        },
+        JobV2StepBody::Parallel { parallel } => parallel
+            .branches
+            .iter()
+            .any(|child| step_targets_activity(child, activity_name)),
+        JobV2StepBody::FanOut { fan_out, .. } => {
+            step_targets_activity(&fan_out.worker, activity_name)
+        }
+        JobV2StepBody::Loop { loop_ } => loop_
+            .steps
+            .iter()
+            .any(|child| step_targets_activity(child, activity_name)),
+    }
 }
 
 #[cfg(test)]
@@ -349,12 +466,12 @@ mod tests {
     use super::*;
 
     use orbit_common::types::activity_job::{V2ActivityCatalog, resolve_job_target_refs};
-    use orbit_common::types::{ActivityV2Spec, JobV2Step, JobV2StepBody, load_activity_asset};
+    use orbit_common::types::{ActivityV2Spec, load_activity_asset};
     use serde_json::Value;
     use std::collections::BTreeSet;
     use tempfile::tempdir;
 
-    use crate::command::activity::DEFAULT_ACTIVITY_FILES;
+    use crate::command::activity::{DEFAULT_ACTIVITY_FILES, seed_default_activities};
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf, PathBuf) {
         let root = tempdir().expect("create tempdir");
@@ -389,6 +506,41 @@ spec:
         std::fs::create_dir_all(path.parent().expect("job path has parent"))
             .expect("create job dir");
         std::fs::write(path, yaml).expect("write job yaml");
+    }
+
+    fn write_legacy_ttl_task_gate_pipeline(path: &Path) {
+        let yaml = r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: task_gate_pipeline
+spec:
+  state: enabled
+  kind: workflow
+  max_active_runs: 10
+  steps:
+    - id: wait_for_window
+      loop:
+        max_iterations: 120
+        break_when: "{{ steps.reserve.output.reserved }} == true"
+        steps:
+          - id: reserve
+            target: activity:reserve_locks
+          - id: sleep_if_conflict
+            when: "{{ steps.reserve.output.reserved }} == false"
+            target: activity:sleep
+    - id: starvation_check
+      when: "{{ steps.reserve.output.reserved }} == false"
+      target: activity:gate_starvation_fail
+    - id: dispatch_pr
+      when: "{{ input.mode }} == pr && {{ steps.reserve.output.reserved }} == true"
+      target: activity:invoke_and_wait
+    - id: dispatch_local
+      when: "{{ input.mode }} == local && {{ steps.reserve.output.reserved }} == true"
+      target: activity:invoke_and_wait
+"#;
+        std::fs::create_dir_all(path.parent().expect("job path has parent"))
+            .expect("create job dir");
+        std::fs::write(path, yaml).expect("write legacy task gate pipeline");
     }
 
     fn default_activity_catalog() -> V2ActivityCatalog {
@@ -816,6 +968,54 @@ spec:
             .expect("job lookup");
         assert_eq!(path, workspace_job);
         assert_eq!(spec.max_active_runs, 7);
+    }
+
+    #[test]
+    fn stale_workspace_task_gate_pipeline_refreshes_to_release_behavior() {
+        let (_root, runtime, global_root, workspace_root) = test_runtime();
+        seed_default_jobs(&global_root.join("resources/jobs"), true).expect("seed default jobs");
+        seed_default_activities(&global_root.join("resources/activities"), true)
+            .expect("seed default activities");
+        let workspace_job = workspace_root.join("resources/jobs/task_gate_pipeline.yaml");
+        write_legacy_ttl_task_gate_pipeline(&workspace_job);
+
+        let refreshed = refresh_stale_default_job_assets(&workspace_root.join("resources/jobs"))
+            .expect("refresh stale workspace job");
+        assert_eq!(refreshed, 1);
+
+        let entry = runtime
+            .show_job_catalog_entry("task_gate_pipeline")
+            .expect("catalog entry");
+        assert_eq!(entry.path, workspace_job);
+        assert!(
+            task_gate_pipeline_releases_reservation(&entry.spec),
+            "refreshed task_gate_pipeline must release reservations explicitly"
+        );
+
+        let catalog = runtime.v2_activity_catalog().expect("activity catalog");
+        let mut resolved = entry.spec.clone();
+        resolve_job_target_refs(&mut resolved, &catalog)
+            .expect("release_locks resolves from the active catalog");
+    }
+
+    #[test]
+    fn custom_stale_task_gate_pipeline_override_is_reported() {
+        let root = tempdir().expect("create tempdir");
+        let jobs_dir = root.path().join("resources/jobs");
+        write_job(
+            &jobs_dir.join("task_gate_pipeline.yaml"),
+            "task_gate_pipeline",
+            "custom_gate_without_release",
+            1,
+        );
+
+        let err = refresh_stale_default_job_assets(&jobs_dir)
+            .expect_err("custom stale override should be reported");
+        assert!(
+            err.to_string()
+                .contains("stale task_gate_pipeline override"),
+            "{err}"
+        );
     }
 
     #[test]
