@@ -431,7 +431,7 @@ mod tests {
     #[test]
     fn compile_emits_deny_default_and_broad_read_with_modify_subpath() {
         let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
-        let text = compile_macos_sandbox_profile(&resolved).expect("compile");
+        let text = compile_with_env(&resolved, EnvOverrides::default());
         assert!(text.contains("(deny default)"));
         assert!(text.contains("(allow file-read*)"));
         assert!(
@@ -457,6 +457,28 @@ mod tests {
         assert!(
             text.contains("(allow file-write* (subpath \"/Users/test/.orbit\"))"),
             "missing ~/.orbit write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_with_env_does_not_mutate_process_home() {
+        let home_before = std::env::var_os("HOME");
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/Users/test/.orbit\"))"),
+            "missing injected HOME/.orbit write allow: {text}"
+        );
+        assert_eq!(
+            std::env::var_os("HOME"),
+            home_before,
+            "profile compilation tests must not mutate process HOME"
         );
     }
 
@@ -601,7 +623,7 @@ mod tests {
             &["/Users/test/repo"],
             &["/Users/test/repo/src/**"],
         );
-        let text = compile_macos_sandbox_profile(&resolved).expect("compile");
+        let text = compile_with_env(&resolved, EnvOverrides::default());
         assert!(
             text.contains("(allow file-write* (subpath \"/Users/test/repo/src\"))"),
             "expected glob-stripped subpath: {text}"
@@ -616,7 +638,7 @@ mod tests {
     fn compile_appends_explicit_deny_for_negated_modify_rule() {
         let mut resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo"]);
         resolved.modify.push("!/Users/test/repo/.env".to_string());
-        let text = compile_macos_sandbox_profile(&resolved).expect("compile");
+        let text = compile_with_env(&resolved, EnvOverrides::default());
         assert!(
             text.contains("(deny file-write* (subpath \"/Users/test/repo/.env\"))"),
             "missing deny clause: {text}"
@@ -639,7 +661,7 @@ mod tests {
         resolved
             .modify
             .push("!/Users/test/repo/**/*.env".to_string());
-        let text = compile_macos_sandbox_profile(&resolved).expect("compile");
+        let text = compile_with_env(&resolved, EnvOverrides::default());
         assert!(
             text.contains(
                 "(deny file-write* (regex \"^/Users/test/repo/(?:.*/)?[^/]*\\\\.env$\"))"
@@ -678,14 +700,15 @@ mod tests {
     fn compiled_profile_blocks_writes_outside_modify_scope() {
         use std::process::Command;
 
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
         // The compiled profile broadly allows writes under /tmp,
         // /private/tmp, /private/var/folders, and ~/Library/Caches so
         // agent CLIs can use scratch space. To exercise modify-scope
         // enforcement we need a parent that lives outside all of those.
-        let home = std::env::var("HOME").expect("HOME set on macOS");
-        let parent = std::path::PathBuf::from(home)
-            .join(format!(".orbit-sandbox-test-{}", std::process::id()));
-        std::fs::create_dir_all(&parent).expect("parent dir");
+        let parent = sandbox_test_parent("modify-scope");
         let _cleanup = ScopeGuard(parent.clone());
         let dir = tempfile::Builder::new()
             .prefix("compile-")
@@ -755,10 +778,11 @@ mod tests {
     fn compiled_profile_denies_env_glob_without_blocking_other_writes() {
         use std::process::Command;
 
-        let home = std::env::var("HOME").expect("HOME set on macOS");
-        let parent = std::path::PathBuf::from(home)
-            .join(format!(".orbit-sandbox-test-{}", std::process::id()));
-        std::fs::create_dir_all(&parent).expect("parent dir");
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
+        let parent = sandbox_test_parent("env-glob");
         let _cleanup = ScopeGuard(parent.clone());
         let dir = tempfile::Builder::new()
             .prefix("compile-env-")
@@ -828,10 +852,11 @@ mod tests {
         // mechanism unblocks the real CLIs writing settings/sessions there.
         use std::process::Command;
 
-        let home_root = std::env::var("HOME").expect("HOME set on macOS");
-        let parent = std::path::PathBuf::from(home_root)
-            .join(format!(".orbit-sandbox-test-{}", std::process::id()));
-        std::fs::create_dir_all(&parent).expect("parent dir");
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
+        let parent = sandbox_test_parent("provider-state");
         let _cleanup = ScopeGuard(parent.clone());
         let synthetic_home = tempfile::Builder::new()
             .prefix("synthetic-home-")
@@ -894,6 +919,94 @@ mod tests {
     fn shell_escape(path: &Path) -> String {
         let s = path.display().to_string();
         format!("'{}'", s.replace('\'', "'\\''"))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sandbox_exec_can_apply() -> bool {
+        if !sandbox_exec_available() {
+            return false;
+        }
+
+        let mut profile_file = tempfile::Builder::new()
+            .prefix("orbit-sandbox-probe-")
+            .suffix(".sb")
+            .tempfile()
+            .expect("probe profile tempfile");
+        use std::io::Write;
+        profile_file
+            .write_all(b"(version 1)\n(allow default)\n")
+            .expect("write probe profile");
+        profile_file.flush().expect("flush probe profile");
+
+        std::process::Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/usr/bin/true")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(target_os = "macos")]
+    static SANDBOX_TEST_PARENT_COUNTER: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    #[cfg(target_os = "macos")]
+    fn sandbox_test_parent(label: &str) -> std::path::PathBuf {
+        let roots = [
+            Some(std::env::current_dir().expect("current dir")),
+            std::env::var_os("HOME").map(std::path::PathBuf::from),
+        ];
+        let suffix = SANDBOX_TEST_PARENT_COUNTER
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .to_string();
+        let mut attempts = Vec::new();
+        for root in roots.into_iter().flatten() {
+            if is_default_write_allow_root(&root) {
+                attempts.push(format!(
+                    "{} is under a broad sandbox write allow",
+                    root.display()
+                ));
+                continue;
+            }
+            let parent = root.join(format!(
+                ".orbit-sandbox-test-{}-{label}-{suffix}",
+                std::process::id()
+            ));
+            match std::fs::create_dir_all(&parent) {
+                Ok(()) => return parent,
+                Err(err) => attempts.push(format!("{}: {err}", parent.display())),
+            }
+        }
+        panic!(
+            "no writable macOS sandbox test parent outside broad write allows: {}",
+            attempts.join("; ")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn is_default_write_allow_root(path: &Path) -> bool {
+        fn matches_allowed(path: &Path) -> bool {
+            [
+                Path::new("/tmp"),
+                Path::new("/private/tmp"),
+                Path::new("/private/var/folders"),
+                Path::new("/dev"),
+            ]
+            .into_iter()
+            .any(|root| path.starts_with(root))
+        }
+
+        if matches_allowed(path) {
+            return true;
+        }
+        match path.canonicalize() {
+            Ok(canonical) => matches_allowed(&canonical),
+            Err(_) => false,
+        }
     }
 
     #[cfg(target_os = "macos")]
