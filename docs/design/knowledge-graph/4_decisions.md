@@ -43,11 +43,11 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-003 — Tree-sitter extractors over an LSP backend
 
-**Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352]
+**Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352], [T20260505-11], [T20260505-15]
 
-**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352], and TypeScript/TSX followed in [T20260505-11].
+**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352], TypeScript/TSX followed in [T20260505-11], and Ruby followed in [T20260505-15].
 
-**Decision.** Use tree-sitter grammars with per-language extractors (`rust`, `python`, `go`, `java`, `javascript`, `typescript`, `tsx`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
+**Decision.** Use tree-sitter grammars with per-language extractors (`rust`, `python`, `go`, `java`, `javascript`, `typescript`, `tsx`, `ruby`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
 
 **Consequences.**
 - Fast, deterministic extraction with no per-query process lifecycle.
@@ -439,5 +439,6 @@ Tasks cited by ADRs above:
 - **[T20260505-1]** — Require auto-refresh freshness checks to materialize missing current-branch graph refs before returning fresh.
 - **[T20260505-5]** — Bound `orbit.graph.pack` selector gathering and skip inline refresh by default.
 - **[T20260505-11]** — Add TypeScript and TSX classification, extraction, graph search/pack coverage, and symbol-level history attribution.
+- **[T20260505-15]** — Add Ruby classification, tree-sitter extraction, graph search coverage, and Ruby symbol kinds.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

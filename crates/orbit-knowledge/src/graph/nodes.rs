@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 pub enum LeafKind {
     Function,
     Method,
+    SingletonMethod,
     Class,
+    SingletonClass,
     Enum,
     Struct,
     Interface,
@@ -20,6 +22,7 @@ pub enum LeafKind {
     Trait,
     Impl,
     Field,
+    Constant,
     Module,
     /// Markdown ATX heading (`#`–`######`). `depth` is 1–6. Added T20260422-1540.
     Section {
@@ -37,7 +40,9 @@ impl fmt::Display for LeafKind {
         let s = match self {
             Self::Function => "function",
             Self::Method => "method",
+            Self::SingletonMethod => "singleton_method",
             Self::Class => "class",
+            Self::SingletonClass => "singleton_class",
             Self::Enum => "enum",
             Self::Struct => "struct",
             Self::Interface => "interface",
@@ -45,6 +50,7 @@ impl fmt::Display for LeafKind {
             Self::Trait => "trait",
             Self::Impl => "impl",
             Self::Field => "field",
+            Self::Constant => "constant",
             Self::Module => "module",
             Self::Section { .. } => "section",
             Self::ConfigKey => "config_key",

@@ -17,6 +17,7 @@ mod javascript;
 mod language;
 mod markdown;
 mod python;
+mod ruby;
 mod rust;
 mod table;
 mod typescript;
@@ -33,6 +34,7 @@ use java::JavaExtractor;
 use javascript::JavaScriptExtractor;
 use markdown::MarkdownExtractor;
 use python::PythonExtractor;
+use ruby::RubyExtractor;
 use rust::RustExtractor;
 use table::TableExtractor;
 use typescript::TypeScriptExtractor;
@@ -59,6 +61,7 @@ impl ExtractorRegistry {
             extractors: vec![
                 Box::new(RustExtractor),
                 Box::new(PythonExtractor),
+                Box::new(RubyExtractor),
                 Box::new(GoExtractor),
                 Box::new(JavaExtractor),
                 Box::new(JavaScriptExtractor),
