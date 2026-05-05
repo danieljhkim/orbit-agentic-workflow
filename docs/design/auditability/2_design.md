@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (T20260430-20)
+**Last updated:** 2026-05-05 (T20260505-6)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and known limitations. See [1_overview.md](./1_overview.md) for the feature purpose and [3_vision.md](./3_vision.md) for future questions.
 
@@ -25,6 +25,8 @@ The split is deliberate: command rows stay compact and queryable; envelopes pres
 ## 2. Command Audit Rows
 
 `AuditEvent` lives in `crates/orbit-common/src/types/audit_event.rs`. Rows include execution id, timestamp, command/subcommand, optional tool and target metadata, role, status, exit code, duration, working directory, optional argument/error/stdout/stderr fields, host, pid, and session id. The table and indexes live in `crates/orbit-store/migrations/0001_init.sql`; `crates/orbit-store/src/sqlite/audit_event_store.rs` lists, shows, prunes, exports, computes stats, and returns durations for p95 calculation.
+
+After [T20260505-6], command-audit producers use the shared `audit_execution_id` helper instead of timestamp-only ids. The id keeps a stable producer prefix and appends wall-clock nanoseconds, process id, and a per-process atomic sequence so same-workspace parallel `orbit tool run ...` calls do not collide on clocks with coarse effective resolution. The SQLite unique index on `execution_id` remains the enforcement boundary.
 
 The CLI RAII guard in `crates/orbit-cli/src/audit_middleware.rs` defaults to failure, marks success or denial explicitly, and writes one row in `Drop`, so early returns still audit when stack unwinding reaches the guard. Direct `orbit audit ...` commands are outside the guard today to avoid recursive audit noise.
 
@@ -145,5 +147,6 @@ Each record contains timestamp, level, target, and structured fields. After [T20
 - **[T20260428-17]** — Split local Orbit task-review scoring from PR review-comment scoring and surface both in compact scoreboards.
 - **[T20260430-4]** — Change local task-review scoring to count review-thread creations rather than replies, rename the compact field to `task_review.threads`, and keep legacy metric reads mapped forward.
 - **[T20260430-20]** — Shorten the auditability docs while preserving required guarantees.
+- **[T20260505-6]** — Replace timestamp-only command-audit execution ids with collision-resistant generated ids for parallel tool runs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

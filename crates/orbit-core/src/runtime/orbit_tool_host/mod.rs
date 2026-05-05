@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use orbit_common::types::{
     AuditEventStatus, OrbitError, ReviewThreadStatus, Task, TaskPriority, TaskStatus,
-    build_task_status_index, normalize_optional_attribution_label,
+    audit_execution_id, build_task_status_index, normalize_optional_attribution_label,
     optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
     optional_string_list_alias, optional_u32_alias, prune_missing_context_files, required_string,
     task_dependencies_ready,
@@ -858,15 +858,9 @@ pub(crate) fn record_task_lock_audit_event(
     status: AuditEventStatus,
     payload: Value,
 ) -> Result<(), OrbitError> {
+    let execution_id_prefix = format!("audit-{}", command.replace('.', "-"));
     runtime.record_audit_event(&crate::AuditEventInsertParams {
-        execution_id: format!(
-            "audit-{}-{}",
-            command.replace('.', "-"),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_nanos())
-                .unwrap_or(0)
-        ),
+        execution_id: audit_execution_id(&execution_id_prefix),
         command: command.to_string(),
         subcommand: None,
         tool_name: Some(tool_name.to_string()),

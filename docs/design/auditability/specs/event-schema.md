@@ -15,6 +15,7 @@ Command audit events are SQLite rows represented by `AuditEvent`.
 Required invariants:
 
 - `execution_id` is non-empty and unique within the command audit table.
+- Producer-generated `execution_id` values use the shared prefix + timestamp + process id + per-process sequence helper; new producers must not roll timestamp-only ids.
 - `timestamp`, `command`, `role`, `status`, `exit_code`, `duration_ms`, `working_directory`, and `pid` are always present.
 - `status` is one of `success`, `failure`, or `denied`.
 - A denied command uses `status: denied` and a non-zero exit code.
