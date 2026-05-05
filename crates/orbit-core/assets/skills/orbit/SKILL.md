@@ -125,10 +125,11 @@ orbit tool run orbit.task.update --input '{"id": "<id>", "comment": "...", "mode
 orbit tool run orbit.task.approve --input '{"id": "<id>", "note": "...", "model": "<model_name>"}' # proposed/friction -> backlog, review -> done
 orbit tool run orbit.task.reject --input '{"id": "<id>", "note": "...", "model": "<model_name>"}'   # proposed/friction -> rejected
 orbit tool run orbit.task.locks --input '{}'                         # View active file locks
-orbit tool run orbit.task.review_thread.add --input '{"id": "<id>", "body": "..."}'
-orbit tool run orbit.task.review_thread.list --input '{"id": "<id>", "status": "open"}'
-orbit tool run orbit.task.review_thread.reply --input '{"id": "<id>", "thread_id": "<thread-id>", "body": "..."}'
-orbit tool run orbit.task.review_thread.resolve --input '{"id": "<id>", "thread_id": "<thread-id>"}'
+# Review-thread commands: add/reply require `model`; list/resolve show it for provenance consistency, though it is optional there.
+orbit tool run orbit.task.review_thread.add --input '{"id": "<id>", "body": "...", "path": "<repo-relative path>", "line": "<line>", "model": "<model_name>"}'
+orbit tool run orbit.task.review_thread.list --input '{"id": "<id>", "status": "open", "model": "<model_name>"}'
+orbit tool run orbit.task.review_thread.reply --input '{"id": "<id>", "thread_id": "<thread-id>", "body": "...", "model": "<model_name>"}'
+orbit tool run orbit.task.review_thread.resolve --input '{"id": "<id>", "thread_id": "<thread-id>", "model": "<model_name>"}'
 
 # State handoff commands
 orbit tool run orbit.state.get --input '{"key": "decision"}'

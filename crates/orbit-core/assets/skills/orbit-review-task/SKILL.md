@@ -11,14 +11,20 @@ Review someone else's work and surface issues as Orbit review threads — withou
 
 ## Tool Invocation
 
-Both surfaces accept the same JSON. **`model` is required** for `review_thread.add` and `.reply`; the call rejects otherwise. Use your model name to score the review; pass `model: "human"` to opt out of scoring for human-attributed feedback.
+Both surfaces accept the same JSON. **`model` is required** for `review_thread.add` and `.reply`; those calls reject without it. `review_thread.add` creates the scored finding, while `.reply` preserves attributed follow-up without creating a new finding. `review_thread.list` and `.resolve` do not require `model`, but the examples include it for consistent provenance. Use your model name for agent-attributed feedback; pass `model: "human"` to opt out of scoring for human-attributed feedback.
 
 ```bash
 orbit tool run orbit.task.review_thread.add --input '{
   "id": "<task-id>",
   "body": "<finding>",
-  "path": "<repo-relative path>",   # optional, for inline review
-  "line": <line>,                   # optional, requires path
+  "path": "<repo-relative path>",
+  "line": "<line>",
+  "model": "<your-model>"
+}'
+
+orbit tool run orbit.task.review_thread.list --input '{
+  "id": "<task-id>",
+  "status": "open",
   "model": "<your-model>"
 }'
 
@@ -26,6 +32,12 @@ orbit tool run orbit.task.review_thread.reply --input '{
   "id": "<task-id>",
   "thread_id": "<thread-id>",
   "body": "<reply>",
+  "model": "<your-model>"
+}'
+
+orbit tool run orbit.task.review_thread.resolve --input '{
+  "id": "<task-id>",
+  "thread_id": "<thread-id>",
   "model": "<your-model>"
 }'
 ```
@@ -52,7 +64,7 @@ Read the task with `orbit.task.show`. Pull the `description`, `acceptance_criter
 
 ### 3. File review threads
 
-One thread per distinct issue. Use inline (`path` + `line`) when the feedback ties to a specific location; use general (omit `path`/`line`) for cross-cutting concerns. Lead with a one-line headline (bold), then the why and the suggested fix. Keep each thread self-contained — reviewers should not need to read other threads to understand it.
+One thread per distinct issue. Use inline (`path` + string `line`) when the feedback ties to a specific location; use general (omit `path`/`line`) for cross-cutting concerns. Lead with a one-line headline (bold), then the why and the suggested fix. Keep each thread self-contained — reviewers should not need to read other threads to understand it.
 
 ```text
 **[Spec compliance | Code quality | Nit] — short headline.**
@@ -73,7 +85,8 @@ End by reporting in chat: how many threads filed, which are blockers, overall ve
 - **Never** transition the reviewed task's status (no `orbit.task.update --status …`). The implementer or human owns lifecycle.
 - **Never** resolve threads you authored — resolution is the implementer's call once they've addressed the feedback. Exception: if you replied to your own thread to retract the issue, resolve it.
 - **Always** include `model` on every `review_thread.add` and `.reply` call. The tool rejects calls without it.
-- **Replies don't score** — only the initial `review_thread.add` counts toward the local task-review scoreboard. Use replies for clarification, not for padding.
+- **Listing and resolution are not scored** — `review_thread.list` and `.resolve` do not require `model`; include it when you want consistent provenance in command history or resolver identity.
+- **Replies don't create new findings** — only the initial `review_thread.add` counts toward the local task-review scoreboard. Use replies for clarification, not for padding.
 - If the change has no PR yet, review threads stay local. If it does have a PR, the GitHub sync flow will mirror them as PR review comments.
 
 ## When NOT to use this skill

@@ -31,7 +31,10 @@ spec:
     Durable record: review threads, not this response. Use
     `orbit.task.review_thread.add` to record blocking issues and
     `orbit.task.review_thread.resolve` to mark each issue resolved after the
-    corresponding fix lands. The pipeline does not parse your response body.
+    corresponding fix lands. Calls to `review_thread.add` and
+    `review_thread.reply` require `model`; `review_thread.list` and
+    `review_thread.resolve` do not, though `resolve` may include it for
+    provenance. The pipeline does not parse your response body.
 
     Procedure:
 
@@ -47,8 +50,9 @@ spec:
     3. For each blocking issue you find — correctness bug, broken contract,
        acceptance-criteria miss, obvious regression — record it with
        `orbit.task.review_thread.add` against the most relevant task. Use
-       inline `path` and `line` when the issue is file-specific; omit them
-       for general findings. Skip stylistic nits.
+       inline `path` and string `line` (`"line": "<line>"`) when the issue is
+       file-specific; omit them for general findings. Include `model` on every
+       `review_thread.add` call. Skip stylistic nits.
     4. Apply fixes directly in the worktree, scoped to files the bundle
        already touches. Do not widen scope: out-of-scope concerns belong in
        new tasks created later, not in this review pass.
