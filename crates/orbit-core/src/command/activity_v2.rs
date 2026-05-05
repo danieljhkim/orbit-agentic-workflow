@@ -89,6 +89,7 @@ impl OrbitRuntime {
         })?;
         let _ = writer.emit(V2AuditEventKind::RunStarted {
             job_name: format!("cli:{}", asset.name),
+            retry_source_run_id: None,
         });
 
         let activity_type = match &asset.spec.spec {

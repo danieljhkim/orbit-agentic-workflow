@@ -18,7 +18,7 @@ use orbit_engine::activity_job::{
     DispatchError, JobOutcome, V2AuditWriter, execute_job, resolve_job_catalog_refs_for_execution,
 };
 use orbit_store::{JobRunStepParams, TaskReservationReleaseReason};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::OrbitRuntime;
 use crate::command::SYSTEM_AUDIT_IDENTITY;
@@ -47,6 +47,30 @@ impl OrbitRuntime {
         input: Value,
         backend_flag: Option<Backend>,
     ) -> Result<V2JobRunResult, OrbitError> {
+        self.run_job_v2_from_yaml_with_retry_source(yaml_path, input, backend_flag, None)
+    }
+
+    /// Re-run a completed or historical job run from step 0 using the current
+    /// catalog definition and the source run's persisted input.
+    pub fn replay_job_run(&self, source_run_id: &str) -> Result<V2JobRunResult, OrbitError> {
+        let source = self.show_job_run(source_run_id)?;
+        let input = source.input.clone().unwrap_or_else(|| json!({}));
+        let job = self.show_job_catalog_entry(&source.job_id)?;
+        self.run_job_v2_from_yaml_with_retry_source(
+            &job.path,
+            input,
+            None,
+            Some(source.run_id.clone()),
+        )
+    }
+
+    fn run_job_v2_from_yaml_with_retry_source(
+        &self,
+        yaml_path: &Path,
+        input: Value,
+        backend_flag: Option<Backend>,
+        retry_source_run_id: Option<String>,
+    ) -> Result<V2JobRunResult, OrbitError> {
         let job_name = load_job_name(yaml_path)?;
         let scheduled_at = chrono::Utc::now();
         let run = self.stores().jobs().insert_run(
@@ -54,7 +78,7 @@ impl OrbitRuntime {
             1,
             scheduled_at,
             Some(input.clone()),
-            None,
+            retry_source_run_id.clone(),
         )?;
         let initial_state =
             PipelineState::new(run.run_id.clone(), run.job_id.clone(), input.clone());
@@ -76,11 +100,12 @@ impl OrbitRuntime {
             attempt: run.attempt,
         })?;
 
-        let outcome = self.run_job_v2_from_yaml_with_run_id(
+        let outcome = self.run_job_v2_from_yaml_with_run_context(
             yaml_path,
             input.clone(),
             backend_flag,
             Some(run.run_id.clone()),
+            retry_source_run_id,
         );
         let finished_at = chrono::Utc::now();
         let duration_ms = Some(
@@ -151,6 +176,23 @@ impl OrbitRuntime {
         backend_flag: Option<Backend>,
         run_id_override: Option<String>,
     ) -> Result<V2JobRunResult, OrbitError> {
+        self.run_job_v2_from_yaml_with_run_context(
+            yaml_path,
+            input,
+            backend_flag,
+            run_id_override,
+            None,
+        )
+    }
+
+    fn run_job_v2_from_yaml_with_run_context(
+        &self,
+        yaml_path: &Path,
+        input: Value,
+        backend_flag: Option<Backend>,
+        run_id_override: Option<String>,
+        retry_source_run_id: Option<String>,
+    ) -> Result<V2JobRunResult, OrbitError> {
         let yaml = std::fs::read_to_string(yaml_path).map_err(|err| {
             OrbitError::InvalidInput(format!("read {}: {err}", yaml_path.display()))
         })?;
@@ -203,6 +245,7 @@ impl OrbitRuntime {
         })?;
         let _ = writer.emit(V2AuditEventKind::RunStarted {
             job_name: format!("cli:{}", asset.name),
+            retry_source_run_id,
         });
 
         let outcome_res: Result<JobOutcome, OrbitError> =
@@ -302,7 +345,7 @@ fn load_job_name(yaml_path: &Path) -> Result<String, OrbitError> {
 mod tests {
     use super::*;
 
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use chrono::Utc;
     use orbit_common::types::{ExecutorDef, ExecutorType};
@@ -368,6 +411,50 @@ spec:
 "#
         );
         std::fs::write(path, yaml).expect("write cli metrics job yaml");
+    }
+
+    fn source_bundle_bytes(
+        repo_root: &Path,
+        job_id: &str,
+        run_id: &str,
+    ) -> BTreeMap<String, Vec<u8>> {
+        let mut bytes = BTreeMap::new();
+        let run_dir = repo_root
+            .join(".orbit/state/job-runs")
+            .join(job_id)
+            .join(run_id);
+        let jrun = run_dir.join("jrun.yaml");
+        bytes.insert(
+            "jrun.yaml".to_string(),
+            std::fs::read(&jrun).expect("read source jrun"),
+        );
+        let steps_dir = run_dir.join("steps");
+        if steps_dir.is_dir() {
+            let mut paths = std::fs::read_dir(&steps_dir)
+                .expect("read steps dir")
+                .map(|entry| entry.expect("step entry").path())
+                .collect::<Vec<_>>();
+            paths.sort();
+            for path in paths {
+                let name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("step file name")
+                    .to_string();
+                bytes.insert(
+                    format!("steps/{name}"),
+                    std::fs::read(&path).expect("read step file"),
+                );
+            }
+        }
+        let audit = repo_root
+            .join(".orbit/state/audit/v2_loop")
+            .join(format!("{run_id}.jsonl"));
+        bytes.insert(
+            "audit/v2_loop.jsonl".to_string(),
+            std::fs::read(&audit).expect("read source audit"),
+        );
+        bytes
     }
 
     #[cfg(unix)]
@@ -468,6 +555,77 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
             .expect("catalog history");
         assert!(history.iter().any(|run| run.run_id == result.run_id));
         assert!(repo_root.join(".orbit/state/job-runs").exists());
+    }
+
+    #[test]
+    fn replay_job_run_records_lineage_and_preserves_source_bundle() {
+        let (_root, runtime, repo_root, global_root) = test_runtime();
+        let jobs_dir = global_root.join("resources/jobs");
+        std::fs::create_dir_all(&jobs_dir).expect("create jobs dir");
+        let yaml_path = jobs_dir.join("qa_replay_sleep.yaml");
+        write_job(&yaml_path, "qa_replay_sleep", "sleep");
+
+        let catalog = runtime
+            .show_job_catalog_entry("qa_replay_sleep")
+            .expect("catalog entry");
+        let input = json!({ "seconds": 0, "marker": "source-input" });
+        let source_result = runtime
+            .run_job_v2_from_yaml(&catalog.path, input.clone(), None)
+            .expect("source run succeeds");
+        let source_run = runtime
+            .show_job_run(&source_result.run_id)
+            .expect("show source");
+        let before = source_bundle_bytes(&repo_root, &source_run.job_id, &source_run.run_id);
+
+        let replay_result = runtime
+            .replay_job_run(&source_result.run_id)
+            .expect("replay succeeds");
+
+        assert_ne!(replay_result.run_id, source_result.run_id);
+        assert!(replay_result.success);
+        let replay_run = runtime
+            .show_job_run(&replay_result.run_id)
+            .expect("show replay");
+        assert_eq!(replay_run.job_id, source_run.job_id);
+        assert_eq!(replay_run.input, Some(input));
+        assert_eq!(
+            replay_run.retry_source_run_id.as_deref(),
+            Some(source_result.run_id.as_str())
+        );
+        let replay_jrun = repo_root
+            .join(".orbit/state/job-runs")
+            .join(&replay_run.job_id)
+            .join(&replay_run.run_id)
+            .join("jrun.yaml");
+        let replay_doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&replay_jrun).expect("read replay jrun"))
+                .expect("parse replay jrun");
+        assert_eq!(
+            replay_doc["run"]["retry_source_run_id"].as_str(),
+            Some(source_result.run_id.as_str())
+        );
+        assert_eq!(
+            source_bundle_bytes(&repo_root, &source_run.job_id, &source_run.run_id),
+            before
+        );
+
+        let audit_jsonl = repo_root
+            .join(".orbit/state/audit/v2_loop")
+            .join(format!("{}.jsonl", replay_result.run_id));
+        let run_started = std::fs::read_to_string(&audit_jsonl)
+            .expect("read replay audit")
+            .lines()
+            .find(|line| line.contains(r#""body_kind":"run_started""#))
+            .expect("run_started audit event")
+            .to_string();
+        let event: serde_json::Value =
+            serde_json::from_str(&run_started).expect("parse run_started");
+        assert_eq!(
+            event
+                .get("retry_source_run_id")
+                .and_then(serde_json::Value::as_str),
+            Some(source_result.run_id.as_str())
+        );
     }
 
     #[cfg(unix)]

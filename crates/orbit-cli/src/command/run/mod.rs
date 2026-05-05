@@ -14,7 +14,7 @@ mod trace;
 pub use events::RunEventsArgs;
 pub use history::RunHistoryArgs;
 pub(crate) use job::job_run_to_json;
-pub use job::{JobRunArgs, JobRunPipelineWorkerArgs};
+pub use job::{JobReplayArgs, JobRunArgs, JobRunPipelineWorkerArgs};
 pub use logs::RunLogsArgs;
 pub use show::RunShowArgs;
 pub(crate) use show::{print_legacy_logs_summary, print_run_show};

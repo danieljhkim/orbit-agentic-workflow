@@ -45,6 +45,8 @@ pub struct V2AuditEvent {
 pub enum V2AuditEventKind {
     RunStarted {
         job_name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retry_source_run_id: Option<String>,
     },
     RunFinished {
         outcome: String,

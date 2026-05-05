@@ -248,6 +248,7 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
         .route("/job-runs", get(list_job_runs))
         .route("/runs/:id", get(get_run))
         .route("/runs/:id/cancel", post(cancel_run_action))
+        .route("/runs/:id/replay", post(replay_run_action))
         .route("/runs/:id/events", get(list_run_events))
         .route("/audit", get(list_audit))
         .route("/log", get(get_log))
@@ -793,6 +794,33 @@ mod tests {
         std::fs::write(path, content).expect("write fixture");
     }
 
+    fn write_replay_job(runtime: &OrbitRuntime, name: &str) -> std::path::PathBuf {
+        let jobs_dir = runtime.data_root().join("resources/jobs");
+        std::fs::create_dir_all(&jobs_dir).expect("create jobs dir");
+        let path = jobs_dir.join(format!("{name}.yaml"));
+        std::fs::write(
+            &path,
+            format!(
+                r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: {name}
+spec:
+  state: enabled
+  kind: workflow
+  steps:
+    - id: nap
+      spec:
+        type: deterministic
+        action: sleep
+        config: {{}}
+"#
+            ),
+        )
+        .expect("write replay job");
+        path
+    }
+
     #[test]
     fn diagnostics_metrics_values_adapt_invocation_records() {
         let ts = chrono::DateTime::parse_from_rfc3339("2026-05-05T03:29:45Z")
@@ -939,6 +967,20 @@ mod tests {
             .expect("response")
     }
 
+    async fn request_replay(runtime: OrbitRuntime, run_id: &str, origin: Option<&str>) -> Response {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/runs/{run_id}/replay"));
+        if let Some(origin) = origin {
+            builder = builder.header(header::ORIGIN, origin);
+        }
+        router()
+            .with_state(Arc::new(runtime))
+            .oneshot(builder.body(Body::empty()).expect("request"))
+            .await
+            .expect("response")
+    }
+
     #[tokio::test]
     async fn cancel_run_endpoint_cancels_pending_run() {
         let runtime = OrbitRuntime::in_memory().expect("build runtime");
@@ -1004,6 +1046,83 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let stored = runtime.show_job_run(&run.run_id).expect("show run");
         assert_eq!(stored.state, JobRunState::Pending);
+    }
+
+    #[tokio::test]
+    async fn replay_run_endpoint_returns_new_run_id_and_lineage() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let job_path = write_replay_job(&runtime, "web_replay_success");
+        let source = runtime
+            .run_job_v2_from_yaml(&job_path, json!({ "seconds": 0 }), None)
+            .expect("source run succeeds");
+
+        let response = request_replay(
+            runtime.clone(),
+            &source.run_id,
+            Some("http://localhost:3000"),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = body_json(response).await;
+        let new_run_id = payload["run_id"].as_str().expect("new run id");
+        assert_ne!(new_run_id, source.run_id);
+        let stored = runtime.show_job_run(new_run_id).expect("show replay");
+        assert_eq!(stored.state, JobRunState::Success);
+        assert_eq!(
+            stored.retry_source_run_id.as_deref(),
+            Some(source.run_id.as_str())
+        );
+        let list_response = router()
+            .with_state(Arc::new(runtime.clone()))
+            .oneshot(
+                Request::builder()
+                    .uri("/job-runs?limit=10")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("list response");
+        assert_eq!(list_response.status(), StatusCode::OK);
+        let list_payload = body_json(list_response).await;
+        assert!(
+            list_payload
+                .as_array()
+                .expect("runs array")
+                .iter()
+                .any(|run| run["run_id"].as_str() == Some(new_run_id))
+        );
+
+        let detail = job_run_detail_to_json(&runtime, &stored);
+        assert_eq!(
+            detail["run"]["retry_source_run_id"].as_str(),
+            Some(source.run_id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn replay_run_endpoint_returns_4xx_when_current_job_is_deleted() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let job_path = write_replay_job(&runtime, "web_replay_deleted");
+        let source = runtime
+            .run_job_v2_from_yaml(&job_path, json!({ "seconds": 0 }), None)
+            .expect("source run succeeds");
+        std::fs::remove_file(&job_path).expect("delete job yaml");
+
+        let response = request_replay(
+            runtime.clone(),
+            &source.run_id,
+            Some("http://localhost:3000"),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let payload = body_json(response).await;
+        assert!(
+            payload["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("job not found"))
+        );
     }
 
     #[test]
@@ -1295,6 +1414,16 @@ async fn cancel_run_action(
         | Err(orbit_core::OrbitError::JobRunStateTransition(msg)) => {
             (StatusCode::CONFLICT, Json(json!({ "error": msg }))).into_response()
         }
+        Err(e) => map_runtime_error(e),
+    }
+}
+
+async fn replay_run_action(
+    State(runtime): State<Arc<OrbitRuntime>>,
+    Path(id): Path<String>,
+) -> Response {
+    match runtime.replay_job_run(&id) {
+        Ok(result) => Json(json!({ "run_id": result.run_id })).into_response(),
         Err(e) => map_runtime_error(e),
     }
 }
@@ -2480,6 +2609,7 @@ fn map_runtime_error(e: orbit_core::OrbitError) -> Response {
     match e {
         orbit_core::OrbitError::InvalidInput(msg) => bad_request(msg),
         orbit_core::OrbitError::TaskNotFound(msg) => not_found(format!("task not found: {msg}")),
+        orbit_core::OrbitError::JobNotFound(msg) => not_found(format!("job not found: {msg}")),
         orbit_core::OrbitError::JobRunNotFound(msg) => not_found(format!("run not found: {msg}")),
         other => server_error(other),
     }

@@ -147,6 +147,19 @@ function buildCancelRunButton(run, host) {
   return btn;
 }
 
+function buildReplayRunButton(run, host) {
+  const btn = el("button", {
+    class: "action approve run-replay",
+    text: "Replay run",
+    title: `Replay ${run.run_id}`,
+  });
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    replayRun(run, btn, host);
+  });
+  return btn;
+}
+
 async function cancelRun(runId, btn, host) {
   if (!runId) return;
   const old = btn.textContent;
@@ -165,6 +178,32 @@ async function cancelRun(runId, btn, host) {
   } catch (e) {
     if (host) {
       host.appendChild(el("div", { class: "action-error", text: e.message || "cancel failed" }));
+    }
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+async function replayRun(run, btn, host) {
+  const runId = run && run.run_id;
+  if (!runId) return;
+  if (run.state === "running" && !window.confirm(`Replay still-running run ${runId}?`)) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>Replay run`;
+  if (host) {
+    for (const node of host.querySelectorAll(".action-error")) node.remove();
+  }
+  try {
+    const payload = await postJson(`/api/runs/${encodeURIComponent(runId)}/replay`);
+    if (!payload.run_id) throw new Error("replay response did not include run_id");
+    navigateToRun(payload.run_id);
+    fetchAndRenderRuns().catch(console.error);
+  } catch (e) {
+    if (host) {
+      host.appendChild(el("div", { class: "action-error", text: e.message || "replay failed" }));
     }
     console.error(e);
   } finally {
@@ -1732,6 +1771,17 @@ function renderRunDetailMeta() {
   const back = el("button", { class: "back-action", text: "← back to runs" });
   back.addEventListener("click", () => setActiveTab("diagnostics/runs"));
   const actions = el("div", { class: "run-detail-actions" }, [back]);
+  if (run.retry_source_run_id) {
+    const sourceId = run.retry_source_run_id;
+    const lineage = el("button", {
+      class: "back-action replay-source",
+      text: `Replayed from ${sourceId}`,
+      title: `Open ${sourceId}`,
+    });
+    lineage.addEventListener("click", () => navigateToRun(sourceId));
+    actions.appendChild(lineage);
+  }
+  if (run.run_id) actions.appendChild(buildReplayRunButton(run, wrap));
   if (runIsCancellable(run)) actions.appendChild(buildCancelRunButton(run, wrap));
   wrap.appendChild(actions);
   wrap.appendChild(grid);

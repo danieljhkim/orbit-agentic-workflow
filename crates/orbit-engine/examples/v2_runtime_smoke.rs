@@ -81,6 +81,7 @@ fn smoke_dispatch_shell(
     let _ = writer
         .emit(V2AuditEventKind::RunStarted {
             job_name: "smoke_shell".into(),
+            retry_source_run_id: None,
         })
         .map_err(|e| format!("audit: {e:?}"))?;
 
