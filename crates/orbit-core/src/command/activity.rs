@@ -17,6 +17,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/agent_implement.yaml"),
     ),
     (
+        "agent_review",
+        include_str!("../../assets/activities/agent_review.yaml"),
+    ),
+    (
         "dispatch_agent",
         include_str!("../../assets/activities/dispatch_agent.yaml"),
     ),
