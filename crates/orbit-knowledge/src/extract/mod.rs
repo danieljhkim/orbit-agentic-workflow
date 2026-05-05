@@ -19,6 +19,7 @@ mod markdown;
 mod python;
 mod rust;
 mod table;
+mod typescript;
 
 pub use common::{
     ExtractedExport, ExtractedLeaf, ExtractionResult, compute_source_hash, identity_key,
@@ -34,6 +35,7 @@ use markdown::MarkdownExtractor;
 use python::PythonExtractor;
 use rust::RustExtractor;
 use table::TableExtractor;
+use typescript::TypeScriptExtractor;
 
 /// Trait for file-content extractors.
 ///
@@ -60,6 +62,8 @@ impl ExtractorRegistry {
                 Box::new(GoExtractor),
                 Box::new(JavaExtractor),
                 Box::new(JavaScriptExtractor),
+                Box::new(TypeScriptExtractor::new(Language::TypeScript)),
+                Box::new(TypeScriptExtractor::new(Language::Tsx)),
                 Box::new(MarkdownExtractor),
                 Box::new(ConfigExtractor::new(ConfigFormat::Yaml)),
                 Box::new(ConfigExtractor::new(ConfigFormat::Json)),

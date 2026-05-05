@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-30
+**Last updated:** 2026-05-05
 
 This document specifies the current knowledge graph: storage, build pipeline, query services, Orbit integration, locking, and limitations. The [T20260430-22] cleanup removes duplicated rationale already covered by [1_overview.md](./1_overview.md), [3_vision.md](./3_vision.md), and ADRs.
 
@@ -44,7 +44,7 @@ scan → hash → detect_changes → build_dirs → build_files → build_leaves
 | `detect_changes` | Added / modified / unchanged path set | Incremental leaf extraction uses this set to decide what can reuse the prior graph |
 | `build_graph_dirs` | `DirNode` entries with parent/child wiring | Deterministic; root dir id derived from `.` |
 | `build_graph_files` | `FileNode` entries linked to parent dir | Language detected from extension |
-| `build_graph_leaves` | `LeafNode` entries via file-kind-dispatched extractor | Code via tree-sitter (Rust, Python, Go, Java, JavaScript); markdown sections, YAML/JSON/TOML top-level keys, and CSV/TSV header columns via shallow extractors added in [T20260422-1540]. Per-file read/extract work runs in parallel, then graph mutation is merged on the main thread in file order ([T20260426-0139]). Incremental builds reuse unchanged file/leaf snapshots from the same branch ref when hashes match ([T20260426-0140]) |
+| `build_graph_leaves` | `LeafNode` entries via file-kind-dispatched extractor | Code via tree-sitter (Rust, Python, Go, Java, JavaScript, TypeScript, TSX); markdown sections, YAML/JSON/TOML top-level keys, and CSV/TSV header columns via shallow extractors added in [T20260422-1540]. TypeScript/TSX coverage was added in [T20260505-11]. Per-file read/extract work runs in parallel, then graph mutation is merged on the main thread in file order ([T20260426-0139]). Incremental builds reuse unchanged file/leaf snapshots from the same branch ref when hashes match ([T20260426-0140]) |
 | `attribute_history` | `task_ids` on touched nodes | Introduced in [T20260421-0528] |
 | `persist_graph` | Content-addressed objects, blobs, index | Atomic via tempfile + rename |
 | `write_manifest` | `manifest.json` | Timestamp + commit + ref pointer |
@@ -221,7 +221,7 @@ The shared file-based lock store was introduced in [T20260411-0424] (replacing a
 
 ### 6.1 Extractor coverage drives graph precision
 
-The leaf graph is only as good as each extractor. Code coverage (tree-sitter): Rust, Python, Go, Java, JavaScript. Doc coverage: markdown (ATX headings only — no frontmatter, no fenced-block leaves, no RST). Config coverage: YAML / JSON / TOML top-level keys only — nested paths like `a.b.c` are not indexed. Tabular coverage: CSV / TSV header row only; files over 1 MiB produce zero leaves by design. Anything outside those families (shell scripts, C/C++, `.env`, SQL, etc.) lands in the graph as a leafless `FileNode`, and the agent has to fall back to file-level reads for the uncovered slice. Depth-of-extraction tradeoffs are captured in ADR-011.
+The leaf graph is only as good as each extractor. Code coverage (tree-sitter): Rust, Python, Go, Java, JavaScript, TypeScript, and TSX. Doc coverage: markdown (ATX headings only — no frontmatter, no fenced-block leaves, no RST). Config coverage: YAML / JSON / TOML top-level keys only — nested paths like `a.b.c` are not indexed. Tabular coverage: CSV / TSV header row only; files over 1 MiB produce zero leaves by design. Anything outside those families (shell scripts, C/C++, `.env`, SQL, etc.) lands in the graph as a leafless `FileNode`, and the agent has to fall back to file-level reads for the uncovered slice. Depth-of-extraction tradeoffs are captured in ADR-011 and ADR-024.
 
 ### 6.2 No cross-file reference resolution
 
@@ -288,5 +288,6 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 - **[T20260426-2042]** — Move graph CLI behavior behind the `orbit-tools::graph` facade and remove the direct `orbit-knowledge` dependency from `orbit-cli`.
 - **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
 - **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
+- **[T20260505-11]** — Add TypeScript and TSX extraction coverage, documented by gpt-5.5.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
