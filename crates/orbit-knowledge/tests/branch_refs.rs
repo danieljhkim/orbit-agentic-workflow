@@ -300,6 +300,95 @@ fn ensure_fresh_waits_for_requested_branch_ref_before_returning()
 }
 
 #[test]
+fn branch_refs_ensure_fresh_rebuilds_clean_worktree_when_branch_ref_is_missing()
+-> Result<(), Box<dyn std::error::Error>> {
+    let repo = init_repo()?;
+    let knowledge_dir = repo.path().join(".orbit/knowledge");
+    run_build(BuildConfig {
+        repo_path: repo.path().to_path_buf(),
+        output_dir: knowledge_dir.clone(),
+        incremental: false,
+        ref_name: None,
+        task_id_pattern: None,
+    })?;
+
+    let default_ref = RefName::new("main")?;
+    let graph_store = GraphObjectStore::new(knowledge_dir.join("graph"));
+    assert!(graph_store.ref_path(&default_ref).is_file());
+
+    git(repo.path(), &["branch", "feature/missing-refresh"])?;
+    let feature_worktree = repo.path().join("wt-missing-refresh");
+    git(
+        repo.path(),
+        &[
+            "worktree",
+            "add",
+            feature_worktree.to_str().unwrap(),
+            "feature/missing-refresh",
+        ],
+    )?;
+    write_rust_source(&feature_worktree, "feature_only_graph")?;
+    commit_all_with_date(
+        &feature_worktree,
+        "feature-only graph",
+        "2026-04-10T00:00:00Z",
+    )?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(knowledge_dir.join("manifest.json"))?)?;
+    let generated_at = manifest
+        .get("generated_at")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| io_error("manifest generated_at missing".to_string()))?;
+    let generated_at = chrono::DateTime::parse_from_rfc3339(generated_at)?;
+    let head_ts = chrono::DateTime::parse_from_rfc3339(&git(
+        &feature_worktree,
+        &["log", "-1", "--format=%cI"],
+    )?)?;
+    assert!(head_ts < generated_at);
+
+    let read_target = resolve_graph_read_target(Some(&feature_worktree), None)?;
+    assert_eq!(read_target.requested.as_str(), "feature/missing-refresh");
+    assert_eq!(
+        read_target.fallback.as_ref().map(RefName::as_str),
+        Some("main")
+    );
+    assert!(!graph_store.ref_path(&read_target.requested).exists());
+
+    let status = ensure_fresh(&knowledge_dir, &feature_worktree)?;
+    assert_eq!(status, RefreshStatus::Rebuilt);
+    assert!(graph_store.ref_path(&read_target.requested).is_file());
+
+    let resolved =
+        graph_store.resolve_ref(&read_target.requested, read_target.fallback.as_ref())?;
+    assert!(!resolved.used_fallback);
+
+    let graph = graph_store.read_graph(
+        &read_target.requested,
+        read_target.fallback.as_ref(),
+        read_target.default.as_ref(),
+    )?;
+    assert!(
+        graph
+            .leaves
+            .iter()
+            .any(|leaf| leaf.base.name == "feature_only_graph")
+    );
+    assert!(
+        !graph
+            .leaves
+            .iter()
+            .any(|leaf| leaf.base.name == "main_graph")
+    );
+
+    write_rust_source(&feature_worktree, "feature_dirty_graph")?;
+    let status = ensure_fresh(&knowledge_dir, &feature_worktree)?;
+    assert_eq!(status, RefreshStatus::Rebuilt);
+    let status = ensure_fresh(&knowledge_dir, &feature_worktree)?;
+    assert_eq!(status, RefreshStatus::SkippedDirtyDebounce);
+    Ok(())
+}
+
+#[test]
 fn pack_regression_selector_opens_from_branch_ref_layout() -> Result<(), Box<dyn std::error::Error>>
 {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
