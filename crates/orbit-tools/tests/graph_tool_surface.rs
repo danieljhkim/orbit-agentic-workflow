@@ -6,6 +6,7 @@ use orbit_knowledge::graph::object_store::RefName;
 use orbit_knowledge::graph::{
     BaseNodeFields, CodebaseGraphV1, DirNode, FileNode, GraphObjectStore, LeafKind, LeafNode,
 };
+use orbit_knowledge::pipeline::context::BuildConfig;
 use orbit_tools::{ToolContext, ToolRegistry};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -270,6 +271,67 @@ fn search_task_id_filter_rejects_malformed_input() {
     .to_string();
 
     assert!(error.contains("`task_id` must match T\\d{8}-\\d+(?:-\\d+)*"));
+}
+
+#[test]
+fn search_and_pack_surface_reads_typescript_build_output() {
+    let repo = tempfile::tempdir().unwrap();
+    write_repo_file(
+        repo.path(),
+        "src/types.ts",
+        "export type WidgetState = \"idle\" | \"ready\";\n\
+export interface WidgetConfig {\n\
+    state: WidgetState;\n\
+}\n",
+    );
+    write_repo_file(
+        repo.path(),
+        "src/view.tsx",
+        "export const WidgetView = ({ state }: { state: string }) => (\n\
+    <span>{state}</span>\n\
+);\n",
+    );
+    run_knowledge_build(repo.path());
+
+    let search_response = execute_graph_tool(
+        repo.path(),
+        "orbit.graph.search",
+        json!({"query":"WidgetState","type":"symbol","limit":5}),
+    );
+    assert_eq!(search_response["total"], 1);
+    assert_eq!(
+        search_response["results"][0]["selector"],
+        "symbol:src/types.ts#WidgetState:type_alias"
+    );
+    assert_eq!(search_response["results"][0]["kind"], "type_alias");
+
+    let tsx_response = execute_graph_tool(
+        repo.path(),
+        "orbit.graph.search",
+        json!({"query":"WidgetView","type":"symbol","limit":5}),
+    );
+    assert_eq!(tsx_response["total"], 1);
+    assert_eq!(
+        tsx_response["results"][0]["selector"],
+        "symbol:src/view.tsx#WidgetView:function"
+    );
+
+    let pack_response = execute_graph_tool(
+        repo.path(),
+        "orbit.graph.pack",
+        json!({
+            "selectors": "symbol:src/types.ts#WidgetState:type_alias",
+            "summary": false
+        }),
+    );
+    assert_eq!(pack_response["entries"][0]["name"], "WidgetState");
+    assert_eq!(pack_response["entries"][0]["language"], "typescript");
+    assert!(
+        pack_response["entries"][0]["source"]
+            .as_str()
+            .unwrap()
+            .contains("type WidgetState")
+    );
 }
 
 #[test]
@@ -627,6 +689,25 @@ fn execute_graph_tool_result(
         },
         input,
     )
+}
+
+fn run_knowledge_build(repo_root: &Path) {
+    let config = BuildConfig {
+        repo_path: repo_root.to_path_buf(),
+        output_dir: repo_root.join(".orbit/knowledge"),
+        incremental: false,
+        ref_name: Some(RefName::new(GRAPH_REF).unwrap()),
+        task_id_pattern: None,
+    };
+    orbit_knowledge::pipeline::run_build(config).unwrap();
+}
+
+fn write_repo_file(repo_root: &Path, rel: &str, content: &str) {
+    let path = repo_root.join(rel);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, content).unwrap();
 }
 
 fn write_graph_fixture(graph: CodebaseGraphV1) -> TempDir {

@@ -45,9 +45,9 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 **Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352]
 
-**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352].
+**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352], and TypeScript/TSX followed in [T20260505-11].
 
-**Decision.** Use tree-sitter grammars with per-language extractors (`rust`, `python`, `go`, `java`, `javascript`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
+**Decision.** Use tree-sitter grammars with per-language extractors (`rust`, `python`, `go`, `java`, `javascript`, `typescript`, `tsx`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
 
 **Consequences.**
 - Fast, deterministic extraction with no per-query process lifecycle.
@@ -369,6 +369,22 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-024 — TypeScript and TSX use dedicated tree-sitter grammars
+
+**Status:** Accepted · 2026-05 · [T20260505-11]
+**Author:** gpt-5.5
+
+**Context.** TypeScript-first repositories previously produced leafless `FileNode`s because `.ts`, `.mts`, `.cts`, `.tsx`, and `.d.ts` files were not classified as source code. Treating them as JavaScript would recover some functions but lose TypeScript-specific declarations such as interfaces, type aliases, enums, and declaration-file signatures.
+
+**Decision.** Add `Language::TypeScript` and `Language::Tsx` and dispatch them to `tree-sitter-typescript`'s TypeScript and TSX grammars. Emit structural leaves for top-level functions, arrow/function-expression bindings, classes, class methods, interfaces, type aliases, and enums; keep JavaScript on the existing JavaScript extractor.
+
+**Consequences.**
+- `orbit.graph.search`, `orbit.graph.pack`, and history attribution can now target TypeScript and TSX symbols at leaf granularity.
+- Declaration files ending in `.d.ts` classify as TypeScript through their `.ts` extension and contribute declaration leaves.
+- Cost: TypeScript extraction now has its own grammar dependency and the graph `LeafKind` surface includes `enum` and `type_alias`.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -405,5 +421,6 @@ Tasks cited by ADRs above:
 - **[T20260428-3]** — Expose the full read-only graph tool set through the MCP safe surface for Codex and Gemini.
 - **[T20260430-22]** — Compact the knowledge-graph design docs and fold the obsolete evidence log into ADR-018.
 - **[T20260505-1]** — Require auto-refresh freshness checks to materialize missing current-branch graph refs before returning fresh.
+- **[T20260505-11]** — Add TypeScript and TSX classification, extraction, graph search/pack coverage, and symbol-level history attribution.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -17,6 +17,8 @@ pub enum Language {
     Go,
     Java,
     JavaScript,
+    TypeScript,
+    Tsx,
 }
 
 impl Language {
@@ -27,6 +29,8 @@ impl Language {
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
             "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
+            "ts" | "mts" | "cts" => Some(Self::TypeScript),
+            "tsx" => Some(Self::Tsx),
             _ => None,
         }
     }
@@ -38,6 +42,8 @@ impl Language {
             Self::Go => "go",
             Self::Java => "java",
             Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
+            Self::Tsx => "tsx",
         }
     }
 }
@@ -134,6 +140,36 @@ mod tests {
             FileKind::from_extension("js"),
             FileKind::Code(Language::JavaScript)
         );
+        assert_eq!(
+            FileKind::from_extension("jsx"),
+            FileKind::Code(Language::JavaScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("mjs"),
+            FileKind::Code(Language::JavaScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("cjs"),
+            FileKind::Code(Language::JavaScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("ts"),
+            FileKind::Code(Language::TypeScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("mts"),
+            FileKind::Code(Language::TypeScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("cts"),
+            FileKind::Code(Language::TypeScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("tsx"),
+            FileKind::Code(Language::Tsx)
+        );
+        assert_eq!(FileKind::from_extension("ts").as_str(), "typescript");
+        assert_eq!(FileKind::from_extension("tsx").as_str(), "tsx");
     }
 
     #[test]
