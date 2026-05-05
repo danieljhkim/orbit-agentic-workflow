@@ -3,7 +3,7 @@
 //! Each handler delegates to the same `*_to_json` helpers used by the CLI's
 //! `--json` paths so the wire format stays in lockstep with the CLI.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
@@ -22,14 +22,15 @@ use axum::http::{Request, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
-use chrono::{DateTime, Duration, Timelike, Utc};
+use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use futures_core::Stream;
+use orbit_common::utility::blob_store::BlobStore;
 use orbit_core::command::job_run::JobRunListParams;
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
 use orbit_core::runtime::run_audit::RunAuditStep;
 use orbit_core::{
-    AuditEventStatus, JobRun, JobRunState, OrbitRuntime, Task, TaskComplexity, TaskPriority,
-    TaskStatus, TaskType,
+    AuditEventStatus, InvocationQuery, InvocationRecord, JobRun, JobRunState, OrbitRuntime, Task,
+    TaskComplexity, TaskPriority, TaskStatus, TaskType,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -190,6 +191,34 @@ fn validate_year_month(raw: &str) -> Result<(), orbit_core::OrbitError> {
         )));
     }
     Ok(())
+}
+
+fn month_bounds_utc(raw: &str) -> Result<(DateTime<Utc>, DateTime<Utc>), orbit_core::OrbitError> {
+    validate_year_month(raw)?;
+    let year = raw[..4].parse::<i32>().map_err(|_| {
+        orbit_core::OrbitError::InvalidInput(format!("invalid year component in '{raw}'"))
+    })?;
+    let month = raw[5..].parse::<u32>().map_err(|_| {
+        orbit_core::OrbitError::InvalidInput(format!("invalid month component in '{raw}'"))
+    })?;
+    let start = Utc
+        .with_ymd_and_hms(year, month, 1, 0, 0, 0)
+        .single()
+        .ok_or_else(|| {
+            orbit_core::OrbitError::InvalidInput(format!("invalid month boundary for '{raw}'"))
+        })?;
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    let next_start = Utc
+        .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
+        .single()
+        .ok_or_else(|| {
+            orbit_core::OrbitError::InvalidInput(format!("invalid month boundary for '{raw}'"))
+        })?;
+    Ok((start, next_start - Duration::nanoseconds(1)))
 }
 
 async fn require_localhost_origin(request: Request<Body>, next: Next) -> Response {
@@ -762,6 +791,81 @@ mod tests {
             content.push('\n');
         }
         std::fs::write(path, content).expect("write fixture");
+    }
+
+    #[test]
+    fn diagnostics_metrics_values_adapt_invocation_records() {
+        let ts = chrono::DateTime::parse_from_rfc3339("2026-05-05T03:29:45Z")
+            .expect("parse timestamp")
+            .with_timezone(&Utc);
+        let rows = diagnostics_metrics_values(vec![InvocationRecord {
+            id: 7,
+            ts,
+            job_run_id: "jrun-1".to_string(),
+            activity_id: "implement_one".to_string(),
+            agent: "codex".to_string(),
+            model: Some("gpt-5.5".to_string()),
+            duration_ms: 1234,
+            input_tokens: 100,
+            cache_read_tokens: 0,
+            cache_create_tokens: 0,
+            output_tokens: 23,
+            total_tokens: 123,
+            tool_call_count: 4,
+            task_ids: vec!["T20260505-1".to_string()],
+            tool_calls: Vec::new(),
+        }]);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["step"], "implement_one");
+        assert_eq!(rows[0]["actor_identity"], "codex / gpt-5.5");
+        assert_eq!(rows[0]["token_usage"], 123);
+        assert_eq!(rows[0]["tool_invocations"], 4);
+        assert_eq!(rows[0]["step_duration_ms"], 1234);
+        assert_eq!(rows[0]["task_id"], "T20260505-1");
+    }
+
+    #[test]
+    fn diagnostics_friction_row_extracts_failed_cli_stderr_and_step() {
+        let dir = tempdir().expect("tempdir");
+        let blob_store = BlobStore::new(dir.path());
+        let stderr_ref = blob_store.write(b"command failed\n").expect("write blob");
+
+        let step = json!({
+            "event_id": "evt-step",
+            "body_kind": "step_started",
+            "step_id": "implement_one"
+        });
+        let activity = json!({
+            "event_id": "evt-activity",
+            "body_kind": "activity_started",
+            "parent_event_id": "evt-step"
+        });
+        let event = json!({
+            "event_id": "evt-cli",
+            "ts": "2026-05-05T03:29:45Z",
+            "run_id": "jrun-1",
+            "agent_identity": "system",
+            "body_kind": "cli_invocation_finished",
+            "parent_event_id": "evt-activity",
+            "provider": "codex",
+            "exit_code": 1,
+            "stderr_blob_ref": stderr_ref,
+            "timed_out": false
+        });
+        let events_by_id = HashMap::from([
+            ("evt-step".to_string(), step),
+            ("evt-activity".to_string(), activity),
+            ("evt-cli".to_string(), event.clone()),
+        ]);
+
+        let row =
+            diagnostics_friction_row(&blob_store, &events_by_id, &event, "2026-05").expect("row");
+
+        assert_eq!(row["step"], "implement_one");
+        assert_eq!(row["command"], "codex");
+        assert_eq!(row["exit_code"], 1);
+        assert_eq!(row["stderr"], "command failed\n");
     }
 
     fn seed_run(runtime: &OrbitRuntime, run_id: &str, job_id: &str, state: JobRunState) -> JobRun {
@@ -2081,13 +2185,265 @@ async fn list_diagnostics_metrics(
         Ok(mut entries) => {
             entries.sort_by(|a, b| b.ts.cmp(&a.ts));
             entries.truncate(limit);
-            match serde_json::to_value(&entries) {
-                Ok(value) => Json(value).into_response(),
-                Err(e) => server_error(orbit_core::OrbitError::Store(e.to_string())),
-            }
+            let value = if entries.is_empty() {
+                match diagnostics_metrics_from_invocations(&runtime, &month, limit) {
+                    Ok(rows) => Value::Array(rows),
+                    Err(e) => return map_runtime_error(e),
+                }
+            } else {
+                match serde_json::to_value(&entries) {
+                    Ok(value) => value,
+                    Err(e) => return server_error(orbit_core::OrbitError::Store(e.to_string())),
+                }
+            };
+            Json(value).into_response()
         }
         Err(e) => map_runtime_error(e),
     }
+}
+
+fn diagnostics_metrics_from_invocations(
+    runtime: &OrbitRuntime,
+    month: &str,
+    limit: usize,
+) -> Result<Vec<Value>, orbit_core::OrbitError> {
+    let (since, until) = month_bounds_utc(month)?;
+    let records = runtime.invocation_records(InvocationQuery {
+        since: Some(since),
+        until: Some(until),
+        limit,
+        ..InvocationQuery::default()
+    })?;
+
+    Ok(diagnostics_metrics_values(records))
+}
+
+fn diagnostics_metrics_values(records: Vec<InvocationRecord>) -> Vec<Value> {
+    records
+        .into_iter()
+        .map(|record| {
+            json!({
+                "ts": record.ts.to_rfc3339(),
+                "job_run": record.job_run_id,
+                "step": record.activity_id,
+                "task_id": record.task_ids.first().cloned(),
+                "actor_identity": actor_label(&record.agent, record.model.as_deref()),
+                "tool_invocations": record.tool_call_count,
+                "token_usage": record.total_tokens,
+                "step_duration_ms": record.duration_ms,
+                "retry_count": 0,
+            })
+        })
+        .collect()
+}
+
+fn actor_label(agent: &str, model: Option<&str>) -> String {
+    match model.filter(|model| !model.is_empty()) {
+        Some(model) if !agent.is_empty() => format!("{agent} / {model}"),
+        Some(model) => model.to_string(),
+        None => agent.to_string(),
+    }
+}
+
+fn diagnostics_friction_from_v2_audit(
+    runtime: &OrbitRuntime,
+    month: &str,
+    limit: usize,
+) -> Result<Vec<Value>, orbit_core::OrbitError> {
+    validate_year_month(month)?;
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+
+    let audit_dir = v2_loop_dir(runtime);
+    if !audit_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut files = std::fs::read_dir(&audit_dir)
+        .map_err(|e| orbit_core::OrbitError::Io(e.to_string()))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+        .collect::<Vec<_>>();
+    files.sort();
+    if files.len() > V2_LOOP_FILE_SCAN_CAP {
+        files = files.split_off(files.len() - V2_LOOP_FILE_SCAN_CAP);
+    }
+
+    let blob_store = BlobStore::new(
+        runtime
+            .data_root()
+            .join("state")
+            .join("audit")
+            .join("blobs"),
+    );
+    let mut rows = Vec::new();
+    for path in files {
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|e| orbit_core::OrbitError::Io(format!("read {}: {e}", path.display())))?;
+        let mut events = Vec::new();
+        let mut by_id = HashMap::new();
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: Value = match serde_json::from_str(trimmed) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            if let Some(event_id) = value.get("event_id").and_then(Value::as_str) {
+                by_id.insert(event_id.to_string(), value.clone());
+            }
+            events.push(value);
+        }
+
+        for event in events {
+            if let Some(row) = diagnostics_friction_row(&blob_store, &by_id, &event, month) {
+                rows.push(row);
+            }
+        }
+    }
+
+    rows.sort_by(|a, b| {
+        let left = a.get("ts").and_then(Value::as_str).unwrap_or("");
+        let right = b.get("ts").and_then(Value::as_str).unwrap_or("");
+        right.cmp(left)
+    });
+    rows.truncate(limit);
+    Ok(rows)
+}
+
+fn diagnostics_friction_row(
+    blob_store: &BlobStore,
+    events_by_id: &HashMap<String, Value>,
+    event: &Value,
+    month: &str,
+) -> Option<Value> {
+    let ts = event.get("ts").and_then(Value::as_str)?;
+    if !ts.starts_with(month) {
+        return None;
+    }
+
+    let body_kind = event.get("body_kind").and_then(Value::as_str).unwrap_or("");
+    match body_kind {
+        "cli_invocation_finished" => {
+            let exit_code = event.get("exit_code").and_then(Value::as_i64);
+            let timed_out = event
+                .get("timed_out")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if exit_code == Some(0) && !timed_out {
+                return None;
+            }
+            Some(json!({
+                "ts": ts,
+                "job_run": event.get("run_id").and_then(Value::as_str).unwrap_or(""),
+                "step": enclosing_step_id_for_event(event, events_by_id).unwrap_or_default(),
+                "task_id": null,
+                "command": event.get("provider").and_then(Value::as_str).unwrap_or("cli"),
+                "input": "",
+                "exit_code": exit_code,
+                "stderr": event
+                    .get("stderr_blob_ref")
+                    .and_then(Value::as_str)
+                    .map(|blob_ref| read_blob_text_best_effort(blob_store, blob_ref))
+                    .unwrap_or_default(),
+                "actor_identity": event.get("agent_identity").cloned().unwrap_or(Value::Null),
+            }))
+        }
+        "step_finished" => {
+            let outcome = event
+                .get("outcome")
+                .and_then(Value::as_str)
+                .unwrap_or("success");
+            if matches!(outcome, "success" | "skipped") {
+                return None;
+            }
+            let step = event.get("step_id").and_then(Value::as_str).unwrap_or("");
+            Some(json!({
+                "ts": ts,
+                "job_run": event.get("run_id").and_then(Value::as_str).unwrap_or(""),
+                "step": step,
+                "task_id": null,
+                "command": step,
+                "input": "",
+                "exit_code": null,
+                "stderr": event
+                    .get("error_message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("step finished with outcome '{outcome}'")),
+                "actor_identity": event.get("agent_identity").cloned().unwrap_or(Value::Null),
+            }))
+        }
+        "step_denied" | "tool_denied" | "fs_call_denied" => {
+            let step = enclosing_step_id_for_event(event, events_by_id).unwrap_or_default();
+            Some(json!({
+                "ts": ts,
+                "job_run": event.get("run_id").and_then(Value::as_str).unwrap_or(""),
+                "step": step,
+                "task_id": null,
+                "command": event
+                    .get("tool_name")
+                    .or_else(|| event.get("op"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(body_kind),
+                "input": "",
+                "exit_code": null,
+                "stderr": event
+                    .get("reason")
+                    .or_else(|| event.get("matched_rule"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(body_kind),
+                "actor_identity": event.get("agent_identity").cloned().unwrap_or(Value::Null),
+            }))
+        }
+        _ => None,
+    }
+}
+
+fn enclosing_step_id_for_event(
+    event: &Value,
+    events_by_id: &HashMap<String, Value>,
+) -> Option<String> {
+    if let Some(step_id) = event.get("step_id").and_then(Value::as_str) {
+        return Some(step_id.to_string());
+    }
+
+    let mut parent_id = event
+        .get("parent_event_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let mut seen = HashSet::new();
+    while let Some(id) = parent_id {
+        if !seen.insert(id.clone()) {
+            return None;
+        }
+        let parent = events_by_id.get(&id)?;
+        if parent.get("body_kind").and_then(Value::as_str) == Some("step_started") {
+            return parent
+                .get("step_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+        parent_id = parent
+            .get("parent_event_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+    }
+    None
+}
+
+fn read_blob_text_best_effort(blob_store: &BlobStore, blob_ref: &str) -> String {
+    if blob_ref.len() < 2 || blob_ref.starts_with("error:") {
+        return String::new();
+    }
+    blob_store
+        .read(blob_ref)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default()
 }
 
 async fn list_diagnostics_friction(
@@ -2103,10 +2459,18 @@ async fn list_diagnostics_friction(
         Ok(mut entries) => {
             entries.sort_by(|a, b| b.ts.cmp(&a.ts));
             entries.truncate(limit);
-            match serde_json::to_value(&entries) {
-                Ok(value) => Json(value).into_response(),
-                Err(e) => server_error(orbit_core::OrbitError::Store(e.to_string())),
-            }
+            let value = if entries.is_empty() {
+                match diagnostics_friction_from_v2_audit(&runtime, &month, limit) {
+                    Ok(rows) => Value::Array(rows),
+                    Err(e) => return map_runtime_error(e),
+                }
+            } else {
+                match serde_json::to_value(&entries) {
+                    Ok(value) => value,
+                    Err(e) => return server_error(orbit_core::OrbitError::Store(e.to_string())),
+                }
+            };
+            Json(value).into_response()
         }
         Err(e) => map_runtime_error(e),
     }
