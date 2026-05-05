@@ -15,6 +15,7 @@ mod config;
 mod go;
 mod java;
 mod javascript;
+mod kotlin;
 mod language;
 mod markdown;
 mod python;
@@ -34,6 +35,7 @@ use config::ConfigExtractor;
 use go::GoExtractor;
 use java::JavaExtractor;
 use javascript::JavaScriptExtractor;
+use kotlin::KotlinExtractor;
 use markdown::MarkdownExtractor;
 use python::PythonExtractor;
 use ruby::RubyExtractor;
@@ -68,6 +70,7 @@ impl ExtractorRegistry {
                 Box::new(GoExtractor),
                 Box::new(JavaExtractor),
                 Box::new(JavaScriptExtractor),
+                Box::new(KotlinExtractor),
                 Box::new(TypeScriptExtractor::new(Language::TypeScript)),
                 Box::new(TypeScriptExtractor::new(Language::Tsx)),
                 Box::new(MarkdownExtractor),

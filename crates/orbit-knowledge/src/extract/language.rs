@@ -18,6 +18,7 @@ pub enum Language {
     Go,
     Java,
     JavaScript,
+    Kotlin,
     TypeScript,
     Tsx,
     Ruby,
@@ -32,6 +33,7 @@ impl Language {
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
             "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
+            "kt" | "kts" => Some(Self::Kotlin),
             "ts" | "mts" | "cts" => Some(Self::TypeScript),
             "tsx" => Some(Self::Tsx),
             // Ruby tooling commonly uses .rake tasks and .gemspec manifests;
@@ -49,6 +51,7 @@ impl Language {
             Self::Go => "go",
             Self::Java => "java",
             Self::JavaScript => "javascript",
+            Self::Kotlin => "kotlin",
             Self::TypeScript => "typescript",
             Self::Tsx => "tsx",
             Self::Ruby => "ruby",
@@ -163,6 +166,14 @@ mod tests {
             FileKind::Code(Language::JavaScript)
         );
         assert_eq!(
+            FileKind::from_extension("kt"),
+            FileKind::Code(Language::Kotlin)
+        );
+        assert_eq!(
+            FileKind::from_extension("kts"),
+            FileKind::Code(Language::Kotlin)
+        );
+        assert_eq!(
             FileKind::from_extension("ts"),
             FileKind::Code(Language::TypeScript)
         );
@@ -192,6 +203,7 @@ mod tests {
         );
         assert_eq!(FileKind::from_extension("ts").as_str(), "typescript");
         assert_eq!(FileKind::from_extension("tsx").as_str(), "tsx");
+        assert_eq!(FileKind::from_extension("kt").as_str(), "kotlin");
         assert_eq!(FileKind::from_extension("h").as_str(), "c");
         assert_eq!(FileKind::from_extension("rb").as_str(), "ruby");
     }

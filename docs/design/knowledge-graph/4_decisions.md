@@ -43,11 +43,11 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-003 — Tree-sitter extractors over an LSP backend
 
-**Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352], [T20260505-11], [T20260505-15], [T20260505-16]
+**Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352], [T20260505-11], [T20260505-14], [T20260505-15], [T20260505-16]
 
-**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352], TypeScript/TSX followed in [T20260505-11], Ruby followed in [T20260505-15], and C followed in [T20260505-16].
+**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352], TypeScript/TSX followed in [T20260505-11], Kotlin followed in [T20260505-14], Ruby followed in [T20260505-15], and C followed in [T20260505-16].
 
-**Decision.** Use tree-sitter grammars with per-language extractors (`c`, `rust`, `python`, `go`, `java`, `javascript`, `typescript`, `tsx`, `ruby`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
+**Decision.** Use tree-sitter grammars with per-language extractors (`c`, `rust`, `python`, `go`, `java`, `javascript`, `kotlin`, `typescript`, `tsx`, `ruby`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
 
 **Consequences.**
 - Fast, deterministic extraction with no per-query process lifecycle.
@@ -415,6 +415,22 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-027 — Kotlin mirrors Java-style tree-sitter extraction
+
+**Status:** Accepted · 2026-05 · [T20260505-14]
+**Author:** gpt-5.5
+
+**Context.** JVM and Android workspaces commonly mix Java and Kotlin, so graph coverage that stops at `.java` files hides half of the service shape. Kotlin also has syntax-first declarations that do not map cleanly to Java classes, including `object`, `companion object`, extension functions, and top-level properties.
+
+**Decision.** Classify `.kt` and `.kts` as `Language::Kotlin` and route them to `tree-sitter-kotlin-ng`, the tree-sitter-grammars fork published with the `tree-sitter-language` ABI used by `tree-sitter = "0.26"`. Emit package, class/interface/object/companion, top-level function/property, type alias, and method leaves; record extension functions as standalone `function` leaves named `Receiver.function`.
+
+**Consequences.**
+- Agents can search mixed Java/Kotlin workspaces through one graph surface, including Kotlin scripts.
+- Extension functions stay syntax-only and visible without inventing cross-file receiver binding.
+- Cost: Kotlin-specific leaf kinds (`package`, `object`, `companion_object`) expand the graph kind surface, and overloads still share a syntax-level name unless a future signature-aware identity scheme lands.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -453,6 +469,7 @@ Tasks cited by ADRs above:
 - **[T20260505-1]** — Require auto-refresh freshness checks to materialize missing current-branch graph refs before returning fresh.
 - **[T20260505-5]** — Bound `orbit.graph.pack` selector gathering and skip inline refresh by default.
 - **[T20260505-11]** — Add TypeScript and TSX classification, extraction, graph search/pack coverage, and symbol-level history attribution.
+- **[T20260505-14]** — Add Kotlin classification, tree-sitter extraction, and graph search coverage for mixed Java/Kotlin workspaces.
 - **[T20260505-15]** — Add Ruby classification, tree-sitter extraction, graph search coverage, and Ruby symbol kinds.
 - **[T20260505-16]** — Add C and header classification, tree-sitter extraction, and graph search coverage.
 
