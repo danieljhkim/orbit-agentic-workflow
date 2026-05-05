@@ -24,4 +24,12 @@ Use targeted tests while iterating and full workspace tests before landing risky
 
 ## Commits
 
-Use clear commit messages. Agent-authored commits should use the agent commit identity for that commit and should not leave the repository configured with that identity afterward.
+Use clear commit messages. Agent-authored commits should use the agent commit identity (e.g. `claude`, `codex`) for that commit and should not leave the repository configured with that identity afterward.
+
+When a commit is associated with an Orbit task, include the task ID in square brackets in the commit message:
+
+```text
+feat: add optional agent_review step to bundle pipelines [T20260505-7]
+```
+
+When authoring tasks or design docs, identify yourself by model name (e.g. `claude-opus-4-7`, `gpt-5.5`, `gemini-3.1-pro`). When writing docs, cite the task IDs that motivated the change in the doc itself.

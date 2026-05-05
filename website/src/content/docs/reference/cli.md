@@ -33,8 +33,11 @@ sidebar:
 | `orbit audit` | Query the audit event log. |
 | `orbit metrics` | Inspect token, tool-call, and knowledge-pack metrics. |
 | `orbit scoreboard` | Generate read-only scoreboard summaries. |
-| `orbit job history <job_id>` | Inspect job run history, including workflow runs. |
-| `orbit job run-state <run_id>` | Inspect persisted state for a job run. |
+| `orbit run history` | Show recent job runs. Filter to one job with `-j <job_id>`. |
+| `orbit run show [run_id]` | Show structured state and step summary for a job run (defaults to latest). |
+| `orbit run logs [run_id]` | Print raw stdout/stderr captured for a job run. |
+| `orbit run events [run_id]` | Show audit events recorded for a job run. |
+| `orbit run trace [run_id]` | Show audit event parent/child trace for a job run. |
 
 ## Definitions
 

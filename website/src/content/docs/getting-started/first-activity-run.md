@@ -43,7 +43,9 @@ orbit job run task_auto_pipeline --input mode=local
 1. `--backend`
 2. `ORBIT_BACKEND`
 3. `[runtime] backend` in config
-4. hard-coded fallback (subject to change between releases — pin `cli` explicitly in v1)
+4. hard-coded fallback: **`http`**
+
+Because the fallback is `http`, you must pin `cli` explicitly in v1 — either with `--backend cli`, `ORBIT_BACKEND=cli`, or `[runtime] backend = "cli"` in your config. Activities that declare `backend: cli` directly in YAML are unaffected.
 
 ```bash
 orbit job run task_auto_pipeline --backend cli

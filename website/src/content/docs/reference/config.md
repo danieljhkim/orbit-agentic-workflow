@@ -20,9 +20,9 @@ For `agent_loop` execution, backend selection resolves once before dispatch.
 1. command flag (`--backend`)
 2. `ORBIT_BACKEND`
 3. `[runtime] backend`
-4. hard-coded fallback
+4. hard-coded fallback: **`http`**
 
-**v1 release scope.** v1 supports `backend: cli` only. Pin it explicitly so the resolution is deterministic regardless of build-internal defaults:
+**v1 release scope.** v1 supports `backend: cli` only, but the hard-coded fallback is `http` — so omitting all four tiers will silently land on the preview HTTP transport. Pin `cli` explicitly:
 
 ```toml
 # orbit.toml
