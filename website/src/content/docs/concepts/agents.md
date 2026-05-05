@@ -41,3 +41,7 @@ spec:
 ```
 
 `on_denial` controls whether a denied tool call terminates the loop or returns a structured error for the agent to handle. In v1 (CLI backend) the agent CLI executes inside a supervised subprocess; tool allowlist enforcement is delegated to the harness and recorded as a `tool_allowlist.harness_delegated` envelope event in the audit trail.
+
+## Platform Support
+
+Bundled agent executors (`claude`, `codex`, `gemini`) declare `sandbox: macos-sandbox-exec`, so the spawned subprocess is wrapped in macOS `sandbox-exec` with the activity's resolved `FsProfile` compiled to SBPL. **This OS-level isolation is macOS only.** On Linux and Windows, `EnvironmentHost::resolve_executor_sandbox` rejects the platform mismatch — Orbit's process supervision and tool allowlist still apply, but the agent subprocess itself runs without a kernel-level sandbox. The bundled `local-shell` executor has no sandbox declaration on any platform by design.

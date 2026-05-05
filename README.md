@@ -276,6 +276,8 @@ Tasks, job runs, scoreboards, and run traces are workspace-local. Graph artifact
 
 Orbit uses filesystem-scoped policies to control what agent execution can read and modify — safe parallel execution is the core problem, not just prompt routing. A v2 activity can opt into a named filesystem profile with `fsProfile`; if it omits the field, Orbit resolves an implicit unrestricted profile and still applies global deny rules. Design docs: [docs/design/policy-sandbox/](docs/design/policy-sandbox/).
 
+> **Platform support.** OS-level sandbox enforcement of `fsProfile` for spawned agent CLIs is currently **macOS only**, via `sandbox-exec`. The bundled `claude`, `codex`, and `gemini` executors declare `sandbox: macos-sandbox-exec` and will refuse to launch with a sandbox on Linux/Windows; on those platforms the policy still applies as in-process FS guards for HTTP-tool calls, but the spawned agent subprocess itself runs without OS-level isolation. Linux/Windows backends are not yet implemented.
+
 ```yaml
 schemaVersion: 2
 kind: Policy

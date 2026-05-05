@@ -2,7 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-30
+**Last updated:** 2026-05-05
+
+> **Sandbox backend status.** The only OS-level sandbox backend implemented today is `macos-sandbox-exec`. `ExecutorSandboxKind` (`crates/orbit-common/src/types/executor_def.rs`) defines no Linux or Windows variant, and `EnvironmentHost::resolve_executor_sandbox` (`crates/orbit-core/src/runtime/v2_host.rs`) rejects `macos-sandbox-exec` on non-macOS platforms. On Linux and Windows the spawned agent subprocess runs without OS-level isolation; HTTP-tool `fs.*` enforcement and process supervision still apply. A Linux backend is named in [3_vision.md](./3_vision.md) as future work but is not in `2_design.md`'s shipped contract. [T20260505-23]
 
 Policy & Sandboxing is Orbit's safety surface for filesystem access and process execution. It combines v2 `PolicyDef` profiles, global `denyRead` / `denyModify` rules, HTTP-tool fs enforcement, optional macOS `sandbox-exec` wrapping for CLI agents, and `orbit-exec` process supervision. [2_design.md](./2_design.md) documents what ships today; [3_vision.md](./3_vision.md) names the gaps to a fuller isolation contract.
 

@@ -53,3 +53,5 @@ spec:
   type: agent_loop
   fsProfile: implementer
 ```
+
+> **Platform support.** OS-level enforcement of the resolved profile for spawned agent CLIs is **macOS only**, via `sandbox-exec`. On Linux and Windows the same policy YAML is parsed and applied to in-process FS-tool calls, but no kernel-level sandbox wraps the agent subprocess.

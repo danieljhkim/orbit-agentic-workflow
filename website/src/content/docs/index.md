@@ -8,7 +8,7 @@ tableOfContents: false
   <div class="orbit-hero-copy">
     <div class="orbit-hero-eyebrow">v0.4 · early access</div>
     <h1 class="orbit-hero-headline">An agent runtime for engineering work.</h1>
-    <p class="orbit-hero-lede">Define a task, attach activities, dispatch agents in parallel. Every run is sandboxed, replayable, and bounded by policies you wrote.</p>
+    <p class="orbit-hero-lede">Define a task, attach activities, dispatch agents in parallel. Every run is replayable and bounded by policies you wrote — with OS-level <code>sandbox-exec</code> isolation on macOS.</p>
     <div class="orbit-hero-install">
       <span class="orbit-hero-install-prompt">$</span>
       <code>curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | sh</code>
@@ -42,7 +42,7 @@ tableOfContents: false
   <a class="orbit-card" data-tag="03" href="./concepts/activities-jobs/">
     <div class="orbit-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.91a1 1 0 0 0 0-1.83z"/><path d="M22 17.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="M22 12.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></div>
     <h3>Activities &amp; jobs</h3>
-    <p>The atomic unit of work. Composable, sandboxed, replayable.</p>
+    <p>The atomic unit of work. Composable, replayable, scoped by filesystem policy.</p>
   </a>
   <a class="orbit-card" data-tag="04" href="./concepts/knowledge-graph/">
     <div class="orbit-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="3"/><path d="M5 9v6"/><circle cx="5" cy="18" r="3"/><path d="M12 3v18"/><circle cx="19" cy="6" r="3"/></svg></div>
