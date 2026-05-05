@@ -19,6 +19,7 @@ pub enum Language {
     JavaScript,
     TypeScript,
     Tsx,
+    Ruby,
 }
 
 impl Language {
@@ -31,6 +32,9 @@ impl Language {
             "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
             "ts" | "mts" | "cts" => Some(Self::TypeScript),
             "tsx" => Some(Self::Tsx),
+            // Ruby tooling commonly uses .rake tasks and .gemspec manifests;
+            // both are plain Ruby syntax for extractor purposes.
+            "rb" | "rake" | "gemspec" => Some(Self::Ruby),
             _ => None,
         }
     }
@@ -44,6 +48,7 @@ impl Language {
             Self::JavaScript => "javascript",
             Self::TypeScript => "typescript",
             Self::Tsx => "tsx",
+            Self::Ruby => "ruby",
         }
     }
 }
@@ -168,8 +173,21 @@ mod tests {
             FileKind::from_extension("tsx"),
             FileKind::Code(Language::Tsx)
         );
+        assert_eq!(
+            FileKind::from_extension("rb"),
+            FileKind::Code(Language::Ruby)
+        );
+        assert_eq!(
+            FileKind::from_extension("rake"),
+            FileKind::Code(Language::Ruby)
+        );
+        assert_eq!(
+            FileKind::from_extension("gemspec"),
+            FileKind::Code(Language::Ruby)
+        );
         assert_eq!(FileKind::from_extension("ts").as_str(), "typescript");
         assert_eq!(FileKind::from_extension("tsx").as_str(), "tsx");
+        assert_eq!(FileKind::from_extension("rb").as_str(), "ruby");
     }
 
     #[test]

@@ -565,7 +565,9 @@ fn parse_leaf_kind(s: &str, depth: Option<u8>) -> LeafKind {
     match s {
         "function" => LeafKind::Function,
         "method" => LeafKind::Method,
+        "singleton_method" => LeafKind::SingletonMethod,
         "class" => LeafKind::Class,
+        "singleton_class" => LeafKind::SingletonClass,
         "enum" => LeafKind::Enum,
         "struct" => LeafKind::Struct,
         "interface" => LeafKind::Interface,
@@ -573,6 +575,7 @@ fn parse_leaf_kind(s: &str, depth: Option<u8>) -> LeafKind {
         "trait" => LeafKind::Trait,
         "impl" => LeafKind::Impl,
         "field" => LeafKind::Field,
+        "constant" => LeafKind::Constant,
         "module" => LeafKind::Module,
         "section" => LeafKind::Section {
             depth: depth.unwrap_or(1),
