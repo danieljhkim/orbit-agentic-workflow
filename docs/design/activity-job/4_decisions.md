@@ -540,11 +540,11 @@ This ADR log records the decisions that define the current Activity / Job substr
 
 ## ADR-041 — `orbit init` uses a recommendation-first setup wizard
 
-**Status:** Accepted · 2026-05 · [T20260506-16]
+**Status:** Accepted · 2026-05 · [T20260506-16], [T20260506-17]
 
 **Context.** ADR-027 made `orbit init` the writer for `[agent.<role>]` settings, but the first shipped UX mirrored the TOML schema: nine provider/backend/model prompts with little explanation of reviewer, implementer, and planner roles. First-run setup needed to teach the role model and expose the detected recommendation before asking users to edit individual fields.
 
-**Decision.** Keep the persisted `[agent.<role>]` config shape, but replace the raw field prompt sequence with a recommendation-first wizard. The collector now prints role descriptions, detected agent surfaces, and a role summary; users can accept all defaults with one response, customize one role from detected agent choices, or fall back to a manual provider/backend/model entry for custom stacks.
+**Decision.** Keep the persisted `[agent.<role>]` config shape, but replace the raw field prompt sequence with a recommendation-first wizard. The collector now prints role descriptions, detected agent surfaces, and a role summary; users can accept all defaults with one response, customize one role from detected agent choices, or fall back to a manual provider/backend/model entry for custom stacks. Recommendations are role-aware: reviewer and implementer prefer Codex when detected, while planner prefers Claude when detected.
 
 **Consequences.**
 - First-time users see the workflow roles and the exact recommended setup before making a choice.
@@ -604,5 +604,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260505-10]** — Release run-owned task lock reservations through engine-owned terminal cleanup and reserve-pressure reconciliation.
 - **[T20260505-22]** — Rewrite Claude's `--debug-file` static arg at dispatch time so the log lands at a sandbox-allowed absolute path.
 - **[T20260506-16]** — Replace raw `orbit init` agent prompts with a recommendation-first setup wizard.
+- **[T20260506-17]** — Make `orbit init` recommend Codex for reviewer and implementer when available.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
