@@ -336,7 +336,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -382,7 +382,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -424,7 +424,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -466,7 +466,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
