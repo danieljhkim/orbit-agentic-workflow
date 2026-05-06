@@ -18,6 +18,9 @@ TASK_ID=$(orbit task add \
   --workspace .)
 
 echo "$TASK_ID"
+
+# or ask an agent to create a task
+"create an orbit task for ..."
 ```
 
 ## Inspect It
