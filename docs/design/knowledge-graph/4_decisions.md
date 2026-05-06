@@ -43,16 +43,29 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-003 — Tree-sitter extractors over an LSP backend
 
-**Status:** Accepted · 2026-04 · [T20260406-0455-3], [T20260416-0352], [T20260505-11], [T20260505-13], [T20260505-14], [T20260505-15], [T20260505-16]
+**Status:** Accepted · 2026-04 (rollup updated 2026-05) · [T20260406-0455-3], [T20260409-0550], [T20260416-0352], [T20260505-11], [T20260505-13], [T20260505-14], [T20260505-15], [T20260505-16]
 
-**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead. The Rust extractor landed first ([T20260406-0455-3], hardened in [T20260409-0550]); Go, Java, and JavaScript followed in [T20260416-0352], TypeScript/TSX followed in [T20260505-11], C# followed in [T20260505-13], Kotlin followed in [T20260505-14], Ruby followed in [T20260505-15], and C followed in [T20260505-16].
+**Context.** Reference resolution is strongest via a language server, but LSPs are stateful long-running processes tuned for interactive UX. Agent tools want bulk, structured, token-budgeted output and low lifecycle overhead.
 
-**Decision.** Use tree-sitter grammars with per-language extractors (`c`, `csharp`, `rust`, `python`, `go`, `java`, `javascript`, `kotlin`, `typescript`, `tsx`, `ruby`) producing structural symbols only. Defer cross-file reference resolution indefinitely. See [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend.
+**Decision.** Use tree-sitter grammars with per-language extractors producing structural symbols only. Defer cross-file reference resolution indefinitely (see [3_vision.md §1.1] for the open question of re-introducing LSP as a pluggable backend). Each new language extends this decision via the table below rather than a new ADR; only language-specific tradeoffs that would surprise a reader (a new `LeafKind` variant, an excluded extension, a non-obvious mapping) earn a row in the Notes column.
+
+| Language | Extensions | Grammar | Task(s) | Notes |
+|----------|------------|---------|---------|-------|
+| Rust | `.rs` | `tree-sitter-rust` | [T20260406-0455-3], [T20260409-0550] | — |
+| Go, Java, JavaScript | `.go`, `.java`, `.js` | upstream | [T20260416-0352] | — |
+| Python | `.py` | upstream | (existing) | — |
+| TypeScript / TSX | `.ts`, `.mts`, `.cts`, `.tsx`, `.d.ts` | `tree-sitter-typescript` | [T20260505-11] | Adds `enum` and `type_alias` LeafKinds. `.d.ts` classifies through its `.ts` extension. |
+| C# | `.cs` | `tree-sitter-c-sharp` | [T20260505-13] | `.csx`, `.cshtml`, and Razor-style files explicitly excluded until separate extractors land. |
+| Kotlin | `.kt`, `.kts` | `tree-sitter-kotlin-ng` | [T20260505-14] | Adds `package`, `object`, `companion_object` kinds. Extension functions emit as standalone `function` leaves named `Receiver.function`. |
+| Ruby | `.rb` | upstream | [T20260505-15] | — |
+| C | `.c`, `.h` | `tree-sitter-c` | [T20260505-16] | Headers share the C extractor; prototypes emit as `function_declaration`. C++-shaped headers stay C-classified until a separate extractor lands. |
 
 **Consequences.**
 - Fast, deterministic extraction with no per-query process lifecycle.
 - `find_references`, `callers`, `implementors` ([T20260412-0645-3]) are signature-matched, not type-resolved — a superset of the truth.
-- Cost: extractor maintenance scales with languages supported.
+- Adding a language is an instance of this ADR, not a new decision: append a row above and cite the task on the Status line.
+- Cost: extractor maintenance scales with languages supported; overloads and partial declarations still share syntax-level names until a future signature-aware identity scheme lands.
+- Cost: the graph `LeafKind` surface grows as languages add their own kinds (`enum`, `type_alias`, `package`, `object`, `companion_object`, `function_declaration`); downstream exhaustive matches must absorb each addition.
 
 ---
 
@@ -371,17 +384,9 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-024 — TypeScript and TSX use dedicated tree-sitter grammars
 
-**Status:** Accepted · 2026-05 · [T20260505-11]
-**Author:** gpt-5.5
+**Status:** Superseded by ADR-003 (folded 2026-05) · 2026-05 · [T20260505-11]
 
-**Context.** TypeScript-first repositories previously produced leafless `FileNode`s because `.ts`, `.mts`, `.cts`, `.tsx`, and `.d.ts` files were not classified as source code. Treating them as JavaScript would recover some functions but lose TypeScript-specific declarations such as interfaces, type aliases, enums, and declaration-file signatures.
-
-**Decision.** Add `Language::TypeScript` and `Language::Tsx` and dispatch them to `tree-sitter-typescript`'s TypeScript and TSX grammars. Emit structural leaves for top-level functions, arrow/function-expression bindings, classes, class methods, interfaces, type aliases, and enums; keep JavaScript on the existing JavaScript extractor.
-
-**Consequences.**
-- `orbit.graph.search`, `orbit.graph.pack`, and history attribution can now target TypeScript and TSX symbols at leaf granularity.
-- Declaration files ending in `.d.ts` classify as TypeScript through their `.ts` extension and contribute declaration leaves.
-- Cost: TypeScript extraction now has its own grammar dependency and the graph `LeafKind` surface includes `enum` and `type_alias`.
+Folded into ADR-003's per-language coverage table. See that entry for the current shape.
 
 ---
 
@@ -401,49 +406,25 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-026 — C source and headers share one extractor
 
-**Status:** Accepted · 2026-05 · [T20260505-16]
-**Author:** gpt-5
+**Status:** Superseded by ADR-003 (folded 2026-05) · 2026-05 · [T20260505-16]
 
-**Context.** C source and header files use the same grammar, and the graph layer classifies files by language rather than by downstream role. Function prototypes are common in `.h` files but can also appear in `.c` files.
-
-**Decision.** Classify both `.c` and `.h` as `Language::C` and route both through the `tree-sitter-c` extractor. Emit function definitions as `function` leaves and prototypes as `function_declaration` leaves so callers can distinguish declarations without header/source inference; add explicit leaf kinds for C macros and globals instead of collapsing them into functions.
-
-**Consequences.**
-- Agents can search C systems code and headers through the same graph surface.
-- The extractor stays syntax-only and avoids guessing whether a header is public, private, generated, or included.
-- Cost: `.h` files that are C++-shaped are treated as C until a separate C++ classifier/extractor lands.
+Folded into ADR-003's per-language coverage table. See that entry for the current shape.
 
 ---
 
 ## ADR-027 — Kotlin mirrors Java-style tree-sitter extraction
 
-**Status:** Accepted · 2026-05 · [T20260505-14]
-**Author:** gpt-5.5
+**Status:** Superseded by ADR-003 (folded 2026-05) · 2026-05 · [T20260505-14]
 
-**Context.** JVM and Android workspaces commonly mix Java and Kotlin, so graph coverage that stops at `.java` files hides half of the service shape. Kotlin also has syntax-first declarations that do not map cleanly to Java classes, including `object`, `companion object`, extension functions, and top-level properties.
-
-**Decision.** Classify `.kt` and `.kts` as `Language::Kotlin` and route them to `tree-sitter-kotlin-ng`, the tree-sitter-grammars fork published with the `tree-sitter-language` ABI used by `tree-sitter = "0.26"`. Emit package, class/interface/object/companion, top-level function/property, type alias, and method leaves; record extension functions as standalone `function` leaves named `Receiver.function`.
-
-**Consequences.**
-- Agents can search mixed Java/Kotlin workspaces through one graph surface, including Kotlin scripts.
-- Extension functions stay syntax-only and visible without inventing cross-file receiver binding.
-- Cost: Kotlin-specific leaf kinds (`package`, `object`, `companion_object`) expand the graph kind surface, and overloads still share a syntax-level name unless a future signature-aware identity scheme lands.
+Folded into ADR-003's per-language coverage table. See that entry for the current shape.
 
 ---
 
 ## ADR-028 — C# uses syntax-only enterprise coverage
 
-**Status:** Accepted · 2026-05 · [T20260505-13]
-**Author:** gpt-5.5
+**Status:** Superseded by ADR-003 (folded 2026-05) · 2026-05 · [T20260505-13]
 
-**Context.** .NET monorepos are common in enterprise environments that fit Orbit's audit and graph workflows, but `.cs` files previously classified as unknown and contributed no symbols. C# has rich declarations beyond Java-like classes, including records, properties, events, and delegates.
-
-**Decision.** Classify `.cs` as `Language::CSharp` and route it through `tree-sitter-c-sharp`, the grammar published with the `tree-sitter-language` ABI used by `tree-sitter = "0.26"`. Emit syntax-level leaves for namespaces, classes, structs, records, interfaces, enums, methods, properties, fields, events, and delegates. Keep `.csx`, `.cshtml`, and Razor-style files out of this classifier until separate extractors exist.
-
-**Consequences.**
-- Agents can search and pack C# service symbols through the same graph surface as Rust, JVM, TypeScript, Ruby, and C code.
-- C#-specific declaration forms stay explicit in the graph kind surface instead of being collapsed into class or method leaves.
-- Cost: overloads and partial declarations still share syntax-level names; cross-file partial stitching and semantic reference resolution remain deferred under ADR-003.
+Folded into ADR-003's per-language coverage table. See that entry for the current shape.
 
 ---
 
