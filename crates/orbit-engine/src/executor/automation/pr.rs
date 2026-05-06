@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use orbit_common::types::{
-    OrbitError, ReviewThreadStatus, Role, Task, TaskStatus, normalize_optional_attribution_label,
+    ExternalRef, OrbitError, ReviewThreadStatus, Role, Task, TaskStatus,
+    normalize_optional_attribution_label,
 };
 use orbit_store::pr_scoreboard;
 use orbit_tools::ToolContext;
@@ -62,12 +63,14 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         )));
     }
 
-    // Find pr_number from the first task that has one
+    // Find the GitHub PR external ref from the first task that has one.
     let pr_number = batch_tasks
         .iter()
-        .find_map(|t| t.pr_number.as_deref())
+        .find_map(Task::github_pr_number)
         .ok_or_else(|| {
-            OrbitError::InvalidInput("merge_batch_pr: no task in batch has a pr_number".to_string())
+            OrbitError::InvalidInput(
+                "merge_batch_pr: no task in batch has a github-pr external ref".to_string(),
+            )
         })?
         .to_string();
 
@@ -151,7 +154,7 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
                 } else {
                     None
                 },
-                pr_number: Some(pr_number.clone()),
+                external_refs: vec![ExternalRef::github_pr(pr_number.clone())?],
                 ..TaskAutomationUpdate::default()
             },
         )?;
@@ -300,7 +303,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
             task_id,
             TaskAutomationUpdate {
                 status: Some(TaskStatus::Review),
-                pr_number: Some(pr_number.clone()),
+                external_refs: vec![ExternalRef::github_pr(pr_number.clone())?],
                 ..TaskAutomationUpdate::default()
             },
         )?;
@@ -500,6 +503,7 @@ mod tests {
     use chrono::Utc;
     use orbit_common::types::{
         Activity, Job, JobTargetType, OrbitEvent, Role, TaskArtifact, TaskPriority, TaskType,
+        push_external_ref_if_missing,
     };
     use orbit_tools::ToolContext;
     use serde_json::{Value, json};
@@ -663,8 +667,8 @@ mod tests {
             if let Some(status) = update.status {
                 task.status = status;
             }
-            if let Some(pr_number) = update.pr_number {
-                task.pr_number = Some(pr_number);
+            for external_ref in update.external_refs {
+                push_external_ref_if_missing(&mut task.external_refs, external_ref);
             }
             if let Some(execution_summary) = update.execution_summary {
                 task.execution_summary = execution_summary;
@@ -790,7 +794,6 @@ mod tests {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
-            pr_number: None,
             pr_status: None,
             external_refs: Vec::new(),
             source_task_id: None,

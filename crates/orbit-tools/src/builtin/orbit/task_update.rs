@@ -80,12 +80,6 @@ impl Tool for OrbitTaskUpdateTool {
                 required: false,
             },
             ToolParam {
-                name: "pr_number".to_string(),
-                description: "Pull request number (empty string clears)".to_string(),
-                param_type: "string".to_string(),
-                required: false,
-            },
-            ToolParam {
                 name: "batch_id".to_string(),
                 description: "Batch ID to associate with the task (empty string clears)"
                     .to_string(),

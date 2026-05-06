@@ -39,7 +39,7 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) priority: Option<TaskPriority>,
     pub(crate) complexity: Option<TaskComplexity>,
     pub(crate) task_type: Option<TaskType>,
-    pub(crate) pr_number: Option<Option<String>>,
+    pub(crate) external_refs: Option<Vec<ExternalRef>>,
     pub(crate) pr_status: Option<Option<String>>,
     pub(crate) source_task_id: Option<Option<String>>,
     pub(crate) batch_id: Option<Option<String>>,
@@ -71,7 +71,7 @@ impl TaskRecordUpdateParams {
             || self.priority.is_some()
             || self.complexity.is_some()
             || self.task_type.is_some()
-            || self.pr_number.is_some()
+            || self.external_refs.is_some()
             || self.pr_status.is_some()
             || self.source_task_id.is_some()
             || self.batch_id.is_some()
@@ -217,7 +217,7 @@ impl TaskRecords<'_> {
                     priority: params.priority,
                     complexity: params.complexity,
                     task_type: params.task_type,
-                    pr_number: params.pr_number.clone(),
+                    external_refs: params.external_refs.clone(),
                     pr_status: params.pr_status.clone(),
                     source_task_id: params.source_task_id.clone(),
                     batch_id: params.batch_id.clone(),

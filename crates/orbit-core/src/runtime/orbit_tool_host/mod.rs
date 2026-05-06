@@ -626,8 +626,6 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                             .map(empty_string_to_none),
                         implemented_by: optional_raw_string(&input, "implemented_by")?
                             .map(empty_string_to_none),
-                        pr_number: optional_raw_string(&input, "pr_number")?
-                            .map(empty_string_to_none),
                         pr_status: optional_raw_string(&input, "pr_status")?
                             .map(empty_string_to_none),
                         batch_id: optional_raw_string(&input, "batch_id")?
@@ -954,7 +952,6 @@ mod tests {
                 priority: TaskPriority::Medium,
                 complexity: None,
                 task_type: TaskType::Task,
-                pr_number: None,
                 external_refs: Vec::new(),
                 source_task_id: None,
                 comments: Vec::new(),

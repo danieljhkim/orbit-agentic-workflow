@@ -63,7 +63,6 @@ impl TaskFileStore {
                 priority: params.priority,
                 complexity: params.complexity,
                 task_type: params.task_type,
-                pr_number: params.pr_number,
                 pr_status: None,
                 external_refs: params.external_refs,
                 actor_identity: ActorIdentity::default(),
@@ -261,8 +260,8 @@ impl TaskFileStore {
         if let Some(value) = fields.task_type {
             bundle.doc.task_type = value;
         }
-        if let Some(value) = &fields.pr_number {
-            bundle.doc.pr_number = value.clone();
+        if let Some(value) = &fields.external_refs {
+            bundle.doc.external_refs = value.clone();
         }
         if let Some(value) = &fields.pr_status {
             bundle.doc.pr_status = value.clone();
@@ -487,7 +486,6 @@ mod tests {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
-            pr_number: None,
             external_refs,
             source_task_id: None,
             comments: Vec::new(),
@@ -568,7 +566,91 @@ updated_at: 2026-01-01T00:00:00Z
             .expect("roundtrip legacy task");
 
         let yaml = fs::read_to_string(store.task_doc_path(&task_dir)).expect("read task yaml");
-        assert!(yaml.contains("schema_version: 3"));
+        assert!(yaml.contains("schema_version: 4"));
         assert!(!yaml.contains("external_refs"));
+    }
+
+    #[test]
+    fn legacy_pr_number_loads_as_github_pr_external_ref_and_roundtrips_without_pr_number() {
+        let root = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(root.path().to_path_buf());
+        let id = "T20260101-2";
+        let task_dir = store.task_dir(TaskStateDir::Backlog, id);
+        fs::create_dir_all(&task_dir).expect("create legacy task dir");
+        fs::write(
+            store.task_doc_path(&task_dir),
+            r#"schema_version: 3
+id: T20260101-2
+priority: medium
+title: Legacy PR task
+pr_number: "42"
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+"#,
+        )
+        .expect("write legacy task yaml");
+
+        let task = store
+            .get_task(id)
+            .expect("load legacy task")
+            .expect("legacy task exists");
+        assert_eq!(task.external_refs.len(), 1);
+        assert_eq!(task.external_refs[0].system, "github-pr");
+        assert_eq!(task.external_refs[0].id, "42");
+
+        store
+            .update_task_document(
+                id,
+                &TaskDocumentUpdateParams {
+                    actor: "test".to_string(),
+                    description: Some("Updated.".to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect("roundtrip legacy task");
+
+        let yaml = fs::read_to_string(store.task_doc_path(&task_dir)).expect("read task yaml");
+        assert!(yaml.contains("schema_version: 4"));
+        assert!(!yaml.contains("pr_number"));
+        assert!(yaml.contains("system: github-pr"));
+        assert!(yaml.contains("id: '42'"));
+    }
+
+    #[test]
+    fn legacy_pr_number_does_not_duplicate_existing_github_pr_ref() {
+        let root = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(root.path().to_path_buf());
+        let id = "T20260101-3";
+        let task_dir = store.task_dir(TaskStateDir::Backlog, id);
+        fs::create_dir_all(&task_dir).expect("create legacy task dir");
+        fs::write(
+            store.task_doc_path(&task_dir),
+            r#"schema_version: 3
+id: T20260101-3
+priority: medium
+title: Legacy PR task
+pr_number: "42"
+external_refs:
+- system: github-pr
+  id: "42"
+  url: https://example.com/pull/42
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+"#,
+        )
+        .expect("write legacy task yaml");
+
+        let task = store
+            .get_task(id)
+            .expect("load legacy task")
+            .expect("legacy task exists");
+
+        assert_eq!(task.external_refs.len(), 1);
+        assert_eq!(task.external_refs[0].system, "github-pr");
+        assert_eq!(task.external_refs[0].id, "42");
+        assert_eq!(
+            task.external_refs[0].url.as_deref(),
+            Some("https://example.com/pull/42")
+        );
     }
 }

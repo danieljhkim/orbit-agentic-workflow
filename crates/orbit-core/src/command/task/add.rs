@@ -81,7 +81,6 @@ impl OrbitRuntime {
                 priority: params.priority,
                 complexity: params.complexity,
                 task_type,
-                pr_number: None,
                 external_refs: params.external_refs.clone(),
                 source_task_id: params.source_task_id.clone(),
                 comments: comments.clone(),

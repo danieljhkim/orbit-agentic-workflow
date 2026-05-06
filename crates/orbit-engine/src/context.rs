@@ -188,7 +188,7 @@ pub struct TaskAutomationUpdate {
     pub plan: Option<String>,
     pub workspace_path: Option<Option<String>>,
     pub repo_root: Option<String>,
-    pub pr_number: Option<String>,
+    pub external_refs: Vec<ExternalRef>,
     pub execution_summary: Option<String>,
     pub status_event: Option<String>,
     pub status_note: Option<String>,

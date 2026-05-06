@@ -479,6 +479,8 @@ pub struct ExternalRef {
     pub url: Option<String>,
 }
 
+pub const GITHUB_PR_EXTERNAL_REF_SYSTEM: &str = "github-pr";
+
 impl ExternalRef {
     pub fn try_new(system: String, id: String, url: Option<String>) -> Result<Self, OrbitError> {
         let system = Self::validate_system(&system)?;
@@ -531,6 +533,23 @@ impl ExternalRef {
             )
         })?;
         Self::try_new(system.to_string(), id.to_string(), None)
+    }
+
+    pub fn github_pr(id: impl Into<String>) -> Result<Self, OrbitError> {
+        Self::try_new(GITHUB_PR_EXTERNAL_REF_SYSTEM.to_string(), id.into(), None)
+    }
+
+    pub fn has_key(&self, system: &str, id: &str) -> bool {
+        self.system == system && self.id == id
+    }
+}
+
+pub fn push_external_ref_if_missing(refs: &mut Vec<ExternalRef>, external_ref: ExternalRef) {
+    if !refs
+        .iter()
+        .any(|candidate| candidate.has_key(&external_ref.system, &external_ref.id))
+    {
+        refs.push(external_ref);
     }
 }
 
@@ -597,8 +616,6 @@ pub struct Task {
     #[serde(default)]
     pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
-    #[serde(default)]
-    pub pr_number: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_status: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -633,6 +650,13 @@ impl Task {
     pub fn parsed_plan(&self) -> Result<crate::types::task_plan::TaskPlan, OrbitError> {
         let label = format!("task '{}' plan", self.id);
         crate::types::task_plan::parse_task_plan(self.plan.as_str(), label.as_str())
+    }
+
+    pub fn github_pr_number(&self) -> Option<&str> {
+        self.external_refs
+            .iter()
+            .find(|external_ref| external_ref.system == GITHUB_PR_EXTERNAL_REF_SYSTEM)
+            .map(|external_ref| external_ref.id.as_str())
     }
 }
 
@@ -820,7 +844,7 @@ fn find_dependency_path(
 
 #[cfg(test)]
 mod tests {
-    use super::{ExternalRef, TaskArtifact};
+    use super::{ExternalRef, TaskArtifact, push_external_ref_if_missing};
 
     #[test]
     fn external_ref_try_new_normalizes_valid_input() {
@@ -889,6 +913,26 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("valid URL"));
+    }
+
+    #[test]
+    fn push_external_ref_if_missing_is_idempotent_by_key() {
+        let mut refs = vec![ExternalRef::github_pr("42").expect("github pr ref")];
+
+        push_external_ref_if_missing(
+            &mut refs,
+            ExternalRef::github_pr("42").expect("duplicate github pr ref"),
+        );
+        push_external_ref_if_missing(
+            &mut refs,
+            ExternalRef::parse_key("jira:ENG-1234").expect("jira ref"),
+        );
+
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].system, "github-pr");
+        assert_eq!(refs[0].id, "42");
+        assert_eq!(refs[1].system, "jira");
+        assert_eq!(refs[1].id, "ENG-1234");
     }
 
     #[test]

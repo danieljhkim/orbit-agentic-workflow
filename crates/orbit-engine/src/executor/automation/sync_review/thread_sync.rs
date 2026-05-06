@@ -22,7 +22,7 @@ pub(crate) fn sync_batch_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     let mut total: u64 = 0;
 
     for task in &batch_tasks {
-        if task.pr_number.is_none() {
+        if task.github_pr_number().is_none() {
             continue;
         }
         if task.review_threads.is_empty() {
@@ -52,17 +52,14 @@ fn sync_task_review_to_github_with_client<
 ) -> Result<u64, OrbitError> {
     let task = host.get_task(task_id)?;
 
-    if task.pr_number.is_none() {
+    let Some(pr_number) = task.github_pr_number() else {
         return Ok(0);
-    }
+    };
 
     if task.review_threads.is_empty() {
         return Ok(0);
     }
 
-    let pr_number = task.pr_number.as_deref().ok_or_else(|| {
-        OrbitError::InvalidInput("sync_review_to_github: task missing pr_number".to_string())
-    })?;
     let Some(repo_root) = task.repo_root.as_deref().or(task.workspace_path.as_deref()) else {
         tracing::warn!(
             target: "orbit.engine.review_sync",
@@ -309,8 +306,8 @@ mod tests {
 
     use chrono::Utc;
     use orbit_common::types::{
-        Activity, Job, JobTargetType, OrbitEvent, Role, Task, TaskArtifact, TaskPriority,
-        TaskStatus, TaskType,
+        Activity, ExternalRef, Job, JobTargetType, OrbitEvent, Role, Task, TaskArtifact,
+        TaskPriority, TaskStatus, TaskType,
     };
     use orbit_common::types::{ReviewMessage, ReviewThread, ReviewThreadStatus};
     use orbit_store::task_review_scoreboard;
@@ -593,9 +590,8 @@ mod tests {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Task,
-            pr_number: Some("42".to_string()),
             pr_status: None,
-            external_refs: Vec::new(),
+            external_refs: vec![ExternalRef::github_pr("42").expect("github pr ref")],
             source_task_id: None,
             batch_id: None,
             comments: Vec::new(),

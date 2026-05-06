@@ -149,7 +149,7 @@ fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Pa
         "acceptance_criteria": task.acceptance_criteria.clone(),
         "plan": task.plan.clone(),
         "context_files": kept_context_files,
-        "pr_number": task.pr_number.clone(),
+        "external_refs": task.external_refs.clone(),
         "workspace_path": workspace_path,
         "repo_root": repo_root,
     })

@@ -131,7 +131,7 @@ The chosen mechanism for v2. Key claim: the orphan branch holds canonical YAML *
 
 The "structured conflict" path is critical. When operations cannot replay automatically, the client writes a `.orbit/tasks/_conflicts/<task-id>.yaml` describing both sides and exits with a clear message. The user runs `orbit task sync resolve <task-id>` to choose, edit, or merge, and the resolution becomes the next push.
 
-`external_refs` was added as pure task metadata in [T20260506-9]. This document records the intended task-sync merge behavior now, but the current sync layer does not yet expose implemented field-level replay hooks. Implementing the replay hook is deferred to [T20260506-13].
+`external_refs` was added as pure task metadata in [T20260506-9]. This document records the intended task-sync merge behavior for any future task-sync coordinator work, but the current sync layer does not yet expose implemented field-level replay hooks. The previously tracked standalone replay follow-up [T20260506-13] was rejected as no longer required.
 
 ### 3.3 Why not the other three
 
@@ -295,6 +295,6 @@ Task sync inherits whatever auth posture the team uses for `git push`. If a team
 - [T20260505-12] — Design git-orphan-branch task sync (v2 feature). The task that produced this folder.
 - [T20260421-0528] — Knowledge-graph task attribution. Cited as the canonical example of `T<YYYYMMDD>-<N>` IDs being load-bearing.
 - [T20260506-9] — Adds first-class task `external_refs` metadata and documents the task-sync merge rule.
-- [T20260506-13] — Follow-up to implement task-sync replay merge semantics for `external_refs`.
+- [T20260506-13] — Rejected follow-up; no standalone task-sync replay implementation is currently required for `external_refs`.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

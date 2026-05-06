@@ -221,7 +221,6 @@ pub(super) fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         priority: bundle.doc.priority,
         complexity: bundle.doc.complexity,
         task_type: bundle.doc.task_type,
-        pr_number: bundle.doc.pr_number,
         pr_status: bundle.doc.pr_status,
         external_refs: bundle.doc.external_refs,
         source_task_id: bundle.doc.source_task_id,

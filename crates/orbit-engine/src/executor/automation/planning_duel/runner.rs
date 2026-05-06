@@ -493,7 +493,6 @@ mod tests {
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Bug,
-            pr_number: None,
             pr_status: None,
             external_refs: Vec::new(),
             source_task_id: None,

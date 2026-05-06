@@ -1,6 +1,6 @@
 use orbit_common::types::{
     ExternalRef, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus,
-    normalize_optional_attribution_label,
+    normalize_optional_attribution_label, push_external_ref_if_missing,
 };
 use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
 
@@ -125,6 +125,15 @@ impl TaskWriteHost for OrbitRuntime {
                     .or(Some(actor_label.as_str())),
                 existing_task.model.as_deref().or(model.as_deref()),
             );
+            let external_refs = if update.external_refs.is_empty() {
+                None
+            } else {
+                let mut refs = existing_task.external_refs.clone();
+                for external_ref in update.external_refs.clone() {
+                    push_external_ref_if_missing(&mut refs, external_ref);
+                }
+                Some(refs)
+            };
             let task = self.stores().tasks().update(
                 task_id,
                 StoreTaskUpdateParams {
@@ -145,7 +154,7 @@ impl TaskWriteHost for OrbitRuntime {
                     status: update.status,
                     workspace_path: update.workspace_path.clone(),
                     repo_root: update.repo_root.clone().map(Some),
-                    pr_number: update.pr_number.clone().map(Some),
+                    external_refs,
                     batch_id: update.batch_id.clone().map(Some),
                     status_event: update.status_event.clone(),
                     status_note: update.status_note.clone(),

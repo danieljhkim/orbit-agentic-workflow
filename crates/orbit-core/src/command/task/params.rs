@@ -62,7 +62,6 @@ pub struct TaskUpdateParams {
     pub status: Option<TaskStatus>,
     pub planned_by: Option<Option<String>>,
     pub implemented_by: Option<Option<String>>,
-    pub pr_number: Option<Option<String>>,
     pub pr_status: Option<Option<String>>,
     pub batch_id: Option<Option<String>>,
     pub context_files: Option<Vec<String>>,
@@ -85,7 +84,6 @@ impl TaskUpdateParams {
             || self.status.is_some()
             || self.planned_by.is_some()
             || self.implemented_by.is_some()
-            || self.pr_number.is_some()
             || self.pr_status.is_some()
             || self.batch_id.is_some()
             || self.context_files.is_some()
@@ -110,7 +108,6 @@ impl From<TaskUpdateParams> for TaskRecordUpdateParams {
             status: p.status,
             planned_by: p.planned_by,
             implemented_by: p.implemented_by,
-            pr_number: p.pr_number,
             pr_status: p.pr_status,
             batch_id: p.batch_id,
             context_files: p.context_files,

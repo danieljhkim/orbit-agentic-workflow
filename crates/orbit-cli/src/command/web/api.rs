@@ -315,11 +315,10 @@ fn default_priority() -> TaskPriority {
 /// Partial-update body for `PATCH /tasks/:id`. Each field is `Option<...>`;
 /// fields absent from the JSON body remain unchanged.
 ///
-/// Note: `pr_number`, `pr_status`, and `batch_id` are intentionally omitted
-/// from this v1 surface. They use `Option<Option<String>>` in
-/// `TaskUpdateParams` to distinguish absent vs. clear; the dashboard does not
-/// currently need to set them. Add them via a `deserialize_with` adapter when
-/// a UI use case appears.
+/// Note: `pr_status` and `batch_id` are intentionally omitted from this v1
+/// surface. They use `Option<Option<String>>` in `TaskUpdateParams` to
+/// distinguish absent vs. clear; the dashboard does not currently need to set
+/// them. Add them via a `deserialize_with` adapter when a UI use case appears.
 #[derive(Deserialize, Default)]
 pub(super) struct UpdateTaskBody {
     #[serde(default)]
@@ -433,7 +432,6 @@ async fn update_task_action(
         status: body.status,
         planned_by: None,
         implemented_by: None,
-        pr_number: None,
         pr_status: None,
         batch_id: None,
         context_files: body.context_files,

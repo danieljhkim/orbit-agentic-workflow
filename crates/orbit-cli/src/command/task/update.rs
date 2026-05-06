@@ -41,9 +41,6 @@ pub struct TaskUpdateArgs {
     /// Explicit implementation attribution label (empty string clears)
     #[arg(long)]
     pub implemented_by: Option<String>,
-    /// Pull request number (empty string clears)
-    #[arg(long)]
-    pub pr_number: Option<String>,
     /// PR review status (approve, request-changes)
     #[arg(long)]
     pub pr_status: Option<String>,
@@ -82,7 +79,6 @@ impl Execute for TaskUpdateArgs {
             status,
             planned_by,
             implemented_by,
-            pr_number,
             pr_status,
             batch_id,
             context_files,
@@ -92,13 +88,6 @@ impl Execute for TaskUpdateArgs {
             json,
         } = self;
 
-        let pr_number = pr_number.map(|value| {
-            if value.trim().is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        });
         let pr_status = pr_status.map(|value| {
             if value.trim().is_empty() {
                 None
@@ -144,7 +133,6 @@ impl Execute for TaskUpdateArgs {
                 status: status.map(Into::into),
                 planned_by,
                 implemented_by,
-                pr_number,
                 pr_status,
                 batch_id,
                 context_files: context_files.map(|c| crate::parse::csv_to_vec(&c)),

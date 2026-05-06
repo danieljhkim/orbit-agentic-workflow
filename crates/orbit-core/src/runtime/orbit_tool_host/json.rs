@@ -35,7 +35,6 @@ pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStat
         "priority": task.priority.to_string(),
         "complexity": task.complexity.map(|value| value.to_string()),
         "type": task.task_type.to_string(),
-        "pr_number": task.pr_number,
         "pr_status": task.pr_status,
         "external_refs": task.external_refs,
         "source_task_id": task.source_task_id,

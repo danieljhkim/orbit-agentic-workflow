@@ -137,9 +137,6 @@ impl Execute for TaskShowArgs {
                     }
                 }
             }
-            if let Some(ref pr_number) = task.pr_number {
-                println!("{} {}", bold("PR Number:"), pr_number);
-            }
             if let Some(ref pr_status) = task.pr_status {
                 println!("{} {}", bold("PR Status:"), pr_status);
             }
