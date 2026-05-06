@@ -640,6 +640,53 @@ mod tests {
             "custom-output/\n!custom-output/keep.txt\n"
         );
     }
+
+    #[test]
+    fn workspace_init_with_root_override_does_not_modify_repo_gitignore() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        let custom_root_parent = tempdir().expect("custom root parent");
+        let custom_root = custom_root_parent.path().join("custom-orbit");
+
+        // Seed the workspace as a git repo so the pre-fix code would have
+        // appended `.orbit` to <workspace>/.gitignore.
+        std::fs::create_dir_all(workspace.path().join(".git")).expect("seed git dir");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: Some("custom-root-git".to_string()),
+            base_branch: "main".to_string(),
+            mcp: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(Some(custom_root.as_path()));
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init with root override in a git repo");
+
+        let gitignore = workspace.path().join(".gitignore");
+        assert!(
+            !gitignore.exists(),
+            "`--root` outside the workspace must not create <workspace>/.gitignore",
+        );
+    }
 }
 
 impl Execute for WorkspaceListArgs {
@@ -872,6 +919,8 @@ fn orbit_gitignore_root<'a>(
     workspace_root: &'a std::path::Path,
     orbit_dir: &'a std::path::Path,
 ) -> Option<&'a std::path::Path> {
+    // Legacy: walking up from a subdir, orbit_dir is `<repo>/.orbit` whose
+    // parent is a git repo root.
     if orbit_dir.file_name().and_then(|name| name.to_str()) == Some(".orbit")
         && let Some(repo_root) = orbit_dir.parent()
         && is_git_repo_root(repo_root)
@@ -879,7 +928,15 @@ fn orbit_gitignore_root<'a>(
         return Some(repo_root);
     }
 
-    is_git_repo_root(workspace_root).then_some(workspace_root)
+    // Default: orbit_dir lives directly inside workspace_root as `.orbit`.
+    // If the user passed `--root` to relocate Orbit data outside the workspace
+    // (or to a non-`.orbit` basename), skip the gitignore write — there is no
+    // `<workspace>/.orbit` directory to ignore.
+    if is_git_repo_root(workspace_root) && orbit_dir == workspace_root.join(".orbit") {
+        return Some(workspace_root);
+    }
+
+    None
 }
 
 fn is_git_repo_root(path: &std::path::Path) -> bool {
