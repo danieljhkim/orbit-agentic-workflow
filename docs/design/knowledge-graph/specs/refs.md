@@ -98,7 +98,7 @@ This is stricter than the old behavior on purpose. A detached checkout should no
 The public surfaces are intentionally aligned:
 
 - CLI build/update: `orbit graph build --ref <name>` and `orbit graph update --ref <name>`
-- CLI reads: `orbit graph show --ref <name>` and `orbit graph search --ref <name>`
+- CLI reads: `orbit graph show --ref <name> <selector>` and `orbit graph search --ref <name> <query>`
 - Tool reads: `orbit.graph.overview`, `orbit.graph.search`, `orbit.graph.show`, `orbit.graph.refs`, `orbit.graph.pack`, `orbit.graph.callers`, and `orbit.graph.implementors` all accept optional `ref`
 
 If the ref is omitted, these surfaces all use the same current-branch resolution path.
