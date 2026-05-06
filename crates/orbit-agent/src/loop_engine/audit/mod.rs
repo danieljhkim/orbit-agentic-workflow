@@ -7,13 +7,13 @@
 //! in a separate content-addressed store so events stay small and queryable.
 //!
 //! [`JsonlFileSink`] writes one JSON object per line to
-//! `{audit_root}/loop/{run_id}.jsonl` and fans blob writes to
-//! `{audit_root}/blobs/`. Orbit runtime callers pass `.orbit/state/audit` as
-//! that root; tests use [`InMemorySink`], callers with no need for persistence
-//! use [`NullSink`].
+//! `{audit_root}/loop/{run_id}.jsonl` once the first loop event is emitted and
+//! fans blob writes to `{audit_root}/blobs/`. Orbit runtime callers pass
+//! `.orbit/state/audit` as that root; tests use [`InMemorySink`], callers with
+//! no need for persistence use [`NullSink`].
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -168,7 +168,7 @@ impl AuditSink for InMemorySink {
 
 pub struct JsonlFileSink {
     run_id: String,
-    writer: Mutex<BufWriter<File>>,
+    writer: Mutex<Option<BufWriter<File>>>,
     blob_store: Arc<BlobStore>,
     log_path: PathBuf,
 }
@@ -178,17 +178,12 @@ impl JsonlFileSink {
         let run_id = run_id.into();
         let root = audit_root.as_ref();
         let loop_dir = root.join("loop");
-        fs::create_dir_all(&loop_dir)?;
         let log_path = loop_dir.join(format!("{run_id}.jsonl"));
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)?;
         let blob_root = root.join("blobs");
         let blob_store = Arc::new(BlobStore::new(blob_root));
         Ok(Self {
             run_id,
-            writer: Mutex::new(BufWriter::new(file)),
+            writer: Mutex::new(None),
             blob_store,
             log_path,
         })
@@ -205,6 +200,23 @@ impl JsonlFileSink {
     pub fn blob_store(&self) -> &BlobStore {
         &self.blob_store
     }
+
+    fn ensure_writer<'a>(
+        &self,
+        writer: &'a mut Option<BufWriter<File>>,
+    ) -> io::Result<&'a mut BufWriter<File>> {
+        if writer.is_none() {
+            if let Some(parent) = self.log_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.log_path)?;
+            writer.replace(BufWriter::new(file));
+        }
+        Ok(writer.as_mut().expect("writer initialized"))
+    }
 }
 
 impl AuditSink for JsonlFileSink {
@@ -216,12 +228,19 @@ impl AuditSink for JsonlFileSink {
                 return;
             }
         };
-        let mut w = self.writer.lock().expect("audit writer");
-        if let Err(err) = writeln!(w, "{line}") {
+        let mut writer = self.writer.lock().expect("audit writer");
+        let writer = match self.ensure_writer(&mut writer) {
+            Ok(writer) => writer,
+            Err(err) => {
+                tracing::warn!("failed to open loop audit file: {err}");
+                return;
+            }
+        };
+        if let Err(err) = writeln!(writer, "{line}") {
             tracing::warn!("failed to write loop audit event: {err}");
             return;
         }
-        let _ = w.flush();
+        let _ = writer.flush();
     }
 
     fn write_blob(&self, content: &[u8]) -> String {
@@ -233,4 +252,93 @@ impl AuditSink for JsonlFileSink {
 
 pub fn json_value_to_vec(value: &Value) -> Vec<u8> {
     serde_json::to_vec(value).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use serde_json::Value;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(name: &str) -> Self {
+            let seq = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "orbit-agent-audit-{name}-{}-{seq}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp test dir");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn sample_event(run_id: &str) -> LoopAuditEvent {
+        LoopAuditEvent::IterationBoundary {
+            ts: Utc::now(),
+            run_id: run_id.to_string(),
+            session_id: "session-1".to_string(),
+            iteration: 1,
+            continues: false,
+        }
+    }
+
+    #[test]
+    fn jsonl_file_sink_open_is_lazy() {
+        let dir = TestDir::new("open-lazy");
+        let sink = JsonlFileSink::open(dir.path(), "run-lazy").expect("open sink");
+
+        assert_eq!(
+            sink.log_path(),
+            dir.path().join("loop/run-lazy.jsonl").as_path()
+        );
+        assert!(!dir.path().join("loop").exists());
+        assert!(!sink.log_path().exists());
+    }
+
+    #[test]
+    fn jsonl_file_sink_blob_write_does_not_create_loop_file() {
+        let dir = TestDir::new("blob-lazy");
+        let sink = JsonlFileSink::open(dir.path(), "run-blob").expect("open sink");
+
+        let hash = sink.write_blob(b"stdout payload");
+
+        assert_eq!(hash.len(), 64);
+        assert!(!sink.log_path().exists());
+        assert!(sink.blob_store().root().exists());
+    }
+
+    #[test]
+    fn jsonl_file_sink_emit_creates_loop_file() {
+        let dir = TestDir::new("emit-lazy");
+        let sink = JsonlFileSink::open(dir.path(), "run-event").expect("open sink");
+
+        sink.emit(&sample_event("run-event"));
+
+        let text = std::fs::read_to_string(sink.log_path()).expect("read loop jsonl");
+        let line = text.lines().next().expect("event line");
+        let event: Value = serde_json::from_str(line).expect("parse event");
+        assert_eq!(
+            event.get("event_kind").and_then(Value::as_str),
+            Some("iteration_boundary")
+        );
+    }
 }

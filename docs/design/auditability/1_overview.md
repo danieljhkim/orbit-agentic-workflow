@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (T20260430-20)
+**Last updated:** 2026-05-06 (T20260506-2)
 
 Auditability is Orbit's answer to the operator question that matters after an agent touches a real repository: what happened, why, and who is accountable? The contract spans command rows, Orbit tool mutations, activity/job runs, provider turns, tool calls, filesystem denials, task attribution, metrics, and redacted payload storage. [2_design.md](./2_design.md) describes the shipped implementation; [3_vision.md](./3_vision.md) names the remaining gaps.
 
@@ -32,7 +32,7 @@ The v2 activity/job runtime emits `V2AuditEvent` envelopes for run, step, activi
 
 ### 2.3 Agent-loop audit events preserve provider and tool detail
 
-The HTTP loop engine emits `LoopAuditEvent` records for sessions, HTTP requests/responses, tool requests/results, iteration boundaries, and policy denials. Loop JSONL lives under `.orbit/state/audit/loop/`; large request, response, input, and output bodies are stored as redacted content-addressed blobs under `.orbit/state/audit/blobs/`.
+The HTTP loop engine emits `LoopAuditEvent` records for sessions, HTTP requests/responses, tool requests/results, iteration boundaries, and policy denials. Loop JSONL materializes under `.orbit/state/audit/loop/` only once a run emits loop-level events; large request, response, input, and output bodies are stored as redacted content-addressed blobs under `.orbit/state/audit/blobs/`.
 
 ### 2.4 Invocation metrics are adjacent, not a replacement
 

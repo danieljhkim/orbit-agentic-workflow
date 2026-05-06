@@ -81,10 +81,11 @@ impl V2AuditWriter {
 
     /// High-level constructor for CLI / library callers that don't want to
     /// name the loop-level sink types directly (orbit-core's primary use
-    /// case). Creates a `JsonlFileSink` at
-    /// `audit_root/loop/{run_id}.jsonl` with blobs under `audit_root/blobs/`
-    /// and a `V2JsonlSink` at `audit_root/v2_loop/{run_id}.jsonl`, wires them
-    /// together, and returns a ready-to-dispatch writer.
+    /// case). Creates a lazy `JsonlFileSink` for loop events under
+    /// `audit_root/loop/{run_id}.jsonl`, configures blobs under
+    /// `audit_root/blobs/`, and creates a `V2JsonlSink` at
+    /// `audit_root/v2_loop/{run_id}.jsonl`, wires them together, and returns a
+    /// ready-to-dispatch writer.
     ///
     /// Callers that need a custom sink configuration use `new` +
     /// `with_envelope_sink` directly.

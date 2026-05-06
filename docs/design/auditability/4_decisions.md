@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-05 (T20260505-6)
+**Last updated:** 2026-05-06 (T20260506-2)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -248,6 +248,18 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - Parallel CLI and runtime audit producers get deterministic collision resistance without weakening uniqueness constraints.
 - Cost: execution ids are longer and less visually compact than the old `exec-<nanos>` shape.
 
+## ADR-021 — Loop audit JSONL files materialize on first loop event
+
+**Status:** Accepted · 2026-05 · [T20260506-2]
+
+**Context.** V2 runs always constructed both the v2 envelope sink and the loop-level sink. Runs that emitted only envelope events or CLI-backend blobs therefore left zero-byte `.orbit/state/audit/loop/{run_id}.jsonl` files beside populated `v2_loop` files, making the audit tree look noisy and misleading.
+
+**Decision.** Keep the loop sink available for HTTP agent-loop events and blob writes, but defer creating `loop/{run_id}.jsonl` until the first `LoopAuditEvent` is emitted. Blob writes continue to use `.orbit/state/audit/blobs/` without creating an empty loop event file.
+
+**Consequences.**
+- Runs with no loop-level provider/tool events no longer leave empty loop JSONL placeholders.
+- Cost: consumers must treat a missing loop JSONL file as "no loop events were emitted", not as a missing run; the v2 envelope file remains the canonical run spine.
+
 ---
 
 ## Task References
@@ -276,5 +288,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260430-5]** — Tighten task and PR review-message scoring so only exact configured orchestrator/helper model identities score; typo-prefixed labels are ignored.
 - **[T20260430-20]** — Shorten the auditability docs while preserving required guarantees.
 - **[T20260505-6]** — Replace timestamp-only command-audit execution ids with process-disambiguated generated ids for parallel tool runs.
+- **[T20260506-2]** — Lazily materialize loop audit JSONL files only when loop-level events are emitted.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

@@ -527,7 +527,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
             Some(SYSTEM_AUDIT_IDENTITY)
         );
         assert!(
-            repo_root
+            !repo_root
                 .join(".orbit/state/audit/loop")
                 .join(format!("{}.jsonl", result.run_id))
                 .exists()

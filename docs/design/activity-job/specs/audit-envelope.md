@@ -47,7 +47,7 @@ Envelope events append to:
 Loop-engine events and blobs continue to use the sibling audit layout under:
 
 ```text
-.orbit/state/audit/loop/<run_id>.jsonl
+.orbit/state/audit/loop/<run_id>.jsonl      created on first loop event
 .orbit/state/audit/blobs/<hh>/<hash>
 ```
 

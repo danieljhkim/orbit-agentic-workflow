@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-05 (T20260505-6)
+**Last updated:** 2026-05-06 (T20260506-2)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and known limitations. See [1_overview.md](./1_overview.md) for the feature purpose and [3_vision.md](./3_vision.md) for future questions.
 
@@ -14,7 +14,7 @@ Auditability is split across five channels:
 
 1. **Command audit records.** SQLite rows in the configured audit database; queried through `orbit audit`.
 2. **V2 activity/job envelope events.** JSONL under `.orbit/state/audit/v2_loop/{run_id}.jsonl`.
-3. **Loop-level provider/tool events.** JSONL under `.orbit/state/audit/loop/{run_id}.jsonl`.
+3. **Loop-level provider/tool events.** JSONL under `.orbit/state/audit/loop/{run_id}.jsonl`, created lazily when a run emits loop events.
 4. **Global tracing events.** Redacted JSONL under `~/.orbit/state/logs/orbit.jsonl`.
 5. **Invocation metrics.** SQLite records keyed by job run, activity, task, agent, model, usage, and tool-call summaries.
 
@@ -63,7 +63,7 @@ After [T20260427-0023], selected canonical stores also project live tracing even
 
 ## 5. Loop-Level Provider and Tool Events
 
-`LoopAuditEvent` in `crates/orbit-agent/src/loop_engine/audit/mod.rs` covers session spawn/close, HTTP request/response, tool-call request/result, iteration boundary, and policy denial. `JsonlFileSink` writes loop events to `{audit_root}/loop/{run_id}.jsonl` and payload blobs to `{audit_root}/blobs/`; runtime callers pass `.orbit/state/audit` as `audit_root`.
+`LoopAuditEvent` in `crates/orbit-agent/src/loop_engine/audit/mod.rs` covers session spawn/close, HTTP request/response, tool-call request/result, iteration boundary, and policy denial. `JsonlFileSink` creates `{audit_root}/loop/{run_id}.jsonl` lazily on the first loop event and writes payload blobs to `{audit_root}/blobs/`; runtime callers pass `.orbit/state/audit` as `audit_root`. [T20260506-2] removed zero-byte loop JSONL placeholders for runs that only emit v2 envelope events or CLI-backend blobs.
 
 Loop events reference hashes for request bodies, response bodies, tool inputs, and tool outputs instead of embedding the bodies inline. This keeps event lines queryable while preserving replay material in redacted blob storage.
 

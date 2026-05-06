@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-05
+**Last updated:** 2026-05-06 (T20260506-2)
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
@@ -399,7 +399,7 @@ Some bad shapes fail at load time, some at job preflight, and some during dispat
 
 ### 11.5 The audit story is powerful but split
 
-The v2 envelope tree lives in `.orbit/state/audit/v2_loop/`, HTTP loop details in `.orbit/state/audit/loop/`, and payload blobs in `.orbit/state/audit/blobs/`. Reviewers still need to know the split layout. [T20260426-0519] moved these traces under `.orbit/state/` so top-level `.orbit/` stays for config, resources, tasks, graph artifacts, and the SQLite command-audit database.
+The v2 envelope tree lives in `.orbit/state/audit/v2_loop/`, HTTP loop details materialize lazily in `.orbit/state/audit/loop/`, and payload blobs live in `.orbit/state/audit/blobs/`. Reviewers still need to know the split layout. [T20260426-0519] moved these traces under `.orbit/state/` so top-level `.orbit/` stays for config, resources, tasks, graph artifacts, and the SQLite command-audit database; [T20260506-2] stopped creating empty loop JSONL files for runs with no loop-level events.
 
 ### 11.6 The substrate still leaks into the public product story
 

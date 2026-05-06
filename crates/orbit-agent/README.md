@@ -132,11 +132,11 @@ Every event carries `run_id`, `session_id`, optional `task_id`, and
 
 ### Default sink layout
 
-`JsonlFileSink::open(audit_root, run_id)` writes:
+`JsonlFileSink::open(audit_root, run_id)` prepares:
 
 ```
 {audit_root}/
-  loop/{run_id}.jsonl              one JSON object per line, append-only
+  loop/{run_id}.jsonl              one JSON object per line, append-only, created on first event
   blobs/{hash[..2]}/{hash}         content-addressed verbatim payloads
 ```
 
