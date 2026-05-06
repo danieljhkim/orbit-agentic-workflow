@@ -298,13 +298,13 @@ Orbit exposes a safe MCP surface by default: `orbit.task.*` tools and read-only 
 
 ```bash
 orbit mcp init --auto    # detects .claude/, .gemini/, ~/.codex/config.toml
-orbit mcp init --claude  # writes ~/.claude/.mcp.json + .claude/settings.json
-orbit mcp init --codex   # writes .codex/config.toml (repo must be trusted in Codex)
-orbit mcp init --gemini  # writes .gemini/settings.json
+orbit mcp init --claude  # writes <repo>/.mcp.json + <repo>/.claude/settings.json
+orbit mcp init --codex   # writes <repo>/.codex/config.toml (repo must be trusted in Codex)
+orbit mcp init --gemini  # writes <repo>/.gemini/settings.json
 orbit mcp serve
 ```
 
-`.claude/settings.local.json` and `~/.gemini/settings.json` are user override layers and are never modified. MCP support is an integration layer, not Orbit's moat.
+`orbit mcp init` defaults to workspace scope (repo-local files). Pass `--scope home` to register at the user level instead (e.g. `~/.claude/.mcp.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`). `.claude/settings.local.json` and `~/.gemini/settings.json` are user override layers and are never modified. MCP support is an integration layer, not Orbit's moat.
 
 ### Advanced surfaces
 
