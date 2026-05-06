@@ -69,16 +69,16 @@ Pass `--mcp` to also auto-detect and set up MCP client integrations during works
 orbit workspace init --mcp
 ```
 
-## Build the Graph
+## Update the Graph
 
-Build the initial repository graph before asking agents to reason over code structure.
-
-```bash
-orbit graph build
-```
-
-You can later update it incrementally:
+`orbit workspace init` builds the initial repository graph automatically. Refresh it incrementally as the codebase changes:
 
 ```bash
 orbit graph update
+```
+
+If the initial build fails during `orbit workspace init` (the command prints `graph build: failed (...), run \`orbit graph build\` manually`), retry it with:
+
+```bash
+orbit graph build
 ```
