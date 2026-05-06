@@ -110,9 +110,6 @@ orbit workspace init
 # or skip MCP client auto-detection / setup
 orbit workspace init --no-mcp
 
-# build the code graph
-orbit graph build
-
 # create a task for the work you want done (prints the new task ID)
 TASK_ID=$(orbit task add \
   --title "Create orbit-hello.txt" \

@@ -143,6 +143,7 @@ impl WorkspaceInitArgs {
             },
         )?;
         seed_default_orbitignore(cwd)?;
+        ensure_orbit_gitignore_entry(cwd, orbit_dir)?;
 
         let name = self.name.unwrap_or_else(|| dir_name_or_fallback(cwd));
 
@@ -315,6 +316,178 @@ mod tests {
                 .join("settings.json")
                 .exists()
         );
+    }
+
+    #[test]
+    fn workspace_init_under_home_with_global_orbit_creates_repo_orbit() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let home = tempdir().expect("home tempdir");
+        let workspace = home.path().join("work").join("repo");
+        std::fs::create_dir_all(workspace.join(".git")).expect("create workspace repo");
+        std::fs::create_dir_all(home.path().join(".orbit")).expect("create global orbit root");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(&workspace).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            no_mcp: true,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert!(workspace.join(".orbit").join("state").is_dir());
+        assert!(workspace.join(".orbit").join("knowledge").is_dir());
+        assert!(!home.path().join(".orbit").join("state").exists());
+        assert!(!home.path().join(".orbit").join("knowledge").exists());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join(".gitignore")).expect("read .gitignore"),
+            ".orbit\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_appends_orbit_to_existing_gitignore() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(workspace.path().join(".git")).expect("create .git");
+        std::fs::write(workspace.path().join(".gitignore"), "target/\n.DS_Store")
+            .expect("write .gitignore");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            no_mcp: true,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join(".gitignore")).expect("read .gitignore"),
+            "target/\n.DS_Store\n.orbit\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_does_not_duplicate_existing_orbit_gitignore_entry() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(workspace.path().join(".git")).expect("create .git");
+        std::fs::write(workspace.path().join(".gitignore"), "target/\n/.orbit/\n")
+            .expect("write .gitignore");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            no_mcp: true,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join(".gitignore")).expect("read .gitignore"),
+            "target/\n/.orbit/\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_from_git_subdir_gitignores_repo_orbit_dir() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let nested = repo.path().join("packages").join("demo");
+        std::fs::create_dir_all(repo.path().join(".git")).expect("create .git");
+        std::fs::create_dir_all(&nested).expect("create nested workspace");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(&nested).expect("enter nested workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            no_mcp: true,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(".gitignore")).expect("read repo .gitignore"),
+            ".orbit\n"
+        );
+        assert!(!nested.join(".gitignore").exists());
     }
 
     #[test]
@@ -682,4 +855,59 @@ fn detect_git_remote(cwd: &std::path::Path) -> Option<String> {
     } else {
         None
     }
+}
+
+fn ensure_orbit_gitignore_entry(
+    workspace_root: &std::path::Path,
+    orbit_dir: &std::path::Path,
+) -> Result<(), OrbitError> {
+    let Some(gitignore_root) = orbit_gitignore_root(workspace_root, orbit_dir) else {
+        return Ok(());
+    };
+    let gitignore_path = gitignore_root.join(".gitignore");
+    write_orbit_gitignore_entry(&gitignore_path)
+}
+
+fn orbit_gitignore_root<'a>(
+    workspace_root: &'a std::path::Path,
+    orbit_dir: &'a std::path::Path,
+) -> Option<&'a std::path::Path> {
+    if orbit_dir.file_name().and_then(|name| name.to_str()) == Some(".orbit")
+        && let Some(repo_root) = orbit_dir.parent()
+        && is_git_repo_root(repo_root)
+    {
+        return Some(repo_root);
+    }
+
+    is_git_repo_root(workspace_root).then_some(workspace_root)
+}
+
+fn is_git_repo_root(path: &std::path::Path) -> bool {
+    path.join(".git").exists()
+}
+
+fn write_orbit_gitignore_entry(gitignore_path: &std::path::Path) -> Result<(), OrbitError> {
+    let content = match std::fs::read_to_string(&gitignore_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(OrbitError::Io(error.to_string())),
+    };
+
+    if gitignore_has_orbit_entry(&content) {
+        return Ok(());
+    }
+
+    let mut next = content;
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(".orbit\n");
+    std::fs::write(&gitignore_path, next).map_err(|error| OrbitError::Io(error.to_string()))
+}
+
+fn gitignore_has_orbit_entry(content: &str) -> bool {
+    content.lines().any(|line| {
+        let line = line.trim();
+        matches!(line, ".orbit" | ".orbit/" | "/.orbit" | "/.orbit/")
+    })
 }

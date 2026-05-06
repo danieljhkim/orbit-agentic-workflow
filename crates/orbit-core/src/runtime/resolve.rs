@@ -24,7 +24,8 @@ pub(crate) fn resolve_global_root() -> Result<PathBuf, OrbitError> {
 /// 2. `ORBIT_ROOT` env (escape hatch)
 /// 3. Linked git worktree's main checkout `.orbit/`
 /// 4. `path_overrides` in global registry (longest prefix match from cwd)
-/// 5. Walk up from cwd to find first `.orbit/` directory
+/// 5. Walk up from cwd to find first workspace `.orbit/` directory, skipping
+///    the global home `.orbit/`
 /// 6. Legacy: git repo root (for repos without `.orbit/` directory yet)
 /// 7. Fallback: `<cwd>/.orbit`
 pub(crate) fn resolve_initialize_data_root(
@@ -78,7 +79,7 @@ fn resolve_data_root(
         return Ok(log_resolved_data_root(cwd, "path_override", ws));
     }
 
-    // 5. Walk up from cwd to find first .orbit/ directory
+    // 5. Walk up from cwd to find first workspace .orbit/ directory
     if let Some(orbit_dir) = find_orbit_dir_walk_up(cwd) {
         let root = resolve_orbit_dir_candidate(&orbit_dir)?;
         return Ok(log_resolved_data_root(cwd, "walk_up", root));
@@ -115,16 +116,39 @@ fn find_main_worktree_orbit_dir(cwd: &Path) -> Option<PathBuf> {
     Some(paths::find_git_main_worktree_root(cwd)?.join(".orbit"))
 }
 
-/// Walks up the directory tree from `start` looking for the first `.orbit/` directory.
+/// Walks up the directory tree from `start` looking for the first workspace
+/// `.orbit/` directory.
+///
+/// The user's global `$HOME/.orbit` is not a workspace root. Without this guard,
+/// `orbit workspace init` in a repo under `$HOME` with no local `.orbit/` would
+/// discover the global root before the git-repo bootstrap fallback and then
+/// write workspace state into `$HOME/.orbit`.
 fn find_orbit_dir_walk_up(start: &Path) -> Option<PathBuf> {
     let mut current = start;
     loop {
         let candidate = current.join(".orbit");
-        if candidate.is_dir() {
+        if candidate.is_dir() && !is_global_orbit_dir(&candidate) {
             return Some(candidate);
         }
         current = current.parent()?;
     }
+}
+
+fn is_global_orbit_dir(candidate: &Path) -> bool {
+    let Ok(global) = workspace_registry::global_orbit_dir() else {
+        return false;
+    };
+    paths_equivalent(candidate, &global)
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    left == right
 }
 
 fn resolve_orbit_dir_candidate(orbit_dir: &Path) -> Result<PathBuf, OrbitError> {
@@ -448,6 +472,23 @@ mod tests {
         let resolved = resolve_initialize_data_root(&nested, None).expect("resolve walk-up root");
 
         assert_eq!(resolved, orbit_root);
+    }
+
+    #[test]
+    fn bootstrap_ignores_home_global_orbit_when_repo_has_no_workspace_orbit() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let home = tempdir().expect("home tempdir");
+        let repo = home.path().join("work").join("repo");
+        fs::create_dir_all(repo.join(".git")).expect("create repo git dir");
+        let global_orbit = home.path().join(".orbit");
+        seed_initialized_workspace_root(&global_orbit);
+        let _home = EnvVarGuard::set("HOME", home.path().as_os_str().to_os_string());
+        let _orbit_root = EnvVarGuard::remove("ORBIT_ROOT");
+
+        let resolved = resolve_bootstrap_data_root(&repo, None).expect("resolve bootstrap root");
+
+        assert_eq!(resolved, repo.join(".orbit"));
+        assert_ne!(resolved, global_orbit);
     }
 
     #[test]
