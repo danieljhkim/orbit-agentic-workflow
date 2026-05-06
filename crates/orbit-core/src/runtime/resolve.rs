@@ -26,8 +26,10 @@ pub(crate) fn resolve_global_root() -> Result<PathBuf, OrbitError> {
 /// 4. `path_overrides` in global registry (longest prefix match from cwd)
 /// 5. Walk up from cwd to find first workspace `.orbit/` directory, skipping
 ///    the global home `.orbit/`
-/// 6. Legacy: git repo root (for repos without `.orbit/` directory yet)
-/// 7. Fallback: `<cwd>/.orbit`
+/// 6. Legacy: git repo root (for repos without `.orbit/` directory yet),
+///    skipping the global home `.orbit/`
+/// 7. Fallback: `<cwd>/.orbit`, refusing if it would resolve to the global
+///    home `.orbit/`
 pub(crate) fn resolve_initialize_data_root(
     cwd: &Path,
     root_override: Option<&Path>,
@@ -85,18 +87,27 @@ fn resolve_data_root(
         return Ok(log_resolved_data_root(cwd, "walk_up", root));
     }
 
-    // 6. Legacy: git repo root (for repos without .orbit/ directory yet)
+    // 6. Legacy: git repo root (for repos without .orbit/ directory yet).
+    //    Skip when the candidate equals the global $HOME/.orbit — that happens
+    //    when $HOME is itself a git repo (e.g. yadm/chezmoi/vcsh dotfile
+    //    managers), and adopting the global root as a workspace would silently
+    //    corrupt user state.
     if let Some(repo_root) = paths::find_git_repo_root(cwd) {
-        let root = repo_root.join(".orbit");
-        return Ok(log_resolved_data_root(cwd, "git_repo_root", root));
+        let candidate = repo_root.join(".orbit");
+        if !is_global_orbit_dir(&candidate) {
+            return Ok(log_resolved_data_root(cwd, "git_repo_root", candidate));
+        }
     }
 
-    // 7. Fallback: <cwd>/.orbit
-    Ok(log_resolved_data_root(
-        cwd,
-        "cwd_fallback",
-        paths::cwd_orbit_root(cwd),
-    ))
+    // 7. Fallback: <cwd>/.orbit, but never the global $HOME/.orbit.
+    let cwd_root = paths::cwd_orbit_root(cwd);
+    if is_global_orbit_dir(&cwd_root) {
+        return Err(OrbitError::InvalidInput(format!(
+            "{} is the global Orbit root, not a workspace; run `orbit workspace init` from inside a project directory or pass `--root <path/to/.orbit>`",
+            cwd_root.display()
+        )));
+    }
+    Ok(log_resolved_data_root(cwd, "cwd_fallback", cwd_root))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -472,6 +483,43 @@ mod tests {
         let resolved = resolve_initialize_data_root(&nested, None).expect("resolve walk-up root");
 
         assert_eq!(resolved, orbit_root);
+    }
+
+    #[test]
+    fn bootstrap_rejects_home_when_cwd_is_home_with_global_orbit_and_no_git() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let home = tempdir().expect("home tempdir");
+        let global_orbit = home.path().join(".orbit");
+        seed_initialized_workspace_root(&global_orbit);
+        let _home = EnvVarGuard::set("HOME", home.path().as_os_str().to_os_string());
+        let _orbit_root = EnvVarGuard::remove("ORBIT_ROOT");
+
+        let err = resolve_bootstrap_data_root(home.path(), None)
+            .expect_err("bootstrap should refuse to adopt the global root as a workspace");
+
+        assert!(matches!(
+            err,
+            OrbitError::InvalidInput(message) if message.contains("global Orbit root")
+        ));
+    }
+
+    #[test]
+    fn bootstrap_rejects_home_when_home_itself_is_a_git_repo() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let home = tempdir().expect("home tempdir");
+        fs::create_dir_all(home.path().join(".git")).expect("seed home as git repo");
+        let global_orbit = home.path().join(".orbit");
+        seed_initialized_workspace_root(&global_orbit);
+        let _home = EnvVarGuard::set("HOME", home.path().as_os_str().to_os_string());
+        let _orbit_root = EnvVarGuard::remove("ORBIT_ROOT");
+
+        let err = resolve_bootstrap_data_root(home.path(), None)
+            .expect_err("bootstrap should refuse $HOME/.orbit via git_repo_root + cwd_fallback");
+
+        assert!(matches!(
+            err,
+            OrbitError::InvalidInput(message) if message.contains("global Orbit root")
+        ));
     }
 
     #[test]
