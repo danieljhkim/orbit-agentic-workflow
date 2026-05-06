@@ -21,7 +21,8 @@ pub(super) fn dispatch_batch<H: TaskHost + ?Sized>(
 ) -> Result<Value, OrbitError> {
     let run_id = required_input_string(input, "run_id")?;
     let parallelism = parse_parallelism(input)?;
-    let in_progress = host.list_tasks_filtered(Some(TaskStatus::InProgress), None, None, None)?;
+    let in_progress =
+        host.list_tasks_filtered(Some(TaskStatus::InProgress), None, None, None, None, None)?;
     let occupied = collect_occupied_contexts(&in_progress);
     let selected = match parse_task_ids(input)? {
         Some(task_ids) => load_explicit_batch(host, &task_ids, parallelism, &occupied)?,
@@ -102,7 +103,7 @@ fn select_backlog_batch<H: TaskHost + ?Sized>(
     occupied: &[String],
 ) -> Result<Vec<Task>, OrbitError> {
     let mut backlog = host
-        .list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None)?
+        .list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None, None, None)?
         .into_iter()
         .filter(|task| task_batch_id(task).is_none())
         .filter(|task| !task_is_occupied(task, occupied))

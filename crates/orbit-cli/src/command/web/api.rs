@@ -29,8 +29,8 @@ use orbit_core::command::job_run::JobRunListParams;
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
 use orbit_core::runtime::run_audit::RunAuditStep;
 use orbit_core::{
-    AuditEventStatus, InvocationQuery, InvocationRecord, JobRun, JobRunState, OrbitRuntime, Task,
-    TaskComplexity, TaskPriority, TaskStatus, TaskType,
+    AuditEventStatus, ExternalRef, InvocationQuery, InvocationRecord, JobRun, JobRunState,
+    OrbitRuntime, Task, TaskComplexity, TaskPriority, TaskStatus, TaskType,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -291,6 +291,8 @@ pub(super) struct CreateTaskBody {
     #[serde(default)]
     context_files: Vec<String>,
     #[serde(default)]
+    external_refs: Vec<ExternalRef>,
+    #[serde(default)]
     workspace_path: Option<String>,
     #[serde(default = "default_priority")]
     priority: TaskPriority,
@@ -357,7 +359,7 @@ async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
 fn list_dashboard_tasks(runtime: &OrbitRuntime) -> Result<Vec<Task>, orbit_core::OrbitError> {
     let mut tasks = Vec::new();
     for status in DASHBOARD_TASK_STATUSES {
-        tasks.extend(runtime.list_tasks_filtered(Some(*status), None, None, None)?);
+        tasks.extend(runtime.list_tasks_filtered(Some(*status), None, None, None, None, None)?);
     }
     Ok(tasks)
 }
@@ -403,6 +405,7 @@ async fn create_task_action(
         task_type: body.task_type,
         status: body.status,
         system_created: false,
+        external_refs: body.external_refs,
         source_task_id: body.source_task_id,
     };
     match runtime.add_task_with_identity(params, None, None) {

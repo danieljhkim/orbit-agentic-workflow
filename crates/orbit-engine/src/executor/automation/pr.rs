@@ -30,7 +30,7 @@ pub(super) fn git_merge<H: RuntimeHost + TaskHost + Sync + ?Sized>(
 ) -> Result<Value, OrbitError> {
     let batch_id = required_batch_id(input, "git_merge")?;
     if host
-        .list_tasks_filtered(None, None, None, Some(batch_id))?
+        .list_tasks_filtered(None, None, None, Some(batch_id), None, None)?
         .is_empty()
     {
         return Ok(json!({}));
@@ -55,7 +55,7 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
 ) -> Result<Value, OrbitError> {
     let batch_id = required_batch_id(input, "merge_batch_pr")?;
 
-    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     if batch_tasks.is_empty() {
         return Err(OrbitError::InvalidInput(format!(
             "merge_batch_pr: no tasks found for batch_id '{batch_id}'"
@@ -188,7 +188,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     let completed_task_ids = match completed_task_ids_from_input(input) {
         Some(task_ids) => task_ids,
         None => host
-            .list_tasks_filtered(None, None, None, Some(batch_id))?
+            .list_tasks_filtered(None, None, None, Some(batch_id), None, None)?
             .into_iter()
             .map(|task| task.id)
             .collect(),
@@ -579,6 +579,8 @@ mod tests {
             priority: Option<TaskPriority>,
             parent_id: Option<&str>,
             batch_id: Option<&str>,
+            external_ref: Option<&orbit_common::types::ExternalRef>,
+            has_external_ref_system: Option<&str>,
         ) -> Result<Vec<Task>, OrbitError> {
             Ok(self
                 .tasks
@@ -592,6 +594,21 @@ mod tests {
                 })
                 .filter(|task| {
                     batch_id.is_none_or(|batch_id| task.batch_id.as_deref() == Some(batch_id))
+                })
+                .filter(|task| {
+                    external_ref.is_none_or(|external_ref| {
+                        task.external_refs.iter().any(|candidate| {
+                            candidate.system == external_ref.system
+                                && candidate.id == external_ref.id
+                        })
+                    })
+                })
+                .filter(|task| {
+                    has_external_ref_system.is_none_or(|system| {
+                        task.external_refs
+                            .iter()
+                            .any(|candidate| candidate.system == system)
+                    })
                 })
                 .cloned()
                 .collect())
@@ -775,6 +792,7 @@ mod tests {
             task_type: TaskType::Task,
             pr_number: None,
             pr_status: None,
+            external_refs: Vec::new(),
             source_task_id: None,
             batch_id: None,
             comments: Vec::new(),

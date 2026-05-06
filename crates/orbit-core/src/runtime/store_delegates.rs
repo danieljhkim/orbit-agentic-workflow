@@ -1,7 +1,7 @@
 use orbit_common::types::{
-    AuditEvent, ExecutorDef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError, PolicyDef,
-    ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry,
-    TaskPriority, TaskStatus, TaskType,
+    AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError,
+    PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use orbit_store::{
     AuditEventFilter, AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend,
@@ -177,9 +177,17 @@ impl TaskRecords<'_> {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.store
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.store.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 
     pub(crate) fn update(

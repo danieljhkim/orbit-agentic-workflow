@@ -301,7 +301,8 @@ fn select_proposed_task_ids(
     yes: bool,
     action: &str,
 ) -> Result<Vec<String>, OrbitError> {
-    let proposed = runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None)?;
+    let proposed =
+        runtime.list_tasks_filtered(Some(TaskStatus::Proposed), None, None, None, None, None)?;
     if proposed.is_empty() {
         println!("No proposed tasks found.");
         return Ok(Vec::new());

@@ -58,7 +58,7 @@ pub enum TaskSubcommand {
     Unarchive(TaskUnarchiveArgs),
     /// Delete a task permanently
     Delete(TaskDeleteArgs),
-    /// Search tasks by title or description
+    /// Search tasks by title, description, or external ref ID
     Search(TaskSearchArgs),
     /// Manage task templates
     Templates(TaskTemplatesCommand),

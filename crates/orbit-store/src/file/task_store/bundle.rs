@@ -2,7 +2,8 @@ use std::fs;
 use std::path::Path;
 
 use orbit_common::types::{
-    ActorIdentity, OrbitError, ReviewThread, Task, TaskStatus, normalize_optional_attribution_label,
+    ActorIdentity, ExternalRef, OrbitError, ReviewThread, Task, TaskStatus,
+    normalize_optional_attribution_label,
 };
 
 use crate::file::yaml_doc::{read_yaml_with, write_yaml_atomic_with};
@@ -110,8 +111,20 @@ impl TaskFileStore {
                 )));
             }
         }
+        for external_ref in &bundle.doc.external_refs {
+            validate_external_ref(external_ref)?;
+        }
         Ok(())
     }
+}
+
+fn validate_external_ref(external_ref: &ExternalRef) -> Result<(), OrbitError> {
+    ExternalRef::try_new(
+        external_ref.system.clone(),
+        external_ref.id.clone(),
+        external_ref.url.clone(),
+    )
+    .map(|_| ())
 }
 
 pub(super) fn read_companion_text(path: &Path, label: &str) -> Result<String, OrbitError> {
@@ -210,6 +223,7 @@ pub(super) fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         task_type: bundle.doc.task_type,
         pr_number: bundle.doc.pr_number,
         pr_status: bundle.doc.pr_status,
+        external_refs: bundle.doc.external_refs,
         source_task_id: bundle.doc.source_task_id,
         batch_id: bundle.doc.batch_id,
         comments: bundle.doc.comments,

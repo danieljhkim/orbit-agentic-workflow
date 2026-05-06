@@ -48,12 +48,12 @@ pub use command::workflow::{
 pub use context::{ActorIdentity, ActorKind, OrbitContext};
 pub use orbit_common::types::OrbitError;
 pub use orbit_common::types::{
-    Activity, AuditEvent, AuditEventStatus, AuditStats, ExecutorDef, Job, JobRun, JobRunState,
-    JobRunStep, JobScheduleState, JobStep, JobTargetType, ResolvedTaskDependency, ReviewMessage,
-    ReviewThread, ReviewThreadStatus, Role, Skill, Task, TaskComment, TaskComplexity, TaskPriority,
-    TaskStatus, TaskType, build_task_status_index, normalize_task_dependencies,
-    resolve_task_dependencies, task_dependencies_ready, unmet_task_dependencies,
-    validate_task_dependencies,
+    Activity, AuditEvent, AuditEventStatus, AuditStats, ExecutorDef, ExternalRef, Job, JobRun,
+    JobRunState, JobRunStep, JobScheduleState, JobStep, JobTargetType, ResolvedTaskDependency,
+    ReviewMessage, ReviewThread, ReviewThreadStatus, Role, Skill, Task, TaskComment,
+    TaskComplexity, TaskPriority, TaskStatus, TaskType, build_task_status_index,
+    normalize_task_dependencies, resolve_task_dependencies, task_dependencies_ready,
+    unmet_task_dependencies, validate_task_dependencies,
 };
 pub use orbit_common::utility::redaction::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,

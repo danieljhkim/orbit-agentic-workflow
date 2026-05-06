@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-05
+**Last updated:** 2026-05-06
 
 This document specifies the v2 design for task sync: the registry mechanism, the conflict-resolution model and why it's the central design question, the call sites that need to become sync-aware, the CLI surface, the config schema, and the migration paths. v1 ships with sync disabled by default and the code path absent. The architectural boundary is explicit: the task store ([orbit-store/src/file/task_store/](../../../crates/orbit-store/src/file/task_store/)) keeps owning YAML layout and validation; a new task-sync coordinator above the store owns git transport.
 
@@ -125,10 +125,13 @@ The chosen mechanism for v2. Key claim: the orphan branch holds canonical YAML *
 | `task.history.append` | Same as comments — append-only by construction. Always converges. |
 | `task.review.append` | Same. |
 | `task.field.update` (description, priority, plan, etc.) | Re-fetch, compute diff between operation's expected baseline and registry's current value. If unchanged on registry, retry. If changed, surface structured conflict. |
+| `task.external_refs.merge` | Re-fetch task YAML and union `external_refs` by `(system, id)`. Distinct keys from both replicas are preserved. When both replicas write the same `(system, id)` key with different `url` values, keep one entry and let the later replayed operation win for `url` only. The rest of the task remains governed by the operation that caused the replay. |
 | `task.artifacts.upsert` | Per-artifact: if the artifact is new on the registry too, surface conflict; if it's the same, no-op; otherwise overwrite. |
 | `task.delete` | Always replaces the task with a tombstone marker (see [§3.4](#34-deletion-via-tombstone)). |
 
 The "structured conflict" path is critical. When operations cannot replay automatically, the client writes a `.orbit/tasks/_conflicts/<task-id>.yaml` describing both sides and exits with a clear message. The user runs `orbit task sync resolve <task-id>` to choose, edit, or merge, and the resolution becomes the next push.
+
+`external_refs` was added as pure task metadata in [T20260506-9]. This document records the intended task-sync merge behavior now, but the current sync layer does not yet expose implemented field-level replay hooks. Implementing the replay hook is deferred to [T20260506-13].
 
 ### 3.3 Why not the other three
 
@@ -291,5 +294,7 @@ Task sync inherits whatever auth posture the team uses for `git push`. If a team
 
 - [T20260505-12] — Design git-orphan-branch task sync (v2 feature). The task that produced this folder.
 - [T20260421-0528] — Knowledge-graph task attribution. Cited as the canonical example of `T<YYYYMMDD>-<N>` IDs being load-bearing.
+- [T20260506-9] — Adds first-class task `external_refs` metadata and documents the task-sync merge rule.
+- [T20260506-13] — Follow-up to implement task-sync replay merge semantics for `external_refs`.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

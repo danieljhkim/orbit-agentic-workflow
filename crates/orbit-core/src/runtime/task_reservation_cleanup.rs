@@ -180,6 +180,7 @@ mod tests {
                 complexity: None,
                 task_type: TaskType::Task,
                 pr_number: None,
+                external_refs: Vec::new(),
                 source_task_id: None,
                 comments: Vec::new(),
             })

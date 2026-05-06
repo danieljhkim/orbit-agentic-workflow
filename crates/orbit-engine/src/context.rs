@@ -2,7 +2,7 @@ use crate::executor::registry::ActivityExecutorRegistry;
 use orbit_agent::AgentConfig;
 use orbit_common::types::activity_job::{AgentRole, Backend, Provider};
 use orbit_common::types::{
-    Activity, AgentModelPair, ExecutorDef, InvocationTrace, Job, JobRun, JobRunState,
+    Activity, AgentModelPair, ExecutorDef, ExternalRef, InvocationTrace, Job, JobRun, JobRunState,
     JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, PipelineState, ReviewThread, Role,
     Task, TaskArtifact, TaskComment, TaskPriority, TaskStatus, resolve_agent_model_pair,
 };
@@ -260,6 +260,8 @@ pub trait TaskReadHost {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;
 }
 
@@ -550,9 +552,17 @@ impl TaskReadHost for AgentExecutorHost<'_> {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.task_reader
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.task_reader.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 
@@ -624,9 +634,17 @@ impl TaskReadHost for CliCommandExecutorHost<'_> {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.task_reader
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.task_reader.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 
@@ -684,9 +702,17 @@ impl TaskReadHost for AutomationExecutorHost<'_> {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.task_reader
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.task_reader.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 

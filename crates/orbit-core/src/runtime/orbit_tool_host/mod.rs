@@ -23,7 +23,7 @@ use orbit_tools::{OrbitBuiltinAction, OrbitTaskScope, OrbitToolHost, Reservation
 use serde_json::{Value, json};
 
 use self::input::{
-    empty_string_to_none, optional_bool_alias, parse_artifacts,
+    empty_string_to_none, optional_bool_alias, parse_artifacts, parse_external_refs,
     parse_optional_poll_interval_seconds, parse_optional_timeout_seconds, parse_string_array_field,
     parse_task_complexity, parse_task_priority, parse_task_status, parse_task_type,
     require_object_field, resolve_state_dir, resolve_state_payload, resolve_step_index,
@@ -237,6 +237,7 @@ impl OrbitToolHost for RuntimeOrbitToolHost {
                             .map(|value| parse_task_status("status", &value))
                             .transpose()?,
                         system_created: false,
+                        external_refs: parse_external_refs(&input)?,
                         source_task_id: optional_string_alias(
                             &input,
                             &["source_task_id", "source_task", "sourceTaskId"],
@@ -954,6 +955,7 @@ mod tests {
                 complexity: None,
                 task_type: TaskType::Task,
                 pr_number: None,
+                external_refs: Vec::new(),
                 source_task_id: None,
                 comments: Vec::new(),
             })
@@ -1273,6 +1275,36 @@ mod tests {
         assert_eq!(
             output.get("dependencies"),
             Some(&json!([dependency.id.as_str()]))
+        );
+    }
+
+    #[test]
+    fn task_add_tool_persists_external_refs() {
+        let (_root, runtime, _repo_root) = test_runtime();
+
+        let output = runtime
+            .execute_tool_command(
+                "orbit.task.add",
+                json!({
+                    "title": "External ref task",
+                    "description": "Exercise external ref input on the agent-facing task creation path.",
+                    "workspace": ".",
+                    "external_refs": [
+                        {"system": "jira", "id": "ENG-1234", "url": "https://example.com/browse/ENG-1234"},
+                        {"system": "linear", "id": "LIN-567"}
+                    ],
+                }),
+                Some("codex".to_string()),
+                Some("gpt-5.5".to_string()),
+            )
+            .expect("task add tool succeeds");
+
+        assert_eq!(
+            output.get("external_refs"),
+            Some(&json!([
+                {"system": "jira", "id": "ENG-1234", "url": "https://example.com/browse/ENG-1234"},
+                {"system": "linear", "id": "LIN-567"}
+            ]))
         );
     }
 

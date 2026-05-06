@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use orbit_common::types::{
-    ActorIdentity, OrbitError, Task, TaskArtifact, TaskHistoryEntry, TaskPriority, TaskStatus,
+    ActorIdentity, ExternalRef, OrbitError, Task, TaskArtifact, TaskHistoryEntry, TaskPriority,
+    TaskStatus,
 };
 
 use super::bundle::{TaskBundle, bundle_to_task, merge_review_threads};
@@ -64,6 +65,7 @@ impl TaskFileStore {
                 task_type: params.task_type,
                 pr_number: params.pr_number,
                 pr_status: None,
+                external_refs: params.external_refs,
                 actor_identity: ActorIdentity::default(),
                 assigned_to: None,
                 proposed_by: None,
@@ -118,6 +120,8 @@ impl TaskFileStore {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
         self.migrate_legacy_proposed_friction_tasks()?;
         let mut tasks = if let Some(status) = status {
@@ -137,6 +141,16 @@ impl TaskFileStore {
             priority.is_none_or(|value| task.priority == value)
                 && parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value))
                 && batch_id.is_none_or(|value| task.batch_id.as_deref() == Some(value))
+                && external_ref.is_none_or(|value| {
+                    task.external_refs.iter().any(|candidate| {
+                        candidate.system == value.system && candidate.id == value.id
+                    })
+                })
+                && has_external_ref_system.is_none_or(|value| {
+                    task.external_refs
+                        .iter()
+                        .any(|candidate| candidate.system == value)
+                })
         });
         Ok(tasks)
     }
@@ -167,6 +181,10 @@ impl TaskFileStore {
             .filter(|task| {
                 task.title.to_lowercase().contains(&lowered)
                     || task.description.to_lowercase().contains(&lowered)
+                    || task
+                        .external_refs
+                        .iter()
+                        .any(|external_ref| external_ref.id.to_lowercase().contains(&lowered))
             })
             .collect())
     }
@@ -437,5 +455,120 @@ fn cleanup_partial_task_dir(task_dir: &Path) -> Result<(), OrbitError> {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(OrbitError::Io(err.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use orbit_common::types::{TaskPriority, TaskType};
+    use tempfile::tempdir;
+
+    fn create_params(title: &str, external_refs: Vec<ExternalRef>) -> TaskCreateParams {
+        TaskCreateParams {
+            actor: "test".to_string(),
+            parent_id: None,
+            title: title.to_string(),
+            description: "Fixture task.".to_string(),
+            acceptance_criteria: Vec::new(),
+            dependencies: Vec::new(),
+            plan: String::new(),
+            execution_summary: String::new(),
+            context_files: Vec::new(),
+            workspace_path: Some(".".to_string()),
+            repo_root: None,
+            created_by: Some("test".to_string()),
+            planned_by: None,
+            implemented_by: None,
+            agent: None,
+            model: None,
+            status: TaskStatus::Backlog,
+            priority: TaskPriority::Medium,
+            complexity: None,
+            task_type: TaskType::Task,
+            pr_number: None,
+            external_refs,
+            source_task_id: None,
+            comments: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn list_and_search_match_external_refs() {
+        let root = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(root.path().to_path_buf());
+        let jira = ExternalRef::parse_key("jira:ENG-1234").expect("jira ref");
+        let linear = ExternalRef::parse_key("linear:LIN-567").expect("linear ref");
+
+        let linked = store
+            .create_task(create_params("Linked task", vec![jira.clone(), linear]))
+            .expect("create linked task");
+        let jira_only = store
+            .create_task(create_params("Jira only", vec![jira.clone()]))
+            .expect("create jira-only task");
+
+        let exact = store
+            .list_tasks_filtered(None, None, None, None, Some(&jira), None)
+            .expect("filter by exact ref");
+        let exact_ids = exact
+            .iter()
+            .map(|task| task.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(exact_ids, vec![jira_only.id.as_str(), linked.id.as_str()]);
+
+        let linear_and_jira = store
+            .list_tasks_filtered(None, None, None, None, Some(&jira), Some("linear"))
+            .expect("filter by exact ref and system");
+        assert_eq!(linear_and_jira.len(), 1);
+        assert_eq!(linear_and_jira[0].id, linked.id);
+
+        let matches = store.search_tasks("eng-1234").expect("search by ref id");
+        let match_ids = matches
+            .iter()
+            .map(|task| task.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(match_ids, vec![jira_only.id.as_str(), linked.id.as_str()]);
+    }
+
+    #[test]
+    fn schema_two_task_loads_with_empty_external_refs_and_roundtrips_without_field() {
+        let root = tempdir().expect("tempdir");
+        let store = TaskFileStore::new(root.path().to_path_buf());
+        let id = "T20260101-1";
+        let task_dir = store.task_dir(TaskStateDir::Backlog, id);
+        fs::create_dir_all(&task_dir).expect("create legacy task dir");
+        fs::write(
+            store.task_doc_path(&task_dir),
+            r#"schema_version: 2
+id: T20260101-1
+priority: medium
+title: Legacy task
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+"#,
+        )
+        .expect("write legacy task yaml");
+
+        let task = store
+            .get_task(id)
+            .expect("load legacy task")
+            .expect("legacy task exists");
+        assert!(task.external_refs.is_empty());
+
+        store
+            .update_task_document(
+                id,
+                &TaskDocumentUpdateParams {
+                    actor: "test".to_string(),
+                    description: Some("Updated.".to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect("roundtrip legacy task");
+
+        let yaml = fs::read_to_string(store.task_doc_path(&task_dir)).expect("read task yaml");
+        assert!(yaml.contains("schema_version: 3"));
+        assert!(!yaml.contains("external_refs"));
     }
 }

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    AuditEvent, ExecutorDef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError, OrbitId,
-    PipelineState, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
+    AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError,
+    OrbitId, PipelineState, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
     TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use serde::{Deserialize, Serialize};
@@ -41,6 +41,7 @@ pub struct TaskCreateParams {
     pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
     pub pr_number: Option<String>,
+    pub external_refs: Vec<ExternalRef>,
     pub source_task_id: Option<String>,
     pub comments: Vec<TaskComment>,
 }
@@ -270,6 +271,8 @@ pub trait TaskStoreBackend: Send + Sync {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;
     fn get_task(&self, id: &str) -> Result<Option<Task>, OrbitError>;
     fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError>;

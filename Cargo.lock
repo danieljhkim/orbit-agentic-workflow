@@ -1575,6 +1575,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "unicode-normalization",
+ "url",
 ]
 
 [[package]]

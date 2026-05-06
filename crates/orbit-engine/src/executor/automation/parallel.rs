@@ -462,7 +462,7 @@ fn load_selected_tasks<H: TaskHost + ?Sized>(
     host: &H,
     batch_id: &str,
 ) -> Result<Option<Vec<PendingTask>>, OrbitError> {
-    let tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    let tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     if tasks.is_empty() {
         return Ok(None);
     }

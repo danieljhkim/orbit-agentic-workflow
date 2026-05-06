@@ -1,5 +1,6 @@
 use orbit_common::types::{
-    OrbitId, ReviewThread, TaskArtifact, TaskComplexity, TaskPriority, TaskStatus, TaskType,
+    ExternalRef, OrbitId, ReviewThread, TaskArtifact, TaskComplexity, TaskPriority, TaskStatus,
+    TaskType,
 };
 
 use crate::runtime::TaskRecordUpdateParams;
@@ -22,6 +23,7 @@ pub struct TaskAddParams {
     /// When true, the task metadata attributes creation to `system`.
     /// Used for auto-generated tasks such as job failure follow-ups.
     pub system_created: bool,
+    pub external_refs: Vec<ExternalRef>,
     pub source_task_id: Option<String>,
 }
 
@@ -42,6 +44,7 @@ impl Default for TaskAddParams {
             task_type: None,
             status: None,
             system_created: false,
+            external_refs: Vec::new(),
             source_task_id: None,
         }
     }

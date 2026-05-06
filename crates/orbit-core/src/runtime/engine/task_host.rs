@@ -1,5 +1,6 @@
 use orbit_common::types::{
-    OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, normalize_optional_attribution_label,
+    ExternalRef, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus,
+    normalize_optional_attribution_label,
 };
 use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
 
@@ -25,8 +26,18 @@ impl TaskReadHost for OrbitRuntime {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        OrbitRuntime::list_tasks_filtered(self, status, priority, parent_id, batch_id)
+        OrbitRuntime::list_tasks_filtered(
+            self,
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 

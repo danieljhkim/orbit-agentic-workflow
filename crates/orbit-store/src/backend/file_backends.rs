@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    ExecutorDef, JobRun, KnowledgeRunMetrics, OrbitError, PipelineState, PolicyDef, Task,
-    TaskArtifact, TaskPriority, TaskStatus,
+    ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, OrbitError, PipelineState, PolicyDef,
+    Task, TaskArtifact, TaskPriority, TaskStatus,
 };
 
 use super::contracts::{
@@ -31,8 +31,17 @@ impl TaskStoreBackend for TaskFileStore {
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 
     fn get_task(&self, id: &str) -> Result<Option<Task>, OrbitError> {

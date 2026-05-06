@@ -10,7 +10,7 @@ pub(super) fn snapshot_batch_state<H: TaskHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let run_id = required_input_string(input, "run_id")?;
-    let tasks = host.list_tasks_filtered(None, None, None, Some(run_id))?;
+    let tasks = host.list_tasks_filtered(None, None, None, Some(run_id), None, None)?;
 
     let task_ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
     let task_objects: Vec<Value> = tasks

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    ActorIdentity, OrbitError, OrbitId, ReviewThread, TaskComment, TaskComplexity, TaskPriority,
-    TaskType,
+    ActorIdentity, ExternalRef, OrbitError, OrbitId, ReviewThread, TaskComment, TaskComplexity,
+    TaskPriority, TaskType,
 };
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value as YamlValue};
@@ -55,6 +55,8 @@ pub(super) struct TaskFileDocument {
     pub(super) pr_number: Option<String>,
     #[serde(default)]
     pub(super) pr_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) external_refs: Vec<ExternalRef>,
     #[serde(default)]
     pub(super) source_task_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -112,6 +114,9 @@ pub(super) fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, 
     yaml.push_str(&yaml_field("model", &doc.model)?);
     yaml.push_str(&yaml_field("pr_number", &doc.pr_number)?);
     yaml.push_str(&yaml_field("pr_status", &doc.pr_status)?);
+    if !doc.external_refs.is_empty() {
+        yaml.push_str(&yaml_field("external_refs", &doc.external_refs)?);
+    }
 
     if doc.source_task_id.is_some() || doc.batch_id.is_some() {
         yaml.push_str(&yaml_section("attribution"));

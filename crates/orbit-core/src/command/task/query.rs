@@ -1,4 +1,6 @@
-use orbit_common::types::{OrbitError, Task, TaskArtifact, prune_missing_context_files};
+use orbit_common::types::{
+    ExternalRef, OrbitError, Task, TaskArtifact, prune_missing_context_files,
+};
 
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams;
@@ -56,10 +58,17 @@ impl OrbitRuntime {
         priority: Option<orbit_common::types::TaskPriority>,
         parent_id: Option<&str>,
         batch_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.stores()
-            .tasks()
-            .list_filtered(status, priority, parent_id, batch_id)
+        self.stores().tasks().list_filtered(
+            status,
+            priority,
+            parent_id,
+            batch_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, OrbitError> {

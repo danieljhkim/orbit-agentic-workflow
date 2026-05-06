@@ -34,9 +34,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::types::{OrbitError, OrbitId};
 use crate::utility::selector::exists_in_workspace;
@@ -468,6 +471,95 @@ impl ResolvedTaskDependency {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ExternalRef {
+    pub system: String,
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+impl ExternalRef {
+    pub fn try_new(system: String, id: String, url: Option<String>) -> Result<Self, OrbitError> {
+        let system = Self::validate_system(&system)?;
+
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "external ref id must not be empty".to_string(),
+            ));
+        }
+
+        let url = url
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                Url::parse(&value).map_err(|error| {
+                    OrbitError::InvalidInput(format!(
+                        "external ref url '{value}' must be a valid URL: {error}"
+                    ))
+                })?;
+                Ok::<String, OrbitError>(value)
+            })
+            .transpose()?;
+
+        Ok(Self {
+            system,
+            id: id.to_string(),
+            url,
+        })
+    }
+
+    pub fn is_valid_system(system: &str) -> bool {
+        external_ref_system_regex().is_match(system.trim())
+    }
+
+    pub fn validate_system(system: &str) -> Result<String, OrbitError> {
+        let system = system.trim();
+        if !Self::is_valid_system(system) {
+            return Err(OrbitError::InvalidInput(format!(
+                "external ref system '{system}' must match ^[a-z][a-z0-9-]*$"
+            )));
+        }
+        Ok(system.to_string())
+    }
+
+    pub fn parse_key(raw: &str) -> Result<Self, OrbitError> {
+        let (system, id) = raw.split_once(':').ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "external ref must use <system>:<id> form, for example jira:ENG-1234".to_string(),
+            )
+        })?;
+        Self::try_new(system.to_string(), id.to_string(), None)
+    }
+}
+
+impl<'de> Deserialize<'de> for ExternalRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawExternalRef {
+            system: String,
+            id: String,
+            #[serde(default)]
+            url: Option<String>,
+        }
+
+        let raw = RawExternalRef::deserialize(deserializer)?;
+        ExternalRef::try_new(raw.system, raw.id, raw.url).map_err(serde::de::Error::custom)
+    }
+}
+
+fn external_ref_system_regex() -> &'static Regex {
+    static SYSTEM_REGEX: OnceLock<Regex> = OnceLock::new();
+    SYSTEM_REGEX.get_or_init(|| {
+        Regex::new(r"^[a-z][a-z0-9-]*$").expect("external ref system regex is valid")
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub id: OrbitId,
@@ -509,6 +601,8 @@ pub struct Task {
     pub pr_number: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_refs: Vec<ExternalRef>,
     /// For `Bug` tasks: the originating task whose implementation introduced the defect.
     #[serde(default)]
     pub source_task_id: Option<String>,
@@ -726,7 +820,76 @@ fn find_dependency_path(
 
 #[cfg(test)]
 mod tests {
-    use super::TaskArtifact;
+    use super::{ExternalRef, TaskArtifact};
+
+    #[test]
+    fn external_ref_try_new_normalizes_valid_input() {
+        let external_ref = ExternalRef::try_new(
+            " jira ".to_string(),
+            " ENG-1234 ".to_string(),
+            Some(" https://example.com/browse/ENG-1234 ".to_string()),
+        )
+        .expect("valid external ref");
+
+        assert_eq!(external_ref.system, "jira");
+        assert_eq!(external_ref.id, "ENG-1234");
+        assert_eq!(
+            external_ref.url.as_deref(),
+            Some("https://example.com/browse/ENG-1234")
+        );
+    }
+
+    #[test]
+    fn external_ref_rejects_invalid_system() {
+        let error =
+            ExternalRef::try_new("Jira".to_string(), "ENG-1234".to_string(), None).unwrap_err();
+
+        assert!(matches!(error, crate::types::OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("must match"));
+    }
+
+    #[test]
+    fn external_ref_validate_system_normalizes_valid_input() {
+        assert!(ExternalRef::is_valid_system(" jira "));
+        assert_eq!(
+            ExternalRef::validate_system(" github-pr ").expect("valid system"),
+            "github-pr"
+        );
+        assert!(ExternalRef::validate_system("GitHub").is_err());
+    }
+
+    #[test]
+    fn external_ref_rejects_empty_id() {
+        let error = ExternalRef::try_new("jira".to_string(), "   ".to_string(), None).unwrap_err();
+
+        assert!(matches!(error, crate::types::OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("id must not be empty"));
+    }
+
+    #[test]
+    fn external_ref_rejects_invalid_url() {
+        let error = ExternalRef::try_new(
+            "jira".to_string(),
+            "ENG-1234".to_string(),
+            Some("not a url".to_string()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, crate::types::OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("valid URL"));
+    }
+
+    #[test]
+    fn external_ref_deserialization_uses_validator() {
+        let error = serde_json::from_value::<ExternalRef>(serde_json::json!({
+            "system": "jira",
+            "id": "ENG-1234",
+            "url": "not a url"
+        }))
+        .unwrap_err();
+
+        assert!(error.to_string().contains("valid URL"));
+    }
 
     #[test]
     fn artifact_from_source_defaults_to_file_name() {

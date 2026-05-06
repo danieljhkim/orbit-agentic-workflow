@@ -55,6 +55,14 @@ impl Tool for OrbitTaskAddTool {
                 required: false,
             },
             ToolParam {
+                name: "external_refs".to_string(),
+                description:
+                    "Optional external tracker refs as an array of {system, id, url?} objects"
+                        .to_string(),
+                param_type: "array".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "context_files".to_string(),
                 description:
                     "Optional task context selectors as a comma-separated string or array of strings. Prefer canonical selectors: `file:path`, `dir:path`, or `symbol:path#name:kind`. Legacy raw paths are accepted and upgraded automatically."

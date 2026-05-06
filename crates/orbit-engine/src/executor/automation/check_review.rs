@@ -40,7 +40,7 @@ pub(super) fn check_task_value<H: TaskHost + ?Sized>(
         }
         "all" | "any" => {
             let batch_id = required_batch_id(input, "check_task_value")?;
-            let tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+            let tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
             if tasks.is_empty() {
                 return Err(OrbitError::InvalidInput(format!(
                     "no tasks found for batch_id '{batch_id}'"

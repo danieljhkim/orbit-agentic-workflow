@@ -18,7 +18,7 @@ pub(crate) fn sync_batch_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
 ) -> Result<Value, OrbitError> {
     let batch_id = required_batch_id(input, "sync_batch_review_to_github")?;
 
-    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id))?;
+    let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     let mut total: u64 = 0;
 
     for task in &batch_tasks {
@@ -363,6 +363,8 @@ mod tests {
             _priority: Option<TaskPriority>,
             _parent_id: Option<&str>,
             _batch_id: Option<&str>,
+            _external_ref: Option<&orbit_common::types::ExternalRef>,
+            _has_external_ref_system: Option<&str>,
         ) -> Result<Vec<Task>, OrbitError> {
             Ok(vec![self.task.borrow().clone()])
         }
@@ -593,6 +595,7 @@ mod tests {
             task_type: TaskType::Task,
             pr_number: Some("42".to_string()),
             pr_status: None,
+            external_refs: Vec::new(),
             source_task_id: None,
             batch_id: None,
             comments: Vec::new(),

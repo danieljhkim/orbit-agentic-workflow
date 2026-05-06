@@ -233,6 +233,8 @@ mod tests {
             _priority: Option<TaskPriority>,
             _parent_id: Option<&str>,
             _batch_id: Option<&str>,
+            _external_ref: Option<&orbit_common::types::ExternalRef>,
+            _has_external_ref_system: Option<&str>,
         ) -> Result<Vec<Task>, orbit_common::types::OrbitError> {
             Ok(vec![self.task.lock().expect("task lock").clone()])
         }
@@ -493,6 +495,7 @@ mod tests {
             task_type: TaskType::Bug,
             pr_number: None,
             pr_status: None,
+            external_refs: Vec::new(),
             source_task_id: None,
             batch_id: None,
             comments: Vec::<TaskComment>::new(),

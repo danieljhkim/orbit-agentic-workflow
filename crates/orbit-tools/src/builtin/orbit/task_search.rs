@@ -10,7 +10,7 @@ impl Tool for OrbitTaskSearchTool {
         let mut parameters = vec![ToolParam {
             name: "query".to_string(),
             description:
-                "Case-insensitive substring query matched against task title and description."
+                "Case-insensitive substring query matched against task title, description, and external ref IDs."
                     .to_string(),
             param_type: "string".to_string(),
             required: true,
@@ -18,8 +18,9 @@ impl Tool for OrbitTaskSearchTool {
         parameters.extend(super::identity_params());
         ToolSchema {
             name: "orbit.task.search".to_string(),
-            description: "Search Orbit tasks by case-insensitive title or description match."
-                .to_string(),
+            description:
+                "Search Orbit tasks by case-insensitive title, description, or external ref ID match."
+                    .to_string(),
             parameters,
             builtin: true,
         }

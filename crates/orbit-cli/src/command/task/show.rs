@@ -77,6 +77,16 @@ impl Execute for TaskShowArgs {
                     println!("  - {}", dependency.label());
                 }
             }
+            if !task.external_refs.is_empty() {
+                println!("{}", bold("External refs:"));
+                for external_ref in &task.external_refs {
+                    if let Some(url) = &external_ref.url {
+                        println!("  - {}: {} [{}]", external_ref.system, external_ref.id, url);
+                    } else {
+                        println!("  - {}: {}", external_ref.system, external_ref.id);
+                    }
+                }
+            }
             if !task.plan.is_empty() {
                 println!("{} {}", bold("Plan:"), task.plan);
             }

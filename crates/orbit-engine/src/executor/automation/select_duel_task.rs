@@ -18,7 +18,8 @@ pub(super) fn select_duel_task<H: TaskReadHost + ?Sized>(
         }));
     }
 
-    let mut tasks = host.list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None)?;
+    let mut tasks =
+        host.list_tasks_filtered(Some(TaskStatus::Backlog), None, None, None, None, None)?;
     tasks.retain(|task| duel_batch_id(task).is_none());
     tasks.sort_by(|left, right| {
         (

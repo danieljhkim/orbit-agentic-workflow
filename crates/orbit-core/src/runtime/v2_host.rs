@@ -367,7 +367,7 @@ impl V2RuntimeHost for OrbitRuntime {
                     });
                 }
                 let subtasks = self
-                    .list_tasks_filtered(None, None, Some(epic_id), None)
+                    .list_tasks_filtered(None, None, Some(epic_id), None, None, None)
                     .map_err(|err| DispatchError::DeterministicActionFailed {
                         action: action.to_string(),
                         message: format!("list subtasks of {epic_id}: {err}"),
