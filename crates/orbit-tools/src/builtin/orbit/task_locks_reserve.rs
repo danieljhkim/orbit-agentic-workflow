@@ -12,7 +12,15 @@ impl Tool for OrbitTaskLocksReserveTool {
                 name: "task_ids".to_string(),
                 description: "Task IDs in the bundle as a string or array of strings.".to_string(),
                 param_type: "string_list".to_string(),
-                required: true,
+                required: false,
+            },
+            ToolParam {
+                name: "files".to_string(),
+                description:
+                    "Canonical file or directory selectors to reserve (`file:...`, `dir:...`)."
+                        .to_string(),
+                param_type: "string_list".to_string(),
+                required: false,
             },
             ToolParam {
                 name: "ttl_seconds".to_string(),
@@ -27,8 +35,9 @@ impl Tool for OrbitTaskLocksReserveTool {
         ToolSchema {
             name: "orbit.task.locks.reserve".to_string(),
             description:
-                "Attempt to atomically reserve the bundle's context files and return either a \
-                 reservation grant or a conflict list."
+                "Attempt to atomically reserve either task-derived context files (`task_ids`) or \
+                 direct file/directory selectors (`files`) and return either a reservation grant \
+                 or a conflict list. Exactly one of `task_ids` or `files` must be provided."
                     .to_string(),
             parameters,
             builtin: true,
