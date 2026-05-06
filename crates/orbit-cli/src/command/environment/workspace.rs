@@ -38,9 +38,9 @@ pub struct WorkspaceInitArgs {
     /// Base branch for this workspace (default: main)
     #[arg(long, default_value = "main")]
     pub base_branch: String,
-    /// Skip automatic MCP client integration setup.
+    /// Set up MCP client integrations for auto-detected providers.
     #[arg(long)]
-    pub no_mcp: bool,
+    pub mcp: bool,
     /// No-op (kept for backwards compatibility — defaults are always refreshed on init)
     #[arg(long, hide = true)]
     pub refresh_defaults: bool,
@@ -89,7 +89,7 @@ impl WorkspaceInitArgs {
         let (global_root, orbit_dir) =
             OrbitRuntime::resolve_bootstrap_roots_for_cwd(&cwd, root_override)?;
         let registry_path = workspace_registry::registry_path_for(&global_root);
-        let no_mcp = self.no_mcp;
+        let mcp = self.mcp;
         let init_result = self.execute_at_path(&cwd, &orbit_dir, &global_root, &registry_path)?;
 
         println!("workspace '{}' initialized", init_result.name);
@@ -97,9 +97,7 @@ impl WorkspaceInitArgs {
         println!("  root:      {}", init_result.root.display());
         println!("  orbit_dir: {}", init_result.orbit_dir.display());
 
-        if no_mcp {
-            println!("  mcp:       skipped (--no-mcp)");
-        } else {
+        if mcp {
             let providers = crate::command::mcp::init_auto_for_workspace(
                 &init_result.root,
                 &init_result.orbit_dir,
@@ -109,6 +107,8 @@ impl WorkspaceInitArgs {
             } else {
                 println!("  mcp:       {}", providers.join(", "));
             }
+        } else {
+            println!("  mcp:       skipped (pass --mcp to set up integrations)");
         }
 
         eprintln!("graph build: scanning {}", init_result.root.display());
@@ -224,7 +224,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: false,
+            mcp: true,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_init_respects_no_mcp_flag() {
+    fn workspace_init_skips_mcp_by_default() {
         let _guard = ENV_LOCK.lock().expect("lock env");
         let workspace = tempdir().expect("workspace tempdir");
         let home = tempdir().expect("home tempdir");
@@ -283,7 +283,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -335,7 +335,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: Some("custom-root".to_string()),
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(Some(custom_root.as_path()));
@@ -399,7 +399,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -444,7 +444,7 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);

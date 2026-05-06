@@ -107,8 +107,8 @@ orbit init
 # initialize workspace-local Orbit state inside a repository
 cd <repo>
 orbit workspace init
-# or skip MCP client auto-detection / setup
-orbit workspace init --no-mcp
+# or also auto-detect and set up MCP client integrations
+orbit workspace init --mcp
 
 # build the code graph
 orbit graph build
