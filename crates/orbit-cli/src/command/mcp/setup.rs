@@ -11,10 +11,10 @@ use super::{ORBIT_MCP_SERVER_ID, safe_mcp_tool_names};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
 pub enum ScopeArg {
-    /// Write to user-level config (~/.claude, ~/.codex, ~/.gemini). Default.
-    #[default]
+    /// Write to user-level config (~/.claude, ~/.codex, ~/.gemini).
     Home,
-    /// Write to repo-local config (.mcp.json, .codex/, .gemini/).
+    /// Write to repo-local config (.mcp.json, .codex/, .gemini/). Default.
+    #[default]
     Workspace,
 }
 
@@ -147,8 +147,8 @@ enum ProviderSelectionMode {
 pub struct InitArgs {
     #[command(flatten)]
     pub providers: ProviderSelectionArgs,
-    /// Scope for written config files (home: user-level, workspace: repo-local).
-    #[arg(long, value_enum, default_value_t = ScopeArg::Home)]
+    /// Scope for written config files (workspace: repo-local, home: user-level).
+    #[arg(long, value_enum, default_value_t = ScopeArg::Workspace)]
     pub scope: ScopeArg,
 }
 
@@ -173,8 +173,8 @@ impl InitArgs {
 pub struct RemoveArgs {
     #[command(flatten)]
     pub providers: ProviderSelectionArgs,
-    /// Scope for config files to remove (home: user-level, workspace: repo-local).
-    #[arg(long, value_enum, default_value_t = ScopeArg::Home)]
+    /// Scope for config files to remove (workspace: repo-local, home: user-level).
+    #[arg(long, value_enum, default_value_t = ScopeArg::Workspace)]
     pub scope: ScopeArg,
 }
 
@@ -199,8 +199,8 @@ pub(crate) fn init_auto_for_workspace(
     orbit_root: &Path,
 ) -> Result<Vec<String>, OrbitError> {
     // `orbit workspace init` is a per-workspace setup, so its auto-MCP path
-    // writes repo-local files. `orbit mcp init` separately defaults to home
-    // scope for users who want a single global registration.
+    // writes repo-local files. `orbit mcp init` defaults to workspace scope
+    // as well; pass `--scope home` for a user-level registration.
     run_action(
         McpAction::Init,
         repo_root,
