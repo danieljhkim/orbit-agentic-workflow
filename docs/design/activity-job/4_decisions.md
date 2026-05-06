@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-05 (ADR-040 provider static-arg fixups)
+**Last updated:** 2026-05-06 (ADR-041 `orbit init` setup wizard)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -538,6 +538,20 @@ This ADR log records the decisions that define the current Activity / Job substr
 - The `.orbit/**` deny stays intact and no new write exception ships with the sandbox profile.
 - The executor YAML's `--debug-file` value is no longer honored verbatim — only the basename survives the rewrite. `claude.yaml` now carries a comment pointing at this ADR so a future maintainer reads the dispatcher rather than trusting the literal path.
 
+## ADR-041 — `orbit init` uses a recommendation-first setup wizard
+
+**Status:** Accepted · 2026-05 · [T20260506-16]
+
+**Context.** ADR-027 made `orbit init` the writer for `[agent.<role>]` settings, but the first shipped UX mirrored the TOML schema: nine provider/backend/model prompts with little explanation of reviewer, implementer, and planner roles. First-run setup needed to teach the role model and expose the detected recommendation before asking users to edit individual fields.
+
+**Decision.** Keep the persisted `[agent.<role>]` config shape, but replace the raw field prompt sequence with a recommendation-first wizard. The collector now prints role descriptions, detected agent surfaces, and a role summary; users can accept all defaults with one response, customize one role from detected agent choices, or fall back to a manual provider/backend/model entry for custom stacks.
+
+**Consequences.**
+- First-time users see the workflow roles and the exact recommended setup before making a choice.
+- Normal customization hides backend mechanics behind choices such as Claude CLI or Codex API while preserving manual backend entry for custom providers.
+- The config writer and v2 role resolver remain compatible because the emitted `RawAgentRoleConfig` map is unchanged.
+- Cost: prompt collection now owns display formatting and a small choice loop, so tests must cover interaction flow in addition to config values.
+
 ---
 
 ## Task References
@@ -589,5 +603,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260505-8]** — Add dashboard/runtime controls to cancel active job runs.
 - **[T20260505-10]** — Release run-owned task lock reservations through engine-owned terminal cleanup and reserve-pressure reconciliation.
 - **[T20260505-22]** — Rewrite Claude's `--debug-file` static arg at dispatch time so the log lands at a sandbox-allowed absolute path.
+- **[T20260506-16]** — Replace raw `orbit init` agent prompts with a recommendation-first setup wizard.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

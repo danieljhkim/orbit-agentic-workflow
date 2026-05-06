@@ -15,24 +15,37 @@ use super::raw::RawAgentRoleConfig;
 /// the prompt sequence the user sees.
 pub const ROLE_PROMPT_ORDER: &[&str] = &["reviewer", "implementer", "planner"];
 
+const ROLE_DESCRIPTIONS: &[(&str, &str)] = &[
+    ("Reviewer", "checks changes and leaves feedback"),
+    ("Implementer", "writes code and applies fixes"),
+    ("Planner", "drafts plans and decomposes tasks"),
+];
+
 /// Injectable seam for prompt I/O. Real CLI uses [`StdinPrompter`]; tests use
 /// [`testing::CannedPrompter`].
 pub trait Prompter {
-    /// Display `label` with `default` shown in brackets, read a line, and
-    /// return the trimmed user input. Empty input means "accept default" —
-    /// the caller is responsible for substituting the default value when the
-    /// returned string is empty.
-    fn prompt(&mut self, label: &str, default: &str) -> io::Result<String>;
+    /// Display non-interactive text to the user.
+    fn message(&mut self, text: &str) -> io::Result<()>;
+
+    /// Display `prompt`, read a line, and return the trimmed user input.
+    fn prompt(&mut self, prompt: &str) -> io::Result<String>;
 }
 
 /// Real prompter: writes to stdout, reads a line from stdin.
 pub struct StdinPrompter;
 
 impl Prompter for StdinPrompter {
-    fn prompt(&mut self, label: &str, default: &str) -> io::Result<String> {
+    fn message(&mut self, text: &str) -> io::Result<()> {
         let stdout = io::stdout();
         let mut out = stdout.lock();
-        write!(out, "{label} [{default}]: ")?;
+        writeln!(out, "{text}")?;
+        Ok(())
+    }
+
+    fn prompt(&mut self, prompt: &str) -> io::Result<String> {
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        write!(out, "{prompt}")?;
         out.flush()?;
 
         let stdin = io::stdin();
@@ -45,20 +58,41 @@ impl Prompter for StdinPrompter {
 /// Read provider/backend/model for each of the `ROLE_PROMPT_ORDER` roles and
 /// return a map keyed by role name suitable for serializing as
 /// `[agent.<role>]` blocks. Returned configs always carry `Some` values for
-/// the three fields — empty input substitutes the detection-derived default.
+/// provider/backend, while model is omitted when the selected provider has no
+/// known default and the user leaves it blank.
 ///
 /// Detection results seed the per-role defaults so most users can just press
-/// Enter through the prompts.
+/// Enter once to accept the recommended setup.
 pub fn collect_role_settings(
     detected: &DetectedAgents,
     prompter: &mut dyn Prompter,
 ) -> io::Result<BTreeMap<String, RawAgentRoleConfig>> {
-    let mut out = BTreeMap::new();
-    for role in ROLE_PROMPT_ORDER {
-        let cfg = collect_one_role(role, detected, prompter)?;
-        out.insert((*role).to_string(), cfg);
+    let mut settings = recommended_role_settings(detected);
+
+    prompter.message(&intro_text(detected, &settings))?;
+
+    if yes_by_default(&prompter.prompt("Use this setup? [Y/n]: ")?) {
+        return Ok(settings);
     }
-    Ok(out)
+
+    loop {
+        let role = prompter
+            .prompt("Which role do you want to change? [reviewer/implementer/planner/done]: ")?;
+        let role = role.trim().to_ascii_lowercase();
+        if role.is_empty() || role == "done" || role == "d" {
+            break;
+        }
+        if !ROLE_PROMPT_ORDER.contains(&role.as_str()) {
+            prompter.message("Please enter one of: reviewer, implementer, planner, or done.")?;
+            continue;
+        }
+
+        let cfg = collect_one_role(&role, detected, prompter)?;
+        settings.insert(role, cfg);
+        prompter.message(&format_role_summary("Updated setup:", &settings))?;
+    }
+
+    Ok(settings)
 }
 
 fn collect_one_role(
@@ -66,35 +100,85 @@ fn collect_one_role(
     detected: &DetectedAgents,
     prompter: &mut dyn Prompter,
 ) -> io::Result<RawAgentRoleConfig> {
+    let options = agent_options(detected);
+    prompter.message(&format_agent_options(role, &options))?;
+
+    loop {
+        let choice = prompter.prompt("Choice [1]: ")?;
+        let choice = choice.trim();
+        if choice.eq_ignore_ascii_case("custom") || choice.eq_ignore_ascii_case("c") {
+            return collect_custom_role(detected, prompter);
+        }
+        if choice
+            .parse::<usize>()
+            .is_ok_and(|n| n == options.len() + 1)
+        {
+            return collect_custom_role(detected, prompter);
+        }
+
+        let selected = if choice.is_empty() {
+            Some(0)
+        } else {
+            choice.parse::<usize>().ok().and_then(|n| n.checked_sub(1))
+        };
+
+        if let Some(index) = selected {
+            if let Some(option) = options.get(index) {
+                let model = collect_model_override(option.model, prompter)?;
+                return Ok(RawAgentRoleConfig {
+                    provider: Some(option.provider.to_string()),
+                    backend: Some(option.backend.to_string()),
+                    model,
+                });
+            }
+        }
+
+        let custom_index = options.len() + 1;
+        prompter.message(&format!(
+            "Please enter 1-{custom_index}, or `custom` for a manual provider."
+        ))?;
+    }
+}
+
+fn collect_custom_role(
+    detected: &DetectedAgents,
+    prompter: &mut dyn Prompter,
+) -> io::Result<RawAgentRoleConfig> {
     let provider_default = default_provider(detected);
-    let provider_label = format!("agent.{role}.provider");
     let provider = take_or_default(
-        prompter.prompt(&provider_label, provider_default)?,
+        prompter.prompt(&format!("Provider [{provider_default}]: "))?,
         provider_default,
     );
-
     let backend_default = default_backend(&provider, detected);
-    let backend_label = format!("agent.{role}.backend");
     let backend = take_or_default(
-        prompter.prompt(&backend_label, backend_default)?,
+        prompter.prompt(&format!("Backend (cli/http) [{backend_default}]: "))?,
         backend_default,
     );
-
     let model_default = default_model_for(&provider).unwrap_or("");
-    let model_label = format!("agent.{role}.model");
-    let model_input = prompter.prompt(&model_label, model_default)?;
-    let model_value = take_or_default(model_input, model_default);
-    let model_field = if model_value.is_empty() {
-        None
-    } else {
-        Some(model_value)
-    };
+    let model = collect_model_override(model_default, prompter)?;
 
     Ok(RawAgentRoleConfig {
         provider: Some(provider),
         backend: Some(backend),
-        model: model_field,
+        model,
     })
+}
+
+fn collect_model_override(
+    model_default: &str,
+    prompter: &mut dyn Prompter,
+) -> io::Result<Option<String>> {
+    let prompt = if model_default.is_empty() {
+        "Model (optional): ".to_string()
+    } else {
+        format!("Model [{model_default}]: ")
+    };
+    let model_value = take_or_default(prompter.prompt(&prompt)?, model_default);
+    if model_value.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(model_value))
+    }
 }
 
 fn take_or_default(input: String, default: &str) -> String {
@@ -103,6 +187,201 @@ fn take_or_default(input: String, default: &str) -> String {
         default.to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+fn yes_by_default(input: &str) -> bool {
+    let trimmed = input.trim();
+    trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y") || trimmed.eq_ignore_ascii_case("yes")
+}
+
+fn recommended_role_settings(detected: &DetectedAgents) -> BTreeMap<String, RawAgentRoleConfig> {
+    let provider = default_provider(detected);
+    let backend = default_backend(provider, detected);
+    let model = default_model_for(provider).map(str::to_string);
+
+    let mut out = BTreeMap::new();
+    for role in ROLE_PROMPT_ORDER {
+        out.insert(
+            (*role).to_string(),
+            RawAgentRoleConfig {
+                provider: Some(provider.to_string()),
+                backend: Some(backend.to_string()),
+                model: model.clone(),
+            },
+        );
+    }
+    out
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentOption {
+    label: &'static str,
+    provider: &'static str,
+    backend: &'static str,
+    model: &'static str,
+}
+
+fn agent_options(detected: &DetectedAgents) -> Vec<AgentOption> {
+    let mut options = Vec::new();
+
+    if detected.claude_cli {
+        options.push(agent_option("Claude CLI", "claude", "cli"));
+    }
+    if detected.codex_cli {
+        options.push(agent_option("Codex CLI", "codex", "cli"));
+    }
+    if detected.gemini_cli {
+        options.push(agent_option("Gemini CLI", "gemini", "cli"));
+    }
+    if detected.ollama_cli {
+        options.push(agent_option("Ollama CLI", "ollama", "cli"));
+    }
+    if detected.anthropic_api_key {
+        options.push(agent_option("Claude API", "claude", "http"));
+    }
+    if detected.openai_api_key {
+        options.push(agent_option("Codex API", "codex", "http"));
+    }
+    if detected.gemini_api_key {
+        options.push(agent_option("Gemini API", "gemini", "http"));
+    }
+
+    let provider = default_provider(detected);
+    let backend = default_backend(provider, detected);
+    if !options
+        .iter()
+        .any(|option| option.provider == provider && option.backend == backend)
+    {
+        options.insert(
+            0,
+            AgentOption {
+                label: agent_label(provider, backend),
+                provider,
+                backend,
+                model: default_model_for(provider).unwrap_or(""),
+            },
+        );
+    }
+
+    options
+}
+
+fn agent_option(label: &'static str, provider: &'static str, backend: &'static str) -> AgentOption {
+    AgentOption {
+        label,
+        provider,
+        backend,
+        model: default_model_for(provider).unwrap_or(""),
+    }
+}
+
+fn agent_label(provider: &str, backend: &str) -> &'static str {
+    match (provider, backend) {
+        ("claude", "cli") => "Claude CLI",
+        ("claude", "http") => "Claude API",
+        ("codex", "cli") => "Codex CLI",
+        ("codex", "http") => "Codex API",
+        ("gemini", "cli") => "Gemini CLI",
+        ("gemini", "http") => "Gemini API",
+        ("ollama", "cli") => "Ollama CLI",
+        ("ollama", "http") => "Ollama API",
+        _ => "Custom agent",
+    }
+}
+
+fn intro_text(
+    detected: &DetectedAgents,
+    settings: &BTreeMap<String, RawAgentRoleConfig>,
+) -> String {
+    format!(
+        "Orbit uses agents for three workflow roles:\n\n{}\n\nDetected agents:\n{}\n\n{}",
+        role_description_lines(),
+        detection_lines(detected),
+        format_role_summary("Recommended setup:", settings)
+    )
+}
+
+fn role_description_lines() -> String {
+    ROLE_DESCRIPTIONS
+        .iter()
+        .map(|(role, description)| format!("  {role:<12} {description}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn detection_lines(detected: &DetectedAgents) -> String {
+    [
+        ("Claude CLI", detected.claude_cli),
+        ("Codex CLI", detected.codex_cli),
+        ("Gemini CLI", detected.gemini_cli),
+        ("Ollama CLI", detected.ollama_cli),
+        ("ANTHROPIC_API_KEY", detected.anthropic_api_key),
+        ("OPENAI_API_KEY", detected.openai_api_key),
+        ("GEMINI_API_KEY", detected.gemini_api_key),
+    ]
+    .into_iter()
+    .map(|(label, found)| {
+        let status = if found { "found" } else { "not found" };
+        format!("  {label:<18} {status}")
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+fn format_role_summary(title: &str, settings: &BTreeMap<String, RawAgentRoleConfig>) -> String {
+    let mut lines = vec![
+        title.to_string(),
+        String::new(),
+        format!("  {:<13} {:<28} {}", "Role", "Agent", "Model"),
+    ];
+
+    for role in ROLE_PROMPT_ORDER {
+        if let Some(cfg) = settings.get(*role) {
+            lines.push(format!(
+                "  {:<13} {:<28} {}",
+                title_case_role(role),
+                agent_display_name(cfg),
+                cfg.model.as_deref().unwrap_or("(not set)")
+            ));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn format_agent_options(role: &str, options: &[AgentOption]) -> String {
+    let mut lines = vec![format!("Choose an agent for {}:", title_case_role(role))];
+    lines.push(String::new());
+    for (index, option) in options.iter().enumerate() {
+        let model = if option.model.is_empty() {
+            "(model not set)"
+        } else {
+            option.model
+        };
+        lines.push(format!("  {}. {:<16} {}", index + 1, option.label, model));
+    }
+    lines.push(format!("  {}. Custom", options.len() + 1));
+    lines.join("\n")
+}
+
+fn agent_display_name(cfg: &RawAgentRoleConfig) -> String {
+    let provider = cfg.provider.as_deref().unwrap_or("custom");
+    let backend = cfg.backend.as_deref().unwrap_or("custom");
+    let label = agent_label(provider, backend);
+    if label == "Custom agent" {
+        format!("{provider} ({backend})")
+    } else {
+        label.to_string()
+    }
+}
+
+fn title_case_role(role: &str) -> &'static str {
+    match role {
+        "reviewer" => "Reviewer",
+        "implementer" => "Implementer",
+        "planner" => "Planner",
+        _ => "Role",
     }
 }
 
@@ -120,22 +399,41 @@ pub(crate) mod testing {
     #[derive(Debug, Default)]
     pub(crate) struct CannedPrompter {
         answers: VecDeque<String>,
+        messages: Vec<String>,
+        prompts: Vec<String>,
     }
 
     impl CannedPrompter {
         pub(crate) fn new<I: IntoIterator<Item = &'static str>>(answers: I) -> Self {
             Self {
                 answers: answers.into_iter().map(String::from).collect(),
+                messages: Vec::new(),
+                prompts: Vec::new(),
             }
+        }
+
+        pub(crate) fn transcript(&self) -> String {
+            self.messages
+                .iter()
+                .chain(self.prompts.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
         }
     }
 
     impl Prompter for CannedPrompter {
-        fn prompt(&mut self, label: &str, _default: &str) -> io::Result<String> {
+        fn message(&mut self, text: &str) -> io::Result<()> {
+            self.messages.push(text.to_string());
+            Ok(())
+        }
+
+        fn prompt(&mut self, prompt: &str) -> io::Result<String> {
+            self.prompts.push(prompt.to_string());
             self.answers.pop_front().ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::UnexpectedEof,
-                    format!("no canned answer for prompt `{label}`"),
+                    format!("no canned answer for prompt `{prompt}`"),
                 )
             })
         }
@@ -148,13 +446,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_answers_accept_detection_defaults() {
+    fn empty_answer_accepts_recommended_setup() {
         let detected = DetectedAgents {
             claude_cli: true,
             ..DetectedAgents::default()
         };
-        // 3 roles × 3 prompts = 9 empty answers.
-        let mut prompter = CannedPrompter::new(["", "", "", "", "", "", "", "", ""]);
+        let mut prompter = CannedPrompter::new([""]);
         let result = collect_role_settings(&detected, &mut prompter).unwrap();
 
         let reviewer = result.get("reviewer").expect("reviewer entry");
@@ -172,25 +469,60 @@ mod tests {
         assert_eq!(planner.provider.as_deref(), Some("claude"));
         assert_eq!(planner.backend.as_deref(), Some("cli"));
         assert_eq!(planner.model.as_deref(), Some("claude-opus-4-7"));
+
+        let transcript = prompter.transcript();
+        assert!(transcript.contains("Orbit uses agents for three workflow roles"));
+        assert!(transcript.contains("Recommended setup:"));
+        assert!(transcript.contains("Use this setup? [Y/n]: "));
     }
 
     #[test]
-    fn user_overrides_provider_then_backend_and_model_recompute() {
-        // No CLIs detected → default provider would be claude/http. User
-        // picks codex; backend default for codex (no CLI) is http; model
-        // default becomes gpt-5.5 from the registry.
-        let detected = DetectedAgents::default();
-        let mut prompter = CannedPrompter::new([
-            "codex", "", "", // reviewer: provider=codex, accept backend, accept model
-            "", "", "", // implementer: accept claude/http/claude-opus-4-7
-            "", "", "", // planner: accept claude/http/claude-opus-4-7
-        ]);
+    fn user_customizes_implementer_to_codex_cli() {
+        let detected = DetectedAgents {
+            claude_cli: true,
+            codex_cli: true,
+            ..DetectedAgents::default()
+        };
+        let mut prompter = CannedPrompter::new(["n", "implementer", "2", "", ""]);
         let result = collect_role_settings(&detected, &mut prompter).unwrap();
 
         let reviewer = result.get("reviewer").expect("reviewer entry");
-        assert_eq!(reviewer.provider.as_deref(), Some("codex"));
+        assert_eq!(reviewer.provider.as_deref(), Some("claude"));
+        assert_eq!(reviewer.backend.as_deref(), Some("cli"));
+        assert_eq!(reviewer.model.as_deref(), Some("claude-opus-4-7"));
+
+        let implementer = result.get("implementer").expect("implementer entry");
+        assert_eq!(implementer.provider.as_deref(), Some("codex"));
+        assert_eq!(implementer.backend.as_deref(), Some("cli"));
+        assert_eq!(implementer.model.as_deref(), Some("gpt-5.5"));
+
+        let planner = result.get("planner").expect("planner entry");
+        assert_eq!(planner.provider.as_deref(), Some("claude"));
+        assert_eq!(planner.backend.as_deref(), Some("cli"));
+        assert_eq!(planner.model.as_deref(), Some("claude-opus-4-7"));
+
+        let transcript = prompter.transcript();
+        assert!(transcript.contains("Choose an agent for Implementer:"));
+        assert!(transcript.contains("Updated setup:"));
+    }
+
+    #[test]
+    fn custom_provider_prompts_for_backend_and_model() {
+        let detected = DetectedAgents::default();
+        let mut prompter = CannedPrompter::new([
+            "n",
+            "reviewer",
+            "custom",
+            "openai_compat",
+            "http",
+            "my-model",
+            "",
+        ]);
+        let result = collect_role_settings(&detected, &mut prompter).unwrap();
+        let reviewer = result.get("reviewer").expect("reviewer entry");
+        assert_eq!(reviewer.provider.as_deref(), Some("openai_compat"));
         assert_eq!(reviewer.backend.as_deref(), Some("http"));
-        assert_eq!(reviewer.model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(reviewer.model.as_deref(), Some("my-model"));
 
         let implementer = result.get("implementer").expect("implementer entry");
         assert_eq!(implementer.provider.as_deref(), Some("claude"));
@@ -199,43 +531,14 @@ mod tests {
     }
 
     #[test]
-    fn unknown_provider_yields_empty_model_when_user_accepts_default() {
-        // Unknown provider has no MODEL_REGISTRY entry, so the default model
-        // string is empty. Empty model means we omit the field entirely so
-        // it stays out of the serialized TOML.
+    fn custom_provider_omits_blank_unknown_model() {
         let detected = DetectedAgents::default();
-        let mut prompter = CannedPrompter::new(["openai_compat", "", "", "", "", "", "", "", ""]);
+        let mut prompter =
+            CannedPrompter::new(["n", "reviewer", "custom", "openai_compat", "http", "", ""]);
         let result = collect_role_settings(&detected, &mut prompter).unwrap();
         let reviewer = result.get("reviewer").expect("reviewer entry");
         assert_eq!(reviewer.provider.as_deref(), Some("openai_compat"));
+        assert_eq!(reviewer.backend.as_deref(), Some("http"));
         assert_eq!(reviewer.model, None);
-    }
-
-    #[test]
-    fn user_supplies_custom_model_string() {
-        let detected = DetectedAgents {
-            claude_cli: true,
-            ..DetectedAgents::default()
-        };
-        let mut prompter = CannedPrompter::new([
-            "",
-            "",
-            "claude-haiku-4-5", // reviewer model override
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]);
-        let result = collect_role_settings(&detected, &mut prompter).unwrap();
-        assert_eq!(
-            result.get("reviewer").unwrap().model.as_deref(),
-            Some("claude-haiku-4-5")
-        );
-        assert_eq!(
-            result.get("implementer").unwrap().model.as_deref(),
-            Some("claude-opus-4-7")
-        );
     }
 }
