@@ -11,10 +11,6 @@ spec:
     - bypassPermissions
     - --output-format
     - json
-    # The dispatcher rewrites this to <claude_state_dir>/<basename> at spawn
-    # time so the log lands at a sandbox-allowed path (see T20260505-22).
-    - --fallback-model
-    - claude-sonnet-4-6
     - --tools
     - default
   stdout_format: envelope
