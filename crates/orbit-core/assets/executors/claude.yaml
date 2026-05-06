@@ -13,12 +13,10 @@ spec:
     - json
     # The dispatcher rewrites this to <claude_state_dir>/<basename> at spawn
     # time so the log lands at a sandbox-allowed path (see T20260505-22).
-    - --debug-file
-    - claude-debug.log
     - --fallback-model
     - claude-sonnet-4-6
     - --tools
-    - Read,Write,Edit,Grep,Glob,Bash,TodoWrite,Agent
+    - default
   stdout_format: envelope
   sandbox: macos-sandbox-exec
   models:
