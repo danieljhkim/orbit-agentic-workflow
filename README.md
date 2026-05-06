@@ -107,8 +107,8 @@ orbit init
 # initialize workspace-local Orbit state inside a repository
 cd <repo>
 orbit workspace init
-# or skip MCP client auto-detection / setup
-orbit workspace init --no-mcp
+# or also auto-detect and set up MCP client integrations
+orbit workspace init --mcp
 
 # create a task for the work you want done (prints the new task ID)
 TASK_ID=$(orbit task add \
