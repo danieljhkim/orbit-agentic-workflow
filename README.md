@@ -1,38 +1,46 @@
-# Orbit: Graph-Aware Parallel Execution For Coding Agents
+# Orbit — Linear for AI-Native Developers
 
 <p align="center">
-  <img src="docs/assets/orbit-dashboard-hero.gif" alt="Orbit dashboard: parallel coding agents executing tasks with a live audit log" width="600" />
+  <img src="docs/assets/orbit-dashboard-hero.gif" alt="Orbit dashboard: task backlog, agent execution, and live audit log" width="600" />
 </p>
 
 <p align="center">
-  <em>The Orbit dashboard (<code>orbit web serve</code>) — task fleet, live audit log, per-agent scoreboard.</em>
+  <em>The Orbit dashboard (<code>orbit web serve</code>) — task backlog, live audit log, per-agent scoreboard.</em>
 </p>
 
-**Orbit is a self-hosted runtime for running parallel coding agents against your team's real codebase** — with an auditable trail, a code-aware graph, and explicit locks that keep concurrent agent sessions from stepping on each other.
+**Orbit is durable, intent-tracked agentic project management for developers who use AI coding agents heavily — Linear / Jira designed for the AI-native solo developer, with a path to team-scale automation as trust in agents matures.**
 
-Each engineer on the team runs Orbit on their own machine. A "fleet" is many agents working in parallel on *one* engineer's laptop, not a shared multi-user instance. v1 is built for this shape; a shared-host deployment that aggregates audit and task state across the team is committed for v2 — see [Direction of travel](#direction-of-travel).
+The wedge today is the individual engineer driving multiple coding agents (Claude Code, Cursor, Aider, Codex CLI) against real code, who has outgrown the one-agent-one-terminal model. You need a durable backlog when ideas and bugs accumulate faster than any single session can hold. You need lifecycle tracking when work spans sessions, weeks, or branches. You need intent attribution when six months from now you have to remember *why* an agent wrote a given line of code. Linear and Jira solve durable project management for human-driven teams. Agent vendors solve in-session execution. **Orbit is the layer above — the layer that turns individual agent sessions into a coherent body of work.**
 
-It targets the gap between single-developer tooling (Claude Code, Cursor, Aider, Codex CLI) and enterprise agent platforms: running LLM-driven work — PR review, refactor passes, backlog execution, cross-cutting migrations — on each engineer's own infrastructure, with the audit trail and parallel-execution safety that single-user tools don't try to provide.
+Built for the AI-native solo developer first, with a deliberate funnel that expands toward teams over time: **solo adoption → internal champion at a team → team-scale agentic automation.** The team-scale destination is multi-year. The wedge is today.
 
-The full positioning — what Orbit is for, what it refuses to become, and the decision lens we use when design debates get stuck — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it before contributing or evaluating fit.
+The full positioning — what Orbit is for, who it's for in funnel order, what it refuses to become, and the long-arc fleet vision — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it before contributing or evaluating fit.
 
 ---
 
 ## Primary Features
 
-Two features carry the product thesis. Everything else in Orbit is infrastructure that makes these two reliable.
+Three features carry the wedge. Everything else is infrastructure that makes these reliable.
 
-### Knowledge graph — *available today*
+### Durable, intent-tracked task layer — *available today*
 
-Agents inspect a parsed, content-addressed graph of your codebase: directories, files, extracted symbols, import edges, crate dependencies, trait implementors, and signature-matched caller/reference indexes. Queries are token-budgeted packs shaped for prompt consumption, not LSP-style hover text.
+The wedge surface. Every task carries a durable lifecycle (`proposed → backlog → in-progress → review → done`) that survives across sessions, branches, and weeks. Every commit produced through Orbit carries the `task_id`, so the codebase itself becomes a queryable record of agent intent — `git log --grep '\[T20260506-...\]'` finds every commit that flowed through a given task; `orbit task show` reconstructs the prompt, plan, execution trace, and review threads for that task months later.
 
-The graph is built for safe parallel execution. It is branch-scoped (two worktrees on two branches rebuild concurrently without corruption), and reads fall back to the default branch until a new branch has been built. The public graph surface is read-only; write coordination happens before dispatch through task `context_files` and `orbit.task.locks.reserve` preflight guards.
+The hand-tracking-in-Notion-or-scratch-notes problem ends here. Ideas and bugs go into `orbit task add`, get worked on by an agent (now or later), and produce a body of work that's still navigable a year from now. This is what Linear and Jira solve for human-driven teams; Orbit solves it for the AI-native solo developer who plans to expand the practice across their team.
 
-This is the technical moat and the reason to pick Orbit over a generic agent framework. Design docs: [docs/design/knowledge-graph/](docs/design/knowledge-graph/).
+### Knowledge-graph–aware tooling — *available today*
+
+Agents inspect a parsed, content-addressed graph of your codebase: directories, files, extracted symbols, import edges, crate dependencies, trait implementors, and signature-matched caller/reference indexes. Queries return token-budgeted packs shaped for prompt consumption, not LSP-style hover text.
+
+The graph is the **technical moat** and it is measured, not asserted. Under MCP exposure, the graph reduces token cost on structural code questions (see `benchmarks/graph/` for full v3 results: codex hybrid arm came in 35% cheaper than no-graph, with pre-registered cull thresholds passed). It is also branch-scoped and built for safe parallel execution — two worktrees on two branches rebuild concurrently without corruption; reads fall back to the default branch until a new branch has been built. The public graph surface is read-only; write coordination happens before dispatch through task `context_files` and `orbit.task.locks.reserve` preflight guards.
+
+Design docs: [docs/design/knowledge-graph/](docs/design/knowledge-graph/).
 
 ### Auditability — *available today*
 
-Every tool call, provider request/response, and task-state transition is a structured, queryable event with agent identity attached. When something goes sideways on your team's monorepo, you answer *what / why / who* without calling the Orbit maintainers. Append-only, tamper-evident, exportable.
+Every tool call, provider request/response, and task-state transition is a structured, queryable event with agent identity attached. When something goes sideways — a bad merge, a regression, a refactor whose intent you can't reconstruct months later — you answer *what / why / who* without asking the maintainers. Append-only, tamper-evident, exportable.
+
+For the wedge audience (single engineer, multiple agents, real code), this is what makes ad-hoc agent sessions trustworthy enough to live with downstream — both for you, and for the future teammate who reviews your PR. For the long-arc team-scale destination, it's also the substrate every team-grade primitive depends on.
 
 Full contract below in the [Auditability](#auditability) section. Design docs: [docs/design/auditability/](docs/design/auditability/).
 
@@ -40,11 +48,11 @@ Full contract below in the [Auditability](#auditability) section. Design docs: [
 
 ## Direction of travel
 
-The substrate also hosts work that is not yet a front-door product surface but signals where Orbit is headed:
+The substrate also hosts work that is not yet a front-door product surface but signals where Orbit is headed. The full long-arc destination — fleet orchestration at team scale, once trust in agents matures and human review thins — lives in [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale).
 
 - **Programmatic (HTTP/SDK) provider transport** — direct provider communication for multi-turn agent loops, replacing CLI subprocess execution as the primary path. Wired in code today (`backend: http`, `LoopTransport`) but not part of the v1 release surface; v1 ships CLI backends only.
 - **Groundhog** — a checkpoint-oriented execution mode for HTTP-backend agents. Work runs as a sequence of checkpoints; each attempt starts with a fresh agent context and a clean git-backed workspace snapshot, then either rewinds on failure or persists a small stable memory on success. Today it exists as an `ActivityV2Spec::Groundhog` activity behind the job layer, not as an `orbit run` subcommand. Depends on the HTTP transport above and is therefore also out of scope for v1. Status: [docs/design/groundhog/](docs/design/groundhog/).
-- **Shared-host deployment** — a single Orbit instance serving multiple operators, with team-aggregated audit, tasks, and scoreboards, plus operator-identity-aware authentication on `orbit web serve`. v1 is per-engineer (each operator runs Orbit on their own machine); shared-host is a v2 commitment. Until then, do not expose `orbit web serve` to a non-localhost interface — it has no auth in v1.
+- **Shared-host deployment** — a single Orbit instance serving multiple operators, with team-aggregated audit, tasks, and scoreboards, plus operator-identity-aware authentication on `orbit web serve`. v1 is per-engineer (each operator runs Orbit on their own machine); shared-host is a v2 commitment, downstream of the champion-led team-adoption arc described in POSITIONING. Until v2 ships, do not expose `orbit web serve` to a non-localhost interface — it has no auth in v1.
 
 ---
 
@@ -53,10 +61,11 @@ The substrate also hosts work that is not yet a front-door product surface but s
 Tablestakes for what Orbit is for. Orbit will not ship anything that breaks them.
 
 - **Self-hostable, no cloud dependency.** Single binary, runs on a laptop, in a container, in a CI runner, behind a firewall. Orbit never phones home.
-- **Per-engineer deployment in v1.** Each engineer runs Orbit on their own machine. Tasks, locks, and the audit DB are local to that machine. Cross-engineer coordination flows through the primitives a team already uses — git branches, PRs, CI, GitHub. Shared-host deployment (one Orbit serving multiple engineers) is committed for v2.
+- **Per-engineer deployment in v1.** Each engineer runs Orbit on their own machine. Tasks, locks, and the audit DB are local to that machine. Cross-engineer coordination flows through the primitives a team already uses — git branches, PRs, CI, GitHub. Shared-host deployment (one Orbit serving multiple engineers) is a v2 commitment downstream of the champion-led team-adoption arc; see [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale).
 - **Bring-your-own-credentials.** Your Anthropic / OpenAI / local-model keys, never Orbit's. Orbit is a pass-through.
 - **CLI-backend agent execution (v1).** v1 invokes coding agents through their official CLIs (Codex, Claude Code, Gemini CLI) as supervised subprocesses. Programmatic HTTP/SDK transport (`backend: http`, `LoopTransport`) exists in the codebase and is exercised in tests, but is not a supported release surface in v1 — treat it as preview-only. v2 will flip the default once HTTP coverage is complete.
-- **Fleet primitives.** Parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent commit identity. Single-assistant assumptions are incorrect.
+- **Intent attribution at the codebase level.** Every line of agent-authored code is traceable to the task that produced it. `task_id` baked into commit messages, queryable via `orbit task show` and `git log --grep`, durable across rewrites and refactors. This is what turns a body of agent work into a coherent record over time, instead of a stream of opaque diffs.
+- **Multi-agent capable, agent-identity-attributed.** The architecture treats fleets as the default execution shape (parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent commit identity), even though the wedge audience may run only one or two agents at a time today. Single-assistant assumptions are incorrect, and agent identity is attached to every write so the audit trail and PR history stay legible at any scale.
 - **Git- and GitHub-native.** Branches, worktrees, PRs, CI status. No custom version control abstractions.
 - **Cost-visible.** You know what each run cost in tokens and wall-clock — see `orbit audit stats` and `orbit metrics`.
 - **Configurable, not rigid.** Job DAGs, activity definitions, skill loadouts, role profiles are all YAML. Fork, don't file feature requests.
@@ -153,17 +162,17 @@ curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | 
 
 ## Why Orbit Exists
 
-The hard problem is not "how do I run steps in order?" Durable workflow engines (Temporal, Airflow) already solve that.
+The hard problem is not "how do I run steps in order?" Durable workflow engines (Temporal, Airflow) already solve that. And the hard problem is not "how does an agent edit code?" — agent vendors (Claude Code, Cursor, Aider, Codex CLI) already solve that, and well, in-session.
 
-The hard problem is:
+The hard problem the wedge user has is everything that lives **between** and **around** those agent sessions:
 
-- how to split a code change into parallelizable tasks
-- how to decide which tasks can safely run at the same time
-- how to keep agent sessions from colliding on files or code regions
-- how to recover when parallel work conflicts anyway
+- how to keep durable, queryable state across many short-lived agent sessions
+- how to know six months from now *why* an agent wrote a given line of code
+- how to manage a backlog of agent-actionable work that grows faster than any one session can hold
+- how to drive multiple agents in parallel without losing track of who did what to which file
 - how to do all of that with durable **local** state, under an audit trail you control, without routing your source through a third-party SaaS
 
-Orbit is aimed at that problem.
+Linear and Jira solve durable project management for human-driven teams. Agent vendors solve in-session execution. Orbit is the layer that turns individual agent sessions into a coherent, navigable, audited body of work — for the AI-native solo developer today, with the architectural path to team-scale fleet orchestration once trust in agents matures (see [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale)).
 
 ---
 
