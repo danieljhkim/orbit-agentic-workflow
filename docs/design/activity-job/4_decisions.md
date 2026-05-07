@@ -2,555 +2,390 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-06 (ADR-041 `orbit init` setup wizard)
+**Last updated:** 2026-05-07 (T20260506-18 ADR rollup compaction)
 
-This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
+This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
+
+The log now keeps four load-bearing rollup ADR bodies. Folded entries remain at their original numbers with `Status: Superseded by ADR-NNN (folded)` and a one-line pointer, per [CONVENTIONS §4a](../CONVENTIONS.md#4a-rollup-adrs).
 
 ---
 
-## ADR-001 — `schemaVersion: 2` is the canonical activity/job surface
+## ADR-001 — Canonical v2 assets normalize into one execution contract
 
-**Status:** Accepted · 2026-04 · [T20260419-2156]
+**Status:** Accepted · 2026-05 · [T20260419-2156], [T20260418-2143], [T20260419-0104], [T20260418-2019], [T20260423-0445], [T20260425-0204], [T20260419-2347], [T20260426-0047], [T20260428-8], [T20260506-18]
 
-**Context.** The migration period where v1 and v2 both existed made every doc and runtime path harder to reason about. Orbit needed one canonical schema family, not a permanently dual parser.
+**Context.** Activity/job correctness depends on making authoring conveniences disappear before execution. The old log carried separate ADRs for schema retirement, backend resolution, target refs, defaults, catalog precedence, seeded assets, and workflow admission, but all enforce the same boundary: YAML is human-authored input, while execution sees normalized, validated runtime state.
 
-**Decision.** Treat `schemaVersion: 2` as the canonical activity/job surface and fail fast on version 1 assets at load time.
+**Decision.** Treat `schemaVersion: 2` as the only activity/job asset family, load seeded and workspace catalogs with explicit layer precedence, resolve authoring sugar (`target: activity:<name>`, `backend: auto`, object-valued defaults, and workflow admission) before dispatch, and keep seeded activities/jobs as executable reference contracts for that normalized surface. Direct task-workflow admission remains a workflow-specific normalization path rather than a generic task-update rule.
+
+Folded instances:
+
+| ADR | Instance folded into this rollup |
+|-----|----------------------------------|
+| ADR-003 | `backend: auto` resolves once before dispatch. |
+| ADR-004 | `target: activity:<name>` is authoring sugar resolved before execution. |
+| ADR-008 | Seeded activities and jobs are load-bearing runtime contracts. |
+| ADR-011 | Object-valued job defaults shallow-merge with caller input, and early failures get synthetic job steps. |
+| ADR-013 | Job catalog discovery honors layer precedence. |
+| ADR-016 | Activity catalog discovery honors layer precedence, and activity execution stays job-owned. |
+| ADR-026 | Workflow admission is distinct from generic task updates. |
 
 **Consequences.**
-- The runtime now has one typed surface to document and validate.
-- Migration failures happen structurally, before a run starts.
+- The runtime now documents and validates one typed activity/job surface.
+- Human-authored YAML stays readable while executors consume concrete steps, concrete backends, merged inputs, and first-wins catalog entries.
+- New workspaces start with real executable reference assets rather than empty examples.
+- Costs retained from folded entries:
 - Cost: old assets stop limping along; migration work becomes mandatory instead of gradual.
+- Cost: callers must remember to run the normalization pass before dispatch, and any missed call site fails as a structural bug.
+- Cost: the load path owns more normalization logic, and stale refs fail before dispatch instead of being lazily recoverable.
+- Cost: seeded assets become part of the public maintenance burden and can drift if docs/tests stop exercising them.
+- Cost: the job-level input contract is now a shallow merge rule that docs and tests must preserve, and run history can include synthetic job-level failure steps that were not literal authored YAML steps.
+- Cost: lower-precedence job assets can be shadowed silently, so debugging an unexpected workflow now requires checking catalog source paths.
+- Cost: lower-precedence activity assets can be shadowed silently, and direct ad hoc activity execution is no longer a documented CLI workflow.
+- Cost: task lifecycle semantics are no longer uniform across all status mutation surfaces; reviewers must distinguish workflow admission from ordinary task updates.
 
-## ADR-002 — Keep activity/job types in `orbit-common`, not in engine/core
+## ADR-002 — Host boundaries and agent dispatch stay explicit
 
-**Status:** Accepted · 2026-04 · [T20260419-2014], [T20260418-2210]
+**Status:** Accepted · 2026-05 · [T20260419-2014], [T20260418-2210], [T20260419-0104], [T20260423-0114], [T20260427-48], [T20260430-15], [T20260418-2018], [T20260419-0623-2], [T20260420-0510-2], [T20260428-9], [T20260428-12], [T20260506-16], [T20260506-17], [T20260505-22], [T20260506-18]
 
-**Context.** The v2 runtime shape has to be shared across core, engine, CLI, and seeded assets. Letting the type surface live inside one runtime layer would either duplicate schema definitions or leak higher-layer dependencies downward.
+**Context.** The agent-loop path is where activity/job can most easily leak provider implementation details, mutable sessions, or role configuration across crate boundaries. The split ADRs all defended the same shape: shared types live low, orbit-core hosts primitive services, the engine dispatches concrete activity specs, and provider/backends remain explicit choices.
 
-**Decision.** Keep the activity/job type family in `orbit-common`, and keep the engine/core boundary primitive enough that orbit-core does not name `orbit-agent` types.
+**Decision.** Keep activity/job types in `orbit-common`, keep orbit-core free of `orbit-agent` transport types, and route `backend: cli` through retained provider runtimes behind a host-resolved executor contract. Scope stateful agent features narrowly: loop `session:` is HTTP-only, Groundhog is its own activity kind, role config from `[agent.<role>]` overrides inline settings field-by-field, task-aware CLI envelopes carry durable run context, and provider static-arg fixups run before sandbox dispatch.
+
+Folded instances:
+
+| ADR | Instance folded into this rollup |
+|-----|----------------------------------|
+| ADR-005 | Cross-iteration `session:` binding is loop-scoped and HTTP-only. |
+| ADR-006 | Retained CLI runtimes implement `backend: cli`. |
+| ADR-009 | Groundhog is a sibling activity kind, not an `agent_loop` mode bit. |
+| ADR-015 | CLI backend resolves executor args, not just provider commands. |
+| ADR-025 | Codex CLI dynamic flags stay in provider runtime config. |
+| ADR-027 | `orbit init` writes per-role agent settings. |
+| ADR-031 | `[agent.<role>]` config overrides inline `agent_loop` settings at dispatch. |
+| ADR-032 | CLI agent envelopes carry durable task and run context. |
+| ADR-040 | Provider static-arg fixups apply before sandbox dispatch. |
+| ADR-041 | `orbit init` uses a recommendation-first setup wizard. |
 
 **Consequences.**
-- Parsing, validation, dispatch, and CLI display all talk about the same Rust types.
-- The engine/core seam stays explicit and reviewable.
+- Parsing, validation, dispatch, and CLI display share one Rust type family without making orbit-core depend on provider transport objects.
+- CLI and HTTP agent-loop paths remain intentionally different where their capabilities differ, especially around sessions and tool enforcement.
+- First-run and per-role agent choices live in user config while YAML stays reusable across workspaces.
+- Costs retained from folded entries:
 - Cost: `orbit-common` now owns a wider slice of runtime vocabulary and has to stay disciplined about not accreting behavior.
+- Cost: session reuse becomes a narrowly scoped feature instead of a general-purpose memory layer.
+- Cost: the feature now has materially different semantics between HTTP and CLI, especially around tool enforcement.
+- Cost: ActivityV2 gains another sibling variant and the feature family becomes slightly broader.
+- Cost: the engine/core boundary is slightly wider than a single string and every smoke host implementing `V2RuntimeHost` must model executor args explicitly.
+- Cost: the v2 host boundary exposes a provider-config map, so backend CLI dispatch remains aware of provider-specific runtime settings.
+- Cost: until [T20260428-12] landed, the values written to `config.toml` were inert — they round-tripped but did not influence dispatch, so reviewers had to treat the behavior as half-shipped during that window.
+- Cost: dispatch now has one more clone-and-mutate path per role-tagged step. The same role might get queried multiple times within one job run; if that ever shows up in profiles, memoize at the executor level rather than in the host trait.
+- Cost: the `V2RuntimeHost` seam now has a method that is purely a config-config concern. Tests that build their own mock host get a free `None` default, but a host that wants to exercise the override path has to opt in explicitly.
+- Cost: CLI stdin blobs now contain more task prose, so audit blob readers should continue treating those blobs as diagnostic artifacts rather than small control messages.
+- Cost: provider static-arg fixups mean executor YAML values such as Claude's `--debug-file` path are no longer honored verbatim; maintainers must read dispatcher behavior alongside assets.
+- Cost: prompt collection now owns display formatting and a small choice loop, so tests must cover interaction flow in addition to config values.
 
 ## ADR-003 — Resolve `backend: auto` once, before dispatch
 
-**Status:** Accepted · 2026-04 · [T20260418-2143], [T20260419-0104]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260418-2143], [T20260419-0104]
 
-**Context.** Allowing `Backend::Auto` to leak into the dispatcher would make the execution path depend on call-site behavior and ambient environment deep into runtime code. That is hard to audit and easy to get wrong.
-
-**Decision.** Resolve `backend: auto` once per run using flag → env → config → default precedence, rewrite the parsed asset in place, and require all downstream code to see only concrete backends.
-
-**Consequences.**
-- Dispatch and validation reason about one concrete backend choice.
-- CLI and HTTP paths can reject incompatible shapes structurally.
-- Cost: callers must remember to run the normalization pass before dispatch, and any missed call site fails as a structural bug.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-004 — `target: activity:<name>` is authoring sugar, not an execution primitive
 
-**Status:** Accepted · 2026-04 · [T20260418-2019]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260418-2019]
 
-**Context.** Human-authored jobs benefit from referencing named activities. The executor, however, should not have to look up activities by name mid-run or carry catalog semantics through execution.
-
-**Decision.** Keep `TargetRef` at the authoring/load layer only, and resolve every reference to a concrete `TargetStep` before execution starts.
-
-**Consequences.**
-- Human-authored YAML stays readable and reusable.
-- The executor operates on one target shape.
-- Cost: the load path owns more normalization logic, and stale refs fail before dispatch instead of being lazily recoverable.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-005 — Cross-iteration `session:` binding is a loop-scoped HTTP-only feature
 
-**Status:** Accepted · 2026-04 · [T20260418-2018], [T20260419-0104], [T20260419-0623-2]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260418-2018], [T20260419-0104], [T20260419-0623-2]
 
-**Context.** Reusing one provider conversation across loop iterations is valuable for orchestrator-style steps, but a shared `Session` is mutable and not safe to spread across arbitrary concurrent shapes. The CLI backend also does not expose the same session semantics as the HTTP loop engine.
-
-**Decision.** Support named `session:` bindings only where the runtime can preserve one HTTP `Session` across loop iterations, reject loop-body `session + cli` at load time, and reject concurrent shapes that would share a session unsafely.
-
-**Consequences.**
-- Loop orchestrators such as `task_epic_pipeline` get persistent conversation history.
-- Parallel/fan-out validation stays simple and explicit.
-- Cost: session reuse becomes a narrowly scoped feature instead of a general-purpose memory layer.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-006 — Keep the retained CLI runtimes as the implementation of `backend: cli`
 
-**Status:** Accepted · 2026-04 · [T20260419-0104], [T20260418-2210]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260419-0104], [T20260418-2210]
 
-**Context.** Orbit already had mature CLI-provider runtimes. Replacing them with a brand-new v2-only path would have duplicated provider integration work and risked regressing the CLI story just to satisfy an architectural cleanup.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
-**Decision.** Keep `AgentRuntime` and `providers/*_cli.rs` as the implementation of `backend: cli`, and route v2 CLI dispatch through them rather than deleting them as legacy.
+## ADR-007 — Run state, audit, and operator inspection are durable layers
+
+**Status:** Accepted · 2026-05 · [T20260419-0002], [T20260423-0447], [T20260423-2004-4], [T20260426-0526], [T20260426-0519], [T20260426-0705], [T20260426-0709], [T20260425-2010], [T20260426-0742], [T20260426-2313], [T20260426-2349], [T20260430-31], [T20260505-8], [T20260506-18]
+
+**Context.** Activity/job execution produces operator evidence at several layers: audit envelopes, job-run records, metrics, live traces, retained blobs, run-inspection commands, PR handoff summaries, and cancellation state. The separate ADRs all instantiate the same rule: runtime output is durable workflow state, not process stdout or live assets pretending to be history.
+
+**Decision.** Keep a v2 audit envelope layered over lower-level loop audit, persist direct and pipeline job runs as durable `JobRun` bundles, store file-backed traces under workspace state, read run inspection through runtime accessors, and place public run browsing under `orbit run`. CLI subprocess output may stream through tracing, but retained blobs remain archival; redaction belongs to the tracing subscriber; metrics, execution summaries, and cancellation are persisted as first-class run/task state.
+
+Folded instances:
+
+| ADR | Instance folded into this rollup |
+|-----|----------------------------------|
+| ADR-010 | Historical workflow inspection reads stored data, not live seeded assets. |
+| ADR-012 | Direct v2 job runs persist durable job-run bundles. |
+| ADR-017 | V2 job metrics persist invocation traces beside audit. |
+| ADR-018 | File-backed run traces live under workspace state. |
+| ADR-019 | Run inspection reads v2 traces through runtime accessors. |
+| ADR-020 | Run inspection belongs to `orbit run`. |
+| ADR-021 | CLI subprocess output is both a live tracing stream and retained audit blob. |
+| ADR-022 | CLI output redaction belongs to the tracing subscriber. |
+| ADR-036 | Task PRs require durable execution summaries. |
+| ADR-038 | Dashboard cancellation is a durable job-run transition. |
 
 **Consequences.**
-- The v2 runtime gets a CLI backend without a second provider-integration stack.
-- The engine/core boundary remains clean because orbit-core only supplies primitive CLI executor fields, not orbit-agent transport objects.
-- Cost: the feature now has materially different semantics between HTTP and CLI, especially around tool enforcement.
-
-## ADR-007 — Treat the v2 audit envelope as a separate tree layered over loop-level audit
-
-**Status:** Accepted · 2026-04 · [T20260419-0002]
-
-**Context.** Activity/job execution needs run/step/activity structure that the lower-level loop sink does not provide. At the same time, the loop sink already owns full HTTP transcript and blob persistence.
-
-**Decision.** Add a separate v2 audit envelope tree with `parent_event_id`, `run_id`, `agent_identity`, and `workspace_path`, and let it point at rather than replace the underlying loop-level sink.
-
-**Consequences.**
-- Reviewers can traverse runs by job/step/activity structure without losing raw loop detail.
-- Workspace provenance becomes queryable at the envelope layer.
+- Reviewers can traverse runs by job, step, activity, and raw loop detail without parsing agent process output as workflow handoff.
+- Operator surfaces share durable state for history, metrics, logs, cancellation, and PR handoff.
+- The file layout clearly separates command audit queries from run-trace reconstruction files.
+- Costs retained from folded entries:
 - Cost: audit review now spans two related storage layouts instead of one.
+- Cost: some read-only inspection paths no longer shared the same asset-validation gate as active workflow execution paths.
+- Cost: direct v2 execution now has persistence side effects and can record synthetic job-level steps that were not literal authored YAML steps.
+- Cost: job execution now has another persistence side effect, and CLI metrics remain limited by the provider harness output format.
+- Cost: existing local `.orbit/audit/` artifacts are legacy files; readers looking for historical runs may need to check both locations during any manual transition period.
+- Cost: the runtime layer now owns a read-side view model for audit JSONL, so envelope schema changes must update both writer and accessor tests together.
+- Cost: scripts and muscle memory that used the removed aliases must migrate to the `orbit run` forms.
+- Cost: CLI output now has two observability paths; the tracing line text is UTF-8/lossy and newline-stripped while the retained blob bytes remain the archival source.
+- Cost: tests that inspect tracing safety must capture formatted subscriber output, not raw `Event` fields.
+- Cost: manual or custom-body shipment paths must still persist task summaries before opening the PR, even when the caller already prepared a complete body.
+- Cost: direct in-process job runs still cannot safely self-signal; dashboard cancellation is primarily the durable pipeline-worker/operator path.
 
 ## ADR-008 — Seed reference activities and jobs as load-bearing runtime contracts
 
-**Status:** Accepted · 2026-04 · [T20260419-2347], [T20260419-0622-3], [T20260419-0623], [T20260419-0623-2]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260419-2347], [T20260419-0622-3], [T20260419-0623], [T20260419-0623-2]
 
-**Context.** Activity/job semantics are easier to trust when they exist in real assets, not only in types and tests. Orbit also needs a usable default runtime after `orbit init`.
-
-**Decision.** Treat seeded activities and jobs as part of the runtime contract: they are default assets, examples, and executable reference surfaces all at once.
-
-**Consequences.**
-- New workspaces start with a real control-plane corpus instead of empty directories.
-- Complex constructs such as `fan_out`, `loop`, and `session:` live in reviewable YAML, not just in Rust tests.
-- Cost: seeded assets become part of the public maintenance burden and can drift if docs/tests stop exercising them.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-009 — Groundhog is a sibling activity kind, not an `agent_loop` mode bit
 
-**Status:** Accepted · 2026-04 · [T20260420-0510-2]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260420-0510-2]
 
-**Context.** Groundhog carries its own retry memory, checkpoint closure, and workspace snapshot semantics. Hiding that behind extra `agent_loop` flags would have buried a qualitatively different execution contract inside one overly broad type.
-
-**Decision.** Represent Groundhog as its own `ActivityV2Spec::Groundhog` variant with a dedicated runner.
-
-**Consequences.**
-- Groundhog-specific state and docs have an obvious home.
-- The agent loop type stays smaller and easier to reason about.
-- Cost: ActivityV2 gains another sibling variant and the feature family becomes slightly broader.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-010 — Historical workflow inspection must not depend on live seeded job assets
 
-**Status:** Superseded by ADR-014 · 2026-04 · [T20260423-0447]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260423-0447]
 
-**Context.** After [T20260419-2156], some older workflow assets such as duel no longer ship as runnable seeded jobs. Their historical run bundles and scoreboards can still exist on disk, and users still need to inspect that history.
-
-**Decision.** Treat historical inspection as a stored-data concern, not a live-asset lookup. At the time, read-only surfaces such as `orbit run duel list` and latest `orbit run duel show` filtered persisted run bundles directly, and bare `orbit run duel` defaulted to the preserved scoreboard surface instead of the retired execution path.
-
-**Consequences.**
-- Retired workflows remained observable even after their executable assets disappeared.
-- CLI retirement messaging and historical inspection behavior stayed aligned until the public run surface was simplified in [T20260425-2010].
-- Cost: some read-only inspection paths no longer shared the same asset-validation gate as active workflow execution paths.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-011 — Merge object-valued job defaults with caller input, and surface early pipeline failures as synthetic job steps
 
-**Status:** Accepted · 2026-04 · [T20260423-0445]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260423-0445]
 
-**Context.** The `task_auto_pipeline` / historical `orbit run ship` auto-dispatch path passes only a partial input object (`mode`, `base_branch`, `task_ids`, optional concurrency). The earlier job executor contract only applied `job.default_input` when the caller passed `null`, so any explicit object silently discarded required default keys like `max_tasks` and `max_bundle_size`. The same incident exposed a second operator gap: persisted v2 pipeline runs that failed before writing any concrete step files surfaced as `steps: []` with no `error_message` in workflow-specific show surfaces.
-
-**Decision.** When both `job.default_input` and the caller input are JSON objects, Orbit performs a shallow merge and lets caller keys win on conflict; `null` and non-object caller inputs keep their pre-existing semantics. Separately, when a persisted v2 pipeline run fails and no recorded step already carries error detail, the pipeline worker writes a synthetic failed `JobRunStep` (`target_type: job`, `target_id: <job_id>`) so CLI/operator surfaces have a concrete message to show.
-
-**Consequences.**
-- Seeded workflows can rely on omitted keys inheriting from job defaults even when wrappers pass partial input objects.
-- `orbit run ship --json`, `orbit run history`, and `orbit run show` surface actionable failure detail for early v2 pipeline failures instead of blank summaries.
-- Cost: the job-level input contract is now a shallow merge rule that docs and tests must preserve, and run history can include synthetic job-level failure steps that were not literal authored YAML steps.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-012 — Direct v2 job runs are durable job runs, not audit-only executions
 
-**Status:** Accepted · 2026-04 · [T20260423-2004-4]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260423-2004-4]
 
-**Context.** `orbit job run <schemaVersion: 2 yaml>` returned a run ID and wrote v2 audit JSONL, but did not create the persisted `JobRun` bundle that run inspection, the dashboard, and other operator surfaces read. That made the returned run ID less useful than IDs from pipeline-dispatched workflows and weakened Orbit's auditability story.
-
-**Decision.** Treat direct v2 job execution as a normal durable job run at the public CLI/API boundary. The direct-run wrapper inserts a `JobRun`, marks it running, writes `state.json`, executes the same normalized v2 job path with the stored run ID, records a synthetic job-level step for the final pipeline/error surface, and finalizes the run. The lower-level `run_job_v2_from_yaml_with_run_id` remains available for already-persisted pipeline workers.
-
-**Consequences.**
-- A run ID returned by `orbit job run` is inspectable through `orbit run history -j <job_name>` and `orbit run show <run_id>`.
-- Ad hoc YAML runs remain visible even when the job is not part of the live catalog, because history can fall back to stored run bundles.
-- Cost: direct v2 execution now has persistence side effects and can record synthetic job-level steps that were not literal authored YAML steps.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-013 — Job catalog discovery honors layer precedence
 
-**Status:** Accepted · 2026-04 · [T20260425-0204]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260425-0204]
 
-**Context.** Jobs are scoped as `MergeByKey`, but the v2 job catalog rejected a workspace/global duplicate `task_auto_pipeline` as invalid. That made normal workspace overrides fail before `orbit run ship` could start.
-
-**Decision.** Load catalog directories from highest to lowest precedence and keep the first job for each `metadata.name`; environment job dirs outrank workspace jobs, and workspace jobs outrank global seeded jobs. Keep duplicate-name rejection inside a single directory tree so one layer remains internally unambiguous.
-
-**Consequences.**
-- Workspace workflows can override seeded defaults without deleting global resources.
-- Public run aliases and pipeline-worker lookup paths share the same first-wins catalog resolution.
-- Cost: lower-precedence job assets can be shadowed silently, so debugging an unexpected workflow now requires checking catalog source paths.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-014 — Public run workflows are execution aliases only
 
-**Status:** Superseded by ADR-020 · 2026-04 · [T20260425-2010]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260425-2010]
 
-**Context.** `orbit run` had become a mixed surface: some entries executed workflows, while `ship list/show` and `duel list/show` browsed history that was already available through the then-generic job-run inspection surface. At the same time, the explicit task ship path and auto-dispatch path needed different job targets, and planning duel support had a live workflow alias without a seeded runnable job asset.
-
-**Decision.** Treat `orbit run` as an execution-alias surface only. `orbit run ship <TASK_ID>...` dispatches explicit bundles through `task_pr_pipeline` or `task_local_pipeline` selected by `--mode`; `orbit run ship-auto` dispatches `task_auto_pipeline`; `orbit run duel-plan <TASK_ID>` dispatches the seeded `job_duel_plan_pipeline`; `orbit run job <JOB_ID>` remains the direct job surface. ADR-020 supersedes the inspection placement part of this decision.
-
-**Consequences.**
-- The public command grammar separates execution from inspection and removes workflow-specific history aliases.
-- Explicit task shipping no longer routes through the auto-dispatch job, so task IDs map directly to the PR/local bundle jobs.
-- Planning duels are runnable again through a seeded activity/job pair instead of a stale workflow alias.
-- Cost: users of `orbit run ship local`, `orbit run ship list/show`, and `orbit run duel list/show` must update their command muscle memory and scripts.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-015 — CLI backend resolves executor args, not just provider commands
 
-**Status:** Accepted · 2026-04 · [T20260423-0114]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260423-0114]
 
-**Context.** A local ship run for [T20260423-0114] failed in `backend: cli` before task execution because Orbit launched `codex --sandbox workspace-write` with piped stdin. The seeded Codex executor already declared `args: [exec, --json]`, but the v2 host boundary only returned a provider command string, so those static args were lost.
-
-**Decision.** Make the v2 CLI host boundary return a resolved CLI executor (`command` plus static `args`) and have `cli_runner.rs` prepend those executor args before provider runtime args from the retained `AgentRuntime`. Environment command overrides remain command overrides; registered executor args still define the static CLI mode.
-
-**Consequences.**
-- `backend: cli` now honors seeded and workspace executor definitions for subprocess shape.
-- Codex task runs enter non-interactive `codex exec --json` instead of the interactive TUI.
-- Cost: the engine/core boundary is slightly wider than a single string and every smoke host implementing `V2RuntimeHost` must model executor args explicitly.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-016 — Activity catalogs honor layer precedence and activity execution stays job-owned
 
-**Status:** Accepted · 2026-04 · [T20260426-0047]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260426-0047]
 
-**Context.** Activity assets are scoped as `MergeByKey`, but the catalog still rejected workspace/global duplicate names such as `pr_open`. The same product pass exposed that `orbit activity run` made activities look like a standalone public execution surface even though shipped workflows execute them through jobs.
-
-**Decision.** Load activity catalog directories from highest to lowest precedence and keep the first activity for each `metadata.name`; environment activity dirs outrank workspace activities, and workspace activities outrank global seeded activities. Keep duplicate-name rejection inside a single directory tree, and remove the public `orbit activity run` subcommand so `orbit activity` remains a catalog surface.
-
-**Consequences.**
-- Workspace activity overrides can coexist with global defaults without breaking `orbit activity list --ops` or job target resolution.
-- Public execution stays concentrated in `orbit job run` and workflow aliases under `orbit run`.
-- Cost: lower-precedence activity assets can be shadowed silently, and direct ad hoc activity execution is no longer a documented CLI workflow.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-017 — V2 job metrics persist invocation traces beside audit
 
-**Status:** Accepted · 2026-04 · [T20260426-0526]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260426-0526]
 
-**Context.** V2 job execution emitted rich audit JSONL, but `orbit metrics` reads agent and tool usage from the SQLite invocation store. After the v1 runner trace hook was removed, v2 CLI agent-loop runs could finish successfully while metrics reported no invocations or tool calls.
-
-**Decision.** Treat invocation metrics as a first-class v2 job side effect rather than an audit scrape. `DispatchOutcome` may carry an `InvocationTrace`; the job executor persists that trace through `V2RuntimeHost` with the durable run ID, step ID, canonical agent/model identity, and task IDs from rendered input. The CLI backend derives the trace by parsing structured provider stdout, while HTTP loop paths convert `LoopOutcome` usage and tool-call names into the same store shape.
-
-**Consequences.**
-- `orbit metrics` can report v2 job agent usage and tool calls without depending on audit-log parsing.
-- CLI and HTTP agent-loop paths converge on the same invocation-store contract.
-- Cost: job execution now has another persistence side effect, and CLI metrics remain limited by the provider harness output format.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-018 — File-backed run traces live under workspace state
 
-**Status:** Accepted · 2026-04 · [T20260426-0519]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260426-0519]
 
-**Context.** The v2 activity/job audit JSONL tree was written directly under `.orbit/audit/`, which made runtime traces a first-level sibling of durable authoring surfaces such as resources, tasks, and graph artifacts. That placement also obscured the distinction between the SQLite command audit store and file-backed run reconstruction artifacts.
-
-**Decision.** Store activity/job audit JSONL and payload blobs under `.orbit/state/audit/`, with `v2_loop/`, `loop/`, and `blobs/` as siblings below that state root. Keep the SQLite command audit database at its existing persistence path and keep the v2 envelope's `workspace_path` field as the cross-workspace filter.
-
-**Consequences.**
-- Workspace runtime artifacts now live together under `.orbit/state/`.
-- The file layout more clearly separates command audit queries from run-trace reconstruction files.
-- Cost: existing local `.orbit/audit/` artifacts are legacy files; readers looking for historical runs may need to check both locations during any manual transition period.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-019 — Run inspection reads v2 traces through runtime accessors
 
-**Status:** Accepted · 2026-04 · [T20260426-0705], [T20260426-0709]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260426-0705], [T20260426-0709]
 
-**Context.** Operators need to inspect the v2 envelope tree from `orbit run`, but letting CLI command rendering parse `.orbit/state/audit/` paths directly couples user-facing inspection to engine-owned persistence details. Step selectors also drifted because durable v2 runs can store synthetic job-level steps while the envelope carries the activity DAG `step.id`.
-
-**Decision.** Keep file-layout and blob-reading knowledge in orbit-core runtime accessors, and expose `orbit run events`, `orbit run trace`, and `orbit run logs` through those accessors. Treat envelope `step.started.step_id` as the primary user-facing step selector, with legacy `JobRunStep.target_id` and numeric step indexes as fallbacks.
-
-**Consequences.**
-- `orbit run events` and `orbit run trace` give operators chronological and tree-shaped views of run-local audit envelopes.
-- Run-log stdout/stderr reading now follows the same boundary as v2 audit sink construction.
-- Cost: the runtime layer now owns a read-side view model for audit JSONL, so envelope schema changes must update both writer and accessor tests together.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-020 — Run inspection belongs to `orbit run`
 
-**Status:** Accepted · 2026-04 · [T20260426-0742]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260426-0742]
 
-**Context.** After run inspection gained history, state, logs, events, and trace commands, keeping duplicate job-level inspection aliases made `orbit job` mix catalog/execution responsibilities with run browsing. The help output also taught users two places to do the same inspection work.
-
-**Decision.** Remove the public job-level history and run-state aliases. Keep `orbit job` focused on `list`, `show`, and direct `run`; use `orbit run history -j <JOB_ID>` and `orbit run show <RUN_ID>` for durable run inspection.
-
-**Consequences.**
-- Operators have one public command family for job-run inspection.
-- The `orbit run` inspection commands keep their existing history/state behavior.
-- Cost: scripts and muscle memory that used the removed aliases must migrate to the `orbit run` forms.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-021 — CLI subprocess output is a live tracing stream and a retained audit blob
 
-**Status:** Accepted · 2026-04 · [T20260426-2313]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260426-2313]
 
-**Context.** The CLI backend captured subprocess stdout/stderr as bulk buffers and surfaced them only after process exit through blob refs. That preserved auditability, but it left dashboard/log-feed work without a live structured signal for agent progress.
-
-**Decision.** Read CLI subprocess stdout and stderr line by line in the existing pipe-reader threads, append each raw line to the retained byte buffer, and emit one `tracing::info!` event per line with `provider`, `stream`, `job_run_id`, `task_id`, and `line`. Keep `CliInvocationFinished` and its stdout/stderr blob refs on the same captured-byte path as before; output redaction is now enforced by the tracing subscriber per ADR-022.
-
-**Consequences.**
-- Future tracing sinks can build a merged live feed without scraping subprocess blobs.
-- The audit/blob contract, exit-code handling, and timeout handling remain the durable completion record.
-- Cost: CLI output now has two observability paths; the tracing line text is UTF-8/lossy and newline-stripped while the retained blob bytes remain the archival source.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-022 — CLI output redaction belongs to the tracing subscriber
 
-**Status:** Accepted · 2026-04 · [T20260426-2349]
+**Status:** Superseded by ADR-007 (folded) · 2026-04 · [T20260426-2349]
 
-**Context.** `cli_runner` originally scrubbed subprocess lines before emitting `tracing::info!`, but that made redaction a per-emitter obligation. The global JSONL tracing feed made forgotten call-site wrappers a durable secret-leak risk.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
-**Decision.** Emit raw line text from `cli_runner` and rely on `orbit-common`'s default tracing formatter to redact string field values and `Debug`-formatted field values before stderr or JSONL output is written. Keep the retained stdout/stderr byte buffers unmodified because they are the audit/blob contract.
+## ADR-023 — Seeded task-shipment workflows are deterministic, recoverable, and lock-aware
+
+**Status:** Accepted · 2026-05 · [T20260427-33], [T20260425-2010], [T20260427-45], [T20260430-9], [T20260430-12], [T20260430-14], [T20260421-0542-2], [T20260430-27], [T20260430-30], [T20260430-26], [T20260505-2], [T20260505-10], [T20260506-18]
+
+**Context.** The seeded task workflows added many small ADRs as shipment behavior grew: run aliases, deterministic auto-dispatch, remote base selection, recovery hooks, backlog exclusions, operator status, friction admission, and lock cleanup. They are one decision family: task shipment is an explicit durable workflow, not an advisory agent step or hidden side effect.
+
+**Decision.** Keep `orbit run` workflow aliases focused on execution, make automatic task shipment deterministic from backlog listing through gate fan-out, default shipping worktrees to fetched remote base refs, admit tasks through status-aware workflow gates, and protect overlapping work with durable task-lock reservations. Recovery is bounded and step-scoped on direct shipment workflows, operator status is derived from persisted pipeline state, accepted friction reports enter auto-backlog by `status: backlog`, and run-owned reservations clean up when their owner run reaches a terminal state.
+
+Folded instances:
+
+| ADR | Instance folded into this rollup |
+|-----|----------------------------------|
+| ADR-014 | Public run workflows are execution aliases only. |
+| ADR-024 | Shipping worktrees default to fetched remote base refs. |
+| ADR-028 | Job-level recovery handles retry-exhausted step errors. |
+| ADR-029 | The first direct-shipment recovery default was deterministic and conservative. |
+| ADR-030 | Default recovery is step-scoped and agent-driven. |
+| ADR-033 | Auto-backlog lock exclusions are structured output. |
+| ADR-034 | `ship-auto` reports operator workflow status from durable pipeline state. |
+| ADR-035 | Gate reservations release after terminal child waits. |
+| ADR-037 | Accepted friction reports enter auto-backlog by status. |
+| ADR-039 | Run-owned task-lock reservations clean up at owner terminal. |
 
 **Consequences.**
-- New tracing emitters inherit the same string-field redaction path without adding `redact_event_text` at each call site.
-- The live tracing stream is redacted while `CliInvocationFinished` blob refs still point at the original captured bytes.
-- Cost: tests that inspect tracing safety must capture formatted subscriber output, not raw `Event` fields.
-
-## ADR-023 — Auto-dispatch uses deterministic backlog bundles only
-
-**Status:** Accepted · 2026-04 · [T20260427-33]
-
-**Context.** `task_auto_pipeline` included an audit-only `dispatch_agent` HTTP step, but downstream dispatch already consumed deterministic singleton bundles from `list_backlog_tasks`. Missing provider credentials could therefore fail `orbit run ship-auto` before any required workflow data was produced.
-
-**Decision.** Remove `dispatch_agent` from `task_auto_pipeline` and keep the auto-dispatch path deterministic from backlog listing through bundle validation and gate fan-out.
-
-**Consequences.**
-- `orbit run ship-auto` no longer requires Claude HTTP credentials for an advisory step.
-- The pipeline has fewer moving parts before dispatching child gate runs.
+- Task shipment workflows expose durable admission, recovery, status, and lock state without asking downstream steps to parse model output.
+- Auto-dispatch no longer depends on provider credentials before it has deterministic backlog bundles.
+- Gate-owned reservations serialize overlapping bundles while their owner run is alive and are released by both seeded early-release steps and engine-owned terminal cleanup.
+- Costs retained from folded entries:
 - Cost: the auto-dispatch audit trail no longer contains a model-authored advisory grouping note.
+- Cost: users of `orbit run ship local`, `orbit run ship list/show`, and `orbit run duel list/show` must update their command muscle memory and scripts.
+- Cost: default shipping workflows now require the configured base branch to be fetchable from `origin`; callers that intentionally operate without a remote must opt into `base_sync: local`.
+- Cost: job authors must make the recovery activity generic enough for every retryable step in that job.
+- Cost: this is intentionally conservative; it does not perform semantic git cleanup, task mutation, or child-run reconciliation until a more specific recovery policy is justified.
+- Cost: default recovery now depends on a CLI agent runtime being available, and authors must decide which steps deserve recovery rather than flipping one workflow-level switch.
+- Cost: the Rust serializer and seeded activity YAML schema now duplicate the exclusion shape and must be kept in sync.
+- Cost: the CLI formatter now knows selected fields from `task_auto_pipeline` state, so future pipeline key renames must either preserve compatibility or update the operator summary parser.
+- Cost: `task_gate_pipeline` now relies on the dynamic `task_{{ input.mode }}_pipeline` job-name convention, so future gate modes must either follow that naming convention or refactor the dispatch selector.
+- Cost: reviewers must read friction eligibility as a status rule, not a task-type rule.
+- Cost: job-run finalization and reservation reserve paths are more coupled, so new terminal run paths must route through the cleanup helper rather than writing directly to the job-run store.
 
 ## ADR-024 — Shipping worktrees default to fetched remote base refs
 
-**Status:** Accepted · 2026-04 · [T20260427-45]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260427-45]
 
-**Context.** `task_pr_pipeline`, `task_local_pipeline`, and `task_auto_pipeline` create task worktrees from a configured base branch. The earlier automation tried a best-effort `git pull --rebase origin <base>` from the repo root checkout, then preferred the local branch when choosing the worktree start point. A stale local base branch could therefore seed new or reused worktrees even when `origin/<base>` had moved.
-
-**Decision.** Make `base_sync: remote` the default workflow contract. Remote mode fetches `origin/<base>` and uses that fetched remote-tracking ref for worktree creation/reset, PR freshness checks, branch rebases, and local merge retry rebases. Keep `base_sync: local` as an explicit direct-job escape hatch for local-only repositories or unpublished base branches.
-
-**Consequences.**
-- `orbit run ship` and `orbit run ship-auto` no longer silently create task branches from stale local base state.
-- The automation no longer mutates whichever branch happens to be checked out in the repo root just to refresh base state.
-- Cost: default shipping workflows now require the configured base branch to be fetchable from `origin`; callers that intentionally operate without a remote must opt into `base_sync: local`.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-025 — Codex CLI dynamic flags stay in provider runtime config
 
-**Status:** Accepted · 2026-04 · [T20260427-48]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260427-48]
 
-**Context.** The seeded Codex executor needs `exec --json` as static command shape, but sandbox mode, writable side directories, and approval policy are runtime choices. A stale split meant the v2 CLI runner built Codex runtime args from an empty provider config, and approval policy could be appended after `exec` as `--ask-for-approval`, which current Codex CLI rejects in that position.
-
-**Decision.** Keep `crates/orbit-core/assets/executors/codex.yaml` limited to static mode flags, thread provider config through `V2RuntimeHost` into the retained CLI runtime, and pass Codex approval policy as an exec-compatible config override.
-
-**Consequences.**
-- Codex `backend: cli` runs now source sandbox and `--add-dir` arguments from Orbit runtime config.
-- Codex approval policy no longer depends on an interactive-only flag position after `exec`.
-- Cost: the v2 host boundary exposes a provider-config map, so backend CLI dispatch remains aware of provider-specific runtime settings.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-026 — Workflow admission is distinct from generic task updates
 
-**Status:** Accepted · 2026-04 · [T20260428-8]
+**Status:** Superseded by ADR-001 (folded) · 2026-04 · [T20260428-8]
 
-**Context.** Task-starting workflows such as `orbit run ship` and `orbit run duel-plan` are the intended entrypoints for accepting and beginning work, but the generic task update guard could fail them before implementation or planning began when a selected task had no plan. Removing that guard globally would also let unrelated deterministic metadata updates resurrect archived tasks.
-
-**Decision.** Add a workflow-admission path for `worktree_setup` and `run_planning_duel` that accepts `proposed`, `friction`, `backlog`, `rejected`, and `archived` tasks into `in-progress`, with `in-progress` treated as idempotent retry input. Keep direct `orbit.task.update` and generic `apply_task_automation_update` behavior separate from this broader workflow permission.
-
-**Consequences.**
-- `orbit run ship`, `orbit run ship --mode local`, and `orbit run duel-plan` can start intentionally selected tasks without a pre-authored execution plan.
-- Friction reports accepted directly into workflow execution still record the `friction -> in-progress` acceptance path for lifecycle history and friction-bounty scoring.
-- Planning-duel output now reports `task_status: "in-progress"` instead of claiming the task status stayed unchanged.
-- Cost: task lifecycle semantics are no longer uniform across all status mutation surfaces; reviewers must distinguish workflow admission from ordinary task updates.
+Folded into ADR-001's rollup for canonical v2 asset normalization.
 
 ## ADR-027 — `orbit init` is the writer for per-role agent settings
 
-**Status:** Accepted · 2026-04 · [T20260428-9]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260428-9]
 
-**Context.** Provider, model, and backend choices for `agent_loop` activities lived inline in YAML, so users had to edit assets to choose different stacks per role. The team chose three roles (`reviewer`, `implementer`, `planner`) and made `orbit init` write those preferences to `config.toml`.
-
-**Decision.** Land the writer half first. `RawRuntimeConfig` gains `agent: Option<BTreeMap<String, RawAgentRoleConfig>>`; `orbit init` prompts provider → backend → model for each role and writes `[agent.<role>]` blocks. Detection in `agent_detect.rs` checks PATH for `claude`/`codex`/`gemini`/`ollama`, then relevant API keys, derives provider/backend/model defaults, and is testable through `AgentEnvProbe`. Prompting is fixed-order, accepts defaults on empty input, skips under `--non-interactive`, and leaves an existing `config.toml` untouched unless `--force` is set. The dispatch reader half was deferred and later landed in [T20260428-12].
-
-**Consequences.**
-- A first-time `orbit init` records per-role agent preferences to a single, user-readable file with no YAML editing required.
-- The detection probe is reusable by the consumer-side resolver in [T20260428-12], where the same trait will be invoked at dispatch time as a fallback layer behind config.toml.
-- The default-config.toml asset documents the schema as a commented block; users who skipped prompts can drop in their own values without re-running init.
-- Cost: until [T20260428-12] landed, the values written to `config.toml` were inert — they round-tripped but did not influence dispatch, so reviewers had to treat the behavior as half-shipped during that window.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-028 — Job-level recovery activity handles retry-exhausted step errors
 
-**Status:** Accepted · 2026-04 · [T20260430-9]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260430-9]
 
-**Context.** Some v2 workflow failures are recoverable only after a remediation pass, not through immediate retry. For example, a deterministic merge action can fail because the base checkout is dirty; retrying the same action without cleanup fails identically. Orbit needed a bounded hook that lets a workspace-authored activity inspect and repair the state before the workflow gives up.
-
-**Decision.** Add optional job-level `recovery_activity: <name>` to `JobV2`. Catalog resolution validates and caches it before dispatch. When a step exhausts normal retries with a retryable `DispatchError`, the executor invokes recovery once with `failed_step_id`, `activity_name`, `error_message`, `attempt`, and `max_attempts`; success grants exactly one post-recovery attempt, while recovery failure or post-recovery failure returns the original error. Non-retryable errors bypass recovery. The hook inherits the failing step's resolved `FsProfile`, emits `StepRecoveryAttempted`, and does not write normal step output into the pipeline.
-
-**Consequences.**
-- Workflows get a bounded remediation point without making retry semantics unbounded.
-- Recovery activities use the existing activity dispatch, audit, run-trace, and policy plumbing.
-- Cost: job authors must make the recovery activity generic enough for every retryable step in that job.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-029 — Ship default task-step recovery only on direct shipment workflows
 
-**Status:** Superseded by ADR-030 · 2026-04 · [T20260430-12]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260430-12]
 
-**Context.** [T20260430-9] added the executor hook but deliberately left recovery policy to job authors. Orbit's seeded task workflows still needed a concrete default so transient agent, git, and PR orchestration failures get one bounded remediation point before the run fails.
-
-**Decision.** Seed `step_failure_recovery` as a deterministic activity with the exact recovery-hook input fields: `failed_step_id`, `activity_name`, `error_message`, `attempt`, and `max_attempts`. The action validates those fields, emits compact diagnostic output, and waits for a short fixed cooldown before the executor performs its single post-recovery attempt. Enable it via `recovery_activity: step_failure_recovery` on `task_local_pipeline` and `task_pr_pipeline`.
-
-**Scope.** Do not enable the generic recovery activity on `task_gate_pipeline`, `task_auto_pipeline`, `task_epic_pipeline`, or `job_duel_plan_pipeline`. Those workflows orchestrate child runs, fan-out dispatch, epic-level agent planning, or planning-duel execution; a job-level generic recovery there would tend to rerun orchestration rather than repair one direct task-shipment step.
-
-**Consequences.**
-- Direct local and PR task shipment now gets one cooldown-backed recovery attempt for retryable step failures without changing the executor's five-field recovery contract.
-- The seeded activity is deterministic and cheap, so it does not require provider credentials and works in the same runtime environments as the deterministic git/task actions.
-- Cost: this is intentionally conservative; it does not perform semantic git cleanup, task mutation, or child-run reconciliation until a more specific recovery policy is justified.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-030 — Default recovery is step-scoped and agent-driven
 
-**Status:** Accepted · 2026-04 · [T20260430-14]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260430-14]
 
-**Context.** The first seeded recovery policy in [T20260430-12] was too weak: a deterministic cooldown could only help timing flakes, and wiring recovery at the workflow root made every retryable step inherit the same recovery policy. The intended default is for an agent to manually inspect the failed step and make bounded repairs only where that specific step benefits.
-
-**Decision.** Add optional step-level `recovery_activity: <name>` to `JobV2Step`. Catalog resolution validates and caches each step-level activity, backend resolution normalizes the cached specs, and retry exhaustion prefers step-level recovery before falling back to job-level recovery. Seed `step_failure_recovery` as a CLI-backed Codex `agent_loop` that inspects the unchanged ADR-028 input fields, performs conservative repair, avoids rerunning the failed step, and returns before the executor's single post-recovery attempt. Wire it only to direct task-shipment steps: `task_local_pipeline`'s `implement_one`, `commit`, `merge`, and conditional `push`; `task_pr_pipeline`'s `implement_one`, `push`, and `pr_open`.
-
-**Consequences.**
-- Recovery policy is explicit at the step that needs it instead of inherited by the whole workflow.
-- The default recovery pass can perform real inspection and bounded repair while preserving the executor's single-retry safety rail.
-- CLI-backed agent loops now serialize object input as the prompt when no explicit `prompt` is present, matching the HTTP path and letting recovery agents see the five input fields without expanding the recovery hook.
-- Cost: default recovery now depends on a CLI agent runtime being available, and authors must decide which steps deserve recovery rather than flipping one workflow-level switch.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-031 — `[agent.<role>]` config overrides inline `agent_loop` settings at dispatch
 
-**Status:** Accepted · 2026-04 · [T20260428-12]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260428-12]
 
-**Context.** ADR-027 ([T20260428-9]) shipped the writer half of per-role agent settings: `orbit init` collects provider/backend/model per role and persists them to `[agent.<role>]` blocks in `config.toml`. Until now nothing read those values — they round-tripped on disk but had no effect on dispatch. The follow-up needed to wire the values through to `agent_loop` dispatch without forcing every YAML author to know the per-role mapping inline, and without leaking provider-credential or config-source concerns into `orbit-common`.
-
-**Decision.** Tag activities and job steps with optional `AgentRole` (`Reviewer | Implementer | Planner`, serde lowercase) in `orbit-common`, and let dispatch override inline `(provider, model, backend)` from `[agent.<role>]` field by field. `AgentLoopSpec`, `GroundhogSpec`, `TargetStep`, and `TargetRef` all carry the role, and `TargetRef → TargetStep` preserves it. `EnvironmentHost::agent_role_config` and the mirrored `V2RuntimeHost` method expose parsed role config; `resolve_agent_settings` combines it with inline values. At dispatch, `step.role.or(activity.role)` selects the effective role, step role wins over activity role, absent fields fall back inline, absent roles are a no-op, and replay still switches the HTTP session provider to `"replay"`. Env-var overrides and role inference remain deferred.
-
-**Consequences.**
-- `orbit init`-written role preferences now have effect at dispatch without any YAML edits — a workspace can flip `[agent.implementer].provider` and every `role: implementer` step picks it up on the next run.
-- Activities can stay role-tagged without committing to a particular provider, which makes the seeded YAML reusable across workspaces with different provider stacks.
-- The resolver is pure and field-by-field, so partial role-config (e.g. only `provider`) does not silently overwrite a model the activity author chose deliberately.
-- Cost: dispatch now has one more clone-and-mutate path per role-tagged step. The same role might get queried multiple times within one job run; if that ever shows up in profiles, memoize at the executor level rather than in the host trait.
-- Cost: the `V2RuntimeHost` seam now has a method that is purely a config-config concern. Tests that build their own mock host get a free `None` default, but a host that wants to exercise the override path has to opt in explicitly.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-032 — CLI agent envelopes carry durable task and run context
 
-**Status:** Accepted · 2026-04 · [T20260430-15]
+**Status:** Superseded by ADR-002 (folded) · 2026-04 · [T20260430-15]
 
-**Context.** The v2 `backend: cli` path used a compact stdin envelope containing the activity instruction, prompt string, declared tools, and model. That was enough for generic prompt-shaped activities, but task implementers depend on structured context: task id, worktree path, plan, acceptance criteria, and run id. When the prompt string was empty or only indirectly populated, an agent following the `agent_implement` instructions could be told to recover with `orbit.task.show` without any authoritative id to pass. Concurrent task pipeline runs made timestamp-based recovery unsafe.
-
-**Decision.** Keep the retained provider CLI runtimes, but make the v2 CLI envelope task-aware. Every CLI agent invocation now receives the rendered activity `input` object and top-level `run_id`. When that input names exactly one task (`task_id`, `task.id`, or a single-entry `task_ids` array), orbit-core embeds a canonical task snapshot with description, acceptance criteria, plan, pr number, pruned context files, and path fields. Input-supplied `workspace_path` and `repo_root` override the stored task paths in that snapshot.
-
-**Consequences.**
-- Task implementers can recover deterministically from the envelope itself and only call `orbit.task.show` as a refresh path, not as a guessing game.
-- The engine/core boundary stays primitive: orbit-engine asks for optional JSON task context through `V2RuntimeHost`, and orbit-core owns task loading and context-file pruning.
-- Cost: CLI stdin blobs now contain more task prose, so audit blob readers should continue treating those blobs as diagnostic artifacts rather than small control messages.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-033 — Auto-backlog lock exclusions are structured output
 
-**Status:** Accepted · 2026-04 · [T20260421-0542-2]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260421-0542-2]
 
-**Context.** `task_auto_pipeline` starts with the deterministic `list_backlog_tasks` activity. After the context-lock filter landed, automatic dispatch could silently drop backlog tasks whose context overlapped `in-progress` or `review` work, leaving operators to reconstruct the reason by reading task state after the fact.
-
-**Decision.** Keep the lock-overlap filter in `list_backlog_tasks`, but make automatic mode emit an additive `excluded` array. Each entry names the excluded task, whether it directly overlapped a lock or was dropped because a sibling under the same root ancestor tainted the group, and the requested-file / locking-task attribution. Explicit `task_ids` override mode omits the field because that path intentionally skips the filter.
-
-**Consequences.**
-- Auto-dispatch traces now contain a durable pre-gate reason for lock-overlap exclusions without changing the existing `task_count`, `task_ids`, `tasks`, or `bundles` fields.
-- The output deliberately does not attribute status-based admission or `max_tasks` truncation, keeping `excluded` scoped to context-lock behavior.
-- Cost: the Rust serializer and seeded activity YAML schema now duplicate the exclusion shape and must be kept in sync.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-034 — `ship-auto` reports operator workflow status from durable pipeline state
 
-**Status:** Accepted · 2026-04 · [T20260430-27], [T20260430-30]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260430-27], [T20260430-30]
 
-**Context.** `orbit run ship-auto` can succeed as a parent workflow even when it dispatched no bundles because every backlog candidate was excluded by `list_backlog_tasks`, or when child gate runs are still waiting behind active reservations. A bare `state=succeeded` line made these cases look like ordinary successful shipment.
-
-**Decision.** Keep the workflow exit code tied to parent run execution, but derive an explicit operator `workflow_status` from the persisted `task_auto_pipeline` snapshot. The status labels are `empty_backlog`, `gated_noop`, `gate_waiting`, `gate_failed`, and `completed`; JSON output includes the stable raw fields for scripts, while default text renders labeled multi-line summaries with bundle counts, exclusion counts/reasons, blocker holders, and child gate run status when available.
-
-**Consequences.**
-- Operators and scripts can distinguish true empty backlog from lock-gated no-op without running `orbit run show`.
-- Child gate waits are visible from the command that submitted them, including run IDs for follow-up inspection.
-- Cost: the CLI formatter now knows selected fields from `task_auto_pipeline` state, so future pipeline key renames must either preserve compatibility or update the operator summary parser.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-035 — Gate reservations release after terminal child waits
 
-**Status:** Accepted; normal-cleanup rule superseded by ADR-039 · 2026-04 · [T20260430-26]
+**Status:** Superseded by ADR-023 (folded) · 2026-04 · [T20260430-26]
 
-**Context.** `task_gate_pipeline` used task-lock reservation TTL as both crash cleanup and normal completion cleanup. That kept overlapping gates blocked after a child shipment run had already reached terminal state, turning the 30-minute TTL into artificial queue latency.
-
-**Decision.** Keep TTL as the abandoned/crashed-run fallback, but release normal gate reservations explicitly. The gate now dispatches the selected shipment workflow through one `invoke_and_wait` step, keeps the reservation active while that child run is waiting, and runs the deterministic `release_locks` activity only after the wait result is terminal rather than `timeout`, `pending`, or `running`. `orbit.task.locks` also reports active reservations with reservation id, task ids, files, actor, and expiration so gate conflicts are inspectable.
-
-**Consequences.**
-- Overlapping task bundles remain serialized while a child shipment run is actually active.
-- Completed, failed, or cancelled child runs free their admission reservation immediately instead of waiting for TTL expiration.
-- Operators can distinguish task-held locks from reservation-held locks without reading raw SQLite state.
-- Cost: `task_gate_pipeline` now relies on the dynamic `task_{{ input.mode }}_pipeline` job-name convention, so future gate modes must either follow that naming convention or refactor the dispatch selector.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-036 — Task PRs require durable execution summaries
 
-**Status:** Accepted · 2026-05 · [T20260430-31]
+**Status:** Superseded by ADR-007 (folded) · 2026-05 · [T20260430-31]
 
-**Context.** `task_pr_pipeline` generated pull request bodies from persisted task records, but `pr_open` could still create a PR with an empty or placeholder `Execution Summary` disclosure. That made reviewer handoff look complete while forcing reviewers to reconstruct implementation results from logs or history.
-
-**Decision.** Treat each completed task's persisted `execution_summary` as required PR handoff data. `pr_open` reloads every `completed_task_ids` task, rejects empty, whitespace-only, and explicit placeholder summaries before creating the PR, and preserves non-empty caller-provided `body` text only after that durable-summary guard passes. Generated default PR bodies render summary details blocks only for meaningful summaries.
-
-**Consequences.**
-- A task-shipment PR cannot be opened until every participating task has a durable implementation handoff on the task record.
-- Multi-task bundles include one populated summary per completed task in generated PR bodies.
-- Cost: manual or custom-body shipment paths must still persist task summaries before opening the PR, even when the caller already prepared a complete body.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-037 — Accepted friction reports enter auto-backlog by status
 
-**Status:** Accepted · 2026-05 · [T20260505-2]
+**Status:** Superseded by ADR-023 (folded) · 2026-05 · [T20260505-2]
 
-**Context.** Friction reports keep `type: friction` for lifecycle history and friction-bounty accounting even after triage accepts them into `status: backlog`. `list_backlog_tasks` previously filtered automatic mode by both `status: backlog` and `type != friction`, so accepted friction work could only ship through explicit task IDs or manual paths.
-
-**Decision.** Make automatic `list_backlog_tasks` admission status-only: `status: backlog` tasks are candidates regardless of type, while untriaged `status: friction` reports remain absent because they are not backlog. Accepted friction reports participate in the same context-lock exclusion pass as any other backlog task, and explicit `task_ids` override mode remains unchanged.
-
-**Consequences.**
-- Accepted friction work can move through `task_auto_pipeline` without losing its `type: friction` audit and scoreboard identity.
-- The `excluded` array remains scoped to context-lock conflicts; it reports accepted friction tasks only when they are otherwise admitted backlog candidates and overlap active locks.
-- Cost: reviewers must read friction eligibility as a status rule, not a task-type rule.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-038 — Dashboard cancellation is a durable job-run transition
 
-**Status:** Accepted · 2026-05 · [T20260505-8]
+**Status:** Superseded by ADR-007 (folded) · 2026-05 · [T20260505-8]
 
-**Context.** Dashboard Recent Runs exposed job-run status but no operator stop control. The runtime already had a cancellation entry point, but it signalled only the owner PID and returned no structured cancellation outcome, which was too weak for stuck CLI-backed workflows with provider subprocess trees.
-
-**Decision.** Treat cancellation as a first-class durable job-run transition. `pending` and `running` may become `cancelled`; terminal states reject cancellation. Pending cancellation does not signal. Running cancellation validates the stored PID start-time identity and, on Unix, terminates the run owner process group with graceful signal plus bounded `SIGKILL` escalation. The dashboard calls `POST /api/runs/:id/cancel`, and client cancellability is derived from `state` rather than a redundant server field.
-
-**Consequences.**
-- Operators can stop active work from Diagnostics while preserving coherent `orbit run show` and `orbit.pipeline.wait` state.
-- `JobRunCancelled` audit payloads carry previous/final state, actor/source, signal-attempted flag, and signal outcome.
-- Cost: direct in-process job runs still cannot safely self-signal; dashboard cancellation is primarily the durable pipeline-worker/operator path.
+Folded into ADR-007's rollup for durable run state and operator inspection.
 
 ## ADR-039 — Run-owned task-lock reservations clean up at owner terminal
 
-**Status:** Accepted · 2026-05 · [T20260505-10]
+**Status:** Superseded by ADR-023 (folded) · 2026-05 · [T20260505-10]
 
-**Context.** ADR-035 made the seeded gate release path explicit, but correctness still depended on workflow YAML preserving `release_locks`. A stale or workspace-overridden `task_gate_pipeline` could omit that step, letting a completed gate-owned reservation block overlapping work until TTL. Orbit needed the invariant that a reservation owned by a job run does not outlive that owner run.
-
-**Decision.** Persist nullable reservation ownership (`owner_run_id` plus minimal metadata) and treat ownership itself as terminal-cleanup eligibility. `ToolContext` carries trusted reservation-owner metadata from v2 deterministic/agent-loop dispatch and from Orbit-managed CLI subprocess environments; `orbit.task.locks.reserve` ignores caller-supplied owner-looking fields. When a job run finalizes to a terminal state, orbit-core best-effort releases active reservations whose `owner_run_id` exactly matches that run id. The seeded `release_locks` activity remains an early-release optimization, not the correctness mechanism. Reserve pressure also triggers bounded, opportunistic reconciliation for overlapping owned reservations whose owner run is terminal or stale; it is not a background sweeper.
-
-**Consequences.**
-- Parent/child ownership stays precise: a child shipment run cannot release a parent gate run's reservation unless the IDs match.
-- TTL is now only the fallback for unowned/manual reservations, abandoned owned reservations with no terminal/reconciliation trigger, and ordinary expiration.
-- Release audit events stay on the existing task-lock audit surface and distinguish `explicit`, `run_terminal`, `stale_run_reconciled`, and TTL expiration reasons.
-- Cost: job-run finalization and reservation reserve paths are more coupled, so new terminal run paths must route through the cleanup helper rather than writing directly to the job-run store.
+Folded into ADR-023's rollup for seeded task-shipment workflow automation.
 
 ## ADR-040 — Provider static-arg fixups apply before sandbox dispatch
 
-**Status:** Accepted · 2026-05 · [T20260505-22]
+**Status:** Superseded by ADR-002 (folded) · 2026-05 · [T20260505-22]
 
-**Context.** The seeded Claude executor passed `--debug-file .orbit/state/logs/claude-debug.log` as a static arg. With the default policy `denyModify: .orbit/**` in force, `sandbox-exec` rejected Claude's startup write before the review step even began (`EPERM`, ~414ms, empty stdout). Codex's `--add-dir` / `writable_dirs_json` side-write surface had papered over the same class of issue for Codex; Claude has no equivalent CLI surface to grant a workspace write back, and weakening the `.orbit/**` deny would carve a real hole in the sandbox.
-
-**Decision.** Treat provider static-arg massaging as a dispatch-time concern, separate from inner-sandbox neutralization. Before each `backend: cli` invocation the dispatcher runs `apply_provider_static_arg_fixups`, today populated only by Claude's `--debug-file` rewrite: every `--debug-file <value>` pair has its value replaced with `<claude_state_dir>/<basename(value)>`, where `claude_state_dir` is `$CLAUDE_CONFIG_DIR` or `$HOME/.claude` (the same path the SBPL profile already grants writes for). Inner-sandbox neutralization continues to run only when an outer sandbox is active. The fixup is a no-op when neither env var resolves, leaving bare-exec behavior untouched in those edge environments.
-
-**Consequences.**
-- Claude's debug log lands in the already-allowed claude state dir under both sandboxed and bare-exec runs, so the review step no longer fails with `EPERM` at startup.
-- The `.orbit/**` deny stays intact and no new write exception ships with the sandbox profile.
-- The executor YAML's `--debug-file` value is no longer honored verbatim — only the basename survives the rewrite. `claude.yaml` now carries a comment pointing at this ADR so a future maintainer reads the dispatcher rather than trusting the literal path.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ## ADR-041 — `orbit init` uses a recommendation-first setup wizard
 
-**Status:** Accepted · 2026-05 · [T20260506-16], [T20260506-17]
+**Status:** Superseded by ADR-002 (folded) · 2026-05 · [T20260506-16], [T20260506-17]
 
-**Context.** ADR-027 made `orbit init` the writer for `[agent.<role>]` settings, but the first shipped UX mirrored the TOML schema: nine provider/backend/model prompts with little explanation of reviewer, implementer, and planner roles. First-run setup needed to teach the role model and expose the detected recommendation before asking users to edit individual fields.
-
-**Decision.** Keep the persisted `[agent.<role>]` config shape, but replace the raw field prompt sequence with a recommendation-first wizard. The collector now prints role descriptions, detected agent surfaces, and a role summary; users can accept all defaults with one response, customize one role from detected agent choices, or fall back to a manual provider/backend/model entry for custom stacks. Recommendations are role-aware: reviewer and implementer prefer Codex when detected, while planner prefers Claude when detected.
-
-**Consequences.**
-- First-time users see the workflow roles and the exact recommended setup before making a choice.
-- Normal customization hides backend mechanics behind choices such as Claude CLI or Codex API while preserving manual backend entry for custom providers.
-- The config writer and v2 role resolver remain compatible because the emitted `RawAgentRoleConfig` map is unchanged.
-- Cost: prompt collection now owns display formatting and a small choice loop, so tests must cover interaction flow in addition to config values.
+Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 
 ---
 
@@ -605,5 +440,6 @@ This ADR log records the decisions that define the current Activity / Job substr
 - **[T20260505-22]** — Rewrite Claude's `--debug-file` static arg at dispatch time so the log lands at a sandbox-allowed absolute path.
 - **[T20260506-16]** — Replace raw `orbit init` agent prompts with a recommendation-first setup wizard.
 - **[T20260506-17]** — Make `orbit init` recommend Codex for reviewer and implementer when available.
+- **[T20260506-18]** — Compact activity-job ADRs via rollups.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
