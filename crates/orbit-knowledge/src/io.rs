@@ -19,11 +19,7 @@ impl LineEnding {
         while index < bytes.len() {
             match bytes[index] {
                 b'\n' => return Self::Lf,
-                b'\r' => {
-                    if bytes.get(index + 1) == Some(&b'\n') {
-                        return Self::CrLf;
-                    }
-                }
+                b'\r' if bytes.get(index + 1) == Some(&b'\n') => return Self::CrLf,
                 _ => {}
             }
             index += 1;
