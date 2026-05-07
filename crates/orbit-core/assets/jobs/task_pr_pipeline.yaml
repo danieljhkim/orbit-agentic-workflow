@@ -25,10 +25,10 @@ spec:
     task_ids: []
     base_branch: agent-main
     base_sync: remote
-    review: true
+    review: false
     title: null
     body: null
-  
+
   steps:
     - id: worktree
       target: activity:worktree_setup
