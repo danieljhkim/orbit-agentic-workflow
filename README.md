@@ -46,32 +46,6 @@ Full contract below in the [Auditability](#auditability) section. Design docs: [
 
 ---
 
-## Direction of travel
-
-The substrate also hosts work that is not yet a front-door product surface but signals where Orbit is headed. The full long-arc destination — fleet orchestration at team scale, once trust in agents matures and human review thins — lives in [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale).
-
-- **Programmatic (HTTP/SDK) provider transport** — direct provider communication for multi-turn agent loops, replacing CLI subprocess execution as the primary path. Wired in code today (`backend: http`, `LoopTransport`) but not part of the v1 release surface; v1 ships CLI backends only.
-- **Groundhog** — a checkpoint-oriented execution mode for HTTP-backend agents. Work runs as a sequence of checkpoints; each attempt starts with a fresh agent context and a clean git-backed workspace snapshot, then either rewinds on failure or persists a small stable memory on success. Today it exists as an `ActivityV2Spec::Groundhog` activity behind the job layer, not as an `orbit run` subcommand. Depends on the HTTP transport above and is therefore also out of scope for v1. Status: [docs/design/groundhog/](docs/design/groundhog/).
-- **Shared-host deployment** — a single Orbit instance serving multiple operators, with team-aggregated audit, tasks, and scoreboards, plus operator-identity-aware authentication on `orbit web serve`. v1 is per-engineer (each operator runs Orbit on their own machine); shared-host is a v2 commitment, downstream of the champion-led team-adoption arc described in POSITIONING. Until v2 ships, do not expose `orbit web serve` to a non-localhost interface — it has no auth in v1.
-
----
-
-## Non-negotiables
-
-Tablestakes for what Orbit is for. Orbit will not ship anything that breaks them.
-
-- **Self-hostable, no cloud dependency.** Single binary, runs on a laptop, in a container, in a CI runner, behind a firewall. Orbit never phones home.
-- **Per-engineer deployment in v1.** Each engineer runs Orbit on their own machine. Tasks, locks, and the audit DB are local to that machine. Cross-engineer coordination flows through the primitives a team already uses — git branches, PRs, CI, GitHub. Shared-host deployment (one Orbit serving multiple engineers) is a v2 commitment downstream of the champion-led team-adoption arc; see [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale).
-- **Bring-your-own-credentials.** Your Anthropic / OpenAI / local-model keys, never Orbit's. Orbit is a pass-through.
-- **CLI-backend agent execution (v1).** v1 invokes coding agents through their official CLIs (Codex, Claude Code, Gemini CLI) as supervised subprocesses. Programmatic HTTP/SDK transport (`backend: http`, `LoopTransport`) exists in the codebase and is exercised in tests, but is not a supported release surface in v1 — treat it as preview-only. v2 will flip the default once HTTP coverage is complete.
-- **Intent attribution at the codebase level.** Every line of agent-authored code is traceable to the task that produced it. `task_id` baked into commit messages, queryable via `orbit task show` and `git log --grep`, durable across rewrites and refactors. This is what turns a body of agent work into a coherent record over time, instead of a stream of opaque diffs.
-- **Multi-agent capable, agent-identity-attributed.** The architecture treats fleets as the default execution shape (parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent commit identity), even though the wedge audience may run only one or two agents at a time today. Single-assistant assumptions are incorrect, and agent identity is attached to every write so the audit trail and PR history stay legible at any scale.
-- **Git- and GitHub-native.** Branches, worktrees, PRs, CI status. No custom version control abstractions.
-- **Cost-visible.** You know what each run cost in tokens and wall-clock — see `orbit audit stats` and `orbit metrics`.
-- **Configurable, not rigid.** Job DAGs, activity definitions, skill loadouts, role profiles are all YAML. Fork, don't file feature requests.
-
----
-
 ## The Core Model
 
 Orbit is built around four concepts you will actually touch:
@@ -91,7 +65,7 @@ Supporting primitives (`activity`, `job`, `policy`, `executor`, `tool`) are the 
 
 Orbit itself can be installed without Rust. Only source builds require a Rust toolchain.
 
-For the default PR-based execution path (`orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship --mode local` instead.
+For the default PR-based execution path (`orbit run ship-auto` or `orbit run ship`), you also need the GitHub CLI (`gh`) installed and authenticated. If you do not want to use GitHub or open pull requests, use `orbit run ship --mode local` instead.
 
 ```bash
 # install via curl | sh (macOS and Linux)
@@ -136,26 +110,11 @@ orbit task list --status proposed
 orbit task show "$TASK_ID"
 orbit task approve "$TASK_ID"
 
-# run the default PR-based execution path
-orbit run ship "$TASK_ID"
+# run the default PR-based execution path (orbit's default base branch is agent-main, so we target main here)
+orbit run ship "$TASK_ID" --base main
 
-# or run a local-only execution path
-orbit run ship --mode local "$TASK_ID"
-```
-
-If you prefer conversational drafting, ask an agent to produce the `orbit task add ...` command for your real task, then run that command and continue with the same review + ship flow.
-
-If you already know which task(s) you want to run, pin them explicitly:
-
-```bash
-orbit run ship T123 T456 --base main
-```
-
-Pinned installs and custom install directories are supported:
-
-```bash
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_VERSION=v0.3.0 sh
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_INSTALL_DIR="$HOME/.local/bin" sh
+# or auto-select backlog tasks (without conflicts) and dispatch them through the same PR/local path
+orbit run ship-auto --base main
 ```
 
 ---
@@ -174,29 +133,6 @@ The hard problem the wedge user has is everything that lives **between** and **a
 
 Linear and Jira solve durable project management for human-driven teams. Agent vendors solve in-session execution. Orbit is the layer that turns individual agent sessions into a coherent, navigable, audited body of work — for the AI-native solo developer today, with the architectural path to team-scale fleet orchestration once trust in agents matures (see [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale)).
 
----
-
-## Auditability
-
-When something goes wrong on your team's monorepo, you need to answer three questions without calling the Orbit maintainers: **what** the agent did, **why** it did that, and **who** is accountable. Every tool call, provider request/response, and task-state transition is a structured, queryable event with agent identity attached. Audit is append-only and tamper-evident; prompts and responses are stored verbatim with configurable redaction.
-
-When auditability conflicts with performance, ergonomics, or feature surface, auditability wins.
-
-The full contract — coverage commitments, schema stability, reproducibility, tamper-evidence — lives in [docs/POSITIONING.md](docs/POSITIONING.md#primary-focus-auditability). Query command audit rows with `orbit audit list`, `orbit audit show`, and `orbit audit stats`. Inspect run-local activity/job traces with `orbit run events <run_id>` and `orbit run trace <run_id>`.
-
----
-
-## Graph-Aware Scheduling
-
-Orbit already contains the pieces that matter most to its thesis:
-
-- code graph build and query via `orbit graph`
-- automatic task bundling and fan-out dispatch
-- gate pipelines that wait for safe execution windows
-- explicit task lock reservation before dispatch
-- isolated worktree-based execution for bundles
-
-The knowledge graph is described in [docs/design/knowledge-graph/](docs/design/knowledge-graph/). It is not generic workflow authoring — it is graph-aware scheduling and conflict management for parallel coding agents.
 
 ---
 
