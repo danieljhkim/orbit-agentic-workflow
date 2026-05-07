@@ -1197,6 +1197,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn run_cli_backend_audit_argv_starts_with_sandbox_exec_for_each_provider() {
+        if !sandbox_exec_can_apply_for_test() {
+            return;
+        }
+
         for provider_name in ["claude", "codex", "gemini"] {
             let temp = tempdir().expect("tempdir");
             let script = temp.path().join(provider_name);
@@ -1265,6 +1269,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn run_cli_backend_pins_codex_sandbox_under_outer_wrapper() {
+        if !sandbox_exec_can_apply_for_test() {
+            return;
+        }
+
         let temp = tempdir().expect("tempdir");
         let script = temp.path().join("codex");
         write_executable(
@@ -1329,6 +1337,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn run_cli_backend_drops_gemini_sandbox_flag_under_outer_wrapper() {
+        if !sandbox_exec_can_apply_for_test() {
+            return;
+        }
+
         let temp = tempdir().expect("tempdir");
         let script = temp.path().join("gemini");
         write_executable(
@@ -1391,6 +1403,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn run_cli_backend_leaves_claude_argv_suffix_unchanged_under_sandbox() {
+        if !sandbox_exec_can_apply_for_test() {
+            return;
+        }
+
         let temp = tempdir().expect("tempdir");
         let script = temp.path().join("claude");
         write_executable(
@@ -1739,6 +1755,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn test_agent_loop_spec_for(provider: &str, timeout: Duration) -> AgentLoopSpec {
         let provider = match provider {
             "claude" => Provider::Claude,
@@ -1775,4 +1792,15 @@ mod tests {
 
     #[cfg(not(unix))]
     fn make_executable(_path: &Path) {}
+
+    #[cfg(target_os = "macos")]
+    fn sandbox_exec_can_apply_for_test() -> bool {
+        Command::new("sandbox-exec")
+            .args(["-p", "(version 1)\n(allow default)\n", "/usr/bin/true"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
 }

@@ -13,10 +13,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
+use orbit_common::types::ResolvedFsProfile;
 use orbit_common::types::activity_job::AgentRole;
 use orbit_common::types::{
-    AuditEventStatus, ExecutorSandboxKind, ExecutorType, ResolvedFsProfile, Role, TaskStatus,
-    TaskType, UNRESTRICTED_FS_PROFILE, audit_execution_id, prune_missing_context_files,
+    AuditEventStatus, ExecutorSandboxKind, ExecutorType, Role, TaskStatus, TaskType,
+    UNRESTRICTED_FS_PROFILE, audit_execution_id, prune_missing_context_files,
 };
 use orbit_common::types::{InvocationTrace, Task};
 use orbit_common::utility::path::workspace_relative_paths_overlap;
@@ -770,7 +772,8 @@ impl V2RuntimeHost for OrbitRuntime {
     fn resolve_executor_sandbox(
         &self,
         provider: &str,
-        fs_profile: Option<&str>,
+        #[cfg(target_os = "macos")] fs_profile: Option<&str>,
+        #[cfg(not(target_os = "macos"))] _fs_profile: Option<&str>,
     ) -> Result<Option<ResolvedSandbox>, DispatchError> {
         let executor = self.get_executor_def(provider).map_err(|err| {
             DispatchError::CliInvocationFailed(format!(
@@ -787,10 +790,10 @@ impl V2RuntimeHost for OrbitRuntime {
             ExecutorSandboxKind::MacosSandboxExec => {
                 #[cfg(not(target_os = "macos"))]
                 {
-                    return Err(DispatchError::CliInvocationFailed(format!(
+                    Err(DispatchError::CliInvocationFailed(format!(
                         "executor `{provider}` declares sandbox `macos-sandbox-exec` but current platform is `{}`",
                         std::env::consts::OS
-                    )));
+                    )))
                 }
                 #[cfg(target_os = "macos")]
                 {
@@ -1201,6 +1204,7 @@ fn existing_lock_context_files(task: &Task) -> Vec<String> {
 /// the workspace root. The kernel's `subpath` predicate is meaningless for
 /// relative paths, so this is the layer that turns Orbit's policy into a
 /// payload `sandbox-exec` can enforce.
+#[cfg(target_os = "macos")]
 fn resolve_fs_profile_absolute(
     runtime: &OrbitRuntime,
     fs_profile: Option<&str>,
@@ -1300,6 +1304,7 @@ fn absolutize_side_write_root(workspace_root: &str, path: &str) -> Option<String
     Some(normalized.display().to_string())
 }
 
+#[cfg(target_os = "macos")]
 fn absolutize_rule(workspace_root: &str, rule: &str) -> String {
     let (negated, body) = rule
         .strip_prefix('!')
