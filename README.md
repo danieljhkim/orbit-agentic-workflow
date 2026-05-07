@@ -154,7 +154,7 @@ orbit run ship T123 T456 --base main
 Pinned installs and custom install directories are supported:
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_VERSION=v0.1.0 sh
+curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_VERSION=v0.3.0 sh
 curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
