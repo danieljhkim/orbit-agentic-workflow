@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** gemini
-**Last updated:** 2026-04-30
+**Last updated:** 2026-05-07
 
 This append-only ADR log records UI decisions in ascending order. Each entry keeps its status line, cited task ID, decision summary, and at least one explicit cost.
 
@@ -54,12 +54,24 @@ This append-only ADR log records UI decisions in ascending order. Each entry kee
 - Operators get one clear scroll target for raw log rows while live-tail controls stay visible during short-screen monitoring.
 - Cost: The Tasks view trades narrow-screen stacking for denser columns so the live log remains in the first viewport.
 
+## ADR-005 — Minimal UI Scope With Required References
+
+**Status:** Accepted · 2026-05 · [T20260506-20]
+
+**Context.** The user-interface design folder had the four numbered docs and a theme spec, but it lacked the required `references/` folder. The numbered docs also read thinner than other feature folders, making it unclear whether the UI had rotted or was intentionally limited.
+
+**Decision.** Keep the UI feature scoped to the local dashboard and shared Canon Refined visual grammar for now, add `references/glossary.md`, and document missing future commitments as explicit limitations rather than filling the folder with speculative mechanisms.
+
+**Consequences.**
+- The folder now satisfies the shared design-doc layout while staying honest about the dashboard-first implementation.
+- Cost: Future UI work still needs separate decisions for component packaging, keyboard contracts, accessibility targets, and visual regression testing.
+
 ## Task References
 
 - [T20260427-29] introduced the Canon Refined UI direction.
 - [T20260428-13] unified policy-denial sources for the dashboard.
 - [T20260428-15] compacted scoreboard ratio columns.
-- [T20260430-24] tightened this ADR log without changing decisions.
 - [T20260430-29] bounded the live `orbit.log` tail panel.
+- [T20260506-20] added required UI references and accepted the current minimal scope.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
