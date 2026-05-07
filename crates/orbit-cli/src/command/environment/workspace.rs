@@ -944,7 +944,7 @@ fn is_git_repo_root(path: &std::path::Path) -> bool {
 }
 
 fn write_orbit_gitignore_entry(gitignore_path: &std::path::Path) -> Result<(), OrbitError> {
-    let content = match std::fs::read_to_string(&gitignore_path) {
+    let content = match std::fs::read_to_string(gitignore_path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(OrbitError::Io(error.to_string())),
@@ -959,7 +959,7 @@ fn write_orbit_gitignore_entry(gitignore_path: &std::path::Path) -> Result<(), O
         next.push('\n');
     }
     next.push_str(".orbit\n");
-    std::fs::write(&gitignore_path, next).map_err(|error| OrbitError::Io(error.to_string()))
+    std::fs::write(gitignore_path, next).map_err(|error| OrbitError::Io(error.to_string()))
 }
 
 fn gitignore_has_orbit_entry(content: &str) -> bool {

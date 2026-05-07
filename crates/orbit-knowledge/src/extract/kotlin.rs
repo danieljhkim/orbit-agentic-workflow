@@ -383,6 +383,7 @@ fn collect_variable_names(node: Node, source: &str, names: &mut Vec<String>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_leaf(
     node: Node,
     source: &str,

@@ -113,7 +113,7 @@ impl V2ActivityCatalog {
             })?;
             let asset = match load_activity_asset(&yaml) {
                 Ok(asset) => asset,
-                Err(source @ AssetLoadError::RetiredVersion(_)) if skip_retired => {
+                Err(_source @ AssetLoadError::RetiredVersion(_)) if skip_retired => {
                     skipped.push(path.to_path_buf());
                     return Ok(());
                 }

@@ -122,15 +122,15 @@ fn collect_one_role(
             choice.parse::<usize>().ok().and_then(|n| n.checked_sub(1))
         };
 
-        if let Some(index) = selected {
-            if let Some(option) = options.get(index) {
-                let model = collect_model_override(option.model, prompter)?;
-                return Ok(RawAgentRoleConfig {
-                    provider: Some(option.provider.to_string()),
-                    backend: Some(option.backend.to_string()),
-                    model,
-                });
-            }
+        if let Some(index) = selected
+            && let Some(option) = options.get(index)
+        {
+            let model = collect_model_override(option.model, prompter)?;
+            return Ok(RawAgentRoleConfig {
+                provider: Some(option.provider.to_string()),
+                backend: Some(option.backend.to_string()),
+                model,
+            });
         }
 
         let custom_index = options.len() + 1;

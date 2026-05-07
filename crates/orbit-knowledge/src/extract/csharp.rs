@@ -276,6 +276,7 @@ fn variable_names(node: Node, source: &str) -> Vec<String> {
     names
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_leaf(
     node: Node,
     source: &str,

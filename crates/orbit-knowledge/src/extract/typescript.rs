@@ -253,6 +253,7 @@ fn extract_class_binding(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_leaf(
     node: Node,
     source: &str,

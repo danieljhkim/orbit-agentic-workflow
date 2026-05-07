@@ -244,9 +244,9 @@ fn write_file(repo: &Path, rel: &str, content: &str) {
     std::fs::write(path, content).expect("write fixture file");
 }
 
-fn leaves_by_qualified_name<'a>(
-    leaves: &'a [orbit_knowledge::extract::ExtractedLeaf],
-) -> BTreeMap<&'a str, &'a orbit_knowledge::extract::ExtractedLeaf> {
+fn leaves_by_qualified_name(
+    leaves: &[orbit_knowledge::extract::ExtractedLeaf],
+) -> BTreeMap<&str, &orbit_knowledge::extract::ExtractedLeaf> {
     leaves
         .iter()
         .map(|leaf| (leaf.qualified_name.as_str(), leaf))
