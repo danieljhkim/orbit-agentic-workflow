@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-07
 
 ADR-style log of non-obvious task-sync decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -108,7 +108,7 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-007 — Sync ships in v2; v1 is per-engineer
 
-**Status:** Proposed · 2026-05 · [T20260505-12]
+**Status:** Superseded by ADR-009 · 2026-05 · [T20260505-12]
 
 **Context.** Initial discussion of task sync framed it as a v1 feature — small, opt-in, fits the existing per-engineer doctrine. Subsequent analysis (specifically the conflict-resolution scenarios in [2_design.md §3.1](./2_design.md)) revealed that doing sync correctly requires the operation-aware-replay subsystem in ADR-002, which is meaningful engineering. A half-built sync — for example, ADD-only with no update propagation — produces the wrong mental model: "I can see Bob's task exists but never see him work on it." That's worse for adoption than no sync.
 
@@ -137,8 +137,25 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ---
 
+## ADR-009 — v1 registry primitive; task sync v2 consumer
+
+**Status:** Proposed · 2026-05 · [T20260507-10]
+
+**Context.** CEO/EXPANSION review on 2026-05-06, decision D8, shifted the release boundary: the unified `OrbitRegistry` primitive and knowledge-graph snapshot publication land in v1, while task sync remains v2. ADR-007 correctly deferred task sync, but it now reads as if v2 must introduce the registry concept itself.
+
+**Decision.** Split the reusable primitive from the task-sync feature. v1 lands the [orbit-registry](../orbit-registry/) primitive as shared branch-backed infrastructure; task-sync is a v2 consumer of that v1 primitive, adding task-bundle schema, online mutation policy, ID allocation against the registry view, and operation-aware replay. v1 still publishes no shared task state.
+
+**Consequences.**
+- Future v2 task-sync scope is smaller and more honest: it owns task semantics, not the generic registry substrate.
+- Knowledge-graph snapshot publication and task sync share one primitive, so transport, ref layout, auth, and audit constraints need one owner.
+- ADR-006's `git2` choice becomes load-bearing earlier than originally scoped; per CEO review D8, the KG-share read path must re-evaluate whether that transport cost is still justified before the registry primitive is accepted.
+- Cost: v1 absorbs reusable registry complexity before task-sync users exist, and any `OrbitRegistry` contract mistake becomes inherited by v2 task sync.
+
+---
+
 ## Task References
 
 - [T20260505-12] — Design git-orphan-branch task sync (v2 feature). The task that produced this folder.
+- [T20260507-10] — Updates task-sync docs after CEO review D8 split the v1 orbit-registry primitive from the v2 task-sync consumer.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

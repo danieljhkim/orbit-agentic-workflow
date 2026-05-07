@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-07
 
-This document specifies the v2 design for task sync: the registry mechanism, the conflict-resolution model and why it's the central design question, the call sites that need to become sync-aware, the CLI surface, the config schema, and the migration paths. v1 ships with sync disabled by default and the code path absent. The architectural boundary is explicit: the task store ([orbit-store/src/file/task_store/](../../../crates/orbit-store/src/file/task_store/)) keeps owning YAML layout and validation; a new task-sync coordinator above the store owns git transport.
+This document specifies the v2 design for task sync: the task registry shape, the conflict-resolution model and why it's the central design question, the call sites that need to become sync-aware, the CLI surface, the config schema, and the migration paths. v1 ships with sync disabled by default and the task-sync code path absent, while the shared [orbit-registry](../orbit-registry/) primitive lands first. The architectural boundary is explicit: the task store ([orbit-store/src/file/task_store/](../../../crates/orbit-store/src/file/task_store/)) keeps owning YAML layout and validation; the v2 task-sync coordinator consumes `OrbitRegistry` for branch-backed publication and owns task-specific mutation semantics.
 
 ---
 
@@ -15,7 +15,7 @@ In scope for task sync:
 - Task YAML bundles (`task.yaml`).
 - Companion files: `plan.md`, `execution-summary.md`.
 - Task artifacts under `<task-id>/artifacts/**`.
-- ID allocation against the registry's view of state, with the format `T<YYYYMMDD>-<N>` preserved for the future sync registry. Current v1 Orbit `task_id` values remain local-only search keys after [T20260506-11]; cross-engineer references use `external_refs`.
+- ID allocation against the `OrbitRegistry` view of task state, with the format `T<YYYYMMDD>-<N>` preserved for the future sync registry. Current v1 Orbit `task_id` values remain local-only search keys after [T20260506-11]; cross-engineer references use `external_refs`.
 
 Out of scope (with rationale in [§7](#7-concerns--honest-limitations)):
 
@@ -27,7 +27,7 @@ Out of scope (with rationale in [§7](#7-concerns--honest-limitations)):
 
 ### 2.1 Registry ref and branch name
 
-The registry lives at `refs/heads/orbit/tasks`. User-facing branch name: `orbit/tasks`. This is a normal-form git branch ref so:
+Task sync configures the v1 `OrbitRegistry` primitive with `refs/heads/orbit/tasks`. User-facing branch name: `orbit/tasks`. This is a normal-form git branch ref so:
 
 - Branch protection on hosts (GitHub, GitLab, Gitea) can be applied without custom configuration.
 - Code review tooling that lists branches will include it.
@@ -187,24 +187,25 @@ All four mutation entry points (runtime, CLI, web) route through the same sync-a
 
 ### 5.1 The sync coordinator
 
-A new component, tentatively `orbit-store::sync::TaskSyncCoordinator`, sits *above* the existing file store and *below* the runtime/CLI/web entry points. It owns:
+A new component, tentatively `orbit-store::sync::TaskSyncCoordinator`, sits *above* the existing file store and *below* the runtime/CLI/web entry points. It consumes `OrbitRegistry` for reusable branch-backed publication and owns:
 
-- Git transport (fetch, commit, push, retry).
+- Task-registry configuration for the shared registry primitive.
 - Operation classification (which task operation is being attempted).
 - Replay logic (the rules in [§3.2](#32-operation-aware-replay-the-recommended-mechanism)).
-- Auth handoff to the system git credential helper.
+- Structured task-sync conflicts and resolution state.
 
 It does *not* own:
 
+- Generic git transport, ref publication, or credential-helper integration (owned by [docs/design/orbit-registry/](../orbit-registry/) after CEO review D8).
 - YAML serialization (still in [bundle.rs](../../../crates/orbit-store/src/file/task_store/bundle.rs)).
 - Layout (`<state>/<task-id>/...` paths still in [layout.rs](../../../crates/orbit-store/src/file/task_store/layout.rs)).
 - Reservation locks (still per-machine in [task_reservation_store.rs](../../../crates/orbit-store/src/sqlite/task_reservation_store.rs); locks are out of scope at any version).
 
-Putting git transport above the file store keeps `orbit-store` mockable for tests and ensures sync policy can change without rewriting layout code.
+Putting the task-sync layer above the file store keeps `orbit-store` mockable for tests and ensures sync policy can change without rewriting layout code.
 
 ### 5.2 git2 vs shelling to git
 
-The recommendation is the `git2` crate (libgit2 bindings). Reasons:
+The task-sync recommendation remains the `git2` crate (libgit2 bindings). Because the reusable transport may now land in v1 as part of orbit-registry, ADR-009 requires revalidating this cost against the knowledge-graph snapshot read path before accepting the shared primitive. Reasons:
 
 - In-process control over fetch/push/commit lets the coordinator implement retry without spawning subprocesses.
 - Authentication callbacks integrate with the system credential helper without parsing `git` output.
@@ -296,5 +297,6 @@ Task sync inherits whatever auth posture the team uses for `git push`. If a team
 - [T20260421-0528] — Historical knowledge-graph task attribution. Superseded as a canonical load-bearing ID example by [T20260506-11].
 - [T20260506-9] — Adds first-class task `external_refs` metadata and documents the task-sync merge rule.
 - [T20260506-13] — Rejected follow-up; no standalone task-sync replay implementation is currently required for `external_refs`.
+- [T20260507-10] — Updates task-sync docs after CEO review D8 split the v1 orbit-registry primitive from the v2 task-sync consumer.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

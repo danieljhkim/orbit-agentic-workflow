@@ -2,11 +2,13 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-07
 
-Task sync is an opt-in, git-orphan-branch task registry that lets engineers on the same team see each other's tasks without running a shared Orbit instance. **Sync is a v2 feature.** v1 ships per-engineer per the [README](../../../README.md) and [POSITIONING](../../POSITIONING.md) doctrines — each operator runs Orbit on their own machine, with tasks, locks, and audit DB local to that machine. This document captures the v2 design now while context is fresh; the implementation lands as a separate sequence of tasks once the design is Accepted.
+Task sync is an opt-in v2 feature that lets engineers on the same team see each other's tasks without running a shared Orbit instance. It is now scoped as **task-sync built on the v1 [orbit-registry](../orbit-registry/) primitive**: v1 lands reusable git-backed registry infrastructure for branch-scoped publication, while task bundles remain local-only until task sync itself ships in v2. v1 still ships per-engineer per the [README](../../../README.md) and [POSITIONING](../../POSITIONING.md) doctrines: each operator runs Orbit on their own machine, with tasks, locks, and audit DB local to that machine. This document captures the v2 task-sync layer while context is fresh; the implementation lands as a separate sequence of tasks once the design is Accepted.
 
-**2026-05-06 note ([T20260506-11]).** The prior cross-machine `task_id` motivation has been retired for v1. Orbit task IDs remain local search keys for the author (`git log --grep '[T...]'`); cross-engineer task references go through `external_refs`. This task-sync design remains a future v2 registry proposal, not a statement that today's `task_id` is globally resolvable.
+**2026-05-07 note ([T20260507-10]).** CEO/EXPANSION review D8 shifted the release boundary. The unified `OrbitRegistry` primitive lands in v1 as shared code infrastructure, alongside knowledge-graph snapshot publication; task sync remains v2 and becomes a consumer of that primitive rather than the feature that introduces the registry concept.
+
+**2026-05-06 note ([T20260506-11]).** The prior cross-machine `task_id` motivation has been retired for v1. Orbit task IDs remain local search keys for the author (`git log --grep '[T...]'`); cross-engineer task references go through `external_refs`. This task-sync design remains a future v2 task-sync proposal layered on the registry primitive, not a statement that today's `task_id` is globally resolvable.
 
 This document is the entry point. [2_design.md](./2_design.md) specifies the mechanism, call sites, and migration paths in detail; [3_vision.md](./3_vision.md) names open questions and prior work; [4_decisions.md](./4_decisions.md) is the ADR log.
 
@@ -16,13 +18,13 @@ This document is the entry point. [2_design.md](./2_design.md) specifies the mec
 
 The per-engineer-deployment commitment is honest about what v1 supports, but it leaves a visible coordination gap. Engineer A creates [T20260504-1] on their laptop; engineer B has no way to know it exists short of asking, finding the resulting PR, or reading commits the agent produces. For a 10–50 engineer team, that's expensive friction — exactly the friction the per-engineer framing was supposed to be honest about, not pretend away.
 
-Three obvious options for closing the gap:
+The v1 [orbit-registry](../orbit-registry/) primitive narrows the implementation gap but does not itself publish tasks. Three obvious options remain for closing the human coordination gap:
 
 1. **A shared Orbit server.** Solves it natively but is the v2 shared-host story, not v1.
-2. **Sync the task store via some external mechanism.** Generic, vague, hand-wavy.
-3. **Use git itself as the coordination primitive.** The team already has a shared git remote. Auth, ACL, and transport are already solved by whatever git host the team uses.
+2. **Build a task-specific registry from scratch in v2.** Plausible before the v1 registry decision, but now duplicated infrastructure.
+3. **Layer task sync on the v1 OrbitRegistry primitive.** The team already has a shared git remote. Auth, ACL, and transport are already solved by whatever git host the team uses, and Orbit now has one reusable branch-backed registry abstraction.
 
-Option 3 is what task sync proposes. A single orphan branch (proposed: `orbit/tasks`, ref `refs/heads/orbit/tasks`) holds the canonical task registry. `orbit task add` and mutating `orbit task update` paths fetch this ref before mutating, write locally, commit on the orphan branch, and push. Atomic git ref update is the coordinator. No new server, no new auth surface, no break to the v1 deployment doctrine.
+Option 3 is what task sync proposes for v2. A task-sync registry, implemented as an `OrbitRegistry` consumer, uses a single orphan branch (proposed: `orbit/tasks`, ref `refs/heads/orbit/tasks`) to hold the canonical task registry. `orbit task add` and mutating `orbit task update` paths fetch this ref before mutating, write locally, commit on the orphan branch, and push. Atomic git ref update is the coordinator. No new server, no new auth surface, and no break to the v1 deployment doctrine because v1 ships the primitive, not shared task state.
 
 The name "task sync" is deliberately narrow. It means task YAML bundles plus their companion files (`plan.md`, `execution-summary.md`, `artifacts/**`). It does *not* mean syncing locks, the audit DB, scoreboards, or job runs. Those have different consistency needs and are out of scope at any version — see [2_design.md §7](./2_design.md).
 
@@ -32,7 +34,7 @@ The name "task sync" is deliberately narrow. It means task YAML bundles plus the
 
 ### 2.1 Task registry
 
-The orphan branch acting as the canonical store of task bundles. The ref is `refs/heads/orbit/tasks`, the user-facing branch name is `orbit/tasks`. Its tree mirrors the workspace `.orbit/tasks/` layout exactly: status directories at the top (`proposed/`, `backlog/`, `in_progress/`, `review/`, `done/`, `blocked/`, `archived/`, `rejected/`, `friction/`, `someday/`), date-partitioned subdirectories (`<yyyy-mm>/`) under terminal states, and a per-task directory containing `task.yaml`, `plan.md`, `execution-summary.md`, and an optional `artifacts/` subtree.
+The task-sync use of the v1 `OrbitRegistry` primitive. It is backed by an orphan branch acting as the canonical store of task bundles. The ref is `refs/heads/orbit/tasks`, the user-facing branch name is `orbit/tasks`. Its tree mirrors the workspace `.orbit/tasks/` layout exactly: status directories at the top (`proposed/`, `backlog/`, `in_progress/`, `review/`, `done/`, `blocked/`, `archived/`, `rejected/`, `friction/`, `someday/`), date-partitioned subdirectories (`<yyyy-mm>/`) under terminal states, and a per-task directory containing `task.yaml`, `plan.md`, `execution-summary.md`, and an optional `artifacts/` subtree.
 
 Why an orphan branch and not a normal feature branch: the registry has no shared history with code branches, and merging it into `main` would be nonsensical. Orphan history keeps the registry inspectable via standard `git log refs/heads/orbit/tasks` while preventing accidental merge into product branches.
 
@@ -54,7 +56,7 @@ Task sync v2 ships **operation-aware replay**: on push reject, the client re-fet
 
 ### 2.4 v1/v2 boundary
 
-This design exists in v1 as a docs-only artifact. v1 ships with `[task.sync] enabled = false` as the default and no sync code. The implementation lives behind that flag and lands incrementally in v2. The decision to defer is itself an ADR ([4_decisions.md ADR-001](./4_decisions.md)) because it has costs the team should be able to read and challenge.
+v1 ships the shared `OrbitRegistry` primitive and keeps task state per-engineer. v1 also ships with `[task.sync] enabled = false` as the default and no task-sync mutation code. Task sync lands incrementally in v2 as a consumer of that primitive: it contributes the task bundle schema, online mutation policy, ID allocation against the registry view, and operation-aware replay. The release-boundary decision is captured in [4_decisions.md ADR-009](./4_decisions.md), which supersedes the older all-or-nothing v1/v2 statement in ADR-007.
 
 ---
 
@@ -63,6 +65,7 @@ This design exists in v1 as a docs-only artifact. v1 ships with `[task.sync] ena
 | Concern | File | Task |
 |---------|------|------|
 | Folder layout, frontmatter, ADR template | [docs/design/CONVENTIONS.md](../CONVENTIONS.md) | — |
+| Shared registry primitive | [docs/design/orbit-registry/](../orbit-registry/) | — |
 | Per-engineer deployment doctrine | [README.md](../../../README.md), [POSITIONING.md](../../POSITIONING.md) | — |
 | Task ID allocation (`T<YYYYMMDD>-<N>`) | [crates/orbit-store/src/file/task_store/layout.rs:102-132](../../../crates/orbit-store/src/file/task_store/layout.rs) | [T20260505-12] |
 | Task bundle write path | [crates/orbit-store/src/file/task_store/bundle.rs](../../../crates/orbit-store/src/file/task_store/bundle.rs) | [T20260505-12] |
@@ -79,5 +82,6 @@ This design exists in v1 as a docs-only artifact. v1 ships with `[task.sync] ena
 
 - [T20260505-12] — Design git-orphan-branch task sync (v2 feature). The task that produced this folder.
 - [T20260421-0528] — Historical knowledge-graph task attribution work. Superseded as evidence that `T<YYYYMMDD>-<N>` must be load-bearing across machines by [T20260506-11].
+- [T20260507-10] — Updates task-sync docs after CEO review D8 split the v1 orbit-registry primitive from the v2 task-sync consumer.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

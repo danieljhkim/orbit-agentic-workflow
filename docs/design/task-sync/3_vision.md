@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-05
+**Last updated:** 2026-05-07
 
-This document captures the open questions task sync deliberately leaves unanswered, the prior work the design builds on or rejects, what the design contributes that's specific to Orbit, and external references for readers who want to dig deeper. The questions in §1 are the most likely sources of post-v2 design pressure; the prior work in §2 explains why the v2 design landed where it did.
+This document captures the open questions task sync deliberately leaves unanswered, the prior work the design builds on or rejects, what the design contributes that's specific to Orbit, and external references for readers who want to dig deeper. The questions in §1 are the most likely sources of post-v2 design pressure after the v1 [orbit-registry](../orbit-registry/) decision; the prior work in §2 explains why the v2 task-sync layer landed where it did.
 
 ---
 
@@ -22,14 +22,14 @@ The v2 design ships without compaction. Three candidate strategies for a follow-
 
 Decision deferred until operational pain manifests on a real team's branch.
 
-### 1.2 Should sync fold into v2 shared-host?
+### 1.2 Shared-host coexistence after the registry primitive
 
-Task sync is opt-in and orthogonal to the v2 shared-host coordinator. If shared-host ships, there are two coherent end states:
+The v1 orbit-registry decision answers the infrastructure question: Orbit will have a reusable git-backed registry primitive before task sync ships. The remaining product question is how task sync should coexist with the v2 shared-host coordinator. If shared-host ships, there are two coherent end states:
 
-- **Sync remains.** Teams can choose: orphan-branch sync (no server, slower, partially manual) or shared-host (server, fast, central). Both ship.
-- **Sync is deprecated.** Shared-host becomes the team-coordination story; orphan-branch sync is removed because it duplicates functionality with worse properties.
+- **Task sync remains.** Teams can choose: a git-remote-backed `OrbitRegistry` consumer (no server, slower, partially manual) or shared-host (server, fast, central). Both ship.
+- **Task sync is deprecated.** Shared-host becomes the team-coordination story; task sync is removed because it duplicates functionality with worse properties. The underlying `OrbitRegistry` primitive can still serve other v1 consumers such as knowledge-graph snapshot publication.
 
-The honest answer depends on demand. Some teams won't run a shared service. Some teams will. The design does not pre-commit; it builds task sync as a standalone feature that can survive or be retired without restructuring the rest of Orbit.
+The honest answer depends on demand. Some teams won't run a shared service. Some teams will. The design does not pre-commit; it builds task sync as a feature-specific registry consumer that can survive or be retired without restructuring the shared primitive.
 
 ### 1.3 Soft-claim semantics
 
@@ -134,6 +134,7 @@ Task sync inherits the team's existing git auth posture. Whatever the team uses 
 - [docs/POSITIONING.md](../../POSITIONING.md) — the per-engineer-deployment doctrine that motivates this design.
 - [README.md](../../../README.md) — `Direction of travel` section names shared-host as v2; task sync slots underneath that as a v2 mechanism.
 - [docs/design/CONVENTIONS.md](../CONVENTIONS.md) — folder layout, frontmatter, ADR template.
+- [docs/design/orbit-registry/](../orbit-registry/) — the v1 shared registry primitive that task sync consumes in v2.
 - [docs/design/knowledge-graph/](../knowledge-graph/) — content-addressed branch-scoped storage; relevant precedent for "Orbit data lives in branch-aware structures."
 - [docs/design/auditability/](../auditability/) — relevant for understanding why audit DB is explicitly out-of-scope for task sync.
 
@@ -150,5 +151,6 @@ Task sync inherits the team's existing git auth posture. Whatever the team uses 
 ## Task References
 
 - [T20260505-12] — Design git-orphan-branch task sync (v2 feature). The task that produced this folder.
+- [T20260507-10] — Updates task-sync docs after CEO review D8 split the v1 orbit-registry primitive from the v2 task-sync consumer.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
