@@ -11,8 +11,8 @@ tableOfContents: false
     <p class="orbit-hero-lede">Define a task, attach activities, dispatch agents in parallel. Every run is replayable and bounded by policies you wrote — with OS-level <code>sandbox-exec</code> isolation on macOS.</p>
     <div class="orbit-hero-install">
       <span class="orbit-hero-install-prompt">$</span>
-      <code>curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | sh</code>
-      <button class="orbit-hero-install-copy" type="button" data-copy="curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | sh">Copy</button>
+      <code>curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | sh</code>
+      <button class="orbit-hero-install-copy" type="button" data-copy="curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | sh">Copy</button>
     </div>
     <div class="orbit-hero-actions">
       <a class="orbit-button primary" href="./getting-started/install/">Install Orbit →</a>

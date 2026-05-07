@@ -95,7 +95,7 @@ For the default PR-based execution path (`orbit run ship`), you also need the Gi
 
 ```bash
 # install via curl | sh (macOS and Linux)
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | sh
 
 # or install via Homebrew (macOS)
 brew install danieljhkim/tap/orbit
@@ -154,8 +154,8 @@ orbit run ship T123 T456 --base main
 Pinned installs and custom install directories are supported:
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | ORBIT_VERSION=v0.1.0 sh
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | ORBIT_INSTALL_DIR="$HOME/.local/bin" sh
+curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_VERSION=v0.1.0 sh
+curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install.sh | ORBIT_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ---
