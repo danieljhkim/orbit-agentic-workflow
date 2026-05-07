@@ -14,7 +14,7 @@ The wedge today is the individual engineer driving multiple coding agents (Claud
 
 Built for the AI-native solo developer first, with a deliberate funnel that expands toward teams over time: **solo adoption → internal champion at a team → team-scale agentic automation.** The team-scale destination is multi-year. The wedge is today.
 
-The full positioning — what Orbit is for, who it's for in funnel order, what it refuses to become, and the long-arc fleet vision — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it before contributing or evaluating fit.
+The full positioning — what Orbit is for, who it's for in funnel order, what it refuses to become, the open-core commercial model, and the commercial roadmap for the hosted Team product — lives in [docs/POSITIONING.md](docs/POSITIONING.md). Read it before contributing or evaluating fit.
 
 ---
 
@@ -131,7 +131,19 @@ The hard problem the wedge user has is everything that lives **between** and **a
 - how to drive multiple agents in parallel without losing track of who did what to which file
 - how to do all of that with durable **local** state, under an audit trail you control, without routing your source through a third-party SaaS
 
-Linear and Jira solve durable project management for human-driven teams. Agent vendors solve in-session execution. Orbit is the layer that turns individual agent sessions into a coherent, navigable, audited body of work — for the AI-native solo developer today, with the architectural path to team-scale fleet orchestration once trust in agents matures (see [POSITIONING § Long-arc vision](docs/POSITIONING.md#long-arc-vision-fleet-orchestration-at-team-scale)).
+Linear and Jira solve durable project management for human-driven teams. Agent vendors solve in-session execution. Orbit is the layer that turns individual agent sessions into a coherent, navigable, audited body of work — for the AI-native solo developer today, with the architectural path to team-scale fleet orchestration through **Orbit Team**, the hosted multi-tenant paid product (see [POSITIONING § Commercial roadmap](docs/POSITIONING.md#commercial-roadmap-orbit-team)).
+
+
+---
+
+## Commercial Model
+
+Orbit ships in two tiers:
+
+- **Orbit OSS (this repository).** Self-hosted, single-operator. The whole solo wedge experience — agent loop, knowledge graph, audit, task layer, MCP, providers, CLI — ships under a permissive license (MIT or Apache 2.0). Free forever for individuals and small teams running their own infrastructure. The OSS is self-sufficient: no single-operator workflow is gated behind the paid tier.
+- **Orbit Team (in development).** Hosted multi-tenant deployment for engineering organizations. Cross-engineer audit aggregation, team scoreboards, SSO/SAML, RBAC, hosted operations, support SLAs. Closed-source SaaS, separate repository, separate billing.
+
+The boundary rule: *"would a solo developer running self-hosted Orbit on their laptop want this?"* — yes → OSS, no → Team. Open-core split locked at the architecture level (separate repos), not feature flags in shared code. The Team product funds sustained OSS development. See [POSITIONING § Commercial model](docs/POSITIONING.md#commercial-model-open-core-two-tiers) for the full structure.
 
 
 ---
