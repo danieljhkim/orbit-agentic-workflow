@@ -336,9 +336,13 @@ fn normalize_tokens_value(value: &mut Value, rules: &NormalizationRules) -> bool
             }
             changed
         }
-        Value::Array(items) => items.iter_mut().fold(false, |changed, item| {
-            normalize_tokens_value(item, rules) || changed
-        }),
+        Value::Array(items) => {
+            let mut changed = false;
+            for item in items {
+                changed |= normalize_tokens_value(item, rules);
+            }
+            changed
+        }
         Value::String(text) => {
             let normalized = normalize_legacy_text(text, &rules.legacy_label);
             if normalized != *text {

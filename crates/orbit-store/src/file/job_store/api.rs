@@ -72,7 +72,7 @@ impl JobFileStore {
             .into_iter()
             .filter(|run| run.state == JobRunState::Pending || run.state == JobRunState::Running)
             .collect::<Vec<_>>();
-        runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
         Ok(runs)
     }
 
@@ -82,7 +82,7 @@ impl JobFileStore {
             .into_iter()
             .filter(|run| run.state == JobRunState::Pending || run.state == JobRunState::Running)
             .collect::<Vec<_>>();
-        runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
         Ok(runs)
     }
 }

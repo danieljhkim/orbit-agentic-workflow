@@ -246,15 +246,14 @@ impl WorkingGraph {
         chain.selector = to_selector.to_string();
 
         if let Some(mut existing_target_chain) = self.version_chains.remove(to_selector) {
-            let mut next_seq = existing_target_chain
+            let next_seq = existing_target_chain
                 .edits
                 .last()
                 .map(|edit| edit.edit_sequence + 1)
                 .unwrap_or(1);
-            for edit in chain.edits {
+            for (next_seq, edit) in (next_seq..).zip(chain.edits) {
                 let mut merged = edit;
                 merged.edit_sequence = next_seq;
-                next_seq += 1;
                 existing_target_chain.edits.push(merged);
             }
             chain = existing_target_chain;

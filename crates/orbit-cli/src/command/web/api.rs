@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path as FsPath, PathBuf};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -375,8 +375,24 @@ fn bounded_limit(requested: Option<usize>, default: usize) -> usize {
     requested.unwrap_or(default).min(HISTORY_MAX_LIMIT)
 }
 
+fn validate_id(id: &str) -> Result<&str, String> {
+    let valid = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if valid {
+        Ok(id)
+    } else {
+        Err("id must contain only ASCII letters, digits, '-' or '_'".to_string())
+    }
+}
+
 async fn get_task(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
-    match runtime.get_task(&id) {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
+    match runtime.get_task(id) {
         Ok(task) => match dashboard_status_index(&runtime) {
             Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
@@ -421,6 +437,10 @@ async fn update_task_action(
     Path(id): Path<String>,
     Json(body): Json<UpdateTaskBody>,
 ) -> Response {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
     let params = TaskUpdateParams {
         title: body.title,
         description: body.description,
@@ -438,7 +458,7 @@ async fn update_task_action(
         upsert_artifacts: Vec::new(),
         append_review_threads: Vec::new(),
     };
-    match runtime.update_task_with_identity(&id, params, None, None) {
+    match runtime.update_task_with_identity(id, params, None, None) {
         Ok(task) => match dashboard_status_index(&runtime) {
             Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
@@ -452,8 +472,12 @@ async fn approve_task_action(
     Path(id): Path<String>,
     body: Option<Json<ApproveBody>>,
 ) -> Response {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
     let body = body.map(|Json(b)| b).unwrap_or_default();
-    match runtime.approve_task(&id, body.note, body.comment) {
+    match runtime.approve_task(id, body.note, body.comment) {
         Ok(task) => match dashboard_status_index(&runtime) {
             Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
@@ -467,7 +491,11 @@ async fn reject_task_action(
     Path(id): Path<String>,
     Json(body): Json<RejectBody>,
 ) -> Response {
-    match runtime.reject_task(&id, body.note, body.comment) {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
+    match runtime.reject_task(id, body.note, body.comment) {
         Ok(task) => match dashboard_status_index(&runtime) {
             Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
             Err(e) => server_error(e),
@@ -480,7 +508,11 @@ async fn archive_task_action(
     State(runtime): State<Arc<OrbitRuntime>>,
     Path(id): Path<String>,
 ) -> Response {
-    match runtime.archive_task(&id) {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
+    match runtime.archive_task(id) {
         Ok(()) => Json(json!({ "ok": true, "id": id })).into_response(),
         Err(e) => map_runtime_error(e),
     }
@@ -982,6 +1014,75 @@ spec:
             .expect("response")
     }
 
+    async fn request_dashboard_run_events(runtime: OrbitRuntime, encoded_run_id: &str) -> Response {
+        Router::new()
+            .nest("/api", router())
+            .with_state(Arc::new(runtime))
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/runs/{encoded_run_id}/events"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response")
+    }
+
+    #[tokio::test]
+    async fn list_run_events_rejects_path_traversal_id() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+
+        let response = request_dashboard_run_events(runtime, "..%2F..%2Fetc%2Fpasswd").await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn list_run_events_rejects_id_with_slashes() {
+        let cases = [
+            ("jrun%2F1", "literal slash"),
+            ("jrun%5C1", "backslash"),
+            (".jrun-1", "leading dot"),
+            ("jrun%00nul", "nul byte"),
+        ];
+
+        for (encoded_run_id, label) in cases {
+            let runtime = OrbitRuntime::in_memory().expect("build runtime");
+
+            let response = request_dashboard_run_events(runtime, encoded_run_id).await;
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn list_run_events_accepts_valid_run_id() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let run_id = "jrun-1";
+        let audit_dir = runtime.data_root().join("state/audit/v2_loop");
+        std::fs::create_dir_all(&audit_dir).expect("create audit dir");
+        write_lines(
+            &audit_dir.join(format!("{run_id}.jsonl")),
+            &[json!({
+                "schemaVersion": 1,
+                "event_type": "step.started",
+                "event_id": "evt-step-started",
+                "run_id": run_id,
+                "body_kind": "step_started"
+            })
+            .to_string()],
+        );
+
+        let response = request_dashboard_run_events(runtime, run_id).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = body_json(response).await;
+        let events = payload.as_array().expect("events array");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["run_id"], run_id);
+        assert_eq!(events[0]["body_kind"], "step_started");
+    }
+
     #[tokio::test]
     async fn cancel_run_endpoint_cancels_pending_run() {
         let runtime = OrbitRuntime::in_memory().expect("build runtime");
@@ -1390,7 +1491,11 @@ spec:
 }
 
 async fn get_run(State(runtime): State<Arc<OrbitRuntime>>, Path(id): Path<String>) -> Response {
-    match runtime.show_job_run(&id) {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
+    match runtime.show_job_run(id) {
         Ok(run) => Json(job_run_detail_to_json(&runtime, &run)).into_response(),
         Err(e) => map_runtime_error(e),
     }
@@ -1400,7 +1505,11 @@ async fn cancel_run_action(
     State(runtime): State<Arc<OrbitRuntime>>,
     Path(id): Path<String>,
 ) -> Response {
-    match runtime.cancel_job_run_with_context(&id, "dashboard", "web") {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
+    match runtime.cancel_job_run_with_context(id, "dashboard", "web") {
         Ok(result) => Json(json!({
             "run_id": result.run_id,
             "previous_state": result.previous_state,
@@ -1423,7 +1532,11 @@ async fn replay_run_action(
     State(runtime): State<Arc<OrbitRuntime>>,
     Path(id): Path<String>,
 ) -> Response {
-    match runtime.replay_job_run(&id) {
+    let id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
+    match runtime.replay_job_run(id) {
         Ok(result) => Json(json!({ "run_id": result.run_id })).into_response(),
         Err(e) => map_runtime_error(e),
     }
@@ -1482,6 +1595,10 @@ async fn list_run_events(
     Path(id): Path<String>,
     Query(q): Query<RunEventsQuery>,
 ) -> Response {
+    let run_id = match validate_id(&id) {
+        Ok(id) => id,
+        Err(message) => return bad_request(message),
+    };
     let limit = bounded_limit(q.limit, RUN_EVENTS_DEFAULT_LIMIT);
     let offset = q.offset.unwrap_or(0);
     let kind = q
@@ -1491,7 +1608,12 @@ async fn list_run_events(
         .filter(|s| !s.is_empty())
         .map(str::to_string);
 
-    let path = v2_loop_path(&runtime, &id);
+    let path = v2_loop_path(&runtime, run_id);
+    let path = match canonical_v2_loop_path(&runtime, &path) {
+        Ok(Some(path)) => path,
+        Ok(None) => return Json(Value::Array(Vec::new())).into_response(),
+        Err(e) => return map_runtime_error(e),
+    };
     let raw = match std::fs::read_to_string(&path) {
         Ok(raw) => raw,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -1539,6 +1661,32 @@ fn v2_loop_path(runtime: &OrbitRuntime, run_id: &str) -> PathBuf {
         .join("audit")
         .join("v2_loop")
         .join(format!("{run_id}.jsonl"))
+}
+
+fn canonical_v2_loop_path(
+    runtime: &OrbitRuntime,
+    path: &FsPath,
+) -> Result<Option<PathBuf>, orbit_core::OrbitError> {
+    let canonical_path = match path.canonicalize() {
+        Ok(path) => path,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(orbit_core::OrbitError::Io(format!(
+                "resolve {}: {e}",
+                path.display()
+            )));
+        }
+    };
+    let audit_dir = v2_loop_dir(runtime);
+    let canonical_dir = audit_dir
+        .canonicalize()
+        .map_err(|e| orbit_core::OrbitError::Io(format!("resolve {}: {e}", audit_dir.display())))?;
+    if !canonical_path.starts_with(&canonical_dir) {
+        return Err(orbit_core::OrbitError::InvalidInput(
+            "run id resolved outside audit log directory".to_string(),
+        ));
+    }
+    Ok(Some(canonical_path))
 }
 
 fn v2_loop_dir(runtime: &OrbitRuntime) -> PathBuf {
@@ -2313,7 +2461,7 @@ async fn list_diagnostics_metrics(
     let limit = bounded_limit(q.limit, HISTORY_DEFAULT_LIMIT);
     match runtime.read_metrics_entries_limited(&month, limit) {
         Ok(mut entries) => {
-            entries.sort_by(|a, b| b.ts.cmp(&a.ts));
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.ts));
             entries.truncate(limit);
             let value = if entries.is_empty() {
                 match diagnostics_metrics_from_invocations(&runtime, &month, limit) {
@@ -2587,7 +2735,7 @@ async fn list_diagnostics_friction(
     let limit = bounded_limit(q.limit, HISTORY_DEFAULT_LIMIT);
     match runtime.read_friction_entries_limited(&month, limit) {
         Ok(mut entries) => {
-            entries.sort_by(|a, b| b.ts.cmp(&a.ts));
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.ts));
             entries.truncate(limit);
             let value = if entries.is_empty() {
                 match diagnostics_friction_from_v2_audit(&runtime, &month, limit) {

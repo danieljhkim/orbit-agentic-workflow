@@ -27,7 +27,7 @@ pub(crate) fn seed_default_executors(
                 store.upsert_executor_def(&def)?;
                 created += 1;
             }
-            Some(existing) if overwrite => {
+            Some(_) if overwrite => {
                 store.upsert_executor_def(&def)?;
                 created += 1;
             }
