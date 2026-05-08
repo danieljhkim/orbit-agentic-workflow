@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-08 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3)
+**Last updated:** 2026-05-08 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8)
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
@@ -204,12 +204,13 @@ The CLI path is driven by `cli_runner.rs`, added in [T20260419-0104]. The flow i
 2. Build an `Agent` from `orbit-agent`.
 3. Ask the retained CLI runtime for an `AgentInvocationSpec` containing provider-specific per-request args.
 4. Emit the advisory `ToolAllowlistHarnessDelegated` event.
-5. Emit `CliInvocationStarted` with redacted argv and stdin blob ref.
-6. Spawn the subprocess with a wall-clock timeout.
-7. Emit `CliInvocationFinished` with stdout/stderr blob refs and timeout state.
-8. Parse the captured provider output with the existing Orbit response parser and persist its `InvocationTrace` through the host.
+5. Resolve the subprocess cwd from runtime-owned workspace context.
+6. Emit `CliInvocationStarted` with redacted argv, stdin blob ref, and resolved cwd.
+7. Spawn the subprocess in that cwd with a wall-clock timeout.
+8. Emit `CliInvocationFinished` with stdout/stderr blob refs and timeout state.
+9. Parse the captured provider output with the existing Orbit response parser and persist its `InvocationTrace` through the host.
 
-After [T20260426-2313], stdout/stderr readers emit line-level `tracing::info!` events while the child runs, carrying `provider`, `stream`, `job_run_id`, `task_id`, and `line`. After [T20260426-2349], the default tracing subscriber redacts formatted output. The readers still retain original bytes for the existing audit/blob path, so run logs follow blob refs rather than the live feed.
+After [T20260426-2313], stdout/stderr readers emit line-level `tracing::info!` events while the child runs, carrying `provider`, `stream`, `job_run_id`, `task_id`, and `line`. After [T20260508-8], those events also carry `cwd` when the CLI subprocess has a resolved cwd. After [T20260426-2349], the default tracing subscriber redacts formatted output. The readers still retain original bytes for the existing audit/blob path, so run logs follow blob refs rather than the live feed.
 
 Executor args are prepended before provider runtime args. For seeded Codex, the subprocess starts as `codex exec --json ...`, not the interactive TUI. [T20260423-0114] exposed the earlier command-only boundary.
 
@@ -217,7 +218,7 @@ After [T20260427-48], provider runtime args receive provider config through `V2R
 
 After [T20260427-51], macOS CLI invocations declaring `sandbox: macos-sandbox-exec` run under `sandbox-exec -f <profile.sb> <provider> ...`. Orbit treats that SBPL profile as filesystem authority and neutralizes provider-native sandbox flags. After [T20260428-10], the profile grants Codex state (`$CODEX_HOME` or `$HOME/.codex`) plus side-write roots from provider config so inherited Orbit subprocesses can persist workflow state while project writes remain governed by `fsProfile`. After [T20260505-22], dispatch also runs `apply_provider_static_arg_fixups` before spawn, separately from sandbox neutralization. Today this only rewrites Claude's `--debug-file` value to `<claude_state_dir>/<basename>` so the log lands inside the already-writable state dir instead of `.orbit/**`, which the default policy denies.
 
-After [T20260430-15], the CLI stdin envelope carries rendered activity input and durable `run_id` beside instruction, prompt, tools, and model. When input identifies one task, orbit-core embeds a canonical task snapshot with `input.workspace_path` / `input.repo_root` taking precedence over stored paths. After [T20260505-10], Orbit-managed CLI subprocesses receive `ORBIT_RUN_ID` plus an Orbit-managed run-context marker; `orbit tool run` requires both before it populates `ToolContext` reservation ownership. Direct manual CLI tool calls, including calls with only `ORBIT_RUN_ID`, remain unowned.
+After [T20260430-15], the CLI stdin envelope carries rendered activity input and durable `run_id` beside instruction, prompt, tools, and model. When input identifies one task, orbit-core embeds a canonical task snapshot with `input.workspace_path` / `input.repo_root` taking precedence over stored paths. After [T20260508-8], `backend: cli` also uses a shared workspace resolver for subprocess cwd: `input.workspace_path`, then `task.workspace_path`, then best-effort `ToolContext.workspace_root`. Declared input/task paths must already be directories; stale worktrees fail as `CliInvocationFailed` before `CliInvocationStarted` is emitted. `groundhog` delegates to the same resolver so task execution and attempt orchestration do not drift. After [T20260505-10], Orbit-managed CLI subprocesses receive `ORBIT_RUN_ID` plus an Orbit-managed run-context marker; `orbit tool run` requires both before it populates `ToolContext` reservation ownership. Direct manual CLI tool calls, including calls with only `ORBIT_RUN_ID`, remain unowned.
 
 The older `AgentRuntime` trait and `providers/*_cli.rs` files are not deprecated leftovers; they are the shipped `backend: cli` implementation.
 
@@ -483,5 +484,6 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260505-10]** — Release run-owned task lock reservations through engine-owned terminal cleanup and reserve-pressure reconciliation.
 - **[T20260505-21]** — Add whole-run replay with `retry_source_run_id` lineage and current-definition semantics.
 - **[T20260506-2]** — Lazily materialize loop audit JSONL files only when loop-level events are emitted.
+- **[T20260508-8]** — Resolve backend: cli subprocess cwd from workspace context and record it in audit/tracing.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

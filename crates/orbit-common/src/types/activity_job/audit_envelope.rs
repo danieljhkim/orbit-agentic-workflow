@@ -156,6 +156,7 @@ pub enum V2AuditEventKind {
         argv_redacted: Vec<String>,
         stdin_blob_ref: Option<String>,
         model: Option<String>,
+        cwd: Option<String>,
         wall_clock_timeout_ms: u64,
     },
     /// §7.6 — CLI backend subprocess finished (either naturally or by

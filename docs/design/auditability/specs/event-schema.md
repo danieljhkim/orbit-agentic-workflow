@@ -39,6 +39,7 @@ Required invariants:
 - Child events set `parent_event_id` when emitted under a parent context.
 - `workspace_path` remains optional; CLI/library callers with a real workspace should attach it, while smoke and stub hosts may omit it.
 - Body variants use the `body_kind` discriminator.
+- `cli.invocation.started` includes optional `cwd` when Activity/Job resolved a subprocess working directory.
 - A run starts with a run-start event and finishes with a run-finished event whenever execution reaches the dispatch wrapper.
 
 Failure modes:
@@ -82,4 +83,4 @@ Required invariants:
 
 ## Agent Signature
 
-Last revised by codex / gpt-5 for [T20260426-0605].
+Last revised by codex / gpt-5.5 for [T20260508-8].
