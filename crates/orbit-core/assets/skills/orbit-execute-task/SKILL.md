@@ -35,9 +35,8 @@ orbit tool run orbit.task.show --input '{"id": "<task-id>", "field": "plan", "mo
 # Start a task (proposed/backlog/someday/blocked -> in-progress)
 orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why>", "model": "<model_name>"}'
 
-# Update plan, status, or add a comment
+# Update plan or add a comment
 orbit tool run orbit.task.update --input '{"id": "<task-id>", "plan": "<markdown plan>", "model": "<model_name>"}'
-orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "model": "<model_name>"}'
 orbit tool run orbit.task.update --input '{"id": "<task-id>", "comment": "<what happened>", "model": "<model_name>"}'
 
 # Persist execution summary
@@ -83,16 +82,27 @@ orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this 
 
 Follow the task's `plan` step by step. Use selector-first context from `context_files` before touching code: prefer `orbit.graph.pack`, and read files directly only for unresolved selectors or when the graph is unavailable. Run the repo-approved verification commands from the plan. If repo instructions forbid tests, honor that and use the allowed validation path instead.
 
-### Step 5: Move to review and summarize
+### Step 5: Summarize and hand off
 
-```bash
-orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "model": "<model_name>"}'
-```
-
-Then persist the execution summary (see template below):
+First persist the execution summary (see template below):
 
 ```bash
 orbit tool run orbit.task.update --input '{"id": "<task-id>", "execution_summary": "<summary>", "model": "<model_name>"}'
+```
+
+Then choose the lifecycle handoff path:
+
+- **Under an activity envelope** (for example, `agent_implement`): persist the
+  `execution_summary` only. Do not move the task to `review`; the pipeline owns
+  that transition after commit/merge or PR steps succeed. If the envelope gives
+  lifecycle instructions, it takes precedence over this skill's direct-execution
+  defaults.
+- **Direct execution** (no activity envelope, ad-hoc human-requested work):
+  persist the `execution_summary` and move the task to `review` via
+  `orbit.task.update`.
+
+```bash
+orbit tool run orbit.task.update --input '{"id": "<task-id>", "status": "review", "model": "<model_name>"}'
 ```
 
 ## Execution Summary Template
@@ -136,11 +146,15 @@ Recommended follow-ups:
 - If material ambiguity remains, ask clarifying questions before implementation.
 - If approval cannot be obtained for `proposed` work, stop after recording that state.
 - Do not skip lifecycle updates.
-- Moving `in-progress -> review` requires a non-empty `execution_summary`, so persist the summary before or together with the review transition.
+- Direct execution must persist a non-empty `execution_summary` before or
+  together with the review transition. Envelope-driven execution persists the
+  summary and leaves the review transition to the owning pipeline.
 
 ## Exit Criteria
 
 - Requested change implemented and validated.
 - Task started via `orbit.task.start` before execution.
-- Task advanced to `review`.
 - Execution summary persisted via `orbit.task.update`.
+- For direct execution, task advanced to `review`.
+- For envelope-driven execution, task left for the pipeline-owned review
+  transition after commit/merge or PR steps succeed.
