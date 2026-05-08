@@ -13,12 +13,14 @@ const tasks = await loadTasks();
 await rm(targetRoot, { recursive: true, force: true });
 await mkdir(targetRoot, { recursive: true });
 
-for (const task of tasks) {
+const sortedTasks = [...tasks].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+
+for (const [index, task] of sortedTasks.entries()) {
   const file = path.join(targetRoot, `${task.id}.md`);
-  await writeFile(file, renderTaskPage(task), 'utf8');
+  await writeFile(file, renderTaskPage(task, index + 10), 'utf8');
 }
 
-await writeFile(path.join(targetRoot, 'index.md'), renderIndex(tasks), 'utf8');
+await writeFile(path.join(targetRoot, 'index.md'), renderIndex(sortedTasks), 'utf8');
 
 async function loadTasks() {
   const override = process.env.ORBIT_TASK_LIST_JSON;
@@ -33,13 +35,16 @@ async function loadTasks() {
   return JSON.parse(raw);
 }
 
-function renderTaskPage(task) {
+function renderTaskPage(task, sidebarOrder) {
   const summary = pickSummary(task.description, task.title);
   const frontmatter = [
     '---',
     `title: ${JSON.stringify(task.title)}`,
     `description: ${JSON.stringify(summary)}`,
     `slug: tasks/${task.id}`,
+    'sidebar:',
+    `  label: ${JSON.stringify(task.id)}`,
+    `  order: ${sidebarOrder}`,
     '---',
     '',
   ].join('\n');
