@@ -1,6 +1,6 @@
 //! Command implementations for all Orbit CLI subcommands.
 //!
-//! Each sub-module (task, job, activity, skill, audit, tool, init, job_run)
+//! Each sub-module (task, job, activity, skill, audit, tool, init)
 //! provides the data types and logic for one command group. Commands are
 //! executed via the `Execute` trait, which receives an `&OrbitRuntime` and
 //! produces an `OrbitError` on failure.
@@ -21,8 +21,6 @@ pub mod executor;
 pub mod graph;
 pub mod init;
 pub mod job;
-pub mod job_run;
-pub mod job_v2;
 pub mod pipeline_run;
 pub mod policy;
 pub mod skill;
