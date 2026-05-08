@@ -499,7 +499,7 @@ spec:
     }
 
     #[test]
-    fn gate_pipeline_releases_reservation_after_child_terminal_wait() {
+    fn gate_pipeline_releases_reservation_before_child_success_guard() {
         let yaml = DEFAULT_JOB_FILES
             .iter()
             .find_map(|(name, yaml)| (*name == "task_gate_pipeline").then_some(*yaml))
@@ -520,9 +520,17 @@ spec:
             .iter()
             .position(|id| *id == "release_reservation")
             .expect("task gate pipeline has reservation release step");
+        let guard_index = root_step_ids
+            .iter()
+            .position(|id| *id == "require_child_success")
+            .expect("task gate pipeline has child success guard step");
         assert!(
             dispatch_index < release_index,
             "reservation must release only after invoke_and_wait returns"
+        );
+        assert!(
+            release_index < guard_index,
+            "reservation must release before the child success guard can fail the run"
         );
 
         let dispatch = &asset.spec.steps[dispatch_index];
@@ -555,6 +563,68 @@ spec:
                 );
             }
             other => panic!("expected release target ref, got {other:?}"),
+        }
+
+        let guard = &asset.spec.steps[guard_index];
+        assert_eq!(
+            guard.when.as_deref(),
+            Some("{{ steps.reserve.output.reserved }} == true")
+        );
+        match &guard.body {
+            JobV2StepBody::TargetRef(target) => {
+                assert_eq!(target.target, "activity:pipeline_success_guard");
+                let input = target.default_input.as_ref().expect("guard input");
+                assert_eq!(
+                    input["result"],
+                    Value::String("{{ steps.dispatch_child.output }}".to_string())
+                );
+            }
+            other => panic!("expected guard target ref, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auto_pipeline_checks_gate_results_after_fan_in() {
+        let yaml = DEFAULT_JOB_FILES
+            .iter()
+            .find_map(|(name, yaml)| (*name == "task_auto_pipeline").then_some(*yaml))
+            .expect("task auto pipeline default exists");
+        let asset = load_job_asset(yaml).expect("parse task auto pipeline");
+        let root_step_ids = asset
+            .spec
+            .steps
+            .iter()
+            .map(|step| step.id.as_str())
+            .collect::<Vec<_>>();
+
+        let dispatch_index = root_step_ids
+            .iter()
+            .position(|id| *id == "dispatch")
+            .expect("task auto pipeline has dispatch fan-out");
+        let guard_index = root_step_ids
+            .iter()
+            .position(|id| *id == "require_gate_success")
+            .expect("task auto pipeline has gate success guard");
+        assert!(
+            dispatch_index < guard_index,
+            "gate results must be collected before the success guard runs"
+        );
+
+        let guard = &asset.spec.steps[guard_index];
+        assert_eq!(
+            guard.when.as_deref(),
+            Some("{{ steps.validate_bundles.output.bundle_count }} > 0")
+        );
+        match &guard.body {
+            JobV2StepBody::TargetRef(target) => {
+                assert_eq!(target.target, "activity:pipeline_success_guard");
+                let input = target.default_input.as_ref().expect("guard input");
+                assert_eq!(
+                    input["results"],
+                    Value::String("{{ steps.gate_results.output }}".to_string())
+                );
+            }
+            other => panic!("expected guard target ref, got {other:?}"),
         }
     }
 

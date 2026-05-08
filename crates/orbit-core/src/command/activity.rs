@@ -53,6 +53,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/pipeline_wait.yaml"),
     ),
     (
+        "pipeline_success_guard",
+        include_str!("../../assets/activities/pipeline_success_guard.yaml"),
+    ),
+    (
         "list_backlog_tasks",
         include_str!("../../assets/activities/list_backlog_tasks.yaml"),
     ),
