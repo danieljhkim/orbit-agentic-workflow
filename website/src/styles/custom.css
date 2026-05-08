@@ -513,8 +513,14 @@ body {
 }
 
 @media (max-width: 54rem) {
+  .sl-markdown-content table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
   .orbit-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .orbit-hero-headline {
