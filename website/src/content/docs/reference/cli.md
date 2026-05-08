@@ -29,7 +29,7 @@ sidebar:
 
 | Command | Purpose |
 |---------|---------|
-| `orbit graph` | Build and query the knowledge graph. |
+| `orbit graph` | Build and query the knowledge graph. See [Knowledge Graph](../concepts/knowledge-graph). |
 | `orbit audit` | Query the audit event log. |
 | `orbit metrics` | Inspect token, tool-call, and knowledge-pack metrics. |
 | `orbit scoreboard` | Generate read-only scoreboard summaries. |
@@ -43,10 +43,10 @@ sidebar:
 
 | Command | Purpose |
 |---------|---------|
-| `orbit activity` | View activity definitions. |
-| `orbit job` | View and manage job definitions. |
+| `orbit activity` | View activity definitions. See [Activities & Jobs](../concepts/activities-jobs). |
+| `orbit job` | View and manage job definitions. See [Activities & Jobs](../concepts/activities-jobs). |
 | `orbit tool` | View and manage tools and external MCP plugins. |
-| `orbit policy` | View filesystem profile policies and runtime scoping. |
+| `orbit policy` | View filesystem profile policies and runtime scoping. See [Scoping](./scoping) and [Policy Format](./policy-format). |
 | `orbit executor` | View executors. |
 
 ## Services
