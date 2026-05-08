@@ -229,6 +229,8 @@ fn non_empty_env_path(value: Option<&OsStr>) -> Option<PathBuf> {
 /// [`Child`] paired with a [`NamedTempFile`] holding the compiled profile;
 /// the caller must keep the `NamedTempFile` alive until the child exits, or
 /// the kernel may lose the profile mid-run.
+/// When `cwd` is set, it is applied to the outer `sandbox-exec` wrapper and
+/// inherited by the wrapped child.
 ///
 /// `process_group(0)` is set on Unix so the supervision layer can reap the
 /// whole tree (matching the `orbit-exec::process::spawn` contract).
@@ -237,6 +239,7 @@ pub fn spawn_under_macos_sandbox(
     program: &str,
     args: &[String],
     env: &[(String, String)],
+    cwd: Option<&Path>,
     stdin: Stdio,
     stdout: Stdio,
     stderr: Stdio,
@@ -270,6 +273,9 @@ pub fn spawn_under_macos_sandbox(
         .stdin(stdin)
         .stdout(stdout)
         .stderr(stderr);
+    if let Some(path) = cwd {
+        command.current_dir(path);
+    }
 
     #[cfg(unix)]
     {
@@ -708,6 +714,44 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path_var = std::ffi::OsString::from(dir.path().display().to_string());
         assert!(!sandbox_exec_available_in(&path_var));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn spawn_under_macos_sandbox_runs_program_in_provided_cwd() {
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
+        let parent = sandbox_test_parent("cwd");
+        let _cleanup = ScopeGuard(parent.clone());
+        let dir = tempfile::Builder::new()
+            .prefix("sandbox-cwd-")
+            .tempdir_in(&parent)
+            .expect("cwd tempdir");
+        let cwd = dir.path().canonicalize().expect("canonical cwd");
+        let (child, _profile_file) = spawn_under_macos_sandbox(
+            "(version 1)\n(allow default)\n",
+            "/bin/sh",
+            &["-c".to_string(), "pwd".to_string()],
+            &[],
+            Some(&cwd),
+            Stdio::null(),
+            Stdio::piped(),
+            Stdio::piped(),
+        )
+        .expect("spawn sandboxed child");
+        let output = child.wait_with_output().expect("wait for child");
+
+        assert!(
+            output.status.success(),
+            "sandboxed pwd should succeed; stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("stdout utf8"),
+            format!("{}\n", cwd.display())
+        );
     }
 
     #[cfg(target_os = "macos")]

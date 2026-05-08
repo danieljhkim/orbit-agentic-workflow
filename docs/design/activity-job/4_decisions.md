@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-08 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3)
+**Last updated:** 2026-05-08 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -424,6 +424,19 @@ Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 - Audit lineage moves from agent tool calls to deterministic `ActivityStarted` / `ActivityFinished` envelopes for the join step; the child relationship remains reconstructable from `dispatched_run_ids` and run-step state.
 - If `pipeline_wait` times out while a child is still running, the next deterministic `load_epic` snapshot still shows open work. Redundant redispatch is bounded by the gate pipeline's task-lock reservation: overlapping context files are denied while the child reservation is active, and TTL remains the abandoned-run fallback.
 
+## ADR-045 — CLI subprocess cwd is runtime-owned workspace state
+
+**Status:** Accepted · 2026-05 · [T20260508-8]
+
+**Context.** Per-run worktrees are supposed to isolate task implementation, but `backend: cli` children previously inherited the pipeline worker cwd and only learned the intended workspace through prompt/input data.
+
+**Decision.** Resolve CLI subprocess cwd before spawn from `input.workspace_path`, then task snapshot `workspace_path`, then best-effort `ToolContext.workspace_root`. Declared input/task paths fail fast if stale, and the selected cwd is recorded in the CLI started audit event plus line-level tracing.
+
+**Consequences.**
+- The runtime, not the prompt, controls where relative paths in provider CLIs resolve.
+- Groundhog and CLI dispatch share one workspace resolver, reducing future drift between orchestration and implementation attempts.
+- Cost: stale declared worktrees now fail before spawn instead of silently running from the parent process directory.
+
 ---
 
 ## Task References
@@ -483,5 +496,6 @@ Folded into ADR-002's rollup for explicit agent dispatch boundaries.
 - **[T20260506-17]** — Make `orbit init` recommend Codex for reviewer and implementer when available.
 - **[T20260506-18]** — Compact activity-job ADRs via rollups.
 - **[T20260508-3]** — Revise generated task PR bodies around the one-task-per-PR workflow.
+- **[T20260508-8]** — Resolve backend: cli subprocess cwd from workspace context and record it in audit/tracing.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

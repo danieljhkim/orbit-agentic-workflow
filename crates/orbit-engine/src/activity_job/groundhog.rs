@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use super::agent_loop_driver::drive_agent_loop_with_tool_context;
 use super::audit_writer::V2AuditWriter;
 use super::dispatcher::{DispatchError, DispatchOutcome, V2RuntimeHost, v2_fs_audit_logger};
+use super::workspace::resolve_subprocess_cwd;
 use crate::WorkspaceSnapshot;
 
 const CHRONICLE_ARTIFACT_PATH: &str = "artifacts.chronicle";
@@ -703,23 +704,15 @@ fn resolve_workspace_path(
     tool_ctx: &ToolContext,
     task_workspace_path: &Option<String>,
 ) -> Result<PathBuf, DispatchError> {
-    let selected = input
-        .get("workspace_path")
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
-        .or_else(|| task_workspace_path.clone())
-        .or_else(|| {
-            tool_ctx
-                .workspace_root
-                .as_ref()
-                .map(|path| path.to_string_lossy().into_owned())
-        })
+    let task_ctx = task_workspace_path
+        .as_ref()
+        .map(|workspace_path| json!({ "workspace_path": workspace_path }));
+    resolve_subprocess_cwd(input, task_ctx.as_ref(), tool_ctx.workspace_root.as_deref())?
         .ok_or_else(|| {
             DispatchError::GroundhogFailed(
                 "groundhog activity requires a workspace path or workspace_root".to_string(),
             )
-        })?;
-    Ok(PathBuf::from(selected))
+        })
 }
 
 fn required_input_string(input: &Value, key: &str) -> Result<String, DispatchError> {

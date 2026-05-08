@@ -23,6 +23,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -43,6 +44,7 @@ use super::audit_writer::V2AuditWriter;
 use super::dispatcher::{
     DispatchError, DispatchInvocationTrace, DispatchOutcome, ResolvedSandbox, V2RuntimeHost,
 };
+use super::workspace::resolve_subprocess_cwd;
 
 /// Default wall-clock timeout when `AgentLoopSpec::wall_clock_timeout_seconds`
 /// is zero. Matches §7.6 guidance: CLI subprocesses must have a mandatory
@@ -74,7 +76,15 @@ pub fn run_cli_backend(
         tools: spec.tools.clone(),
     });
 
-    let envelope_json = cli_agent_envelope_json(host, spec, run_id, input)?;
+    let task_ctx = host.task_context_for_agent_input(input)?;
+    let tool_ctx = host.tool_context_for_activity(Some(run_id), fs_profile, None);
+    let subprocess_cwd =
+        resolve_subprocess_cwd(input, task_ctx.as_ref(), tool_ctx.workspace_root.as_deref())?;
+    let subprocess_cwd_string = subprocess_cwd
+        .as_ref()
+        .map(|path| path.display().to_string());
+
+    let envelope_json = cli_agent_envelope_json(spec, run_id, input, task_ctx.as_ref())?;
 
     let mut provider_config = host.provider_cli_config(&provider);
 
@@ -140,6 +150,7 @@ pub fn run_cli_backend(
         argv_redacted: argv_redacted.clone(),
         stdin_blob_ref: Some(stdin_blob_ref.clone()),
         model: model_redacted,
+        cwd: subprocess_cwd_string.clone(),
         wall_clock_timeout_ms: wall_clock_timeout.as_millis() as u64,
     });
 
@@ -152,11 +163,13 @@ pub fn run_cli_backend(
         &subprocess_args,
         &invocation.stdin,
         &child_env,
+        subprocess_cwd.as_deref(),
         wall_clock_timeout,
         SpawnTraceContext {
             provider: &provider,
             job_run_id: run_id,
             task_id: task_id_from_input(input),
+            cwd: subprocess_cwd_string.as_deref(),
         },
         sandbox.as_ref(),
     )
@@ -219,10 +232,10 @@ pub fn run_cli_backend(
 }
 
 fn cli_agent_envelope_json(
-    host: &dyn V2RuntimeHost,
     spec: &AgentLoopSpec,
     run_id: &str,
     input: &Value,
+    task_ctx: Option<&Value>,
 ) -> Result<Vec<u8>, DispatchError> {
     let mut envelope = serde_json::Map::new();
     envelope.insert("schemaVersion".to_string(), Value::from(1));
@@ -247,8 +260,8 @@ fn cli_agent_envelope_json(
             .map_err(|err| DispatchError::CliInvocationFailed(format!("serialize model: {err}")))?,
     );
 
-    if let Some(task) = host.task_context_for_agent_input(input)? {
-        envelope.insert("task".to_string(), task);
+    if let Some(task) = task_ctx {
+        envelope.insert("task".to_string(), task.clone());
     }
 
     serde_json::to_vec(&Value::Object(envelope))
@@ -432,13 +445,14 @@ fn spawn_child_with_optional_sandbox(
     program: &str,
     args: &[String],
     env: &[(String, String)],
+    cwd: Option<&Path>,
     sandbox: Option<&ResolvedSandbox>,
 ) -> Result<SpawnedChild, OrbitError> {
     match sandbox {
         Some(sb) if sb.kind == ExecutorSandboxKind::MacosSandboxExec => {
-            spawn_macos_sandboxed(program, args, env, sb)
+            spawn_macos_sandboxed(program, args, env, cwd, sb)
         }
-        Some(_) | None => spawn_bare(program, args, env),
+        Some(_) | None => spawn_bare(program, args, env, cwd),
     }
 }
 
@@ -446,13 +460,19 @@ fn spawn_bare(
     program: &str,
     args: &[String],
     env: &[(String, String)],
+    cwd: Option<&Path>,
 ) -> Result<SpawnedChild, OrbitError> {
-    let child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .envs(env.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(path) = cwd {
+        command.current_dir(path);
+    }
+    let child = command
         .spawn()
         .map_err(|err| OrbitError::Execution(format!("failed to spawn `{program}`: {err}")))?;
     Ok(SpawnedChild {
@@ -465,9 +485,10 @@ fn spawn_macos_sandboxed(
     program: &str,
     args: &[String],
     env: &[(String, String)],
+    cwd: Option<&Path>,
     sandbox: &ResolvedSandbox,
 ) -> Result<SpawnedChild, OrbitError> {
-    spawn_macos_sandboxed_with(program, args, env, sandbox, sandbox_exec_available())
+    spawn_macos_sandboxed_with(program, args, env, cwd, sandbox, sandbox_exec_available())
 }
 
 /// Test-friendly variant of [`spawn_macos_sandboxed`]: callers pass an
@@ -479,6 +500,7 @@ fn spawn_macos_sandboxed_with(
     program: &str,
     args: &[String],
     env: &[(String, String)],
+    cwd: Option<&Path>,
     sandbox: &ResolvedSandbox,
     sandbox_exec_present: bool,
 ) -> Result<SpawnedChild, OrbitError> {
@@ -489,7 +511,7 @@ fn spawn_macos_sandboxed_with(
                 program = program,
                 "sandbox-exec not available on PATH; falling back to bare exec because executor declares allow_fallback"
             );
-            return spawn_bare(program, args, env);
+            return spawn_bare(program, args, env, cwd);
         }
         return Err(OrbitError::Execution(
             "sandbox-exec not available on PATH; declare allow_fallback: true to permit bare exec"
@@ -507,6 +529,7 @@ fn spawn_macos_sandboxed_with(
         program,
         args,
         env,
+        cwd,
         Stdio::piped(),
         Stdio::piped(),
         Stdio::piped(),
@@ -521,6 +544,7 @@ struct SpawnTraceContext<'a> {
     provider: &'a str,
     job_run_id: &'a str,
     task_id: Option<&'a str>,
+    cwd: Option<&'a str>,
 }
 
 fn spawn_with_timeout(
@@ -528,6 +552,7 @@ fn spawn_with_timeout(
     args: &[String],
     stdin_bytes: &[u8],
     env: &[(String, String)],
+    cwd: Option<&Path>,
     timeout: Duration,
     trace: SpawnTraceContext<'_>,
     sandbox: Option<&ResolvedSandbox>,
@@ -537,7 +562,7 @@ fn spawn_with_timeout(
         mut child,
         // The temp profile must outlive the child — drop it after wait.
         _profile_temp,
-    } = spawn_child_with_optional_sandbox(program, args, env, sandbox)
+    } = spawn_child_with_optional_sandbox(program, args, env, cwd, sandbox)
         .map_err(|err| format!("spawn {program}: {err}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
@@ -559,6 +584,7 @@ fn spawn_with_timeout(
             "stdout",
             trace.job_run_id.to_string(),
             trace.task_id.map(ToString::to_string),
+            trace.cwd.map(ToString::to_string),
             dispatch.clone(),
         )
     });
@@ -570,6 +596,7 @@ fn spawn_with_timeout(
             "stderr",
             trace.job_run_id.to_string(),
             trace.task_id.map(ToString::to_string),
+            trace.cwd.map(ToString::to_string),
             dispatch,
         )
     });
@@ -622,6 +649,7 @@ fn spawn_output_reader<R>(
     stream: &'static str,
     job_run_id: String,
     task_id: Option<String>,
+    cwd: Option<String>,
     dispatch: tracing::Dispatch,
 ) -> thread::JoinHandle<()>
 where
@@ -644,6 +672,7 @@ where
                             stream,
                             &job_run_id,
                             task_id.as_deref(),
+                            cwd.as_deref(),
                             &raw_line,
                         );
                     }
@@ -659,16 +688,28 @@ fn emit_output_line(
     stream: &str,
     job_run_id: &str,
     task_id: Option<&str>,
+    cwd: Option<&str>,
     raw_line: &[u8],
 ) {
     let line = line_text(raw_line);
-    tracing::info!(
-        provider = provider,
-        stream = stream,
-        job_run_id = job_run_id,
-        task_id = task_id,
-        line = line.as_str()
-    );
+    if let Some(cwd) = cwd {
+        tracing::info!(
+            provider = provider,
+            stream = stream,
+            job_run_id = job_run_id,
+            task_id = task_id,
+            cwd = cwd,
+            line = line.as_str()
+        );
+    } else {
+        tracing::info!(
+            provider = provider,
+            stream = stream,
+            job_run_id = job_run_id,
+            task_id = task_id,
+            line = line.as_str()
+        );
+    }
 }
 
 fn line_text(raw_line: &[u8]) -> String {
@@ -735,11 +776,13 @@ mod tests {
                 &args,
                 b"",
                 &[],
+                None,
                 Duration::from_secs(5),
                 SpawnTraceContext {
                     provider: "codex",
                     job_run_id: "job-123",
                     task_id: Some("T123"),
+                    cwd: None,
                 },
                 None,
             )
@@ -761,6 +804,38 @@ mod tests {
             assert_eq!(event.field("task_id"), Some("T123"));
             assert!(event.fields.contains_key("stream"));
             assert!(event.fields.contains_key("line"));
+            assert!(!event.fields.contains_key("cwd"));
+        }
+
+        let cwd = tempdir().expect("cwd tempdir");
+        let cwd_path = cwd.path().canonicalize().expect("canonical cwd");
+        let cwd_string = cwd_path.display().to_string();
+        let (result, events) = capture_events(|| {
+            spawn_with_timeout(
+                "/bin/sh",
+                &args,
+                b"",
+                &[],
+                Some(&cwd_path),
+                Duration::from_secs(5),
+                SpawnTraceContext {
+                    provider: "codex",
+                    job_run_id: "job-456",
+                    task_id: Some("T456"),
+                    cwd: Some(cwd_string.as_str()),
+                },
+                None,
+            )
+        });
+        let (stdout, stderr, exit_code, _duration, timed_out) = result.expect("spawn succeeds");
+
+        assert_eq!(stdout, b"out-one\nout-two\n");
+        assert_eq!(stderr, b"err-one\n");
+        assert_eq!(exit_code, Some(0));
+        assert!(!timed_out);
+        assert_eq!(events.len(), 3);
+        for event in &events {
+            assert_eq!(event.field("cwd"), Some(cwd_string.as_str()));
         }
     }
 
@@ -773,11 +848,13 @@ mod tests {
                 &args,
                 b"",
                 &[],
+                None,
                 Duration::from_secs(5),
                 SpawnTraceContext {
                     provider: "codex",
                     job_run_id: "job-redact",
                     task_id: Some("TRED"),
+                    cwd: None,
                 },
                 None,
             )
@@ -792,6 +869,23 @@ mod tests {
         assert!(
             !formatted_output.contains("abc123"),
             "formatted tracing output leaked secret: {formatted_output}"
+        );
+    }
+
+    #[test]
+    fn spawn_bare_runs_program_in_provided_cwd() {
+        let temp = tempdir().expect("tempdir");
+        let cwd = temp.path().canonicalize().expect("canonical tempdir");
+        let SpawnedChild {
+            child,
+            _profile_temp,
+        } = spawn_bare("/bin/sh", &sh_args("pwd"), &[], Some(&cwd)).expect("spawn succeeds");
+
+        let output = child.wait_with_output().expect("wait succeeds");
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("stdout utf8"),
+            format!("{}\n", cwd.display())
         );
     }
 
@@ -852,6 +946,114 @@ mod tests {
         assert!(!finished.4);
         assert_eq!(sink.blob("blob-2"), Some(b"plain stdout\n".to_vec()));
         assert_eq!(sink.blob("blob-3"), Some(b"plain stderr\n".to_vec()));
+    }
+
+    #[test]
+    fn run_cli_backend_returns_error_when_declared_workspace_path_missing() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("codex");
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+        );
+        let missing = temp.path().join("missing-worktree");
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-missing-cwd",
+            "codex:gpt-5.5",
+            sink_for_writer,
+        ));
+        let host = TestHost {
+            command: script.display().to_string(),
+            executor_args: Vec::new(),
+            provider_config: HashMap::new(),
+            sandbox: None,
+            task_context: Some(serde_json::json!({
+                "workspace_path": missing.display().to_string()
+            })),
+        };
+        let spec = test_agent_loop_spec(Duration::from_secs(5));
+        let input = serde_json::json!({
+            "prompt": "do it",
+            "task_id": "TMISSING"
+        });
+
+        let err = run_cli_backend(&host, &spec, "job-missing-cwd", audit.clone(), &input, None)
+            .expect_err("missing declared workspace should fail");
+        match err {
+            DispatchError::CliInvocationFailed(message) => {
+                assert!(
+                    message.contains(&missing.display().to_string()),
+                    "error should name missing path: {message}"
+                );
+            }
+            other => panic!("expected CliInvocationFailed, got {other:?}"),
+        }
+
+        let events = audit.events_snapshot().expect("events snapshot");
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(&event.kind, V2AuditEventKind::CliInvocationStarted { .. })),
+            "CliInvocationStarted should not be emitted before cwd validation succeeds"
+        );
+    }
+
+    #[test]
+    fn run_cli_backend_records_resolved_cwd_in_started_event() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("codex");
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+        );
+        let workspace_dir = tempdir().expect("workspace tempdir");
+        let workspace = workspace_dir
+            .path()
+            .canonicalize()
+            .expect("canonical workspace");
+        let workspace_string = workspace.display().to_string();
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-cwd-audit",
+            "codex:gpt-5.5",
+            sink_for_writer,
+        ));
+        let host = TestHost {
+            command: script.display().to_string(),
+            executor_args: Vec::new(),
+            provider_config: HashMap::new(),
+            sandbox: None,
+            task_context: Some(serde_json::json!({
+                "workspace_path": workspace_string.clone()
+            })),
+        };
+        let spec = test_agent_loop_spec(Duration::from_secs(5));
+
+        let outcome = run_cli_backend(
+            &host,
+            &spec,
+            "job-cwd-audit",
+            audit.clone(),
+            &serde_json::json!({ "prompt": "do it", "task_id": "TCWD" }),
+            None,
+        )
+        .expect("run succeeds");
+        assert!(outcome.success);
+
+        let events = audit.events_snapshot().expect("events snapshot");
+        let cwd = events
+            .iter()
+            .find_map(|event| match &event.kind {
+                V2AuditEventKind::CliInvocationStarted { cwd, .. } => cwd.as_deref(),
+                _ => None,
+            })
+            .expect("cli.invocation.started cwd");
+        assert_eq!(cwd, workspace_string);
     }
 
     #[test]
@@ -942,8 +1144,9 @@ mod tests {
             "workspace_path": "/tmp/orbit-worktree"
         });
 
-        let raw = cli_agent_envelope_json(&host, &spec, "jrun-context", &input)
-            .expect("build cli agent envelope");
+        let raw =
+            cli_agent_envelope_json(&spec, "jrun-context", &input, host.task_context.as_ref())
+                .expect("build cli agent envelope");
         let envelope: Value = serde_json::from_slice(&raw).expect("parse envelope json");
 
         assert_eq!(envelope["schemaVersion"], 1);
@@ -964,11 +1167,13 @@ mod tests {
                 &args,
                 b"",
                 &[],
+                None,
                 Duration::from_millis(75),
                 SpawnTraceContext {
                     provider: "codex",
                     job_run_id: "job-timeout",
                     task_id: Some("TTIME"),
+                    cwd: None,
                 },
                 None,
             )
@@ -1161,7 +1366,7 @@ mod tests {
     #[test]
     fn spawn_macos_sandboxed_returns_error_when_sandbox_exec_missing_and_fallback_disabled() {
         let sandbox = sandbox_for_test();
-        let err = spawn_macos_sandboxed_with("/bin/sh", &[], &[], &sandbox, false)
+        let err = spawn_macos_sandboxed_with("/bin/sh", &[], &[], None, &sandbox, false)
             .expect_err("expected fallback-disabled error");
         match err {
             OrbitError::Execution(msg) => {
@@ -1184,6 +1389,7 @@ mod tests {
             "/bin/sh",
             &["-c".to_string(), "exit 0".to_string()],
             &[],
+            None,
             &sandbox,
             false,
         )
