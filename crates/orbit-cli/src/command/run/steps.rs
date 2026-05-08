@@ -1,4 +1,4 @@
-use orbit_core::command::job_run::JobRunListParams;
+use orbit_core::command::job::JobRunListParams;
 use orbit_core::runtime::run_audit::RunAuditStep;
 use orbit_core::{JobRun, JobRunStep, JobTargetType, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};

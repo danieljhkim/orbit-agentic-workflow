@@ -1,5 +1,5 @@
 use clap::Args;
-use orbit_core::command::job_run::JobRunListParams;
+use orbit_core::command::job::JobRunListParams;
 use orbit_core::{OrbitError, OrbitRuntime};
 use serde_json::json;
 

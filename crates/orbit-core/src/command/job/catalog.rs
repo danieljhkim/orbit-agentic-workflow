@@ -18,27 +18,27 @@ use crate::OrbitRuntime;
 const DEFAULT_JOB_FILES: &[(&str, &str)] = &[
     (
         "job_duel_plan_pipeline",
-        include_str!("../../assets/jobs/job_duel_plan_pipeline.yaml"),
+        include_str!("../../../assets/jobs/job_duel_plan_pipeline.yaml"),
     ),
     (
         "task_auto_pipeline",
-        include_str!("../../assets/jobs/task_auto_pipeline.yaml"),
+        include_str!("../../../assets/jobs/task_auto_pipeline.yaml"),
     ),
     (
         "task_epic_pipeline",
-        include_str!("../../assets/jobs/task_epic_pipeline.yaml"),
+        include_str!("../../../assets/jobs/task_epic_pipeline.yaml"),
     ),
     (
         "task_gate_pipeline",
-        include_str!("../../assets/jobs/task_gate_pipeline.yaml"),
+        include_str!("../../../assets/jobs/task_gate_pipeline.yaml"),
     ),
     (
         "task_local_pipeline",
-        include_str!("../../assets/jobs/task_local_pipeline.yaml"),
+        include_str!("../../../assets/jobs/task_local_pipeline.yaml"),
     ),
     (
         "task_pr_pipeline",
-        include_str!("../../assets/jobs/task_pr_pipeline.yaml"),
+        include_str!("../../../assets/jobs/task_pr_pipeline.yaml"),
     ),
 ];
 

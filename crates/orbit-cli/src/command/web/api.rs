@@ -25,7 +25,7 @@ use axum::routing::{get, post};
 use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use futures_core::Stream;
 use orbit_common::utility::blob_store::BlobStore;
-use orbit_core::command::job_run::JobRunListParams;
+use orbit_core::command::job::JobRunListParams;
 use orbit_core::command::task::{TaskAddParams, TaskUpdateParams};
 use orbit_core::runtime::run_audit::RunAuditStep;
 use orbit_core::{
