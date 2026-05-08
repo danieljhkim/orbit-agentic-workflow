@@ -48,7 +48,9 @@ spec:
        real confidence.
     7. Persist an execution summary when useful, but do not move the task to
        `review`; the pipeline does that only after commit/merge or PR steps
-       succeed.
+       succeed. This envelope rule overrides the direct-execution review
+       transition described in the `orbit-execute-task` skill's Step 5 and Exit
+       Criteria.
     8. Return a short structured summary. Include a `diff` string only when you
        can produce it cheaply and accurately.
   tools:
