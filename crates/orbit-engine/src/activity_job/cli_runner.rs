@@ -29,7 +29,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest, parse_and_validate_response};
+use orbit_agent::{
+    Agent, AgentConfig, AgentOperation, AgentRequest, parse_and_validate_response,
+    peek_response_status,
+};
 use orbit_common::types::activity_job::{AgentLoopSpec, V2AuditEventKind};
 use orbit_common::types::{ExecutionResult, ExecutorSandboxKind, InvocationTrace, OrbitError};
 use orbit_common::utility::redaction::PatternRedactor;
@@ -61,7 +64,6 @@ pub fn run_cli_backend(
 ) -> Result<DispatchOutcome, DispatchError> {
     let provider = spec.provider.as_str().to_string();
     let mut cli_executor = host.resolve_cli_executor(&provider)?;
-    let sandbox = host.resolve_executor_sandbox(&provider, fs_profile)?;
     let timeout_seconds = if spec.wall_clock_timeout_seconds == 0 {
         DEFAULT_WALL_CLOCK_TIMEOUT_SECONDS
     } else {
@@ -78,11 +80,17 @@ pub fn run_cli_backend(
 
     let task_ctx = host.task_context_for_agent_input(input)?;
     let tool_ctx = host.tool_context_for_activity(Some(run_id), fs_profile, None);
+    // Resolve the subprocess cwd before sandbox compilation so the host can
+    // re-allow the active worktree subpath after the policy deny rules. The
+    // sandbox's `denyModify .orbit/**` rule otherwise blocks every non-codex
+    // provider from writing inside its own jrun worktree. See T20260508-17.
     let subprocess_cwd =
         resolve_subprocess_cwd(input, task_ctx.as_ref(), tool_ctx.workspace_root.as_deref())?;
     let subprocess_cwd_string = subprocess_cwd
         .as_ref()
         .map(|path| path.display().to_string());
+    let sandbox =
+        host.resolve_executor_sandbox(&provider, fs_profile, subprocess_cwd.as_deref())?;
 
     let envelope_json = cli_agent_envelope_json(spec, run_id, input, task_ctx.as_ref())?;
 
@@ -188,7 +196,18 @@ pub fn run_cli_backend(
         timed_out,
     });
 
-    let success = !timed_out && matches!(exit_code, Some(0));
+    // Provisional success based on exit code; the embedded envelope status
+    // (read below) can demote this to false. Some provider CLIs (notably
+    // claude) can exit 0 with an outer `result.subtype = "success"` envelope
+    // even when their inner Orbit response payload reports `status = "failed"`,
+    // and pre-T20260508-17 the dispatcher recorded that as success. The
+    // structured envelope is now authoritative when present.
+    let exit_success = !timed_out && matches!(exit_code, Some(0));
+    let stdout_text = String::from_utf8_lossy(&stdout).into_owned();
+    let envelope_status = peek_response_status(&stdout_text);
+    let envelope_indicates_failure =
+        matches!(envelope_status.as_deref(), Some("failed") | Some("timeout"));
+    let success = exit_success && !envelope_indicates_failure;
     let trace = parse_cli_invocation_trace(
         &stdout,
         &stderr,
@@ -201,13 +220,16 @@ pub fn run_cli_backend(
             "cli subprocess exceeded {}s wall-clock timeout",
             timeout_seconds
         ))
+    } else if exit_success && envelope_indicates_failure {
+        Some(format!(
+            "cli subprocess reported envelope status={:?} despite exit 0",
+            envelope_status.as_deref().unwrap_or("unknown")
+        ))
     } else if !success {
         Some(format!("cli subprocess exited with code {:?}", exit_code))
     } else {
         None
     };
-
-    let stdout_text = String::from_utf8_lossy(&stdout).into_owned();
 
     Ok(DispatchOutcome {
         success,
@@ -1672,6 +1694,94 @@ mod tests {
         );
     }
 
+    /// Regression for T20260508-17: a CLI subprocess that exits 0 but emits an
+    /// embedded Orbit response envelope reporting `status: "failed"` must NOT
+    /// be classified as success. Pre-fix, dispatch returned `success: true`
+    /// because the dispatcher only consulted exit code, leaving the planning
+    /// pipeline to push an empty branch and open an empty PR.
+    #[test]
+    fn run_cli_backend_demotes_success_when_envelope_reports_failed_despite_exit_zero() {
+        let temp = tempdir().expect("tempdir");
+        // The agent config layer infers provider from the command basename, so
+        // the script name must match a known provider. The demotion logic is
+        // provider-agnostic — codex exercises the same code path as claude.
+        let script = temp.path().join("codex");
+        // Stdout shape mirrors the Claude CLI: a wrapping JSON whose `result`
+        // is a stringified Orbit envelope with status="failed". Exit 0.
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"{\\\"schemaVersion\\\":1,\\\"status\\\":\\\"failed\\\",\\\"error\\\":{\\\"code\\\":\\\"E\\\",\\\"message\\\":\\\"m\\\",\\\"details\\\":null}}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n",
+        );
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-success-demote",
+            "claude:s",
+            sink_for_writer,
+        ));
+        let host = TestHost::with_command(script.display().to_string());
+        let spec = test_agent_loop_spec(Duration::from_secs(5));
+
+        let outcome = run_cli_backend(
+            &host,
+            &spec,
+            "job-success-demote",
+            audit,
+            &serde_json::json!({"prompt": "hi"}),
+            None,
+        )
+        .expect("run cli backend");
+
+        assert!(
+            !outcome.success,
+            "envelope status=failed must demote dispatch success even on exit 0"
+        );
+        let message = outcome.message.expect("expected demote message");
+        assert!(
+            message.contains("envelope status") && message.contains("failed"),
+            "demote message should explain envelope status; got {message:?}"
+        );
+    }
+
+    /// Sanity check that the demotion does not regress the happy path: an exit-0
+    /// run with a `status: "success"` envelope must still be classified as
+    /// success. Without this, the demotion logic could silently flip every
+    /// claude run to failed.
+    #[test]
+    fn run_cli_backend_keeps_success_when_envelope_reports_success() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("codex");
+        write_executable(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"schemaVersion\":1,\"status\":\"success\",\"result\":{}}'\n",
+        );
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_for_writer: Arc<dyn AuditSink> = sink;
+        let audit = Arc::new(V2AuditWriter::new(
+            "job-success-keep",
+            "claude:s",
+            sink_for_writer,
+        ));
+        let host = TestHost::with_command(script.display().to_string());
+        let spec = test_agent_loop_spec(Duration::from_secs(5));
+
+        let outcome = run_cli_backend(
+            &host,
+            &spec,
+            "job-success-keep",
+            audit,
+            &serde_json::json!({"prompt": "hi"}),
+            None,
+        )
+        .expect("run cli backend");
+        assert!(
+            outcome.success,
+            "envelope status=success must keep dispatch success on exit 0"
+        );
+    }
+
     #[test]
     fn task_id_from_input_reads_common_activity_shapes() {
         assert_eq!(
@@ -1926,6 +2036,7 @@ mod tests {
             &self,
             _provider: &str,
             _fs_profile: Option<&str>,
+            _subprocess_cwd: Option<&Path>,
         ) -> Result<Option<ResolvedSandbox>, DispatchError> {
             Ok(self.sandbox.clone())
         }

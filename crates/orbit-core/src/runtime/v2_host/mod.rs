@@ -18,6 +18,7 @@ mod task_context;
 mod test_support;
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use orbit_common::types::activity_job::AgentRole;
@@ -57,6 +58,8 @@ impl V2RuntimeHost for OrbitRuntime {
         provider: &str,
         #[cfg(target_os = "macos")] fs_profile: Option<&str>,
         #[cfg(not(target_os = "macos"))] _fs_profile: Option<&str>,
+        #[cfg(target_os = "macos")] subprocess_cwd: Option<&Path>,
+        #[cfg(not(target_os = "macos"))] _subprocess_cwd: Option<&Path>,
     ) -> Result<Option<ResolvedSandbox>, DispatchError> {
         sandbox::resolve_executor_sandbox(
             self,
@@ -65,6 +68,10 @@ impl V2RuntimeHost for OrbitRuntime {
             fs_profile,
             #[cfg(not(target_os = "macos"))]
             _fs_profile,
+            #[cfg(target_os = "macos")]
+            subprocess_cwd,
+            #[cfg(not(target_os = "macos"))]
+            _subprocess_cwd,
         )
     }
 

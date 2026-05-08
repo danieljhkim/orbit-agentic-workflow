@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Instant;
@@ -92,10 +93,18 @@ pub trait V2RuntimeHost: Send + Sync {
     /// declared (today's behavior). Returns a structured error on
     /// platform mismatch (e.g. `macos-sandbox-exec` on Linux) so the
     /// activity fails closed at dispatch time.
+    ///
+    /// `subprocess_cwd` is the resolved working directory the subprocess
+    /// will run in. The host uses it to re-allow the active worktree path
+    /// after the policy's `denyModify .orbit/**` rule when the cwd is a
+    /// jrun worktree under `.orbit/state/worktrees/`. Without this, every
+    /// non-codex provider (claude/gemini) cannot write inside its own
+    /// worktree because the deny rule wins last-match. See T20260508-17.
     fn resolve_executor_sandbox(
         &self,
         _provider: &str,
         _fs_profile: Option<&str>,
+        _subprocess_cwd: Option<&Path>,
     ) -> Result<Option<ResolvedSandbox>, DispatchError> {
         Ok(None)
     }

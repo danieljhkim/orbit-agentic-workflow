@@ -1,4 +1,6 @@
 #[cfg(target_os = "macos")]
+use std::path::Path;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 
 use orbit_common::types::ExecutorSandboxKind;
@@ -15,6 +17,8 @@ pub(super) fn resolve_executor_sandbox(
     provider: &str,
     #[cfg(target_os = "macos")] fs_profile: Option<&str>,
     #[cfg(not(target_os = "macos"))] _fs_profile: Option<&str>,
+    #[cfg(target_os = "macos")] subprocess_cwd: Option<&Path>,
+    #[cfg(not(target_os = "macos"))] _subprocess_cwd: Option<&Path>,
 ) -> Result<Option<ResolvedSandbox>, DispatchError> {
     let executor = runtime.get_executor_def(provider).map_err(|err| {
         DispatchError::CliInvocationFailed(format!(
@@ -44,7 +48,8 @@ pub(super) fn resolve_executor_sandbox(
                             "resolve fsProfile for sandbox: {err}"
                         ))
                     })?;
-                append_provider_side_write_roots(runtime, provider, &mut resolved)?;
+                append_codex_side_write_roots(runtime, provider, &mut resolved)?;
+                append_active_worktree_root(runtime, subprocess_cwd, &mut resolved);
                 Ok(Some(ResolvedSandbox {
                     kind,
                     fs_profile: resolved,
@@ -93,7 +98,7 @@ fn resolve_fs_profile_absolute(
 }
 
 #[cfg(target_os = "macos")]
-fn append_provider_side_write_roots(
+fn append_codex_side_write_roots(
     runtime: &OrbitRuntime,
     provider: &str,
     resolved: &mut ResolvedFsProfile,
@@ -103,8 +108,8 @@ fn append_provider_side_write_roots(
     // Gemini have no analogous CLI flag — their startup-time writes are
     // confined to their state directories, which `compile_macos_sandbox_profile`
     // already grants via the per-provider state-dir allowances. If a future
-    // provider gains a side-root surface, generalize this branch rather than
-    // duplicating it. See T20260428-14.
+    // provider gains a side-root surface, add a sibling appender. See
+    // T20260428-14.
     if provider != "codex" {
         return Ok(());
     }
@@ -138,6 +143,57 @@ fn append_provider_side_write_roots(
         resolved.modify.push(root);
     }
     Ok(())
+}
+
+/// Re-allow the active job-run worktree under `<workspace>/.orbit/state/worktrees/`
+/// for every provider, after the policy's `denyModify .orbit/**` rule. Without
+/// this, `task_pr_pipeline` runs whose subprocess cwd lives under
+/// `.orbit/state/worktrees/orbit-jrun-…` cannot edit their own checkout under
+/// the macOS sandbox: SBPL is last-match-wins, the broad `unrestricted` profile
+/// allows `<workspace>/**` first, the global deny appends `!<workspace>/.orbit/**`
+/// last, and codex was the only provider that re-asserted a writable side-root
+/// after that. See T20260508-17.
+///
+/// Scope is deliberately narrow: only the calling subprocess's cwd is
+/// re-allowed, and only when it canonicalizes to a direct child of
+/// `<workspace>/.orbit/state/worktrees/`. Cwds outside that prefix yield no
+/// change — we do not blanket-reallow `.orbit/**` for non-codex providers.
+#[cfg(target_os = "macos")]
+fn append_active_worktree_root(
+    runtime: &OrbitRuntime,
+    subprocess_cwd: Option<&Path>,
+    resolved: &mut ResolvedFsProfile,
+) {
+    let Some(cwd) = subprocess_cwd else {
+        return;
+    };
+    let Some(worktree_root) = active_worktree_subpath(runtime, cwd) else {
+        return;
+    };
+    // Append after the policy denies; SBPL last-match-wins re-grants writes
+    // inside the active worktree without widening any path outside it.
+    resolved.modify.push(worktree_root);
+}
+
+#[cfg(target_os = "macos")]
+fn active_worktree_subpath(runtime: &OrbitRuntime, subprocess_cwd: &Path) -> Option<String> {
+    let cwd = subprocess_cwd
+        .canonicalize()
+        .unwrap_or_else(|_| subprocess_cwd.to_path_buf());
+    let workspace_orbit = runtime
+        .paths()
+        .orbit_dir
+        .canonicalize()
+        .unwrap_or_else(|_| runtime.paths().orbit_dir.clone());
+    let worktrees_root = workspace_orbit.join("state").join("worktrees");
+    // Require the cwd to live strictly under `…/.orbit/state/worktrees/`.
+    // A bare `worktrees` cwd would re-allow the entire registry; one path
+    // segment deeper restricts the grant to a single jrun subtree.
+    let relative = cwd.strip_prefix(&worktrees_root).ok()?;
+    let mut components = relative.components();
+    let first = components.next()?;
+    let worktree_dir = worktrees_root.join(first.as_os_str());
+    Some(worktree_dir.display().to_string())
 }
 
 #[cfg(target_os = "macos")]
@@ -193,7 +249,7 @@ mod tests {
     fn resolve_executor_sandbox_returns_none_when_executor_has_no_sandbox() {
         let runtime = seeded_runtime_with_executor(None);
         let resolved = runtime
-            .resolve_executor_sandbox("codex", None)
+            .resolve_executor_sandbox("codex", None, None)
             .expect("resolve");
         assert!(resolved.is_none());
     }
@@ -205,7 +261,7 @@ mod tests {
             orbit_common::types::ExecutorSandboxKind::MacosSandboxExec,
         ));
         let resolved = runtime
-            .resolve_executor_sandbox("codex", None)
+            .resolve_executor_sandbox("codex", None, None)
             .expect("resolve")
             .expect("descriptor");
         assert_eq!(
@@ -238,7 +294,7 @@ mod tests {
         );
 
         let resolved = runtime
-            .resolve_executor_sandbox("codex", None)
+            .resolve_executor_sandbox("codex", None, None)
             .expect("resolve")
             .expect("descriptor");
         let modify = &resolved.fs_profile.modify;
@@ -287,12 +343,149 @@ mod tests {
             orbit_common::types::ExecutorSandboxKind::MacosSandboxExec,
         ));
         let err = runtime
-            .resolve_executor_sandbox("codex", None)
+            .resolve_executor_sandbox("codex", None, None)
             .expect_err("expected platform-mismatch error");
         let message = format!("{err}");
         assert!(
             message.contains("macos-sandbox-exec"),
             "error must name the sandbox kind: {message}"
+        );
+    }
+
+    /// Claude has no codex-style writable-dirs flag, so a worktree under
+    /// `.orbit/state/worktrees/` was unwriteable under the macOS sandbox
+    /// before T20260508-17. The host now appends the active worktree subpath
+    /// after the policy deny so SBPL last-match-wins re-grants writes there.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_executor_sandbox_reallows_claude_active_worktree_under_orbit() {
+        let (_root, runtime, _repo_root) = runtime_with_workspace_layout();
+        seed_executor(
+            &runtime,
+            "claude",
+            Some(orbit_common::types::ExecutorSandboxKind::MacosSandboxExec),
+        );
+
+        let workspace_orbit = runtime
+            .paths()
+            .orbit_dir
+            .canonicalize()
+            .unwrap_or_else(|_| runtime.paths().orbit_dir.clone());
+        let worktree = workspace_orbit
+            .join("state")
+            .join("worktrees")
+            .join("orbit-jrun-20260508-9999");
+        std::fs::create_dir_all(&worktree).expect("create worktree");
+
+        let resolved = runtime
+            .resolve_executor_sandbox("claude", None, Some(&worktree))
+            .expect("resolve")
+            .expect("descriptor");
+        let modify = &resolved.fs_profile.modify;
+        let workspace_orbit_str = workspace_orbit.display().to_string();
+        let workspace_orbit_deny = format!("!{workspace_orbit_str}/**");
+        let deny_pos = modify
+            .iter()
+            .position(|entry| entry == &workspace_orbit_deny)
+            .unwrap_or_else(|| {
+                panic!(
+                    "default policy should deny workspace .orbit writes via {workspace_orbit_deny}; modify={modify:?}"
+                )
+            });
+        let worktree_str = worktree
+            .canonicalize()
+            .unwrap_or_else(|_| worktree.clone())
+            .display()
+            .to_string();
+        let allow_pos = modify
+            .iter()
+            .rposition(|entry| entry == &worktree_str)
+            .unwrap_or_else(|| {
+                panic!(
+                    "active worktree subpath should re-allow under sandbox: expected {worktree_str} in {modify:?}"
+                )
+            });
+        assert!(
+            deny_pos < allow_pos,
+            "active worktree re-allow must come after policy deny: {modify:?}"
+        );
+    }
+
+    /// Regression guard against a blanket reallow: when the cwd is NOT under
+    /// `.orbit/state/worktrees/`, no extra modify entry should be appended for
+    /// non-codex providers. Otherwise a misconfigured activity could quietly
+    /// widen the sandbox.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_executor_sandbox_does_not_reallow_for_non_worktree_cwd() {
+        let (_root, runtime, repo_root) = runtime_with_workspace_layout();
+        seed_executor(
+            &runtime,
+            "claude",
+            Some(orbit_common::types::ExecutorSandboxKind::MacosSandboxExec),
+        );
+
+        // Repo root is a sibling of `.orbit`, well outside the worktrees prefix.
+        let resolved = runtime
+            .resolve_executor_sandbox("claude", None, Some(&repo_root))
+            .expect("resolve")
+            .expect("descriptor");
+        let modify = &resolved.fs_profile.modify;
+        let workspace_orbit = runtime
+            .paths()
+            .orbit_dir
+            .canonicalize()
+            .unwrap_or_else(|_| runtime.paths().orbit_dir.clone())
+            .display()
+            .to_string();
+        // No reallow of `<workspace>/.orbit` itself for non-codex providers.
+        assert!(
+            !modify.iter().any(|entry| entry == &workspace_orbit),
+            "claude must not blanket-reallow workspace .orbit when cwd is outside worktrees: {modify:?}"
+        );
+        // No reallow rooted at `.orbit/state/worktrees` either.
+        let worktrees_root = format!("{workspace_orbit}/state/worktrees");
+        assert!(
+            !modify
+                .iter()
+                .any(|entry| entry.strip_prefix('!').unwrap_or(entry) == worktrees_root.as_str()),
+            "claude must not reallow the worktrees root directly: {modify:?}"
+        );
+    }
+
+    /// A cwd that resolves exactly to `.orbit/state/worktrees/` (no specific
+    /// jrun child) must not yield a grant — that would re-allow every worktree
+    /// in the registry. Only one path segment deeper qualifies.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_executor_sandbox_rejects_bare_worktrees_root_cwd() {
+        let (_root, runtime, _repo_root) = runtime_with_workspace_layout();
+        seed_executor(
+            &runtime,
+            "claude",
+            Some(orbit_common::types::ExecutorSandboxKind::MacosSandboxExec),
+        );
+        let workspace_orbit = runtime
+            .paths()
+            .orbit_dir
+            .canonicalize()
+            .unwrap_or_else(|_| runtime.paths().orbit_dir.clone());
+        let worktrees_root = workspace_orbit.join("state").join("worktrees");
+        std::fs::create_dir_all(&worktrees_root).expect("create worktrees root");
+
+        let resolved = runtime
+            .resolve_executor_sandbox("claude", None, Some(&worktrees_root))
+            .expect("resolve")
+            .expect("descriptor");
+        let modify = &resolved.fs_profile.modify;
+        let worktrees_root_str = worktrees_root
+            .canonicalize()
+            .unwrap_or_else(|_| worktrees_root.clone())
+            .display()
+            .to_string();
+        assert!(
+            !modify.iter().any(|entry| entry == &worktrees_root_str),
+            "bare worktrees-root cwd must not re-allow the registry: {modify:?}"
         );
     }
 }

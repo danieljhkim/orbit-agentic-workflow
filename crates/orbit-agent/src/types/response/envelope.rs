@@ -16,6 +16,27 @@ pub fn is_timeout(exec_result: &ExecutionResult) -> bool {
     !exec_result.success && exec_result.stderr.contains("process timed out")
 }
 
+/// Best-effort lookup of an embedded Orbit response envelope's `status` field
+/// in raw subprocess stdout, *without* validating exit-code alignment.
+///
+/// Used by the CLI dispatcher (T20260508-17) to demote `success` when a CLI
+/// like Claude exits 0 with a wrapping `result.subtype = "success"` but its
+/// embedded Orbit envelope reports `status = "failed"`. `parse_and_validate_response`
+/// returns `Err` in that case because exit alignment fails, which threw away
+/// the signal the dispatcher needs to classify the outcome.
+///
+/// Returns `None` when stdout cannot be parsed or carries no recognizable
+/// envelope, so callers can fall through to other classification rather than
+/// regressing legacy provider shapes.
+pub fn peek_response_status(stdout: &str) -> Option<String> {
+    let documents = parse_json_documents(stdout).ok()?;
+    let envelope = documents
+        .iter()
+        .rev()
+        .find_map(find_agent_response_envelope)?;
+    Some(envelope.status)
+}
+
 fn parse_json_documents(stdout: &str) -> Result<Vec<Value>, OrbitError> {
     let mut documents = Vec::new();
     for item in Deserializer::from_str(stdout).into_iter::<Value>() {
@@ -288,6 +309,34 @@ mod tests {
         assert_eq!(trace.usage.input, 0);
         assert_eq!(trace.usage.output, 0);
         assert_eq!(trace.duration_ms, 1234);
+    }
+
+    #[test]
+    fn peek_response_status_extracts_envelope_failed_from_claude_shaped_wrapper() {
+        // Mimics the bug in T20260508-17: claude exits 0 with `result.subtype`
+        // = "success" but the inner Orbit envelope (carried as a JSON-string
+        // in `result`) reports `status: "failed"`. peek_response_status must
+        // surface "failed" so the dispatcher can demote success without going
+        // through validate_exit_alignment (which would reject the envelope
+        // outright because exit==0 contradicts status=="failed").
+        let inner = r#"{\"schemaVersion\":1,\"status\":\"failed\",\"error\":{\"code\":\"E\",\"message\":\"m\",\"details\":null}}"#;
+        let stdout = format!(
+            r#"{{"type":"result","subtype":"success","result":"{inner}","usage":{{"input_tokens":10,"output_tokens":3}}}}"#
+        );
+        assert_eq!(peek_response_status(&stdout).as_deref(), Some("failed"));
+    }
+
+    #[test]
+    fn peek_response_status_returns_none_when_no_envelope_present() {
+        assert_eq!(peek_response_status("{\"hello\":\"world\"}"), None);
+        assert_eq!(peek_response_status(""), None);
+        assert_eq!(peek_response_status("not json"), None);
+    }
+
+    #[test]
+    fn peek_response_status_extracts_success_from_top_level_envelope() {
+        let stdout = r#"{"schemaVersion":1,"status":"success","result":{}}"#;
+        assert_eq!(peek_response_status(stdout).as_deref(), Some("success"));
     }
 
     #[test]
