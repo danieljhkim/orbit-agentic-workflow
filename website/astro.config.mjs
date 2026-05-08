@@ -123,6 +123,19 @@ export default defineConfig({
           items: [{ slug: 'scoreboard', label: 'Per-agent metrics' }],
         },
         {
+          label: 'Tasks',
+          items: [
+            {
+              label: 'By ID',
+              autogenerate: {
+                directory: 'tasks',
+                collapsed: true,
+              },
+              collapsed: true,
+            },
+          ],
+        },
+        {
           label: 'Contributing',
           items: [
             { slug: 'contributing', label: 'Overview' },
