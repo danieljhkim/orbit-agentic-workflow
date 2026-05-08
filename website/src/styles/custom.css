@@ -29,6 +29,15 @@
   --sl-color-hairline-light: #26262b;
   --sl-color-hairline: #26262b;
   --sl-color-hairline-shade: #17171a;
+
+  /* Canon Refined elevation tokens */
+  --orbit-bg-elev: #17171a;
+  --orbit-bg-sunk: #060607;
+  --orbit-border: #26262b;
+  --orbit-border-strong: #3b3b42;
+  --orbit-radius-sm: 4px;
+  --orbit-radius-md: 6px;
+  --orbit-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root[data-theme='light'] {
@@ -52,6 +61,11 @@
   --sl-color-hairline-light: #d8dbe2;
   --sl-color-hairline: #eceef3;
   --sl-color-hairline-shade: #f4f5f8;
+
+  --orbit-bg-elev: #f4f5f8;
+  --orbit-bg-sunk: #eceef3;
+  --orbit-border: #d8dbe2;
+  --orbit-border-strong: #9da0aa;
 }
 
 html {
@@ -61,6 +75,37 @@ html {
 body {
   background: var(--sl-color-bg);
   letter-spacing: 0;
+}
+
+/* Custom scrollbars: ultra-thin, low-contrast, theme-aware. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--orbit-border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--orbit-border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 160ms var(--orbit-ease);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--orbit-border-strong);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .site-title,
@@ -94,18 +139,16 @@ body {
 
 .sl-markdown-content code {
   border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 4px;
+  border-radius: var(--orbit-radius-sm);
 }
-
-
 
 .sl-markdown-content table {
   font-size: 0.92rem;
-  background-color: var(--sl-color-bg-inline-code);
+  background-color: var(--orbit-bg-elev);
   border-collapse: separate;
   border-spacing: 0;
   border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
+  border-radius: var(--orbit-radius-md);
   overflow: hidden;
 }
 
@@ -135,9 +178,64 @@ body {
   border-inline-start-color: var(--sl-color-accent);
 }
 
+/* Bespoke theme toggle (replaces Starlight's native <select>). */
+.orbit-theme-toggle {
+  align-items: center;
+  background: var(--orbit-bg-elev);
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius-sm);
+  color: var(--sl-color-gray-3);
+  cursor: pointer;
+  display: inline-flex;
+  height: 2rem;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  transition:
+    background-color 160ms var(--orbit-ease),
+    border-color 160ms var(--orbit-ease),
+    color 160ms var(--orbit-ease);
+  width: 2rem;
+}
+
+.orbit-theme-toggle:hover,
+.orbit-theme-toggle:focus-visible {
+  background: var(--sl-color-accent-low);
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-text-accent);
+  outline: none;
+}
+
+.orbit-theme-icon {
+  display: block;
+  position: absolute;
+  transition:
+    opacity 200ms var(--orbit-ease),
+    transform 240ms var(--orbit-ease);
+}
+
+.orbit-theme-toggle[data-theme='dark'] .orbit-theme-icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.orbit-theme-toggle[data-theme='dark'] .orbit-theme-icon-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.6);
+}
+
+.orbit-theme-toggle[data-theme='light'] .orbit-theme-icon-moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.6);
+}
+
+.orbit-theme-toggle[data-theme='light'] .orbit-theme-icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
 /* Hide the auto-rendered Starlight title on the homepage so the canon hero
-   is the entrance to the page. Targets the title's content-panel only when
-   it is immediately followed by a panel containing .orbit-hero. */
+   is the entrance to the page. */
 .content-panel:has(+ .content-panel .orbit-hero) {
   display: none;
 }
@@ -179,9 +277,9 @@ body {
 
 .orbit-hero-install {
   align-items: center;
-  background: var(--sl-color-bg-inline-code);
+  background: var(--orbit-bg-elev);
   border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
+  border-radius: var(--orbit-radius-md);
   display: flex;
   font-family: var(--sl-font-mono);
   font-size: 0.88rem;
@@ -191,6 +289,11 @@ body {
   width: fit-content;
   max-width: 100%;
   overflow-x: auto;
+  transition: border-color 160ms var(--orbit-ease);
+}
+
+.orbit-hero-install:hover {
+  border-color: var(--orbit-border-strong);
 }
 
 .orbit-hero-install-prompt {
@@ -217,7 +320,7 @@ body {
   margin-left: 1rem;
   padding: 0;
   flex: 0 0 auto;
-  transition: color 120ms ease;
+  transition: color 160ms var(--orbit-ease);
 }
 
 .orbit-hero-install-copy:hover {
@@ -233,16 +336,24 @@ body {
 
 .orbit-button {
   align-items: center;
+  background: transparent;
   border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
+  border-radius: var(--orbit-radius-sm);
   color: var(--sl-color-text);
   display: inline-flex;
   font-size: 0.92rem;
   font-weight: 600;
   gap: 0.45rem;
   min-height: 2.35rem;
-  padding: 0.45rem 0.8rem;
+  padding: 0.45rem 0.9rem;
+  position: relative;
   text-decoration: none;
+  transition:
+    background-color 180ms var(--orbit-ease),
+    border-color 180ms var(--orbit-ease),
+    color 180ms var(--orbit-ease),
+    transform 180ms var(--orbit-ease),
+    box-shadow 180ms var(--orbit-ease);
 }
 
 .orbit-button.primary {
@@ -252,13 +363,22 @@ body {
 }
 
 .orbit-button:hover {
+  background: var(--sl-color-accent-low);
   border-color: var(--sl-color-accent);
   color: var(--sl-color-text-accent);
+  transform: translateY(-1px);
 }
 
 .orbit-button.primary:hover {
-  background: #8ab3ff;
+  background: var(--sl-color-accent-high);
+  border-color: var(--sl-color-accent-high);
+  box-shadow: 0 6px 24px -8px color-mix(in srgb, var(--sl-color-accent) 60%, transparent);
   color: #0a0a0a;
+  transform: translateY(-1px);
+}
+
+.orbit-button:active {
+  transform: translateY(0);
 }
 
 .orbit-hero-diagram {
@@ -281,8 +401,14 @@ body {
   transform: rotate(18deg);
 }
 
+.orbit-hero-diagram::before {
+  animation: orbit-ring-breath 6s ease-in-out infinite;
+}
+
 .orbit-hero-diagram::after {
-  animation: orbit-rotate 42s linear infinite;
+  animation:
+    orbit-rotate 42s linear infinite,
+    orbit-ring-breath 6s ease-in-out infinite 1.5s;
   border-color: color-mix(in srgb, var(--sl-color-accent) 75%, var(--sl-color-hairline-light));
   inset: 31%;
   transform-origin: center;
@@ -306,10 +432,11 @@ body {
   position: absolute;
   top: calc(18% - 0.375rem);
   width: 0.75rem;
+  animation: orbit-dot-glow 3.6s ease-in-out infinite;
 }
 
 .orbit-dot-outer {
-  animation: orbit-rotate 18s linear infinite;
+  animation: orbit-rotate 18s linear infinite reverse;
 }
 
 .orbit-dot-outer::before {
@@ -319,6 +446,7 @@ body {
   left: calc(50% - 0.3rem);
   top: -0.3rem;
   width: 0.6rem;
+  animation: orbit-dot-glow 4.8s ease-in-out infinite 0.8s;
 }
 
 .orbit-core {
@@ -326,12 +454,26 @@ body {
   border-radius: 999px;
   height: 0.55rem;
   width: 0.55rem;
+  position: relative;
+  animation: orbit-core-pulse 2.4s ease-in-out infinite;
+}
+
+.orbit-core::after {
+  background: var(--sl-color-accent);
+  border-radius: 999px;
+  content: "";
+  height: 100%;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+  animation: orbit-core-halo 2.4s ease-out infinite;
 }
 
 .orbit-section-title {
   align-items: center;
   color: var(--sl-color-gray-4);
   display: flex;
+  font-family: var(--sl-font-mono);
   font-size: 0.78rem;
   font-weight: 600;
   gap: 0.75rem;
@@ -347,6 +489,22 @@ body {
   height: 1px;
 }
 
+/* Unified panel architecture — orbit-card and orbit-design-note share
+   the same elevation, radius, and hover language. */
+.orbit-panel,
+.orbit-card,
+.orbit-design-note {
+  background: var(--orbit-bg-elev);
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: var(--orbit-radius-md);
+  position: relative;
+  transition:
+    background-color 200ms var(--orbit-ease),
+    border-color 200ms var(--orbit-ease),
+    transform 200ms var(--orbit-ease),
+    box-shadow 200ms var(--orbit-ease);
+}
+
 .orbit-card-grid {
   display: grid;
   gap: 1rem;
@@ -355,26 +513,22 @@ body {
 }
 
 .orbit-card {
-  background: var(--sl-color-bg-inline-code);
-  border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
   color: var(--sl-color-text);
   display: block;
   padding: 1.25rem;
-  position: relative;
   text-decoration: none;
-  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
 .orbit-card[data-tag]::before {
   color: var(--sl-color-text-accent);
   content: attr(data-tag);
   font-family: var(--sl-font-mono);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   position: absolute;
   right: 1.25rem;
+  text-transform: uppercase;
   top: 1.25rem;
 }
 
@@ -385,14 +539,23 @@ body {
   height: 36px;
   justify-content: flex-start;
   margin-bottom: 0.75rem;
+  transition: transform 240ms var(--orbit-ease);
   width: 36px;
 }
 
+/* Dynamic hover: accent-low wash + lift + halo, replacing the static border swap. */
 .orbit-card:hover,
 .orbit-card:focus-visible {
-  background: color-mix(in srgb, var(--sl-color-accent) 5%, transparent);
+  background: color-mix(in srgb, var(--sl-color-accent-low) 70%, var(--orbit-bg-elev));
   border-color: var(--sl-color-accent);
+  box-shadow: 0 8px 28px -16px color-mix(in srgb, var(--sl-color-accent) 60%, transparent);
   outline: none;
+  transform: translateY(-2px);
+}
+
+.orbit-card:hover .orbit-card-icon,
+.orbit-card:focus-visible .orbit-card-icon {
+  transform: translateX(2px);
 }
 
 .orbit-card:hover h3,
@@ -405,7 +568,7 @@ body {
   font-size: 1rem;
   font-weight: 650;
   margin: 0 0 0.35rem;
-  transition: color 120ms ease;
+  transition: color 160ms var(--orbit-ease);
 }
 
 .orbit-card p {
@@ -426,34 +589,38 @@ body {
 /* Starlight applies `margin-top: var(--sl-content-gap-y)` to any
    element preceded by a sibling inside `.sl-markdown-content`. In a
    grid, that pushes every item except the first one down inside its
-   cell, breaking row alignment. Zero it out for our grid children. */
+   cell, breaking row alignment. */
 .orbit-card-grid > *,
 .orbit-design-notes > * {
   margin-top: 0;
 }
 
 .orbit-design-note {
-  background: var(--sl-color-bg-inline-code);
-  border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1rem;
+  padding: 1.25rem;
+}
+
+.orbit-design-note:hover,
+.orbit-design-note:focus-within {
+  background: color-mix(in srgb, var(--sl-color-accent-low) 35%, var(--orbit-bg-elev));
+  border-color: var(--orbit-border-strong);
 }
 
 .orbit-design-note-key {
   color: var(--sl-color-text-accent);
   font-family: var(--sl-font-mono);
   font-size: 0.78rem;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   margin-bottom: 0.5rem;
   text-transform: uppercase;
 }
 
 .orbit-design-note-value {
-  color: var(--sl-color-gray-3);
-  font-size: 0.92rem;
+  color: var(--sl-color-gray-2);
+  font-size: 0.95rem;
   line-height: 1.55;
 }
 
@@ -489,6 +656,7 @@ body {
 .orbit-footer a {
   color: var(--sl-color-gray-3);
   text-decoration: none;
+  transition: color 160ms var(--orbit-ease);
 }
 
 .orbit-footer a:hover,
@@ -505,9 +673,52 @@ body {
   }
 }
 
+@keyframes orbit-ring-breath {
+  0%, 100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes orbit-dot-glow {
+  0%, 100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+@keyframes orbit-core-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+@keyframes orbit-core-halo {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  80%, 100% {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .orbit-hero-diagram::before,
   .orbit-hero-diagram::after,
-  .orbit-dot {
+  .orbit-dot,
+  .orbit-dot::before,
+  .orbit-dot-outer::before,
+  .orbit-core,
+  .orbit-core::after {
     animation: none;
   }
 }

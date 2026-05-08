@@ -1,0 +1,76 @@
+---
+---
+
+<button
+  type="button"
+  id="orbit-theme-toggle"
+  class="orbit-theme-toggle"
+  aria-label="Toggle color theme"
+  data-theme="dark"
+>
+  <svg
+    class="orbit-theme-icon orbit-theme-icon-moon"
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+  <svg
+    class="orbit-theme-icon orbit-theme-icon-sun"
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2" />
+    <path d="M12 20v2" />
+    <path d="m4.93 4.93 1.41 1.41" />
+    <path d="m17.66 17.66 1.41 1.41" />
+    <path d="M2 12h2" />
+    <path d="M20 12h2" />
+    <path d="m6.34 17.66-1.41 1.41" />
+    <path d="m19.07 4.93-1.41 1.41" />
+  </svg>
+</button>
+
+<script is:inline>
+  (() => {
+    const btn = document.getElementById('orbit-theme-toggle');
+    if (!btn) return;
+    const KEY = 'starlight-theme';
+    const apply = (t) => {
+      const next = t === 'light' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      btn.dataset.theme = next;
+      btn.setAttribute(
+        'aria-label',
+        next === 'light' ? 'Switch to dark theme' : 'Switch to light theme',
+      );
+    };
+    let initial = 'dark';
+    try {
+      initial = localStorage.getItem(KEY) || document.documentElement.dataset.theme || 'dark';
+    } catch (_) {}
+    apply(initial);
+    btn.addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem(KEY, next);
+      } catch (_) {}
+      apply(next);
+    });
+  })();
+</script>
