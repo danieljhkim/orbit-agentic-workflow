@@ -2,23 +2,26 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use orbit_common::types::{
-    OrbitError, PlannerSlot, Task, TaskStatus, normalize_attribution_label,
+    JobRun, JobRunState, OrbitError, PlannerSlot, Task, TaskStatus, normalize_attribution_label,
     normalize_optional_attribution_label,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::planning_duel_scoreboard;
-use crate::AuditToolCallCountsByRole;
+use crate::{AuditToolCallCountsByRole, AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall};
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
 
 const SUMMARY_FILENAME: &str = "summary.json";
-// v2 adds `task_review.threads`; v1 readers can ignore the extra field.
-const CURRENT_SCHEMA_VERSION: u32 = 2;
+// v2 adds `task_review.threads`; v3 adds tasks_created/tasks_planned,
+// per-(role, surface) tool call counts, top-level workflows_run, and a
+// recent_7d window block. Older readers ignore unknown fields.
+const CURRENT_SCHEMA_VERSION: u32 = 3;
 const TASK_REVIEW_THREADS_METRIC: &str = "task-review-threads";
 const LEGACY_TASK_REVIEW_MESSAGES_METRIC: &str = "task-review-messages";
+const RECENT_WINDOW_DAYS: i64 = 7;
 
 type ModelScoreboard = BTreeMap<String, BTreeMap<String, u64>>;
 
@@ -58,6 +61,10 @@ pub struct TaskReviewSummary {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentSummary {
     pub tasks_completed: u64,
+    #[serde(default)]
+    pub tasks_created: u64,
+    #[serde(default)]
+    pub tasks_planned: u64,
     pub friction: FrictionSummary,
     pub tokens: TokenSummary,
     pub duels: DuelSummary,
@@ -67,6 +74,43 @@ pub struct AgentSummary {
     pub tool_calls: u64,
     #[serde(default)]
     pub failed_tool_calls: u64,
+    /// Per-Orbit-surface tool call counts (e.g. `graph` → 56, `task` → 102).
+    /// The surface key is the segment after the `orbit.` namespace prefix —
+    /// see [`AuditToolCallCountsBySurfaceAndRole`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tool_calls_by_surface: BTreeMap<String, u64>,
+}
+
+/// Top-level "completed `orbit run` jobs" rollup. Not per-agent: a workflow
+/// is a job-level concept and routinely fans out across multiple agents.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkflowRunCount {
+    pub job_id: String,
+    pub count: u64,
+}
+
+/// One row of the "most-called tools" leaderboard — `count` invocations of
+/// `tool_name` attributed to `role`. Sourced from the audit log; restricted
+/// to `orbit.*` tools by the SQL filter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TopToolCall {
+    pub role: String,
+    pub tool_name: String,
+    pub count: u64,
+}
+
+/// Headline totals over the most recent [`RECENT_WINDOW_DAYS`]. Carries no
+/// per-agent breakdowns by design — the section is a "is this still being
+/// used" recency signal, not a leaderboard.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecentSummary {
+    /// Lower bound of the window (inclusive), RFC3339.
+    pub since: String,
+    pub tasks_created: u64,
+    pub tasks_completed: u64,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tool_calls_by_surface: BTreeMap<String, u64>,
+    pub workflows_run: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,6 +118,19 @@ pub struct ScoreboardSummary {
     pub schema_version: u32,
     pub generated_at: String,
     pub agents: BTreeMap<String, AgentSummary>,
+    /// Top jobs by completed-run count, descending. Empty when the runtime
+    /// passed no JobRun records (e.g. backward-compat callers).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workflows_run: Vec<WorkflowRunCount>,
+    /// Top (role, tool_name) pairs across the audit log, restricted to
+    /// `orbit.*` tool names. Already sorted desc by count.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub top_tools: Vec<TopToolCall>,
+    /// Recency window for headline deltas on the public scoreboard.
+    /// Optional so older readers / unit tests that don't wire it tolerate
+    /// its absence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recent_7d: Option<RecentSummary>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -96,11 +153,37 @@ struct TokenAgentEntry {
     total_tool_calls: u64,
 }
 
+/// Bundle of the optional inputs that have grown around the core
+/// task-and-friction summary. New callers should populate this struct;
+/// the older `generate_summary*` thin wrappers stay for tests and any
+/// caller that hasn't been updated yet.
+#[derive(Debug, Default, Clone)]
+pub struct ScoreboardInputs<'a> {
+    /// Per-(role) tool-call totals — drives the legacy `tool_calls`/
+    /// `failed_tool_calls` columns.
+    pub audit_tool_calls: &'a [AuditToolCallCountsByRole],
+    /// Per-(role, surface) tool-call counts. All-time.
+    pub audit_tool_calls_by_surface: &'a [AuditToolCallCountsBySurfaceAndRole],
+    /// Per-(role, surface) tool-call counts windowed to the most recent
+    /// [`RECENT_WINDOW_DAYS`]. Drives the `recent_7d.tool_calls_by_surface`
+    /// totals.
+    pub audit_tool_calls_by_surface_recent: &'a [AuditToolCallCountsBySurfaceAndRole],
+    /// All persisted JobRun records — successful ones populate the
+    /// `workflows_run` rollup; the lot drives the 7d workflows count.
+    pub job_runs: &'a [JobRun],
+    /// Top (role, tool_name) pairs across the audit log, sorted desc by
+    /// count. Drives the "most-called tools" leaderboard.
+    pub top_tool_calls: &'a [AuditTopToolCall],
+    /// Reference "now" for recency windowing. `None` means no recency
+    /// section is emitted (used by legacy callers).
+    pub now: Option<DateTime<Utc>>,
+}
+
 pub fn generate_summary(
     scoreboard_dir: &Path,
     tasks: &[Task],
 ) -> Result<ScoreboardSummary, OrbitError> {
-    generate_summary_with_audit_tool_calls(scoreboard_dir, tasks, &[])
+    generate_summary_with_inputs(scoreboard_dir, tasks, &ScoreboardInputs::default())
 }
 
 pub fn generate_summary_with_audit_tool_calls(
@@ -108,6 +191,22 @@ pub fn generate_summary_with_audit_tool_calls(
     tasks: &[Task],
     audit_tool_calls: &[AuditToolCallCountsByRole],
 ) -> Result<ScoreboardSummary, OrbitError> {
+    generate_summary_with_inputs(
+        scoreboard_dir,
+        tasks,
+        &ScoreboardInputs {
+            audit_tool_calls,
+            ..ScoreboardInputs::default()
+        },
+    )
+}
+
+pub fn generate_summary_with_inputs(
+    scoreboard_dir: &Path,
+    tasks: &[Task],
+    inputs: &ScoreboardInputs<'_>,
+) -> Result<ScoreboardSummary, OrbitError> {
+    let audit_tool_calls = inputs.audit_tool_calls;
     let mut agents: BTreeMap<String, AgentSummary> = BTreeMap::new();
 
     let friction = read_model_scoreboard(scoreboard_dir, "friction_bounty.json")?;
@@ -188,6 +287,7 @@ pub fn generate_summary_with_audit_tool_calls(
     }
 
     overlay_audit_tool_calls(&mut agents, audit_tool_calls);
+    overlay_audit_tool_calls_by_surface(&mut agents, inputs.audit_tool_calls_by_surface);
 
     for run in planning_duel_scoreboard::load_runs(scoreboard_dir)? {
         let planner_a = agents
@@ -228,24 +328,144 @@ pub fn generate_summary_with_audit_tool_calls(
     }
 
     for task in tasks {
-        if !matches!(task.status, TaskStatus::Done | TaskStatus::Archived) {
-            continue;
+        if matches!(task.status, TaskStatus::Done | TaskStatus::Archived)
+            && let Some(model) = normalize_optional_attribution_label(
+                task.model.as_deref().or(task.implemented_by.as_deref()),
+                task.model.as_deref(),
+            )
+        {
+            let summary = agents.entry(model_key(&model)).or_default();
+            summary.tasks_completed = summary.tasks_completed.saturating_add(1);
         }
-        let Some(model) = normalize_optional_attribution_label(
-            task.model.as_deref().or(task.implemented_by.as_deref()),
-            task.model.as_deref(),
-        ) else {
-            continue;
-        };
-        let summary = agents.entry(model_key(&model)).or_default();
-        summary.tasks_completed = summary.tasks_completed.saturating_add(1);
+
+        // Created/Planned count *all* statuses — see [T20260508-16]: rejected
+        // and friction tasks still represent real work the agent produced.
+        if let Some(label) = task
+            .created_by
+            .as_deref()
+            .map(|raw| normalize_attribution_label(raw, None))
+            .filter(|value| !value.is_empty())
+        {
+            let summary = agents.entry(label).or_default();
+            summary.tasks_created = summary.tasks_created.saturating_add(1);
+        }
+        if let Some(label) = task
+            .planned_by
+            .as_deref()
+            .map(|raw| normalize_attribution_label(raw, None))
+            .filter(|value| !value.is_empty())
+        {
+            let summary = agents.entry(label).or_default();
+            summary.tasks_planned = summary.tasks_planned.saturating_add(1);
+        }
     }
+
+    let workflows_run = aggregate_workflows_run(inputs.job_runs);
+    let top_tools: Vec<TopToolCall> = inputs
+        .top_tool_calls
+        .iter()
+        .map(|row| TopToolCall {
+            role: row.role.clone(),
+            tool_name: row.tool_name.clone(),
+            count: row.total,
+        })
+        .collect();
+    let recent_7d = inputs
+        .now
+        .map(|now| build_recent_summary(now, tasks, inputs));
 
     Ok(ScoreboardSummary {
         schema_version: CURRENT_SCHEMA_VERSION,
         generated_at: Utc::now().to_rfc3339(),
         agents,
+        workflows_run,
+        top_tools,
+        recent_7d,
     })
+}
+
+fn aggregate_workflows_run(runs: &[JobRun]) -> Vec<WorkflowRunCount> {
+    let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+    for run in runs {
+        if run.state == JobRunState::Success {
+            *counts.entry(run.job_id.to_string()).or_insert(0) += 1;
+        }
+    }
+    let mut rows: Vec<WorkflowRunCount> = counts
+        .into_iter()
+        .map(|(job_id, count)| WorkflowRunCount { job_id, count })
+        .collect();
+    // Highest run-count first; tie-break by job_id ASC for stable output.
+    rows.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.job_id.cmp(&b.job_id)));
+    rows
+}
+
+fn build_recent_summary(
+    now: DateTime<Utc>,
+    tasks: &[Task],
+    inputs: &ScoreboardInputs<'_>,
+) -> RecentSummary {
+    let since = now - Duration::days(RECENT_WINDOW_DAYS);
+
+    let mut tasks_created: u64 = 0;
+    let mut tasks_completed: u64 = 0;
+    for task in tasks {
+        if task.created_at >= since {
+            tasks_created = tasks_created.saturating_add(1);
+        }
+        if matches!(task.status, TaskStatus::Done | TaskStatus::Archived)
+            && task_done_at(task).is_some_and(|done_at| done_at >= since)
+        {
+            tasks_completed = tasks_completed.saturating_add(1);
+        }
+    }
+
+    let mut tool_calls_by_surface: BTreeMap<String, u64> = BTreeMap::new();
+    for row in inputs.audit_tool_calls_by_surface_recent {
+        *tool_calls_by_surface
+            .entry(row.surface.clone())
+            .or_insert(0) += row.total;
+    }
+
+    let workflows_run: u64 = inputs
+        .job_runs
+        .iter()
+        .filter(|run| run.state == JobRunState::Success)
+        .filter(|run| run_completed_at(run) >= since)
+        .count() as u64;
+
+    RecentSummary {
+        since: since.to_rfc3339(),
+        tasks_created,
+        tasks_completed,
+        tool_calls_by_surface,
+        workflows_run,
+    }
+}
+
+/// Best-effort timestamp for when a task entered `done`/`archived`. Reads
+/// the most recent matching transition from `task.history`; falls back to
+/// `updated_at` so legacy rows missing history transitions still count.
+fn task_done_at(task: &Task) -> Option<DateTime<Utc>> {
+    let from_history = task
+        .history
+        .iter()
+        .rev()
+        .find(|entry| {
+            matches!(
+                entry.to_status,
+                Some(TaskStatus::Done) | Some(TaskStatus::Archived)
+            )
+        })
+        .map(|entry| entry.at);
+    from_history.or(Some(task.updated_at))
+}
+
+/// Best-effort completion timestamp for a JobRun. `finished_at` is set when
+/// the run terminates; the fallback to `created_at` keeps the recency
+/// filter conservative for legacy rows that pre-date that field.
+fn run_completed_at(run: &JobRun) -> DateTime<Utc> {
+    run.finished_at.unwrap_or(run.created_at)
 }
 
 pub fn write_summary(
@@ -309,6 +529,24 @@ fn overlay_nested_metric(
     for (model, value) in by_model {
         let summary = agents.entry(model_key(model)).or_default();
         apply(summary, *value);
+    }
+}
+
+fn overlay_audit_tool_calls_by_surface(
+    agents: &mut BTreeMap<String, AgentSummary>,
+    rows: &[AuditToolCallCountsBySurfaceAndRole],
+) {
+    for row in rows {
+        let model = model_key(&row.role);
+        if model.is_empty() {
+            continue;
+        }
+        let summary = agents.entry(model).or_default();
+        let entry = summary
+            .tool_calls_by_surface
+            .entry(row.surface.clone())
+            .or_insert(0);
+        *entry = entry.saturating_add(row.total);
     }
 }
 
@@ -512,13 +750,356 @@ mod tests {
 
         let summary = generate_summary(temp.path(), &[]).expect("generate summary");
 
-        assert_eq!(summary.schema_version, 2);
+        assert_eq!(summary.schema_version, CURRENT_SCHEMA_VERSION);
         let reviewer = summary
             .agents
             .get("gpt-reviewer")
             .expect("reviewer summary");
         assert_eq!(reviewer.task_review.threads, 2);
         assert_eq!(reviewer.pr.review_comments, 1);
+    }
+
+    #[test]
+    fn summary_counts_tasks_created_and_planned_across_all_statuses() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+
+        // Mix of statuses including ones excluded from `tasks_completed`.
+        let tasks = vec![
+            test_task("T1", TaskStatus::Done, "claude-opus-4-7", "claude-opus-4-7"),
+            test_task("T2", TaskStatus::Backlog, "claude-opus-4-7", "gpt-5.5"),
+            test_task(
+                "T3",
+                TaskStatus::Rejected,
+                "claude-opus-4-7",
+                "claude-opus-4-7",
+            ),
+            test_task("T4", TaskStatus::Friction, "gpt-5.5", "gpt-5.5"),
+            test_task_no_attrib("T5", TaskStatus::Done),
+        ];
+
+        let summary = generate_summary(temp.path(), &tasks).expect("generate summary");
+
+        let claude = summary
+            .agents
+            .get("claude-opus-4-7")
+            .expect("claude summary");
+        // Three tasks were created by claude (Done, Backlog, Rejected).
+        assert_eq!(claude.tasks_created, 3);
+        // Two were planned by claude (Done, Rejected).
+        assert_eq!(claude.tasks_planned, 2);
+        // Only Done counts toward Completed (no `task.model` here, so it
+        // attributes via `implemented_by`-equivalent — but we left model None;
+        // verify the attribution still ignores Backlog/Rejected/Friction).
+        // T1 (Done) has implemented_by=None and model=None, so it does not
+        // attribute to Completed.
+        assert_eq!(claude.tasks_completed, 0);
+
+        let codex = summary.agents.get("gpt-5.5").expect("codex summary");
+        assert_eq!(codex.tasks_created, 1); // T4
+        assert_eq!(codex.tasks_planned, 2); // T2, T4
+
+        // T5 has no created_by/planned_by — must not crash and must not
+        // create a phantom agent bucket.
+        assert!(!summary.agents.contains_key(""));
+    }
+
+    #[test]
+    fn summary_overlays_per_surface_tool_call_counts() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+
+        let surface_rows = vec![
+            AuditToolCallCountsBySurfaceAndRole {
+                surface: "graph".to_string(),
+                role: "claude-opus-4-7".to_string(),
+                total: 56,
+                failed: 2,
+            },
+            AuditToolCallCountsBySurfaceAndRole {
+                surface: "graph".to_string(),
+                role: "gpt-5.5".to_string(),
+                total: 697,
+                failed: 5,
+            },
+            AuditToolCallCountsBySurfaceAndRole {
+                surface: "task".to_string(),
+                role: "gpt-5.5".to_string(),
+                total: 410,
+                failed: 1,
+            },
+        ];
+
+        let summary = generate_summary_with_inputs(
+            temp.path(),
+            &[],
+            &ScoreboardInputs {
+                audit_tool_calls_by_surface: &surface_rows,
+                ..ScoreboardInputs::default()
+            },
+        )
+        .expect("generate summary");
+
+        let claude = summary
+            .agents
+            .get("claude-opus-4-7")
+            .expect("claude summary");
+        assert_eq!(claude.tool_calls_by_surface.get("graph").copied(), Some(56));
+        assert_eq!(claude.tool_calls_by_surface.get("task"), None);
+
+        let codex = summary.agents.get("gpt-5.5").expect("codex summary");
+        assert_eq!(codex.tool_calls_by_surface.get("graph").copied(), Some(697));
+        assert_eq!(codex.tool_calls_by_surface.get("task").copied(), Some(410));
+    }
+
+    #[test]
+    fn summary_aggregates_workflows_run_for_successful_runs() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+
+        let now = Utc::now();
+        let runs = vec![
+            test_job_run("r1", "task_local_pipeline", JobRunState::Success, now),
+            test_job_run("r2", "task_local_pipeline", JobRunState::Success, now),
+            test_job_run("r3", "task_local_pipeline", JobRunState::Failed, now),
+            test_job_run("r4", "task_auto_pipeline", JobRunState::Success, now),
+            test_job_run("r5", "task_pr_pipeline", JobRunState::Cancelled, now),
+        ];
+
+        let summary = generate_summary_with_inputs(
+            temp.path(),
+            &[],
+            &ScoreboardInputs {
+                job_runs: &runs,
+                ..ScoreboardInputs::default()
+            },
+        )
+        .expect("generate summary");
+
+        // Sorted descending by count, then job_id ascending.
+        assert_eq!(
+            summary.workflows_run,
+            vec![
+                WorkflowRunCount {
+                    job_id: "task_local_pipeline".to_string(),
+                    count: 2,
+                },
+                WorkflowRunCount {
+                    job_id: "task_auto_pipeline".to_string(),
+                    count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn recent_7d_filters_tasks_workflows_and_surface_calls_by_window() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+
+        let now = Utc::now();
+        let inside = now - chrono::Duration::days(3);
+        let outside = now - chrono::Duration::days(30);
+
+        // Two created in-window, one outside.
+        let mut t_inside = test_task(
+            "T-in",
+            TaskStatus::Done,
+            "claude-opus-4-7",
+            "claude-opus-4-7",
+        );
+        t_inside.created_at = inside;
+        t_inside
+            .history
+            .push(orbit_common::types::TaskHistoryEntry {
+                at: inside,
+                by: "claude-opus-4-7".to_string(),
+                event: "transitioned".to_string(),
+                note: None,
+                from_status: None,
+                to_status: Some(TaskStatus::Done),
+            });
+
+        let mut t_inside2 = test_task("T-in2", TaskStatus::Backlog, "gpt-5.5", "gpt-5.5");
+        t_inside2.created_at = inside;
+
+        let mut t_outside = test_task(
+            "T-out",
+            TaskStatus::Done,
+            "claude-opus-4-7",
+            "claude-opus-4-7",
+        );
+        t_outside.created_at = outside;
+        t_outside.updated_at = outside; // legacy: no history transition
+        // No history on t_outside — task_done_at falls back to updated_at.
+
+        let tasks = vec![t_inside, t_inside2, t_outside];
+
+        let surface_recent = vec![AuditToolCallCountsBySurfaceAndRole {
+            surface: "graph".to_string(),
+            role: "claude-opus-4-7".to_string(),
+            total: 12,
+            failed: 0,
+        }];
+
+        let runs = vec![
+            test_job_run(
+                "r-recent",
+                "task_local_pipeline",
+                JobRunState::Success,
+                inside,
+            ),
+            test_job_run(
+                "r-old",
+                "task_local_pipeline",
+                JobRunState::Success,
+                outside,
+            ),
+        ];
+
+        let summary = generate_summary_with_inputs(
+            temp.path(),
+            &tasks,
+            &ScoreboardInputs {
+                audit_tool_calls_by_surface_recent: &surface_recent,
+                job_runs: &runs,
+                now: Some(now),
+                ..ScoreboardInputs::default()
+            },
+        )
+        .expect("generate summary");
+
+        let recent = summary
+            .recent_7d
+            .expect("recent_7d populated when now is set");
+        // Two tasks created in window (T-in, T-in2). T-out is older.
+        assert_eq!(recent.tasks_created, 2);
+        // One task transitioned to Done in window (T-in). T-out's
+        // updated_at is older than the window.
+        assert_eq!(recent.tasks_completed, 1);
+        // Surface row total flows through.
+        assert_eq!(recent.tool_calls_by_surface.get("graph").copied(), Some(12));
+        // Only the recent run counts.
+        assert_eq!(recent.workflows_run, 1);
+    }
+
+    #[test]
+    fn summary_passes_top_tools_through_unchanged() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+
+        let rows = vec![
+            AuditTopToolCall {
+                role: "gpt-5.5".to_string(),
+                tool_name: "orbit.graph.show".to_string(),
+                total: 355,
+            },
+            AuditTopToolCall {
+                role: "claude-opus-4-7".to_string(),
+                tool_name: "orbit.graph.search".to_string(),
+                total: 45,
+            },
+        ];
+
+        let summary = generate_summary_with_inputs(
+            temp.path(),
+            &[],
+            &ScoreboardInputs {
+                top_tool_calls: &rows,
+                ..ScoreboardInputs::default()
+            },
+        )
+        .expect("generate summary");
+
+        assert_eq!(
+            summary.top_tools,
+            vec![
+                TopToolCall {
+                    role: "gpt-5.5".to_string(),
+                    tool_name: "orbit.graph.show".to_string(),
+                    count: 355,
+                },
+                TopToolCall {
+                    role: "claude-opus-4-7".to_string(),
+                    tool_name: "orbit.graph.search".to_string(),
+                    count: 45,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn recent_7d_absent_when_now_not_provided() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        let summary = generate_summary(temp.path(), &[]).expect("generate summary");
+        assert!(summary.recent_7d.is_none());
+    }
+
+    fn test_task(
+        id: &str,
+        status: TaskStatus,
+        created_by: &str,
+        planned_by: &str,
+    ) -> orbit_common::types::Task {
+        let mut task = test_task_no_attrib(id, status);
+        task.created_by = Some(created_by.to_string());
+        task.planned_by = Some(planned_by.to_string());
+        task
+    }
+
+    fn test_task_no_attrib(id: &str, status: TaskStatus) -> orbit_common::types::Task {
+        use orbit_common::types::{Task, TaskPriority, TaskType};
+        Task {
+            id: id.to_string(),
+            parent_id: None,
+            title: id.to_string(),
+            description: String::new(),
+            acceptance_criteria: Vec::new(),
+            dependencies: Vec::new(),
+            plan: String::new(),
+            execution_summary: String::new(),
+            context_files: Vec::new(),
+            workspace_path: None,
+            repo_root: None,
+            created_by: None,
+            planned_by: None,
+            implemented_by: None,
+            agent: None,
+            model: None,
+            status,
+            priority: TaskPriority::Medium,
+            complexity: None,
+            task_type: TaskType::Task,
+            pr_status: None,
+            external_refs: Vec::new(),
+            source_task_id: None,
+            batch_id: None,
+            comments: Vec::new(),
+            history: Vec::new(),
+            review_threads: Vec::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn test_job_run(
+        run_id: &str,
+        job_id: &str,
+        state: JobRunState,
+        finished_at: chrono::DateTime<Utc>,
+    ) -> JobRun {
+        JobRun {
+            run_id: run_id.to_string(),
+            job_id: job_id.to_string(),
+            attempt: 1,
+            state,
+            scheduled_at: finished_at,
+            started_at: Some(finished_at),
+            finished_at: Some(finished_at),
+            duration_ms: Some(0),
+            created_at: finished_at,
+            pid: None,
+            pid_start_time: None,
+            input: None,
+            retry_source_run_id: None,
+            knowledge_metrics: None,
+            steps: Vec::new(),
+        }
     }
 
     #[test]

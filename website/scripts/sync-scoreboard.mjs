@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,44 +6,97 @@ const websiteRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const repoRoot = path.dirname(websiteRoot);
 const sourcePath = path.join(repoRoot, '.orbit', 'state', 'scoreboard', 'summary.json');
 const duelPath = path.join(repoRoot, '.orbit', 'state', 'scoreboard', 'duel_plan.json');
-const targetPath = path.join(websiteRoot, 'src', 'content', 'docs', 'scoreboard.md');
+const docsRoot = path.join(websiteRoot, 'src', 'content', 'docs');
+const metricsDir = path.join(docsRoot, 'metrics');
+const operationsPath = path.join(metricsDir, 'operations.md');
+const scoreboardPath = path.join(metricsDir, 'scoreboard.md');
+// Legacy single-page route. Removed so /scoreboard doesn't shadow the new
+// /metrics/* pages. Safe to delete repeatedly — `force` ignores ENOENT.
+const legacyPath = path.join(docsRoot, 'scoreboard.md');
 
-const FRONTMATTER = [
-  '---',
-  'title: "Scoreboard"',
-  'description: "Per-agent metrics for tasks completed, friction reports, planning duels, task review threads, and tool calls."',
-  'tableOfContents: false',
-  '---',
-  '',
-].join('\n');
+const HIDDEN_AGENTS = new Set(['human', 'agent', 'system', 'admin']);
+const TOP_TOOLS_RENDER_LIMIT = 20;
 
 const summary = await loadSummary(sourcePath);
 
+await mkdir(metricsDir, { recursive: true });
+await rm(legacyPath, { force: true });
+
 if (!summary) {
-  await writeFile(
-    targetPath,
-    `${FRONTMATTER}# Scoreboard\n\n_No scoreboard summary has been generated yet. Run Orbit in this workspace to populate \`.orbit/state/scoreboard/summary.json\`._\n`,
-  );
+  await writeFile(operationsPath, frontmatter('Operations', 'Operation metrics generated from Orbit task history, audit trails, and job runs.') + '# Operations\n\n_No scoreboard summary has been generated yet. Run Orbit in this workspace to populate `.orbit/state/scoreboard/summary.json`._\n');
+  await writeFile(scoreboardPath, frontmatter('Scoreboard', 'Per-agent quality and engagement signals.') + '# Scoreboard\n\n_No scoreboard summary has been generated yet. Run Orbit in this workspace to populate `.orbit/state/scoreboard/summary.json`._\n');
   process.exit(0);
 }
 
-const HIDDEN_AGENTS = new Set(['human', 'agent', 'system', 'admin']);
 const agents = Object.entries(summary.agents ?? {})
   .filter(([name]) => !HIDDEN_AGENTS.has(name))
   .sort(([a], [b]) => a.localeCompare(b));
 const generatedAt = summary.generated_at ?? null;
+const recent = summary.recent_7d ?? null;
+const workflowsRun = Array.isArray(summary.workflows_run) ? summary.workflows_run : [];
+const topTools = Array.isArray(summary.top_tools) ? summary.top_tools : [];
 const duelsByModel = await loadDuelStats(duelPath);
 
-const sections = [
-  renderIntro(generatedAt, agents.length),
-  renderTasksTable(agents),
+const operationsSections = [
+  renderTasksTable(agents, recent),
+  renderToolCallsTable(agents, recent),
+  renderTopToolsTable(topTools),
+  renderWorkflowsTable(workflowsRun, recent),
+].filter(Boolean);
+
+const scoreboardSections = [
+  renderPrsTable(agents),
   renderFrictionTable(agents),
   renderDuelsTable(duelsByModel),
   renderTaskReviewTable(agents),
-  renderToolCallsTable(agents),
-];
+].filter(Boolean);
 
-await writeFile(targetPath, FRONTMATTER + sections.join('\n\n') + '\n');
+await writeFile(
+  operationsPath,
+  frontmatter(
+    'Operations',
+    'Proof-of-use stats from the Orbit feature surfaces — tasks, tool calls, workflow runs.',
+  ) +
+    [
+      pageHeader(
+        'Operations',
+        'What agents *do* with Orbit — task lifecycle, tool usage, workflow runs.',
+        generatedAt,
+        agents.length,
+      ),
+      ...operationsSections,
+    ].join('\n\n') +
+    '\n',
+);
+
+await writeFile(
+  scoreboardPath,
+  frontmatter(
+    'Scoreboard',
+    'Per-agent quality and engagement signals — PRs, friction, planning duels, task reviews.',
+  ) +
+    [
+      pageHeader(
+        'Scoreboard',
+        'Per-agent quality and engagement signals.',
+        generatedAt,
+        agents.length,
+      ),
+      ...scoreboardSections,
+    ].join('\n\n') +
+    '\n',
+);
+
+function frontmatter(title, description) {
+  return [
+    '---',
+    `title: "${title}"`,
+    `description: "${description}"`,
+    'tableOfContents: false',
+    '---',
+    '',
+  ].join('\n');
+}
 
 async function loadSummary(filePath) {
   try {
@@ -95,31 +148,138 @@ async function loadDuelStats(filePath) {
   return [...stats.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-function renderIntro(generatedAt, agentCount) {
-  const lines = ['# Scoreboard', ''];
-  lines.push(
-    'Per-agent metrics aggregated from Orbit task history, planning duel runs, and audit trails.',
-  );
-  lines.push('');
+function pageHeader(title, blurb, generatedAt, agentCount) {
+  const lines = [`# ${title}`, '', blurb, ''];
   if (generatedAt) {
-    lines.push(`_Generated ${formatTimestamp(generatedAt)} • ${agentCount} agent${agentCount === 1 ? '' : 's'}._`);
-  } else {
+    lines.push(`_Generated ${formatTimestamp(generatedAt)} · ${agentCount} agent${agentCount === 1 ? '' : 's'}._`);
+  } else if (agentCount > 0) {
     lines.push(`_${agentCount} agent${agentCount === 1 ? '' : 's'}._`);
   }
   return lines.join('\n');
 }
 
-function renderTasksTable(agents) {
+function renderTasksTable(agents, recent) {
   const rows = agents
-    .filter(([, a]) => (a.tasks_completed ?? 0) > 0)
+    .filter(([, a]) => (a.tasks_created ?? 0) + (a.tasks_planned ?? 0) + (a.tasks_completed ?? 0) > 0)
     .map(([name, a]) => ({
       sortKey: a.tasks_completed ?? 0,
-      cells: [agentCell(name), num(a.tasks_completed)],
+      cells: [
+        agentCell(name),
+        num(a.tasks_created ?? 0),
+        num(a.tasks_planned ?? 0),
+        num(a.tasks_completed ?? 0),
+      ],
     }));
+  const totalCreated = agents.reduce((sum, [, a]) => sum + (a.tasks_created ?? 0), 0);
+  const totalCompleted = agents.reduce((sum, [, a]) => sum + (a.tasks_completed ?? 0), 0);
+  const headline = `**${num(totalCompleted)} tasks completed** · ${num(totalCreated)} created${recencyDelta(recent, 'tasks_completed', 'completed this week')}`;
   return section(
-    'Tasks completed',
-    'Tasks reaching `done` or `archived` status, attributed to the implementing model. Sorted by completed count.',
-    ['Agent', 'Completed'],
+    'Tasks',
+    'Tasks attributed to each agent, all-time. `Created` and `Planned` count every status (including rejected and friction); `Completed` counts only `done` and `archived`. Sorted by completed.',
+    headline,
+    ['Agent', 'Created', 'Planned', 'Completed'],
+    sortRows(rows),
+  );
+}
+
+function renderToolCallsTable(agents, recent) {
+  const rows = agents
+    .map(([name, a]) => {
+      const surfaces = a.tool_calls_by_surface ?? {};
+      const graph = surfaces.graph ?? 0;
+      const task = surfaces.task ?? 0;
+      const total = Object.values(surfaces).reduce((s, v) => s + (v ?? 0), 0);
+      return { name, graph, task, total };
+    })
+    .filter((r) => r.total > 0)
+    .map((r) => ({
+      sortKey: r.total,
+      cells: [agentCell(r.name), num(r.graph), num(r.task), num(r.total)],
+    }));
+  const totalAll = agents.reduce(
+    (sum, [, a]) =>
+      sum + Object.values(a.tool_calls_by_surface ?? {}).reduce((s, v) => s + (v ?? 0), 0),
+    0,
+  );
+  const recentSum = recent?.tool_calls_by_surface
+    ? Object.values(recent.tool_calls_by_surface).reduce((s, v) => s + (v ?? 0), 0)
+    : null;
+  const headline = `**${num(totalAll)} \`orbit.*\` tool calls**${
+    recentSum != null && recentSum > 0 ? ` · +${num(recentSum)} this week` : ''
+  }`;
+  return section(
+    'Tool calls',
+    'Audit-recorded `orbit.*` tool invocations per agent, broken down by Orbit surface. `Total` sums every surface (graph + task + duel + fs + …). Sorted by total.',
+    headline,
+    ['Agent', 'Graph', 'Task', 'Total'],
+    sortRows(rows),
+  );
+}
+
+function renderTopToolsTable(topTools) {
+  const rows = topTools
+    .filter((row) => !HIDDEN_AGENTS.has(row.role))
+    .slice(0, TOP_TOOLS_RENDER_LIMIT)
+    .map((row) => ({
+      sortKey: row.count ?? 0,
+      cells: [num(row.count ?? 0), agentCell(row.role), `\`${row.tool_name}\``],
+    }));
+  if (rows.length === 0) return null;
+  return section(
+    'Most-called tools',
+    `Top ${TOP_TOOLS_RENDER_LIMIT} (agent, tool) pairs from the audit log. Restricted to \`orbit.*\` tools.`,
+    null,
+    ['Calls', 'Agent', 'Tool'],
+    sortRows(rows),
+  );
+}
+
+function renderWorkflowsTable(workflowsRun, recent) {
+  const rows = workflowsRun
+    .filter((row) => (row.count ?? 0) > 0)
+    .map((row) => ({
+      sortKey: row.count ?? 0,
+      cells: [`\`${row.job_id}\``, num(row.count ?? 0)],
+    }));
+  const total = workflowsRun.reduce((sum, row) => sum + (row.count ?? 0), 0);
+  const headline = `**${num(total)} workflow runs completed**${
+    recent?.workflows_run != null && recent.workflows_run > 0 ? ` · +${num(recent.workflows_run)} this week` : ''
+  }`;
+  return section(
+    'Workflow runs',
+    'Successful `orbit run` jobs grouped by job definition. Sorted by completed runs.',
+    headline,
+    ['Job', 'Runs'],
+    sortRows(rows),
+  );
+}
+
+function renderPrsTable(agents) {
+  const rows = agents
+    .filter(([, a]) => {
+      const pr = a.pr ?? {};
+      return (pr.merged_clean ?? 0) + (pr.merged_with_revision ?? 0) > 0;
+    })
+    .map(([name, a]) => {
+      const pr = a.pr ?? {};
+      const clean = pr.merged_clean ?? 0;
+      const revised = pr.merged_with_revision ?? 0;
+      const total = clean + revised;
+      const rate = total > 0 ? clean / total : null;
+      const cleanRate = rate == null ? '—' : `${Math.round(rate * 100)}%`;
+      return {
+        sortKey: total,
+        cells: [agentCell(name), num(total), num(clean), num(revised), cleanRate],
+      };
+    });
+  if (rows.length === 0) return null;
+  const total = rows.reduce((sum, row) => sum + row.sortKey, 0);
+  const headline = `**${num(total)} PRs landed via the Orbit ship workflow.**`;
+  return section(
+    'PRs landed',
+    'Pull requests merged through `orbit run ship` / `orbit run ship-auto`. Clean rate = `merged_clean / (merged_clean + merged_with_revision)`. Sorted by total.',
+    headline,
+    ['Agent', 'Total', 'Clean', 'With revision', 'Clean rate'],
     sortRows(rows),
   );
 }
@@ -145,6 +305,7 @@ function renderFrictionTable(agents) {
   return section(
     'Friction bounty',
     'Self-reported agent friction reports. Accept rate = `accepted / reported`. Sorted by accept rate.',
+    null,
     ['Agent', 'Reported', 'Accepted', 'Rejected', 'Accept rate'],
     sortRows(rows),
   );
@@ -172,6 +333,7 @@ function renderDuelsTable(duelsByModel) {
   return section(
     'Planning duels',
     'Head-to-head planning runs. Wins and losses are recorded only for planner roles; arbiter runs decide outcomes and are listed separately. Win rate is `wins / (wins + losses)`. Sorted by win rate.',
+    null,
     ['Agent', 'Wins', 'Losses', 'As planner', 'As arbiter', 'Win rate'],
     sortRows(rows),
   );
@@ -187,34 +349,20 @@ function renderTaskReviewTable(agents) {
   return section(
     'Task review threads',
     'Review threads opened on tasks, attributed to the reviewing model. Sorted by thread count.',
+    null,
     ['Agent', 'Threads'],
     sortRows(rows),
   );
 }
 
-function renderToolCallsTable(agents) {
-  const rows = agents
-    .filter(([, a]) => (a.tool_calls ?? 0) + (a.failed_tool_calls ?? 0) > 0)
-    .map(([name, a]) => {
-      const total = a.tool_calls ?? 0;
-      const failed = a.failed_tool_calls ?? 0;
-      const rate = total > 0 ? failed / total : null;
-      const failRate = rate == null ? '—' : `${Math.round(rate * 100)}%`;
-      return {
-        sortKey: rate,
-        cells: [agentCell(name), num(total), num(failed), failRate],
-      };
-    });
-  return section(
-    'Tool calls',
-    'Tool invocations recorded in the audit trail. Failure rate = `failed / total`. Sorted by failure rate (highest first).',
-    ['Agent', 'Total', 'Failed', 'Failure rate'],
-    sortRows(rows),
-  );
+function recencyDelta(recent, field, label) {
+  if (!recent) return '';
+  const value = recent[field];
+  if (value == null || value === 0) return '';
+  return ` · +${num(value)} ${label}`;
 }
 
 function sortRows(rows) {
-  // Sort descending by sortKey; nulls (undefined rates) go last; stable agent-name tiebreaker.
   return [...rows]
     .sort((a, b) => {
       const aNull = a.sortKey == null;
@@ -228,11 +376,15 @@ function sortRows(rows) {
     .map((row) => row.cells);
 }
 
-function section(title, description, headers, rows) {
-  if (rows.length === 0) {
-    return `## ${title}\n\n${description}\n\n_No data yet._`;
-  }
-  return `## ${title}\n\n${description}\n\n${markdownTable(headers, rows)}`;
+// Now H2 instead of H3 — each metric becomes a top-level section on its
+// dedicated page.
+function section(title, description, headline, headers, rows) {
+  if (rows == null) return null;
+  const body = rows.length === 0 ? '_No data yet._' : markdownTable(headers, rows);
+  const lines = [`## ${title}`, '', description];
+  if (headline) lines.push('', headline);
+  lines.push('', body);
+  return lines.join('\n');
 }
 
 function markdownTable(headers, rows) {

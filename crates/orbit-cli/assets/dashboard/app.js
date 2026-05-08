@@ -697,17 +697,24 @@ function renderRuns(runs) {
 
 const SCOREBOARD_COLUMNS = [
   { key: "agent", label: "agent", num: false },
-  { key: "tasks_completed", label: "tasks", num: true },
+  { key: "tasks_created", label: "created", num: true },
+  { key: "tasks_planned", label: "planned", num: true },
+  { key: "tasks_completed", label: "completed", num: true },
   { key: "task_review.threads", label: "review threads", num: true },
   { key: "pr.review_comments", label: "pr rev", num: true },
   {
-    key: "tokens",
-    label: "tokens",
+    key: "graph_calls",
+    label: "graph calls",
     num: true,
-    format: "pair",
-    left: "tokens.total",
-    right: "tokens.output",
-    title: "total / output tokens",
+    compute: (agent) => agent?.tool_calls_by_surface?.graph ?? 0,
+    title: "orbit.graph.* calls",
+  },
+  {
+    key: "task_calls",
+    label: "task calls",
+    num: true,
+    compute: (agent) => agent?.tool_calls_by_surface?.task ?? 0,
+    title: "orbit.task.* calls",
   },
   {
     key: "tools",
@@ -804,8 +811,12 @@ function renderScoreboard(summary) {
           cellText = num === 0 ? "0" : fmtDuration(num);
           if (num === 0) extra = " zero";
         } else {
-          const num = asScoreboardNumber(readPath(agent, col.key));
+          const value = col.compute
+            ? col.compute(agent)
+            : readPath(agent, col.key);
+          const num = asScoreboardNumber(value);
           cellText = fmtScoreboardCount(num);
+          titleText = col.title || titleText;
           if (num === 0) extra = " zero";
         }
       }

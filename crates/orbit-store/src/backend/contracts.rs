@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::sqlite::audit_event_store::{
     AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
+    AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
 };
 
 #[derive(Debug, Clone)]
@@ -451,6 +452,15 @@ pub trait AuditEventStoreBackend: Send + Sync {
         &self,
         since: Option<&DateTime<Utc>>,
     ) -> Result<Vec<AuditToolCallCountsByRole>, OrbitError>;
+    fn get_audit_tool_call_counts_by_surface_and_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<AuditToolCallCountsBySurfaceAndRole>, OrbitError>;
+    fn get_audit_top_tool_calls(
+        &self,
+        since: Option<&DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<Vec<AuditTopToolCall>, OrbitError>;
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError>;
 }
 

@@ -46,6 +46,27 @@ pub struct AuditToolCallCountsByRole {
     pub failed: u64,
 }
 
+/// Per-(surface, role) aggregate of `orbit.<surface>.*` tool calls. `surface`
+/// is the segment between the leading `orbit.` namespace prefix and the next
+/// dot — e.g. `orbit.graph.search` → `graph`, `orbit.task.update` → `task`.
+/// Non-`orbit.*` tool names are excluded by the SQL filter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditToolCallCountsBySurfaceAndRole {
+    pub surface: String,
+    pub role: String,
+    pub total: u64,
+    pub failed: u64,
+}
+
+/// One (role, tool_name) pair with its call count. Used to surface the
+/// "most-called tools" leaderboard on the public Metrics page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditTopToolCall {
+    pub role: String,
+    pub tool_name: String,
+    pub total: u64,
+}
+
 impl Store {
     pub fn insert_audit_event_record(
         &self,
@@ -499,6 +520,147 @@ impl Store {
         rows.map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    /// Per-(surface, role) tool call counts where `tool_name` matches
+    /// `orbit.<surface>.<verb>`. The surface segment is extracted with
+    /// SQLite string functions so we don't need a regex extension.
+    /// `failed` counts every non-`success` row (failure + denied) like
+    /// [`Self::get_audit_tool_call_counts_by_role`].
+    pub fn get_audit_tool_call_counts_by_surface_and_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<AuditToolCallCountsBySurfaceAndRole>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        // SUBSTR(tool_name, 7) strips the literal "orbit." prefix; the
+        // appended "." in the inner SUBSTR ensures INSTR finds a delimiter
+        // even for names with no third segment (e.g. "orbit.task" → surface
+        // "task"). The outer LIKE filter discards anything that does not
+        // start with "orbit." entirely.
+        let extract = "SUBSTR(tool_name, 7, INSTR(SUBSTR(tool_name, 7) || '.', '.') - 1)";
+        let sql = if since.is_some() {
+            format!(
+                "SELECT {extract} AS surface, role, COUNT(*), \
+                 COALESCE(SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END), 0) \
+                 FROM audit_events \
+                 WHERE command = 'tool' \
+                   AND subcommand IN ('run', 'run-mcp') \
+                   AND tool_name LIKE 'orbit.%' \
+                   AND timestamp >= ?1 \
+                 GROUP BY surface, role \
+                 ORDER BY surface ASC, COUNT(*) DESC, role ASC"
+            )
+        } else {
+            format!(
+                "SELECT {extract} AS surface, role, COUNT(*), \
+                 COALESCE(SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END), 0) \
+                 FROM audit_events \
+                 WHERE command = 'tool' \
+                   AND subcommand IN ('run', 'run-mcp') \
+                   AND tool_name LIKE 'orbit.%' \
+                 GROUP BY surface, role \
+                 ORDER BY surface ASC, COUNT(*) DESC, role ASC"
+            )
+        };
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = if let Some(s) = since {
+            stmt.query_map(params![s.to_rfc3339()], |row| {
+                Ok(AuditToolCallCountsBySurfaceAndRole {
+                    surface: row.get(0)?,
+                    role: row.get(1)?,
+                    total: row.get::<_, i64>(2)? as u64,
+                    failed: row.get::<_, i64>(3)? as u64,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+        } else {
+            stmt.query_map([], |row| {
+                Ok(AuditToolCallCountsBySurfaceAndRole {
+                    surface: row.get(0)?,
+                    role: row.get(1)?,
+                    total: row.get::<_, i64>(2)? as u64,
+                    failed: row.get::<_, i64>(3)? as u64,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+        };
+
+        rows.map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    /// Top (role, tool_name) pairs by call count across the audit log,
+    /// limited to `orbit.*` tool names. The optional `since` filter, when
+    /// supplied, scopes the query to events at-or-after that timestamp.
+    /// `limit` caps the row count after sorting; `0` means no cap.
+    ///
+    /// Sort key: total DESC, then tool_name ASC, then role ASC for stable
+    /// output across runs.
+    pub fn get_audit_top_tool_calls(
+        &self,
+        since: Option<&DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<Vec<AuditTopToolCall>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let base = "SELECT tool_name, role, COUNT(*) \
+                    FROM audit_events \
+                    WHERE command = 'tool' \
+                      AND subcommand IN ('run', 'run-mcp') \
+                      AND tool_name LIKE 'orbit.%'";
+        let order = "GROUP BY tool_name, role \
+                     ORDER BY COUNT(*) DESC, tool_name ASC, role ASC";
+        let sql = match (since.is_some(), limit > 0) {
+            (true, true) => format!("{base} AND timestamp >= ?1 {order} LIMIT ?2"),
+            (true, false) => format!("{base} AND timestamp >= ?1 {order}"),
+            (false, true) => format!("{base} {order} LIMIT ?1"),
+            (false, false) => format!("{base} {order}"),
+        };
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let map_row = |row: &rusqlite::Row<'_>| {
+            Ok(AuditTopToolCall {
+                tool_name: row.get(0)?,
+                role: row.get(1)?,
+                total: row.get::<_, i64>(2)? as u64,
+            })
+        };
+
+        let rows = match (since, limit) {
+            (Some(s), 0) => stmt
+                .query_map(params![s.to_rfc3339()], map_row)
+                .map_err(|e| OrbitError::Store(e.to_string()))?
+                .collect::<Result<Vec<_>, _>>(),
+            (Some(s), n) => stmt
+                .query_map(params![s.to_rfc3339(), n as i64], map_row)
+                .map_err(|e| OrbitError::Store(e.to_string()))?
+                .collect::<Result<Vec<_>, _>>(),
+            (None, 0) => stmt
+                .query_map([], map_row)
+                .map_err(|e| OrbitError::Store(e.to_string()))?
+                .collect::<Result<Vec<_>, _>>(),
+            (None, n) => stmt
+                .query_map(params![n as i64], map_row)
+                .map_err(|e| OrbitError::Store(e.to_string()))?
+                .collect::<Result<Vec<_>, _>>(),
+        };
+
+        rows.map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
     pub fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         let conn = self
             .conn
@@ -716,5 +878,184 @@ mod tests {
                 failed: 2,
             }]
         );
+    }
+
+    #[test]
+    fn tool_call_counts_by_surface_and_role_extract_segment_after_orbit_prefix() {
+        let store = Store::open_in_memory().expect("open store");
+
+        let mut graph_search = sample_params_with(
+            "exec-graph-search-1",
+            "claude-opus-4-7",
+            AuditEventStatus::Success,
+        );
+        graph_search.tool_name = Some("orbit.graph.search".to_string());
+        graph_search.target_id = Some("orbit.graph.search".to_string());
+        store
+            .insert_audit_event_record(&graph_search)
+            .expect("insert");
+
+        let mut graph_search_failed = sample_params_with(
+            "exec-graph-search-2",
+            "claude-opus-4-7",
+            AuditEventStatus::Failure,
+        );
+        graph_search_failed.tool_name = Some("orbit.graph.search".to_string());
+        graph_search_failed.target_id = Some("orbit.graph.search".to_string());
+        store
+            .insert_audit_event_record(&graph_search_failed)
+            .expect("insert");
+
+        let mut graph_show =
+            sample_params_with("exec-graph-show", "gpt-5.5", AuditEventStatus::Success);
+        graph_show.tool_name = Some("orbit.graph.show".to_string());
+        graph_show.target_id = Some("orbit.graph.show".to_string());
+        store
+            .insert_audit_event_record(&graph_show)
+            .expect("insert");
+
+        let mut task_update =
+            sample_params_with("exec-task-update", "gpt-5.5", AuditEventStatus::Success);
+        task_update.tool_name = Some("orbit.task.update".to_string());
+        task_update.target_id = Some("orbit.task.update".to_string());
+        store
+            .insert_audit_event_record(&task_update)
+            .expect("insert");
+
+        // Non-orbit tool name must be excluded.
+        let mut external = sample_params_with(
+            "exec-external",
+            "claude-opus-4-7",
+            AuditEventStatus::Success,
+        );
+        external.tool_name = Some("github.create_pr".to_string());
+        external.target_id = Some("github.create_pr".to_string());
+        store.insert_audit_event_record(&external).expect("insert");
+
+        // Non-`run`/`run-mcp` subcommand must be excluded even on an orbit name.
+        let mut non_run = sample_params_with(
+            "exec-show-noise",
+            "claude-opus-4-7",
+            AuditEventStatus::Success,
+        );
+        non_run.subcommand = Some("show".to_string());
+        non_run.tool_name = Some("orbit.graph.search".to_string());
+        non_run.target_id = Some("orbit.graph.search".to_string());
+        store.insert_audit_event_record(&non_run).expect("insert");
+
+        let rows = store
+            .get_audit_tool_call_counts_by_surface_and_role(None)
+            .expect("surface counts");
+
+        assert_eq!(
+            rows,
+            vec![
+                AuditToolCallCountsBySurfaceAndRole {
+                    surface: "graph".to_string(),
+                    role: "claude-opus-4-7".to_string(),
+                    total: 2,
+                    failed: 1,
+                },
+                AuditToolCallCountsBySurfaceAndRole {
+                    surface: "graph".to_string(),
+                    role: "gpt-5.5".to_string(),
+                    total: 1,
+                    failed: 0,
+                },
+                AuditToolCallCountsBySurfaceAndRole {
+                    surface: "task".to_string(),
+                    role: "gpt-5.5".to_string(),
+                    total: 1,
+                    failed: 0,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn top_tool_calls_groups_by_tool_name_and_role_with_limit() {
+        let store = Store::open_in_memory().expect("open store");
+
+        // gpt-5.5: 3× orbit.graph.show
+        for i in 0..3 {
+            let mut p = sample_params_with(
+                &format!("exec-show-{i}"),
+                "gpt-5.5",
+                AuditEventStatus::Success,
+            );
+            p.tool_name = Some("orbit.graph.show".to_string());
+            p.target_id = Some("orbit.graph.show".to_string());
+            store.insert_audit_event_record(&p).expect("insert");
+        }
+
+        // claude-opus-4-7: 2× orbit.graph.search
+        for i in 0..2 {
+            let mut p = sample_params_with(
+                &format!("exec-claude-search-{i}"),
+                "claude-opus-4-7",
+                AuditEventStatus::Success,
+            );
+            p.tool_name = Some("orbit.graph.search".to_string());
+            p.target_id = Some("orbit.graph.search".to_string());
+            store.insert_audit_event_record(&p).expect("insert");
+        }
+
+        // gpt-5.5: 1× orbit.task.update
+        {
+            let mut p =
+                sample_params_with("exec-task-update", "gpt-5.5", AuditEventStatus::Success);
+            p.tool_name = Some("orbit.task.update".to_string());
+            p.target_id = Some("orbit.task.update".to_string());
+            store.insert_audit_event_record(&p).expect("insert");
+        }
+
+        // Non-orbit tool — must be excluded.
+        {
+            let mut p = sample_params_with("exec-non-orbit", "gpt-5.5", AuditEventStatus::Success);
+            p.tool_name = Some("github.create_pr".to_string());
+            p.target_id = Some("github.create_pr".to_string());
+            store.insert_audit_event_record(&p).expect("insert");
+        }
+
+        // Non-`run`/`run-mcp` subcommand on an orbit name — must be excluded.
+        {
+            let mut p = sample_params_with("exec-show-noise", "gpt-5.5", AuditEventStatus::Success);
+            p.subcommand = Some("show".to_string());
+            p.tool_name = Some("orbit.graph.show".to_string());
+            p.target_id = Some("orbit.graph.show".to_string());
+            store.insert_audit_event_record(&p).expect("insert");
+        }
+
+        let rows = store
+            .get_audit_top_tool_calls(None, 0)
+            .expect("top tool calls");
+        assert_eq!(
+            rows,
+            vec![
+                AuditTopToolCall {
+                    tool_name: "orbit.graph.show".to_string(),
+                    role: "gpt-5.5".to_string(),
+                    total: 3,
+                },
+                AuditTopToolCall {
+                    tool_name: "orbit.graph.search".to_string(),
+                    role: "claude-opus-4-7".to_string(),
+                    total: 2,
+                },
+                AuditTopToolCall {
+                    tool_name: "orbit.task.update".to_string(),
+                    role: "gpt-5.5".to_string(),
+                    total: 1,
+                },
+            ]
+        );
+
+        // Limit caps the row count, preserving sort order.
+        let limited = store
+            .get_audit_top_tool_calls(None, 2)
+            .expect("top tool calls limited");
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].tool_name, "orbit.graph.show");
+        assert_eq!(limited[1].tool_name, "orbit.graph.search");
     }
 }

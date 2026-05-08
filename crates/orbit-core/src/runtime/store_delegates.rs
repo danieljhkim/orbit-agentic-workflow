@@ -534,6 +534,22 @@ impl AuditEventRecords<'_> {
         self.store.get_audit_tool_call_counts_by_role(since)
     }
 
+    pub(crate) fn tool_call_counts_by_surface_and_role(
+        &self,
+        since: Option<&chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Vec<orbit_store::AuditToolCallCountsBySurfaceAndRole>, OrbitError> {
+        self.store
+            .get_audit_tool_call_counts_by_surface_and_role(since)
+    }
+
+    pub(crate) fn top_tool_calls(
+        &self,
+        since: Option<&chrono::DateTime<chrono::Utc>>,
+        limit: usize,
+    ) -> Result<Vec<orbit_store::AuditTopToolCall>, OrbitError> {
+        self.store.get_audit_top_tool_calls(since, limit)
+    }
+
     pub(crate) fn insert(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {
         self.store.insert_audit_event_record(params)
     }

@@ -179,8 +179,8 @@ body {
 
 .orbit-hero-install {
   align-items: center;
-  background: var(--sl-color-bg-inline-code);
-  border: 1px solid var(--sl-color-hairline-light);
+  background: transparent;
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 8px;
   display: flex;
   font-family: var(--sl-font-mono);

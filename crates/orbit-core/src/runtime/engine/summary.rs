@@ -1,6 +1,15 @@
+use chrono::{Duration, Utc};
 use orbit_common::types::OrbitError;
+use orbit_store::JobRunQuery;
+use orbit_store::scoreboard_summary::ScoreboardInputs;
 
 use crate::OrbitRuntime;
+
+const RECENT_WINDOW_DAYS: i64 = 7;
+/// Cap on the "most-called tools" leaderboard. 50 is comfortably above the
+/// distinct (role, tool) pair count we observe in current workspaces and
+/// keeps `summary.json` size bounded.
+const TOP_TOOLS_LIMIT: usize = 50;
 
 impl OrbitRuntime {
     pub fn generate_scoreboard_summary(
@@ -8,11 +17,31 @@ impl OrbitRuntime {
     ) -> Result<orbit_store::scoreboard_summary::ScoreboardSummary, OrbitError> {
         let tasks = self.list_tasks()?;
         orbit_store::friction_bounty::refresh_from_tasks(&self.paths().scoreboard_dir, &tasks)?;
+
+        let now = Utc::now();
+        let since_recent = now - Duration::days(RECENT_WINDOW_DAYS);
+
         let audit_tool_calls = self.audit_tool_call_counts_by_role(None)?;
-        let summary = orbit_store::scoreboard_summary::generate_summary_with_audit_tool_calls(
+        let audit_tool_calls_by_surface = self.audit_tool_call_counts_by_surface_and_role(None)?;
+        let audit_tool_calls_by_surface_recent =
+            self.audit_tool_call_counts_by_surface_and_role(Some(&since_recent))?;
+        let top_tool_calls = self.audit_top_tool_calls(None, TOP_TOOLS_LIMIT)?;
+        let job_runs = self
+            .stores()
+            .jobs()
+            .list_runs_filtered(&JobRunQuery::default())?;
+
+        let summary = orbit_store::scoreboard_summary::generate_summary_with_inputs(
             &self.paths().scoreboard_dir,
             &tasks,
-            &audit_tool_calls,
+            &ScoreboardInputs {
+                audit_tool_calls: &audit_tool_calls,
+                audit_tool_calls_by_surface: &audit_tool_calls_by_surface,
+                audit_tool_calls_by_surface_recent: &audit_tool_calls_by_surface_recent,
+                job_runs: &job_runs,
+                top_tool_calls: &top_tool_calls,
+                now: Some(now),
+            },
         )?;
         let _ =
             orbit_store::scoreboard_summary::write_summary(&self.paths().scoreboard_dir, &summary)?;
