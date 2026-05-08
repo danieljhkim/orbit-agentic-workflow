@@ -198,6 +198,83 @@ pub(super) fn pipeline_wait(
         })
 }
 
+pub(super) fn pipeline_success_guard(action: &str, input: &Value) -> Result<Value, DispatchError> {
+    let context = input
+        .get("context")
+        .and_then(Value::as_str)
+        .unwrap_or("pipeline child run");
+    let mut checked_count = 0usize;
+    let mut failures = Vec::new();
+
+    if let Some(result) = input.get("result")
+        && !result.is_null()
+    {
+        checked_count += 1;
+        if let Some(failure) = pipeline_wait_entry_failure("result", result) {
+            failures.push(failure);
+        }
+    }
+
+    if let Some(results) = input.get("results")
+        && !results.is_null()
+    {
+        let entries =
+            results
+                .as_array()
+                .ok_or_else(|| DispatchError::DeterministicActionFailed {
+                    action: action.to_string(),
+                    message: "`results` must be an array".to_string(),
+                })?;
+        for (idx, entry) in entries.iter().enumerate() {
+            checked_count += 1;
+            if let Some(failure) = pipeline_wait_entry_failure(&format!("results[{idx}]"), entry) {
+                failures.push(failure);
+            }
+        }
+    }
+
+    if checked_count == 0 {
+        return Err(DispatchError::DeterministicActionFailed {
+            action: action.to_string(),
+            message: "expected `result` or `results` to check".to_string(),
+        });
+    }
+
+    if !failures.is_empty() {
+        return Err(DispatchError::DeterministicActionFailed {
+            action: action.to_string(),
+            message: format!("{context} did not succeed: {}", failures.join("; ")),
+        });
+    }
+
+    Ok(serde_json::json!({
+        "succeeded": true,
+        "checked_count": checked_count,
+    }))
+}
+
+fn pipeline_wait_entry_failure(label: &str, entry: &Value) -> Option<String> {
+    let Some(status) = entry.get("status").and_then(Value::as_str) else {
+        return Some(format!("{label} missing string status"));
+    };
+    if status == "succeeded" {
+        return None;
+    }
+
+    let run_id = entry
+        .get("run_id")
+        .and_then(Value::as_str)
+        .unwrap_or("<unknown>");
+    let error = entry
+        .get("error")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    Some(match error {
+        Some(error) => format!("{label} run {run_id} status {status}: {error}"),
+        None => format!("{label} run {run_id} status {status}"),
+    })
+}
+
 pub(super) fn gate_starvation_fail(
     runtime: &OrbitRuntime,
     action: &str,
@@ -283,4 +360,84 @@ pub(super) fn gate_starvation_fail(
             task_ids_vec, conflicting_files, max_wait_seconds
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn action_failure_message(err: DispatchError) -> String {
+        match err {
+            DispatchError::DeterministicActionFailed { action, message } => {
+                assert_eq!(action, "pipeline_success_guard");
+                message
+            }
+            other => panic!("expected deterministic action failure, got {other}"),
+        }
+    }
+
+    #[test]
+    fn pipeline_success_guard_accepts_succeeded_result() {
+        let output = pipeline_success_guard(
+            "pipeline_success_guard",
+            &json!({
+                "result": {
+                    "run_id": "jrun-ok",
+                    "status": "succeeded"
+                }
+            }),
+        )
+        .expect("succeeded result should pass");
+
+        assert_eq!(output["succeeded"], json!(true));
+        assert_eq!(output["checked_count"], json!(1));
+    }
+
+    #[test]
+    fn pipeline_success_guard_rejects_failed_result() {
+        let err = pipeline_success_guard(
+            "pipeline_success_guard",
+            &json!({
+                "context": "task gate child",
+                "result": {
+                    "run_id": "jrun-failed",
+                    "status": "failed",
+                    "error": "implementation failed"
+                }
+            }),
+        )
+        .expect_err("failed child run should fail the guard");
+
+        let message = action_failure_message(err);
+        assert!(message.contains("task gate child did not succeed"));
+        assert!(message.contains("jrun-failed"));
+        assert!(message.contains("status failed"));
+        assert!(message.contains("implementation failed"));
+    }
+
+    #[test]
+    fn pipeline_success_guard_rejects_mixed_results() {
+        let err = pipeline_success_guard(
+            "pipeline_success_guard",
+            &json!({
+                "results": [
+                    {
+                        "run_id": "jrun-ok",
+                        "status": "succeeded"
+                    },
+                    {
+                        "run_id": "jrun-cancelled",
+                        "status": "cancelled"
+                    },
+                    null
+                ]
+            }),
+        )
+        .expect_err("any non-succeeded result should fail the guard");
+
+        let message = action_failure_message(err);
+        assert!(message.contains("results[1] run jrun-cancelled status cancelled"));
+        assert!(message.contains("results[2] missing string status"));
+    }
 }

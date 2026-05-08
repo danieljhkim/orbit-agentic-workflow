@@ -228,6 +228,9 @@ pub(super) fn run_deterministic(
         // Join already-submitted child v2 Jobs without keeping the
         // dispatching agent activity open.
         "pipeline_wait" => pipeline_actions::pipeline_wait(runtime, action, input, tool_context),
+        // Fail a workflow if one or more child pipeline wait results did not
+        // reach `succeeded`.
+        "pipeline_success_guard" => pipeline_actions::pipeline_success_guard(action, input),
         // Post-loop gate signal: the admission window never opened in
         // time. Emits a `gate.starvation` audit event with task_ids and
         // conflicting_files so an epic-orchestrator parent can decide
