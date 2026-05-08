@@ -1,4 +1,4 @@
-.PHONY: help graph-run graph-run-claude graph-run-codex graph-sweep graph-sweep-dry-run graph-sweep-claude graph-sweep-codex graph-aggregate graph-test
+.PHONY: help graph-run graph-run-claude graph-run-codex graph-sweep graph-sweep-dry-run graph-sweep-claude graph-sweep-codex graph-aggregate graph-test identity-key-run
 
 PYTHON ?= python3
 BENCH_ROOT := $(CURDIR)
@@ -29,6 +29,8 @@ GRAPH_SWEEP_ID ?=
 GRAPH_RUN_ARGS ?=
 GRAPH_SWEEP_ARGS ?=
 
+IDENTITY_KEY_SCRIPTS ?= $(BENCH_ROOT)/identity-key/scripts
+
 # Export GRAPH_VERSION so the Python scripts resolve VERSION_ROOT correctly.
 export GRAPH_VERSION
 
@@ -56,6 +58,9 @@ help:
 	@echo ""
 	@echo "  make -C benchmarks graph-test"
 	@echo "    Run benchmark script unit tests (living scripts only)."
+	@echo ""
+	@echo "  make -C benchmarks identity-key-run"
+	@echo "    Rebuild the identity-key v1 scenario records."
 	@echo ""
 	@echo "Versioning:"
 	@echo "  GRAPH_VERSION=v3 (default)  targets benchmarks/graph/v3/ (living)."
@@ -102,3 +107,6 @@ graph-aggregate:
 
 graph-test:
 	$(PYTHON) -m unittest discover -s $(BENCH_ROOT)/graph/scripts -p 'test_*.py'
+
+identity-key-run:
+	$(IDENTITY_KEY_SCRIPTS)/run.sh
