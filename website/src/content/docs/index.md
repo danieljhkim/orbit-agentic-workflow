@@ -63,22 +63,22 @@ tableOfContents: false
 
 <div class="orbit-section-title">Why Orbit</div>
 
-<div class="orbit-design-notes">
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Self-hosted</div>
-    <div class="orbit-design-note-value">Source never leaves your infrastructure. Bring your own model provider.</div>
+<div class="orbit-card-grid">
+  <div class="orbit-card">
+    <h3>Self-hosted</h3>
+    <p>Source never leaves your infrastructure. Bring your own model provider.</p>
   </div>
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Auditable</div>
-    <div class="orbit-design-note-value">Every agent action is captured. Replay any run, any time.</div>
+  <div class="orbit-card">
+    <h3>Auditable</h3>
+    <p>Every agent action is captured. Replay any run, any time.</p>
   </div>
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Scope-first</div>
-    <div class="orbit-design-note-value">Filesystem policies bound exactly what an agent can touch.</div>
+  <div class="orbit-card">
+    <h3>Scope-first</h3>
+    <p>Filesystem policies bound exactly what an agent can touch.</p>
   </div>
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Concurrent</div>
-    <div class="orbit-design-note-value">Worktree isolation lets agents work in parallel without colliding.</div>
+  <div class="orbit-card">
+    <h3>Concurrent</h3>
+    <p>Worktree isolation lets agents work in parallel without colliding.</p>
   </div>
 </div>
 
