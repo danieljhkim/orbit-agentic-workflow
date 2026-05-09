@@ -613,7 +613,7 @@ spec:
         let guard = &asset.spec.steps[guard_index];
         assert_eq!(
             guard.when.as_deref(),
-            Some("{{ steps.validate_bundles.output.bundle_count }} > 0")
+            Some("{{ steps.validate_bundles.output.bundle_count }} != 0")
         );
         match &guard.body {
             JobV2StepBody::TargetRef(target) => {

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -486,6 +486,19 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - New blocks (e.g. a future `dag` or `gate` construct) must land with a sibling test module covering at least the invariants enumerated in the seed surface.
 - Shared scaffolding in `tests/mod.rs` is the consolidation seam — broaden it (agent_loop or shell hosts, additional builders) there rather than re-deriving in each block module.
 
+## ADR-049 — Condition guards stay equality-only
+
+**Status:** Accepted · 2026-05 · [T20260509-11]
+
+**Context.** `task_auto_pipeline` needed to skip its success guard for empty backlog runs, but its seeded `bundle_count > 0` guard rendered to an unsupported comparison and failed before the step could be skipped. Orbit could either extend the shared evaluator with numeric ordering or express the guard in the existing grammar.
+
+**Decision.** Keep the shared condition grammar to `==` and `!=`, with `&&` and `||` composition, and express skip-on-empty guards with equality-compatible forms such as `!= 0` and `!= []`. The `ship-auto` guard uses `{{ steps.validate_bundles.output.bundle_count }} != 0`, so zero bundles skip the guard and populated fan-out still checks child gate success.
+
+**Consequences.**
+- The evaluator stays string-based and shared between `StepCondition::Expr`, v2 `when:`, and loop `break_when:` without adding numeric coercion rules.
+- Seeded jobs can still model empty collections and counts, but authored guards must avoid ordering operators unless a future task intentionally extends the grammar.
+- Cost: authors cannot write natural numeric comparisons in guards today; they must encode supported equality checks or add a deliberate grammar extension with tests and docs.
+
 ---
 
 ## Task References
@@ -550,5 +563,6 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - **[T20260509-2]** — Split the v2 job executor into responsibility-focused modules without changing runtime behavior.
 - **[T20260509-7]** — Establish focused test coverage for the activity/job DAG executor (linear, retry, parallel, fan-out, loop, pipeline durability) and the macOS sandbox / policy boundary.
 - **[T20260509-9]** — Auto-populate `task.context_files` from the winning planning-duel plan after resolution.
+- **[T20260509-11]** — Keep condition guards on equality-only grammar and repair the `ship-auto` empty-backlog guard.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
