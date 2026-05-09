@@ -107,14 +107,16 @@ pub(super) struct UpdateTaskBody {
 
 pub(super) async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
     match list_dashboard_tasks(&runtime) {
-        Ok(tasks) => {
-            let status_by_id = orbit_core::build_task_status_index(&tasks);
-            let values: Vec<Value> = tasks
-                .iter()
-                .map(|task| task_to_json(task, &status_by_id))
-                .collect();
-            Json(Value::Array(values)).into_response()
-        }
+        Ok(tasks) => match dashboard_status_index(&runtime) {
+            Ok(status_by_id) => {
+                let values: Vec<Value> = tasks
+                    .iter()
+                    .map(|task| task_to_json(task, &status_by_id))
+                    .collect();
+                Json(Value::Array(values)).into_response()
+            }
+            Err(e) => server_error(e),
+        },
         Err(e) => server_error(e),
     }
 }
@@ -130,9 +132,7 @@ fn list_dashboard_tasks(runtime: &OrbitRuntime) -> Result<Vec<Task>, orbit_core:
 fn dashboard_status_index(
     runtime: &OrbitRuntime,
 ) -> Result<std::collections::BTreeMap<String, TaskStatus>, orbit_core::OrbitError> {
-    Ok(orbit_core::build_task_status_index(&list_dashboard_tasks(
-        runtime,
-    )?))
+    Ok(orbit_core::build_task_status_index(&runtime.list_tasks()?))
 }
 
 pub(super) async fn get_task(
