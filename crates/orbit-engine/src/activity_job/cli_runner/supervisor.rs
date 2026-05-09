@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::process::Child;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,8 @@ use super::spawn::{SpawnedChild, spawn_child_with_optional_sandbox};
 pub(super) const DEFAULT_WALL_CLOCK_TIMEOUT_SECONDS: u64 = 300;
 
 pub(super) type SpawnOutput = (Vec<u8>, Vec<u8>, Option<i32>, Duration, bool);
+
+const OUTPUT_READER_JOIN_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub(super) struct SpawnTraceContext<'a> {
     pub(super) provider: &'a str,
@@ -39,6 +42,11 @@ struct OutputReaderContext {
     task_id: Option<String>,
     cwd: Option<String>,
     dispatch: tracing::Dispatch,
+}
+
+struct OutputReaderHandle {
+    finished: mpsc::Receiver<()>,
+    join: thread::JoinHandle<()>,
 }
 
 pub(super) fn spawn_with_timeout(
@@ -109,14 +117,14 @@ pub(super) fn spawn_with_timeout(
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                cleanup_child_process_group(child.id());
                 exit_status = Some(status);
                 break;
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
+                    kill_child_process_tree(&mut child);
                     timed_out = true;
-                    let _ = child.wait();
                     exit_status = None;
                     break;
                 }
@@ -126,19 +134,16 @@ pub(super) fn spawn_with_timeout(
         }
     }
 
+    let reader_join_deadline = timed_out.then(|| Instant::now() + OUTPUT_READER_JOIN_TIMEOUT);
     if let Some(h) = stdout_reader {
-        let _ = h.join();
+        join_output_reader(h, reader_join_deadline);
     }
     if let Some(h) = stderr_reader {
-        let _ = h.join();
+        join_output_reader(h, reader_join_deadline);
     }
 
-    let stdout = Arc::try_unwrap(stdout_buf)
-        .map(|m| m.into_inner().unwrap_or_default())
-        .unwrap_or_default();
-    let stderr = Arc::try_unwrap(stderr_buf)
-        .map(|m| m.into_inner().unwrap_or_default())
-        .unwrap_or_default();
+    let stdout = stdout_buf.lock().map(|buf| buf.clone()).unwrap_or_default();
+    let stderr = stderr_buf.lock().map(|buf| buf.clone()).unwrap_or_default();
     let exit_code = exit_status.as_ref().and_then(|s| s.code());
     let duration = started.elapsed();
     Ok((stdout, stderr, exit_code, duration, timed_out))
@@ -148,7 +153,7 @@ fn spawn_output_reader<R>(
     handle: R,
     buf: Arc<Mutex<Vec<u8>>>,
     context: OutputReaderContext,
-) -> thread::JoinHandle<()>
+) -> OutputReaderHandle
 where
     R: Read + Send + 'static,
 {
@@ -161,7 +166,8 @@ where
         dispatch,
     } = context;
 
-    thread::spawn(move || {
+    let (finished_tx, finished) = mpsc::channel();
+    let join = thread::spawn(move || {
         tracing::dispatcher::with_default(&dispatch, || {
             let mut reader = BufReader::new(handle);
             let mut raw_line = Vec::new();
@@ -186,7 +192,61 @@ where
                 }
             }
         });
-    })
+        let _ = finished_tx.send(());
+    });
+    OutputReaderHandle { finished, join }
+}
+
+fn join_output_reader(reader: OutputReaderHandle, deadline: Option<Instant>) {
+    let OutputReaderHandle { finished, join } = reader;
+    match deadline {
+        Some(deadline) => {
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            match finished.recv_timeout(timeout) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    let _ = join.join();
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+        None => {
+            let _ = join.join();
+        }
+    }
+}
+
+fn kill_child_process_tree(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let _ = signal_child_process_group(child.id(), libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(unix)]
+fn cleanup_child_process_group(child_id: u32) {
+    let _ = signal_child_process_group(child_id, libc::SIGKILL);
+}
+
+#[cfg(not(unix))]
+fn cleanup_child_process_group(_child_id: u32) {}
+
+#[cfg(unix)]
+fn signal_child_process_group(child_id: u32, signal: libc::c_int) -> std::io::Result<()> {
+    if child_id == 0 || child_id > i32::MAX as u32 {
+        return Ok(());
+    }
+    let rc = unsafe { libc::killpg(child_id as libc::pid_t, signal) };
+    if rc == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        Ok(())
+    } else {
+        Err(error)
+    }
 }
 
 fn emit_output_line(
@@ -377,5 +437,99 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].field("stream"), Some("stdout"));
         assert_eq!(events[0].field("line"), Some("before timeout"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_with_timeout_kills_grandchild_holding_output_pipes() {
+        let pid_dir = tempdir().expect("pid tempdir");
+        let pid_file = pid_dir.path().join("grandchild.pid");
+        let script = format!(
+            "(sleep 30) & child=$!; printf '%s\\n' \"$child\" > {}; printf '%s\\n' 'before timeout'; sleep 30",
+            shell_quote(pid_file.to_string_lossy().as_ref())
+        );
+        let args = sh_args(&script);
+
+        let started = std::time::Instant::now();
+        let (stdout, stderr, exit_code, duration, timed_out) =
+            spawn_with_timeout(spawn_test_request(
+                "/bin/sh",
+                &args,
+                None,
+                Duration::from_millis(150),
+                SpawnTraceContext {
+                    provider: "codex",
+                    job_run_id: "job-timeout-tree",
+                    task_id: Some("TTREE"),
+                    cwd: None,
+                },
+            ))
+            .expect("spawn succeeds");
+
+        assert!(timed_out);
+        assert_eq!(exit_code, None);
+        assert_eq!(stdout, b"before timeout\n");
+        assert!(stderr.is_empty());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "timeout path should return promptly; reported duration={duration:?}"
+        );
+
+        let grandchild_pid = read_pid(&pid_file);
+        assert!(
+            wait_until(Duration::from_secs(2), || !process_is_live(grandchild_pid)),
+            "grandchild process {grandchild_pid} should be gone after timeout"
+        );
+    }
+
+    #[cfg(unix)]
+    fn read_pid(path: &Path) -> u32 {
+        std::fs::read_to_string(path)
+            .expect("read pid file")
+            .trim()
+            .parse()
+            .expect("parse pid")
+    }
+
+    #[cfg(unix)]
+    fn wait_until<F>(timeout: Duration, mut condition: F) -> bool
+    where
+        F: FnMut() -> bool,
+    {
+        let started = std::time::Instant::now();
+        while started.elapsed() < timeout {
+            if condition() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        condition()
+    }
+
+    #[cfg(unix)]
+    fn process_is_live(pid: u32) -> bool {
+        if pid == 0 || pid > i32::MAX as u32 {
+            return false;
+        }
+        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        if rc != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            return false;
+        }
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output();
+        let Ok(output) = output else {
+            return true;
+        };
+        if !output.status.success() {
+            return false;
+        }
+        let status = String::from_utf8_lossy(&output.stdout);
+        !status.trim_start().starts_with('Z')
+    }
+
+    #[cfg(unix)]
+    fn shell_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 }

@@ -49,6 +49,11 @@ fn spawn_bare(
     if let Some(path) = cwd {
         command.current_dir(path);
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
     let child = command
         .spawn()
         .map_err(|err| OrbitError::Execution(format!("failed to spawn `{program}`: {err}")))?;
