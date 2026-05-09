@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-09
 
 This document specifies the current knowledge graph: storage, build pipeline, query services, Orbit integration, locking, and limitations. The [T20260430-22] cleanup removes duplicated rationale already covered by [1_overview.md](./1_overview.md), [3_vision.md](./3_vision.md), and ADRs.
 
@@ -39,7 +39,7 @@ scan → hash → detect_changes → build_dirs → build_files → build_leaves
 
 | Stage | Output | Notes |
 |-------|--------|-------|
-| `scan_repo` | `ctx.file_paths` | Walks the repo honoring `.gitignore` plus Orbit-specific `.orbitignore` rules |
+| `scan_repo` | `ctx.file_paths` | Walks the repo honoring `.gitignore` plus Orbit-specific `.orbitignore` rules; classifies entries with `DirEntry::file_type()` and skips symlinked directories/files instead of following them ([T20260509-33]) |
 | `compute_hashes` | Per-file content hashes | Drives incremental detection; reads and hashes files in parallel, then publishes `ctx.new_hashes` after the worker phase ([T20260426-0139]) |
 | `detect_changes` | Added / modified / unchanged path set | Incremental leaf extraction uses this set to decide what can reuse the prior graph |
 | `build_graph_dirs` | `DirNode` entries with parent/child wiring | Deterministic; root dir id derived from `.` |
@@ -88,6 +88,8 @@ Those layers answer a different question than runtime policy. `.orbitignore` dec
 That split is structural on purpose. The knowledge-graph crate depends only on `orbit-common`; it does not depend on `orbit-policy`, and the scanner does not consult runtime policy while building the graph. This keeps graph refresh deterministic and keeps policy semantics out of the indexing hot path.
 
 The default `.orbitignore` baseline excludes common generated or runtime-owned trees (`.orbit/`, `node_modules/`, `target/`, `dist/`, `build/`, virtualenvs, caches, `*.egg-info/`). `orbit workspace init` seeds the list so users can edit it. A path can appear in both layers with different intent: benchmark transcripts may be excluded from indexing while policy still allows reads; `.orbit/` may be excluded from indexing while policy denies modification.
+
+Both scan paths use directory-entry file type metadata rather than `Path::is_dir()` / `Path::is_file()`, so symlinks are classified as symlinks instead of followed. The scanner recurses only into non-symlink directories and records only regular files; `.orbitignore` discovery uses the same boundary. That prevents repository symlinks from pulling in files outside the workspace or creating recursive scan cycles ([T20260509-33]).
 
 ### 2.5 Build benchmark scoreboard
 
@@ -243,6 +245,10 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 
 `graph_bench.json` records wall time and peak RSS from the local machine that ran `make bench` ([T20260426-0236]). The default corpus is the Orbit repo itself, so counts and timings move with checked-in source and benchmark fixtures. Compare records as local trend signals and include the machine/core context when using them in reviews.
 
+### 6.12 Symlinked source trees are excluded
+
+The scanner skips symlinked directories rather than trying to canonicalize and follow only in-workspace targets ([T20260509-33]). This is the safer default for agent indexing because it avoids outside-repo leakage and cycles, but a workspace that intentionally exposes source through symlinked directories must materialize those files or wait for an explicit, cycle-safe opt-in traversal policy.
+
 ---
 
 ## Task References
@@ -273,5 +279,6 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 - **[T20260505-16]** — Add C and header extraction coverage, documented by gpt-5.
 - **[T20260505-5]** — Bound `orbit.graph.pack` selector gathering and skip inline refresh by default, documented by gpt-5.5.
 - **[T20260506-11]** — Remove graph task attribution after 0/961 audited reverse-lookup uses; preserve task IDs as local commit-search keys.
+- **[T20260509-33]** — Skip symlinked directories/files during knowledge scans and `.orbitignore` discovery to prevent outside-repo indexing and recursive cycles.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

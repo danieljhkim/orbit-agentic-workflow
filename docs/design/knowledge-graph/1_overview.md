@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-09
 
 The knowledge graph is Orbit's durable, queryable codebase map: a content-addressed, branch-scoped tree of directories, files, and extracted symbols. It sits between raw files and the agent prompt so agents can ask *"where is `AgentRuntime` defined?"* without re-reading the repo from scratch. Task attribution was removed in [T20260506-11]; task IDs now remain local commit-search keys rather than graph fields. This compaction pass [T20260430-22] keeps the overview focused on entry-point concepts and leaves mechanism detail to [2_design.md](./2_design.md).
 
@@ -82,7 +82,7 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 |---------|----------------|-----------------|
 | Crate boundary | `crates/orbit-knowledge` | [T20260411-0008], [T20260411-0424] |
 | Storage layout | `src/graph/object_store.rs` | [T20260421-0358] |
-| Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139] |
+| Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139], [T20260509-33] |
 | Historical task attribution removal | `src/pipeline/` | [T20260506-11] |
 | Query services | `src/service/` | [T20260412-0645-2], [T20260412-0645-3] |
 | Working graph | `src/working_graph/` | [T20260411-0424] |
@@ -108,5 +108,6 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 - **[T20260428-1]** — Historical graph task-ID attribution/search alignment; superseded by [T20260506-11].
 - **[T20260506-11]** — Remove knowledge-graph task attribution; preserve task IDs as local commit-search keys.
 - **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
+- **[T20260509-33]** — Skip symlinked directory entries during knowledge scanner traversal.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
