@@ -29,7 +29,7 @@ allowed_internal_deps() {
       echo "orbit-common orbit-tools"
       ;;
     orbit-cli)
-      echo "orbit-common orbit-core orbit-knowledge orbit-mcp"
+      echo "orbit-common orbit-core orbit-mcp"
       ;;
     *)
       echo ""
