@@ -1,9 +1,8 @@
 //! File content extractors for the knowledge graph.
 //!
 //! Extracts structural symbols from source code via tree-sitter (`Language`
-//! extractors in `rust.rs`, `python.rs`, …) and shallow anchors from non-code
-//! files (markdown headings, config keys, tabular headers) added by
-//! T20260422-1540 in `markdown.rs`, `config.rs`, `table.rs`.
+//! extractors in `rust.rs`, `python.rs`, …), markdown heading anchors, and
+//! file-level source capture for structured config and tabular files.
 //!
 //! Dispatch key is `FileKind`, which subsumes the prior `Language`-based
 //! dispatch under `FileKind::Code(Language)` without changing extractor
@@ -49,8 +48,8 @@ use typescript::TypeScriptExtractor;
 ///
 /// Implementors declare the `FileKind` they handle and emit a flat list of
 /// `ExtractedLeaf` anchors for that file's content. For code, anchors are
-/// symbols; for docs/configs/tables, anchors are sections/keys/columns
-/// (T20260422-1540).
+/// symbols; for markdown, anchors are sections. Config and table extractors
+/// stay registered to preserve file-level source capture but emit no leaves.
 pub trait FileExtractor: Send + Sync {
     fn file_kind(&self) -> FileKind;
     fn extract(&self, source: &str) -> ExtractionResult;
