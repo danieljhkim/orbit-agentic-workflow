@@ -15,8 +15,6 @@ pub(in crate::command::mcp::setup) fn apply_gemini_remove(
     apply_simple_json_remove(target, "mcpServers")
 }
 
-/// Generic JSON applier shared by providers whose registration is a single
-
 #[cfg(test)]
 mod tests {
     use tempfile::tempdir;

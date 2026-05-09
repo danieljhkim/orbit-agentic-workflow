@@ -171,9 +171,11 @@ fn parallel_inherits_audit_parent_stack_into_each_branch() {
     for branch_id in ["br_a", "br_b"] {
         let started = events
             .iter()
-            .find(|e| match &e.kind {
-                V2AuditEventKind::StepStarted { step_id } if step_id == branch_id => true,
-                _ => false,
+            .find(|e| {
+                matches!(
+                    &e.kind,
+                    V2AuditEventKind::StepStarted { step_id } if step_id == branch_id
+                )
             })
             .unwrap_or_else(|| panic!("missing StepStarted for branch `{branch_id}`"));
         assert_eq!(
