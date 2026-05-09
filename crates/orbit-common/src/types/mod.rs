@@ -89,7 +89,7 @@ pub use policy_def::{
 pub use resource::{
     EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorResource, ExecutorResourceSpec,
     POLICY_RESOURCE_SCHEMA_VERSION, PolicyResource, PolicyResourceSpec, ResourceEnvelope,
-    ResourceHeader, ResourceKind, ResourceMetadata, parse_policy_resource,
+    ResourceHeader, ResourceKind, ResourceMetadata, parse_policy_resource, validate_resource_name,
 };
 pub use role::Role;
 pub use run_state::PipelineState;

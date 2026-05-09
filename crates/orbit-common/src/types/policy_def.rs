@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::types::OrbitError;
+use crate::types::{OrbitError, validate_resource_name};
 
 pub const DEFAULT_POLICY_NAME: &str = "default";
 pub const UNRESTRICTED_FS_PROFILE: &str = "unrestricted";
@@ -74,6 +74,8 @@ pub struct FsCheckResult {
 
 impl PolicyDef {
     pub fn validate(&self) -> Result<(), OrbitError> {
+        validate_resource_name(&self.name)?;
+
         let deny_read = normalize_rule_set(&self.deny_read, "spec.denyRead")?;
         let deny_modify = normalize_rule_set(&self.deny_modify, "spec.denyModify")?;
 

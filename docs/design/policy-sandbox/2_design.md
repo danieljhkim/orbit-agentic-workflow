@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-09 (T20260509-27)
+**Last updated:** 2026-05-09 (T20260509-7, T20260509-28)
 
 This document describes Orbit's shipped policy and sandboxing implementation: v2 `PolicyDef`, profile resolution, last-match-wins path evaluation, HTTP-tool enforcement, activity/job `fsProfile` binding, macOS CLI sandbox wrapping, and `orbit-exec` supervision. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for forward-looking gaps.
 
@@ -12,13 +12,14 @@ This document describes Orbit's shipped policy and sandboxing implementation: v2
 
 `PolicyDef` in `crates/orbit-common/src/types/policy_def.rs` is v2-only. `crates/orbit-common/src/types/resource.rs` rejects schema v1 with a migration message that names `spec.denyRead`, `spec.denyModify`, and `spec.fsProfiles`.
 
-A valid policy declares `name`, optional `description`, global `denyRead` / `denyModify`, and `fsProfiles` mapping names to `FsProfile { read, modify }`.
+A valid policy declares `name`, optional `description`, global `denyRead` / `denyModify`, and `fsProfiles` mapping names to `FsProfile { read, modify }`. The policy name must also pass the centralized resource-name validator in `crates/orbit-common/src/types/resource.rs`: it is a non-empty single file stem, not a hidden dot name, and contains no separators, traversal markers, drive-prefix characters, extension dots, or control characters ([T20260509-28]). File-backed stores validate before constructing `<name>.yaml` paths.
 
 `PolicyDef::validate` enforces:
 
-1. Every profile name is non-empty.
-2. Every positive `modify` rule is covered by a positive `read` rule in the same profile.
-3. Profile rules do not exactly duplicate global deny entries.
+1. The policy name is a safe resource file stem.
+2. Every profile name is non-empty.
+3. Every positive `modify` rule is covered by a positive `read` rule in the same profile.
+4. Profile rules do not exactly duplicate global deny entries.
 
 `PolicyDef::merged(global, workspace)` lets workspace `fsProfiles` overwrite globals by name while global denies accumulate. The merged policy is revalidated.
 
@@ -168,6 +169,10 @@ Risk-weighted regression tests sit beside the implementations they guard
   `compiled_profile_for_realistic_agent_loop_profile_allows_repo_writes_denies_dotenv`)
   exercise an `agent_loop`-shaped profile end-to-end against the kernel
   sandbox.
+- `crates/orbit-store/src/file/policy_def_store.rs#tests` — policy resource
+  name tests reject traversal-shaped names such as `../x` before path
+  construction and assert no file is written outside the policy store
+  ([T20260509-28]).
 
 Tests skip on non-macOS (and on macOS hosts where `sandbox-exec` cannot
 apply) via the existing `cfg(target_os = "macos")` + `sandbox_exec_can_apply()`
@@ -210,6 +215,6 @@ non-empty on Linux CI.
 - **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude (`~/.claude` / `$CLAUDE_CONFIG_DIR`) and Gemini (`~/.gemini`), and document why side-write roots remain Codex-only.
 - **[T20260430-23]** — Shorten the policy sandbox design docs while preserving the shipped contract and ADR history.
 - **[T20260509-7]** — Add `PolicyEngine::check` boundary tests and macOS sandbox `denyRead` / realistic agent-loop profile tests.
-- **[T20260509-27]** — Reject parent-directory traversal in candidate policy paths while preserving valid relative path normalization.
+- **[T20260509-28]** — Validate policy and executor resource names as safe file stems before file-store path construction.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
