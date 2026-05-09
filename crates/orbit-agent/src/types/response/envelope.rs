@@ -232,10 +232,10 @@ fn find_agent_response_envelope(value: &Value) -> Option<AgentResponseEnvelope> 
 }
 
 fn find_agent_response_envelope_in_string(raw: &str) -> Option<AgentResponseEnvelope> {
-    if let Ok(nested) = serde_json::from_str::<Value>(raw) {
-        if let Some(envelope) = find_agent_response_envelope(&nested) {
-            return Some(envelope);
-        }
+    if let Ok(nested) = serde_json::from_str::<Value>(raw)
+        && let Some(envelope) = find_agent_response_envelope(&nested)
+    {
+        return Some(envelope);
     }
 
     raw.match_indices('{').find_map(|(start, _)| {
