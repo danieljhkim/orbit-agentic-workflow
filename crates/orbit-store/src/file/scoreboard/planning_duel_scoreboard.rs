@@ -12,7 +12,9 @@ use std::path::Path;
 use orbit_common::types::{OrbitError, PlannerSlot, PlanningDuelRun};
 use serde::{Deserialize, Serialize};
 
-use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::fs::{
+    atomic_write_text_volatile as write_atomic, with_exclusive_file_lock,
+};
 
 const SCOREBOARD_FILENAME: &str = "duel_plan.json";
 const CURRENT_SCHEMA_VERSION: u32 = 1;
@@ -79,12 +81,14 @@ pub struct Aggregates {
 /// Append a single [`PlanningDuelRun`] to `scoreboard_dir/duel_plan.json`.
 pub fn append_run(scoreboard_dir: &Path, run: &PlanningDuelRun) -> Result<(), OrbitError> {
     let path = scoreboard_dir.join(SCOREBOARD_FILENAME);
-    let mut file = load_scoreboard_file(&path)?;
-    file.runs.push(run.clone());
+    with_exclusive_file_lock(&path, "planning duel scoreboard", || {
+        let mut file = load_scoreboard_file(&path)?;
+        file.runs.push(run.clone());
 
-    let json = serde_json::to_string_pretty(&file)
-        .map_err(|e| OrbitError::Io(format!("serialize duel_plan.json: {e}")))?;
-    write_atomic(&path, &format!("{json}\n")).map_err(Into::into)
+        let json = serde_json::to_string_pretty(&file)
+            .map_err(|e| OrbitError::Io(format!("serialize duel_plan.json: {e}")))?;
+        write_atomic(&path, &format!("{json}\n")).map_err(Into::into)
+    })
 }
 
 /// Load every run entry from `scoreboard_dir/duel_plan.json`.
@@ -212,3 +216,91 @@ pub fn aggregate(runs: &[PlanningDuelRun], filter: AggregateFilter) -> Aggregate
 // ============================================================================
 // Tests
 // ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    use chrono::Utc;
+    use orbit_common::types::{
+        EfficiencyMetrics, PlannerSlot, PlanningEfficiency, PlanningOutcome,
+        PlanningRoleAssignment, PlanningRoles,
+    };
+
+    use super::*;
+
+    #[test]
+    fn append_run_keeps_all_concurrent_writes() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        let scoreboard_dir = Arc::new(temp.path().to_path_buf());
+        let writers = 32;
+        let barrier = Arc::new(Barrier::new(writers));
+
+        let handles: Vec<_> = (0..writers)
+            .map(|index| {
+                let scoreboard_dir = Arc::clone(&scoreboard_dir);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    let run = test_run(format!("run-{index:02}"));
+                    barrier.wait();
+                    append_run(&scoreboard_dir, &run).expect("append run");
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().expect("join writer thread");
+        }
+
+        let runs = load_runs(&scoreboard_dir).expect("load runs");
+        assert_eq!(runs.len(), writers);
+
+        let run_ids: BTreeSet<_> = runs.into_iter().map(|run| run.run_id).collect();
+        let expected: BTreeSet<_> = (0..writers)
+            .map(|index| format!("run-{index:02}"))
+            .collect();
+        assert_eq!(run_ids, expected);
+    }
+
+    fn test_run(run_id: String) -> PlanningDuelRun {
+        PlanningDuelRun {
+            run_id,
+            task_id: "T-test".to_string(),
+            completed_at: Utc::now(),
+            roles: PlanningRoles {
+                planner_a: role("codex", "gpt-5.5"),
+                planner_b: role("claude", "opus"),
+                arbiter: role("gemini", "pro"),
+            },
+            planner_a_artifact_path: "artifacts/planner-a.md".to_string(),
+            planner_b_artifact_path: "artifacts/planner-b.md".to_string(),
+            outcome: PlanningOutcome {
+                winner: PlannerSlot::PlannerA,
+                arbiter_rationale: "test winner".to_string(),
+            },
+            efficiency: PlanningEfficiency {
+                planner_a: metrics(),
+                planner_b: metrics(),
+                arbiter: metrics(),
+            },
+        }
+    }
+
+    fn role(agent: &str, model: &str) -> PlanningRoleAssignment {
+        PlanningRoleAssignment {
+            agent: agent.to_string(),
+            model: model.to_string(),
+        }
+    }
+
+    fn metrics() -> EfficiencyMetrics {
+        EfficiencyMetrics {
+            wall_clock_ms: 1_000,
+            tool_call_count: 1,
+            token_usage: None,
+            byte_proxy_total: None,
+        }
+    }
+}
