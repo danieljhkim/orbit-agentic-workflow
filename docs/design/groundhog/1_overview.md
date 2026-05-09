@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (removed duplicate top-level docs, [T20260430-21])
+**Last updated:** 2026-05-09 (split Groundhog runner module layout, [T20260509-19])
 
 > *"The agent gets to retry each checkpoint like Bill Murray in Groundhog Day — it wakes up fresh but remembers what it learned."*
 
@@ -55,7 +55,7 @@ Mechanical success criteria belong to the runtime, not the agent's self-report. 
 | Concern | Where it lives | Primary task ID |
 |---------|----------------|-----------------|
 | Structured checkpoint plan parsing | `crates/orbit-common/src/types/task_plan.rs` | [T20260420-0509-2] |
-| Groundhog activity runner | `crates/orbit-engine/src/activity_job/groundhog.rs` | [T20260420-0510-2] |
+| Groundhog activity runner | `crates/orbit-engine/src/activity_job/groundhog/mod.rs` plus sibling submodules | [T20260420-0510-2], [T20260509-19] |
 | Git-backed snapshots and rewind | `crates/orbit-engine/src/workspace_snapshot.rs` | [T20260420-0509-4] |
 | Chronicle types and serializer helpers | `crates/orbit-common/src/groundhog.rs` | [T20260420-0509] |
 | Groundhog builtin verbs | `crates/orbit-tools/src/builtin/orbit/groundhog_*` | [T20260420-0509-3] |
@@ -72,5 +72,6 @@ Mechanical success criteria belong to the runtime, not the agent's self-report. 
 - **[T20260420-0510]** — Add the shared runtime checkpoint verifier.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
 - **[T20260430-21]** — Shorten Groundhog design docs and remove obsolete top-level duplicates.
+- **[T20260509-19]** — Split the Groundhog activity runner into focused engine submodules.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

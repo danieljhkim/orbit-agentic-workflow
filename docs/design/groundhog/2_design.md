@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-30 (folded implementation status into numbered docs, [T20260430-21])
+**Last updated:** 2026-05-09 (split Groundhog runner module layout, [T20260509-19])
 
 This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
@@ -57,7 +57,7 @@ One more legacy detail matters: the chronicle type still carries `deviation_stac
 
 ## 3. Attempt Lifecycle and Prompt Construction
 
-The dedicated runner in `crates/orbit-engine/src/activity_job/groundhog.rs` shipped in [T20260420-0510-2]. Its lifecycle today is:
+The dedicated runner is rooted at `crates/orbit-engine/src/activity_job/groundhog/mod.rs`, with attempt handling, persistence/state, and the local verifier in sibling submodules. The original runner shipped in [T20260420-0510-2], and the focused module split landed in [T20260509-19]. Its lifecycle today is:
 
 1. Load the task via `orbit.task.show`.
 2. Parse the task's structured plan.
@@ -134,7 +134,7 @@ The shared verifier module in `crates/orbit-engine/src/checkpoint_verifier.rs` l
 
 and it evaluates criteria in parallel.
 
-The Groundhog runner, however, does not currently call that shared verifier. `crates/orbit-engine/src/activity_job/groundhog.rs` still carries an inline `verify_checkpoint(...)` helper that:
+The Groundhog runner, however, does not currently call that shared verifier. `crates/orbit-engine/src/activity_job/groundhog/verifier.rs` still carries a local `verify_checkpoint(...)` helper that:
 
 - evaluates criteria sequentially
 - returns only an optional `FailureReport`
@@ -193,5 +193,6 @@ The runner can report success, blocked status, and checkpoint counts through its
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
 - **[T20260426-0603]** — Remove the public Groundhog checkpoint deviation verb from the tool surface.
 - **[T20260430-21]** — Shorten Groundhog design docs and fold the implementation status ledger into numbered docs.
+- **[T20260509-19]** — Split the Groundhog activity runner into focused engine submodules.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
