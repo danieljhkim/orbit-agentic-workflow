@@ -73,6 +73,55 @@ fn run_cli_backend_finished_audit_event_keeps_stdout_stderr_blob_refs() {
 }
 
 #[test]
+fn run_cli_backend_canonicalizes_model_before_invocation() {
+    let temp = tempdir().expect("tempdir");
+    let script = temp.path().join("codex");
+    write_executable(
+        &script,
+        "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"status\":\"ok\"}'\n",
+    );
+
+    let sink = Arc::new(RecordingSink::default());
+    let sink_for_writer: Arc<dyn AuditSink> = sink;
+    let audit = Arc::new(V2AuditWriter::new(
+        "job-canonical-model",
+        "codex:canonical-model",
+        sink_for_writer,
+    ));
+    let host = TestHost::with_command(script.display().to_string());
+    let mut spec = test_agent_loop_spec(Duration::from_secs(5));
+    spec.model = Some("legacy-model".to_string());
+
+    let outcome = run_cli_backend(
+        &host,
+        &spec,
+        "job-canonical-model",
+        audit.clone(),
+        &serde_json::json!({"prompt": "hi"}),
+        None,
+    )
+    .expect("run succeeds");
+
+    assert!(outcome.success);
+    let events = audit.events_snapshot().expect("events snapshot");
+    let (argv, model) = events
+        .iter()
+        .find_map(|event| match &event.kind {
+            V2AuditEventKind::CliInvocationStarted {
+                argv_redacted,
+                model,
+                ..
+            } => Some((argv_redacted, model.as_deref())),
+            _ => None,
+        })
+        .expect("started event");
+
+    assert_eq!(model, Some("canonical-model"));
+    assert!(argv.iter().any(|arg| arg == "canonical-model"));
+    assert!(!argv.iter().any(|arg| arg == "legacy-model"));
+}
+
+#[test]
 fn run_cli_backend_bounds_stdout_text_preview_and_keeps_envelope_status_from_full_stdout() {
     let temp = tempdir().expect("tempdir");
     let script = temp.path().join("codex");

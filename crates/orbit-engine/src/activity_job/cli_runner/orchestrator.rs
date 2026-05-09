@@ -33,11 +33,14 @@ pub fn run_cli_backend(
     fs_profile: Option<&str>,
 ) -> Result<DispatchOutcome, DispatchError> {
     let provider = spec.provider.as_str().to_string();
+    let canonical_model = host.canonical_model_name(&provider, spec.model.as_deref());
+    let mut dispatch_spec = spec.clone();
+    dispatch_spec.model = canonical_model;
     let mut cli_executor = host.resolve_cli_executor(&provider)?;
-    let timeout_seconds = if spec.wall_clock_timeout_seconds == 0 {
+    let timeout_seconds = if dispatch_spec.wall_clock_timeout_seconds == 0 {
         DEFAULT_WALL_CLOCK_TIMEOUT_SECONDS
     } else {
-        spec.wall_clock_timeout_seconds
+        dispatch_spec.wall_clock_timeout_seconds
     };
     let wall_clock_timeout = Duration::from_secs(timeout_seconds);
 
@@ -45,7 +48,7 @@ pub fn run_cli_backend(
     // subprocess starts so a reviewer can see the enforcement gap at a glance.
     let _ = audit.emit(V2AuditEventKind::ToolAllowlistHarnessDelegated {
         provider: provider.clone(),
-        tools: spec.tools.clone(),
+        tools: dispatch_spec.tools.clone(),
     });
 
     let task_ctx = host.task_context_for_agent_input(input)?;
@@ -62,7 +65,7 @@ pub fn run_cli_backend(
     let sandbox =
         host.resolve_executor_sandbox(&provider, fs_profile, subprocess_cwd.as_deref())?;
 
-    let envelope_json = cli_agent_envelope_json(spec, run_id, input, task_ctx.as_ref())?;
+    let envelope_json = cli_agent_envelope_json(&dispatch_spec, run_id, input, task_ctx.as_ref())?;
 
     let mut provider_config = host.provider_cli_config(&provider);
 
@@ -87,7 +90,7 @@ pub fn run_cli_backend(
 
     let config = AgentConfig::from_cli_config(
         cli_executor.command.clone(),
-        spec.model.as_deref(),
+        dispatch_spec.model.as_deref(),
         &provider_config,
     )
     .map_err(|err| DispatchError::CliInvocationFailed(format!("agent config: {err}")))?;

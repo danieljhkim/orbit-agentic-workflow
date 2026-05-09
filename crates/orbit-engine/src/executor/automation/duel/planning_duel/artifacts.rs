@@ -517,7 +517,7 @@ mod tests {
             },
             arbiter: PlanningRoleAssignment {
                 agent: "gemini".to_string(),
-                model: "gemini-3.1-pro".to_string(),
+                model: "gemini-3.1-pro-preview".to_string(),
             },
         }
     }
@@ -561,7 +561,7 @@ mod tests {
             "planning-duel/claude-claude-opus-4-7.md"
         );
         assert_eq!(winner.arbiter_agent_cli, "gemini");
-        assert_eq!(winner.arbiter_model, "gemini-3.1-pro");
+        assert_eq!(winner.arbiter_model, "gemini-3.1-pro-preview");
         assert_eq!(
             winner.arbiter_rationale,
             "Claude provided a more comprehensive diagnosis."
@@ -586,7 +586,7 @@ mod tests {
 
         assert!(
             message.contains(
-                "winner artifact arbiter codex/gpt-5.5 does not match recorded arbiter gemini/gemini-3.1-pro"
+                "winner artifact arbiter codex/gpt-5.5 does not match recorded arbiter gemini/gemini-3.1-pro-preview"
             ),
             "{message}"
         );
@@ -620,7 +620,7 @@ mod tests {
             "winner_model": "claude-opus-4-7",
             "artifact_path": "planning-duel/claude-claude-opus-4-7.md",
             "arbiter_agent_cli": "gemini",
-            "arbiter_model": "gemini-3.1-pro",
+            "arbiter_model": "gemini-3.1-pro-preview",
             "arbiter_rationale": "Claude provided a more comprehensive diagnosis."
         }));
 
@@ -634,6 +634,6 @@ mod tests {
             "planning-duel/claude-claude-opus-4-7.md"
         );
         assert_eq!(winner.arbiter_agent_cli, "gemini");
-        assert_eq!(winner.arbiter_model, "gemini-3.1-pro");
+        assert_eq!(winner.arbiter_model, "gemini-3.1-pro-preview");
     }
 }

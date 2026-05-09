@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-30, T20260509-38, T20260509-40)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-30, T20260509-38, T20260509-40, T20260509-80)
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
@@ -163,6 +163,7 @@ Activity / Job is where orbit-core hands work to orbit-engine without depending 
 - run a deterministic action by name
 - source an API key for a provider
 - resolve a provider's CLI executor command plus static args
+- canonicalize a provider/model pair before CLI dispatch
 - build `ToolContext` for an activity, including policy, filesystem audit hooks, and trusted reservation-owner context from the active run id
 - persist invocation traces for completed agent-loop work
 
@@ -201,20 +202,23 @@ After [T20260426-0526], completed HTTP loop outcomes become `InvocationTrace` re
 The CLI path is driven by `cli_runner.rs`, added in [T20260419-0104]. The flow is:
 
 1. Ask the host for the concrete CLI executor: command plus static executor args.
-2. Build an `Agent` from `orbit-agent`.
-3. Ask the retained CLI runtime for an `AgentInvocationSpec` containing provider-specific per-request args.
-4. Emit the advisory `ToolAllowlistHarnessDelegated` event.
-5. Resolve the subprocess cwd from runtime-owned workspace context.
-6. Emit `CliInvocationStarted` with redacted argv, stdin blob ref, and resolved cwd.
-7. Spawn the subprocess in that cwd with a wall-clock timeout.
-8. Emit `CliInvocationFinished` with stdout/stderr blob refs and timeout state.
-9. Parse the captured provider output with the existing Orbit response parser and persist its `InvocationTrace` through the host.
+2. Ask the host to canonicalize the authored provider/model pair.
+3. Build an `Agent` from `orbit-agent`.
+4. Ask the retained CLI runtime for an `AgentInvocationSpec` containing provider-specific per-request args.
+5. Emit the advisory `ToolAllowlistHarnessDelegated` event.
+6. Resolve the subprocess cwd from runtime-owned workspace context.
+7. Emit `CliInvocationStarted` with redacted argv, stdin blob ref, and resolved cwd.
+8. Spawn the subprocess in that cwd with a wall-clock timeout.
+9. Emit `CliInvocationFinished` with stdout/stderr blob refs and timeout state.
+10. Parse the captured provider output with the existing Orbit response parser and persist its `InvocationTrace` through the host.
 
 After [T20260426-2313], stdout/stderr readers emit line-level `tracing::info!` events while the child runs, carrying `provider`, `stream`, `job_run_id`, `task_id`, and `line`. After [T20260508-8], those events also carry `cwd` when the CLI subprocess has a resolved cwd. After [T20260426-2349], the default tracing subscriber redacts formatted output. The readers still retain original bytes for the existing audit/blob path, so run logs follow blob refs rather than the live feed.
 
 Executor args are prepended before provider runtime args. For seeded Codex, the subprocess starts as `codex exec --json ...`, not the interactive TUI. [T20260423-0114] exposed the earlier command-only boundary.
 
 After [T20260427-48], provider runtime args receive provider config through `V2RuntimeHost`. Static executor definitions keep command-shape flags (`exec --json`); dynamic Codex settings such as sandbox mode, side-write roots, and approval policy stay in the retained provider runtime. Codex approval policy is an exec-compatible config override, not the interactive-only `--ask-for-approval` flag.
+
+After [T20260509-80], `backend: cli` canonicalizes the activity's provider/model through the runtime before building the provider invocation or CLI stdin envelope. The host resolves tier aliases and compatibility renames against the active executor registry; notably, stale Gemini `gemini-3.1-pro` / `gemini-3-flash` settings normalize to the seeded `gemini-3.1-pro-preview` / `gemini-3-flash-preview` IDs so recovery hooks do not fail before attempting recovery.
 
 After [T20260427-51], macOS CLI invocations declaring `sandbox: macos-sandbox-exec` run under `/usr/bin/sandbox-exec -f <profile.sb> <provider> ...`; [T20260509-30] made that wrapper resolution trusted and absolute instead of `PATH`-based. Orbit treats that SBPL profile as filesystem authority and neutralizes provider-native sandbox flags. After [T20260428-10], the profile grants Codex state (`$CODEX_HOME` or `$HOME/.codex`) plus side-write roots from provider config so inherited Orbit subprocesses can persist workflow state while project writes remain governed by `fsProfile`. After [T20260505-22], dispatch also runs `apply_provider_static_arg_fixups` before spawn, separately from sandbox neutralization. Today this only rewrites Claude's `--debug-file` value to `<claude_state_dir>/<basename>` so the log lands inside the already-writable state dir instead of `.orbit/**`, which the default policy denies.
 
@@ -535,5 +539,6 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260509-30]** — Resolve the macOS `sandbox-exec` wrapper from a trusted absolute path before CLI spawn.
 - **[T20260509-38]** — Run legacy parallel-batch workers through cancellable pipeline runs so timeout failure paths return promptly.
 - **[T20260509-40]** — Run CLI subprocesses in killable process groups and bound timeout-path output reader joins.
+- **[T20260509-80]** — Canonicalize stale Gemini model IDs before CLI recovery dispatch.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

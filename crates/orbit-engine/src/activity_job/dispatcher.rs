@@ -77,6 +77,15 @@ pub trait V2RuntimeHost: Send + Sync {
     /// CLI mapping (e.g. `openai_compat` which is HTTP-only).
     fn resolve_cli_executor(&self, provider: &str) -> Result<ResolvedCliExecutor, DispatchError>;
 
+    /// Canonicalize a provider-specific model name before dispatch.
+    ///
+    /// The core host resolves tier aliases and compatibility renames against
+    /// the active executor registry. Test hosts and embedders that do not
+    /// model runtime executor state can rely on the passthrough default.
+    fn canonical_model_name(&self, _provider: &str, model: Option<&str>) -> Option<String> {
+        model.map(ToOwned::to_owned)
+    }
+
     /// Return provider-specific CLI runtime config for `backend: cli`.
     ///
     /// Most providers ignore this today. Codex uses it for sandbox,

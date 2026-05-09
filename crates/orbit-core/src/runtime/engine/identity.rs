@@ -21,10 +21,17 @@ impl OrbitRuntime {
             .ok()
             .flatten()
             .and_then(|def| {
-                Some(AgentModelPair::new(
-                    def.model_for_tier("strong")?.to_string(),
-                    def.model_for_tier("weak")?.to_string(),
-                ))
+                let orchestrator = normalize_configured_model_for_agent(
+                    agent_cli,
+                    def.model_for_tier("strong")?,
+                    true,
+                );
+                let helper = normalize_configured_model_for_agent(
+                    agent_cli,
+                    def.model_for_tier("weak")?,
+                    false,
+                );
+                Some(AgentModelPair::new(orchestrator, helper))
             })
             .or_else(|| resolve_agent_model_pair(agent_cli))
     }
@@ -134,9 +141,25 @@ fn matches_model_alias(family: &str, requested: &str, configured: &str, strong: 
                 || claude_cli_full_model_name(configured)
                     .is_some_and(|value| requested.eq_ignore_ascii_case(&value))
         }
-        ("gemini", true) => requested.eq_ignore_ascii_case("gemini-3.1-pro"),
+        ("gemini", true) => ["gemini-3.1-pro", "gemini-3-pro", "gemini-3-pro-preview"]
+            .iter()
+            .any(|alias| requested.eq_ignore_ascii_case(alias)),
         ("gemini", false) => requested.eq_ignore_ascii_case("gemini-3-flash"),
         _ => false,
+    }
+}
+
+fn normalize_configured_model_for_agent(agent_cli: &str, model: &str, strong: bool) -> String {
+    let family = agent_family_from_cli(agent_cli);
+    let trimmed = model.trim();
+    let lower = trimmed.to_ascii_lowercase();
+
+    match (family.as_str(), strong, lower.as_str()) {
+        ("gemini", true, "gemini-3.1-pro" | "gemini-3-pro" | "gemini-3-pro-preview") => {
+            "gemini-3.1-pro-preview".to_string()
+        }
+        ("gemini", false, "gemini-3-flash") => "gemini-3-flash-preview".to_string(),
+        _ => trimmed.to_string(),
     }
 }
 
@@ -149,4 +172,78 @@ fn claude_cli_full_model_name(model: &str) -> Option<String> {
         return Some(format!("claude-sonnet-{}", version.replace('.', "-")));
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use orbit_common::types::{ExecutorDef, ExecutorType};
+    use std::collections::HashMap;
+    use tempfile::{TempDir, tempdir};
+
+    fn test_runtime() -> (TempDir, OrbitRuntime) {
+        let root = tempdir().expect("tempdir");
+        let global = root.path().join("home/.orbit");
+        let workspace = root.path().join("repo/.orbit");
+        std::fs::create_dir_all(&global).expect("create global root");
+        std::fs::create_dir_all(&workspace).expect("create workspace root");
+        let runtime = OrbitRuntime::from_roots(&global, &workspace).expect("build runtime");
+        (root, runtime)
+    }
+
+    #[test]
+    fn gemini_defaults_use_current_preview_model_ids() {
+        let (_root, runtime) = test_runtime();
+
+        let pair = runtime
+            .configured_agent_model_pair("gemini")
+            .expect("gemini pair");
+
+        assert_eq!(pair.orchestrator, "gemini-3.1-pro-preview");
+        assert_eq!(pair.helper, "gemini-3-flash-preview");
+    }
+
+    #[test]
+    fn stale_gemini_executor_models_are_canonicalized() {
+        let (_root, runtime) = test_runtime();
+        let now = Utc::now();
+        runtime
+            .upsert_executor_def(&ExecutorDef {
+                name: "gemini".to_string(),
+                executor_type: ExecutorType::DirectAgent,
+                command: Some("gemini".to_string()),
+                args: Vec::new(),
+                stdout_format: None,
+                models: HashMap::from([
+                    ("strong".to_string(), "gemini-3.1-pro".to_string()),
+                    ("weak".to_string(), "gemini-3-flash".to_string()),
+                ]),
+                timeout_seconds: None,
+                env: HashMap::new(),
+                sandbox: None,
+                allow_fallback: false,
+                created_at: now,
+                updated_at: now,
+            })
+            .expect("seed stale executor");
+
+        let pair = runtime
+            .configured_agent_model_pair("gemini")
+            .expect("gemini pair");
+        assert_eq!(pair.orchestrator, "gemini-3.1-pro-preview");
+        assert_eq!(pair.helper, "gemini-3-flash-preview");
+        assert_eq!(
+            runtime.canonical_model_for_agent("gemini", Some("gemini-3.1-pro")),
+            Some("gemini-3.1-pro-preview".to_string())
+        );
+        assert_eq!(
+            runtime.canonical_model_for_agent("gemini", Some("gemini-3-pro")),
+            Some("gemini-3.1-pro-preview".to_string())
+        );
+        assert_eq!(
+            runtime.canonical_model_for_agent("gemini", Some("weak")),
+            Some("gemini-3-flash-preview".to_string())
+        );
+    }
 }

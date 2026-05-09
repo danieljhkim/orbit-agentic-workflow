@@ -111,7 +111,7 @@ pub fn default_model_for(provider: &str) -> Option<&'static str> {
     match provider {
         "claude" => Some("claude-opus-4-7"),
         "codex" => Some("gpt-5.5"),
-        "gemini" => Some("gemini-3-pro"),
+        "gemini" => Some("gemini-3.1-pro-preview"),
         _ => None,
     }
 }
@@ -318,7 +318,7 @@ mod tests {
     fn model_registry_returns_expected_defaults() {
         assert_eq!(default_model_for("claude"), Some("claude-opus-4-7"));
         assert_eq!(default_model_for("codex"), Some("gpt-5.5"));
-        assert_eq!(default_model_for("gemini"), Some("gemini-3-pro"));
+        assert_eq!(default_model_for("gemini"), Some("gemini-3.1-pro-preview"));
         assert_eq!(default_model_for("ollama"), None);
         assert_eq!(default_model_for("unknown"), None);
     }

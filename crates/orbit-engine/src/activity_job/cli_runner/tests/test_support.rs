@@ -272,6 +272,14 @@ impl V2RuntimeHost for TestHost {
         })
     }
 
+    fn canonical_model_name(&self, _provider: &str, model: Option<&str>) -> Option<String> {
+        match model {
+            Some("legacy-model") => Some("canonical-model".to_string()),
+            Some(model) => Some(model.to_string()),
+            None => None,
+        }
+    }
+
     fn provider_cli_config(&self, _provider: &str) -> HashMap<String, String> {
         self.provider_config.clone()
     }

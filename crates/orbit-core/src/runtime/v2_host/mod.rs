@@ -49,6 +49,10 @@ impl V2RuntimeHost for OrbitRuntime {
         cli_executor::resolve_cli_executor(self, provider)
     }
 
+    fn canonical_model_name(&self, provider: &str, model: Option<&str>) -> Option<String> {
+        self.canonical_model_for_agent(provider, model)
+    }
+
     fn provider_cli_config(&self, _provider: &str) -> HashMap<String, String> {
         EnvironmentHost::agent_provider_config(self)
     }

@@ -178,7 +178,7 @@ fn recovery_agent_loop_uses_reviewer_role_config() {
         AgentRole::Reviewer,
         AgentRoleConfig {
             provider: Some(Provider::Gemini),
-            model: Some("gemini-3.1-pro".to_string()),
+            model: Some("gemini-3.1-pro-preview".to_string()),
             backend: Some(Backend::Cli),
         },
     );
@@ -198,7 +198,7 @@ fn recovery_agent_loop_uses_reviewer_role_config() {
         panic!("expected agent_loop recovery spec");
     };
     assert_eq!(spec.provider, Provider::Gemini);
-    assert_eq!(spec.model.as_deref(), Some("gemini-3.1-pro"));
+    assert_eq!(spec.model.as_deref(), Some("gemini-3.1-pro-preview"));
     assert_eq!(spec.backend, Backend::Cli);
     assert_eq!(host.observed_role_lookups(), vec![AgentRole::Reviewer]);
 }

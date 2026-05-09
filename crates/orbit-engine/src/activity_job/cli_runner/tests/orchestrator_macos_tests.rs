@@ -172,7 +172,7 @@ fn run_cli_backend_drops_gemini_sandbox_flag_under_outer_wrapper() {
     let sink_for_writer: Arc<dyn AuditSink> = sink;
     let audit = Arc::new(V2AuditWriter::new(
         "job-gemini-drop",
-        "gemini:gemini-3.1-pro",
+        "gemini:gemini-3.1-pro-preview",
         sink_for_writer,
     ));
     let host = TestHost {

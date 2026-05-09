@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-38, T20260509-40)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-38, T20260509-40, T20260509-80)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -525,6 +525,19 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - Timed-out child work gets the same run-cancellation path operators use elsewhere, including bounded process-group signaling for running pipeline workers.
 - Cost: the retained legacy path now depends on the v2 pipeline tool surface and polls active workers, so completion can lag by the polling interval rather than waking on an in-process channel send.
 
+## ADR-052 — CLI dispatch canonicalizes provider model IDs
+
+**Status:** Accepted · 2026-05 · [T20260509-80]
+
+**Context.** Step-failure recovery reuses the configured reviewer role. When a workspace or seeded executor carried the non-preview Gemini `gemini-3.1-pro` model ID, the recovery activity reached `backend: cli`, launched Gemini with `-m gemini-3.1-pro`, and failed with `ModelNotFoundError` before it could attempt the bounded repair.
+
+**Decision.** Add a `V2RuntimeHost::canonical_model_name` hook and run it before backend: cli builds the provider invocation or stdin envelope. orbit-core resolves tier aliases and compatibility renames through the same executor-aware model registry used by other runtime identity surfaces. Gemini's seeded pair is `gemini-3.1-pro-preview` / `gemini-3-flash-preview`; stale `gemini-3.1-pro`, `gemini-3-pro`, `gemini-3-pro-preview`, and `gemini-3-flash` values are accepted as aliases that canonicalize to the seeded pair.
+
+**Consequences.**
+- Recovery hooks inherit role configuration without being hostage to stale Gemini model spellings.
+- CLI audit events and invocation traces record the canonical model that actually ran.
+- Cost: `V2RuntimeHost` now owns one more model-resolution hook, so custom test hosts that need non-passthrough behavior must opt into it explicitly.
+
 ---
 
 ## Task References
@@ -592,5 +605,6 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - **[T20260509-11]** — Keep condition guards on equality-only grammar and repair the `ship-auto` empty-backlog guard.
 - **[T20260509-38]** — Run legacy parallel-batch workers through cancellable pipeline runs so timeout failure paths return promptly.
 - **[T20260509-40]** — Run CLI subprocesses in killable process groups and bound timeout-path output reader joins.
+- **[T20260509-80]** — Canonicalize stale Gemini model IDs before CLI recovery dispatch.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

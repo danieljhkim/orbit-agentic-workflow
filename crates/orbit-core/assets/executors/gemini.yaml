@@ -16,6 +16,6 @@ spec:
   stdout_format: envelope
   sandbox: macos-sandbox-exec
   models:
-    strong: gemini-3.1-pro
-    weak: gemini-3-flash
+    strong: gemini-3.1-pro-preview
+    weak: gemini-3-flash-preview
   env: {}

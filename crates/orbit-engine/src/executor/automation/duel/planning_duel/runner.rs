@@ -600,7 +600,7 @@ mod tests {
                 "planning_duel_roles": {
                     "planner_a": { "agent": "codex", "model": "gpt-5.5" },
                     "planner_b": { "agent": "claude", "model": "claude-opus-4-7" },
-                    "arbiter":   { "agent": "gemini", "model": "gemini-3.1-pro" }
+                    "arbiter":   { "agent": "gemini", "model": "gemini-3.1-pro-preview" }
                 }
             }),
         )

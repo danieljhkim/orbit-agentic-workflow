@@ -495,7 +495,7 @@ mod tests {
     fn git_commit_uses_scoped_identity_without_mutating_local_human_config() {
         let cases = [
             ("claude-opus-4-7", "claude <claude@orbit.local>"),
-            ("gemini-3.1-pro", "gemini <gemini@orbit.local>"),
+            ("gemini-3.1-pro-preview", "gemini <gemini@orbit.local>"),
             ("gpt-5.5", "codex <codex@openai.com>"),
         ];
 
@@ -612,7 +612,12 @@ mod tests {
 
         let tasks = vec![
             task_with_file("T1", "Claude task", "src/claude.txt", "claude-opus-4-7"),
-            task_with_file("T2", "Gemini task", "src/gemini.txt", "gemini-3.1-pro"),
+            task_with_file(
+                "T2",
+                "Gemini task",
+                "src/gemini.txt",
+                "gemini-3.1-pro-preview",
+            ),
         ];
         let host = CommitTestHost::new(tasks, workspace.to_path_buf());
         let input = json!({
