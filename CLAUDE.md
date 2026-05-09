@@ -15,6 +15,10 @@ Project instructions for agents working on Orbit.
 
 - Use subagents to support you through large tasks and keep your context window clean.
 
+## Maintainer Conventions
+- Order files for the next maintainer's first read: lead with the module's primary concept or entry point, then move into supporting detail.
+- Data-heavy modules usually start with their core structs/enums; orchestration modules usually start with the main public function.
+
 ## Build / Lint
 
 - Build: `make build`
@@ -61,7 +65,7 @@ For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs)
 
 ## Friction Reports
 
-Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems. File them with `type: friction`; Orbit auto-sets `status: friction` at creation. Passing only `status: friction` also infers `type: friction`, and passing both is valid.
+Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems when you hit them, not when a user instructs you to investigate an issue already identified by a user. File them with `type: friction`; Orbit auto-sets `status: friction` at creation. Passing only `status: friction` also infers `type: friction`, and passing both is valid. No need to search for existing friction tasks of the same issue - just file it.
 
 The type/status coupling exists only at creation. The task type remains `friction` for the record's lifetime, while triage moves status forward through normal lifecycle transitions such as `backlog`, `in-progress`, `done`, or `rejected`. A task that leaves `status: friction` must not return to it.
 
