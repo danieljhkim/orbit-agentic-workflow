@@ -111,7 +111,7 @@ mod tests {
     use std::collections::HashMap;
     use std::time::Duration;
 
-    use super::super::test_support::{TestHost, test_agent_loop_spec};
+    use super::super::tests::test_support::{TestHost, test_agent_loop_spec};
     use super::*;
 
     #[test]

@@ -6,9 +6,9 @@ use orbit_agent::loop_engine::audit::AuditSink;
 use orbit_common::types::activity_job::V2AuditEventKind;
 use tempfile::tempdir;
 
-use super::super::audit_writer::V2AuditWriter;
-use super::super::dispatcher::DispatchError;
-use super::run_cli_backend;
+use super::super::super::audit_writer::V2AuditWriter;
+use super::super::super::dispatcher::DispatchError;
+use super::super::run_cli_backend;
 use super::test_support::{RecordingSink, TestHost, test_agent_loop_spec, write_executable};
 
 #[test]

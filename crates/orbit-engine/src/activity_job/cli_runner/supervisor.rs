@@ -231,7 +231,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::super::test_support::{
+    use super::super::tests::test_support::{
         assert_event, capture_events, capture_redacted_tracing_output, sh_args,
     };
     use super::*;

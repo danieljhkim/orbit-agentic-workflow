@@ -19,12 +19,12 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Metadata, Subscriber, span};
 use tracing_subscriber::{Registry, fmt as tracing_fmt, fmt::MakeWriter, layer::SubscriberExt};
 
-use super::super::dispatcher::{
+use super::super::super::dispatcher::{
     DispatchError, ResolvedCliExecutor, ResolvedSandbox, V2RuntimeHost,
 };
-use super::supervisor::SpawnOutput;
+use super::super::supervisor::SpawnOutput;
 
-pub(super) fn sandbox_for_test() -> ResolvedSandbox {
+pub(in crate::activity_job::cli_runner) fn sandbox_for_test() -> ResolvedSandbox {
     ResolvedSandbox {
         kind: ExecutorSandboxKind::MacosSandboxExec,
         fs_profile: orbit_common::types::ResolvedFsProfile {
@@ -36,11 +36,13 @@ pub(super) fn sandbox_for_test() -> ResolvedSandbox {
     }
 }
 
-pub(super) fn sh_args(script: &str) -> Vec<String> {
+pub(in crate::activity_job::cli_runner) fn sh_args(script: &str) -> Vec<String> {
     vec!["-c".to_string(), script.to_string()]
 }
 
-pub(super) fn capture_events<F>(f: F) -> (Result<SpawnOutput, String>, Vec<CapturedEvent>)
+pub(in crate::activity_job::cli_runner) fn capture_events<F>(
+    f: F,
+) -> (Result<SpawnOutput, String>, Vec<CapturedEvent>)
 where
     F: FnOnce() -> Result<SpawnOutput, String>,
 {
@@ -55,7 +57,9 @@ where
     (result, events)
 }
 
-pub(super) fn capture_redacted_tracing_output<F>(f: F) -> (Result<SpawnOutput, String>, String)
+pub(in crate::activity_job::cli_runner) fn capture_redacted_tracing_output<F>(
+    f: F,
+) -> (Result<SpawnOutput, String>, String)
 where
     F: FnOnce() -> Result<SpawnOutput, String>,
 {
@@ -74,7 +78,11 @@ where
     (result, output)
 }
 
-pub(super) fn assert_event(events: &[CapturedEvent], stream: &str, line: &str) {
+pub(in crate::activity_job::cli_runner) fn assert_event(
+    events: &[CapturedEvent],
+    stream: &str,
+    line: &str,
+) {
     assert!(
         events
             .iter()
@@ -85,12 +93,12 @@ pub(super) fn assert_event(events: &[CapturedEvent], stream: &str, line: &str) {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct CapturedEvent {
-    pub(super) fields: BTreeMap<String, String>,
+pub(in crate::activity_job::cli_runner) struct CapturedEvent {
+    pub(in crate::activity_job::cli_runner) fields: BTreeMap<String, String>,
 }
 
 impl CapturedEvent {
-    pub(super) fn field(&self, name: &str) -> Option<&str> {
+    pub(in crate::activity_job::cli_runner) fn field(&self, name: &str) -> Option<&str> {
         self.fields.get(name).map(String::as_str)
     }
 }
@@ -131,7 +139,7 @@ impl Subscriber for CaptureSubscriber {
 
 #[derive(Default)]
 struct FieldCapture {
-    pub(super) fields: BTreeMap<String, String>,
+    pub(in crate::activity_job::cli_runner) fields: BTreeMap<String, String>,
 }
 
 impl Visit for FieldCapture {
@@ -186,13 +194,13 @@ impl Write for BufferWriter {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingSink {
+pub(in crate::activity_job::cli_runner) struct RecordingSink {
     events: Mutex<Vec<LoopAuditEvent>>,
     blobs: Mutex<Vec<(String, Vec<u8>)>>,
 }
 
 impl RecordingSink {
-    pub(super) fn blob(&self, reference: &str) -> Option<Vec<u8>> {
+    pub(in crate::activity_job::cli_runner) fn blob(&self, reference: &str) -> Option<Vec<u8>> {
         self.blobs
             .lock()
             .expect("blobs lock")
@@ -220,16 +228,16 @@ impl AuditSink for RecordingSink {
     }
 }
 
-pub(super) struct TestHost {
-    pub(super) command: String,
-    pub(super) executor_args: Vec<String>,
-    pub(super) provider_config: HashMap<String, String>,
-    pub(super) sandbox: Option<ResolvedSandbox>,
-    pub(super) task_context: Option<Value>,
+pub(in crate::activity_job::cli_runner) struct TestHost {
+    pub(in crate::activity_job::cli_runner) command: String,
+    pub(in crate::activity_job::cli_runner) executor_args: Vec<String>,
+    pub(in crate::activity_job::cli_runner) provider_config: HashMap<String, String>,
+    pub(in crate::activity_job::cli_runner) sandbox: Option<ResolvedSandbox>,
+    pub(in crate::activity_job::cli_runner) task_context: Option<Value>,
 }
 
 impl TestHost {
-    pub(super) fn with_command(command: String) -> Self {
+    pub(in crate::activity_job::cli_runner) fn with_command(command: String) -> Self {
         Self {
             command,
             executor_args: Vec::new(),
@@ -289,7 +297,9 @@ impl V2RuntimeHost for TestHost {
     }
 }
 
-pub(super) fn test_agent_loop_spec(timeout: Duration) -> AgentLoopSpec {
+pub(in crate::activity_job::cli_runner) fn test_agent_loop_spec(
+    timeout: Duration,
+) -> AgentLoopSpec {
     AgentLoopSpec {
         instruction: String::new(),
         tools: Vec::new(),
@@ -304,7 +314,10 @@ pub(super) fn test_agent_loop_spec(timeout: Duration) -> AgentLoopSpec {
 }
 
 #[cfg(target_os = "macos")]
-pub(super) fn test_agent_loop_spec_for(provider: &str, timeout: Duration) -> AgentLoopSpec {
+pub(in crate::activity_job::cli_runner) fn test_agent_loop_spec_for(
+    provider: &str,
+    timeout: Duration,
+) -> AgentLoopSpec {
     let provider = match provider {
         "claude" => Provider::Claude,
         "codex" => Provider::Codex,
@@ -324,7 +337,7 @@ pub(super) fn test_agent_loop_spec_for(provider: &str, timeout: Duration) -> Age
     }
 }
 
-pub(super) fn write_executable(path: &Path, contents: &str) {
+pub(in crate::activity_job::cli_runner) fn write_executable(path: &Path, contents: &str) {
     fs::write(path, contents).expect("write script");
     make_executable(path);
 }
@@ -342,7 +355,7 @@ fn make_executable(path: &Path) {
 fn make_executable(_path: &Path) {}
 
 #[cfg(target_os = "macos")]
-pub(super) fn sandbox_exec_can_apply_for_test() -> bool {
+pub(in crate::activity_job::cli_runner) fn sandbox_exec_can_apply_for_test() -> bool {
     Command::new("sandbox-exec")
         .args(["-p", "(version 1)\n(allow default)\n", "/usr/bin/true"])
         .stdin(Stdio::null())

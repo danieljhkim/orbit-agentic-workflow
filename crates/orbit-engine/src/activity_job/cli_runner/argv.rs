@@ -108,7 +108,7 @@ fn filter_gemini_inner_sandbox_args(args: &[String]) -> Vec<String> {
 mod tests {
     use std::collections::HashMap;
 
-    use super::super::test_support::sandbox_for_test;
+    use super::super::tests::test_support::sandbox_for_test;
     use super::*;
 
     #[test]

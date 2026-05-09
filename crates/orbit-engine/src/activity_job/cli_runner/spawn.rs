@@ -122,7 +122,7 @@ mod tests {
     use orbit_common::types::OrbitError;
     use tempfile::tempdir;
 
-    use super::super::test_support::{sandbox_for_test, sh_args};
+    use super::super::tests::test_support::{sandbox_for_test, sh_args};
     use super::*;
 
     #[test]
