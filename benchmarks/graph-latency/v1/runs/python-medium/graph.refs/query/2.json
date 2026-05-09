@@ -7,13 +7,13 @@
     "os": "macOS-26.4.1-arm64-arm-64bit",
     "ram_gb": 64
   },
-  "orbit_sha": "1b4a9be8881f411effb5c1719b1959fefee40463",
+  "orbit_sha": "f6097e0a119631728f76e09f3d82c73867cf1684",
   "phase": "query",
   "query_shape": "refs:symbol:django/db/models/base.py#Model:class",
   "result_count": 20,
   "result_size_bytes": 3215,
-  "rss_peak_mb": 145,
+  "rss_peak_mb": 147,
   "seed": 2,
   "tool": "graph.refs",
-  "wall_ms": 1853
+  "wall_ms": 3013
 }

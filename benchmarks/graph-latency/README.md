@@ -30,14 +30,14 @@ Concrete `<org>/<repo>@<sha>` pins are recorded in each round's `vN/METHOD.md`. 
 make -C benchmarks graph-latency-fetch
 
 # Single cell
-GRAPH_LATENCY_VERSION=v1 make -C benchmarks graph-latency-run \
+GRAPH_LATENCY_VERSION=v2 make -C benchmarks graph-latency-run \
   GL_CORPUS=python-medium GL_TOOL=graph.search GL_PHASE=query GL_SEED=1
 
 # Full sweep
-GRAPH_LATENCY_VERSION=v1 make -C benchmarks graph-latency-sweep
+GRAPH_LATENCY_VERSION=v2 make -C benchmarks graph-latency-sweep
 
 # Aggregate
-GRAPH_LATENCY_VERSION=v1 make -C benchmarks graph-latency-aggregate
+GRAPH_LATENCY_VERSION=v2 make -C benchmarks graph-latency-aggregate
 ```
 
 ## Outputs
@@ -53,8 +53,7 @@ Each record (`<seed>.json`) contains `wall_ms`, `rss_peak_mb`, `result_size_byte
 | Version | Scope | Status | Report |
 |---|---|---|---|
 | [v1](./v1/) | First baseline; Python + Java + TypeScript at medium × 9 tools | FROZEN | [RESULTS.md](./v1/RESULTS.md) |
-| [v2](./v2/) | Same matrix as v1; orbit binary SHA bumped (v0.1.0 → v0.3.1 release) | FROZEN | [RESULTS.md](./v2/RESULTS.md) |
-| [v3](./v3/) | TBD — measurement variable not yet fixed | LIVING | [RESULTS.md](./v3/RESULTS.md) |
+| [v2](./v2/) | TBD — measurement variable not yet fixed | LIVING | [RESULTS.md](./v2/RESULTS.md) |
 
 ## Conventions
 
@@ -77,9 +76,7 @@ benchmarks/graph-latency/
 │   ├── corpora.yaml
 │   ├── tasks/
 │   └── runs/           # frozen records (per-cell JSON)
-├── v2/                 # FROZEN round 2
-│   └── ...             # same shape; orbit binary SHA bumped vs v1
-└── v3/                 # LIVING round 3
+└── v2/                 # LIVING round 2
     ├── README.md
     ├── METHOD.md
     ├── RESULTS.md

@@ -7,13 +7,13 @@
     "os": "macOS-26.4.1-arm64-arm-64bit",
     "ram_gb": 64
   },
-  "orbit_sha": "1b4a9be8881f411effb5c1719b1959fefee40463",
+  "orbit_sha": "f6097e0a119631728f76e09f3d82c73867cf1684",
   "phase": "query",
   "query_shape": "search:QuerySet",
-  "result_count": 345,
+  "result_count": 198,
   "result_size_bytes": 3482,
-  "rss_peak_mb": 114,
+  "rss_peak_mb": 112,
   "seed": 4,
   "tool": "graph.search",
-  "wall_ms": 1141
+  "wall_ms": 1169
 }

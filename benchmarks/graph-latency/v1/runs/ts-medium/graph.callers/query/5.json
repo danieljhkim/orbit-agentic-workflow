@@ -7,13 +7,13 @@
     "os": "macOS-26.4.1-arm64-arm-64bit",
     "ram_gb": 64
   },
-  "orbit_sha": "1b4a9be8881f411effb5c1719b1959fefee40463",
+  "orbit_sha": "f6097e0a119631728f76e09f3d82c73867cf1684",
   "phase": "query",
   "query_shape": "callers:symbol:packages/reactivity/src/baseHandlers.ts#BaseReactiveHandler:class",
   "result_count": 0,
   "result_size_bytes": 139,
-  "rss_peak_mb": 29,
+  "rss_peak_mb": 30,
   "seed": 5,
   "tool": "graph.callers",
-  "wall_ms": 158
+  "wall_ms": 156
 }

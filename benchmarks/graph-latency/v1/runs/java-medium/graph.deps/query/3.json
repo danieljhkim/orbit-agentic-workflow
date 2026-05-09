@@ -7,7 +7,7 @@
     "os": "macOS-26.4.1-arm64-arm-64bit",
     "ram_gb": 64
   },
-  "orbit_sha": "1b4a9be8881f411effb5c1719b1959fefee40463",
+  "orbit_sha": "f6097e0a119631728f76e09f3d82c73867cf1684",
   "phase": "query",
   "query_shape": "deps-default",
   "result_count": null,
@@ -15,5 +15,5 @@
   "rss_peak_mb": 19,
   "seed": 3,
   "tool": "graph.deps",
-  "wall_ms": 22
+  "wall_ms": 25
 }
