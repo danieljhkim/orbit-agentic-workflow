@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::sync::{Arc, RwLock};
 
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
@@ -28,9 +29,9 @@ use crate::error::tool_error_result;
 /// `[a-z0-9_-]` and refuse to load the tool. The adapter sanitizes names by
 /// replacing dots with underscores when advertising over MCP and translates
 /// inbound `tools/call` names back to canonical form before dispatch. The
-/// `name_map` is rebuilt from the host on every `tools/list` and refreshed
-/// lazily on a `tools/call` cache miss so legacy dotted names from older
-/// clients still dispatch correctly.
+/// `name_map` is rebuilt from the host on every `tools/list` and
+/// `tools/call` so dynamically-added tools cannot create stale or
+/// ambiguous dispatch.
 pub struct OrbitToolServer {
     host: Arc<dyn McpHost>,
     name_map: RwLock<HashMap<String, String>>,
@@ -44,26 +45,42 @@ impl OrbitToolServer {
         }
     }
 
-    fn refresh_name_map(&self, schemas: &[ToolSchema]) {
-        let map = build_name_map(schemas);
+    fn refresh_name_map(&self, schemas: &[ToolSchema]) -> Result<(), ToolNameCollision> {
+        let map = match build_name_map(schemas) {
+            Ok(map) => map,
+            Err(err) => {
+                self.clear_name_map();
+                return Err(err);
+            }
+        };
+        self.replace_name_map(map);
+        Ok(())
+    }
+
+    fn replace_name_map(&self, map: HashMap<String, String>) {
         if let Ok(mut guard) = self.name_map.write() {
             *guard = map;
         }
     }
 
-    fn canonical_name(&self, advertised: &str) -> String {
-        if let Ok(guard) = self.name_map.read()
-            && let Some(name) = guard.get(advertised)
-        {
-            return name.clone();
-        }
-        let schemas = self.host.list_tool_schemas();
-        let map = build_name_map(&schemas);
-        let resolved = map.get(advertised).cloned();
+    fn clear_name_map(&self) {
         if let Ok(mut guard) = self.name_map.write() {
-            *guard = map;
+            guard.clear();
         }
-        resolved.unwrap_or_else(|| advertised.to_string())
+    }
+
+    fn canonical_name(&self, advertised: &str) -> Result<String, ToolNameCollision> {
+        let schemas = self.host.list_tool_schemas();
+        let map = match build_name_map(&schemas) {
+            Ok(map) => map,
+            Err(err) => {
+                self.clear_name_map();
+                return Err(err);
+            }
+        };
+        let resolved = map.get(advertised).cloned();
+        self.replace_name_map(map);
+        Ok(resolved.unwrap_or_else(|| advertised.to_string()))
     }
 }
 
@@ -76,13 +93,61 @@ fn sanitize_tool_name(name: &str) -> String {
     name.replace('.', "_")
 }
 
-fn build_name_map(schemas: &[ToolSchema]) -> HashMap<String, String> {
-    let mut map = HashMap::with_capacity(schemas.len());
-    for schema in schemas {
-        let advertised = sanitize_tool_name(&schema.name);
-        map.insert(advertised, schema.name.clone());
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ToolNameCollision {
+    advertised_name: String,
+    canonical_names: Vec<String>,
+}
+
+impl ToolNameCollision {
+    fn into_mcp_error(self) -> McpError {
+        let message = self.to_string();
+        McpError::internal_error(
+            message,
+            Some(json!({
+                "code": "tool_name_collision",
+                "advertised_name": self.advertised_name,
+                "canonical_names": self.canonical_names,
+            })),
+        )
     }
-    map
+}
+
+impl fmt::Display for ToolNameCollision {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "MCP tool name collision: advertised name '{}' is produced by canonical tools {}; rename one tool before exposing over MCP",
+            self.advertised_name,
+            self.canonical_names.join(", ")
+        )
+    }
+}
+
+fn build_name_map(schemas: &[ToolSchema]) -> Result<HashMap<String, String>, ToolNameCollision> {
+    let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for schema in schemas {
+        grouped
+            .entry(sanitize_tool_name(&schema.name))
+            .or_default()
+            .push(schema.name.clone());
+    }
+
+    let mut map = HashMap::with_capacity(schemas.len());
+    for (advertised_name, mut canonical_names) in grouped {
+        canonical_names.sort();
+        canonical_names.dedup();
+        if canonical_names.len() > 1 {
+            return Err(ToolNameCollision {
+                advertised_name,
+                canonical_names,
+            });
+        }
+        if let Some(canonical_name) = canonical_names.pop() {
+            map.insert(advertised_name, canonical_name);
+        }
+    }
+    Ok(map)
 }
 
 impl ServerHandler for OrbitToolServer {
@@ -105,7 +170,8 @@ impl ServerHandler for OrbitToolServer {
     ) -> Result<ListToolsResult, McpError> {
         let mut schemas = self.host.list_tool_schemas();
         schemas.sort_by(|a, b| a.name.cmp(&b.name));
-        self.refresh_name_map(&schemas);
+        self.refresh_name_map(&schemas)
+            .map_err(ToolNameCollision::into_mcp_error)?;
         let tools = schemas.into_iter().map(schema_to_tool).collect();
         Ok(ListToolsResult::with_all_items(tools))
     }
@@ -116,7 +182,9 @@ impl ServerHandler for OrbitToolServer {
         _ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
         let inbound = req.name.to_string();
-        let canonical = self.canonical_name(&inbound);
+        let canonical = self
+            .canonical_name(&inbound)
+            .map_err(ToolNameCollision::into_mcp_error)?;
         let input = req
             .arguments
             .map(Value::Object)
@@ -279,6 +347,15 @@ mod tests {
         param_with_type(name, "string")
     }
 
+    fn tool_schema(name: &str) -> ToolSchema {
+        ToolSchema {
+            name: name.to_string(),
+            description: String::new(),
+            parameters: Vec::new(),
+            builtin: true,
+        }
+    }
+
     #[test]
     fn task_add_schema_advertises_type_and_status_enums() {
         let schema = build_input_schema("orbit.task.add", &[param("type"), param("status")]);
@@ -322,20 +399,10 @@ mod tests {
     #[test]
     fn build_name_map_keys_are_advertised_names() {
         let schemas = vec![
-            ToolSchema {
-                name: "orbit.task.add".to_string(),
-                description: String::new(),
-                parameters: Vec::new(),
-                builtin: true,
-            },
-            ToolSchema {
-                name: "orbit.task.review_thread.add".to_string(),
-                description: String::new(),
-                parameters: Vec::new(),
-                builtin: true,
-            },
+            tool_schema("orbit.task.add"),
+            tool_schema("orbit.task.review_thread.add"),
         ];
-        let map = build_name_map(&schemas);
+        let map = build_name_map(&schemas).expect("unique advertised names");
         assert_eq!(
             map.get("orbit_task_add").map(String::as_str),
             Some("orbit.task.add")
@@ -344,6 +411,48 @@ mod tests {
             map.get("orbit_task_review_thread_add").map(String::as_str),
             Some("orbit.task.review_thread.add")
         );
+    }
+
+    #[test]
+    fn build_name_map_rejects_sanitized_name_collisions() {
+        let schemas = vec![tool_schema("foo.bar"), tool_schema("foo_bar")];
+        let err = build_name_map(&schemas).expect_err("sanitized names must be unique");
+        assert_eq!(err.advertised_name, "foo_bar");
+        assert_eq!(
+            err.canonical_names,
+            vec!["foo.bar".to_string(), "foo_bar".to_string()]
+        );
+
+        let mcp_err = err.into_mcp_error();
+        assert!(mcp_err.message.contains("foo_bar"));
+        let data = mcp_err.data.as_ref().expect("structured error data");
+        assert_eq!(
+            data.get("code").and_then(Value::as_str),
+            Some("tool_name_collision")
+        );
+        assert_eq!(
+            data.get("advertised_name").and_then(Value::as_str),
+            Some("foo_bar")
+        );
+    }
+
+    #[test]
+    fn refresh_name_map_rejects_listing_collisions() {
+        let host = Arc::new(StubHost {
+            schemas: Vec::new(),
+        });
+        let server = OrbitToolServer::new(host);
+        let schemas = vec![tool_schema("foo.bar"), tool_schema("foo_bar")];
+        let err = server
+            .refresh_name_map(&schemas)
+            .expect_err("tools/list refresh must reject ambiguous advertised names");
+        assert_eq!(err.advertised_name, "foo_bar");
+    }
+
+    #[test]
+    fn schema_to_tool_keeps_dotted_orbit_tools_advertised_with_underscores() {
+        let tool = schema_to_tool(tool_schema("orbit.task.add"));
+        assert_eq!(tool.name.as_ref(), "orbit_task_add");
     }
 
     struct StubHost {
@@ -363,35 +472,53 @@ mod tests {
     #[test]
     fn canonical_name_translates_advertised_back_to_dotted() {
         let host = Arc::new(StubHost {
-            schemas: vec![ToolSchema {
-                name: "orbit.task.add".to_string(),
-                description: String::new(),
-                parameters: Vec::new(),
-                builtin: true,
-            }],
+            schemas: vec![tool_schema("orbit.task.add")],
         });
         let server = OrbitToolServer::new(host);
-        // Cache miss path: refreshes from host on first lookup.
-        assert_eq!(server.canonical_name("orbit_task_add"), "orbit.task.add");
-        // Cache hit path: same answer, served from in-memory map.
-        assert_eq!(server.canonical_name("orbit_task_add"), "orbit.task.add");
+        // Refreshes from host before resolving the advertised name.
+        assert_eq!(
+            server.canonical_name("orbit_task_add").unwrap(),
+            "orbit.task.add"
+        );
+        // Repeated lookups preserve the same advertised-to-canonical mapping.
+        assert_eq!(
+            server.canonical_name("orbit_task_add").unwrap(),
+            "orbit.task.add"
+        );
     }
 
     #[test]
     fn canonical_name_passes_through_unknown_or_legacy_dotted_names() {
         let host = Arc::new(StubHost {
-            schemas: vec![ToolSchema {
-                name: "orbit.task.add".to_string(),
-                description: String::new(),
-                parameters: Vec::new(),
-                builtin: true,
-            }],
+            schemas: vec![tool_schema("orbit.task.add")],
         });
         let server = OrbitToolServer::new(host);
         // Legacy dotted name from an older client falls through unchanged so
         // the host's own ToolNotFound handling still runs.
-        assert_eq!(server.canonical_name("orbit.task.add"), "orbit.task.add");
-        assert_eq!(server.canonical_name("totally.unknown"), "totally.unknown");
+        assert_eq!(
+            server.canonical_name("orbit.task.add").unwrap(),
+            "orbit.task.add"
+        );
+        assert_eq!(
+            server.canonical_name("totally.unknown").unwrap(),
+            "totally.unknown"
+        );
+    }
+
+    #[test]
+    fn canonical_name_rejects_sanitized_dispatch_collisions() {
+        let host = Arc::new(StubHost {
+            schemas: vec![tool_schema("foo.bar"), tool_schema("foo_bar")],
+        });
+        let server = OrbitToolServer::new(host);
+        let err = server
+            .canonical_name("foo_bar")
+            .expect_err("dispatch must reject ambiguous advertised names");
+        assert_eq!(err.advertised_name, "foo_bar");
+        assert_eq!(
+            err.canonical_names,
+            vec!["foo.bar".to_string(), "foo_bar".to_string()]
+        );
     }
 
     #[test]
