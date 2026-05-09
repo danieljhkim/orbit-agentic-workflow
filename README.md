@@ -19,20 +19,35 @@ Full positioning, commercial model, and roadmap: [docs/POSITIONING.md](docs/POSI
 ## Primary Features
 
 - **Durable, intent-tracked task layer.** Lifecycle (`proposed → backlog → in-progress → review → done`) survives sessions, branches, and weeks. Every commit carries the `task_id`; `orbit task show` reconstructs prompt, plan, execution trace, and review threads months later.
+
 - **Auditability.** Every tool call, provider request/response, and task transition is a structured, queryable event with agent identity attached. Append-only, tamper-evident, exportable. → [docs/design/auditability/](docs/design/auditability/)
+
 - **Knowledge-graph–aware tooling.** Agents query a parsed, content-addressed graph (symbols, imports, callers, implementors) instead of grep. Branch-scoped, safe for parallel rebuild. The graph is what makes audit cheap to populate; benchmark in [`benchmarks/graph/`](benchmarks/graph/). → [docs/design/knowledge-graph/](docs/design/knowledge-graph/)
+
+- **Conflict-aware parallel execution.** Agents reserve explicit locks on files or code regions they intend to edit (`orbit task locks reserve`) before dispatch. Overlapping reservations are rejected up front instead of producing merge conflicts later; locks auto-release when their owning run reaches a terminal state. → [docs/design/activity-job/](docs/design/activity-job/)
 
 ---
 
 ## Dogfooding: throughput
 
-Orbit ships its own backlog using Orbit. Recent peak: **~24 PRs merged per hour** to this repo, agent-authored end-to-end — tasks dispatched in parallel worktrees, and PRs opened without human intervention between them.
+Orbit ships its own backlog using Orbit. Recent peak: **~24 PRs merged per hour** to this repo, agent-authored end-to-end — tasks dispatched in parallel worktrees, and PRs opened without human intervention between them (`orbit run ship-auto` commands flush the backlog to PRs).
 
 <p align="center">
   <img src="docs/assets/merge-throughput.png" alt="GitHub commit timeline showing parallel-batch PRs landing every few minutes, each tagged with an Orbit task ID" width="300" />
 </p>
 
 Live receipts: [`agent-main` commit history](https://github.com/danieljhkim/orbit/commits/agent-main/) and the [published task backlog](https://orbit-cli.com/tasks/). Every `[T20260509-XX]` tag in a commit is an Orbit task ID — `orbit task show <id>` (or the published view) reconstructs the prompt, plan, execution trace, and review threads months later.
+
+---
+
+## Parallel Execution 
+
+`orbit run ship-auto`
+
+Throughput like the above isn't from one fast agent — it's many agents running concurrently against the same repo. Four primitives keep that safe:
+
+- **Worktrees per session.** Each agent runs in an isolated `git worktree` with its own checkout, branch, and target directory. No cross-agent contamination of working state.
+- **Task locks.** Before dispatch, agents reserve TTL-based locks on the files or code regions they intend to edit (`orbit task locks reserve`). Overlapping reservations are rejected up front instead of producing merge conflicts later; locks auto-release when their owning run reaches a terminal state.
 
 ---
 
@@ -59,9 +74,10 @@ TASK_ID=$(orbit task add \
   --acceptance-criteria "..." \
   --workspace .)
 orbit task approve "$TASK_ID"
-orbit run ship "$TASK_ID" --base main      # PR pipeline (default)
-# or: orbit run ship-auto --base main      # auto-select from backlog
-# or: orbit run ship --mode local "$TASK_ID"
+
+orbit run ship-auto      # conflict-aware flush of the backlog tasks to PR
+
+orbit web serve          # launch interactive dashboard
 ```
 
 Full command reference: `orbit --help` and [orbit-cli.com](https://orbit-cli.com).
