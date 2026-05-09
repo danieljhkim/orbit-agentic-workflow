@@ -1,6 +1,7 @@
 use orbit_common::types::{
     AgentResponseEnvelope, AgentRunError, ExecutionResult, InvocationTrace, OrbitError,
 };
+use serde::Deserialize;
 use serde_json::{Deserializer, Value};
 
 use super::{AgentResponseStatus, ResponseParseResult, trace::extract_invocation_trace};
@@ -206,10 +207,7 @@ fn find_agent_response_envelope(value: &Value) -> Option<AgentResponseEnvelope> 
     }
 
     match value {
-        Value::String(raw) => {
-            let nested = serde_json::from_str::<Value>(raw).ok()?;
-            find_agent_response_envelope(&nested)
-        }
+        Value::String(raw) => find_agent_response_envelope_in_string(raw),
         Value::Array(items) => items.iter().rev().find_map(find_agent_response_envelope),
         Value::Object(map) => {
             for key in [
@@ -231,6 +229,20 @@ fn find_agent_response_envelope(value: &Value) -> Option<AgentResponseEnvelope> 
         }
         _ => None,
     }
+}
+
+fn find_agent_response_envelope_in_string(raw: &str) -> Option<AgentResponseEnvelope> {
+    if let Ok(nested) = serde_json::from_str::<Value>(raw) {
+        if let Some(envelope) = find_agent_response_envelope(&nested) {
+            return Some(envelope);
+        }
+    }
+
+    raw.match_indices('{').find_map(|(start, _)| {
+        let mut deserializer = Deserializer::from_str(&raw[start..]);
+        let nested = Value::deserialize(&mut deserializer).ok()?;
+        find_agent_response_envelope(&nested)
+    })
 }
 
 fn deserialize_envelope(value: &Value) -> Option<AgentResponseEnvelope> {
@@ -327,8 +339,34 @@ mod tests {
     }
 
     #[test]
+    fn peek_response_status_extracts_failed_from_prose_prefixed_claude_result() {
+        let result = concat!(
+            "I could not continue after the workspace disappeared.\n",
+            r#"{"schemaVersion":1,"status":"failed","error":{"code":"workspace_unavailable","message":"worktree missing","details":null}}"#
+        );
+        let stdout = serde_json::json!({
+            "type": "result",
+            "subtype": "success",
+            "result": result,
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 3
+            }
+        })
+        .to_string();
+
+        assert_eq!(peek_response_status(&stdout).as_deref(), Some("failed"));
+    }
+
+    #[test]
     fn peek_response_status_returns_none_when_no_envelope_present() {
         assert_eq!(peek_response_status("{\"hello\":\"world\"}"), None);
+        assert_eq!(peek_response_status("{\"status\":\"failed\"}"), None);
+        let prose_with_braces = serde_json::json!({
+            "result": "prose with {arbitrary braces} and {\"status\":\"failed\"}, but no Orbit envelope"
+        })
+        .to_string();
+        assert_eq!(peek_response_status(&prose_with_braces), None);
         assert_eq!(peek_response_status(""), None);
         assert_eq!(peek_response_status("not json"), None);
     }
