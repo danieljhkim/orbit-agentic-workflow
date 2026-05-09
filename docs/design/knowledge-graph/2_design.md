@@ -142,6 +142,12 @@ Search no longer accepts a `task_id` filter. Task-to-commit lookup is handled by
 
 Object and blob hashes are content-addressed, so a cache hit can trust the value already verified on insertion. `read_graph_object` and `extract_leaf_source` verify SHA-256 integrity only on cache miss, then insert the verified value. The cache is scoped to a `KnowledgeStore` instance rather than a global singleton so separate workspaces and tests cannot cross-contaminate.
 
+### 3.4 Source hydration is opt-in on broad graph reads
+
+`GraphObjectStore::read_graph` accepts `GraphReadOptions` with separate `hydrate_file_source` and `hydrate_leaf_source` flags, both defaulting to `false` ([T20260509-65]). The object store still loads node objects and preserves `source_blob_hash`, but it leaves `FileNode.source` and `LeafNode.source` empty unless the caller explicitly asks for the matching source class.
+
+The tool surface maps that choice to actual query needs: `show` hydrates file and leaf source; `refs`, `callers`, and `implementors` hydrate leaf source; `search` hydrates both only for `source_regex`; `overview`, default search, `deps`, and the `history` compatibility stub do not hydrate source. `pack` keeps summary mode body-free and hydrates leaf source only when `summary: false`. Incremental rebuild reuse still hydrates both file and leaf source because it copies unchanged snapshots into the next graph.
+
 ---
 
 ## 4. Orbit Integration
@@ -280,5 +286,6 @@ The scanner skips symlinked directories rather than trying to canonicalize and f
 - **[T20260505-5]** — Bound `orbit.graph.pack` selector gathering and skip inline refresh by default, documented by gpt-5.5.
 - **[T20260506-11]** — Remove graph task attribution after 0/961 audited reverse-lookup uses; preserve task IDs as local commit-search keys.
 - **[T20260509-33]** — Skip symlinked directories/files during knowledge scans and `.orbitignore` discovery to prevent outside-repo indexing and recursive cycles.
+- **[T20260509-65]** — Add `GraphReadOptions` so broad graph reads skip file/leaf source hydration unless a tool opts in.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

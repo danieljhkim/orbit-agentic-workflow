@@ -62,6 +62,7 @@ fn load_graph(
             &read_target.requested,
             read_target.fallback.as_ref(),
             read_target.default.as_ref(),
+            Default::default(),
         )
         .unwrap()
 }

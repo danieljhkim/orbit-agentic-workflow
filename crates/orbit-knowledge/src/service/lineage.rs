@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::error::KnowledgeError;
 use crate::graph::navigator::GraphNodeRef;
 use crate::graph::nodes::CodebaseGraphV1;
-use crate::graph::object_store::{GraphObjectStore, resolve_graph_read_target};
+use crate::graph::object_store::{GraphObjectStore, GraphReadOptions, resolve_graph_read_target};
 use crate::selector::Selector;
 use crate::service::GraphContextService;
 
@@ -59,6 +59,10 @@ pub fn render_lineage_pack(
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        GraphReadOptions {
+            hydrate_leaf_source: true,
+            ..Default::default()
+        },
     )?;
     render_lineage_pack_from_graph(&graph, selectors, options)
 }

@@ -1,7 +1,7 @@
 use orbit_common::types::{
     OrbitError, ToolParam, ToolSchema, optional_string, optional_string_list_alias,
 };
-use orbit_knowledge::{Selector, TaskGraphService};
+use orbit_knowledge::{GraphReadOptions, Selector, TaskGraphService};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -70,11 +70,16 @@ impl Tool for OrbitKnowledgePackTool {
         let explicit_knowledge_dir = super::has_explicit_knowledge_dir(&input);
         let skip_auto_refresh = !refresh || explicit_knowledge_dir;
         let service = TaskGraphService::new(knowledge_dir, super::write::task_graph_scope(ctx));
+        let read_options = GraphReadOptions {
+            hydrate_leaf_source: !summary,
+            ..Default::default()
+        };
         let mut pack = service.pack_json(
             &selectors,
             ctx.workspace_root.as_deref(),
             skip_auto_refresh,
             explicit_ref.as_deref(),
+            read_options,
             Some(selector_timeout_ms),
         )?;
         add_refresh_diagnostics(

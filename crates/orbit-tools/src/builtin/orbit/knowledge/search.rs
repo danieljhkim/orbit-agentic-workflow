@@ -1,4 +1,5 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema, optional_raw_string};
+use orbit_knowledge::GraphReadOptions;
 use orbit_knowledge::graph::navigator::GraphNodeRef;
 use orbit_knowledge::service::{GraphContextService, SearchHit};
 use regex::Regex;
@@ -104,7 +105,14 @@ impl Tool for OrbitKnowledgeSearchTool {
         let use_default_ranking =
             node_type.is_none() && kind_filter.is_none() && prefix.is_none() && !has_source_regex;
 
-        let graph = super::load_graph_for_read(ctx, &input)?;
+        let graph = super::load_graph_for_read(
+            ctx,
+            &input,
+            GraphReadOptions {
+                hydrate_file_source: has_source_regex,
+                hydrate_leaf_source: has_source_regex,
+            },
+        )?;
         let svc = GraphContextService::new(&graph);
 
         let type_strs: Vec<&str> = node_type.iter().map(String::as_str).collect();

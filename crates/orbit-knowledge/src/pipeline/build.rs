@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::error::KnowledgeError;
 use crate::extract::{self, FileKind, identity_key, leaf_location, node_id};
 use crate::graph::nodes::{BaseNodeFields, DirNode, FileNode, LeafKind, LeafNode, ReExport};
-use crate::graph::object_store::GraphObjectStore;
+use crate::graph::object_store::{GraphObjectStore, GraphReadOptions};
 use crate::pipeline::context::PipelineContext;
 use tracing::debug;
 
@@ -427,7 +427,15 @@ fn load_prior_file_snapshots(ctx: &PipelineContext) -> Option<HashMap<String, Pr
     }
 
     let store = GraphObjectStore::new(ctx.graph_dir());
-    let prior_graph = match store.read_graph(&ctx.ref_name, None, ctx.default_ref_name.as_ref()) {
+    let prior_graph = match store.read_graph(
+        &ctx.ref_name,
+        None,
+        ctx.default_ref_name.as_ref(),
+        GraphReadOptions {
+            hydrate_file_source: true,
+            hydrate_leaf_source: true,
+        },
+    ) {
         Ok(graph) => graph,
         Err(error) => {
             debug!(

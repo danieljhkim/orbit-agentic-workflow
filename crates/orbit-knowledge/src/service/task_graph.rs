@@ -4,7 +4,7 @@ use orbit_common::types::OrbitError;
 use serde_json::Value;
 
 use crate::extract::{self, Language};
-use crate::graph::object_store::{GraphObjectStore, resolve_graph_read_target};
+use crate::graph::object_store::{GraphObjectStore, GraphReadOptions, resolve_graph_read_target};
 use crate::lock::GraphLockGuard;
 use crate::pipeline::context::BuildConfig;
 use crate::{
@@ -45,6 +45,7 @@ impl TaskGraphService {
         workspace_root: Option<&Path>,
         explicit_knowledge_dir: bool,
         explicit_ref: Option<&str>,
+        read_options: GraphReadOptions,
         selector_timeout_ms: Option<u64>,
     ) -> Result<Value, OrbitError> {
         if explicit_ref.is_none() {
@@ -68,7 +69,7 @@ impl TaskGraphService {
                 read_target.fallback.as_ref(),
                 read_target.default.as_ref(),
             )?;
-            store.pack_with_timeout(selectors, selector_timeout_ms)
+            store.pack_with_timeout_options(selectors, selector_timeout_ms, read_options)
         };
 
         let pack = match pack_result() {
@@ -189,6 +190,7 @@ impl TaskGraphService {
         workspace_root: Option<&Path>,
         explicit_knowledge_dir: bool,
         explicit_ref: Option<&str>,
+        options: GraphReadOptions,
     ) -> Result<crate::graph::nodes::CodebaseGraphV1, OrbitError> {
         if explicit_ref.is_none() {
             self.maybe_refresh_knowledge_graph(workspace_root, explicit_knowledge_dir);
@@ -200,6 +202,7 @@ impl TaskGraphService {
             &read_target.requested,
             read_target.fallback.as_ref(),
             read_target.default.as_ref(),
+            options,
         ) {
             Ok(graph) => Ok(graph),
             Err(first_error) => {
@@ -230,6 +233,7 @@ impl TaskGraphService {
                         &read_target.requested,
                         read_target.fallback.as_ref(),
                         read_target.default.as_ref(),
+                        options,
                     )
                     .map_err(|retry_error| {
                         OrbitError::Execution(format!(

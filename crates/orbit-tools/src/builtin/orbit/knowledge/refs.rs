@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema, optional_string_list_alias};
-use orbit_knowledge::Selector;
 use orbit_knowledge::service::GraphContextService;
+use orbit_knowledge::{GraphReadOptions, Selector};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -102,7 +102,14 @@ impl Tool for OrbitKnowledgeRefsTool {
 
         // Extract the defining file to exclude self-references
         let knowledge_dir = super::write::resolve_knowledge_dir(ctx, &input)?;
-        let graph = super::load_graph_for_read(ctx, &input)?;
+        let graph = super::load_graph_for_read(
+            ctx,
+            &input,
+            GraphReadOptions {
+                hydrate_leaf_source: true,
+                ..Default::default()
+            },
+        )?;
         let svc = GraphContextService::new(&graph);
         let all_hits = svc.find_references(
             Some(&knowledge_dir),
