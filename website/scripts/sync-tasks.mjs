@@ -7,13 +7,19 @@ const websiteRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const repoRoot = path.dirname(websiteRoot);
 const targetRoot = path.join(websiteRoot, 'src', 'content', 'docs', 'tasks');
 const githubPullBaseUrl = 'https://github.com/danieljhkim/orbit/pull/';
+const maxSyncedDoneTasks = 100;
+const syncedDoneTaskTypes = new Set(['task', 'refactor', 'feature', 'epic', 'bug', 'issue']);
+const syncedHighSeverityFrictionPriorities = new Set(['high', 'critical']);
 
 const tasks = await loadTasks();
 
 await rm(targetRoot, { recursive: true, force: true });
 await mkdir(targetRoot, { recursive: true });
 
-const sortedTasks = [...tasks].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+const sortedTasks = [...tasks]
+  .filter(shouldSyncTask)
+  .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+  .slice(0, maxSyncedDoneTasks);
 
 for (const [index, task] of sortedTasks.entries()) {
   const file = path.join(targetRoot, `${task.id}.md`);
@@ -33,6 +39,12 @@ async function loadTasks() {
     maxBuffer: 256 * 1024 * 1024,
   });
   return JSON.parse(raw);
+}
+
+function shouldSyncTask(task) {
+  const type = String(task.type ?? '').toLowerCase();
+  if (syncedDoneTaskTypes.has(type)) return true;
+  return type === 'friction' && syncedHighSeverityFrictionPriorities.has(String(task.priority ?? '').toLowerCase());
 }
 
 function renderTaskPage(task, sidebarOrder) {
@@ -80,7 +92,8 @@ function renderIndex(tasks) {
 
   const sorted = [...tasks].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
   const generated = new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
-  const intro = `_${sorted.length} done task${sorted.length === 1 ? '' : 's'}. Generated ${generated}._`;
+  const itemLabel = sorted.length === 1 ? 'item' : 'items';
+  const intro = `_Showing ${sorted.length} most recent done ${itemLabel} for task, refactor, feature, epic, bug, issue, and high-severity friction work; the website caps this list at ${maxSyncedDoneTasks}. Generated ${generated}._`;
   const headers = ['ID', 'Title', 'Type', 'Implemented by', 'Updated'];
   const rows = sorted.map((task) => [
     `[${task.id}](/tasks/${task.id}/)`,
