@@ -258,11 +258,25 @@ fn run_cli_backend_demotes_success_when_envelope_reports_failed_despite_exit_zer
     // the script name must match a known provider. The demotion logic is
     // provider-agnostic — codex exercises the same code path as claude.
     let script = temp.path().join("codex");
-    // Stdout shape mirrors the Claude CLI: a wrapping JSON whose `result`
-    // is a stringified Orbit envelope with status="failed". Exit 0.
+    // Stdout shape mirrors the observed Claude CLI failure: a wrapping JSON
+    // whose `result` string starts with prose before embedding an Orbit
+    // envelope with status="failed". Exit 0.
+    let stdout = serde_json::json!({
+        "type": "result",
+        "subtype": "success",
+        "result": concat!(
+            "I could not continue after the workspace disappeared.\n",
+            r#"{"schemaVersion":1,"status":"failed","error":{"code":"workspace_unavailable","message":"worktree missing","details":null}}"#
+        ),
+        "usage": {
+            "input_tokens": 1,
+            "output_tokens": 1
+        }
+    })
+    .to_string();
     write_executable(
         &script,
-        "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"{\\\"schemaVersion\\\":1,\\\"status\\\":\\\"failed\\\",\\\"error\\\":{\\\"code\\\":\\\"E\\\",\\\"message\\\":\\\"m\\\",\\\"details\\\":null}}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n",
+        &format!("#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{stdout}'\n"),
     );
 
     let sink = Arc::new(RecordingSink::default());
