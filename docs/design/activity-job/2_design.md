@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-30, T20260509-40)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-30, T20260509-38, T20260509-40)
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
@@ -417,6 +417,7 @@ This feature spans a migration, so the retained surfaces are explicit.
 | v2 `agent_loop` CLI path | Kept | Implemented by the retained `AgentRuntime` trait and `providers/*_cli.rs` after [T20260419-0104]. |
 | `TargetRef` authoring form | Kept at authoring/load time only | Human-friendly YAML surface; resolved away before execution since [T20260418-2019]. |
 | v1 `crate::job_runner` | Kept | Older sequential/DAG runtime still exists beside the v2 executor; Phase 3 was additive in [T20260418-2018]. |
+| Legacy `run_parallel_task_pipeline` | Kept behind automation | After [T20260509-38], its workers are launched as durable pipeline runs and waited through `orbit.pipeline.wait`; timeouts cancel active child runs before blocking timed-out tasks, so the parent no longer waits on never-returning scoped threads. |
 | Seeded reference activities and jobs | Kept | They act as runnable contracts and examples, and were moved into init seeding in [T20260419-2347]. |
 | Groundhog as a dedicated activity kind | Kept | Explicit sibling activity after [T20260420-0510-2], not an `agent_loop` toggle. |
 
@@ -532,6 +533,7 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260509-7]** — Establish focused test coverage for the activity/job DAG executor (linear, retry, parallel, fan-out, loop, pipeline durability) and the macOS sandbox / policy boundary.
 - **[T20260509-11]** — Keep condition guards on equality-only grammar and repair the `ship-auto` empty-backlog guard.
 - **[T20260509-30]** — Resolve the macOS `sandbox-exec` wrapper from a trusted absolute path before CLI spawn.
+- **[T20260509-38]** — Run legacy parallel-batch workers through cancellable pipeline runs so timeout failure paths return promptly.
 - **[T20260509-40]** — Run CLI subprocesses in killable process groups and bound timeout-path output reader joins.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
