@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7)
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
@@ -346,6 +346,41 @@ Planning-duel writeback now reports `task_status: "in-progress"` instead of `sta
 
 After [T20260508-3], generated one-task PR bodies render the task contract first: `## Task`, optional collapsed `## Execution Summary`, `## Validation`, then `## Branch Freshness`. The task section includes the task link, description, and plain-bullet acceptance criteria so reviewers can see the requested work beside the implementation summary. Multi-task callers keep the legacy `## Tasks` plus files-changed layout until those paths are retired.
 
+### 8.12 Test surfaces guarding executor invariants
+
+Risk-weighted regression tests live next to the executor modules they guard
+under `crates/orbit-engine/src/activity_job/job_executor/tests/`
+([T20260509-7]). Each executor-block module has a sibling `*_tests.rs` and
+each test names the specific invariant it guards in the function name. The
+current surface:
+
+- `step_tests.rs` (`step.rs`) — linear step success and pipeline propagation,
+  failure short-circuit (mod.rs:131-148), retry `max_attempts` exhaustion,
+  non-retryable bypass, success on intermediate attempt, and
+  `compute_backoff_ms` linear/exponential monotonicity and cap behavior.
+- `parallel_tests.rs` (`parallel.rs`) — `JoinMode::All`, `JoinMode::Any`,
+  `JoinMode::Quorum`, `StepJoin` audit event ordering, and audit
+  parent-stack inheritance into branch threads.
+- `fanout_tests.rs` (`fan_out.rs`) — empty items emit `FanoutDispatched{0}`
+  and `FaninJoined{0,0}`, collected outputs are spawn-index ordered even
+  when workers complete out of order, `max_workers` semaphore caps
+  in-flight workers, structural error surfaces under unsatisfied join,
+  `fan_in.collect` writes the collected value under the alias key, and
+  per-worker `WorkerState` events appear in `dispatched`→`finished` order.
+- `loop_tests.rs` (`loop_block.rs`) — `items` length over `max_iterations`
+  errors, `break_when` exits with `LoopIterationEnd{broke=true}`,
+  exhausting iterations emits `LoopDidNotConverge`, and the loop exits on
+  first body failure.
+- `pipeline_durability_tests.rs` (`exec_ctx.rs`, `fan_out.rs:53-56`) —
+  a step's output remains visible to later steps via
+  `{{ steps.<id>.output.* }}`, and the pipeline snapshot taken into
+  fan-out workers preserves upstream values past the fan-out boundary.
+
+Shared host scaffolding (`ScriptedHost`, `Action`, job/step builders) lives
+in `tests/mod.rs` so each block module stays focused on its own invariants.
+New executor blocks must land with a sibling `*_tests.rs` covering the
+analogous invariants — see ADR-047.
+
 ---
 
 ## 9. Filesystem Policy and `fsProfile`
@@ -488,5 +523,6 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260506-2]** — Lazily materialize loop audit JSONL files only when loop-level events are emitted.
 - **[T20260508-8]** — Resolve backend: cli subprocess cwd from workspace context and record it in audit/tracing.
 - **[T20260509-2]** — Split the v2 job executor into responsibility-focused modules without changing runtime behavior.
+- **[T20260509-7]** — Establish focused test coverage for the activity/job DAG executor (linear, retry, parallel, fan-out, loop, pipeline durability) and the macOS sandbox / policy boundary.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

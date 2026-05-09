@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-30
+**Last updated:** 2026-05-09 (T20260509-7)
 
 This document describes Orbit's shipped policy and sandboxing implementation: v2 `PolicyDef`, profile resolution, last-match-wins path evaluation, HTTP-tool enforcement, activity/job `fsProfile` binding, macOS CLI sandbox wrapping, and `orbit-exec` supervision. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for forward-looking gaps.
 
@@ -145,7 +145,35 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 
 ---
 
-## 9. Concerns & Honest Limitations
+## 9. Test surfaces
+
+Risk-weighted regression tests sit beside the implementations they guard
+([T20260509-7]):
+
+- `crates/orbit-policy/src/engine.rs#tests` — `PolicyEngine::check` boundary
+  semantics: positive read-rule matches return `allowed=true` with the rule
+  recorded in `matched_rule`; modify paths outside any positive rule resolve
+  to `allowed=false`; global `denyRead` / `denyModify` rules override
+  profile-level positive rules under last-match-wins; an unknown profile name
+  errors structurally (with the documented `unrestricted` exception); and the
+  `matched_rule` field is populated for audit attribution.
+- `crates/orbit-exec/src/macos_sandbox.rs#tests` — SBPL compilation tests
+  cover `denyRead` / `denyModify` clause emission (`subpath` for simple
+  rules, `regex` for non-trivial globs) and the deny-after-allow ordering
+  required for last-match-wins. macOS-gated runtime tests
+  (`compiled_profile_denies_reads_to_negated_read_path` and
+  `compiled_profile_for_realistic_agent_loop_profile_allows_repo_writes_denies_dotenv`)
+  exercise an `agent_loop`-shaped profile end-to-end against the kernel
+  sandbox.
+
+Tests skip on non-macOS (and on macOS hosts where `sandbox-exec` cannot
+apply) via the existing `cfg(target_os = "macos")` + `sandbox_exec_can_apply()`
+gate. SBPL-text assertions paired with each runtime case keep coverage
+non-empty on Linux CI.
+
+---
+
+## 10. Concerns & Honest Limitations
 
 1. **OS-level CLI sandboxing is macOS-only.** Linux (`bwrap`), Docker, and other wrappers remain future work; generic `run_process` still defaults to `NoSandbox`.
 2. **CLI tool allowlists are delegated.** The macOS wrapper narrows writes, but Orbit still trusts Claude/Codex/Gemini harnesses for declared `tools:`.
@@ -178,5 +206,6 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 - **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude (`~/.claude` / `$CLAUDE_CONFIG_DIR`) and Gemini (`~/.gemini`), and document why side-write roots remain Codex-only.
 - **[T20260430-23]** — Shorten the policy sandbox design docs while preserving the shipped contract and ADR history.
+- **[T20260509-7]** — Add `PolicyEngine::check` boundary tests and macOS sandbox `denyRead` / realistic agent-loop profile tests.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
