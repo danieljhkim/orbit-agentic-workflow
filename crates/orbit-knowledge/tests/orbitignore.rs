@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::Command;
 
@@ -130,6 +132,64 @@ fn orbitignore_nested_files_compose_with_root_file() {
     assert_eq!(
         symbol_search_total(&output_dir, repo, "excluded_marker_symbol"),
         0
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn scanner_skips_outside_repo_directory_symlink() {
+    let repo_dir = tempdir().unwrap();
+    let repo = repo_dir.path();
+    init_repo(repo);
+
+    write_file(
+        repo,
+        "src/in_repo.rs",
+        "pub fn in_repo_symlink_guard_marker() {}\n",
+    );
+
+    let outside_dir = tempdir().unwrap();
+    fs::write(
+        outside_dir.path().join("outside.rs"),
+        "pub fn outside_symlink_guard_marker() {}\n",
+    )
+    .unwrap();
+    symlink(outside_dir.path(), repo.join("linked_outside")).unwrap();
+    commit_all(repo, "seed outside directory symlink");
+
+    let knowledge_dir = tempdir().unwrap();
+    let output_dir = knowledge_dir.path().join("knowledge");
+    run_build(build_config(repo, &output_dir)).unwrap();
+
+    assert_eq!(
+        symbol_search_total(&output_dir, repo, "in_repo_symlink_guard_marker"),
+        1
+    );
+    assert_eq!(
+        symbol_search_total(&output_dir, repo, "outside_symlink_guard_marker"),
+        0
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn scanner_skips_cyclic_directory_symlinks() {
+    let repo_dir = tempdir().unwrap();
+    let repo = repo_dir.path();
+    init_repo(repo);
+
+    write_file(repo, "src/lib.rs", "pub fn cycle_safe_marker() {}\n");
+    symlink(".", repo.join("src/self")).unwrap();
+    symlink("..", repo.join("src/parent")).unwrap();
+    commit_all(repo, "seed cyclic directory symlinks");
+
+    let knowledge_dir = tempdir().unwrap();
+    let output_dir = knowledge_dir.path().join("knowledge");
+    run_build(build_config(repo, &output_dir)).unwrap();
+
+    assert_eq!(
+        symbol_search_total(&output_dir, repo, "cycle_safe_marker"),
+        1
     );
 }
 
