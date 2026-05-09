@@ -313,10 +313,11 @@ mod tests {
 
     use axum::body::Body;
     use axum::http::{Method, Request, StatusCode, header};
-    use orbit_core::{JobRunState, OrbitRuntime};
+    use orbit_core::command::task::TaskAddParams;
+    use orbit_core::{JobRunState, OrbitRuntime, TaskStatus};
     use tower::ServiceExt;
 
-    use super::test_support::seed_run;
+    use super::test_support::{body_json, seed_run};
     use super::*;
 
     async fn request_cancel(runtime: OrbitRuntime, run_id: &str, origin: Option<&str>) -> Response {
@@ -331,6 +332,38 @@ mod tests {
             .oneshot(builder.body(Body::empty()).expect("request"))
             .await
             .expect("response")
+    }
+
+    async fn request_tasks(runtime: OrbitRuntime) -> Response {
+        router()
+            .with_state(Arc::new(runtime))
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/tasks")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response")
+    }
+
+    fn seed_task(
+        runtime: &OrbitRuntime,
+        title: &str,
+        status: TaskStatus,
+        dependencies: Vec<String>,
+    ) -> orbit_core::Task {
+        runtime
+            .add_task(TaskAddParams {
+                title: title.to_string(),
+                description: format!("Fixture for {title}."),
+                status: Some(status),
+                dependencies,
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("create task")
     }
 
     #[tokio::test]
@@ -355,6 +388,78 @@ mod tests {
             let stored = runtime.show_job_run(&run.run_id).expect("show run");
             assert_eq!(stored.state, JobRunState::Pending, "{label}");
         }
+    }
+
+    #[tokio::test]
+    async fn tasks_resolve_dependency_statuses_from_all_tasks() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let done = seed_task(
+            &runtime,
+            "Completed dependency",
+            TaskStatus::Done,
+            Vec::new(),
+        );
+        let archived = seed_task(
+            &runtime,
+            "Archived dependency",
+            TaskStatus::Backlog,
+            Vec::new(),
+        );
+        runtime.archive_task(&archived.id).expect("archive task");
+        let rejected = seed_task(
+            &runtime,
+            "Rejected dependency",
+            TaskStatus::Rejected,
+            Vec::new(),
+        );
+        let visible = seed_task(
+            &runtime,
+            "Visible dependent",
+            TaskStatus::Backlog,
+            vec![done.id.clone(), archived.id.clone(), rejected.id.clone()],
+        );
+
+        let response = request_tasks(runtime).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        let rows = body.as_array().expect("tasks response array");
+        assert!(
+            rows.iter()
+                .any(|task| task["id"].as_str() == Some(&visible.id))
+        );
+        assert!(
+            rows.iter()
+                .any(|task| task["id"].as_str() == Some(&rejected.id))
+        );
+        assert!(
+            !rows
+                .iter()
+                .any(|task| task["id"].as_str() == Some(&done.id))
+        );
+        assert!(
+            !rows
+                .iter()
+                .any(|task| task["id"].as_str() == Some(&archived.id))
+        );
+
+        let visible_json = rows
+            .iter()
+            .find(|task| task["id"].as_str() == Some(&visible.id))
+            .expect("visible task row");
+        let dependencies = visible_json["resolved_dependencies"]
+            .as_array()
+            .expect("resolved dependencies array");
+        let dependency_labels = dependencies
+            .iter()
+            .map(|value| value.as_str().expect("dependency label"))
+            .collect::<Vec<_>>();
+        let done_label = format!("{} [done]", done.id);
+        let archived_label = format!("{} [archived]", archived.id);
+        let rejected_label = format!("{} [rejected]", rejected.id);
+        assert!(dependency_labels.contains(&done_label.as_str()));
+        assert!(dependency_labels.contains(&archived_label.as_str()));
+        assert!(dependency_labels.contains(&rejected_label.as_str()));
     }
 
     #[tokio::test]
