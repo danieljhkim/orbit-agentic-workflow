@@ -42,6 +42,10 @@ impl RuntimeHost for OrbitRuntime {
         )))
     }
 
+    fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        OrbitRuntime::cancel_job_run(self, run_id).map(|_| ())
+    }
+
     fn validate_activity_target_exists(
         &self,
         _target_type: JobTargetType,

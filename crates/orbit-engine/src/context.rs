@@ -396,6 +396,11 @@ pub trait RuntimeHost {
         input: Value,
         debug: bool,
     ) -> Result<JobRunResult, OrbitError>;
+    fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        Err(OrbitError::Execution(format!(
+            "cancel_job_run is not implemented for run '{run_id}'"
+        )))
+    }
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,
@@ -826,6 +831,10 @@ impl RuntimeHost for AutomationExecutorHost<'_> {
     ) -> Result<JobRunResult, OrbitError> {
         self.runtime
             .run_job_now_with_input_debug(job_id, input, debug)
+    }
+
+    fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        self.runtime.cancel_job_run(run_id)
     }
 
     fn validate_activity_target_exists(

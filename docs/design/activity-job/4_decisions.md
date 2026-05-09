@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-40)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-38, T20260509-40)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -512,6 +512,19 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - Output capture still preserves partial stdout/stderr bytes already drained before timeout, even if a reader thread does not finish within the bounded join window.
 - Cost: Unix process groups do not cover descendants that deliberately create a new session/process group, and non-Unix platforms still use the immediate-child fallback until an equivalent tree-kill primitive is added.
 
+## ADR-051 — Legacy parallel-batch workers use cancellable runs
+
+**Status:** Accepted · 2026-05 · [T20260509-38]
+
+**Context.** The retained `run_parallel_task_pipeline` automation path used scoped threads to call `run_job_now_with_input_debug`, then marked active workers failed after a long receive timeout. Rust scoped threads still join before the scope exits, so a never-returning worker could keep the parent dispatcher hung even after timeout failure recording.
+
+**Decision.** Launch each legacy parallel-batch worker through the durable pipeline surface (`orbit.pipeline.invoke`) and poll active run IDs through `orbit.pipeline.wait` instead of owning scoped worker threads. When the configured worker timeout elapses, the dispatcher cancels every active child run before writing `WORKER_TIMEOUT` task failure state and returning the batch failure.
+
+**Consequences.**
+- Timeout return no longer depends on the worker's thread or agent process eventually exiting.
+- Timed-out child work gets the same run-cancellation path operators use elsewhere, including bounded process-group signaling for running pipeline workers.
+- Cost: the retained legacy path now depends on the v2 pipeline tool surface and polls active workers, so completion can lag by the polling interval rather than waking on an in-process channel send.
+
 ---
 
 ## Task References
@@ -577,6 +590,7 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - **[T20260509-7]** — Establish focused test coverage for the activity/job DAG executor (linear, retry, parallel, fan-out, loop, pipeline durability) and the macOS sandbox / policy boundary.
 - **[T20260509-9]** — Auto-populate `task.context_files` from the winning planning-duel plan after resolution.
 - **[T20260509-11]** — Keep condition guards on equality-only grammar and repair the `ship-auto` empty-backlog guard.
+- **[T20260509-38]** — Run legacy parallel-batch workers through cancellable pipeline runs so timeout failure paths return promptly.
 - **[T20260509-40]** — Run CLI subprocesses in killable process groups and bound timeout-path output reader joins.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
