@@ -1,0 +1,119 @@
+#![deny(clippy::print_stderr, clippy::print_stdout)]
+//! Shared domain types, error definitions, ID generation, and the Groundhog
+//! chronicle data model for the Orbit workspace.
+//!
+//! # Role
+//! This crate is the single source of truth for all cross-crate domain data
+//! structures. Every other `orbit-*` crate (except `orbit-util`) depends on
+//! it. It depends only on `orbit-util` (for generic helpers like filesystem,
+//! redaction, and selector evaluation).
+//!
+//! # Key exports
+//! - [`OrbitError`] — workspace-wide error enum; all crates use this exclusively
+//! - [`OrbitId`] — deterministic, human-readable ID generation
+//! - [`Activity`], [`Job`], [`JobRun`], [`Task`], [`Skill`] — core domain types
+//! - [`ExecutionResult`] — process execution output shared between orbit-exec
+//!   and callers
+//! - [`AuditEvent`], [`OrbitEvent`] — event types for the audit trail and
+//!   event bus
+//! - [`Role`], [`PolicyDecision`] — RBAC primitives consumed by orbit-policy
+//! - [`groundhog`] — Groundhog checkpoint lineage and append-only chronicle
+//!   serialization
+//!
+//! # Dependency direction
+//! `orbit-util ← orbit-types ← (every other orbit-* crate)`
+
+pub mod activity;
+pub mod activity_job;
+pub mod actor;
+pub mod agent_pair;
+pub mod audit;
+pub mod audit_event;
+pub mod duel;
+pub mod error;
+pub mod event;
+pub mod executor_def;
+pub mod friction;
+pub mod groundhog;
+pub mod id;
+pub mod invocation;
+pub mod job;
+pub mod metrics;
+pub mod policy_decision;
+pub mod policy_def;
+pub mod resource;
+pub mod role;
+pub mod run_state;
+pub mod skill;
+pub mod task;
+pub mod task_plan;
+pub mod tool;
+pub mod tool_input;
+pub mod workspace;
+
+pub use activity::Activity;
+pub use activity_job::{
+    AUDIT_ENVELOPE_SCHEMA_VERSION, ActivityAsset, ActivityV2, ActivityV2Spec, AgentLoopSpec,
+    AssetLoadError, BackoffStrategy, BranchOutcome, DeterministicSpec, FanInSpec, FanOutBlock,
+    JobAsset, JobKind, JobV2, JobV2Step, JobV2StepBody, JoinMode, LoopBlock, OnDenial,
+    ParallelBlock, PipelineRef, RetrySpec, SchemaHeader, ShellSpec, TargetStep, ToolAllowlistError,
+    V2_TOOL_WILDCARD_ROOTS, V2AuditEnvelope, V2AuditEvent, V2AuditEventKind, load_activity_asset,
+    load_job_asset, tool_allowed, validate_tool_allowlist,
+};
+pub use actor::{ActorIdentity, normalize_attribution_label, normalize_optional_attribution_label};
+pub use agent_pair::{
+    AgentModelPair, agent_family_from_cli, all_agent_families, infer_agent_family_from_model,
+    normalize_agent_family_for_model, resolve_agent_model_pair,
+};
+pub use audit::Audit;
+pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats, audit_execution_id};
+pub use duel::{
+    Ambiguity, ArbiterVerdict, Cost, Decision, DuelRun, EfficiencyMetrics, ImplementerStats,
+    Outcome, PerCommentVerdict, PlannerSlot, PlanningDuelRun, PlanningEfficiency, PlanningOutcome,
+    PlanningRoleAssignment, PlanningRoles, ReviewerStats, RoleAssignment, Roles, Scores, Severity,
+    TaskClass, TaskScope, ValidIssuesBySeverity, Verdict,
+};
+pub use error::{OrbitError, redact_sensitive_env_error};
+pub use event::OrbitEvent;
+pub use executor_def::{ExecutorDef, ExecutorSandboxKind, ExecutorType, StdoutFormat};
+pub use friction::FrictionEntry;
+pub use id::OrbitId;
+pub use invocation::{InvocationTrace, TokenUsage, ToolCallTrace};
+pub use job::{
+    AgentCommitRequest, AgentResponseEnvelope, AgentRunError, Job, JobRun, JobRunState, JobRunStep,
+    JobScheduleState, JobStep, JobTargetType, KnowledgeRunMetrics, RunEvent, StepCondition,
+    default_job_max_active_runs, default_max_iterations, default_retry_backoff_seconds,
+};
+pub use metrics::MetricsEntry;
+pub use policy_decision::PolicyDecision;
+pub use policy_def::{
+    DEFAULT_POLICY_NAME, FsCheckResult, FsOperation, FsProfile, PolicyDef, ResolvedFsProfile,
+    UNRESTRICTED_FS_PROFILE,
+};
+pub use resource::{
+    EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorResource, ExecutorResourceSpec,
+    POLICY_RESOURCE_SCHEMA_VERSION, PolicyResource, PolicyResourceSpec, ResourceEnvelope,
+    ResourceHeader, ResourceKind, ResourceMetadata, parse_policy_resource,
+};
+pub use role::Role;
+pub use run_state::PipelineState;
+pub use skill::Skill;
+pub use task::{
+    ExternalRef, GITHUB_PR_EXTERNAL_REF_SYSTEM, ResolvedTaskDependency, ReviewMessage,
+    ReviewThread, ReviewThreadStatus, Task, TaskArtifact, TaskComment, TaskComplexity,
+    TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, build_task_status_index,
+    normalize_task_dependencies, prune_missing_context_files, push_external_ref_if_missing,
+    resolve_task_dependencies, task_dependencies_ready, unmet_task_dependencies,
+    validate_task_dependencies,
+};
+pub use task_plan::{TaskPlan, TaskPlanCheckpoint, TaskPlanSuccessCriterion, parse_task_plan};
+pub use tool::{ExecutionResult, StoredTool, ToolParam, ToolSchema};
+pub use tool_input::{
+    optional_csv_or_string_list_alias, optional_raw_string, optional_string, optional_string_alias,
+    optional_string_list_alias, optional_u32_alias, required_string, split_csv,
+};
+pub use workspace::{Workspace, WorkspacePaths, WorkspaceRegistry, WorkspaceStatus};
+
+/// Re-export Orbit's tracing facade for crates that need to emit structured
+/// events without expanding their dependency surface.
+pub use tracing;

@@ -12,6 +12,8 @@ members = [
   "crates/orbit-exec",
   "crates/orbit-tools",
   "crates/orbit-mcp",
+  "crates/orbit-types",
+  "crates/orbit-util",
 ]
 resolver = "2"
 

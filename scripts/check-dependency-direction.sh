@@ -5,31 +5,47 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 fail=0
 
+# Allowed internal `orbit-*` dependencies for each crate.
+#
+# Layout (post-split):
+#   orbit-util  — leaf (no internal deps)
+#   orbit-types — depends only on orbit-util
+#   orbit-common — *transitional* shim; depends on orbit-types + orbit-util.
+#                  Listed alongside orbit-types/orbit-util in caller allowlists
+#                  for the migration window. To retire orbit-common, drop it
+#                  from each caller's allowlist (and from this list) after
+#                  imports have been migrated. See crates/orbit-common/RETIRE.md.
 allowed_internal_deps() {
   case "$1" in
-    orbit-common)
+    orbit-util)
       echo ""
       ;;
-    orbit-policy | orbit-exec | orbit-knowledge | orbit-store)
-      echo "orbit-common"
+    orbit-types)
+      echo "orbit-util"
+      ;;
+    orbit-common)
+      echo "orbit-types orbit-util"
+      ;;
+    orbit-policy | orbit-exec | orbit-knowledge | orbit-store | orbit-registry)
+      echo "orbit-common orbit-types orbit-util"
       ;;
     orbit-tools)
-      echo "orbit-common orbit-exec orbit-knowledge orbit-policy"
+      echo "orbit-common orbit-types orbit-util orbit-exec orbit-knowledge orbit-policy"
       ;;
     orbit-agent)
-      echo "orbit-common orbit-tools"
+      echo "orbit-common orbit-types orbit-util orbit-tools"
       ;;
     orbit-engine)
-      echo "orbit-agent orbit-common orbit-exec orbit-store orbit-tools"
+      echo "orbit-agent orbit-common orbit-types orbit-util orbit-exec orbit-store orbit-tools"
       ;;
     orbit-core)
-      echo "orbit-common orbit-engine orbit-policy orbit-store orbit-tools"
+      echo "orbit-common orbit-types orbit-util orbit-engine orbit-policy orbit-store orbit-tools"
       ;;
     orbit-mcp)
-      echo "orbit-common orbit-tools"
+      echo "orbit-common orbit-types orbit-util orbit-tools"
       ;;
     orbit-cli)
-      echo "orbit-common orbit-core orbit-mcp"
+      echo "orbit-common orbit-types orbit-util orbit-core orbit-mcp"
       ;;
     *)
       echo ""
@@ -58,8 +74,11 @@ workspace_crates=(
   orbit-knowledge
   orbit-mcp
   orbit-policy
+  orbit-registry
   orbit-store
   orbit-tools
+  orbit-types
+  orbit-util
 )
 
 for crate in "${workspace_crates[@]}"; do

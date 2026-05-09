@@ -25,18 +25,22 @@ All must pass before a task moves to `review`.
 ## Crate Architecture
 
 ```
-orbit-common → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → orbit-agent → orbit-engine → orbit-core → orbit-cli
-            ↘ orbit-store ──────────────────────────────────────────────────↗            ↗
-            ↘ orbit-mcp ─────────────────────────────────────────────────────────────────────────────────────────↗
+orbit-util ← orbit-types ← orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → orbit-agent → orbit-engine → orbit-core → orbit-cli
+                       ↖ orbit-store ──────────────────────────────────────────────────────↗            ↗
+                       ↖ orbit-mcp ──────────────────────────────────────────────────────────────────────────────────────────────↗
+                       ↖ orbit-registry
 ```
 
-- **orbit-common**: leaf — no internal deps. `types::` owns shared domain types, `OrbitError`, ID generation, and activity/job schemas; `utility::` owns generic helpers like fs, redaction, logging, and blob storage.
-- **orbit-policy**: filesystem-scoping policy engine. Owns `FsProfile` resolution and `denyRead` / `denyModify` evaluation. Depends only on `orbit-common`.
-- **orbit-exec**: process / sandbox / supervision primitives for shell-command execution under an `FsProfile`. Depends only on `orbit-common`.
-- **orbit-knowledge**: knowledge/graph parsing and storage helpers. Multi-language source parsing (Rust, Go, Java, JavaScript/TypeScript, Python). Depends on `orbit-common`; consumed by `orbit-tools`, which exposes graph tool and CLI-use-case facades upstream.
-- **orbit-store**: layered store pattern (YAML + SQLite). Match existing modules when adding new ones. Depends only on `orbit-common`.
-- **orbit-tools**: tool registry plus built-in graph, fs, and policy-aware exec tools. Depends on `orbit-common`, `orbit-exec`, `orbit-knowledge`, `orbit-policy`.
-- **orbit-mcp**: Model Context Protocol adapter using `rmcp`. Depends only on `orbit-common`; consumed by `orbit-cli` via `orbit mcp serve`.
+- **orbit-util**: leaf — no internal deps. Owns generic helpers (filesystem, redaction, logging, blob storage, git, selectors, path normalization) plus a small `UtilError` for utility helpers that need to surface failure without taking on a dependency on the domain error.
+- **orbit-types**: leaf with respect to other orbit-* crates apart from depending on `orbit-util`. Owns the shared domain model — `OrbitError`, `OrbitId`, `Task`, `AuditEvent`, `Job`/`JobRun`, `Skill`, activity/job schemas, `FrictionEntry`, `TaskPlan`, `ExecutorDef`, `PolicyDef` — and the Groundhog chronicle module. Provides `From<UtilError> for OrbitError` for `?` ergonomics.
+- **orbit-common** *(transitional shim — to be retired)*: legacy facade re-exporting from `orbit-types` and `orbit-util` so existing `orbit_common::types::*` / `orbit_common::utility::*` paths still resolve. New code MUST import from `orbit-types` / `orbit-util` directly. See `crates/orbit-common/RETIRE.md` for the retirement plan.
+- **orbit-policy**: filesystem-scoping policy engine. Owns `FsProfile` resolution and `denyRead` / `denyModify` evaluation. Depends on `orbit-types` and `orbit-util`.
+- **orbit-exec**: process / sandbox / supervision primitives for shell-command execution under an `FsProfile`. Depends on `orbit-types` and `orbit-util`.
+- **orbit-knowledge**: knowledge/graph parsing and storage helpers. Multi-language source parsing (Rust, Go, Java, JavaScript/TypeScript, Python). Depends on `orbit-types`/`orbit-util`; consumed by `orbit-tools`, which exposes graph tool and CLI-use-case facades upstream.
+- **orbit-store**: layered store pattern (YAML + SQLite). Match existing modules when adding new ones. Depends on `orbit-types` and `orbit-util`.
+- **orbit-registry**: registry of named workspace artifacts. Depends on `orbit-types` and `orbit-util`.
+- **orbit-tools**: tool registry plus built-in graph, fs, and policy-aware exec tools. Depends on `orbit-types`, `orbit-util`, `orbit-exec`, `orbit-knowledge`, `orbit-policy`.
+- **orbit-mcp**: Model Context Protocol adapter using `rmcp`. Depends on `orbit-types`/`orbit-util` and `orbit-tools`; consumed by `orbit-cli` via `orbit mcp serve`.
 - **orbit-agent**: per-provider `AgentRuntime` implementations under `providers/<name>/<name>_runtime.rs` (claude, codex, gemini, openai_compat, anthropic, ollama, mock_agent). Implements `backend: cli`. Also hosts HTTP `LoopTransport` primitives.
 - **orbit-engine**: activity/job execution, template rendering, retry logic. Owns the `backend: cli` subprocess runner (`activity_job::cli_runner`), which references `orbit-agent::{Agent, AgentConfig}` directly so orbit-core stays clean of orbit-agent types.
 - **orbit-core**: runtime bootstrap, config layering, command dispatch, default asset seeding. Surfaces the `OrbitRuntime` API used by `orbit-cli`; does NOT depend on `orbit-agent`.

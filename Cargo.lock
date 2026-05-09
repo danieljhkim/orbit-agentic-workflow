@@ -1609,22 +1609,9 @@ dependencies = [
 name = "orbit-common"
 version = "0.3.1"
 dependencies = [
- "chrono",
- "clap",
- "fs2",
- "proptest",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "tempfile",
- "thiserror",
+ "orbit-types",
+ "orbit-util",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "unicode-normalization",
- "url",
 ]
 
 [[package]]
@@ -1778,6 +1765,48 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "orbit-types"
+version = "0.3.1"
+dependencies = [
+ "chrono",
+ "clap",
+ "fs2",
+ "orbit-util",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "unicode-normalization",
+ "url",
+]
+
+[[package]]
+name = "orbit-util"
+version = "0.3.1"
+dependencies = [
+ "chrono",
+ "fs2",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

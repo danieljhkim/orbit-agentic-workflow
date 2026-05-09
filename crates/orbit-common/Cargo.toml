@@ -4,25 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# `orbit-common` is a transitional facade. Its sources have moved to
+# `orbit-types` (domain) and `orbit-util` (helpers). This crate re-exports
+# them so existing `orbit_common::types::*` / `orbit_common::utility::*`
+# import paths keep resolving while consumers migrate. See `RETIRE.md`.
+
 [features]
-clap = ["dep:clap"]
+clap = ["orbit-types/clap"]
 
 [dependencies]
-chrono.workspace = true
-clap = { workspace = true, optional = true }
-fs2.workspace = true
-regex.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-serde_yaml.workspace = true
-sha2.workspace = true
-thiserror.workspace = true
+orbit-types = { path = "../orbit-types" }
+orbit-util = { path = "../orbit-util" }
 tracing.workspace = true
-tracing-appender.workspace = true
-tracing-subscriber.workspace = true
-unicode-normalization.workspace = true
-url.workspace = true
-
-[dev-dependencies]
-proptest.workspace = true
-tempfile = "3"
