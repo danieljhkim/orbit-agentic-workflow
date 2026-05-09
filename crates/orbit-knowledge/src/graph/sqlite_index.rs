@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavio
 use super::nodes::{BaseNodeFields, CodebaseGraphV1, FileNode, LeafKind};
 use crate::error::KnowledgeError;
 
-pub(crate) const GRAPH_SQLITE_INDEX_SCHEMA_VERSION: u32 = 2;
+pub(crate) const GRAPH_SQLITE_INDEX_SCHEMA_VERSION: u32 = 3;
 pub(crate) const GRAPH_SQLITE_INDEX_FILENAME: &str = "graph_index.sqlite";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +154,191 @@ impl GraphIndexReader {
             Ok(lineage)
         }
     }
+
+    pub fn overview_counts(&self) -> Result<(usize, usize, usize), KnowledgeError> {
+        Ok((
+            self.node_count("dir")?,
+            self.node_count("file")?,
+            self.node_count("leaf")?,
+        ))
+    }
+
+    pub fn overview_language_counts(&self) -> Result<HashMap<String, usize>, KnowledgeError> {
+        self.string_count_map(
+            r#"
+            SELECT language, COUNT(*)
+            FROM node
+            WHERE node_type = 'file' AND language <> ''
+            GROUP BY language
+            ORDER BY language ASC
+            "#,
+            "query graph sqlite overview language counts",
+        )
+    }
+
+    pub fn overview_symbol_kind_counts(&self) -> Result<HashMap<String, usize>, KnowledgeError> {
+        self.string_count_map(
+            r#"
+            SELECT kind, COUNT(*)
+            FROM node
+            WHERE node_type = 'leaf' AND kind IS NOT NULL
+            GROUP BY kind
+            ORDER BY kind ASC
+            "#,
+            "query graph sqlite overview symbol kind counts",
+        )
+    }
+
+    pub fn overview_dir_file_counts(&self) -> Result<BTreeMap<String, usize>, KnowledgeError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT dir_key, COUNT(*)
+                FROM (
+                  SELECT CASE
+                    WHEN trimmed_path = '' THEN '.'
+                    WHEN instr(trimmed_path, '/') = 0 THEN '.'
+                    ELSE substr(trimmed_path, 1, instr(trimmed_path, '/') - 1)
+                  END AS dir_key
+                  FROM (
+                    SELECT ltrim(path, '/') AS trimmed_path
+                    FROM file_summary
+                  )
+                )
+                GROUP BY dir_key
+                ORDER BY dir_key ASC
+                "#,
+            )
+            .map_err(|error| {
+                sqlite_error(
+                    &self.path,
+                    "prepare graph sqlite overview dir file counts",
+                    error,
+                )
+            })?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|error| {
+                sqlite_error(
+                    &self.path,
+                    "query graph sqlite overview dir file counts",
+                    error,
+                )
+            })?;
+
+        let mut counts = BTreeMap::new();
+        for row in rows {
+            let (key, count) = row.map_err(|error| {
+                sqlite_error(
+                    &self.path,
+                    "read graph sqlite overview dir file count row",
+                    error,
+                )
+            })?;
+            counts.insert(
+                key,
+                usize_from_i64(&self.path, "overview dir file count", count)?,
+            );
+        }
+        Ok(counts)
+    }
+
+    pub fn overview_top_files(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, String, usize)>, KnowledgeError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let limit = i64::try_from(limit).map_err(|_| {
+            KnowledgeError::invalid_data("graph sqlite overview top-file limit exceeds i64")
+        })?;
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT COALESCE(node.selector, 'file:' || file_summary.path) AS selector,
+                       node.name,
+                       file_summary.symbol_count
+                FROM file_summary
+                JOIN node ON node.id = file_summary.file_id
+                ORDER BY file_summary.symbol_count DESC,
+                         file_summary.path ASC,
+                         selector ASC,
+                         node.name ASC
+                LIMIT ?1
+                "#,
+            )
+            .map_err(|error| {
+                sqlite_error(&self.path, "prepare graph sqlite overview top files", error)
+            })?;
+        let rows = stmt
+            .query_map(params![limit], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|error| {
+                sqlite_error(&self.path, "query graph sqlite overview top files", error)
+            })?;
+
+        let mut files = Vec::new();
+        for row in rows {
+            let (selector, name, symbol_count) = row.map_err(|error| {
+                sqlite_error(&self.path, "read graph sqlite overview top-file row", error)
+            })?;
+            files.push((
+                selector,
+                name,
+                usize_from_i64(&self.path, "overview top-file symbol count", symbol_count)?,
+            ));
+        }
+        Ok(files)
+    }
+
+    fn node_count(&self, node_type: &str) -> Result<usize, KnowledgeError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM node WHERE node_type = ?1",
+                params![node_type],
+                |row| row.get(0),
+            )
+            .map_err(|error| {
+                sqlite_error(&self.path, "query graph sqlite overview count", error)
+            })?;
+        usize_from_i64(&self.path, "overview node count", count)
+    }
+
+    fn string_count_map(
+        &self,
+        sql: &str,
+        action: &str,
+    ) -> Result<HashMap<String, usize>, KnowledgeError> {
+        let mut stmt = self
+            .conn
+            .prepare(sql)
+            .map_err(|error| sqlite_error(&self.path, action, error))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|error| sqlite_error(&self.path, action, error))?;
+
+        let mut counts = HashMap::new();
+        for row in rows {
+            let (key, count) = row
+                .map_err(|error| sqlite_error(&self.path, "read graph sqlite count row", error))?;
+            counts.insert(key, usize_from_i64(&self.path, "overview count", count)?);
+        }
+        Ok(counts)
+    }
 }
 
 pub(crate) fn write_graph_index(
@@ -200,6 +385,7 @@ pub(crate) fn write_graph_index(
           kind TEXT,
           name TEXT NOT NULL,
           name_lower TEXT NOT NULL,
+          language TEXT NOT NULL,
           location TEXT NOT NULL,
           location_lower TEXT NOT NULL,
           parent_id TEXT,
@@ -243,9 +429,9 @@ pub(crate) fn write_graph_index(
             .prepare(
                 r#"
                 INSERT OR REPLACE INTO node (
-                  id, node_type, kind, name, name_lower, location, location_lower, parent_id,
-                  selector, object_hash, ordinal
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                  id, node_type, kind, name, name_lower, language, location, location_lower,
+                  parent_id, selector, object_hash, ordinal
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                 "#,
             )
             .map_err(|error| sqlite_error(path, "prepare graph sqlite node insert", error))?;
@@ -404,6 +590,7 @@ fn insert_node(
             kind,
             base.name.as_str(),
             base.name.to_lowercase(),
+            base.language.as_str(),
             base.location.as_str(),
             base.location.to_lowercase(),
             base.parent_id.as_deref(),
@@ -413,6 +600,15 @@ fn insert_node(
         ])
         .map_err(|error| sqlite_error(path, "insert graph sqlite node", error))?;
     Ok(())
+}
+
+fn usize_from_i64(path: &Path, label: &str, value: i64) -> Result<usize, KnowledgeError> {
+    usize::try_from(value).map_err(|_| {
+        KnowledgeError::invalid_data(format!(
+            "graph sqlite index {} returned invalid {label} `{value}`",
+            path.display()
+        ))
+    })
 }
 
 fn graph_index_node_from_row(row: &Row<'_>) -> rusqlite::Result<GraphIndexNodeRow> {

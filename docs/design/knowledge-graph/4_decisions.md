@@ -510,17 +510,18 @@ These entries were formerly ADR headings, but they are plain instances of ADR-00
 
 ## ADR-034 — SQLite sidecar for secondary graph indexes
 
-**Status:** Accepted · 2026-05 · [T20260509-70]
+**Status:** Accepted · 2026-05 · [T20260509-70], [T20260509-72]
 **Author:** gpt-5.5
 
 **Context.** Selector resolution, name search, and file-symbol counts still walk the hydrated graph or JSON by-id index. A JSON sidecar would keep persistence simple but would not provide efficient prefix/range lookup, partial indexes, or concurrent read/write behavior.
 
-**Decision.** Write a mutable SQLite sidecar at `graph/graph_index.sqlite` during `GraphObjectStore::write_graph`. The sidecar is rebuilt in a WAL-backed transaction with `meta`, `node`, and `file_summary` tables; `meta.graph_ref` stores the root graph hash and is inserted last so readers can reject missing or mismatched indexes. Existing graph reads do not consume the sidecar until a separate read facade lands.
+**Decision.** Write a mutable SQLite sidecar at `graph/graph_index.sqlite` during `GraphObjectStore::write_graph`. The sidecar is rebuilt in a WAL-backed transaction with `meta`, `node`, and `file_summary` tables; `meta.graph_ref` stores the root graph hash and is inserted last so readers can reject missing or mismatched indexes. Read paths may use the sidecar only after validating that graph ref; `overview` summary uses SQL aggregation for current, unscoped reads and falls back for scoped summaries so prefix semantics stay identical.
 
 **Consequences.**
 - Future read tasks can add SQL fast paths without changing the content-addressed object format.
 - Write-path validation can measure the index independently before read behavior depends on it.
 - Re-running the same graph preserves semantic meta/node contents, while a new root graph hash cleanly replaces prior rows.
+- Schema v3 stores node language because broad overview summaries must return the same language counts as the hydrated fallback.
 - Cost: graph persistence now pays an extra SQLite write per rebuild and `orbit-knowledge` directly depends on the workspace `rusqlite` dependency.
 
 ---
@@ -574,5 +575,6 @@ Tasks cited by ADRs above:
 - **[T20260509-65]** — Add `GraphReadOptions` so broad graph reads skip file/leaf source hydration unless a tool opts in.
 - **[T20260509-67]** — Bound default-ranking graph search candidate retention with named headroom and hard cap constants.
 - **[T20260509-70]** — Build the write-only SQLite secondary index sidecar during graph persistence.
+- **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

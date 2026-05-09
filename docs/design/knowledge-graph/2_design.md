@@ -19,14 +19,14 @@ This document specifies the current knowledge graph: storage, build pipeline, qu
 │   ├── objects/<hh>/<hash>.json   immutable node bodies (dir / file / leaf)
 │   ├── blobs/<hh>/<hash>.txt      immutable source blobs
 │   ├── index/by-id/<root-graph-hash>.json   immutable per-build index
-│   ├── graph_index.sqlite         mutable SQLite secondary index for future fast reads
+│   ├── graph_index.sqlite         mutable SQLite secondary index for fast reads
 │   └── refs/heads/<branch>.json   mutable branch ref → active index
 └── working/<activity_id>/       (in memory today; see 3_vision.md §2.3)
 ```
 
 The split between immutable objects/blobs/index and mutable refs is deliberate. Rebuilds always write new immutable artifacts and then atomically rename a ref file; no object file is ever overwritten. This survives concurrent worktree rebuilds and interrupted writes ([T20260421-0358]).
 
-`graph/graph_index.sqlite` is a mutable secondary index written alongside the content-addressed graph ([T20260509-70]). Its `meta` table records `schema_version`, `created_at`, and the active `graph_ref` root hash; `node` contains one row per dir/file/leaf with lowercased name/location fields and stable selectors where unambiguous; `file_summary` stores one row per file with direct leaf-child count. Writes rebuild the SQLite schema/data in one WAL-backed transaction and insert `meta.graph_ref` last, so future readers can treat a missing or mismatched `graph_ref` as invalid. No read tool consumes this sidecar yet.
+`graph/graph_index.sqlite` is a mutable secondary index written alongside the content-addressed graph ([T20260509-70]). Its `meta` table records `schema_version`, `created_at`, and the active `graph_ref` root hash; `node` contains one row per dir/file/leaf with lowercased name/location fields, language, and stable selectors where unambiguous; `file_summary` stores one row per file with direct leaf-child count. Writes rebuild the SQLite schema/data in one WAL-backed transaction and insert `meta.graph_ref` last, so readers can treat a missing or mismatched `graph_ref` as invalid. Current read use is intentionally narrow: selector context and broad `overview` summaries can use the sidecar when it matches the resolved graph ref, while scoped overview summaries still fall back to the JSON/object path ([T20260509-72]).
 
 The legacy `refs/current.json` layout is migrated to `refs/heads/<default-branch>.json` on open; see [specs/refs.md](./specs/refs.md).
 
@@ -125,7 +125,7 @@ All tool inputs that reference a node accept a selector string.
 
 | Service | Entry point | Notable task |
 |---------|-------------|--------------|
-| Overview | `overview(prefix?)` | Compact mode above 50 files added in [T20260412-0645-2] |
+| Overview | `overview(prefix?)` | Compact mode above 50 files added in [T20260412-0645-2]; broad summaries use the SQLite sidecar when current ([T20260509-72]) |
 | Search | `search(query)` / `search_structured` | Source-regex and structured selector search |
 | Context | `bounded_context(selector, budget)` | — |
 | References | `find_references(selector)` | — |
@@ -260,9 +260,9 @@ The read cache is per `KnowledgeStore`, not global ([T20260426-0141]). Long-runn
 
 The scanner skips symlinked directories rather than trying to canonicalize and follow only in-workspace targets ([T20260509-33]). This is the safer default for agent indexing because it avoids outside-repo leakage and cycles, but a workspace that intentionally exposes source through symlinked directories must materialize those files or wait for an explicit, cycle-safe opt-in traversal policy.
 
-### 6.13 SQLite secondary index is write-only
+### 6.13 SQLite secondary index coverage is intentionally partial
 
-The `graph/graph_index.sqlite` sidecar exists to make future selector, name, and file-symbol-count reads sublinear, but current graph services still hydrate through the JSON by-id index and object store ([T20260509-70]). Until a read facade verifies `meta.graph_ref` against the resolved branch ref, this sidecar is an independently testable write-path artifact rather than a query source.
+The `graph/graph_index.sqlite` sidecar exists to make selector, name, and file-symbol-count reads sublinear ([T20260509-70]). Readers must verify `meta.graph_ref` against the resolved branch ref before trusting it; missing, stale, corrupt, or unsupported shapes fall back to the JSON by-id index and object store. As of [T20260509-72], broad `overview` summaries query aggregate counts and top files from SQLite, but scoped summaries still fall back so their output stays byte-for-byte aligned with the established prefix semantics.
 
 ---
 
@@ -297,5 +297,6 @@ The `graph/graph_index.sqlite` sidecar exists to make future selector, name, and
 - **[T20260509-33]** — Skip symlinked directories/files during knowledge scans and `.orbitignore` discovery to prevent outside-repo indexing and recursive cycles.
 - **[T20260509-65]** — Add `GraphReadOptions` so broad graph reads skip file/leaf source hydration unless a tool opts in.
 - **[T20260509-70]** — Build the write-only SQLite secondary index sidecar during graph persistence.
+- **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

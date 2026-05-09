@@ -59,10 +59,11 @@ Storage follows a git-style split:
 ├── objects/<hh>/<hash>.json     immutable, content-addressed node bodies
 ├── blobs/<hh>/<hash>.txt        immutable, content-addressed file/symbol source
 ├── index/by-id/<root-graph-hash>.json   immutable per-build index
+├── graph_index.sqlite           mutable secondary index for current fast reads
 └── refs/heads/<branch>.json     mutable branch ref → active index
 ```
 
-A rebuild writes new immutable objects/blobs and index, then atomically swings the branch ref. Refs are the only mutable surface, so concurrent builds on different worktrees cannot corrupt each other ([T20260421-0358]). See [specs/refs.md](./specs/refs.md).
+A rebuild writes new immutable objects/blobs and index, refreshes the SQLite sidecar for current fast reads, then atomically swings the branch ref. Refs are the only authoritative mutable pointer, so concurrent builds on different worktrees cannot corrupt each other ([T20260421-0358], [T20260509-70], [T20260509-72]). See [specs/refs.md](./specs/refs.md).
 
 ### 2.4 Working graph and write guards
 
@@ -81,10 +82,10 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 | Concern | Where it lives | Primary task ID |
 |---------|----------------|-----------------|
 | Crate boundary | `crates/orbit-knowledge` | [T20260411-0008], [T20260411-0424] |
-| Storage layout | `src/graph/object_store.rs` | [T20260421-0358] |
+| Storage layout | `src/graph/object_store.rs`, `src/graph/sqlite_index.rs` | [T20260421-0358], [T20260509-70] |
 | Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139], [T20260509-33] |
 | Historical task attribution removal | `src/pipeline/` | [T20260506-11] |
-| Query services | `src/service/` | [T20260412-0645-2], [T20260412-0645-3] |
+| Query services | `src/service/`, `crates/orbit-tools/src/builtin/orbit/knowledge/` | [T20260412-0645-2], [T20260412-0645-3], [T20260509-72] |
 | Working graph | `src/working_graph/` | [T20260411-0424] |
 | Locking | `src/lock.rs` | [T20260411-0424], [T20260417-0301-2] |
 | Refresh safety | `src/pipeline/mod.rs` | [T20260417-0307], [T20260416-0719] |
@@ -109,5 +110,7 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 - **[T20260506-11]** — Remove knowledge-graph task attribution; preserve task IDs as local commit-search keys.
 - **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
 - **[T20260509-33]** — Skip symlinked directory entries during knowledge scanner traversal.
+- **[T20260509-70]** — Build the SQLite secondary index sidecar during graph persistence.
+- **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
