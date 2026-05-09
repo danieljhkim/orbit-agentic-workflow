@@ -38,7 +38,7 @@ spec:
     base_branch: main
     base_sync: remote
     max_bundles: 10
-    concurrency: 3
+    concurrency: 5
     max_bundle_size: 5
     max_tasks: 50
 
