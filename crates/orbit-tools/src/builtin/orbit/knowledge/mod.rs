@@ -16,8 +16,8 @@ pub mod show;
 mod write;
 
 use orbit_common::types::OrbitError;
-use orbit_knowledge::TaskGraphService;
 use orbit_knowledge::graph::nodes::CodebaseGraphV1;
+use orbit_knowledge::{GraphReadOptions, TaskGraphService};
 use serde_json::Value;
 
 use crate::ToolContext;
@@ -32,6 +32,7 @@ pub(super) fn has_explicit_knowledge_dir(input: &Value) -> bool {
 pub(super) fn load_graph_for_read(
     ctx: &ToolContext,
     input: &Value,
+    options: GraphReadOptions,
 ) -> Result<CodebaseGraphV1, OrbitError> {
     let knowledge_dir = write::resolve_knowledge_dir(ctx, input)?;
     let service = TaskGraphService::new(knowledge_dir, write::task_graph_scope(ctx));
@@ -40,5 +41,6 @@ pub(super) fn load_graph_for_read(
         ctx.workspace_root.as_deref(),
         has_explicit_knowledge_dir(input),
         explicit_ref.as_deref(),
+        options,
     )
 }

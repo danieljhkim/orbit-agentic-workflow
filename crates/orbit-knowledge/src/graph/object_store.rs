@@ -83,6 +83,12 @@ pub struct GraphWriteTarget {
     pub default: Option<RefName>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GraphReadOptions {
+    pub hydrate_file_source: bool,
+    pub hydrate_leaf_source: bool,
+}
+
 pub fn resolve_graph_read_target(
     workspace_path: Option<&Path>,
     explicit_ref: Option<&str>,
@@ -433,6 +439,7 @@ impl GraphObjectStore {
         requested: &RefName,
         fallback: Option<&RefName>,
         default_ref: Option<&RefName>,
+        options: GraphReadOptions,
     ) -> Result<CodebaseGraphV1, KnowledgeError> {
         self.prepare_refs_layout(default_ref)?;
         let resolved = self.resolve_ref(requested, fallback)?;
@@ -463,6 +470,7 @@ impl GraphObjectStore {
             file.base.object_hash = Some(entry.object_hash.clone());
             if let Some(ref blob_hash) = file.source_blob_hash
                 && file.source.is_empty()
+                && options.hydrate_file_source
             {
                 // Legacy graphs recorded a file source hash before file blobs were
                 // persisted. Keep those refs readable; new refs hydrate normally.
@@ -486,6 +494,7 @@ impl GraphObjectStore {
 
             if let Some(ref blob_hash) = leaf.source_blob_hash
                 && leaf.source.is_empty()
+                && options.hydrate_leaf_source
             {
                 leaf.source = self.read_blob(blob_hash)?;
             }
@@ -958,6 +967,96 @@ fn dir_depth(location: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::nodes::{
+        BaseNodeFields, CodebaseGraphV1, DirNode, FileNode, LeafKind, LeafNode,
+    };
+
+    #[test]
+    fn graph_read_options_gate_blob_source_hydration() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let store = GraphObjectStore::new(temp_dir.path());
+        let graph = CodebaseGraphV1 {
+            root_dir_id: "dir-root".to_string(),
+            dirs: vec![DirNode {
+                base: base_node("dir-root", ".", "./", None),
+                dir_children: Vec::new(),
+                file_children: vec!["file-lib".to_string()],
+            }],
+            files: vec![FileNode {
+                base: base_node("file-lib", "lib.rs", "src/lib.rs", Some("dir-root")),
+                extension: Some("rs".to_string()),
+                source_blob_hash: None,
+                source: "pub fn greet() { helper(); }\n".to_string(),
+                imports: Vec::new(),
+                exports: vec!["greet".to_string()],
+                re_exports: Vec::new(),
+                leaf_children: vec!["leaf-greet".to_string()],
+            }],
+            leaves: vec![LeafNode {
+                base: base_node("leaf-greet", "greet", "src/lib.rs#greet", Some("file-lib")),
+                kind: LeafKind::Function,
+                source: "pub fn greet() { helper(); }\n".to_string(),
+                source_blob_hash: None,
+                source_hash: Some("source-hash".to_string()),
+                file_hash_at_capture: Some("file-hash".to_string()),
+                history: Vec::new(),
+                input_signature: Vec::new(),
+                output_signature: Vec::new(),
+                start_line: Some(1),
+                end_line: Some(1),
+                children: Vec::new(),
+            }],
+        };
+        let current_ref = store.write_graph(&graph).expect("write graph");
+        let ref_name = RefName::new("main").expect("valid ref");
+        store
+            .write_ref_atomic(&ref_name, &current_ref)
+            .expect("write ref");
+
+        let default_graph = store
+            .read_graph(
+                &ref_name,
+                None,
+                Some(&ref_name),
+                GraphReadOptions::default(),
+            )
+            .expect("read graph without hydration");
+        assert_eq!(default_graph.files[0].source, "");
+        assert!(default_graph.files[0].source_blob_hash.is_some());
+        assert_eq!(default_graph.leaves[0].source, "");
+        assert!(default_graph.leaves[0].source_blob_hash.is_some());
+
+        let hydrated_graph = store
+            .read_graph(
+                &ref_name,
+                None,
+                Some(&ref_name),
+                GraphReadOptions {
+                    hydrate_file_source: true,
+                    hydrate_leaf_source: true,
+                },
+            )
+            .expect("read graph with hydration");
+        assert_eq!(hydrated_graph.files[0].source, graph.files[0].source);
+        assert_eq!(hydrated_graph.leaves[0].source, graph.leaves[0].source);
+    }
+
+    fn base_node(id: &str, name: &str, location: &str, parent_id: Option<&str>) -> BaseNodeFields {
+        BaseNodeFields {
+            id: id.to_string(),
+            identity_key: id.to_string(),
+            object_hash: None,
+            name: name.to_string(),
+            location: location.to_string(),
+            language: "rust".to_string(),
+            description: String::new(),
+            parent_id: parent_id.map(str::to_string),
+            is_locked: false,
+            lineage_locked: false,
+            lock_owner: None,
+            lock_reason: String::new(),
+        }
+    }
 
     #[test]
     fn dir_depth_root_location_is_zero() {

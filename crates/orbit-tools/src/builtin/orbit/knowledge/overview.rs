@@ -75,7 +75,7 @@ impl Tool for OrbitKnowledgeOverviewTool {
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let prefix = super::super::optional_string(&input, "prefix")?;
         let requested_format = OverviewFormat::parse(&input)?;
-        let graph = super::load_graph_for_read(ctx, &input)?;
+        let graph = super::load_graph_for_read(ctx, &input, Default::default())?;
         let svc = GraphContextService::new(&graph);
         let overview = svc.overview(prefix.as_deref());
         let resolved_format = requested_format.unwrap_or_else(|| {

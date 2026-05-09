@@ -6,7 +6,7 @@ use orbit_knowledge::graph::nodes::CodebaseGraphV1;
 use orbit_knowledge::graph::object_store::RefName;
 use orbit_knowledge::pipeline::context::BuildConfig;
 use orbit_knowledge::service::GraphContextService;
-use orbit_knowledge::{Selector, TaskGraphScope, TaskGraphService};
+use orbit_knowledge::{GraphReadOptions, Selector, TaskGraphScope, TaskGraphService};
 use serde_json::{Value, json};
 
 pub(crate) const REMOVED_GRAPH_HISTORY_MESSAGE: &str = "Knowledge-graph task attribution has been removed. Use `git log --grep '[T<task-id>]'` for local forward lookup, and use `external_refs` for cross-engineer task references.";
@@ -149,7 +149,14 @@ pub fn build_graph(options: GraphBuildOptions) -> Result<GraphBuildOutput, Orbit
 }
 
 pub fn show_graph(options: GraphShowOptions) -> Result<GraphShowOutput, OrbitError> {
-    let graph = load_graph(&options.data_root, options.ref_name.as_deref())?;
+    let graph = load_graph(
+        &options.data_root,
+        options.ref_name.as_deref(),
+        GraphReadOptions {
+            hydrate_file_source: true,
+            hydrate_leaf_source: true,
+        },
+    )?;
     let service = GraphContextService::new(&graph);
 
     let selector: Selector = options
@@ -169,7 +176,11 @@ pub fn show_graph(options: GraphShowOptions) -> Result<GraphShowOutput, OrbitErr
 }
 
 pub fn search_graph(options: GraphSearchOptions) -> Result<GraphSearchOutput, OrbitError> {
-    let graph = load_graph(&options.data_root, options.ref_name.as_deref())?;
+    let graph = load_graph(
+        &options.data_root,
+        options.ref_name.as_deref(),
+        Default::default(),
+    )?;
     let service = GraphContextService::new(&graph);
 
     let type_refs: Vec<&str> = options.node_types.iter().map(String::as_str).collect();
@@ -265,11 +276,15 @@ pub(crate) fn node_context_payload(
     value
 }
 
-fn load_graph(data_root: &Path, explicit_ref: Option<&str>) -> Result<CodebaseGraphV1, OrbitError> {
+fn load_graph(
+    data_root: &Path,
+    explicit_ref: Option<&str>,
+    options: GraphReadOptions,
+) -> Result<CodebaseGraphV1, OrbitError> {
     let knowledge_dir = data_root.join("knowledge");
     let repo_path = repo_from_data_root(data_root);
     let service = TaskGraphService::new(knowledge_dir, TaskGraphScope::default());
-    service.read_graph(Some(&repo_path), false, explicit_ref)
+    service.read_graph(Some(&repo_path), false, explicit_ref, options)
 }
 
 fn repo_from_data_root(data_root: &Path) -> PathBuf {

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::error::KnowledgeError;
+use crate::graph::object_store::GraphReadOptions;
 use crate::selector::Selector;
 
 use super::KnowledgeStore;
@@ -21,6 +22,22 @@ impl KnowledgeStore {
         &self,
         selectors: &[Selector],
         timeout_ms: Option<u64>,
+    ) -> Result<KnowledgePack, KnowledgeError> {
+        self.pack_with_timeout_options(
+            selectors,
+            timeout_ms,
+            GraphReadOptions {
+                hydrate_leaf_source: true,
+                ..Default::default()
+            },
+        )
+    }
+
+    pub fn pack_with_timeout_options(
+        &self,
+        selectors: &[Selector],
+        timeout_ms: Option<u64>,
+        read_options: GraphReadOptions,
     ) -> Result<KnowledgePack, KnowledgeError> {
         let mut entries = Vec::with_capacity(selectors.len());
         let mut unresolved_selectors = Vec::new();
@@ -60,7 +77,7 @@ impl KnowledgeStore {
                 self.graph_object_cache(),
             )?;
             let node = object.get("node");
-            let source = if index_entry.node_type == "leaf" {
+            let source = if index_entry.node_type == "leaf" && read_options.hydrate_leaf_source {
                 extract_leaf_source(&self.knowledge_dir, &object, self.graph_object_cache())?
             } else {
                 None

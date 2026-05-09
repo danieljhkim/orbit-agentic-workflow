@@ -74,6 +74,7 @@ fn graph_reads_fall_back_to_default_branch_when_current_branch_ref_is_missing()
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert_eq!(graph.root_dir_id, "dir:.");
     assert_eq!(graph.leaves.len(), 1);
@@ -109,6 +110,7 @@ fn graph_reads_fall_back_to_non_main_default_branch_when_current_branch_ref_is_m
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert_eq!(graph.root_dir_id, "dir:.");
     assert_eq!(graph.leaves.len(), 1);
@@ -195,11 +197,13 @@ fn concurrent_branch_builds_keep_distinct_refs_and_graphs_reachable()
         &alpha_read_target.requested,
         alpha_read_target.fallback.as_ref(),
         Some(&default_ref),
+        Default::default(),
     )?;
     let beta_graph = store.read_graph(
         &beta_read_target.requested,
         beta_read_target.fallback.as_ref(),
         Some(&default_ref),
+        Default::default(),
     )?;
     assert!(
         alpha_graph
@@ -285,6 +289,7 @@ fn ensure_fresh_waits_for_requested_branch_ref_before_returning()
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert!(
         graph
@@ -361,6 +366,7 @@ fn branch_refs_ensure_fresh_rebuilds_clean_worktree_when_branch_ref_is_missing()
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert!(
         graph
@@ -449,6 +455,7 @@ fn branch_refs_ensure_fresh_rebuilds_after_reset_to_older_timestamp_head()
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert!(
         graph

@@ -1,7 +1,7 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::Selector;
 use orbit_knowledge::service::GraphContextService;
 use orbit_knowledge::service::callers::{MAX_CALLER_DEPTH, transitive_callers};
+use orbit_knowledge::{GraphReadOptions, Selector};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -52,7 +52,14 @@ impl Tool for OrbitKnowledgeCallersTool {
             .unwrap_or(DEFAULT_DEPTH) as usize;
         let depth = requested_depth.min(MAX_CALLER_DEPTH);
 
-        let graph = super::load_graph_for_read(ctx, &input)?;
+        let graph = super::load_graph_for_read(
+            ctx,
+            &input,
+            GraphReadOptions {
+                hydrate_leaf_source: true,
+                ..Default::default()
+            },
+        )?;
         let svc = GraphContextService::new(&graph);
 
         let hits = transitive_callers(&svc, &graph, &selector, depth)

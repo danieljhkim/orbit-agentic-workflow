@@ -45,6 +45,7 @@ mod store;
 pub mod working_graph;
 
 pub use error::KnowledgeError;
+pub use graph::GraphReadOptions;
 pub use selector::{Selector, SelectorParseError};
 pub use service::{TaskGraphScope, TaskGraphService, default_knowledge_dir};
 pub use store::{

@@ -1,6 +1,6 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::Selector;
 use orbit_knowledge::service::GraphContextService;
+use orbit_knowledge::{GraphReadOptions, Selector};
 use serde_json::Value;
 
 use crate::{Tool, ToolContext};
@@ -53,7 +53,14 @@ impl Tool for OrbitKnowledgeShowTool {
         let max_siblings = input.get("siblings").and_then(Value::as_u64).unwrap_or(3) as usize;
         let max_children = input.get("children").and_then(Value::as_u64).unwrap_or(5) as usize;
 
-        let graph = super::load_graph_for_read(ctx, &input)?;
+        let graph = super::load_graph_for_read(
+            ctx,
+            &input,
+            GraphReadOptions {
+                hydrate_file_source: true,
+                hydrate_leaf_source: true,
+            },
+        )?;
         let svc = GraphContextService::new(&graph);
 
         let node = svc

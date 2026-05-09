@@ -1,7 +1,7 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::Selector;
 use orbit_knowledge::service::GraphContextService;
 use orbit_knowledge::service::implementors::trait_implementors;
+use orbit_knowledge::{GraphReadOptions, Selector};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -39,7 +39,14 @@ impl Tool for OrbitKnowledgeImplementorsTool {
             .parse()
             .map_err(|e| OrbitError::InvalidInput(format!("{e}")))?;
 
-        let graph = super::load_graph_for_read(ctx, &input)?;
+        let graph = super::load_graph_for_read(
+            ctx,
+            &input,
+            GraphReadOptions {
+                hydrate_leaf_source: true,
+                ..Default::default()
+            },
+        )?;
         let svc = GraphContextService::new(&graph);
 
         let hits = trait_implementors(&svc, &graph, &selector)

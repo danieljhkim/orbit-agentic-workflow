@@ -9,4 +9,4 @@ pub use nodes::{
     BaseNodeFields, CodebaseGraphV1, DirNode, FileNode, GraphNode, LeafHistoryEntry, LeafKind,
     LeafNode, SignatureField,
 };
-pub use object_store::GraphObjectStore;
+pub use object_store::{GraphObjectStore, GraphReadOptions};
