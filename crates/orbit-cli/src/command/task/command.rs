@@ -71,6 +71,30 @@ pub enum TaskSubcommand {
     PruneContext(TaskPruneContextArgs),
 }
 
+impl Execute for TaskSubcommand {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        match self {
+            TaskSubcommand::Add(args) => args.execute(runtime),
+            TaskSubcommand::Artifact(cmd) => cmd.execute(runtime),
+            TaskSubcommand::List(args) => args.execute(runtime),
+            TaskSubcommand::Locks(args) => args.execute(runtime),
+            TaskSubcommand::Show(args) => args.execute(runtime),
+            TaskSubcommand::Lint(args) => args.execute(runtime),
+            TaskSubcommand::Update(args) => args.execute(runtime),
+            TaskSubcommand::Start(args) => args.execute(runtime),
+            TaskSubcommand::Approve(args) => args.execute(runtime),
+            TaskSubcommand::Reject(args) => args.execute(runtime),
+            TaskSubcommand::Archive(args) => args.execute(runtime),
+            TaskSubcommand::Unarchive(args) => args.execute(runtime),
+            TaskSubcommand::Delete(args) => args.execute(runtime),
+            TaskSubcommand::Search(args) => args.execute(runtime),
+            TaskSubcommand::Templates(cmd) => cmd.execute(runtime),
+            TaskSubcommand::ReviewThread(cmd) => cmd.execute(runtime),
+            TaskSubcommand::PruneContext(args) => args.execute(runtime),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clap::{Parser, error::ErrorKind};
@@ -95,29 +119,5 @@ mod tests {
         );
         assert!(!help.contains("proposed → archived"), "{help}");
         assert!(!help.contains("review → backlog"), "{help}");
-    }
-}
-
-impl Execute for TaskSubcommand {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        match self {
-            TaskSubcommand::Add(args) => args.execute(runtime),
-            TaskSubcommand::Artifact(cmd) => cmd.execute(runtime),
-            TaskSubcommand::List(args) => args.execute(runtime),
-            TaskSubcommand::Locks(args) => args.execute(runtime),
-            TaskSubcommand::Show(args) => args.execute(runtime),
-            TaskSubcommand::Lint(args) => args.execute(runtime),
-            TaskSubcommand::Update(args) => args.execute(runtime),
-            TaskSubcommand::Start(args) => args.execute(runtime),
-            TaskSubcommand::Approve(args) => args.execute(runtime),
-            TaskSubcommand::Reject(args) => args.execute(runtime),
-            TaskSubcommand::Archive(args) => args.execute(runtime),
-            TaskSubcommand::Unarchive(args) => args.execute(runtime),
-            TaskSubcommand::Delete(args) => args.execute(runtime),
-            TaskSubcommand::Search(args) => args.execute(runtime),
-            TaskSubcommand::Templates(cmd) => cmd.execute(runtime),
-            TaskSubcommand::ReviewThread(cmd) => cmd.execute(runtime),
-            TaskSubcommand::PruneContext(args) => args.execute(runtime),
-        }
     }
 }
