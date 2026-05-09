@@ -19,6 +19,7 @@ Project instructions for agents working on Orbit.
 
 - Build: `make build`
 - Fmt:   `make fmt`
+- CI:    `make ci`
 
 All must pass before a task moves to `review`.
 
