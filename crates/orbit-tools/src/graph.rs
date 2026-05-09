@@ -243,6 +243,12 @@ pub(crate) fn node_context_payload(
         }
         GraphNodeRef::File(file) => {
             let obj = value.as_object_mut().expect("node context payload object");
+            if !file.source.is_empty() {
+                obj.insert("source".to_string(), json!(file.source));
+            }
+            if let Some(source_blob_hash) = file.source_blob_hash.as_ref() {
+                obj.insert("source_blob_hash".to_string(), json!(source_blob_hash));
+            }
             if !file.imports.is_empty() {
                 obj.insert("imports".to_string(), json!(file.imports));
             }

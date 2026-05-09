@@ -17,10 +17,10 @@ const GRAPH_REF: &str = "main";
 #[test]
 fn search_prefers_code_symbols_and_hides_non_code_by_default() {
     let runtime_file = file_node("src/runtime.rs", "rust", Some("rs"), vec![]);
-    let config_file = file_node(
-        "benchmarks/locate-agentruntime.yaml",
-        "yaml",
-        Some("yaml"),
+    let doc_file = file_node(
+        "docs/locate-agentruntime.md",
+        "markdown",
+        Some("md"),
         vec![],
     );
     let runtime_trait = leaf_node(
@@ -29,18 +29,18 @@ fn search_prefers_code_symbols_and_hides_non_code_by_default() {
         LeafKind::Trait,
         "pub trait AgentRuntime {}",
     );
-    let config_key = leaf_node(
-        "benchmarks/locate-agentruntime.yaml",
+    let doc_section = leaf_node(
+        "docs/locate-agentruntime.md",
         "AgentRuntime",
-        LeafKind::ConfigKey,
-        "",
+        LeafKind::Section { depth: 1 },
+        "# AgentRuntime\n\nDocs mention the runtime contract.\n",
     );
     let fixture = write_graph_fixture(graph_with_root(
         vec![
             attach_leaf(runtime_file, &runtime_trait),
-            attach_leaf(config_file, &config_key),
+            attach_leaf(doc_file, &doc_section),
         ],
-        vec![runtime_trait, config_key],
+        vec![runtime_trait, doc_section],
     ));
 
     let response = execute_graph_tool(
@@ -69,9 +69,7 @@ fn search_prefers_code_symbols_and_hides_non_code_by_default() {
         .map(|entry| entry["selector"].as_str().unwrap())
         .collect();
     assert_eq!(selectors[0], "symbol:src/runtime.rs#AgentRuntime:trait");
-    assert!(
-        selectors.contains(&"symbol:benchmarks/locate-agentruntime.yaml#AgentRuntime:config_key")
-    );
+    assert!(selectors.contains(&"symbol:docs/locate-agentruntime.md#AgentRuntime:section"));
 }
 
 #[test]
@@ -139,6 +137,40 @@ fn search_source_regex_selector_format_stays_plain_selectors() {
     );
 
     assert_eq!(response, json!(["file:src/lib.rs"]));
+}
+
+#[test]
+fn search_file_selector_finds_package_json_by_filename() {
+    let mut file = file_node("package.json", "json", Some("json"), vec![]);
+    file.source = "{\"name\":\"orbit\"}\n".to_string();
+    let fixture = write_graph_fixture(graph_with_root(vec![file], Vec::new()));
+
+    let response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.search",
+        json!({"query":"package.json","type":"file","limit":5}),
+    );
+
+    assert_eq!(response["total"], 1);
+    assert_eq!(response["results"][0]["selector"], "file:package.json");
+    assert_eq!(response["results"][0]["kind"], "file");
+}
+
+#[test]
+fn show_file_selector_includes_file_level_source() {
+    let mut file = file_node("package.json", "json", Some("json"), vec![]);
+    file.source = "{\"name\":\"orbit\"}\n".to_string();
+    let fixture = write_graph_fixture(graph_with_root(vec![file], Vec::new()));
+
+    let response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.show",
+        json!({"selector":"file:package.json"}),
+    );
+
+    assert_eq!(response["selector"], "file:package.json");
+    assert_eq!(response["source"], "{\"name\":\"orbit\"}\n");
+    assert!(response["children"].as_array().unwrap().is_empty());
 }
 
 #[test]
