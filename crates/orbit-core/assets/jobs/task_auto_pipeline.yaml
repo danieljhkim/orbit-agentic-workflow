@@ -76,7 +76,7 @@ spec:
         collect: gate_results
 
     - id: require_gate_success
-      when: "{{ steps.validate_bundles.output.bundle_count }} > 0"
+      when: "{{ steps.validate_bundles.output.bundle_count }} != 0"
       target: activity:pipeline_success_guard
       default_input:
         context: task_auto_pipeline gate runs

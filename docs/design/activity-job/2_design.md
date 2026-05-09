@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11)
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
@@ -251,6 +251,8 @@ For `run_command` or any shell-based step, there is no implicit structured outpu
 ### 8.2 `when` and `retry`
 
 `when` is evaluated once, before retry. A skipped step is a successful no-op and does not retry.
+
+After [T20260509-11], the shipped condition grammar remains equality-only (`==` / `!=`, combined with `&&` / `||`); skip-on-empty guards express emptiness as `!= 0` or `!= []` rather than numeric comparisons, preserving `ship-auto` empty-backlog no-op behavior.
 
 The retry wrapper re-runs the whole step body up to `max_attempts`, with exponential or linear backoff. Some errors bypass retry:
 
@@ -526,5 +528,6 @@ Read-only history does not need the same dependencies as live execution. [T20260
 - **[T20260508-8]** — Resolve backend: cli subprocess cwd from workspace context and record it in audit/tracing.
 - **[T20260509-2]** — Split the v2 job executor into responsibility-focused modules without changing runtime behavior.
 - **[T20260509-7]** — Establish focused test coverage for the activity/job DAG executor (linear, retry, parallel, fan-out, loop, pipeline durability) and the macOS sandbox / policy boundary.
+- **[T20260509-11]** — Keep condition guards on equality-only grammar and repair the `ship-auto` empty-backlog guard.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

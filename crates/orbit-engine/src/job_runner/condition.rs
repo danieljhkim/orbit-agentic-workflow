@@ -113,6 +113,32 @@ mod tests {
     }
 
     #[test]
+    fn test_neq_numeric_string_zero() {
+        assert!(!evaluate_expr("0 != 0").unwrap());
+        assert!(evaluate_expr("3 != 0").unwrap());
+    }
+
+    #[test]
+    fn test_rendered_bundle_count_skip_guard() {
+        let mut ctx = TemplateContext::default();
+        ctx.steps.insert(
+            "validate_bundles".to_string(),
+            serde_json::json!({
+                "output": {
+                    "bundle_count": 0
+                }
+            }),
+        );
+
+        let result = evaluate_bool_expr(
+            "{{ steps.validate_bundles.output.bundle_count }} != 0",
+            &ctx,
+        )
+        .unwrap();
+        assert!(!result);
+    }
+
+    #[test]
     fn test_and() {
         assert!(evaluate_expr("a == a && b == b").unwrap());
         assert!(!evaluate_expr("a == a && b == c").unwrap());
