@@ -481,6 +481,148 @@ fn overview_defaults_to_summary_for_broad_scope() {
 }
 
 #[test]
+fn overview_summary_uses_sql_index_without_by_id_graph_read() {
+    let fixture = write_graph_fixture(large_overview_graph(120, 12));
+    let knowledge_dir = fixture.path().join(".orbit/knowledge");
+
+    delete_by_id_index(&knowledge_dir);
+
+    let response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+
+    assert_eq!(response["mode"], "summary");
+    assert_eq!(response["total_files"], 120);
+    assert_eq!(response["total_symbols"], 1440);
+    assert_eq!(response["dir_file_counts"], json!({"src": 120}));
+}
+
+#[test]
+fn overview_summary_falls_back_when_sqlite_index_is_missing_or_stale() {
+    let missing_fixture = write_graph_fixture(large_overview_graph(120, 12));
+    let missing_knowledge_dir = missing_fixture.path().join(".orbit/knowledge");
+    fs::remove_file(missing_knowledge_dir.join("graph/graph_index.sqlite")).unwrap();
+    let fallback_response = execute_graph_tool(
+        missing_fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+
+    let stale_fixture = write_graph_fixture(large_overview_graph(120, 12));
+    let index_path = stale_fixture
+        .path()
+        .join(".orbit/knowledge/graph/graph_index.sqlite");
+    let conn = Connection::open(index_path).unwrap();
+    conn.execute(
+        "UPDATE meta SET value = 'stale-root' WHERE key = 'graph_ref'",
+        [],
+    )
+    .unwrap();
+    let stale_response = execute_graph_tool(
+        stale_fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+
+    assert_eq!(stale_response, fallback_response);
+}
+
+#[test]
+fn overview_summary_sql_path_and_fallback_are_byte_equal_for_large_fixture() {
+    let fixture = write_graph_fixture(large_overview_graph(120, 12));
+    let knowledge_dir = fixture.path().join(".orbit/knowledge");
+
+    let sql_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+    fs::remove_file(knowledge_dir.join("graph/graph_index.sqlite")).unwrap();
+    let fallback_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+
+    assert_eq!(
+        serde_json::to_vec(&sql_response).unwrap(),
+        serde_json::to_vec(&fallback_response).unwrap()
+    );
+}
+
+#[test]
+fn overview_summary_with_prefix_falls_back_and_matches_fallback() {
+    let fixture = write_graph_fixture(large_overview_graph(120, 12));
+    let knowledge_dir = fixture.path().join(".orbit/knowledge");
+
+    let scoped_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"prefix":"src/group_00/","format":"summary"}),
+    );
+    fs::remove_file(knowledge_dir.join("graph/graph_index.sqlite")).unwrap();
+    let fallback_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"prefix":"src/group_00/","format":"summary"}),
+    );
+
+    assert_eq!(scoped_response, fallback_response);
+    assert_eq!(scoped_response["total_files"], 10);
+    assert_eq!(scoped_response["dir_file_counts"], json!({".": 10}));
+}
+
+#[test]
+#[ignore = "manual latency observation for T20260509-72"]
+fn overview_summary_sql_path_microbenchmark_10k_leaf_fixture() {
+    let fixture = write_graph_fixture(large_overview_graph(200, 50));
+    let knowledge_dir = fixture.path().join(".orbit/knowledge");
+
+    let sql_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+    let sql_start = Instant::now();
+    let timed_sql_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+    let sql_elapsed = sql_start.elapsed();
+    assert_eq!(timed_sql_response, sql_response);
+
+    fs::remove_file(knowledge_dir.join("graph/graph_index.sqlite")).unwrap();
+    let fallback_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+    let fallback_start = Instant::now();
+    let timed_fallback_response = execute_graph_tool(
+        fixture.path(),
+        "orbit.graph.overview",
+        json!({"format":"summary"}),
+    );
+    let fallback_elapsed = fallback_start.elapsed();
+    assert_eq!(fallback_response, sql_response);
+    assert_eq!(timed_fallback_response, sql_response);
+
+    let sql_ms = sql_elapsed.as_secs_f64() * 1000.0;
+    let fallback_ms = fallback_elapsed.as_secs_f64() * 1000.0;
+    let speedup = fallback_ms / sql_ms.max(f64::EPSILON);
+    println!(
+        "overview summary 10k leaves: sql={sql_ms:.3}ms fallback={fallback_ms:.3}ms speedup={speedup:.1}x"
+    );
+    assert!(
+        speedup >= 5.0,
+        "expected SQL overview path to be at least 5x faster, got {speedup:.1}x"
+    );
+}
+
+#[test]
 fn refs_partition_code_doc_and_config_hits() {
     let definition = leaf_node(
         "src/runtime.rs",
@@ -986,6 +1128,32 @@ fn write_graph_fixture(graph: CodebaseGraphV1) -> TempDir {
         .unwrap();
 
     repo_root
+}
+
+fn large_overview_graph(file_count: usize, symbols_per_file: usize) -> CodebaseGraphV1 {
+    let mut files = Vec::with_capacity(file_count);
+    let mut leaves = Vec::with_capacity(file_count * symbols_per_file);
+
+    for file_index in 0..file_count {
+        let path = format!("src/group_{:02}/file_{file_index:04}.rs", file_index / 10);
+        let mut file = file_node(&path, "rust", Some("rs"), vec![]);
+
+        for symbol_index in 0..symbols_per_file {
+            let name = format!("symbol_{file_index:04}_{symbol_index:04}");
+            let leaf = leaf_node(
+                &path,
+                &name,
+                LeafKind::Function,
+                &format!("fn {name}() {{}}"),
+            );
+            file = attach_leaf(file, &leaf);
+            leaves.push(leaf);
+        }
+
+        files.push(file);
+    }
+
+    graph_with_root(files, leaves)
 }
 
 fn delete_by_id_index(knowledge_dir: &Path) {

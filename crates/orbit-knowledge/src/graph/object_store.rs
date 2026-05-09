@@ -1107,7 +1107,7 @@ mod tests {
         assert!(indexes.contains(&"idx_node_selector".to_string()));
 
         let meta = sqlite_meta(&conn);
-        assert_eq!(meta.get("schema_version").map(String::as_str), Some("2"));
+        assert_eq!(meta.get("schema_version").map(String::as_str), Some("3"));
         assert_eq!(
             meta.get("graph_ref").map(String::as_str),
             Some(current_ref.root_graph_hash.as_str())
@@ -1128,14 +1128,15 @@ mod tests {
             .expect("count selectors");
         assert_eq!(selector_count, expected_node_count as i64);
 
-        let (name_lower, location_lower, selector): (String, String, String) = conn
+        let (name_lower, language, location_lower, selector): (String, String, String, String) = conn
             .query_row(
-                "SELECT name_lower, location_lower, selector FROM node WHERE id = 'leaf-greet'",
+                "SELECT name_lower, language, location_lower, selector FROM node WHERE id = 'leaf-greet'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("leaf row");
         assert_eq!(name_lower, "greet");
+        assert_eq!(language, "rust");
         assert_eq!(location_lower, "src/lib.rs#greet");
         assert_eq!(selector, "symbol:src/Lib.rs#Greet:function");
 
