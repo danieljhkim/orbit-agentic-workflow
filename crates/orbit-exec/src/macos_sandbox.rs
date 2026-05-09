@@ -777,6 +777,44 @@ mod tests {
     }
 
     #[test]
+    fn compile_emits_explicit_read_deny_for_negated_read_rule() {
+        // Invariant: `denyRead` rules (negated entries in `read`) must
+        // translate to explicit `(deny file-read* ...)` clauses appended
+        // after the broad `(allow file-read*)` so they win under
+        // last-match-wins. This is the kernel-side complement to
+        // `compile_appends_explicit_deny_for_negated_modify_rule`.
+        let mut resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo"]);
+        resolved.read.push("!/Users/test/repo/.env".to_string());
+        let text = compile_with_env(&resolved, EnvOverrides::default());
+        assert!(
+            text.contains("(deny file-read* (subpath \"/Users/test/repo/.env\"))"),
+            "missing deny file-read* clause: {text}"
+        );
+        let allow_pos = text.find("(allow file-read*)").expect("broad read allow");
+        let deny_pos = text
+            .find("(deny file-read* (subpath \"/Users/test/repo/.env\"))")
+            .expect("read deny clause");
+        assert!(
+            allow_pos < deny_pos,
+            "deny file-read* must come after broad allow for last-match-wins: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_uses_regex_for_non_subpath_negated_read_glob() {
+        // Invariant: a `denyRead` rule with a non-trivial glob (e.g.
+        // `!**/secrets/**`) must compile to a regex deny clause, not a
+        // collapsed subpath that would over-match.
+        let mut resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo"]);
+        resolved.read.push("!/Users/test/repo/**/*.env".to_string());
+        let text = compile_with_env(&resolved, EnvOverrides::default());
+        assert!(
+            text.contains("(deny file-read* (regex \"^/Users/test/repo/(?:.*/)?[^/]*\\\\.env$\"))"),
+            "missing regex read deny: {text}"
+        );
+    }
+
+    #[test]
     fn compile_uses_regex_for_non_subpath_negated_modify_glob() {
         let mut resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo"]);
         resolved
@@ -931,6 +969,159 @@ mod tests {
             !blocked_target.exists(),
             "blocked file should not exist: {blocked_target:?}"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn compiled_profile_denies_reads_to_negated_read_path() {
+        // Invariant: an SBPL profile compiled from `read: [base, !secrets]`
+        // must let the kernel block reads of `secrets/...` while still
+        // allowing reads of sibling paths under `base`. This is the
+        // runtime complement to `compile_emits_explicit_read_deny_for_negated_read_rule`.
+        use std::process::Command;
+
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
+        let parent = sandbox_test_parent("read-deny");
+        let _cleanup = ScopeGuard(parent.clone());
+        let dir = tempfile::Builder::new()
+            .prefix("compile-readdeny-")
+            .tempdir_in(&parent)
+            .expect("tempdir in parent");
+        let secrets_dir = dir.path().join("secrets");
+        std::fs::create_dir_all(&secrets_dir).expect("secrets dir");
+        let secret_path = secrets_dir.join("api.key");
+        std::fs::write(&secret_path, b"top-secret").expect("write secret");
+        let public_path = dir.path().join("public.txt");
+        std::fs::write(&public_path, b"public-data").expect("write public");
+
+        let resolved = ResolvedFsProfile {
+            name: "default".to_string(),
+            read: vec![
+                dir.path().display().to_string(),
+                format!("!{}", secrets_dir.display()),
+            ],
+            modify: vec![],
+        };
+        let profile_text = compile_macos_sandbox_profile(&resolved).expect("compile sbpl");
+        let mut profile_file = tempfile::Builder::new()
+            .prefix("orbit-sandbox-test-")
+            .suffix(".sb")
+            .tempfile()
+            .expect("tempfile");
+        use std::io::Write;
+        profile_file
+            .write_all(profile_text.as_bytes())
+            .expect("write profile");
+        profile_file.flush().expect("flush");
+
+        // Allowed read of public_path succeeds.
+        let allow_status = Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/bin/sh")
+            .arg("-c")
+            .arg(format!("cat {}", shell_escape(&public_path)))
+            .status()
+            .expect("run sandbox-exec");
+        assert!(
+            allow_status.success(),
+            "public read should be allowed; status={allow_status:?}"
+        );
+
+        // Denied read of secret_path fails.
+        let deny_status = Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/bin/sh")
+            .arg("-c")
+            .arg(format!("cat {}", shell_escape(&secret_path)))
+            .status()
+            .expect("run sandbox-exec");
+        assert!(
+            !deny_status.success(),
+            "secrets read should be denied by negated read rule; status={deny_status:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn compiled_profile_for_realistic_agent_loop_profile_allows_repo_writes_denies_dotenv() {
+        // Realistic activity profile boundary test (AC #2). Synthesize an
+        // `agent_loop`-style profile: read=[repo], modify=[repo, !repo/.env].
+        // Exercise allow + deny in one process: writing `repo/src/foo.rs`
+        // succeeds; writing `repo/.env` fails. Mirrors how an `agent_loop`
+        // step would be sandboxed at runtime.
+        use std::process::Command;
+
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
+        let parent = sandbox_test_parent("agent-loop-realistic");
+        let _cleanup = ScopeGuard(parent.clone());
+        let repo = tempfile::Builder::new()
+            .prefix("agent-loop-")
+            .tempdir_in(&parent)
+            .expect("repo tempdir");
+        let src_dir = repo.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir");
+
+        let resolved = ResolvedFsProfile {
+            name: "agent_loop".to_string(),
+            read: vec![repo.path().display().to_string()],
+            modify: vec![
+                repo.path().display().to_string(),
+                format!("!{}/.env", repo.path().display()),
+            ],
+        };
+        let profile_text = compile_macos_sandbox_profile(&resolved).expect("compile sbpl");
+        let mut profile_file = tempfile::Builder::new()
+            .prefix("orbit-sandbox-test-")
+            .suffix(".sb")
+            .tempfile()
+            .expect("tempfile");
+        use std::io::Write;
+        profile_file
+            .write_all(profile_text.as_bytes())
+            .expect("write profile");
+        profile_file.flush().expect("flush");
+
+        let source_target = src_dir.join("foo.rs");
+        let env_target = repo.path().join(".env");
+
+        let source_status = Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/bin/sh")
+            .arg("-c")
+            .arg(format!(
+                "echo 'fn main() {{}}' > {}",
+                shell_escape(&source_target)
+            ))
+            .status()
+            .expect("run sandbox-exec");
+        assert!(
+            source_status.success(),
+            "agent_loop must be able to write source files; status={source_status:?}"
+        );
+        assert!(source_target.exists(), "source file not written");
+
+        let env_status = Command::new("sandbox-exec")
+            .arg("-f")
+            .arg(profile_file.path())
+            .arg("/bin/sh")
+            .arg("-c")
+            .arg(format!("echo 'KEY=secret' > {}", shell_escape(&env_target)))
+            .status()
+            .expect("run sandbox-exec");
+        assert!(
+            !env_status.success(),
+            "agent_loop must be blocked from writing .env; status={env_status:?}"
+        );
+        assert!(!env_target.exists(), ".env should not have been written");
     }
 
     #[cfg(target_os = "macos")]
