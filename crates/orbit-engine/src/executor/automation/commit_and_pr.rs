@@ -45,7 +45,7 @@ fn ensure_workspace_path<H: RuntimeHost + ?Sized>(
 
     let repo_root_str = host.repo_root()?;
     let repo_root = Path::new(&repo_root_str);
-    let worktree = super::parallel::resolve_shared_worktree_path(repo_root, run_id)?;
+    let worktree = super::worktree::resolve_shared_worktree_path(repo_root, run_id)?;
 
     let mut patched = input.clone();
     if let Some(obj) = patched.as_object_mut() {

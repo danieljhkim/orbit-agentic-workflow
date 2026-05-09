@@ -18,7 +18,7 @@ pub(super) fn push_batch_changes<H: RuntimeHost + ?Sized>(
         None => {
             let repo_root_str = host.repo_root()?;
             let repo_root = Path::new(&repo_root_str);
-            super::parallel::resolve_shared_worktree_path(repo_root, batch_id)?
+            super::worktree::resolve_shared_worktree_path(repo_root, batch_id)?
         }
     };
 

@@ -42,7 +42,7 @@ pub(super) fn git_merge<H: RuntimeHost + TaskHost + Sync + ?Sized>(
         .and_then(Value::as_str)
         .unwrap_or("fast_forward");
     match strategy {
-        "fast_forward" => super::merge_worktree::merge_batch_worktree_into_base(host, input),
+        "fast_forward" => super::worktree::merge_batch_worktree_into_base(host, input),
         "pr_merge" => merge_batch_pr(host, input),
         other => Err(OrbitError::InvalidInput(format!(
             "git_merge: unknown strategy '{other}'; expected fast_forward or pr_merge"
@@ -324,7 +324,7 @@ fn resolve_batch_workspace_path<H: RuntimeHost + ?Sized>(
         Some(path) => canonicalize_existing_dir(&path, "workspace_path"),
         None => {
             let repo_root = host.repo_root()?;
-            super::parallel::resolve_shared_worktree_path(Path::new(&repo_root), batch_id)
+            super::worktree::resolve_shared_worktree_path(Path::new(&repo_root), batch_id)
         }
     }
 }

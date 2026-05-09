@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use orbit_common::types::OrbitError;
 use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process};
@@ -203,62 +203,6 @@ fn resolve_remote_base_ref(repo_root: &Path, branch: &str) -> Result<String, Orb
     Err(OrbitError::Execution(format!(
         "unable to resolve fetched remote base ref '{remote_base}' for task worktree creation"
     )))
-}
-
-pub(super) fn sanitize_worktree_token(value: &str) -> Result<String, OrbitError> {
-    let sanitized: String = value
-        .trim()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let trimmed = sanitized
-        .trim_matches(|c: char| c == '-' || c == '.')
-        .to_string();
-    if trimmed.is_empty() {
-        return Err(OrbitError::InvalidInput(format!(
-            "run_id '{value}' sanitizes to an empty string"
-        )));
-    }
-    Ok(trimmed)
-}
-
-pub(super) fn resolve_worktree_path_from_prefix(
-    repo_root: &Path,
-    prefix: &str,
-    run_id: &str,
-) -> Result<PathBuf, OrbitError> {
-    let sanitized = sanitize_worktree_token(run_id)?;
-    let dir_name = format!("{prefix}-{sanitized}");
-    match std::env::var("ORBIT_WORKTREE_ROOT")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        Some(root) => {
-            let repo_name = repo_root
-                .file_name()
-                .and_then(|value| value.to_str())
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| {
-                    OrbitError::Execution(format!(
-                        "cannot derive repository name from '{}'",
-                        repo_root.display()
-                    ))
-                })?;
-            Ok(PathBuf::from(root).join(repo_name).join(dir_name))
-        }
-        None => Ok(repo_root
-            .join(".orbit")
-            .join("state")
-            .join("worktrees")
-            .join(dir_name)),
-    }
 }
 
 #[cfg(test)]

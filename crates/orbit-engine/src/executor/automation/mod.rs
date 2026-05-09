@@ -1,11 +1,9 @@
 mod check_review;
-mod cleanup_worktree;
 mod commit;
 mod dispatch_batch;
 mod freshness;
 pub(crate) mod git;
 mod input;
-mod merge_worktree;
 mod parallel;
 mod planning_duel;
 mod pr;
@@ -16,9 +14,9 @@ pub(crate) mod review;
 mod run_command;
 mod select_duel_roles;
 mod select_duel_task;
-mod setup_worktree;
 mod sync_review;
 mod task;
+mod worktree;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -184,8 +182,8 @@ pub fn execute_action<
         GIT_PUSH_ACTION => push::push_batch_changes(host, input),
         GIT_PULL_ACTION => pull::pull_batch_changes(host, input),
         GIT_MERGE_ACTION => pr::git_merge(host, input),
-        WORKTREE_SETUP_ACTION => setup_worktree::setup_worktree(host, input),
-        WORKTREE_CLEANUP_ACTION => cleanup_worktree::cleanup_worktree(host, input),
+        WORKTREE_SETUP_ACTION => worktree::setup_worktree(host, input),
+        WORKTREE_CLEANUP_ACTION => worktree::cleanup_worktree(host, input),
         PR_OPEN_ACTION => pr::pr_open(host, input),
         PR_SYNC_REVIEWS_ACTION => sync_review::sync_batch_review_to_github(host, input),
         CHECK_TASK_VALUE_ACTION => check_review::check_task_value(host, input),

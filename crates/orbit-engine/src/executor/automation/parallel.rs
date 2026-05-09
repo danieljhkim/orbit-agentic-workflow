@@ -1,5 +1,5 @@
 use std::collections::{HashSet, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -7,9 +7,8 @@ use orbit_common::types::{JobRunState, OrbitError, Task, TaskStatus};
 use orbit_common::utility::selector::overlaps;
 use serde_json::{Value, json};
 
-use super::git::{
-    base_sync_mode_from_input, git_output, git_success, resolve_worktree_start_point,
-};
+use super::git::{base_sync_mode_from_input, resolve_worktree_start_point};
+use super::worktree::{ensure_shared_worktree, resolve_shared_worktree_path};
 use crate::context::{
     RuntimeHost, TaskAutomationUpdate, TaskHost, blocked_workflow_failure_update,
 };
@@ -17,52 +16,6 @@ use crate::context::{
 const DEFAULT_PARALLEL_BASE: &str = "main";
 const DEFAULT_PARALLELISM: usize = 4;
 const PARALLEL_WORKER_JOB_ID: &str = "job_parallel_task_worker";
-const SHARED_WORKTREE_NAME_PREFIX: &str = "parallel-batch";
-const SHARED_WORKTREE_BRANCH_PREFIX: &str = "orbit/parallel-batch";
-
-/// Sanitize a run_id into a token safe to use as a git branch component and
-/// filesystem directory segment. Keeps `[A-Za-z0-9._-]`, replaces everything
-/// else with `-`, and trims leading/trailing separators.
-fn sanitize_run_id_token(run_id: &str) -> Result<String, OrbitError> {
-    let sanitized: String = run_id
-        .trim()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let trimmed = sanitized
-        .trim_matches(|c: char| c == '-' || c == '.')
-        .to_string();
-    if trimmed.is_empty() {
-        return Err(OrbitError::InvalidInput(format!(
-            "cannot derive shared worktree token from run_id '{run_id}'"
-        )));
-    }
-    Ok(trimmed)
-}
-
-fn shared_worktree_dir_name(run_id: &str) -> Result<String, OrbitError> {
-    Ok(format!(
-        "{SHARED_WORKTREE_NAME_PREFIX}-{}",
-        sanitize_run_id_token(run_id)?
-    ))
-}
-
-fn shared_worktree_branch_name(run_id: &str) -> Result<String, OrbitError> {
-    // Use a dash separator (not a slash) so the branch does not nest under the
-    // legacy `orbit/parallel-batch` ref name. Git refuses to create a child
-    // ref like `orbit/parallel-batch/jrun-1` if a leaf ref `orbit/parallel-batch`
-    // already exists, which is exactly the collision this task is fixing.
-    Ok(format!(
-        "{SHARED_WORKTREE_BRANCH_PREFIX}-{}",
-        sanitize_run_id_token(run_id)?
-    ))
-}
 
 /// Extract the `run_id` from an activity input value, returning a trimmed
 /// non-empty string. Used by downstream batch activities that need to resolve
@@ -314,81 +267,6 @@ pub(super) fn run_parallel_task_pipeline<H: RuntimeHost + TaskHost + Sync + ?Siz
         "completed_task_ids": completed_task_ids,
         "failures": failures,
     }))
-}
-
-pub(super) fn resolve_shared_worktree_path(
-    repo_root: &Path,
-    run_id: &str,
-) -> Result<PathBuf, OrbitError> {
-    let dir_name = shared_worktree_dir_name(run_id)?;
-    match std::env::var("ORBIT_WORKTREE_ROOT")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        Some(value) => {
-            let repo_name = repo_root
-                .file_name()
-                .and_then(|value| value.to_str())
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| {
-                    OrbitError::Execution(format!(
-                        "cannot derive repository name from '{}'",
-                        repo_root.display()
-                    ))
-                })?;
-            Ok(PathBuf::from(value).join(repo_name).join(dir_name))
-        }
-        None => Ok(repo_root
-            .join(".orbit")
-            .join("state")
-            .join("worktrees")
-            .join(dir_name)),
-    }
-}
-
-fn ensure_shared_worktree(
-    repo_root: &Path,
-    worktree_path: &Path,
-    start_point: &str,
-    run_id: &str,
-) -> Result<(), OrbitError> {
-    let worktree_branch = shared_worktree_branch_name(run_id)?;
-    let worktree_branch = worktree_branch.as_str();
-
-    if worktree_path.exists() {
-        // Worktree already exists — reset it to the base branch tip so it's fresh.
-        let target = git_output(repo_root, &["rev-parse", start_point])?;
-        git_success(
-            worktree_path,
-            &["checkout", "-B", worktree_branch, target.trim()],
-        )?;
-        git_success(worktree_path, &["clean", "-fd"])?;
-        return Ok(());
-    }
-
-    if let Some(parent) = worktree_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            OrbitError::Execution(format!(
-                "failed to create shared worktree directory '{}': {error}",
-                parent.display()
-            ))
-        })?;
-    }
-
-    // Create the worktree on its own branch, based off the base branch.
-    // This avoids "branch already checked out" errors.
-    git_success(
-        repo_root,
-        &[
-            "worktree",
-            "add",
-            "-b",
-            worktree_branch,
-            &worktree_path.to_string_lossy(),
-            start_point,
-        ],
-    )
 }
 
 impl From<Task> for PendingTask {

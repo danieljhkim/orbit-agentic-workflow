@@ -6,11 +6,9 @@ use sha2::{Digest, Sha256};
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
-use super::git::{
-    base_sync_mode_from_input, git_success, resolve_worktree_path_from_prefix,
-    resolve_worktree_start_point,
-};
-use super::input::{input_string_field, required_input_string};
+use super::super::git::{base_sync_mode_from_input, git_success, resolve_worktree_start_point};
+use super::super::input::{input_string_field, required_input_string};
+use super::resolve_worktree_path_from_prefix;
 
 const DEFAULT_BASE: &str = "main";
 const DEFAULT_BRANCH_PREFIX: &str = "orbit";
@@ -21,7 +19,7 @@ const DEFAULT_BRANCH_PREFIX: &str = "orbit";
 ///
 /// Generic automation — not tied to duel or any specific workflow. Any
 /// pipeline can reuse this by passing a `branch_prefix`.
-pub(super) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
+pub(in crate::executor::automation) fn setup_worktree<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
@@ -104,7 +102,7 @@ fn ensure_worktree(
     branch_name: &str,
 ) -> Result<(), OrbitError> {
     if worktree_path.exists() {
-        let target = super::git::git_output(repo_root, &["rev-parse", start_point])?;
+        let target = super::super::git::git_output(repo_root, &["rev-parse", start_point])?;
         git_success(
             worktree_path,
             &["checkout", "-B", branch_name, target.trim()],
