@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use orbit_common::types::{
     EXECUTOR_RESOURCE_SCHEMA_VERSION, ExecutorDef, ExecutorResource, ExecutorResourceSpec,
-    OrbitError, ResourceKind, ResourceMetadata,
+    OrbitError, ResourceKind, ResourceMetadata, validate_resource_name,
 };
 
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
@@ -19,6 +19,11 @@ impl ExecutorDefFileStore {
 
     fn executors_dir(&self) -> PathBuf {
         self.root.clone()
+    }
+
+    fn executor_path(&self, name: &str) -> Result<PathBuf, OrbitError> {
+        validate_resource_name(name)?;
+        Ok(self.executors_dir().join(format!("{name}.yaml")))
     }
 
     pub fn list_executor_defs(&self) -> Result<Vec<ExecutorDef>, OrbitError> {
@@ -43,7 +48,7 @@ impl ExecutorDefFileStore {
     }
 
     pub fn get_executor_def(&self, name: &str) -> Result<Option<ExecutorDef>, OrbitError> {
-        let path = self.executors_dir().join(format!("{name}.yaml"));
+        let path = self.executor_path(name)?;
         if !path.exists() {
             return Ok(None);
         }
@@ -53,9 +58,9 @@ impl ExecutorDefFileStore {
     }
 
     pub fn upsert_executor_def(&self, def: &ExecutorDef) -> Result<(), OrbitError> {
+        let path = self.executor_path(&def.name)?;
         let dir = self.executors_dir();
         fs::create_dir_all(&dir).map_err(|e| OrbitError::Io(e.to_string()))?;
-        let path = dir.join(format!("{}.yaml", def.name));
         let content = serde_yaml::to_string(&ExecutorResource {
             schema_version: EXECUTOR_RESOURCE_SCHEMA_VERSION,
             kind: ResourceKind::Executor,
@@ -94,6 +99,7 @@ fn parse_executor_def(content: &str, label: String) -> Result<ExecutorDef, Orbit
             label, doc.schema_version
         )));
     }
+    doc.metadata.validate_name()?;
     Ok(ExecutorDef {
         name: doc.metadata.name,
         executor_type: doc.spec.executor_type,
@@ -151,6 +157,7 @@ mod tests {
             .get_executor_def("claude")
             .expect("get")
             .expect("present");
+        assert_eq!(loaded.name, "claude");
         assert_eq!(loaded.sandbox, Some(ExecutorSandboxKind::MacosSandboxExec));
         assert!(loaded.allow_fallback);
     }
@@ -187,5 +194,41 @@ mod tests {
             .expect("present");
         assert_eq!(loaded.sandbox, Some(ExecutorSandboxKind::MacosSandboxExec));
         assert!(loaded.allow_fallback);
+    }
+
+    #[test]
+    fn rejects_traversal_executor_name_without_external_write() {
+        let dir = tempdir().expect("tempdir");
+        let store = ExecutorDefFileStore::new(dir.path().join("executors"));
+
+        let err = store
+            .upsert_executor_def(&baseline_def("../x"))
+            .expect_err("traversal name must fail");
+        assert!(matches!(err, OrbitError::InvalidInput(_)));
+        assert!(!dir.path().join("x.yaml").exists());
+
+        let err = store
+            .get_executor_def("../x")
+            .expect_err("traversal lookup must fail");
+        assert!(matches!(err, OrbitError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn rejects_traversal_executor_metadata_name_when_loading() {
+        let dir = tempdir().expect("tempdir");
+        let executors_dir = dir.path().join("executors");
+        std::fs::create_dir_all(&executors_dir).expect("mkdir");
+        std::fs::write(
+            executors_dir.join("bad.yaml"),
+            "schemaVersion: 2\nkind: Executor\nmetadata:\n  name: ../x\nspec:\n  executor_type: direct_agent\n",
+        )
+        .expect("seed");
+
+        let store = ExecutorDefFileStore::new(executors_dir);
+        let err = store
+            .list_executor_defs()
+            .expect_err("traversal metadata name must fail");
+        assert!(matches!(err, OrbitError::InvalidInput(_)));
+        assert!(!dir.path().join("x.yaml").exists());
     }
 }

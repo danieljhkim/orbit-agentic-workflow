@@ -57,6 +57,54 @@ impl ResourceMetadata {
             annotations: HashMap::new(),
         }
     }
+
+    pub fn validate_name(&self) -> Result<(), OrbitError> {
+        validate_resource_name(&self.name)
+    }
+}
+
+pub fn validate_resource_name(name: &str) -> Result<(), OrbitError> {
+    if name.is_empty() {
+        return invalid_resource_name(name, "must not be empty");
+    }
+
+    if name.trim() != name {
+        return invalid_resource_name(name, "must not have leading or trailing whitespace");
+    }
+
+    if name.starts_with('.') {
+        return invalid_resource_name(name, "must not start with `.`");
+    }
+
+    if name.contains("..") {
+        return invalid_resource_name(name, "must not contain `..`");
+    }
+
+    if name
+        .chars()
+        .any(|ch| matches!(ch, '/' | '\\' | ':' | '\0') || ch.is_control())
+    {
+        return invalid_resource_name(
+            name,
+            "must not contain separators, drive prefixes, or control characters",
+        );
+    }
+
+    if std::path::Path::new(name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        != Some(name)
+    {
+        return invalid_resource_name(name, "must be a single file stem");
+    }
+
+    Ok(())
+}
+
+fn invalid_resource_name(name: &str, reason: &str) -> Result<(), OrbitError> {
+    Err(OrbitError::InvalidInput(format!(
+        "invalid resource name {name:?}: {reason}"
+    )))
 }
 
 /// Header-only parse for routing `orbit apply` to the right store.
@@ -173,6 +221,38 @@ pub fn parse_policy_resource(yaml: &str, label: &str) -> Result<PolicyResource, 
         )));
     }
 
+    header.metadata.validate_name()?;
+
     serde_yaml::from_str(yaml)
         .map_err(|error| OrbitError::InvalidInput(format!("failed to parse {label}: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_resource_name;
+
+    #[test]
+    fn resource_name_accepts_existing_seeded_name_shapes() {
+        for name in [
+            "default",
+            "local-shell",
+            "task_auto_pipeline",
+            "agent_loop_cli_reference",
+        ] {
+            validate_resource_name(name).expect(name);
+        }
+    }
+
+    #[test]
+    fn resource_name_rejects_path_like_names() {
+        for name in [
+            "", " ", ".hidden", ".", "..", "../x", "x/../y", "x/y", "x\\y", "C:foo", "foo:bar",
+            "foo.yaml", "foo\nbar",
+        ] {
+            assert!(
+                validate_resource_name(name).is_err(),
+                "expected invalid resource name: {name:?}"
+            );
+        }
+    }
 }
