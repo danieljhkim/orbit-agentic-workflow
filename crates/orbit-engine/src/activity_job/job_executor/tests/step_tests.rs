@@ -19,6 +19,36 @@ fn linear_step_success_propagates_output_to_pipeline() {
 }
 
 #[test]
+fn when_false_literal_skips_step_without_failing_job() {
+    let host = ScriptedHost::new([("disabled", vec![Action::Ok(json!({"ran": true}))])]);
+    let mut skipped = target_step("safety", "disabled");
+    skipped.when = Some("false".to_string());
+    let job = job_with_steps(vec![skipped]);
+    let writer = std::sync::Arc::new(test_writer("run-when-false-literal"));
+
+    let outcome = execute_job(
+        &job,
+        Value::Null,
+        "run-when-false-literal",
+        writer.clone(),
+        &host,
+    )
+    .expect("when:false should skip cleanly");
+
+    assert!(outcome.success);
+    assert_eq!(host.call_count("disabled"), 0, "skipped step must not run");
+    let events = writer.events_snapshot().expect("audit");
+    assert!(
+        events.iter().any(|event| matches!(
+            &event.kind,
+            V2AuditEventKind::StepSkipped { step_id, reason }
+                if step_id == "safety" && reason == "when:false => false"
+        )),
+        "expected StepSkipped audit event for when:false"
+    );
+}
+
+#[test]
 fn step_failure_short_circuits_remaining_steps() {
     // Invariant: a failed step terminates the linear loop in `execute_job`
     // (mod.rs:131-148). Without retry/recovery, a retryable
