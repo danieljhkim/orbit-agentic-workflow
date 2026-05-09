@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11)
+**Last updated:** 2026-05-09 (T20260427-34, T20260427-36, T20260427-38, T20260427-40, T20260508-3, T20260508-8, T20260509-2, T20260509-7, T20260509-9, T20260509-11, T20260509-40)
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 
@@ -499,6 +499,19 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - Seeded jobs can still model empty collections and counts, but authored guards must avoid ordering operators unless a future task intentionally extends the grammar.
 - Cost: authors cannot write natural numeric comparisons in guards today; they must encode supported equality checks or add a deliberate grammar extension with tests and docs.
 
+## ADR-050 — CLI timeout supervision owns the subprocess group
+
+**Status:** Accepted · 2026-05 · [T20260509-40]
+
+**Context.** `backend: cli` captures stdout/stderr through reader threads while supervising a wall-clock timeout. Killing only the immediate child lets shell-spawned grandchildren survive, keep inherited pipe write ends open, and either hang reader joins or leak background work after a timed-out activity.
+
+**Decision.** Spawn bare Unix CLI subprocesses as process-group leaders, matching the existing macOS sandbox wrapper boundary. On timeout, signal the whole child process group with `SIGKILL`, wait for the main child, and bound timeout-path reader joins; after a normal child exit, clean up the same process group before joining readers so orphaned pipe holders do not block capture.
+
+**Consequences.**
+- CLI subprocess supervision has one Unix tree boundary for bare and macOS-sandboxed paths.
+- Output capture still preserves partial stdout/stderr bytes already drained before timeout, even if a reader thread does not finish within the bounded join window.
+- Cost: Unix process groups do not cover descendants that deliberately create a new session/process group, and non-Unix platforms still use the immediate-child fallback until an equivalent tree-kill primitive is added.
+
 ---
 
 ## Task References
@@ -564,5 +577,6 @@ The plumbing adds a single optional field to `TaskAutomationUpdate` (`context_fi
 - **[T20260509-7]** — Establish focused test coverage for the activity/job DAG executor (linear, retry, parallel, fan-out, loop, pipeline durability) and the macOS sandbox / policy boundary.
 - **[T20260509-9]** — Auto-populate `task.context_files` from the winning planning-duel plan after resolution.
 - **[T20260509-11]** — Keep condition guards on equality-only grammar and repair the `ship-auto` empty-backlog guard.
+- **[T20260509-40]** — Run CLI subprocesses in killable process groups and bound timeout-path output reader joins.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
