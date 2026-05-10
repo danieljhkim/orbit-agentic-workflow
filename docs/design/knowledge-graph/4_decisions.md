@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-10 (post-[T20260509-64], [T20260510-7])
 
 ADR-style log of non-obvious knowledge-graph decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -104,7 +104,7 @@ The [T20260506-19] maintenance pass keeps every remaining ADR tied to exactly on
 
 ## ADR-006 — Hunk-to-symbol attribution by line-range overlap only
 
-**Status:** Accepted · 2026-04 · [T20260421-0528]
+**Status:** Superseded by ADR-029 · 2026-04 · [T20260421-0528]
 
 **Context.** `git log --follow` chases renames through history but at non-trivial per-hop cost. Hunk coordinates have to be re-mapped after every rename hop. At commit volumes typical of this repo, follow mode compounds into minutes of extra walker time. This decision described the now-removed attribution walker.
 
@@ -181,16 +181,17 @@ The [T20260506-19] maintenance pass keeps every remaining ADR tied to exactly on
 
 ## ADR-011 — Non-code extraction via `FileKind`-dispatched extractors
 
-**Status:** Accepted · 2026-04 · [T20260422-1540]
+**Status:** Accepted · 2026-04 · [T20260422-1540] (config/table extraction collapsed by ADR-038 / [T20260509-64])
 
 **Context.** Tree-sitter extractors covered five source-code languages; every other file landed in the graph as a leafless `FileNode`. Design docs under `docs/design/` and scoreboard/config files under `.orbit/` were load-bearing context but invisible to graph queries at sub-file granularity. The `LanguageExtractor` trait was the natural extension point — a pluggable design without plugins. Implementing a parallel system for non-code files would duplicate the registry and the pipeline dispatch.
 
-**Decision.** Rename `LanguageExtractor` → `FileExtractor` and switch its discriminator from `Language` to a new `FileKind { Code(Language), Doc(DocFormat), Config(ConfigFormat), Table(TableFormat), Unknown }`. Add exactly three `LeafKind` variants: `Section { depth: u8 }` (markdown heading), `ConfigKey` (top-level key in YAML/JSON/TOML), `Column` (header cell in CSV/TSV). Ship shallow extractors only: ATX headings (not frontmatter, not fenced blocks), top-level map entries (not nested paths), first-row cells (not row-level nodes). 1 MiB size cap on tabular extraction short-circuits before parsing. Extraction is the only pipeline path that changes — `FileKind::from_extension` replaces `Language::from_extension` at build time.
+**Decision.** Rename `LanguageExtractor` → `FileExtractor` and switch its discriminator from `Language` to a new `FileKind { Code(Language), Doc(DocFormat), Config(ConfigFormat), Table(TableFormat), Unknown }`. Add three `LeafKind` variants: `Section { depth: u8 }` (markdown heading), `ConfigKey` (top-level key in YAML/JSON/TOML), `Column` (header cell in CSV/TSV). Ship shallow extractors only: ATX headings (not frontmatter, not fenced blocks), top-level map entries (not nested paths), first-row cells (not row-level nodes). 1 MiB size cap on tabular extraction short-circuits before parsing. Extraction is the only pipeline path that changes — `FileKind::from_extension` replaces `Language::from_extension` at build time.
+
+**Amendment ([T20260509-64]).** ADR-038 collapses the config and table extractors to file-as-leaf: YAML/JSON/TOML/CSV/TSV files keep `FileKind::Config(_)` / `FileKind::Table(_)` classification but emit zero leaves. The `ConfigKey` and `Column` `LeafKind` variants remain in the enum for forward compatibility but are no longer produced. Markdown `Section { depth }` extraction is unchanged.
 
 **Consequences.**
-- Markdown section anchors, top-level config keys, and CSV columns are now first-class graph nodes.
+- Markdown section anchors are first-class graph nodes; config keys and table columns are not (per ADR-038).
 - Stored index-file `kind` field switches from direct enum serialization to `LeafKind::to_string()` — required because `Section { depth }` serializes as `{"section": {"depth": 1}}` and the index's `kind: Option<String>` consumer expects bare strings. The full depth payload lives in the object body.
-- Per-format map order for config keys is not part of the extractor contract — TOML is alphabetical, YAML/JSON are insertion-order. Consumers that care about order must sort.
 - Cost: `LeafKind` JSON shape becomes heterogeneous (some variants are bare strings, `Section { depth }` is an externally-tagged object). Acceptable because no consumer pins the full LeafKind JSON string; `#[non_exhaustive]` not yet set on the enum — future LeafKind additions remain a breaking change for downstream exhaustive matches.
 
 ---
@@ -576,6 +577,23 @@ These entries were formerly ADR headings, but they are plain instances of ADR-00
 
 ---
 
+## ADR-038 — Collapse YAML/JSON/TOML/CSV/TSV extraction to file-as-leaf
+
+**Status:** Accepted · 2026-05 · [T20260509-64]
+**Author:** claude-opus-4-7
+
+**Context.** ADR-011 shipped `ConfigKey` and `Column` extractors that emitted one leaf per top-level YAML/JSON/TOML key and one leaf per CSV/TSV header column. Those leaves had `source: ""` because the body was the file's source rather than a sub-span. Downstream tools special-cased empty-source leaves; search namespaces filled with `name`, `version`, `dependencies`, etc. from every config file in the repo; and the unit agents actually navigate to is the file (`package.json`, `Cargo.toml`, `tsconfig.json`), not the key. The same change also lands before the `benchmarks/graph-latency/` Phase 0 baseline freeze, so v1 numbers measure the leaf model we are keeping.
+
+**Decision.** `ConfigExtractor` (YAML/JSON/TOML) and `TableExtractor` (CSV/TSV) return zero leaves. `FileKind::Config(_)` / `FileKind::Table(_)` classification stays so file-level filtering keeps working, and the file node still carries source so `orbit.graph.search` substring queries and `orbit.graph.show` against config selectors return file-level content. Markdown extraction (`Section { depth }`) is explicitly out of scope and unchanged — section bodies have real content and a forward path to per-section embeddings.
+
+**Consequences.**
+- Removes the `source: ""` corner case from downstream tools.
+- Cuts leaf count for config-heavy repos (tsconfig matrices, helm charts, monorepo CI manifests) without losing capability — file-level search and `show` continue to work.
+- `LeafKind::ConfigKey` and `LeafKind::Column` remain in the enum but are unreachable from extraction; they are not removed because callers may still pattern-match on them and the enum is not `#[non_exhaustive]`.
+- Cost: agents that navigate by config key (`name`, `version`, `dependencies`) lose sub-file granularity for those formats and must use file-level selectors plus inspection. There is no migration for old graphs that already persisted ConfigKey/Column leaves; those leaves disappear on the next rebuild.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -622,11 +640,17 @@ Tasks cited by ADRs above:
 - **[T20260506-19]** — Normalize knowledge-graph ADR Cost lines and demote folded language instances to coverage records.
 - **[T20260509-33]** — Skip symlinked directory entries during scanner traversal and `.orbitignore` discovery.
 - **[T20260509-34]** — Use exact git checkout identity instead of commit timestamps for clean graph freshness.
+- **[T20260509-64]** — Collapse YAML/JSON/TOML/CSV/TSV extraction to file-as-leaf (ADR-038).
 - **[T20260509-65]** — Add `GraphReadOptions` so broad graph reads skip file/leaf source hydration unless a tool opts in.
 - **[T20260509-67]** — Bound default-ranking graph search candidate retention with named headroom and hard cap constants.
+- **[T20260509-68]** — Replace `overview.top_files` Vec-then-sort with a bounded min-heap top-K.
 - **[T20260509-70]** — Build the write-only SQLite secondary index sidecar during graph persistence.
+- **[T20260509-71]** — Add the read-side `GraphIndexReader` facade with version check and graceful fallback.
 - **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
 - **[T20260509-73]** — Wire exact-name and path-prefix graph search through the SQLite sidecar.
+- **[T20260509-74]** — Wire `orbit.graph.show` selector resolution through the SQLite unique-selector index.
+- **[T20260510-1]** — Restore SQL/fallback equivalence for `orbit.graph.search` (substring on either column).
+- **[T20260510-2]** — Restore SQL/fallback equivalence for `orbit.graph.show` `children` (forward leaf pointers).
 - **[T20260510-5]** — Extract `orbit_knowledge::commands::*` as the canonical graph command surface and thin graph tools to dispatch/envelope shaping.
 - **[T20260510-7]** — Make leaf IDs unique across extractors so SQL fast paths preserve every symbol.
 

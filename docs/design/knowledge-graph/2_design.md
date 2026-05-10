@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-10 (post-[T20260509-64], [T20260510-7])
 
 This document specifies the current knowledge graph: storage, build pipeline, query services, Orbit integration, locking, and limitations. The [T20260430-22] cleanup removes duplicated rationale already covered by [1_overview.md](./1_overview.md), [3_vision.md](./3_vision.md), and ADRs.
 
@@ -47,12 +47,12 @@ scan → hash → detect_changes → build_dirs → build_files → build_leaves
 | `detect_changes` | Added / modified / unchanged path set | Incremental leaf extraction uses this set to decide what can reuse the prior graph |
 | `build_graph_dirs` | `DirNode` entries with parent/child wiring | Deterministic; root dir id derived from `.` |
 | `build_graph_files` | `FileNode` entries linked to parent dir | Language detected from extension |
-| `build_graph_leaves` | `LeafNode` entries via file-kind-dispatched extractor | Code via tree-sitter (C, C#, Rust, Python, Go, Java, JavaScript, Kotlin, TypeScript, TSX, Ruby); markdown sections, YAML/JSON/TOML top-level keys, and CSV/TSV header columns via shallow extractors added in [T20260422-1540]. TypeScript/TSX coverage was added in [T20260505-11]; C# coverage was added in [T20260505-13]; C `.c`/`.h` coverage was added in [T20260505-16]. Per-file read/extract work runs in parallel, then graph mutation is merged on the main thread in file order ([T20260426-0139]). Incremental builds reuse unchanged file/leaf snapshots from the same branch ref when hashes match ([T20260426-0140]) |
+| `build_graph_leaves` | `LeafNode` entries via file-kind-dispatched extractor | Code via tree-sitter (C, C#, Rust, Python, Go, Java, JavaScript, Kotlin, TypeScript, TSX, Ruby); markdown ATX headings via the doc extractor added in [T20260422-1540]. YAML/JSON/TOML/CSV/TSV files are still classified via `FileKind::Config(_)` / `FileKind::Table(_)` but their extractors return zero leaves — the file node carries source for substring search and `show` ([T20260509-64]). Code coverage extensions: TypeScript/TSX [T20260505-11]; C# [T20260505-13]; C [T20260505-16]; Kotlin [T20260505-14]; Ruby [T20260505-15]. Per-file read/extract work runs in parallel, then graph mutation is merged on the main thread in file order ([T20260426-0139]). Incremental builds reuse unchanged file/leaf snapshots from the same branch ref when hashes match ([T20260426-0140]). Every extractor finalizes per-file unique leaf IDs through the [specs/leaf-id-uniqueness.md](./specs/leaf-id-uniqueness.md) scheme ([T20260510-7]) |
 | `persist_graph` | Content-addressed objects, blobs, JSON index, SQLite secondary index | Atomic file writes for immutable JSON artifacts; SQLite sidecar rebuilt in one WAL transaction with `meta.graph_ref` written last ([T20260509-70]) |
 | `write_manifest` | `manifest.json` | Timestamp + clean checkout identity + graph summary |
 | `save_hash_cache` | `hashes.json` | Baseline for the next incremental `detect_changes` pass |
 
-Extraction dispatches on `FileKind`. Each `FileExtractor` emits `ExtractedLeaf` records with name, kind, span, hash, and child names. Code uses tree-sitter; shallow doc/config/table extractors handle markdown ATX headings, top-level YAML/JSON/TOML keys, and CSV/TSV header cells with a 1 MiB cap ([T20260422-1540]). Leaf IDs must be unique per file after extraction finalization: no two leaves for the same path may share `(qualified_name, kind)`, because the node ID is derived from `symbol:{path}#{qualified_name}:{kind}`. The contract and selector-breaking implications are specified in [specs/leaf-id-uniqueness.md](./specs/leaf-id-uniqueness.md) ([T20260510-7]).
+Extraction dispatches on `FileKind`. Each `FileExtractor` emits `ExtractedLeaf` records with name, kind, span, hash, and child names. Code uses tree-sitter; the markdown extractor emits ATX heading sections only ([T20260422-1540]). Config (YAML/JSON/TOML) and table (CSV/TSV) extractors classify the file but emit zero leaves; the file node still carries source so substring search and `show` resolve to the file ([T20260509-64]). Leaf IDs must be unique per file after extraction finalization: no two leaves for the same path may share `(qualified_name, kind)`, because the node ID is derived from `symbol:{path}#{qualified_name}:{kind}`. The contract and selector-breaking implications are specified in [specs/leaf-id-uniqueness.md](./specs/leaf-id-uniqueness.md) ([T20260510-7]).
 
 Hashing and leaf extraction are parallelized only across independent file work. `compute_hashes` collects `(path, sha256)` worker results before replacing `ctx.new_hashes`; `build_graph_leaves` workers return either a reusable prior snapshot or freshly extracted file output, and the main thread applies those outputs sorted by original `FileNode` index. That merge discipline keeps `ctx.graph.leaves` and each `FileNode.leaf_children` byte-stable relative to the old sequential order while avoiding locks around `PipelineContext` ([T20260426-0139]). Individual file read failures remain non-fatal skips in both phases.
 
@@ -127,14 +127,15 @@ Symbol selectors keep the same `symbol:{path}#{qualified_name}:{kind}` envelope,
 
 | Command | Lower-level primitive | Notable task |
 |---------|-------------|--------------|
-| Overview | `GraphContextService::overview`, SQLite summary readers | Compact mode above 50 files added in [T20260412-0645-2]; broad summaries use the SQLite sidecar when current ([T20260509-72]) |
-| Search | `search_hits_with_total_bounded`, SQLite substring search | Source-regex and structured selector search; default ranking lives in `commands::search` |
-| Context | `bounded_context(selector, budget)`, SQLite context readers | — |
+| Overview | `GraphContextService::overview`, `GraphIndexReader` | Compact mode above 50 files added in [T20260412-0645-2]; broad summaries use the SQLite sidecar when current ([T20260509-72]); `top_files` is a bounded min-heap top-K rather than collect-and-sort ([T20260509-68]) |
+| Search | `search_hits_with_total_bounded`, `GraphIndexReader` | Source-regex and structured selector search; default ranking lives in `commands::search`; exact-name and path-prefix queries take the SQLite fast path when the sidecar is current ([T20260509-73]); SQL/fallback equivalence is enforced as a multiset over leaves after [T20260510-1] and [T20260510-7] |
+| Context | `bounded_context(selector, budget)`, `GraphIndexReader` | — |
 | References | `find_references(selector)` | `commands::refs` owns code/doc/config classification |
 | Callers | `transitive_callers(selector, depth)` | [T20260412-0645-3] |
 | Implementors | `trait_implementors(trait)` | [T20260412-0645-3] |
 | Dependencies | `crate_dependencies(crate)` | [T20260412-0645-3] |
 | Lineage | `render_lineage_pack(selector)` | — |
+| Show | `read_node_by_id`, `GraphIndexReader` | Selector lookup goes through the SQLite unique-selector index and hydrates a single node rather than calling `read_graph` ([T20260509-71], [T20260509-74]); fallback path also patches `children` to use `LeafNode.children` so SQL and JSON return identical child lists ([T20260510-2]) |
 | Pack | `pack_json(...)` | Agent-friendly field projection ships in the same era as [T20260411-0424]; selector packing is bounded and prompt-first by default after [T20260505-5] |
 
 All command-backed reads are against a resolved snapshot. Graph mutation code remains internal/deferred; the current public surface does not expose graph write tools.
@@ -216,7 +217,7 @@ The shared file-based lock store was introduced in [T20260411-0424] (replacing a
 
 ### 6.1 Extractor coverage drives graph precision
 
-The leaf graph is only as good as each extractor. Code coverage (tree-sitter): C, C#, Rust, Python, Go, Java, JavaScript, Kotlin, TypeScript, TSX, and Ruby. Doc coverage: markdown (ATX headings only — no frontmatter, no fenced-block leaves, no RST). Config coverage: YAML / JSON / TOML top-level keys only — nested paths like `a.b.c` are not indexed. Tabular coverage: CSV / TSV header row only; files over 1 MiB produce zero leaves by design. Anything outside those families (shell scripts, C++, `.env`, SQL, Razor, etc.) lands in the graph as a leafless `FileNode`, and the agent has to fall back to file-level reads for the uncovered slice. Depth-of-extraction tradeoffs are captured in ADR-011, ADR-024, ADR-026, ADR-027, and ADR-028.
+The leaf graph is only as good as each extractor. Code coverage (tree-sitter): C, C#, Rust, Python, Go, Java, JavaScript, Kotlin, TypeScript, TSX, and Ruby. Doc coverage: markdown (ATX headings only — no frontmatter, no fenced-block leaves, no RST). Config (YAML / JSON / TOML) and table (CSV / TSV) files now land as leafless `FileNode`s after [T20260509-64] — file-level search and `show` still resolve via file source, but per-key and per-column leaves are no longer emitted. Anything outside those families (shell scripts, C++, `.env`, SQL, Razor, etc.) similarly lands as a leafless `FileNode`, and the agent has to fall back to file-level reads for the uncovered slice. Depth-of-extraction tradeoffs are captured in ADR-003, ADR-011, and ADR-038.
 
 ### 6.2 No cross-file reference resolution
 
@@ -297,9 +298,16 @@ The `graph/graph_index.sqlite` sidecar exists to make selector, name, and file-s
 - **[T20260505-5]** — Bound `orbit.graph.pack` selector gathering and skip inline refresh by default, documented by gpt-5.5.
 - **[T20260506-11]** — Remove graph task attribution after 0/961 audited reverse-lookup uses; preserve task IDs as local commit-search keys.
 - **[T20260509-33]** — Skip symlinked directories/files during knowledge scans and `.orbitignore` discovery to prevent outside-repo indexing and recursive cycles.
+- **[T20260509-64]** — Collapse YAML/JSON/TOML/CSV/TSV extraction to file-as-leaf; keep `FileKind::Config(_)` / `FileKind::Table(_)` classification.
 - **[T20260509-65]** — Add `GraphReadOptions` so broad graph reads skip file/leaf source hydration unless a tool opts in.
+- **[T20260509-68]** — Replace `overview.top_files` Vec-then-sort with a bounded min-heap top-K.
 - **[T20260509-70]** — Build the write-only SQLite secondary index sidecar during graph persistence.
+- **[T20260509-71]** — Add the read-side `GraphIndexReader` facade with version check and fallback.
 - **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
+- **[T20260509-73]** — Wire exact-name and path-prefix `orbit.graph.search` queries through the SQLite sidecar.
+- **[T20260509-74]** — Wire `orbit.graph.show` selector resolution through the SQLite unique-selector index.
+- **[T20260510-1]** — Restore SQL/fallback equivalence for `orbit.graph.search` (substring on either column).
+- **[T20260510-2]** — Restore SQL/fallback equivalence for `orbit.graph.show` `children` (use forward leaf pointers).
 - **[T20260510-7]** — Specify per-file leaf-ID uniqueness via language-natural qualifiers plus deterministic occurrence suffixes.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

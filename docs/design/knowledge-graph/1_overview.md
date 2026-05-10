@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-10 (post-[T20260509-64], [T20260510-7])
 
 The knowledge graph is Orbit's durable, queryable codebase map: a content-addressed, branch-scoped tree of directories, files, and extracted symbols. It sits between raw files and the agent prompt so agents can ask *"where is `AgentRuntime` defined?"* without re-reading the repo from scratch. Task attribution was removed in [T20260506-11]; task IDs now remain local commit-search keys rather than graph fields. This compaction pass [T20260430-22] keeps the overview focused on entry-point concepts and leaves mechanism detail to [2_design.md](./2_design.md).
 
@@ -31,8 +31,8 @@ The graph precomputes that structure once per branch, persists it, and exposes p
 The graph has three node kinds:
 
 - **`DirNode`** — a directory with child dirs/files; the root id derives from `"."`.
-- **`FileNode`** — a source file with extracted leaves plus a `source_blob_hash`.
-- **`LeafNode`** — an extracted symbol or doc/config/table leaf with source span, hash, signature fields, and history.
+- **`FileNode`** — a source file with extracted leaves plus a `source_blob_hash`. Config (YAML/JSON/TOML) and table (CSV/TSV) files are leafless after [T20260509-64]; the file node still carries source for substring search and `show`.
+- **`LeafNode`** — an extracted code symbol or markdown ATX section with source span, hash, and signature fields.
 
 All three share `BaseNodeFields`: `id`, `identity_key`, `location`, `language`, `description`, `parent_id`, and lock state. Historical `task_ids` attribution fields were removed in [T20260506-11].
 
@@ -85,7 +85,9 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 | Storage layout | `src/graph/object_store.rs`, `src/graph/sqlite_index.rs` | [T20260421-0358], [T20260509-70] |
 | Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139], [T20260509-33] |
 | Historical task attribution removal | `src/pipeline/` | [T20260506-11] |
-| Query commands | `src/commands/` with lower-level `src/service/` helpers | [T20260412-0645-2], [T20260412-0645-3], [T20260509-72], [T20260510-5] |
+| Query commands | `src/commands/` with lower-level `src/service/` helpers | [T20260412-0645-2], [T20260412-0645-3], [T20260509-72], [T20260509-73], [T20260509-74], [T20260510-5] |
+| SQLite read facade | `src/graph/sqlite_index.rs` | [T20260509-71] |
+| Extraction (code + markdown) | `src/extract/` | [T20260422-1540], [T20260509-64], [T20260510-7] |
 | Working graph | `src/working_graph/` | [T20260411-0424] |
 | Locking | `src/lock.rs` | [T20260411-0424], [T20260417-0301-2] |
 | Refresh safety | `src/pipeline/mod.rs` | [T20260417-0307], [T20260416-0719] |
@@ -110,8 +112,13 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 - **[T20260506-11]** — Remove knowledge-graph task attribution; preserve task IDs as local commit-search keys.
 - **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
 - **[T20260509-33]** — Skip symlinked directory entries during knowledge scanner traversal.
+- **[T20260509-64]** — Collapse YAML/JSON/TOML/CSV/TSV extraction to file-as-leaf.
 - **[T20260509-70]** — Build the SQLite secondary index sidecar during graph persistence.
+- **[T20260509-71]** — Add the read-side `GraphIndexReader` facade with version check and graceful fallback.
 - **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
+- **[T20260509-73]** — Wire exact-name and path-prefix `orbit.graph.search` queries through the SQLite sidecar.
+- **[T20260509-74]** — Wire `orbit.graph.show` selector resolution through the SQLite unique-selector index.
 - **[T20260510-5]** — Move canonical knowledge-graph command semantics into `orbit_knowledge::commands::*`; keep `orbit-tools` as dispatch and envelope shaping.
+- **[T20260510-7]** — Make leaf IDs unique across extractors so SQL fast paths preserve every symbol.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

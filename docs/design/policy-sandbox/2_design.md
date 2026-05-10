@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-09 (T20260509-7, T20260509-28, T20260509-30)
+**Last updated:** 2026-05-10 (T20260508-13 sibling allowances reflected; T20260509-7, T20260509-28, T20260509-30)
 
 This document describes Orbit's shipped policy and sandboxing implementation: v2 `PolicyDef`, profile resolution, last-match-wins path evaluation, HTTP-tool enforcement, activity/job `fsProfile` binding, macOS CLI sandbox wrapping, and `orbit-exec` supervision. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for forward-looking gaps.
 
@@ -122,6 +122,7 @@ The compiled macOS profile denies by default, allows broad reads required by age
 - scratch/cache roots (`/tmp`, `/private/tmp`, `/private/var/folders`, `/dev`, `$HOME/Library/Caches`)
 - `$HOME/.orbit` for inherited Orbit subprocess audit/state
 - provider state dirs: Codex (`$CODEX_HOME` or `$HOME/.codex`), Claude (`$CLAUDE_CONFIG_DIR` or `$HOME/.claude`), and Gemini (`$HOME/.gemini`)
+- Claude `$HOME/.claude.json` sibling files (`.claude.json`, `.claude.json.lock`, atomic-write `.claude.json.tmp.<pid>.<ms_ts>`) when `CLAUDE_CONFIG_DIR` is unset, since these live at the home root rather than under `$HOME/.claude/` ([T20260508-13])
 - positive `modify` roots from the resolved profile
 - Codex side-write roots from runtime provider config, appended after policy denies so workflow state remains writable under the outer sandbox
 
@@ -219,6 +220,7 @@ non-empty on Linux CI.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 - **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude (`~/.claude` / `$CLAUDE_CONFIG_DIR`) and Gemini (`~/.gemini`), and document why side-write roots remain Codex-only.
 - **[T20260430-23]** — Shorten the policy sandbox design docs while preserving the shipped contract and ADR history.
+- **[T20260508-13]** — Allow Claude's `$HOME/.claude.json` sibling files (`.json`, `.lock`, atomic-write `.tmp.<pid>.<ms_ts>`) under the macOS sandbox.
 - **[T20260509-7]** — Add `PolicyEngine::check` boundary tests and macOS sandbox `denyRead` / realistic agent-loop profile tests.
 - **[T20260509-28]** — Validate policy and executor resource names as safe file stems before file-store path construction.
 - **[T20260509-30]** — Resolve `sandbox-exec` from trusted absolute locations and keep availability errors fail-closed and explicit.
