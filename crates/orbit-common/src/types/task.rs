@@ -9,8 +9,8 @@
 //! 1. **Done is terminal** — no transitions out of done.
 //! 2. **Archived requires dedicated command** — use `orbit task archive`; the
 //!    bare `--status archived` path is rejected.
-//! 3. **Friction is creation-only** — untriaged friction reports start in this
-//!    status and cannot return to it after triage.
+//! 3. **Friction is legacy-only** — new friction reports are stored through
+//!    `orbit.friction.add`, not the task lifecycle.
 //! 4. **InProgress → Review requires execution_summary** — enforced at the
 //!    command layer, not in [`TaskStatus::validate_transition`].
 //!
@@ -18,7 +18,7 @@
 //! | Status       | Purpose |
 //! |--------------|---------|
 //! | Proposed     | Awaiting human approval before entering the backlog. |
-//! | Friction     | Agent self-reported friction awaiting triage. |
+//! | Friction     | Legacy agent self-reported friction task. |
 //! | Backlog      | Approved and queued for work. |
 //! | Someday      | Future-scoped — wanted but not yet actionable. Agents skip someday tasks. |
 //! | InProgress   | Actively being worked on. |
@@ -53,7 +53,7 @@ use crate::utility::selector::exists_in_workspace;
 pub enum TaskStatus {
     /// Awaiting human approval before entering the backlog.
     Proposed,
-    /// Agent self-reported friction awaiting triage.
+    /// Legacy agent self-reported friction task.
     Friction,
     /// Approved and queued for work; not yet started.
     Backlog,
@@ -130,8 +130,8 @@ impl TaskStatus {
     /// 1. **Done is terminal** — no transitions out of done.
     /// 2. **Archived requires dedicated command** — use `orbit task archive`, not a
     ///    bare status update (enforced upstream; blocked here as defense-in-depth).
-    /// 3. **Friction is creation-only** — enforced here and enriched upstream
-    ///    with prior-transition details when possible.
+    /// 3. **Friction is legacy-only** — new friction reports use
+    ///    `orbit.friction.add`.
     /// 4. **InProgress → Review requires execution_summary** — enforced upstream in
     ///    `update_task_with_status_note`, not here (we lack the task data).
     ///
@@ -158,8 +158,8 @@ impl TaskStatus {
             ));
         }
 
-        // Friction is an entry status for newly filed agent self-reports. It
-        // cannot be entered later without corrupting friction-bounty history.
+        // Friction is retained for legacy persisted tasks only. New friction
+        // reports are append-only records under `.orbit/frictions/`.
         if target == TaskStatus::Friction {
             return Err(format!(
                 "invalid status transition: {} -> {} (friction can only be set at task creation)",
@@ -248,10 +248,9 @@ pub enum TaskType {
     Feature,
     #[serde(alias = "epic")]
     Epic,
-    /// Agent-reported friction, DX issues, or system problems.
-    /// Self-reported friction path — triggers system attribution and scoreboard hooks.
+    /// Legacy agent-reported friction task.
     Friction,
-    /// General issue tracking. Valid task type, but not part of friction-bounty scoring.
+    /// General issue tracking.
     #[serde(alias = "issue")]
     Issue,
     /// An attributable defect — tracks which agent/model introduced the bug
@@ -308,11 +307,6 @@ impl TaskType {
     /// Returns true for self-reported friction tasks.
     pub fn is_friction(&self) -> bool {
         matches!(self, TaskType::Friction)
-    }
-
-    /// Returns true for task types that should update friction bounty scorekeeping.
-    pub fn counts_toward_friction_bounty(&self) -> bool {
-        self.is_friction()
     }
 }
 

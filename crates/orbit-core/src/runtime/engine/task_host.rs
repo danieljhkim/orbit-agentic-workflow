@@ -185,7 +185,6 @@ mod tests {
     use std::process::Command;
 
     use crate::command::task::{TaskAddParams, TaskUpdateParams};
-    use orbit_common::types::TaskType;
     use serde_json::{Value, json};
     use tempfile::tempdir;
 
@@ -376,13 +375,10 @@ mod tests {
     }
 
     #[test]
-    fn worktree_setup_admits_unplanned_workflow_statuses_and_counts_friction_once() {
+    fn worktree_setup_admits_unplanned_workflow_statuses() {
         let (root, runtime) = test_runtime();
         let repo = root.path().join("repo");
         init_git_repo(&repo);
-        let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
-        fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
-
         let proposed = runtime
             .add_task(TaskAddParams {
                 title: "Proposed workflow task".to_string(),
@@ -391,19 +387,6 @@ mod tests {
                 ..Default::default()
             })
             .expect("create proposed task");
-        let friction = runtime
-            .add_task_with_identity(
-                TaskAddParams {
-                    title: "Friction workflow task".to_string(),
-                    description: "Starts from friction without a plan.".to_string(),
-                    task_type: Some(TaskType::Friction),
-                    workspace_path: Some(".".to_string()),
-                    ..Default::default()
-                },
-                Some("codex".to_string()),
-                Some("gpt-fixture".to_string()),
-            )
-            .expect("create friction task");
         let backlog = approve_for_execution(
             &runtime,
             &runtime
@@ -442,7 +425,6 @@ mod tests {
 
         let task_ids = vec![
             proposed.id.clone(),
-            friction.id.clone(),
             backlog.id.clone(),
             rejected.id.clone(),
             archived.id.clone(),
@@ -463,18 +445,10 @@ mod tests {
             );
         }
 
-        let scoreboard = read_friction_scoreboard(&scoreboard_dir);
-        assert_eq!(scoreboard["issues-accepted"]["gpt-fixture"], 1);
-
-        let friction_task = runtime
-            .get_task(&friction.id)
-            .expect("reload friction task");
         let admitted_again = runtime
-            .admit_task_for_workflow_as_system(&friction_task.id, "worktree_setup")
+            .admit_task_for_workflow_as_system(&proposed.id, "worktree_setup")
             .expect("idempotent workflow admission");
         assert_eq!(admitted_again.status, TaskStatus::InProgress);
-        let scoreboard = read_friction_scoreboard(&scoreboard_dir);
-        assert_eq!(scoreboard["issues-accepted"]["gpt-fixture"], 1);
     }
 
     #[test]
@@ -769,11 +743,5 @@ mod tests {
             .find(|comment| comment.message.starts_with("Batch dispatched:"))
             .expect("batch dispatch comment");
         assert_eq!(batch_comment.by, SYSTEM_ACTOR_LABEL);
-    }
-
-    fn read_friction_scoreboard(scoreboard_dir: &Path) -> Value {
-        let raw = fs::read_to_string(scoreboard_dir.join("friction_bounty.json"))
-            .expect("read friction scoreboard");
-        serde_json::from_str(&raw).expect("parse friction scoreboard")
     }
 }

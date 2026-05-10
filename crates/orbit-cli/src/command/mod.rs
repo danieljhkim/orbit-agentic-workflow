@@ -8,7 +8,7 @@ pub mod semantic;
 pub mod task;
 pub mod web;
 
-pub use definitions::{activity, executor, job, policy, skill, tool};
+pub use definitions::{activity, executor, job, migrate, policy, skill, tool};
 pub use environment::{config, init, workspace};
 pub use observe::{audit, graph, metrics, scoreboard};
 
@@ -46,13 +46,14 @@ Operate:
   run         Run a workflow (ship, ship-auto, duel-plan, job)
   task        Create, update, and manage tasks
   semantic    Manage local semantic-search indexing
+  migrate     Run one-shot data migrations
 
 Observe:
   graph       Query the knowledge graph
   audit       Query the audit event log
   log         Tail the unified Orbit log feed
   metrics     Show metrics
-  scoreboard  Show scoreboards (friction, duel-plan)
+  scoreboard  Show scoreboards (duel-plan, PR, task review)
 
 Definitions:
   activity    View activity definitions
@@ -88,6 +89,7 @@ pub enum Commands {
     Run(run::RunCommand),
     Task(task::TaskCommand),
     Semantic(semantic::SemanticCommand),
+    Migrate(migrate::MigrateCommand),
 
     // ── Observe ──
     Graph(graph::GraphCommand),
@@ -125,6 +127,7 @@ impl Execute for Commands {
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Semantic(cmd) => cmd.execute(runtime),
+            Commands::Migrate(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Log(cmd) => cmd.execute(runtime),

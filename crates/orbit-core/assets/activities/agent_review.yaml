@@ -65,6 +65,7 @@ spec:
        summary in the response — the review-thread records are the result.
   tools:
     - orbit.task.*
+    - orbit.friction.*
     - orbit.graph.*
     - fs.read
     - fs.delete

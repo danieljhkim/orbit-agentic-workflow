@@ -62,7 +62,6 @@ pub(super) async fn scoreboard(State(runtime): State<Arc<OrbitRuntime>>) -> Resp
                 key.clone(),
                 json!({
                     "tasks_completed": 0,
-                    "friction": { "reported": 0, "accepted": 0, "rejected": 0 },
                     "tokens": { "total": 0, "output": 0 },
                     "duels": { "wins": 0, "losses": 0, "participated": 0 },
                     "pr": { "review_comments": 0, "merged_clean": 0, "merged_with_revision": 0 },

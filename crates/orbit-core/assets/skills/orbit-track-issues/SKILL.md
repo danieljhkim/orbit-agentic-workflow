@@ -7,10 +7,10 @@ description: MUST use this skill when Orbit tooling or skill instructions cause 
 
 ## Purpose
 
-This skill ensures that **agent-discovered Orbit tooling, workflow, or seeded-instruction friction** is recorded as an Orbit task so it can be fixed later.
+This skill ensures that **agent-discovered Orbit tooling, workflow, or seeded-instruction friction** is recorded as an append-only Orbit friction report.
 
-Orbit is designed to continuously improve. When agents encounter problems, they must **create tasks instead of silently working around them**.
-These reports are reserved for self-reported agent friction. Do not use this skill to classify ordinary user-requested work, generic bugs, or backlog items as `friction`.
+Orbit is designed to continuously improve. When agents encounter problems, they must **create reports instead of silently working around them**.
+These reports are reserved for self-reported agent friction. Do not use this skill for ordinary user-requested work, generic bugs, or backlog items.
 
 Examples of issues worth tracking:
 
@@ -24,43 +24,35 @@ Examples of issues worth tracking:
 
 If Orbit tooling or Orbit-authored guidance slows the agent down, it should be tracked.
 
-## Scoreboard
+## Storage
 
-Every self-reported friction task is tracked in `.orbit/state/scoreboard/friction_bounty.json`. Filing with `type: friction` automatically creates the task in `status: friction`; passing `status: friction` instead also infers `type: friction`.
+Every self-reported friction record is stored under `.orbit/frictions/` as append-only markdown with YAML frontmatter.
+There is no task lifecycle, triage state, rejection penalty, or precomputed scoreboard file.
 
-- **issues-reported** — counted for each task created with `type: friction`
-- **issues-accepted** — counted when triage moves the task from `friction` to `backlog`, `in-progress`, or `done`
-- **issues-rejected** — counted when triage moves the task from `friction` to `rejected`
+Do **not ignore friction**. Always create a report.
 
-Report real friction, not noise. Rejected reports count against you.
-Do **not ignore friction**. Always create a task.
-
-## How to Create the Task
+## How to Create the Report
 
 Two surfaces, identical JSON args. See the `orbit` skill for the full mapping.
 
 CLI form:
 
 ```bash
-orbit tool run orbit.task.add --input '{
-  "title": "<short, specific problem statement>",
-  "description": "<what happened, where, and why it caused friction>",
-  "type": "friction",
-  "priority": "<low|medium|high|critical>",
-  "workspace": ".",
+orbit tool run orbit.friction.add --input '{
+  "body": "<what happened, where, and why it caused friction>",
+  "tags": ["<tooling|skill-guidance|docs|lifecycle|build|naming|policy|other>"],
+  "during_task": "<optional task id>",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
 ```
 
-MCP form (same JSON, called as `orbit_task_add`):
+MCP form (same JSON, called as `orbit_friction_add`):
 
 ```text
-orbit_task_add({
-  "title": "<short, specific problem statement>",
-  "description": "<what happened, where, and why it caused friction>",
-  "type": "friction",
-  "priority": "<low|medium|high|critical>",
-  "workspace": ".",
+orbit_friction_add({
+  "body": "<what happened, where, and why it caused friction>",
+  "tags": ["<tooling|skill-guidance|docs|lifecycle|build|naming|policy|other>"],
+  "during_task": "<optional task id>",
   "model": "<model_name>"
 })
 ```
@@ -69,7 +61,7 @@ Keep the description concrete — name the command, file, or workflow that broke
 
 ## Important Rules
 
-- Do not silently ignore Orbit problems — always create a task.
+- Do not silently ignore Orbit problems — always create a report.
 - Do not implement large design changes inline — track them first.
 - Document the root issue clearly so the next agent can act on it.
-- Report genuine friction only — frivolous issues hurt your score.
+- Report genuine friction only.

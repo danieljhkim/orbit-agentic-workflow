@@ -102,9 +102,9 @@ Command surface determines provenance by default:
 - `orbit-debug-job-failure`: Diagnose failed, stuck, cancelled, or suspicious Orbit job runs.
 - `orbit-execute-task`: Carry a change through implementation, validation, and review.
 - `orbit-review-task`: Review someone else's work and file findings as review threads, without transitioning the task.
-- `orbit-track-issues`: Capture agent-discovered, self-reported friction as tracked tasks.
+- `orbit-track-issues`: Capture agent-discovered, self-reported friction as append-only reports.
 - `orbit-graph`: Navigate or inspect the codebase via the knowledge graph when the activity allowlist includes graph tools.
 
 ## Voice Your Opinion
 
-If something is unclear, missing, buggy, or creates friction during agent work, track it with `orbit-track-issues`. Reserve task type `friction` for that self-report path only.
+If something is unclear, missing, buggy, or creates friction during agent work, track it with `orbit-track-issues`.

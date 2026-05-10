@@ -26,13 +26,6 @@ const RECENT_WINDOW_DAYS: i64 = 7;
 type ModelScoreboard = BTreeMap<String, BTreeMap<String, u64>>;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FrictionSummary {
-    pub reported: u64,
-    pub accepted: u64,
-    pub rejected: u64,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenSummary {
     pub total: u64,
     pub output: u64,
@@ -65,7 +58,6 @@ pub struct AgentSummary {
     pub tasks_created: u64,
     #[serde(default)]
     pub tasks_planned: u64,
-    pub friction: FrictionSummary,
     pub tokens: TokenSummary,
     pub duels: DuelSummary,
     pub pr: PrSummary,
@@ -153,8 +145,8 @@ struct TokenAgentEntry {
     total_tool_calls: u64,
 }
 
-/// Bundle of the optional inputs that have grown around the core
-/// task-and-friction summary. New callers should populate this struct;
+/// Bundle of the optional inputs that have grown around the core task summary.
+/// New callers should populate this struct;
 /// the older `generate_summary*` thin wrappers stay for tests and any
 /// caller that hasn't been updated yet.
 #[derive(Debug, Default, Clone)]
@@ -208,32 +200,6 @@ pub fn generate_summary_with_inputs(
 ) -> Result<ScoreboardSummary, OrbitError> {
     let audit_tool_calls = inputs.audit_tool_calls;
     let mut agents: BTreeMap<String, AgentSummary> = BTreeMap::new();
-
-    let friction = read_model_scoreboard(scoreboard_dir, "friction_bounty.json")?;
-    overlay_nested_metric(
-        &mut agents,
-        &friction,
-        "issues-reported",
-        |summary, value| {
-            summary.friction.reported = summary.friction.reported.saturating_add(value);
-        },
-    );
-    overlay_nested_metric(
-        &mut agents,
-        &friction,
-        "issues-accepted",
-        |summary, value| {
-            summary.friction.accepted = summary.friction.accepted.saturating_add(value);
-        },
-    );
-    overlay_nested_metric(
-        &mut agents,
-        &friction,
-        "issues-rejected",
-        |summary, value| {
-            summary.friction.rejected = summary.friction.rejected.saturating_add(value);
-        },
-    );
 
     let pr = read_model_scoreboard(scoreboard_dir, "pr.json")?;
     overlay_nested_metric(&mut agents, &pr, "pr-review-comments", |summary, value| {

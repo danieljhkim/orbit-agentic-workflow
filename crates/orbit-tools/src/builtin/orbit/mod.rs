@@ -1,4 +1,5 @@
 pub mod duel;
+pub mod friction;
 pub mod graph_history;
 pub mod groundhog;
 pub mod knowledge;
@@ -30,6 +31,10 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(groundhog::checkpoint_success::OrbitGroundhogCheckpointSuccessTool);
     registry.register(groundhog::checkpoint_failure::OrbitGroundhogCheckpointFailureTool);
     registry.register(groundhog::side_effect::OrbitGroundhogSideEffectTool);
+    registry.register(friction::add::OrbitFrictionAddTool);
+    registry.register(friction::list::OrbitFrictionListTool);
+    registry.register(friction::show::OrbitFrictionShowTool);
+    registry.register(friction::stats::OrbitFrictionStatsTool);
     registry.register(task::add::OrbitTaskAddTool);
     registry.register(task::artifact_put::OrbitTaskArtifactPutTool);
     registry.register(task::approve::OrbitTaskApproveTool);

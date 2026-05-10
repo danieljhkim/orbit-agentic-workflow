@@ -172,8 +172,6 @@ impl OrbitRuntime {
             })
         });
 
-        let old_status = task.status;
-        let target_status = params.status;
         let mut append_history: Vec<TaskHistoryEntry> = if dropped_context_files.is_empty() {
             Vec::new()
         } else {
@@ -200,12 +198,6 @@ impl OrbitRuntime {
             )?;
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
         })?;
-
-        if let Some(new_status) = target_status
-            && new_status != old_status
-        {
-            self.try_record_friction_transition(&task, old_status, new_status);
-        }
 
         Ok(updated)
     }

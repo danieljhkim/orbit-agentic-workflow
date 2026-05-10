@@ -82,6 +82,7 @@ spec:
     and downstream dispatch must not depend on it.
   tools:
     - orbit.task.*
+    - orbit.friction.*
     - orbit.graph.*
   on_denial: terminate
   max_iterations: 8

@@ -46,7 +46,6 @@ const operationsSections = [
 
 const scoreboardSections = [
   renderPrsTable(agents),
-  renderFrictionTable(agents),
   renderDuelsTable(duelsByModel),
   renderTaskReviewTable(agents),
 ].filter(Boolean);
@@ -73,7 +72,7 @@ await writeFile(
   scoreboardPath,
   frontmatter(
     'Scoreboard',
-    'Per-agent quality and engagement signals — PRs, friction, planning duels, task reviews.',
+    'Per-agent quality and engagement signals — PRs, planning duels, task reviews.',
   ) +
     [
       pageHeader(
@@ -175,7 +174,7 @@ function renderTasksTable(agents, recent) {
   const headline = `**${num(totalCompleted)} tasks completed** · ${num(totalCreated)} created${recencyDelta(recent, 'tasks_completed', 'completed this week')}`;
   return section(
     'Tasks',
-    'Tasks attributed to each agent, all-time. `Created` and `Planned` count every status (including rejected and friction); `Completed` counts only `done` and `archived`. Sorted by completed.',
+    'Tasks attributed to each agent, all-time. `Created` and `Planned` count every status; `Completed` counts only `done` and `archived`. Sorted by completed.',
     headline,
     ['Agent', 'Created', 'Planned', 'Completed'],
     sortRows(rows),
@@ -280,33 +279,6 @@ function renderPrsTable(agents) {
     'Pull requests merged through `orbit run ship` / `orbit run ship-auto`. Clean rate = `merged_clean / (merged_clean + merged_with_revision)`. Sorted by total.',
     headline,
     ['Agent', 'Total', 'Clean', 'With revision', 'Clean rate'],
-    sortRows(rows),
-  );
-}
-
-function renderFrictionTable(agents) {
-  const rows = agents
-    .filter(([, a]) => {
-      const f = a.friction ?? {};
-      return (f.reported ?? 0) + (f.accepted ?? 0) + (f.rejected ?? 0) > 0;
-    })
-    .map(([name, a]) => {
-      const f = a.friction ?? {};
-      const reported = f.reported ?? 0;
-      const accepted = f.accepted ?? 0;
-      const rejected = f.rejected ?? 0;
-      const rate = reported > 0 ? accepted / reported : null;
-      const acceptRate = rate == null ? '—' : `${Math.round(rate * 100)}%`;
-      return {
-        sortKey: rate,
-        cells: [agentCell(name), num(reported), num(accepted), num(rejected), acceptRate],
-      };
-    });
-  return section(
-    'Friction bounty',
-    'Self-reported agent friction reports. Accept rate = `accepted / reported`. Sorted by accept rate.',
-    null,
-    ['Agent', 'Reported', 'Accepted', 'Rejected', 'Accept rate'],
     sortRows(rows),
   );
 }

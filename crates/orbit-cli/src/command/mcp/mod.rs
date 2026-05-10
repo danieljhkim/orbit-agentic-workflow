@@ -46,6 +46,13 @@ pub(crate) const TASK_TOOL_NAMES: &[&str] = &[
     "orbit.task.update",
 ];
 
+pub(crate) const FRICTION_TOOL_NAMES: &[&str] = &[
+    "orbit.friction.add",
+    "orbit.friction.list",
+    "orbit.friction.show",
+    "orbit.friction.stats",
+];
+
 pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
     "orbit.graph.callers",
     "orbit.graph.deps",
@@ -59,14 +66,19 @@ pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
 ];
 
 pub(crate) fn safe_mcp_tool_names() -> Vec<&'static str> {
-    let mut names = Vec::with_capacity(TASK_TOOL_NAMES.len() + GRAPH_READ_TOOL_NAMES.len());
+    let mut names = Vec::with_capacity(
+        TASK_TOOL_NAMES.len() + FRICTION_TOOL_NAMES.len() + GRAPH_READ_TOOL_NAMES.len(),
+    );
     names.extend_from_slice(TASK_TOOL_NAMES);
+    names.extend_from_slice(FRICTION_TOOL_NAMES);
     names.extend_from_slice(GRAPH_READ_TOOL_NAMES);
     names
 }
 
 pub(crate) fn is_mcp_tool_exposed(name: &str) -> bool {
-    TASK_TOOL_NAMES.contains(&name) || GRAPH_READ_TOOL_NAMES.contains(&name)
+    TASK_TOOL_NAMES.contains(&name)
+        || FRICTION_TOOL_NAMES.contains(&name)
+        || GRAPH_READ_TOOL_NAMES.contains(&name)
 }
 
 fn ensure_mcp_tool_exposed(name: &str) -> Result<(), OrbitError> {
@@ -476,17 +488,13 @@ mod tests {
         }
 
         #[test]
-        fn task_delete_allows_unforced_proposed_friction_and_rejected_tasks_over_mcp() {
+        fn task_delete_allows_unforced_proposed_and_rejected_tasks_over_mcp() {
             let runtime = OrbitRuntime::in_memory().expect("build test runtime");
             let host = RuntimeMcpHost {
                 runtime: runtime.clone(),
             };
 
-            for status in [
-                TaskStatus::Proposed,
-                TaskStatus::Friction,
-                TaskStatus::Rejected,
-            ] {
+            for status in [TaskStatus::Proposed, TaskStatus::Rejected] {
                 let task_id = create_task(&runtime, status);
                 let value = host
                     .call_tool(
@@ -500,7 +508,7 @@ mod tests {
             let events = runtime
                 .list_audit_events(None, Some("orbit.task.delete".to_string()), None, None, 16)
                 .expect("list audit events");
-            assert_eq!(events.len(), 3);
+            assert_eq!(events.len(), 2);
             assert!(events.iter().all(|event| {
                 event.subcommand.as_deref() == Some("run-mcp")
                     && event.status == AuditEventStatus::Success

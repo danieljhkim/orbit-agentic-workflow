@@ -98,6 +98,103 @@ fn task_add_tool_creates_proposed_tasks_for_agents() {
 }
 
 #[test]
+fn task_add_tool_rejects_friction_type_and_status() {
+    let (_root, runtime, _repo_root) = test_runtime();
+
+    for input in [
+        json!({
+            "title": "Legacy friction type",
+            "description": "Should use the new friction record surface.",
+            "workspace": ".",
+            "type": "friction",
+        }),
+        json!({
+            "title": "Legacy friction status",
+            "description": "Should use the new friction record surface.",
+            "workspace": ".",
+            "status": "friction",
+        }),
+    ] {
+        let message = invalid_input_message(runtime.execute_tool_command(
+            "orbit.task.add",
+            input,
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        ));
+        assert!(message.contains("orbit.friction.add"), "{message}");
+    }
+}
+
+#[test]
+fn friction_add_writes_markdown_record_and_validates_tags() {
+    let (_root, runtime, _repo_root) = test_runtime();
+
+    let output = runtime
+        .execute_tool_command(
+            "orbit.friction.add",
+            json!({
+                "body": "The tool guidance pointed at the old task path.",
+                "tags": ["tooling", "skill-guidance"],
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("friction add succeeds");
+
+    let path = output["path"].as_str().expect("record path");
+    let raw = std::fs::read_to_string(path).expect("read friction markdown");
+    assert!(raw.starts_with("---\n"), "{raw}");
+    assert!(raw.contains("id: F"), "{raw}");
+    assert!(raw.contains("model: gpt-5.5"), "{raw}");
+    assert!(raw.contains("tooling"), "{raw}");
+    assert!(raw.contains("skill-guidance"), "{raw}");
+
+    let message = invalid_input_message(runtime.execute_tool_command(
+        "orbit.friction.add",
+        json!({
+            "body": "Unknown tag should be rejected.",
+            "tags": ["not-a-real-tag"],
+        }),
+        Some("codex".to_string()),
+        Some("gpt-5.5".to_string()),
+    ));
+    assert!(message.contains("valid tags"), "{message}");
+}
+
+#[test]
+fn friction_stats_does_not_write_state_scoreboard_file() {
+    let (_root, runtime, _repo_root) = test_runtime();
+    runtime
+        .execute_tool_command(
+            "orbit.friction.add",
+            json!({ "body": "A friction report.", "tags": ["other"] }),
+            Some("codex".to_string()),
+            Some("gpt-zero".to_string()),
+        )
+        .expect("add friction");
+
+    let stats = runtime
+        .execute_tool_command(
+            "orbit.friction.stats",
+            json!({}),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("stats succeeds");
+    assert_eq!(
+        stats["by_model"]["gpt-zero"]["frictions_per_10_tasks"],
+        json!("n/a")
+    );
+    assert!(
+        !runtime
+            .data_root()
+            .join("state")
+            .join("friction_stats.json")
+            .exists()
+    );
+}
+
+#[test]
 fn task_delete_tool_rejects_unforced_protected_statuses() {
     let (_root, runtime, repo_root) = test_runtime();
     let task = create_task(

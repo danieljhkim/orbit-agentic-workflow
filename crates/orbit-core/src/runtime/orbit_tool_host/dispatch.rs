@@ -14,6 +14,10 @@ pub(super) fn execute(
     reservation_owner: Option<ReservationOwnerContext>,
 ) -> Result<Value, OrbitError> {
     match action {
+        OrbitBuiltinAction::FrictionAdd => super::friction_tools::add(runtime, input, model),
+        OrbitBuiltinAction::FrictionList => super::friction_tools::list(runtime, input),
+        OrbitBuiltinAction::FrictionShow => super::friction_tools::show(runtime, input),
+        OrbitBuiltinAction::FrictionStats => super::friction_tools::stats(runtime),
         OrbitBuiltinAction::PipelineInvoke => {
             super::pipeline_tools::invoke(runtime, input, agent, model)
         }
