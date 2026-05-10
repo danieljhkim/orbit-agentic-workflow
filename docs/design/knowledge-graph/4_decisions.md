@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-10
 
 ADR-style log of non-obvious knowledge-graph decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -542,6 +542,23 @@ These entries were formerly ADR headings, but they are plain instances of ADR-00
 
 ---
 
+## ADR-036 — Knowledge commands are the canonical query boundary
+
+**Status:** Accepted · 2026-05 · [T20260510-5]
+**Author:** gpt-5.5
+
+**Context.** The `orbit-tools` graph adapters had accumulated ranking, classification, fast-path, and fallback semantics. That made the tool layer the only consumer able to reproduce canonical `search`, `overview`, `refs`, `show`, and pack behavior, while `orbit-knowledge` exposed lower-level services without a command boundary.
+
+**Decision.** Introduce `orbit_knowledge::commands::*` as the canonical typed command surface. Commands take validated typed inputs, own graph-service and SQLite-index selection, and return typed results. `orbit-tools` remains responsible for schema registration, raw JSON argument parsing, boundary/path validation, error-envelope mapping, and final JSON response shaping.
+
+**Consequences.**
+- Non-tool consumers can reuse the same ranked search, overview format selection, reference classification, and fast-path fallback behavior.
+- Regression tests for graph semantics live with `orbit-knowledge` rather than tool adapters.
+- Tool files shrink to dispatch layers and no longer import graph services or index readers directly.
+- Cost: command inputs must carry resolved workspace/knowledge context, so adapters still own the boundary-sensitive path validation that depends on `ToolContext`.
+
+---
+
 ## Task References
 
 Tasks cited by ADRs above:
@@ -593,5 +610,6 @@ Tasks cited by ADRs above:
 - **[T20260509-70]** — Build the write-only SQLite secondary index sidecar during graph persistence.
 - **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
 - **[T20260509-73]** — Wire exact-name and path-prefix graph search through the SQLite sidecar.
+- **[T20260510-5]** — Extract `orbit_knowledge::commands::*` as the canonical graph command surface and thin graph tools to dispatch/envelope shaping.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

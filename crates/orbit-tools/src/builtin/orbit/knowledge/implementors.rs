@@ -1,7 +1,5 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::service::GraphContextService;
-use orbit_knowledge::service::implementors::trait_implementors;
-use orbit_knowledge::{GraphReadOptions, Selector};
+use orbit_knowledge::commands::implementors::{self, ImplementorsInput};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
@@ -33,26 +31,18 @@ impl Tool for OrbitKnowledgeImplementorsTool {
     }
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let selector_str =
-            super::super::required_string(&input, &["trait_selector"], "trait_selector")?;
-        let selector: Selector = selector_str
-            .parse()
-            .map_err(|e| OrbitError::InvalidInput(format!("{e}")))?;
+        let result = implementors::run(ImplementorsInput {
+            context: super::command_context(ctx, &input)?,
+            trait_selector: super::super::required_string(
+                &input,
+                &["trait_selector"],
+                "trait_selector",
+            )?,
+        })
+        .map_err(super::knowledge_error_to_orbit)?;
 
-        let graph = super::load_graph_for_read(
-            ctx,
-            &input,
-            GraphReadOptions {
-                hydrate_leaf_source: true,
-                ..Default::default()
-            },
-        )?;
-        let svc = GraphContextService::new(&graph);
-
-        let hits = trait_implementors(&svc, &graph, &selector)
-            .map_err(|e| OrbitError::Execution(e.to_string()))?;
-
-        let items: Vec<Value> = hits
+        let items: Vec<Value> = result
+            .implementors
             .into_iter()
             .map(|h| {
                 json!({
@@ -66,7 +56,7 @@ impl Tool for OrbitKnowledgeImplementorsTool {
             .collect();
 
         Ok(json!({
-            "trait": selector_str,
+            "trait": result.trait_selector,
             "total": items.len(),
             "implementors": items,
         }))

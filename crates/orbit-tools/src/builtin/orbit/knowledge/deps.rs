@@ -1,10 +1,8 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::service::deps::crate_dependencies;
+use orbit_knowledge::commands::deps::{self, DepsInput};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
-
-use super::write::resolve_workspace_root_with_override;
 
 pub struct OrbitKnowledgeDepsTool;
 
@@ -33,14 +31,17 @@ impl Tool for OrbitKnowledgeDepsTool {
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         let crate_filter = super::super::optional_string(&input, "crate")?;
-        let workspace_root = resolve_workspace_root_with_override(ctx, &input)?;
+        let workspace_root = super::resolve_workspace_root_with_override(ctx, &input)?;
 
-        let deps = crate_dependencies(&workspace_root, crate_filter.as_deref())
-            .map_err(|e| OrbitError::Execution(format!("crate_dependencies: {e}")))?;
+        let result = deps::run(DepsInput {
+            workspace_root,
+            crate_filter,
+        })
+        .map_err(super::knowledge_error_to_orbit)?;
 
         Ok(json!({
-            "workspace": workspace_root.display().to_string(),
-            "crates": deps,
+            "workspace": result.workspace.display().to_string(),
+            "crates": result.crates,
         }))
     }
 }
