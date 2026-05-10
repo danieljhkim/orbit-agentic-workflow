@@ -1,7 +1,9 @@
 use tree_sitter::{Language as TreeSitterLanguage, Node, Parser};
 
 use super::FileExtractor;
-use super::common::{ExtractedLeaf, ExtractionResult, compute_source_hash};
+use super::common::{
+    ExtractedLeaf, ExtractionResult, compute_source_hash, finalize_unique_qualified_names,
+};
 use super::language::{FileKind, Language};
 
 pub struct TypeScriptExtractor {
@@ -33,6 +35,7 @@ impl FileExtractor for TypeScriptExtractor {
 
         let mut leaves = Vec::new();
         extract_top_level(tree.root_node(), source, &mut leaves);
+        finalize_unique_qualified_names(&mut leaves);
         ExtractionResult {
             leaves,
             ..Default::default()
@@ -186,7 +189,8 @@ fn extract_method(
     parent: &str,
 ) -> Option<String> {
     let name = get_name(node, source)?;
-    let qualified_name = format!("{parent}::{name}");
+    let arity = parameter_arity(node);
+    let qualified_name = format!("{parent}::{name}#{arity}");
     push_leaf(
         node,
         source,
@@ -198,6 +202,17 @@ fn extract_method(
         Vec::new(),
     );
     Some(qualified_name)
+}
+
+fn parameter_arity(node: Node) -> usize {
+    let Some(parameters) = node.child_by_field_name("parameters") else {
+        return 0;
+    };
+    let mut cursor = parameters.walk();
+    parameters
+        .named_children(&mut cursor)
+        .filter(|child| child.kind().contains("parameter"))
+        .count()
 }
 
 fn extract_binding_declaration(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {

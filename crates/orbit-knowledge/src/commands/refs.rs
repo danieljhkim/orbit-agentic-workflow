@@ -99,16 +99,7 @@ pub fn run(input: RefsInput) -> Result<RefsResult, KnowledgeError> {
         .parse()
         .map_err(|error| KnowledgeError::invalid_data(format!("{error}")))?;
     let search_terms = match &selector {
-        Selector::Symbol { symbol, .. } => {
-            let mut terms = vec![symbol.clone()];
-            if let Some(simple_name) = symbol.rsplit("::").next()
-                && input.include_simple_name
-                && simple_name != symbol
-            {
-                terms.push(simple_name.to_string());
-            }
-            terms
-        }
+        Selector::Symbol { symbol, .. } => symbol_search_terms(symbol, input.include_simple_name),
         _ => {
             return Err(KnowledgeError::invalid_data(
                 "refs requires a symbol selector (e.g. symbol:path#name:kind)".to_string(),
@@ -171,6 +162,38 @@ pub fn run(input: RefsInput) -> Result<RefsResult, KnowledgeError> {
     })
 }
 
+fn symbol_search_terms(symbol: &str, include_simple_name: bool) -> Vec<String> {
+    let mut terms = vec![symbol.to_string()];
+    if include_simple_name {
+        let simple_name = simple_selector_symbol_name(symbol);
+        if simple_name != symbol {
+            terms.push(simple_name);
+        }
+    }
+    terms
+}
+
+fn simple_selector_symbol_name(symbol: &str) -> String {
+    let scoped = symbol
+        .rsplit("::")
+        .next()
+        .unwrap_or(symbol)
+        .rsplit('.')
+        .next()
+        .unwrap_or(symbol);
+    strip_numeric_selector_suffixes(scoped).to_string()
+}
+
+fn strip_numeric_selector_suffixes(mut symbol: &str) -> &str {
+    while let Some((prefix, suffix)) = symbol.rsplit_once('#') {
+        if suffix.is_empty() || !suffix.chars().all(|ch| ch.is_ascii_digit()) {
+            break;
+        }
+        symbol = prefix;
+    }
+    symbol
+}
+
 fn classify_ref_kind(path: &str) -> RefKind {
     let extension = Path::new(path)
         .extension()
@@ -187,6 +210,22 @@ fn classify_ref_kind(path: &str) -> RefKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn simple_selector_symbol_name_handles_qualified_leaf_ids() {
+        let cases = [
+            ("User.save", "save"),
+            ("Outer.Inner.run#2", "run"),
+            ("Client::connect#1#2", "connect"),
+            ("<Foo as Runnable>::run", "run"),
+            ("load#3", "load"),
+            ("plain_function", "plain_function"),
+        ];
+
+        for (symbol, expected) in cases {
+            assert_eq!(simple_selector_symbol_name(symbol), expected);
+        }
+    }
 
     #[test]
     fn ref_kind_classification_matches_snapshot() {

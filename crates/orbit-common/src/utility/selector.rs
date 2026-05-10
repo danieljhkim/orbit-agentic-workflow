@@ -501,6 +501,30 @@ mod tests {
     }
 
     #[test]
+    fn symbol_selector_preserves_opaque_qualified_name() {
+        let selector: Selector = "symbol:src/lib.rs#<Foo as Runnable>::run#2:method"
+            .parse()
+            .unwrap();
+
+        assert_eq!(
+            selector,
+            Selector::Symbol {
+                path: "src/lib.rs".to_string(),
+                symbol: "<Foo as Runnable>::run#2".to_string(),
+                kind: "method".to_string(),
+            }
+        );
+        assert_eq!(
+            selector.to_string(),
+            "symbol:src/lib.rs#<Foo as Runnable>::run#2:method"
+        );
+        assert_eq!(
+            anchor_path(&selector.to_string()).unwrap(),
+            PathBuf::from("src/lib.rs")
+        );
+    }
+
+    #[test]
     fn exists_in_workspace_uses_anchor_paths() {
         let temp = tempdir().unwrap();
         let workspace = temp.path();

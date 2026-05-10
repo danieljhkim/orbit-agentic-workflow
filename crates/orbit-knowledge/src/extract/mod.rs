@@ -25,8 +25,8 @@ mod table;
 mod typescript;
 
 pub use common::{
-    ExtractedExport, ExtractedLeaf, ExtractionResult, compute_source_hash, identity_key,
-    leaf_location, node_id,
+    ExtractedExport, ExtractedLeaf, ExtractionResult, compute_source_hash,
+    finalize_unique_qualified_names, identity_key, leaf_location, node_id,
 };
 pub use language::{ConfigFormat, DocFormat, FileKind, Language, TableFormat};
 

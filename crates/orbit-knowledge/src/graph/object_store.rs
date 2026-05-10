@@ -1108,7 +1108,7 @@ mod tests {
         assert!(indexes.contains(&"idx_node_selector".to_string()));
 
         let meta = sqlite_meta(&conn);
-        assert_eq!(meta.get("schema_version").map(String::as_str), Some("5"));
+        assert_eq!(meta.get("schema_version").map(String::as_str), Some("6"));
         assert_eq!(
             meta.get("graph_ref").map(String::as_str),
             Some(current_ref.root_graph_hash.as_str())

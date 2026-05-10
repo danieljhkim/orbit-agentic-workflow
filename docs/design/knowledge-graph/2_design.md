@@ -52,7 +52,7 @@ scan → hash → detect_changes → build_dirs → build_files → build_leaves
 | `write_manifest` | `manifest.json` | Timestamp + clean checkout identity + graph summary |
 | `save_hash_cache` | `hashes.json` | Baseline for the next incremental `detect_changes` pass |
 
-Extraction dispatches on `FileKind`. Each `FileExtractor` emits `ExtractedLeaf` records with name, kind, span, hash, and child names. Code uses tree-sitter; shallow doc/config/table extractors handle markdown ATX headings, top-level YAML/JSON/TOML keys, and CSV/TSV header cells with a 1 MiB cap ([T20260422-1540]).
+Extraction dispatches on `FileKind`. Each `FileExtractor` emits `ExtractedLeaf` records with name, kind, span, hash, and child names. Code uses tree-sitter; shallow doc/config/table extractors handle markdown ATX headings, top-level YAML/JSON/TOML keys, and CSV/TSV header cells with a 1 MiB cap ([T20260422-1540]). Leaf IDs must be unique per file after extraction finalization: no two leaves for the same path may share `(qualified_name, kind)`, because the node ID is derived from `symbol:{path}#{qualified_name}:{kind}`. The contract and selector-breaking implications are specified in [specs/leaf-id-uniqueness.md](./specs/leaf-id-uniqueness.md) ([T20260510-7]).
 
 Hashing and leaf extraction are parallelized only across independent file work. `compute_hashes` collects `(path, sha256)` worker results before replacing `ctx.new_hashes`; `build_graph_leaves` workers return either a reusable prior snapshot or freshly extracted file output, and the main thread applies those outputs sorted by original `FileNode` index. That merge discipline keeps `ctx.graph.leaves` and each `FileNode.leaf_children` byte-stable relative to the old sequential order while avoiding locks around `PipelineContext` ([T20260426-0139]). Individual file read failures remain non-fatal skips in both phases.
 
@@ -120,6 +120,8 @@ A `Selector` is the universal addressing primitive. It accepts:
 - a node id directly
 
 All tool inputs that reference a node accept a selector string.
+
+Symbol selectors keep the same `symbol:{path}#{qualified_name}:{kind}` envelope, but the `qualified_name` portion is language-owned and opaque. The leaf-ID uniqueness scheme may add class scope, Rust impl qualifiers, overload arity, or occurrence suffixes inside that portion; callers should rediscover affected selectors through graph query results rather than constructing method/impl/overload selectors by hand.
 
 ### 3.2 Services
 
@@ -298,5 +300,6 @@ The `graph/graph_index.sqlite` sidecar exists to make selector, name, and file-s
 - **[T20260509-65]** — Add `GraphReadOptions` so broad graph reads skip file/leaf source hydration unless a tool opts in.
 - **[T20260509-70]** — Build the write-only SQLite secondary index sidecar during graph persistence.
 - **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
+- **[T20260510-7]** — Specify per-file leaf-ID uniqueness via language-natural qualifiers plus deterministic occurrence suffixes.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
