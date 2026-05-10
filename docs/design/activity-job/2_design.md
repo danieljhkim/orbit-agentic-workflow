@@ -240,7 +240,7 @@ The executor exposes outputs as `{{ steps.<id>.output.* }}`. Initial context fol
 
 #### Agent-step state handoff via `orbit.state.*`
 
-Agents running inside an activity step pass durable data to later steps through `orbit.state.*`, not through the step's response payload. The contract:
+Agents running inside an activity step pass durable data to later steps through `orbit.state.*`, not through the step's response payload. Treat direct-agent stdout as an audit/diagnostic stream — downstream steps must read durable data from task artifacts, `orbit.state.*`, job-run state, or purpose-built tools (e.g. `orbit.duel.plan.add` / `orbit.duel.plan.winner`), not by parsing agent process output. The contract:
 
 - `orbit.state.get` reads the persisted pipeline snapshot.
 - `orbit.state.set` writes this step's output for the engine to merge after the step finishes.

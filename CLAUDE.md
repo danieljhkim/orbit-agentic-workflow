@@ -2,28 +2,49 @@
 
 Project instructions for agents working on Orbit.
 
-## Project Don'ts
+## Rules
 
-- Don't commit until the Orbit task has been explicitly approved by the human.
-- Don't invent task IDs — get them from `orbit.task.add`.
-- Don't edit task files directly — use `orbit.task.update`.
-- Don't add cross-crate dependencies without checking the architecture diagram below.
-- When you hit friction, ambiguity, naming drift, or duplicated sources of truth: file a self-reported friction report via the `orbit-track-issues` skill instead of working around it.
+- **Don't commit** until the Orbit task has been explicitly approved by the human.
+- **Don't invent task IDs** — get them from `orbit.task.add`. Don't edit task files directly — use `orbit.task.update`.
+- **Don't add cross-crate dependencies** without checking the architecture diagram below.
+- **Use subagents** for large tasks to keep your context window clean.
+- **Hit friction?** File it via the `orbit-track-issues` skill (records append-only under `.orbit/frictions/`). Use for Orbit tooling / skill / seeded-instruction problems only — not for user-requested work or generic bug tracking.
 
-## Project Do's
+## Spotted Issues → Task + FOLLOWUP
 
-- Use subagents to support you through large tasks and keep your context window clean.
+When you notice something out-of-scope for the current task — convention break, failing test, perf regression, security hole, modularization smell, dead code — convert it to a durable artifact instead of reporting it back in chat. Bare `TODO` / `FIXME` comments are not used in this codebase; `FOLLOWUP(<task_id>)` is the only sanctioned marker.
 
-## Maintainer Conventions
-- Order files for the next maintainer's first read: lead with the module's primary concept or entry point, then move into supporting detail.
-- Data-heavy modules usually start with their core structs/enums; orchestration modules usually start with the main public function.
+- **Threshold.** File only when the fix is *out-of-scope for the current task* AND *non-trivial*. Trivial fixes (typo, one-line cleanup) → fix inline. Vague observations ("could be cleaner") → drop, don't file.
+- **Marker format.** `// FOLLOWUP(T20260510-25): <one-line description>` — grep-able by task ID; the task body carries full context. Comment syntax matches the surrounding language (`#` in YAML / Python, `//` in Rust).
+- **Where the marker lives.** Only in files the current task is *already* modifying. If the issue is in a different file, file the task with a file/line reference in the body — don't open an unrelated file just to mark it, that bleeds scope into the current PR.
+- **Resolution.** The implementing agent must `git grep "FOLLOWUP(<task_id>)"` before marking the task done and delete every match as part of the fix. A stale `FOLLOWUP(T...)` referencing a `done` / `archived` task is a review blocker.
 
 ## Build / Lint
 
-- Build: `make build`
-- Fmt:   `make fmt`
+`make build`, `make fmt`, `make ci` — all must pass before a task moves to `review`.
 
-All must pass before a task moves to `review`.
+## Design Docs
+
+Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
+
+**Read before changing a feature.** Start at `1_overview.md` for what/why, then `2_design.md` for current implementation. `4_decisions.md` is the ADR log; `specs/` carries mechanism-level contracts. Cite design-doc sections in PR descriptions when behavior is non-obvious.
+
+**Update in the same PR as the implementation change.** Flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, add a new ADR for any non-obvious decision the change embodies. Stale docs are a review blocker.
+
+**Feature Lead responsibility.** The lead is accountable for their feature's design-doc hygiene and create tasks to ensure the docs are maintained, as well as proactively identifying design-related concerns via filing friction tasks.
+
+| Feature | Folder | Lead |
+|---------|--------|------|
+| Knowledge graph | `knowledge-graph/` | `claude` |
+| Policy & Sandboxing | `policy-sandbox/` | `claude` |
+| Project Learnings | `project-learnings/` | `claude` |
+| Task Lineage | `task-lineage/` | `claude` |
+| Semantic Search | `semantic-search/` | `claude` |
+| Task Sync | `task-sync/` | `claude` |
+| Activity / Job | `activity-job/` | `codex` |
+| Auditability | `auditability/` | `codex` |
+| Groundhog | `groundhog/` | `codex` |
+| User Interface | `user-interface/` | `gemini` |
 
 ## Crate Architecture
 
@@ -61,62 +82,28 @@ orbit-common → orbit-policy, orbit-exec, orbit-knowledge, orbit-embed → orbi
 | Semantic Index  | WorkspaceOnly      | Task-derived embeddings stay with the workspace  |
 | Run Traces      | WorkspaceOnly      | Per-repo activity/job JSONL and blob artifacts   |
 
+## Maintainer Conventions
+
+- Order files for the next maintainer's first read: lead with the module's primary concept or entry point, then move into supporting detail.
+- Data-heavy modules usually start with their core structs/enums; orchestration modules usually start with the main public function.
+
+**Rust practices:**
+
+- **Errors:** propagate via `OrbitError` at crate boundaries; reach for typed `thiserror` variants over ad-hoc strings. `?` over manual `match`. Don't `unwrap` / `expect` in non-test code unless the invariant is local and stated in the message.
+- **Logging:** use `tracing` (never `println!` / `eprintln!` / `log`). The default subscriber handles redaction — don't reach around it. Prefer structured fields (`tracing::info!(run_id, ...)`) over string interpolation.
+- **Visibility:** default to `pub(crate)`; reserve `pub` for items in the crate's documented public surface (see the architecture diagram). Re-export at the crate root only for types that are genuinely part of the API.
+- **Async locking:** never hold a `Mutex` / `RwLock` guard across `.await`. Scope the lock to a block, or use `tokio::sync` primitives when state is genuinely cross-task. Bounded channels by default.
+- **Tests:** in-file unit tests under `#[cfg(test)] mod tests`; integration tests under `tests/`. Match nearby scaffolding (e.g. sibling `*_tests.rs` files in `orbit-engine::activity_job::job_executor`). Don't introduce a new test harness when an existing one fits.
+- **Comments & docs:** `///` doc-comment public items. Explain *why* in code comments, not *what* — well-named identifiers carry the *what*. Remove commented-out code instead of fencing it.
+
+## Commits & Authorship
+
+- Use the agent commit identity (e.g. `codex`, `claude`) as author/committer.
+- Include the Orbit task ID in commit messages when applicable (e.g. `[T20260320-001234]`). Task IDs are workspace-local search keys (`git log --grep '[T...]'`); when a task has a linked `external_ref`, include that tag too (`[T20260506-11] [ENG-1234] ...`) — cross-engineer reviewers resolve the external tag, not the Orbit one.
+- Use your model name (e.g. `claude-opus-4-7`, `gpt-5.5`, `gemini-3.1-pro`) when authoring tasks or docs. Cite relevant task IDs in any doc you write.
+
 ## Orbit Workflow
 
-For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs), invoke the relevant `orbit-*` skill. The `orbit` skill is the entry point and router.
+For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs), invoke the relevant `orbit-*` skill. The `orbit` skill is the entry point and router. Task authoring quality standards live in `orbit-create-task`.
 
-## Friction Reports
-
-Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems encountered during work.
-Record them with `orbit.friction.add`; they are stored as append-only markdown records under `.orbit/frictions/`.
-Do not use friction reports for user-requested work, backlog shaping, or generic bug tracking.
-There is no accept/reject triage lifecycle for friction records.
-No need to search for duplicates before reporting concrete friction.
-
-## Activity / Job Model
-
-The full design lives under [docs/design/activity-job/](./docs/design/activity-job/), with the current implementation in [docs/design/activity-job/2_design.md](./docs/design/activity-job/2_design.md).
-
-### Activity YAML reference
-
-Activity and job YAMLs declare `schemaVersion: 2`. Job steps reference activities by name via `target: activity:<name>` or inline the full spec via `spec:`. `agent_loop` activities declare `backend:`, `provider:`, and `wall_clock_timeout_seconds:`. A step inside a `loop:` body with a `session:` binding must resolve to `backend: http` (enforced at load time).
-
-Policy is a filesystem-scoping surface only. Activities can declare `fsProfile: <name>` to select a named profile from the active policy; the policy layer contributes global `denyRead` / `denyModify` safety rails. If an activity omits `fsProfile:`, runtime resolves an implicit `unrestricted` profile (`read: [./**]`, `modify: [./**]`) before applying the global denies.
-
-### Durable workflow state
-
-Treat direct-agent stdout as an audit/diagnostic stream, not a workflow handoff channel. Jobs and activities should pass durable data through task artifacts, `orbit.state.*`, job-run state, or purpose-built tools such as `orbit.duel.plan.add` and `orbit.duel.plan.winner`; downstream steps should read those persisted records instead of parsing agent process output.
-
-## Task Authoring Quality
-
-Follow the `## Task Quality Standards` section in `orbit-create-task` skill: explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.
-
-**Commits & Tasks & doc authorship**:
-
-- Use the agent commit identity (i.e. `codex` or `claude`) as author/committer when you make commits
-- Include the task ID in the commit message when the commit is associated with an Orbit task (e.g. `[T20260320-001234]`).
-- The task ID in the commit message is a local search key: it lets you or your agent find commits via `git log --grep '[T...]'` in your own workspace, and is not designed to be resolvable on another engineer's machine. When a task has a linked `external_ref`, include that tag alongside it (e.g. `[T20260506-11] [ENG-1234] ...`); cross-engineer reviewers resolve the external tag, not the Orbit one.
-- Use your model name (e.g. `claude-opus-4-7`, `gpt-5.5`, `gemini-3.1-pro`) when authoring tasks or docs.
-- When writing docs, cite relevant task IDs in the doc itself.
-- When your change touches an owned feature's implementation, update that feature's design docs in the same PR: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, and add a new ADR for any non-obvious decision the change embodies. Stale docs are treated as a review blocker.
-
-## Feature Ownership
-
-Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
-
-| Feature | Folder | Lead |
-|---------|--------|------|
-| Knowledge graph | `knowledge-graph/` | `claude` |
-| Policy & Sandboxing | `policy-sandbox/` | `claude` |
-| Project Learnings | `project-learnings/` | `claude` |
-| Task Lineage | `task-lineage/` | `claude` |
-| Activity / Job | `activity-job/` | `codex` |
-| Auditability | `auditability/` | `codex` |
-| Groundhog | `groundhog/` | `codex` |
-| User Interface | `user-interface/` | `gemini` |
-
-## Scoreboards
-
-Scoreboards live at `.orbit/state/scoreboard/`:
-
-- `duel_plan.json` — planning-duel run results.
+Scoreboards live at `.orbit/state/scoreboard/` (e.g. `duel_plan.json` — planning-duel run results).
