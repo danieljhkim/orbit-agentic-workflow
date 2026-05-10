@@ -76,6 +76,35 @@ fn workflow_critical_tools_remain_registered() {
 }
 
 #[test]
+fn friction_surface_is_append_only() {
+    let names = registered_tool_names();
+
+    for retained in [
+        "orbit.friction.add",
+        "orbit.friction.list",
+        "orbit.friction.show",
+        "orbit.friction.stats",
+    ] {
+        assert!(
+            names.contains(retained),
+            "friction tool missing: {retained}"
+        );
+    }
+
+    for removed in [
+        "orbit.friction.update",
+        "orbit.friction.delete",
+        "orbit.friction.resolve",
+        "orbit.friction.reject",
+    ] {
+        assert!(
+            !names.contains(removed),
+            "non-append-only friction tool registered: {removed}"
+        );
+    }
+}
+
+#[test]
 fn task_dependency_params_remain_in_agent_tool_schemas() {
     let mut registry = ToolRegistry::new();
     registry.register_builtins();

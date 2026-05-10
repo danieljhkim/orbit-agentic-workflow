@@ -55,6 +55,7 @@ spec:
        can produce it cheaply and accurately.
   tools:
     - orbit.task.*
+    - orbit.friction.*
     - orbit.graph.*
     - fs.read
     - fs.delete

@@ -302,7 +302,7 @@ fn normalize_scoreboard_artifacts(
     }
 
     let mut changed = 0usize;
-    for file_name in ["pr.json", "friction_bounty.json"] {
+    for file_name in ["pr.json"] {
         if normalize_counter_scoreboard(&scoreboard_dir.join(file_name))? {
             changed += 1;
         }

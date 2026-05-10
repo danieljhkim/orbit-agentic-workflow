@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260506-2, T20260508-8, T20260508-14, T20260508-22, T20260509-12)
+**Last updated:** 2026-05-10 (T20260510-13)
 
 This document describes Orbit's shipped auditability implementation across command audit rows, activity/job envelopes, loop-level provider/tool traces, blob storage, redaction, identity attribution, metrics-adjacent invocation records, and known limitations. See [1_overview.md](./1_overview.md) for the feature purpose and [3_vision.md](./3_vision.md) for future questions.
 
@@ -47,7 +47,7 @@ Some runtime paths write targeted command-audit rows directly:
 
 These producers share the SQLite schema and must preserve the same status, target, actor, and redaction expectations as CLI rows. Prescriptive coverage expectations live in [specs/coverage-matrix.md](./specs/coverage-matrix.md).
 
-After [T20260427-0023], selected canonical stores also project live tracing events: filesystem policy denials still write FS audit events, proc-spawn allowlist denials still return `OrbitError::PolicyDenied`, friction task creation still updates the scoreboard, and each path also emits a redacted `orbit.policy.deny` or `orbit.friction.reported` event.
+After [T20260427-0023], selected canonical stores also project live tracing events: filesystem policy denials still write FS audit events, proc-spawn allowlist denials still return `OrbitError::PolicyDenied`, and each path also emits a redacted `orbit.policy.deny` event. Friction reports are now append-only records under `.orbit/frictions/` via [T20260510-13], not task lifecycle events or precomputed scoreboard updates.
 
 ---
 
@@ -108,7 +108,7 @@ After [T20260428-11], compact `summary.json` counts all audited tool-run attempt
 
 After [T20260428-17] and [T20260430-4], local task review and GitHub PR review are separate scoreboard inputs. Local review-thread creations record `task-review-threads` in `task_review.json`; successful GitHub sync records `pr-review-comments` in `pr.json`. `summary.json` schema version 2 exposes these as `task_review.threads` and `pr.review_comments`, and scoring accepts only exact configured model identities or built-in defaults, skipping `human`, `system`, and arbitrary bare labels.
 
-After [T20260427-43], the friction bounty scoreboard is refreshed from task history: `type: friction` counts reports, exits from `status: friction` to `backlog`, `in-progress`, or `done` count acceptances, and exits to `rejected` count rejections.
+After [T20260510-13], friction reporting is outside the task lifecycle: `orbit.friction.add` writes append-only markdown records under `.orbit/frictions/`, and `orbit.friction.stats` computes model/tag rates on demand from that corpus plus task completion attribution.
 
 ---
 
@@ -146,7 +146,7 @@ Each record contains timestamp, level, target, and structured fields. After [T20
 - **[T20260426-2343]** — Add the global process tracing JSONL feed at `~/.orbit/state/logs/orbit.jsonl`.
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
-- **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
+- **[T20260427-43]** — Superseded friction lifecycle scoring with `status: friction` and history-derived counters.
 - **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.
 - **[T20260428-4]** — Move tool-invocation audit ownership into the runtime, add the `ToolEntryPoint` discriminator, bracket MCP preflight + dispatch, and deduplicate CLI guard rows.
 - **[T20260428-11]** — Derive `summary.json` all/failed tool-call counts from command-audit tool-run rows while keeping invocation/token scoreboard data as the token source.
@@ -159,5 +159,6 @@ Each record contains timestamp, level, target, and structured fields. After [T20
 - **[T20260508-14]** — Surface bounded per-step agent log previews and derived diagnostics error rows in the dashboard.
 - **[T20260508-22]** — Use `task.implemented_by` to set git commit authors for automated task commits.
 - **[T20260509-12]** — Scope workflow git author and committer identity to the spawned commit process without writing repo-local Git config.
+- **[T20260510-13]** — Move friction reports from task lifecycle state to append-only `.orbit/frictions/` records.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

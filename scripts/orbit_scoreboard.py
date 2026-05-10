@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Orbit Scoreboard Visualizer
-Reads .orbit/state/scoreboard/{duel_plan,tokens,pr,friction_bounty}.json
+Reads .orbit/state/scoreboard/{duel_plan,tokens,pr}.json
 and renders an interactive HTML dashboard.
 """
 
@@ -253,7 +253,7 @@ def main():
 
     duel_data     = load_json(SCOREBOARD_DIR / "duel_plan.json")
     tokens_data   = load_json(SCOREBOARD_DIR / "tokens.json")
-    # pr.json and friction_bounty.json are currently empty
+    # pr.json is currently empty
 
     runs = duel_data.get("runs", []) if isinstance(duel_data, dict) else []
 

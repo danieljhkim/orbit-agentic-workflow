@@ -37,10 +37,11 @@ pub mod skill_store {
     pub use crate::file::skill_store::*;
 }
 
-pub mod friction_bounty {
-    pub use crate::file::scoreboard::friction_bounty::{
-        record_friction_accepted, record_friction_rejected, record_friction_reported,
-        refresh_from_tasks,
+pub mod friction_store {
+    pub use crate::file::friction_store::{
+        FrictionAddParams, FrictionListFilter, FrictionMigrationSummary, StoredFrictionRecord,
+        add_friction, ensure_default_tag_taxonomy, friction_stats, list_frictions,
+        migrate_legacy_friction_tasks, show_friction,
     };
 }
 
@@ -56,10 +57,10 @@ pub mod task_review_scoreboard {
 
 pub mod scoreboard_summary {
     pub use crate::file::scoreboard::scoreboard_summary::{
-        AgentSummary, DuelSummary, FrictionSummary, PrSummary, RecentSummary, ScoreboardInputs,
-        ScoreboardSummary, TaskReviewSummary, TokenSummary, TopToolCall, WorkflowRunCount,
-        generate_summary, generate_summary_with_audit_tool_calls, generate_summary_with_inputs,
-        summary_path, write_summary,
+        AgentSummary, DuelSummary, PrSummary, RecentSummary, ScoreboardInputs, ScoreboardSummary,
+        TaskReviewSummary, TokenSummary, TopToolCall, WorkflowRunCount, generate_summary,
+        generate_summary_with_audit_tool_calls, generate_summary_with_inputs, summary_path,
+        write_summary,
     };
 }
 

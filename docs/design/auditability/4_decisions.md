@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-09 (T20260506-2, T20260508-22, T20260509-12)
+**Last updated:** 2026-05-10 (T20260510-13)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -142,7 +142,7 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 
 ## ADR-012 — Friction scorekeeping derives from lifecycle history
 
-**Status:** Accepted · 2026-04 · [T20260427-43]
+**Status:** Superseded · 2026-05 · [T20260510-13]
 
 **Context.** Friction reports used `type: friction`, but untriaged reports shared `status: proposed` with human-authored proposals, making scoreboard derivation ambiguous.
 
@@ -290,6 +290,20 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 
 ---
 
+## ADR-024 — Friction reports are append-only records, not lifecycle tasks
+
+**Status:** Accepted · 2026-05 · [T20260510-13]
+
+**Context.** Friction reports are operational signal, not planned work. Storing them as `type: friction` tasks cluttered task lists and forced accept/reject triage decisions that were more about duplicate handling than report validity.
+
+**Decision.** Store friction reports under `.orbit/frictions/{yyyy}-{mm}/F{nnn}.md` with YAML frontmatter and markdown body. Expose only `orbit.friction.add/list/show/stats`; reject new `orbit.task.add` calls that request `type: friction` or `status: friction`; compute rates on demand from friction records plus task completion attribution.
+
+**Consequences.**
+- The backlog contains work items rather than self-report signal, and friction reports remain append-only.
+- Cost: legacy friction tasks remain readable artifacts and need a one-shot migration command to copy them into the new corpus.
+
+---
+
 ## Task References
 
 - **[T20260419-0002]** — Add workspace provenance and v2 audit envelope events for activity/job execution.
@@ -319,5 +333,6 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260506-2]** — Lazily materialize loop audit JSONL files only when loop-level events are emitted.
 - **[T20260508-22]** — Use `task.implemented_by` to set git commit authors for automated task commits.
 - **[T20260509-12]** — Scope workflow git author and committer identity to the spawned commit process without writing repo-local Git config.
+- **[T20260510-13]** — Move friction reports from task lifecycle state to append-only `.orbit/frictions/` records.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

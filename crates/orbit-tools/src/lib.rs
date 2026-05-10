@@ -60,6 +60,10 @@ pub use registry::ToolRegistry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrbitBuiltinAction {
+    FrictionAdd,
+    FrictionList,
+    FrictionShow,
+    FrictionStats,
     PipelineInvoke,
     PipelineWait,
     ReviewThreadAdd,

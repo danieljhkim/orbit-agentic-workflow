@@ -80,6 +80,7 @@ spec:
     - follow_up: optional string
   tools:
     - orbit.task.*
+    - orbit.friction.*
     - orbit.state.*
     - orbit.graph.*
     - fs.read

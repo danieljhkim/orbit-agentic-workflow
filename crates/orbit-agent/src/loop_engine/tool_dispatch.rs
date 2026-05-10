@@ -78,10 +78,21 @@ pub fn schema_to_tool_spec(schema: &ToolSchema) -> ToolSpec {
 }
 
 const TASK_TYPE_ENUM: &[&str] = &[
-    "task", "feature", "epic", "friction", "issue", "bug", "chore", "refactor",
+    "task", "feature", "epic", "issue", "bug", "chore", "refactor",
 ];
 
-const TASK_STATUS_ENUM: &[&str] = &[
+const TASK_ADD_STATUS_ENUM: &[&str] = &[
+    "proposed",
+    "backlog",
+    "someday",
+    "in-progress",
+    "review",
+    "done",
+    "blocked",
+    "rejected",
+];
+
+const TASK_UPDATE_STATUS_ENUM: &[&str] = &[
     "proposed",
     "friction",
     "backlog",
@@ -96,7 +107,8 @@ const TASK_STATUS_ENUM: &[&str] = &[
 fn enum_values_for(tool_name: &str, param_name: &str) -> Option<&'static [&'static str]> {
     match (tool_name, param_name) {
         ("orbit.task.add", "type") => Some(TASK_TYPE_ENUM),
-        ("orbit.task.add" | "orbit.task.update", "status") => Some(TASK_STATUS_ENUM),
+        ("orbit.task.add", "status") => Some(TASK_ADD_STATUS_ENUM),
+        ("orbit.task.update", "status") => Some(TASK_UPDATE_STATUS_ENUM),
         _ => None,
     }
 }
@@ -184,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn task_tool_specs_preserve_friction_enums() {
+    fn task_add_schema_excludes_legacy_friction_enums() {
         let add_schema = ToolSchema {
             name: "orbit.task.add".to_string(),
             description: String::new(),
@@ -196,20 +208,23 @@ mod tests {
             .as_object()
             .expect("properties");
         assert!(
-            add_properties["type"]["enum"]
+            !add_properties["type"]["enum"]
                 .as_array()
                 .expect("type enum")
                 .iter()
                 .any(|value| value == "friction")
         );
         assert!(
-            add_properties["status"]["enum"]
+            !add_properties["status"]["enum"]
                 .as_array()
                 .expect("status enum")
                 .iter()
                 .any(|value| value == "friction")
         );
+    }
 
+    #[test]
+    fn task_update_schema_preserves_legacy_friction_status_enum() {
         let update_schema = ToolSchema {
             name: "orbit.task.update".to_string(),
             description: String::new(),

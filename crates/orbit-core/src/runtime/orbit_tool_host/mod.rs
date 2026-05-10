@@ -1,4 +1,5 @@
 mod dispatch;
+mod friction_tools;
 mod host;
 mod input;
 mod json;

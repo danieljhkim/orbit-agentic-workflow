@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use orbit_common::types::{OrbitError, WorkspacePaths};
-use orbit_store::{global_executor_def_store, global_policy_def_store};
+use orbit_store::{friction_store, global_executor_def_store, global_policy_def_store};
 
 use crate::OrbitRuntime;
 use crate::command::activity::seed_default_activities;
@@ -217,6 +217,9 @@ pub fn init_workspace_at_root(
     if scoring_enabled {
         seed_scoreboard_templates(&orbit_root)?;
     }
+    if !options.global_only {
+        friction_store::ensure_default_tag_taxonomy(&orbit_root.join("frictions"))?;
+    }
 
     Ok(InitResult {
         refreshed_skill_files,
@@ -303,11 +306,6 @@ fn seed_scoreboard_templates(orbit_root: &Path) -> Result<(), OrbitError> {
     let task_review_path = scoreboard_dir.join("task_review.json");
     if !task_review_path.exists() {
         fs::write(&task_review_path, "{}\n").map_err(|e| OrbitError::Io(e.to_string()))?;
-    }
-
-    let friction_path = scoreboard_dir.join("friction_bounty.json");
-    if !friction_path.exists() {
-        fs::write(&friction_path, "{}\n").map_err(|e| OrbitError::Io(e.to_string()))?;
     }
 
     Ok(())

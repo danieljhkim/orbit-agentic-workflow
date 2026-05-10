@@ -18,6 +18,7 @@ pub mod audit_event;
 pub mod backend_resolver;
 pub mod diagnostics;
 pub mod executor;
+pub mod friction;
 pub mod graph;
 pub mod init;
 pub mod job;

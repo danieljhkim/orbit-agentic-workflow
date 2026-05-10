@@ -8,8 +8,7 @@ Project instructions for agents working on Orbit.
 - Don't invent task IDs — get them from `orbit.task.add`.
 - Don't edit task files directly — use `orbit.task.update`.
 - Don't add cross-crate dependencies without checking the architecture diagram below.
-- When you hit friction, ambiguity, naming drift, or duplicated sources of truth: file a self-reported friction task via the `orbit-track-issues` skill instead of working around it.
-- Reserve task type `friction` for agent self-reports only. Do not use `friction` for normal user-requested work, backlog shaping, or generic bug tracking.
+- When you hit friction, ambiguity, naming drift, or duplicated sources of truth: file a self-reported friction report via the `orbit-track-issues` skill instead of working around it.
 
 ## Project Do's
 
@@ -68,11 +67,11 @@ For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs)
 
 ## Friction Reports
 
-Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems when you hit them, not when a user instructs you to investigate an issue already identified by a user. File them with `type: friction`; Orbit auto-sets `status: friction` at creation. Passing only `status: friction` also infers `type: friction`, and passing both is valid. No need to search for existing friction tasks of the same issue - just file it.
-
-The type/status coupling exists only at creation. The task type remains `friction` for the record's lifetime, while triage moves status forward through normal lifecycle transitions such as `backlog`, `in-progress`, `done`, or `rejected`. A task that leaves `status: friction` must not return to it.
-
-The friction bounty scoreboard binds to that lifecycle history: reported counts come from tasks created with `type: friction`, accepted counts come from `friction → backlog | in-progress | done`, and rejected counts come from `friction → rejected`.
+Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems encountered during work.
+Record them with `orbit.friction.add`; they are stored as append-only markdown records under `.orbit/frictions/`.
+Do not use friction reports for user-requested work, backlog shaping, or generic bug tracking.
+There is no accept/reject triage lifecycle for friction records.
+No need to search for duplicates before reporting concrete friction.
 
 ## Activity / Job Model
 
@@ -119,5 +118,4 @@ Feature design docs live under `docs/design/<feature>/` and follow [`docs/design
 
 Scoreboards live at `.orbit/state/scoreboard/`:
 
-- `friction_bounty.json` — self-reported agent friction reports (issues-reported, issues-accepted, issues-rejected) per agent/model. Rejected reports count against the reporter; quality over quantity.
 - `duel_plan.json` — planning-duel run results.

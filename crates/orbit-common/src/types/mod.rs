@@ -75,7 +75,7 @@ pub use duel::{
 pub use error::OrbitError;
 pub use event::OrbitEvent;
 pub use executor_def::{ExecutorDef, ExecutorSandboxKind, ExecutorType, StdoutFormat};
-pub use friction::FrictionEntry;
+pub use friction::{FrictionEntry, FrictionFrontmatter, FrictionRecord};
 pub use id::OrbitId;
 pub use invocation::{InvocationTrace, TokenUsage, ToolCallTrace};
 pub use job::{
