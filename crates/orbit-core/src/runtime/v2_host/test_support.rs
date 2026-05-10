@@ -74,7 +74,7 @@ pub(crate) fn seed_list_backlog_task(
     parent_id: Option<String>,
     context_files: Vec<&str>,
 ) -> Task {
-    if status == TaskStatus::Friction || task_type == TaskType::Friction {
+    if status == TaskStatus::Friction {
         return runtime
             .stores()
             .tasks()
@@ -144,7 +144,7 @@ pub(crate) fn seed_accepted_friction_task(
         title,
         TaskStatus::Friction,
         priority,
-        TaskType::Friction,
+        TaskType::Chore,
         None,
         context_files,
     );

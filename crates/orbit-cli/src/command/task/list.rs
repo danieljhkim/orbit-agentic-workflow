@@ -15,7 +15,7 @@ use super::output::{
 
 #[derive(Args)]
 #[command(
-    after_help = "Examples:\n  orbit task list\n  orbit task list --all\n  orbit task list --status backlog\n  orbit task list --status friction\n  orbit task list --status in-progress,review\n  orbit task list --type epic\n  orbit task list --priority high\n  orbit task list --parent T12345678-123456\n  orbit task list --ref jira:ENG-1234\n  orbit task list --has-ref jira\n  orbit task list --tag perf --tag bench\n  orbit task list --json"
+    after_help = "Examples:\n  orbit task list\n  orbit task list --all\n  orbit task list --status backlog\n  orbit task list --status friction\n  orbit task list --status in-progress,review\n  orbit task list --type feature\n  orbit task list --priority high\n  orbit task list --parent T12345678-123456\n  orbit task list --ref jira:ENG-1234\n  orbit task list --has-ref jira\n  orbit task list --tag perf --tag bench\n  orbit task list --json"
 )]
 pub struct TaskListArgs {
     /// Filter by one or more statuses (comma-separated). Defaults to backlog,in-progress.
@@ -27,7 +27,7 @@ pub struct TaskListArgs {
     /// Filter by priority level (low, medium, high)
     #[arg(long, value_enum)]
     pub priority: Option<TaskPriority>,
-    /// Filter by task type (task, feature, epic, issue, bug, chore, refactor)
+    /// Filter by task type (feature, bug, refactor, chore)
     #[arg(long = "type", value_enum)]
     pub task_type: Option<TaskType>,
     /// Filter to subtasks belonging to a parent task

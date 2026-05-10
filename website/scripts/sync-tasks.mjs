@@ -8,8 +8,7 @@ const repoRoot = path.dirname(websiteRoot);
 const targetRoot = path.join(websiteRoot, 'src', 'content', 'docs', 'tasks');
 const githubPullBaseUrl = 'https://github.com/danieljhkim/orbit/pull/';
 const maxSyncedDoneTasks = 100;
-const syncedDoneTaskTypes = new Set(['task', 'refactor', 'feature', 'epic', 'bug', 'issue']);
-const syncedHighSeverityFrictionPriorities = new Set(['high', 'critical']);
+const syncedDoneTaskTypes = new Set(['feature', 'bug', 'refactor', 'chore']);
 
 const tasks = await loadTasks();
 
@@ -43,8 +42,7 @@ async function loadTasks() {
 
 function shouldSyncTask(task) {
   const type = String(task.type ?? '').toLowerCase();
-  if (syncedDoneTaskTypes.has(type)) return true;
-  return type === 'friction' && syncedHighSeverityFrictionPriorities.has(String(task.priority ?? '').toLowerCase());
+  return syncedDoneTaskTypes.has(type);
 }
 
 function renderTaskPage(task, sidebarOrder) {
@@ -93,7 +91,7 @@ function renderIndex(tasks) {
   const sorted = [...tasks].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
   const generated = new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
   const itemLabel = sorted.length === 1 ? 'item' : 'items';
-  const intro = `_Showing ${sorted.length} most recent done ${itemLabel} for task, refactor, feature, epic, bug, issue, and high-severity friction work; the website caps this list at ${maxSyncedDoneTasks}. Generated ${generated}._`;
+  const intro = `_Showing ${sorted.length} most recent done ${itemLabel} for feature, bug, refactor, and chore work; the website caps this list at ${maxSyncedDoneTasks}. Generated ${generated}._`;
   const headers = ['ID', 'Title', 'Type', 'Implemented by', 'Updated'];
   const rows = sorted.map((task) => [
     `[${task.id}](/tasks/${task.id}/)`,

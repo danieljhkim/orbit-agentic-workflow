@@ -252,6 +252,9 @@ pub(super) fn update(
             status: optional_string(&input, "status")?
                 .map(|value| parse_task_status("status", &value))
                 .transpose()?,
+            task_type: optional_string_alias(&input, &["type", "task_type", "taskType"])?
+                .map(|value| parse_task_type("type", &value))
+                .transpose()?,
             planned_by: optional_raw_string(&input, "planned_by")?.map(empty_string_to_none),
             implemented_by: optional_raw_string(&input, "implemented_by")?
                 .map(empty_string_to_none),

@@ -1,6 +1,6 @@
 name: spike
 description: Template for a time-boxed research or investigation task
-task_type: task
+task_type: chore
 priority: medium
 description_template: |
   <QUESTION_OR_TOPIC_TO_INVESTIGATE>

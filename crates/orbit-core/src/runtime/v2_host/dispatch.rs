@@ -164,9 +164,8 @@ pub(super) fn run_deterministic(
             }))
         }
         // Materialize the workspace backlog for auto-dispatch.
-        // Filters by `status: backlog`; accepted friction reports keep
-        // `type: friction` and ship like other backlog tasks, while
-        // untriaged `status: friction` reports remain absent. In automatic
+        // Filters by `status: backlog`; legacy untriaged
+        // `status: friction` reports remain absent. In automatic
         // mode, drops any backlog task group whose context overlaps files
         // already held by `in-progress`/`review` tasks. Sorts critical →
         // high → medium → low then by `created_at` ascending so older

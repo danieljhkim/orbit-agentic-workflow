@@ -50,7 +50,7 @@ fn active_task_lock_holders<'a>(
     holders
 }
 
-fn is_epic_terminal_status(status: TaskStatus) -> bool {
+fn is_feature_child_terminal_status(status: TaskStatus) -> bool {
     matches!(
         status,
         TaskStatus::Done
@@ -61,7 +61,7 @@ fn is_epic_terminal_status(status: TaskStatus) -> bool {
     )
 }
 
-fn epic_state_for_task_status(status: TaskStatus) -> &'static str {
+fn feature_child_state_for_task_status(status: TaskStatus) -> &'static str {
     match status {
         // For epic orchestration, `review` means a child shipment workflow
         // reached the human handoff point and should not be dispatched again.
@@ -277,11 +277,11 @@ pub(super) fn load_epic(
                 action: action.to_string(),
                 message: format!("load epic {epic_id}: {err}"),
             })?;
-    if epic.task_type != TaskType::Epic {
+    if epic.task_type != TaskType::Feature {
         return Err(DispatchError::DeterministicActionFailed {
             action: action.to_string(),
             message: format!(
-                "task `{epic_id}` has type `{}`; expected `epic`",
+                "task `{epic_id}` has type `{}`; expected `feature`",
                 epic.task_type
             ),
         });
@@ -298,7 +298,7 @@ pub(super) fn load_epic(
             (
                 t.id.clone(),
                 serde_json::json!({
-                    "state": epic_state_for_task_status(t.status),
+                    "state": feature_child_state_for_task_status(t.status),
                     "status": t.status.to_string(),
                     "title": t.title,
                 }),
@@ -307,7 +307,7 @@ pub(super) fn load_epic(
         .collect::<serde_json::Map<String, Value>>();
     let open_subtasks = subtasks
         .iter()
-        .filter(|task| !is_epic_terminal_status(task.status))
+        .filter(|task| !is_feature_child_terminal_status(task.status))
         .collect::<Vec<_>>();
     let subtask_payload: Vec<Value> = open_subtasks
         .iter()

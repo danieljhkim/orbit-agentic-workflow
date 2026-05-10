@@ -48,7 +48,7 @@ fn load_epic_treats_review_subtasks_as_shipped_terminal_state() {
         "Epic",
         TaskStatus::InProgress,
         TaskPriority::High,
-        TaskType::Epic,
+        TaskType::Feature,
         None,
         vec![],
     );
@@ -57,7 +57,7 @@ fn load_epic_treats_review_subtasks_as_shipped_terminal_state() {
         "Review child",
         TaskStatus::Review,
         TaskPriority::High,
-        TaskType::Task,
+        TaskType::Chore,
         Some(epic.id.clone()),
         vec![],
     );
@@ -66,7 +66,7 @@ fn load_epic_treats_review_subtasks_as_shipped_terminal_state() {
         "Done child",
         TaskStatus::Done,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         Some(epic.id.clone()),
         vec![],
     );
@@ -101,7 +101,7 @@ fn load_epic_keeps_in_progress_subtasks_open_when_review_is_shipped() {
         "Epic",
         TaskStatus::InProgress,
         TaskPriority::High,
-        TaskType::Epic,
+        TaskType::Feature,
         None,
         vec![],
     );
@@ -110,7 +110,7 @@ fn load_epic_keeps_in_progress_subtasks_open_when_review_is_shipped() {
         "Review child",
         TaskStatus::Review,
         TaskPriority::High,
-        TaskType::Task,
+        TaskType::Chore,
         Some(epic.id.clone()),
         vec![],
     );
@@ -119,7 +119,7 @@ fn load_epic_keeps_in_progress_subtasks_open_when_review_is_shipped() {
         "In progress child",
         TaskStatus::InProgress,
         TaskPriority::High,
-        TaskType::Task,
+        TaskType::Chore,
         Some(epic.id.clone()),
         vec![],
     );
@@ -148,7 +148,7 @@ fn list_backlog_tasks_preserves_existing_fields_without_conflicts() {
         "Medium backlog",
         TaskStatus::Backlog,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/alpha/src/lib.rs"],
     );
@@ -157,7 +157,7 @@ fn list_backlog_tasks_preserves_existing_fields_without_conflicts() {
         "High backlog",
         TaskStatus::Backlog,
         TaskPriority::High,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/beta/src/lib.rs"],
     );
@@ -172,7 +172,7 @@ fn list_backlog_tasks_preserves_existing_fields_without_conflicts() {
             {
                 "id": high.id,
                 "title": "High backlog",
-                "type": "task",
+                "type": "chore",
                 "priority": "high",
                 "context_files": high.context_files,
                 "parent_id": null
@@ -180,7 +180,7 @@ fn list_backlog_tasks_preserves_existing_fields_without_conflicts() {
             {
                 "id": medium.id,
                 "title": "Medium backlog",
-                "type": "task",
+                "type": "chore",
                 "priority": "medium",
                 "context_files": medium.context_files,
                 "parent_id": null
@@ -211,7 +211,7 @@ fn list_backlog_tasks_includes_accepted_friction_reports() {
         json!([{
             "id": friction.id,
             "title": "Accepted friction",
-            "type": "friction",
+            "type": "chore",
             "priority": "medium",
             "context_files": friction.context_files,
             "parent_id": null
@@ -229,7 +229,7 @@ fn list_backlog_tasks_omits_untriaged_friction_reports() {
         "Untriaged friction",
         TaskStatus::Friction,
         TaskPriority::Medium,
-        TaskType::Friction,
+        TaskType::Chore,
         None,
         vec!["crates/friction/src/lib.rs"],
     );
@@ -260,7 +260,7 @@ fn list_backlog_tasks_reports_direct_context_lock_conflicts() {
         "Locking task",
         TaskStatus::InProgress,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -269,7 +269,7 @@ fn list_backlog_tasks_reports_direct_context_lock_conflicts() {
         "Backlog task",
         TaskStatus::Backlog,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -304,7 +304,7 @@ fn list_backlog_tasks_reports_group_member_conflicts_with_trigger_conflicts() {
         "Foo lock",
         TaskStatus::InProgress,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -313,7 +313,7 @@ fn list_backlog_tasks_reports_group_member_conflicts_with_trigger_conflicts() {
         "Bar lock",
         TaskStatus::InProgress,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/bar/src/lib.rs"],
     );
@@ -322,7 +322,7 @@ fn list_backlog_tasks_reports_group_member_conflicts_with_trigger_conflicts() {
         "Parent",
         TaskStatus::Backlog,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["docs/parent.md"],
     );
@@ -331,7 +331,7 @@ fn list_backlog_tasks_reports_group_member_conflicts_with_trigger_conflicts() {
         "Low child",
         TaskStatus::Backlog,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         Some(parent.id.clone()),
         vec!["crates/foo/src/lib.rs"],
     );
@@ -340,7 +340,7 @@ fn list_backlog_tasks_reports_group_member_conflicts_with_trigger_conflicts() {
         "High child",
         TaskStatus::Backlog,
         TaskPriority::High,
-        TaskType::Task,
+        TaskType::Chore,
         Some(parent.id.clone()),
         vec!["crates/bar/src/lib.rs"],
     );
@@ -393,7 +393,7 @@ fn list_backlog_tasks_reports_accepted_friction_context_lock_conflicts() {
         "Locking task",
         TaskStatus::InProgress,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/friction/src/lib.rs"],
     );
@@ -432,7 +432,7 @@ fn list_backlog_tasks_does_not_report_untriaged_friction_tasks_as_excluded() {
         "Locking task",
         TaskStatus::InProgress,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -441,7 +441,7 @@ fn list_backlog_tasks_does_not_report_untriaged_friction_tasks_as_excluded() {
         "Friction task",
         TaskStatus::Friction,
         TaskPriority::Medium,
-        TaskType::Friction,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -450,7 +450,7 @@ fn list_backlog_tasks_does_not_report_untriaged_friction_tasks_as_excluded() {
         "Backlog task",
         TaskStatus::Backlog,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -488,7 +488,7 @@ fn list_backlog_tasks_does_not_report_max_tasks_truncation_as_excluded() {
             &format!("Task {index}"),
             TaskStatus::Backlog,
             TaskPriority::Medium,
-            TaskType::Task,
+            TaskType::Chore,
             None,
             vec![&path],
         );
@@ -510,7 +510,7 @@ fn list_backlog_tasks_omits_excluded_for_explicit_task_ids() {
         "Locking task",
         TaskStatus::InProgress,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );
@@ -519,7 +519,7 @@ fn list_backlog_tasks_omits_excluded_for_explicit_task_ids() {
         "Backlog task",
         TaskStatus::Backlog,
         TaskPriority::Medium,
-        TaskType::Task,
+        TaskType::Chore,
         None,
         vec!["crates/foo/src/lib.rs"],
     );

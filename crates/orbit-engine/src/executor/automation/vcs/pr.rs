@@ -897,7 +897,7 @@ mod tests {
             status: TaskStatus::Review,
             priority: TaskPriority::Medium,
             complexity: None,
-            task_type: TaskType::Task,
+            task_type: TaskType::Chore,
             pr_status: None,
             external_refs: Vec::new(),
             source_task_id: None,

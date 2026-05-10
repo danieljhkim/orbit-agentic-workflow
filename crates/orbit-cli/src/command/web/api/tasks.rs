@@ -106,6 +106,8 @@ pub(super) struct UpdateTaskBody {
     #[serde(default)]
     status: Option<TaskStatus>,
     #[serde(default)]
+    task_type: Option<TaskType>,
+    #[serde(default)]
     context_files: Option<Vec<String>>,
 }
 
@@ -207,6 +209,7 @@ pub(super) async fn update_task_action(
         execution_summary: body.execution_summary,
         comment: body.comment,
         status: body.status,
+        task_type: body.task_type,
         planned_by: None,
         implemented_by: None,
         pr_status: None,

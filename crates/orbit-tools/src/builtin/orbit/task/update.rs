@@ -54,6 +54,12 @@ impl Tool for OrbitTaskUpdateTool {
                 required: false,
             },
             ToolParam {
+                name: "type".to_string(),
+                description: "New task type".to_string(),
+                param_type: "string".to_string(),
+                required: false,
+            },
+            ToolParam {
                 name: "planned_by".to_string(),
                 description: "Explicit planning attribution label (empty string clears)"
                     .to_string(),

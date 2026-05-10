@@ -315,6 +315,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             use crate::command::migrate::MigrateSubcommand;
             let sub = match &cmd.command {
                 MigrateSubcommand::Frictions(_) => "frictions",
+                MigrateSubcommand::TaskTypes(_) => "task-types",
             };
             CommandMeta {
                 command: "migrate".to_string(),

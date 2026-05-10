@@ -590,7 +590,7 @@ mod tests {
             status: TaskStatus::Review,
             priority: TaskPriority::Medium,
             complexity: None,
-            task_type: TaskType::Task,
+            task_type: TaskType::Chore,
             pr_status: None,
             external_refs: vec![ExternalRef::github_pr("42").expect("github pr ref")],
             source_task_id: None,

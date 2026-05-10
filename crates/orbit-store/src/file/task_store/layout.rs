@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use orbit_common::types::{OrbitError, TaskStatus, TaskType};
+use orbit_common::types::{OrbitError, TaskStatus};
 
 use super::TaskFileStore;
 use crate::file::layout::{ensure_dirs, read_child_dirs as list_child_dirs};
@@ -259,12 +259,17 @@ impl TaskFileStore {
         if !self.task_doc_path(&task_dir).is_file() {
             return Ok(None);
         }
-        let mut bundle = self.read_bundle_at(&task_dir)?;
-        if bundle.doc.task_type != TaskType::Friction {
+        let doc_path = self.task_doc_path(&task_dir);
+        if read_top_level_task_type(&doc_path)?.as_deref() != Some("friction") {
             return Ok(None);
         }
 
-        let task_id = bundle.doc.id.clone();
+        let Some(task_id) = task_dir.file_name().and_then(|value| value.to_str()) else {
+            return Err(OrbitError::Store(format!(
+                "invalid task directory path {}",
+                task_dir.display()
+            )));
+        };
         let target_dir = self.task_dir(TaskStateDir::Friction, &task_id);
         if target_dir == task_dir {
             return Ok(Some(task_dir));
@@ -277,8 +282,6 @@ impl TaskFileStore {
             )));
         }
 
-        rewrite_legacy_proposed_friction_history(&mut bundle.doc.history);
-        self.write_bundle_at(&task_dir, &bundle)?;
         self.move_task_dir(&task_dir, &target_dir)?;
         Ok(Some(target_dir))
     }
@@ -344,18 +347,6 @@ pub(super) fn validate_task_id(id: &str) -> Result<(), OrbitError> {
     ))
 }
 
-fn rewrite_legacy_proposed_friction_history(history: &mut [orbit_common::types::TaskHistoryEntry]) {
-    for entry in history {
-        if entry.event == "created"
-            && entry.from_status.is_none()
-            && entry.to_status == Some(TaskStatus::Proposed)
-        {
-            entry.to_status = Some(TaskStatus::Friction);
-            return;
-        }
-    }
-}
-
 fn is_valid_task_id(id: &str) -> bool {
     let Some(raw) = id.strip_prefix('T') else {
         return false;
@@ -388,6 +379,21 @@ fn is_valid_task_id(id: &str) -> bool {
         && tail.split('-').all(|component| {
             !component.is_empty() && component.as_bytes().iter().all(u8::is_ascii_digit)
         })
+}
+
+fn read_top_level_task_type(path: &Path) -> Result<Option<String>, OrbitError> {
+    let raw = fs::read_to_string(path).map_err(|err| {
+        OrbitError::Io(format!(
+            "failed to read task file {}: {err}",
+            path.display()
+        ))
+    })?;
+    for line in raw.lines() {
+        if let Some(value) = line.strip_prefix("type:") {
+            return Ok(Some(value.trim().trim_matches('"').to_string()));
+        }
+    }
+    Ok(None)
 }
 
 fn partition_key(id: &str) -> Option<String> {

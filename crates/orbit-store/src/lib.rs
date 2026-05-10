@@ -45,6 +45,12 @@ pub mod friction_store {
     };
 }
 
+pub mod task_type_migration {
+    pub use crate::file::task_store::{
+        TaskTypeMigrationChange, TaskTypeMigrationSummary, migrate_task_types,
+    };
+}
+
 pub mod pr_scoreboard {
     pub use crate::file::scoreboard::pr_scoreboard::{
         record_pr_count_with_revision, record_pr_count_without_revision, record_pr_review_comment,

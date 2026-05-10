@@ -125,15 +125,14 @@ fn infer_task_create_type_and_status(
         ));
     }
 
-    if requested_type == Some(TaskType::Friction) || requested_status == Some(TaskStatus::Friction)
-    {
+    if requested_status == Some(TaskStatus::Friction) {
         return Err(OrbitError::InvalidInput(
             "friction reports are no longer tasks; use orbit.friction.add".to_string(),
         ));
     }
 
     Ok((
-        requested_type.unwrap_or(TaskType::Task),
+        requested_type.unwrap_or(TaskType::Chore),
         requested_status.unwrap_or(default_status),
     ))
 }
@@ -185,19 +184,31 @@ mod tests {
     }
 
     #[test]
-    fn task_add_rejects_legacy_friction_type_and_status() {
+    fn task_add_rejects_legacy_friction_status() {
         let (_root, runtime) = test_runtime();
 
         let err = runtime
             .add_task(TaskAddParams {
                 title: "Friction type".to_string(),
                 description: "Legacy friction path.".to_string(),
-                task_type: Some(TaskType::Friction),
+                task_type: Some(TaskType::Chore),
+                status: Some(TaskStatus::Friction),
                 workspace_path: Some(".".to_string()),
                 ..Default::default()
             })
-            .expect_err("type friction should fail");
+            .expect_err("status friction should fail");
         assert!(err.to_string().contains("use orbit.friction.add"), "{err}");
+
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Chore type".to_string(),
+                description: "Modern task type path.".to_string(),
+                task_type: Some(TaskType::Chore),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("chore type still succeeds");
+        assert_eq!(task.task_type, TaskType::Chore);
 
         let err = runtime
             .add_task(TaskAddParams {
