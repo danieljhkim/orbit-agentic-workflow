@@ -122,7 +122,7 @@ impl Tool for OrbitTaskAddTool {
                 required: false,
             },
         ];
-        parameters.extend(super::super::identity_params());
+        parameters.extend(super::super::model_identity_params());
 
         ToolSchema {
             name: "orbit.task.add".to_string(),
@@ -133,6 +133,7 @@ impl Tool for OrbitTaskAddTool {
     }
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        super::super::reject_agent_field(&input, "orbit.task.add")?;
         super::super::execute_host_action(ctx, input, OrbitBuiltinAction::TaskAdd)
     }
 }

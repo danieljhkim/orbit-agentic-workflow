@@ -110,7 +110,7 @@ impl Tool for OrbitTaskUpdateTool {
                 required: false,
             },
         ]);
-        parameters.extend(super::super::identity_params());
+        parameters.extend(super::super::model_identity_params());
 
         ToolSchema {
             name: "orbit.task.update".to_string(),
@@ -121,6 +121,7 @@ impl Tool for OrbitTaskUpdateTool {
     }
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
+        super::super::reject_agent_field(&input, "orbit.task.update")?;
         super::super::execute_host_action(ctx, input, OrbitBuiltinAction::TaskUpdate)
     }
 }

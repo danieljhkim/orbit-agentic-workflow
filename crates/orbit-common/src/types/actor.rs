@@ -6,25 +6,23 @@ use crate::types::agent_pair::{agent_family_from_cli, all_agent_families};
 
 /// Typed identity for attribution across all Orbit artifacts.
 ///
-/// Replaces ad-hoc `(Option<String>, Option<String>)` agent/model pairs.
-/// Used in tasks, friction logs, metrics entries, audit trails, and
-/// anywhere provenance matters.
+/// Orbit stores model-only agent attribution. The agent family is derived from
+/// the model string at render or routing time.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ActorIdentity {
     /// The Orbit system itself (automated processes with no specific agent).
     #[default]
     System,
-    /// An AI agent with a name and model identifier.
-    Agent { name: String, model: String },
+    /// An AI agent model identifier.
+    Agent { model: String },
     /// A human operator.
     Human { label: String },
 }
 
 impl ActorIdentity {
-    /// Construct an `Agent` variant, trimming whitespace from both fields.
-    pub fn agent(name: impl Into<String>, model: impl Into<String>) -> Self {
+    /// Construct an `Agent` variant, trimming whitespace.
+    pub fn agent(model: impl Into<String>) -> Self {
         Self::Agent {
-            name: name.into().trim().to_string(),
             model: model.into().trim().to_string(),
         }
     }
@@ -36,32 +34,26 @@ impl ActorIdentity {
         }
     }
 
-    /// Build from legacy `(Option<String>, Option<String>)` agent/model pair.
-    ///
-    /// - Both present → `Agent { name, model }`
-    /// - Only agent → `Agent { name, model: "" }` (model unknown)
-    /// - Neither → `System`
+    /// Build from a legacy `(Option<String>, Option<String>)` agent/model pair.
+    /// The model wins because the agent family is derivable from it.
     pub fn from_legacy(agent: Option<&str>, model: Option<&str>) -> Self {
-        match (
-            agent.filter(|s| !s.trim().is_empty()),
-            model.filter(|s| !s.trim().is_empty()),
-        ) {
-            (Some(name), Some(model)) => Self::Agent {
-                name: name.trim().to_string(),
-                model: model.trim().to_string(),
-            },
-            (Some(name), None) => Self::Agent {
-                name: name.trim().to_string(),
-                model: String::new(),
-            },
-            (None, _) => Self::System,
+        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+            return Self::Agent {
+                model: model.to_string(),
+            };
         }
+        if let Some(agent) = agent.map(str::trim).filter(|s| !s.is_empty()) {
+            return Self::Agent {
+                model: agent.to_string(),
+            };
+        }
+        Self::System
     }
 
-    /// Returns the agent name if this is an `Agent` variant.
+    /// Returns the derived agent family if this is a known `Agent` model.
     pub fn agent_name(&self) -> Option<&str> {
         match self {
-            Self::Agent { name, .. } => Some(name),
+            Self::Agent { model } => agent_from_model(model),
             _ => None,
         }
     }
@@ -69,7 +61,7 @@ impl ActorIdentity {
     /// Returns the model name if this is an `Agent` variant.
     pub fn agent_model(&self) -> Option<&str> {
         match self {
-            Self::Agent { model, .. } if !model.is_empty() => Some(model),
+            Self::Agent { model } if !model.is_empty() => Some(model),
             _ => None,
         }
     }
@@ -78,8 +70,7 @@ impl ActorIdentity {
     pub fn label(&self) -> String {
         match self {
             Self::System => "system".to_string(),
-            Self::Agent { name, model } if model.is_empty() => name.clone(),
-            Self::Agent { name, model } => format!("{name} / {model}"),
+            Self::Agent { model } => model.clone(),
             Self::Human { label } => label.clone(),
         }
     }
@@ -104,13 +95,10 @@ impl ActorIdentity {
     pub fn to_legacy(&self) -> (Option<String>, Option<String>) {
         match self {
             Self::System => (None, None),
-            Self::Agent { name, model } => (
-                Some(name.clone()),
-                if model.is_empty() {
-                    None
-                } else {
-                    Some(model.clone())
-                },
+            Self::Agent { model } if model.is_empty() => (None, None),
+            Self::Agent { model } => (
+                agent_from_model(model).map(ToOwned::to_owned),
+                Some(model.clone()),
             ),
             Self::Human { .. } => (None, None),
         }
@@ -120,6 +108,40 @@ impl ActorIdentity {
 impl Display for ActorIdentity {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.label())
+    }
+}
+
+/// Infer Orbit's agent family from a model identifier.
+pub fn agent_from_model(model: &str) -> Option<&'static str> {
+    let model = model.trim().to_ascii_lowercase();
+    if model.is_empty() {
+        return None;
+    }
+
+    if model.starts_with("claude-") || model.starts_with("opus") || model.starts_with("sonnet") {
+        return Some("claude");
+    }
+    if model.starts_with("gpt-") || model.starts_with("o1") || model.starts_with("o3") {
+        return Some("codex");
+    }
+    if model.starts_with("gemini-") {
+        return Some("gemini");
+    }
+    if model.starts_with("ollama:") {
+        return Some("ollama");
+    }
+
+    None
+}
+
+/// Infer a provider family from a model identifier.
+pub fn provider_from_model(model: &str) -> Option<&'static str> {
+    match agent_from_model(model)? {
+        "claude" => Some("anthropic"),
+        "codex" => Some("openai"),
+        "gemini" => Some("google"),
+        "ollama" => Some("ollama"),
+        _ => None,
     }
 }
 
@@ -168,7 +190,7 @@ pub fn normalize_optional_attribution_label(
 /// Custom serialization: emits the flat display label string.
 ///
 /// - `System` → `"system"`
-/// - `Agent { name, model }` → `"name / model"` (or just `"name"` if model is empty)
+/// - `Agent { model }` → `"model"`
 /// - `Human { label }` → `"label"`
 impl Serialize for ActorIdentity {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -178,7 +200,9 @@ impl Serialize for ActorIdentity {
 
 #[derive(Serialize, Deserialize)]
 struct AgentFields {
+    #[serde(default)]
     name: String,
+    #[serde(default)]
     model: String,
 }
 
@@ -193,7 +217,7 @@ impl<'de> Deserialize<'de> for ActorIdentity {
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str(
-                    r#""system", or {"agent": {"name": "...", "model": "..."}}, or {"human": "..."}"#,
+                    r#""system", a model string, {"agent": {"model": "..."}}, or {"human": "..."}"#,
                 )
             }
 
@@ -205,7 +229,6 @@ impl<'de> Deserialize<'de> for ActorIdentity {
                         if other.contains(" / ") {
                             let parts: Vec<&str> = other.splitn(2, " / ").collect();
                             Ok(ActorIdentity::Agent {
-                                name: parts[0].trim().to_string(),
                                 model: parts[1].trim().to_string(),
                             })
                         } else if other == "human" {
@@ -213,9 +236,8 @@ impl<'de> Deserialize<'de> for ActorIdentity {
                                 label: "human".to_string(),
                             })
                         } else {
-                            // Could be an agent name without model, or a human label
-                            Ok(ActorIdentity::Human {
-                                label: other.to_string(),
+                            Ok(ActorIdentity::Agent {
+                                model: other.to_string(),
                             })
                         }
                     }
@@ -232,9 +254,13 @@ impl<'de> Deserialize<'de> for ActorIdentity {
                 match key.as_str() {
                     "agent" => {
                         let fields: AgentFields = map.next_value()?;
+                        let model = if fields.model.trim().is_empty() {
+                            fields.name
+                        } else {
+                            fields.model
+                        };
                         Ok(ActorIdentity::Agent {
-                            name: fields.name,
-                            model: fields.model,
+                            model: model.trim().to_string(),
                         })
                     }
                     "human" => {
@@ -247,5 +273,33 @@ impl<'de> Deserialize<'de> for ActorIdentity {
         }
 
         deserializer.deserialize_any(ActorVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{agent_from_model, provider_from_model};
+
+    #[test]
+    fn agent_from_model_maps_known_prefixes() {
+        assert_eq!(agent_from_model("claude-opus-4-7"), Some("claude"));
+        assert_eq!(agent_from_model("gpt-5.5"), Some("codex"));
+        assert_eq!(agent_from_model("gemini-3.1-pro-preview"), Some("gemini"));
+        assert_eq!(agent_from_model("ollama:llama3.2"), Some("ollama"));
+    }
+
+    #[test]
+    fn agent_from_model_returns_none_for_unknown_prefix() {
+        assert_eq!(agent_from_model("unknown-model"), None);
+        assert_eq!(agent_from_model(""), None);
+    }
+
+    #[test]
+    fn provider_from_model_maps_known_prefixes() {
+        assert_eq!(provider_from_model("claude-sonnet-4-7"), Some("anthropic"));
+        assert_eq!(provider_from_model("gpt-5.5"), Some("openai"));
+        assert_eq!(provider_from_model("gemini-3-pro"), Some("google"));
+        assert_eq!(provider_from_model("ollama:mistral"), Some("ollama"));
+        assert_eq!(provider_from_model("unknown-model"), None);
     }
 }

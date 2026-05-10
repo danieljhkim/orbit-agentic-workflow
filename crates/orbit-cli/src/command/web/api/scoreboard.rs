@@ -114,8 +114,7 @@ fn compute_metrics_extras(
         };
         for entry in entries {
             let key = match &entry.actor_identity {
-                ActorIdentity::Agent { model, name } if !model.is_empty() => model.clone(),
-                ActorIdentity::Agent { name, .. } if !name.is_empty() => name.clone(),
+                ActorIdentity::Agent { model } if !model.is_empty() => model.clone(),
                 ActorIdentity::Human { label } if !label.is_empty() => label.clone(),
                 _ => continue,
             };

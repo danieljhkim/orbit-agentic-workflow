@@ -41,7 +41,6 @@ fn tool_run_task_show_resolves_main_orbit_from_git_worktree() {
         "description": "Task used by worktree resolution integration test.",
         "acceptance_criteria": ["main and linked worktree resolve the same task"],
         "workspace": ".",
-        "agent": "codex",
         "model": "gpt-5"
     })
     .to_string();
@@ -64,7 +63,6 @@ fn tool_run_task_show_resolves_main_orbit_from_git_worktree() {
 
     let show_input = json!({
         "id": task_id,
-        "agent": "codex",
         "model": "gpt-5"
     })
     .to_string();

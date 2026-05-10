@@ -39,7 +39,8 @@ pub(super) struct TaskFileDocument {
     pub(super) planned_by: Option<String>,
     #[serde(default)]
     pub(super) implemented_by: Option<String>,
-    #[serde(default)]
+    /// Legacy field — read-only. Modern task YAML stores model-only attribution.
+    #[serde(default, skip_serializing)]
     pub(super) agent: Option<String>,
     #[serde(default)]
     pub(super) model: Option<String>,
@@ -233,7 +234,6 @@ pub(super) fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, 
     yaml.push_str(&yaml_field("implemented_by", &doc.implemented_by)?);
 
     yaml.push_str(&yaml_section("implementation"));
-    yaml.push_str(&yaml_field("agent", &doc.agent)?);
     yaml.push_str(&yaml_field("model", &doc.model)?);
     yaml.push_str(&yaml_field("pr_status", &doc.pr_status)?);
     if !doc.external_refs.is_empty() {
