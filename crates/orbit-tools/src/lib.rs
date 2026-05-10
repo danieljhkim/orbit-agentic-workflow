@@ -70,6 +70,8 @@ pub enum OrbitBuiltinAction {
     ReviewThreadList,
     ReviewThreadReply,
     ReviewThreadResolve,
+    SemanticRelated,
+    SemanticSearch,
     StateGet,
     StateSet,
     TaskAdd,

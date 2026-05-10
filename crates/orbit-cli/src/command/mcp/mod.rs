@@ -65,13 +65,20 @@ pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
     "orbit.graph.show",
 ];
 
+pub(crate) const SEMANTIC_READ_TOOL_NAMES: &[&str] =
+    &["orbit.semantic.search", "orbit.semantic.related"];
+
 pub(crate) fn safe_mcp_tool_names() -> Vec<&'static str> {
     let mut names = Vec::with_capacity(
-        TASK_TOOL_NAMES.len() + FRICTION_TOOL_NAMES.len() + GRAPH_READ_TOOL_NAMES.len(),
+        TASK_TOOL_NAMES.len()
+            + FRICTION_TOOL_NAMES.len()
+            + GRAPH_READ_TOOL_NAMES.len()
+            + SEMANTIC_READ_TOOL_NAMES.len(),
     );
     names.extend_from_slice(TASK_TOOL_NAMES);
     names.extend_from_slice(FRICTION_TOOL_NAMES);
     names.extend_from_slice(GRAPH_READ_TOOL_NAMES);
+    names.extend_from_slice(SEMANTIC_READ_TOOL_NAMES);
     names
 }
 
@@ -79,6 +86,7 @@ pub(crate) fn is_mcp_tool_exposed(name: &str) -> bool {
     TASK_TOOL_NAMES.contains(&name)
         || FRICTION_TOOL_NAMES.contains(&name)
         || GRAPH_READ_TOOL_NAMES.contains(&name)
+        || SEMANTIC_READ_TOOL_NAMES.contains(&name)
 }
 
 fn ensure_mcp_tool_exposed(name: &str) -> Result<(), OrbitError> {
@@ -298,8 +306,8 @@ mod tests {
     use orbit_mcp::McpHost;
 
     use super::{
-        GRAPH_READ_TOOL_NAMES, RuntimeMcpHost, TASK_TOOL_NAMES, is_mcp_tool_exposed,
-        safe_mcp_tool_names,
+        GRAPH_READ_TOOL_NAMES, RuntimeMcpHost, SEMANTIC_READ_TOOL_NAMES, TASK_TOOL_NAMES,
+        is_mcp_tool_exposed, safe_mcp_tool_names,
     };
 
     #[test]
@@ -329,6 +337,14 @@ mod tests {
             assert!(
                 names.contains(*name),
                 "missing runtime graph read tool: {name}"
+            );
+            assert!(is_mcp_tool_exposed(name));
+        }
+
+        for name in SEMANTIC_READ_TOOL_NAMES {
+            assert!(
+                names.contains(*name),
+                "missing runtime semantic read tool: {name}"
             );
             assert!(is_mcp_tool_exposed(name));
         }
@@ -364,6 +380,13 @@ mod tests {
             assert!(
                 listed.contains(*name),
                 "client-visible MCP tool list missing graph read tool: {name}"
+            );
+        }
+
+        for name in SEMANTIC_READ_TOOL_NAMES {
+            assert!(
+                listed.contains(*name),
+                "client-visible MCP tool list missing semantic read tool: {name}"
             );
         }
 

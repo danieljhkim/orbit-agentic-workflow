@@ -5,6 +5,7 @@ mod input;
 mod json;
 mod pipeline_tools;
 mod review_threads;
+mod semantic_tools;
 mod state_tools;
 mod task_locks;
 mod task_tools;

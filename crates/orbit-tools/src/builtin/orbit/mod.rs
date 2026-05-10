@@ -5,6 +5,7 @@ pub mod groundhog;
 pub mod knowledge;
 pub mod pipeline;
 pub mod review_thread;
+pub mod semantic;
 pub mod state;
 pub mod task;
 
@@ -66,6 +67,8 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(review_thread::list::OrbitReviewThreadListTool);
     registry.register(review_thread::reply::OrbitReviewThreadReplyTool);
     registry.register(review_thread::resolve::OrbitReviewThreadResolveTool);
+    registry.register(semantic::search::OrbitSemanticSearchTool);
+    registry.register(semantic::related::OrbitSemanticRelatedTool);
     registry.register(state::get::OrbitStateGetTool);
     registry.register(state::set::OrbitStateSetTool);
 }

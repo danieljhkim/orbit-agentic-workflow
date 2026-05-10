@@ -34,6 +34,8 @@ pub(super) fn execute(
         OrbitBuiltinAction::ReviewThreadResolve => {
             super::review_threads::resolve(runtime, input, agent, model)
         }
+        OrbitBuiltinAction::SemanticRelated => super::semantic_tools::related(runtime, input),
+        OrbitBuiltinAction::SemanticSearch => super::semantic_tools::search(runtime, input),
         OrbitBuiltinAction::StateGet => super::state_tools::get(task_scope, input),
         OrbitBuiltinAction::StateSet => super::state_tools::set(task_scope, input),
         OrbitBuiltinAction::TaskAdd => super::task_tools::add(runtime, input, agent, model),

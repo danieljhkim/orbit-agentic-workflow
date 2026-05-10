@@ -300,6 +300,8 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 SemanticSubcommand::Uninstall(_) => "uninstall",
                 SemanticSubcommand::Reindex(_) => "reindex",
                 SemanticSubcommand::Stats(_) => "stats",
+                SemanticSubcommand::Search(_) => "search",
+                SemanticSubcommand::Related(_) => "related",
             };
             CommandMeta {
                 command: "semantic".to_string(),

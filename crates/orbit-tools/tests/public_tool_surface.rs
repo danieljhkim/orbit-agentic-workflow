@@ -65,6 +65,8 @@ fn workflow_critical_tools_remain_registered() {
         "orbit.groundhog.side_effect",
         "orbit.pipeline.invoke",
         "orbit.pipeline.wait",
+        "orbit.semantic.related",
+        "orbit.semantic.search",
         "orbit.task.artifact.put",
         "proc.spawn",
     ] {
