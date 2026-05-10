@@ -7,6 +7,7 @@
 //!   model's context window.
 //! - [`worker`] — background indexer that drains task-mutation events into
 //!   the store via a `SubprocessEmbedder`.
+//! - [`query`] — brute-force cosine, FTS5 BM25, RRF, and task-result rollup.
 //! - [`task_fields`] — extracts the per-field rows that get embedded for a
 //!   `Task`.
 //!
@@ -16,6 +17,7 @@
 //! those submodules.
 
 pub mod chunker;
+pub mod query;
 pub mod store;
 pub mod task_fields;
 pub mod worker;

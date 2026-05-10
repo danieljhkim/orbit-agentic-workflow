@@ -203,6 +203,32 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_semantic_search() {
+        let cli = Cli::parse_from(["orbit", "semantic", "search", "semantic search design"]);
+        match cli.command {
+            Commands::Semantic(command) => match command.command {
+                SemanticSubcommand::Search(args) => {
+                    assert_eq!(args.query, "semantic search design")
+                }
+                _ => panic!("expected semantic search"),
+            },
+            _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_semantic_related() {
+        let cli = Cli::parse_from(["orbit", "semantic", "related", "T20260510-3"]);
+        match cli.command {
+            Commands::Semantic(command) => match command.command {
+                SemanticSubcommand::Related(args) => assert_eq!(args.task_id, "T20260510-3"),
+                _ => panic!("expected semantic related"),
+            },
+            _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
     fn cli_rejects_top_level_serve() {
         assert!(Cli::try_parse_from(["orbit", "serve"]).is_err());
     }

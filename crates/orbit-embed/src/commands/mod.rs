@@ -7,11 +7,15 @@
 
 pub mod install;
 pub mod reindex;
+pub mod related;
+pub mod search;
 pub mod stats;
 pub mod uninstall;
 
 pub use install::{SemanticInstallParams, SemanticInstallResult};
 pub use reindex::{SemanticReindexParams, SemanticReindexResult};
+pub use related::{SemanticRelatedParams, SemanticRelatedResult};
+pub use search::{ScoreBreakdown, SemanticHit, SemanticSearchParams, SemanticSearchResult};
 pub use stats::{CompanionStatus, SemanticStatsResult};
 pub use uninstall::{SemanticUninstallParams, SemanticUninstallResult};
 
@@ -29,6 +33,16 @@ pub(crate) fn parse_model(model: Option<&str>) -> Result<ModelSpec, OrbitError> 
         Some(value) => ModelSpec::parse(value),
         None => Ok(default_model()),
     }
+}
+
+pub(crate) fn resolve_query_model(model: Option<&str>) -> Result<ModelSpec, OrbitError> {
+    if model.is_some() {
+        return parse_model(model);
+    }
+    let active = CompanionPaths::default_under_home()
+        .ok()
+        .and_then(|paths| active_model(&paths));
+    parse_model(active.as_deref())
 }
 
 pub(crate) fn active_model(paths: &CompanionPaths) -> Option<String> {

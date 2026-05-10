@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use orbit_core::command::semantic::{
-    SemanticInstallParams, SemanticReindexParams, SemanticUninstallParams,
+    SemanticInstallParams, SemanticReindexParams, SemanticRelatedParams, SemanticSearchParams,
+    SemanticUninstallParams,
 };
 use orbit_core::{OrbitError, OrbitRuntime};
 use serde_json::json;
@@ -24,6 +25,10 @@ pub enum SemanticSubcommand {
     Reindex(SemanticReindexArgs),
     /// Show semantic-search index and companion status
     Stats(SemanticStatsArgs),
+    /// Hybrid semantic search over indexed task fields
+    Search(SemanticSearchArgs),
+    /// Find semantically related tasks
+    Related(SemanticRelatedArgs),
 }
 
 #[derive(Args)]
@@ -60,6 +65,32 @@ pub struct SemanticStatsArgs {
     pub json: bool,
 }
 
+#[derive(Args)]
+pub struct SemanticSearchArgs {
+    pub query: String,
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
+    #[arg(long)]
+    pub field: Option<String>,
+    #[arg(long)]
+    pub kind: Option<String>,
+    #[arg(long)]
+    pub model: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args)]
+pub struct SemanticRelatedArgs {
+    pub task_id: String,
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
+    #[arg(long)]
+    pub model: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
 impl Execute for SemanticCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         self.command.execute(runtime)
@@ -73,6 +104,8 @@ impl Execute for SemanticSubcommand {
             SemanticSubcommand::Uninstall(args) => args.execute(runtime),
             SemanticSubcommand::Reindex(args) => args.execute(runtime),
             SemanticSubcommand::Stats(args) => args.execute(runtime),
+            SemanticSubcommand::Search(args) => args.execute(runtime),
+            SemanticSubcommand::Related(args) => args.execute(runtime),
         }
     }
 }
@@ -164,5 +197,53 @@ impl Execute for SemanticStatsArgs {
             );
             Ok(())
         }
+    }
+}
+
+impl Execute for SemanticSearchArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let result = runtime.semantic_search(SemanticSearchParams {
+            query: self.query,
+            limit: self.limit,
+            field: self.field,
+            kind: self.kind,
+            model: self.model,
+        })?;
+        if self.json {
+            crate::output::json::print_pretty(&json!(result))
+        } else {
+            print_hits(&result.results);
+            println!("model={}", result.model_id);
+            Ok(())
+        }
+    }
+}
+
+impl Execute for SemanticRelatedArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let result = runtime.semantic_related(SemanticRelatedParams {
+            task_id: self.task_id,
+            limit: self.limit,
+            model: self.model,
+        })?;
+        if self.json {
+            crate::output::json::print_pretty(&json!(result))
+        } else {
+            print_hits(&result.results);
+            println!("model={}", result.model_id);
+            Ok(())
+        }
+    }
+}
+
+fn print_hits(results: &[orbit_core::command::semantic::SemanticHit]) {
+    for hit in results {
+        println!(
+            "{}  score={:.4}  best={}  snippet=\"{}\"",
+            hit.source_id,
+            hit.score,
+            hit.best_field,
+            hit.snippet.replace('"', "\\\"")
+        );
     }
 }
