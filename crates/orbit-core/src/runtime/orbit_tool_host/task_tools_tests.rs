@@ -98,31 +98,40 @@ fn task_add_tool_creates_proposed_tasks_for_agents() {
 }
 
 #[test]
-fn task_add_tool_rejects_friction_type_and_status() {
+fn task_add_tool_rejects_dropped_task_types_and_friction_status() {
     let (_root, runtime, _repo_root) = test_runtime();
 
-    for input in [
-        json!({
+    for dropped_type in ["task", "epic", "issue", "friction"] {
+        let message = invalid_input_message(runtime.execute_tool_command(
+            "orbit.task.add",
+            json!({
             "title": "Legacy friction type",
             "description": "Should use the new friction record surface.",
             "workspace": ".",
-            "type": "friction",
-        }),
+                "type": dropped_type,
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        ));
+        assert!(message.contains(dropped_type), "{message}");
+        assert!(
+            message.contains("feature, bug, refactor, chore"),
+            "{message}"
+        );
+    }
+
+    let message = invalid_input_message(runtime.execute_tool_command(
+        "orbit.task.add",
         json!({
             "title": "Legacy friction status",
             "description": "Should use the new friction record surface.",
             "workspace": ".",
             "status": "friction",
         }),
-    ] {
-        let message = invalid_input_message(runtime.execute_tool_command(
-            "orbit.task.add",
-            input,
-            Some("codex".to_string()),
-            Some("gpt-5.5".to_string()),
-        ));
-        assert!(message.contains("orbit.friction.add"), "{message}");
-    }
+        Some("codex".to_string()),
+        Some("gpt-5.5".to_string()),
+    ));
+    assert!(message.contains("orbit.friction.add"), "{message}");
 }
 
 #[test]
@@ -507,6 +516,36 @@ fn task_update_tool_infers_agent_from_model_only_input() {
         output.get("model").and_then(Value::as_str),
         Some("gemini-3.1-pro-preview")
     );
+}
+
+#[test]
+fn task_update_tool_rejects_dropped_task_types() {
+    let (_root, runtime, repo_root) = test_runtime();
+    let task = create_task(
+        &runtime,
+        &repo_root,
+        "Retype fixture",
+        "Task type update fixture.",
+        TaskStatus::Backlog,
+        &[],
+    );
+
+    for dropped_type in ["task", "epic", "issue", "friction"] {
+        let message = invalid_input_message(runtime.execute_tool_command(
+            "orbit.task.update",
+            json!({
+                "id": task.id.clone(),
+                "type": dropped_type,
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        ));
+        assert!(message.contains(dropped_type), "{message}");
+        assert!(
+            message.contains("feature, bug, refactor, chore"),
+            "{message}"
+        );
+    }
 }
 
 #[test]

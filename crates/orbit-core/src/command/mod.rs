@@ -22,6 +22,7 @@ pub mod friction;
 pub mod graph;
 pub mod init;
 pub mod job;
+pub mod migration;
 pub mod pipeline_run;
 pub mod policy;
 pub mod semantic;

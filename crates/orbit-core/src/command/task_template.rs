@@ -51,7 +51,7 @@ struct RawTemplate {
     #[serde(default)]
     description: String,
     #[serde(default)]
-    task_type: Option<RawTaskType>,
+    task_type: Option<TaskType>,
     #[serde(default)]
     priority: Option<RawPriority>,
     #[serde(default)]
@@ -64,39 +64,11 @@ struct RawTemplate {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum RawTaskType {
-    Task,
-    Feature,
-    Epic,
-    Friction,
-    Issue,
-    Bug,
-    Chore,
-    Refactor,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
 enum RawPriority {
     Low,
     Medium,
     High,
     Critical,
-}
-
-impl From<RawTaskType> for TaskType {
-    fn from(v: RawTaskType) -> Self {
-        match v {
-            RawTaskType::Task => TaskType::Task,
-            RawTaskType::Feature => TaskType::Feature,
-            RawTaskType::Epic => TaskType::Epic,
-            RawTaskType::Friction => TaskType::Friction,
-            RawTaskType::Issue => TaskType::Issue,
-            RawTaskType::Bug => TaskType::Bug,
-            RawTaskType::Chore => TaskType::Chore,
-            RawTaskType::Refactor => TaskType::Refactor,
-        }
-    }
 }
 
 impl From<RawPriority> for TaskPriority {
@@ -121,7 +93,7 @@ fn parse_template(yaml: &str, builtin: bool) -> Result<TaskTemplate, OrbitError>
     Ok(TaskTemplate {
         name: raw.name,
         description: raw.description,
-        task_type: raw.task_type.map(Into::into).unwrap_or(TaskType::Task),
+        task_type: raw.task_type.unwrap_or(TaskType::Chore),
         priority: raw.priority.map(Into::into).unwrap_or(TaskPriority::Medium),
         description_template: raw.description_template,
         plan_template: raw.plan_template,

@@ -45,7 +45,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 - Strongly prefer supplying `acceptance_criteria`.
 - Blank or missing task companion files (`plan.md`, `execution-summary.md`) are treated as blank task fields. Repair them through `orbit.task.update` (`plan` or `execution_summary`), not manual file edits.
 - Orbit fills `created_by`, `planned_by`, and `implemented_by` automatically from execution context when those roles are authored during the task lifecycle.
-- Use `orbit-track-issues` for agent self-reported friction; do not create friction tasks.
+- Valid task types are `feature`, `bug`, `refactor`, and `chore`. Use `orbit-track-issues` for agent self-reported friction instead of task types.
 
 ## Task Quality Standards
 
@@ -92,7 +92,7 @@ orbit tool run orbit.task.add --input '{
   "context_files": ["file:src/lib.rs", "dir:src/command", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
-  "type": "<task|feature|epic|issue|bug|chore|refactor>",
+  "type": "<feature|bug|refactor|chore>",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
 ```
@@ -107,7 +107,7 @@ orbit_task_add({
   "context_files": ["file:src/lib.rs", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
-  "type": "<task|feature|epic|issue|bug|chore|refactor>",
+  "type": "<feature|bug|refactor|chore>",
   "model": "<model_name>"
 })
 ```

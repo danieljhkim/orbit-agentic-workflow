@@ -193,7 +193,7 @@ impl<'de> Deserialize<'de> for TaskFileDocument {
 }
 
 pub(super) fn default_task_type() -> TaskType {
-    TaskType::Task
+    TaskType::Chore
 }
 
 pub(super) fn serialize_task_doc_yaml(doc: &TaskFileDocument) -> Result<String, OrbitError> {

@@ -144,12 +144,12 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 
 **Status:** Superseded · 2026-05 · [T20260510-13]
 
-**Context.** Friction reports used `type: friction`, but untriaged reports shared `status: proposed` with human-authored proposals, making scoreboard derivation ambiguous.
+**Context.** Friction reports once used a dedicated task type, but untriaged reports shared `status: proposed` with human-authored proposals, making scoreboard derivation ambiguous.
 
-**Decision.** Add `status: friction` as the creation status for self-reports, infer paired type/status at creation, and rebuild `friction_bounty.json` from task history.
+**Decision.** Add `status: friction` as the creation status for self-reports, infer legacy friction routing at creation, and rebuild `friction_bounty.json` from task history.
 
 **Consequences.**
-- Friction inbox items are separated from human proposals while the lifetime `type: friction` category remains intact.
+- Friction inbox items are separated from human proposals while legacy friction task records remain readable.
 - Cost: legacy untriaged reports need migration, and already-triaged legacy histories depend on existing transition records.
 
 ## ADR-013 — Unified log feed exposes shared backend surfaces for dashboard UI
@@ -294,9 +294,9 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 
 **Status:** Accepted · 2026-05 · [T20260510-13]
 
-**Context.** Friction reports are operational signal, not planned work. Storing them as `type: friction` tasks cluttered task lists and forced accept/reject triage decisions that were more about duplicate handling than report validity.
+**Context.** Friction reports are operational signal, not planned work. Storing them as task records cluttered task lists and forced accept/reject triage decisions that were more about duplicate handling than report validity.
 
-**Decision.** Store friction reports under `.orbit/frictions/{yyyy}-{mm}/F{nnn}.md` with YAML frontmatter and markdown body. Expose only `orbit.friction.add/list/show/stats`; reject new `orbit.task.add` calls that request `type: friction` or `status: friction`; compute rates on demand from friction records plus task completion attribution.
+**Decision.** Store friction reports under `.orbit/frictions/{yyyy}-{mm}/F{nnn}.md` with YAML frontmatter and markdown body. Expose only `orbit.friction.add/list/show/stats`; reject new `orbit.task.add` calls that request legacy friction task routing or `status: friction`; compute rates on demand from friction records plus task completion attribution.
 
 **Consequences.**
 - The backlog contains work items rather than self-report signal, and friction reports remain append-only.
@@ -317,7 +317,7 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260426-2349]** — Apply tracing-layer redaction before stderr and global JSONL output.
 - **[T20260427-0023]** — Project policy denials and friction task submissions into the global tracing feed.
 - **[T20260427-27]** — Close out the unified-log story: job lifecycle dual-write, library print migration with workspace lint gate, and `orbit log tail` reader CLI.
-- **[T20260427-43]** — Add `status: friction`, creation-time type/status inference, migration, and history-derived friction bounty refresh.
+- **[T20260427-43]** — Add `status: friction`, creation-time friction routing, migration, and history-derived friction bounty refresh.
 - **[T20260427-44]** — Add shared log formatter extraction and dashboard backend `/api/log` snapshot/SSE endpoints.
 - **[T20260427-46]** — Implement the Gemini-owned Tasks-tab `orbit.log` panel using the shared dashboard backend API.
 - **[T20260427-47]** — Allow explicit task attribution correction for `planned_by` and `implemented_by` through task update paths.

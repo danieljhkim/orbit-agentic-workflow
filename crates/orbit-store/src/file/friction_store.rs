@@ -205,7 +205,7 @@ pub fn migrate_legacy_friction_tasks(
         .collect();
     let mut legacy = tasks
         .iter()
-        .filter(|task| task.task_type.is_friction())
+        .filter(|task| task.status == TaskStatus::Friction)
         .collect::<Vec<_>>();
     legacy.sort_by(|left, right| {
         left.created_at
@@ -551,7 +551,6 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
         let mut friction = task("T1", TaskStatus::Friction);
-        friction.task_type = TaskType::Friction;
         friction.model = Some("gpt-5.5".to_string());
         friction.description = "Body text.".to_string();
 
@@ -613,7 +612,7 @@ mod tests {
             status,
             priority: TaskPriority::Medium,
             complexity: None,
-            task_type: TaskType::Task,
+            task_type: TaskType::Chore,
             pr_status: None,
             external_refs: Vec::new(),
             source_task_id: None,

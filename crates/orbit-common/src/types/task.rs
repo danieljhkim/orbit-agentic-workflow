@@ -244,35 +244,21 @@ impl FromStr for TaskComplexity {
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
-    Task,
     Feature,
-    #[serde(alias = "epic")]
-    Epic,
-    /// Legacy agent-reported friction task.
-    Friction,
-    /// General issue tracking.
-    #[serde(alias = "issue")]
-    Issue,
     /// An attributable defect — tracks which agent/model introduced the bug
     /// via the `agent`, `model`, and `source_task_id` fields on [`Task`].
     Bug,
-    #[cfg_attr(feature = "clap", value(alias = "other"))]
-    #[serde(alias = "other")]
-    Chore,
     Refactor,
+    Chore,
 }
 
 impl Display for TaskType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            TaskType::Task => "task",
             TaskType::Feature => "feature",
-            TaskType::Epic => "epic",
-            TaskType::Friction => "friction",
-            TaskType::Issue => "issue",
             TaskType::Bug => "bug",
-            TaskType::Chore => "chore",
             TaskType::Refactor => "refactor",
+            TaskType::Chore => "chore",
         };
         write!(f, "{s}")
     }
@@ -283,30 +269,21 @@ impl FromStr for TaskType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "task" => Ok(TaskType::Task),
             "feature" => Ok(TaskType::Feature),
-            "epic" => Ok(TaskType::Epic),
-            "friction" => Ok(TaskType::Friction),
-            "issue" => Ok(TaskType::Issue),
             "bug" => Ok(TaskType::Bug),
-            "chore" => Ok(TaskType::Chore),
-            // Backward-compatible mapping for legacy persisted values.
-            "other" => Ok(TaskType::Chore),
             "refactor" => Ok(TaskType::Refactor),
-            other => Err(format!("unknown task type: {other}")),
+            "chore" => Ok(TaskType::Chore),
+            other => Err(format!(
+                "unknown task type: {other} (valid types: {})",
+                TaskType::valid_names().join(", ")
+            )),
         }
     }
 }
 
 impl TaskType {
-    /// Returns true for epic tasks used by the epic pipeline.
-    pub fn is_epic(&self) -> bool {
-        matches!(self, TaskType::Epic)
-    }
-
-    /// Returns true for self-reported friction tasks.
-    pub fn is_friction(&self) -> bool {
-        matches!(self, TaskType::Friction)
+    pub fn valid_names() -> &'static [&'static str] {
+        &["feature", "bug", "refactor", "chore"]
     }
 }
 
@@ -883,7 +860,7 @@ execution_summary: ""
 context_files: []
 status: backlog
 priority: medium
-task_type: task
+task_type: chore
 created_at: 2026-01-01T00:00:00Z
 updated_at: 2026-01-01T00:00:00Z
 "#,

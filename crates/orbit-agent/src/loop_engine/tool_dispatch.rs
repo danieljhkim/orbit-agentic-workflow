@@ -77,9 +77,7 @@ pub fn schema_to_tool_spec(schema: &ToolSchema) -> ToolSpec {
     }
 }
 
-const TASK_TYPE_ENUM: &[&str] = &[
-    "task", "feature", "epic", "issue", "bug", "chore", "refactor",
-];
+const TASK_TYPE_ENUM: &[&str] = &["feature", "bug", "refactor", "chore"];
 
 const TASK_ADD_STATUS_ENUM: &[&str] = &[
     "proposed",
@@ -107,6 +105,7 @@ const TASK_UPDATE_STATUS_ENUM: &[&str] = &[
 fn enum_values_for(tool_name: &str, param_name: &str) -> Option<&'static [&'static str]> {
     match (tool_name, param_name) {
         ("orbit.task.add", "type") => Some(TASK_TYPE_ENUM),
+        ("orbit.task.update", "type") => Some(TASK_TYPE_ENUM),
         ("orbit.task.add", "status") => Some(TASK_ADD_STATUS_ENUM),
         ("orbit.task.update", "status") => Some(TASK_UPDATE_STATUS_ENUM),
         _ => None,
