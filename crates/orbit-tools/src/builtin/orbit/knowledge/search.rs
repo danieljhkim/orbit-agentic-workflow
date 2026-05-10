@@ -241,62 +241,11 @@ impl Tool for OrbitKnowledgeSearchTool {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DefaultSearchFastPath {
-    ExactName,
-    PathPrefix,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DefaultSearchExecutionPath {
-    SqlExactName,
-    SqlPathPrefix,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SqlDefaultSearchOutcome {
-    path: DefaultSearchExecutionPath,
-    total: usize,
-    rows: Vec<GraphIndexSearchRow>,
-}
-
-/// Classifies default-mode graph search queries into the only shapes backed by
-/// SQLite today:
-///
-/// - Empty/browse queries, wildcard queries (`*` or `?`), regex/fuzzy-looking
-///   queries, and multi-token non-path queries stay on the graph scan path.
-/// - Exact-name queries are one token with no slash or wildcard; they use
-///   `WHERE name_lower = ?` and fall back to scan if the exact index probe has
-///   no rows so substring misses still work.
-/// - Path-prefix queries contain `/`, have no trailing wildcard, and use
-///   `WHERE location_lower LIKE ? ESCAPE '\'` with literal `%`, `_`, and `\`
-///   escaped before appending the prefix `%`.
-fn classify_default_search_query(query: &str) -> Option<DefaultSearchFastPath> {
-    let query = query.trim();
-    if query.is_empty() || query.contains('*') || query.contains('?') {
-        return None;
-    }
-
-    if query.contains('/') {
-        return Some(DefaultSearchFastPath::PathPrefix);
-    }
-
-    if query.split_whitespace().count() != 1 || looks_like_regex_or_fuzzy_query(query) {
-        return None;
-    }
-
-    Some(DefaultSearchFastPath::ExactName)
-}
-
-fn looks_like_regex_or_fuzzy_query(query: &str) -> bool {
-    query.chars().any(|ch| {
-        matches!(
-            ch,
-            '^' | '$' | '+' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '~'
-        )
-    })
-}
-
+/// Default-mode SQL fast path. Mirrors the navigator's
+/// `node_candidate_matches` semantics: substring match on `name_lower` OR
+/// `location_lower`, in scan order. The prior exact-name + path-prefix
+/// classifier returned strict subsets of the fallback's substring match,
+/// shipping output-equivalence violations (T20260510-1).
 fn try_default_search_via_sql_index(
     ctx: &ToolContext,
     input: &Value,
@@ -305,82 +254,35 @@ fn try_default_search_via_sql_index(
     use_selectors: bool,
     limit: usize,
 ) -> Result<Option<Value>, OrbitError> {
-    let Some(outcome) =
-        try_default_search_rows_via_sql_index(ctx, input, query, include_non_code, limit)?
-    else {
-        return Ok(None);
-    };
-
-    if use_selectors {
-        let selectors: Vec<String> = outcome.rows.iter().map(selector_for_search_row).collect();
-        return Ok(Some(json!(selectors)));
-    }
-
-    let items: Vec<Value> = outcome.rows.into_iter().map(search_row_payload).collect();
-    Ok(Some(json!({
-        "total": outcome.total,
-        "results": items,
-    })))
-}
-
-fn try_default_search_rows_via_sql_index(
-    ctx: &ToolContext,
-    input: &Value,
-    query: &str,
-    include_non_code: bool,
-    limit: usize,
-) -> Result<Option<SqlDefaultSearchOutcome>, OrbitError> {
-    if classify_default_search_query(query).is_none() {
-        return Ok(None);
-    }
-
     let Some(reader) = open_current_graph_index(ctx, input)? else {
         return Ok(None);
     };
 
-    search_default_rows_with_graph_index(&reader, query, include_non_code, limit)
-}
-
-fn search_default_rows_with_graph_index(
-    reader: &GraphIndexReader,
-    query: &str,
-    include_non_code: bool,
-    limit: usize,
-) -> Result<Option<SqlDefaultSearchOutcome>, OrbitError> {
-    let Some(path) = classify_default_search_query(query) else {
-        return Ok(None);
-    };
-
-    let query_lower = query.to_lowercase();
-    let (execution_path, rows) = match path {
-        DefaultSearchFastPath::ExactName => {
-            let rows = reader.search_exact_name(&query_lower).map_err(|error| {
-                OrbitError::Execution(format!("query graph sqlite exact-name search: {error}"))
-            })?;
-            if rows.is_empty() {
-                return Ok(None);
-            }
-            (DefaultSearchExecutionPath::SqlExactName, rows)
-        }
-        DefaultSearchFastPath::PathPrefix => (
-            DefaultSearchExecutionPath::SqlPathPrefix,
-            reader
-                .search_location_prefix(&query_lower)
-                .map_err(|error| {
-                    OrbitError::Execution(format!(
-                        "query graph sqlite location-prefix search: {error}"
-                    ))
-                })?,
-        ),
-    };
+    let query_lower = query.trim().to_lowercase();
+    // The fallback bounds retained service hits via `default_ranking_search_limit`
+    // before ranking; mirror that so the SQL fast path scans the same candidate
+    // pool size before applying the rank-and-truncate step.
+    let scan_cap = default_ranking_search_limit(limit);
+    let rows = reader
+        .search_substring(&query_lower, scan_cap)
+        .map_err(|error| {
+            OrbitError::Execution(format!("query graph sqlite substring search: {error}"))
+        })?;
 
     let ranked = rank_sql_default_search_results(rows, include_non_code);
     let total = ranked.len();
-    Ok(Some(SqlDefaultSearchOutcome {
-        path: execution_path,
-        total,
-        rows: ranked.into_iter().take(limit).collect(),
-    }))
+    let rows: Vec<GraphIndexSearchRow> = ranked.into_iter().take(limit).collect();
+
+    if use_selectors {
+        let selectors: Vec<String> = rows.iter().map(selector_for_search_row).collect();
+        return Ok(Some(json!(selectors)));
+    }
+
+    let items: Vec<Value> = rows.into_iter().map(search_row_payload).collect();
+    Ok(Some(json!({
+        "total": total,
+        "results": items,
+    })))
 }
 
 fn open_current_graph_index(
@@ -641,69 +543,43 @@ mod tests {
         );
     }
 
+    /// SQL substring fast path returns the same selectors as the fallback for
+    /// the same query — exact-name, partial substring, multi-token, path-like,
+    /// and regex-shaped strings (which are treated as literal substrings here).
     #[test]
-    fn exact_name_query_uses_sql_index_when_rows_exist() {
+    fn sql_substring_path_matches_fallback_for_diverse_query_shapes() {
         let graph = graph_for_sql_search_tests();
         let (_temp_dir, reader) = index_reader_for_graph(&graph);
 
-        let outcome = search_default_rows_with_graph_index(&reader, "UniqueSymbol", false, 20)
-            .expect("sql search")
-            .expect("sql outcome");
-
-        assert_eq!(outcome.path, DefaultSearchExecutionPath::SqlExactName);
-        assert_eq!(
-            selectors_from_search_rows(&outcome.rows),
-            fallback_selectors(&graph, "UniqueSymbol", false, 20)
-        );
+        for query in [
+            "UniqueSymbol",      // exact name
+            "nique",             // partial substring
+            "Unique Symbol",     // multi-token
+            "^UniqueSymbol$",    // regex-looking literal
+            "src/core/",         // path prefix
+            "src/special%_dir/", // path prefix with LIKE metacharacters
+        ] {
+            let rows = sql_substring_selectors(&reader, query, false, 20);
+            assert_eq!(
+                rows,
+                fallback_selectors(&graph, query, false, 20),
+                "sql/fallback divergence for `{query}`"
+            );
+        }
     }
 
     #[test]
-    fn path_prefix_query_uses_escaped_sql_like() {
-        let graph = graph_for_sql_search_tests();
+    fn sql_substring_path_honors_user_limit() {
+        let graph = graph_with_repeated_name_leaves(25, "CommonSymbol");
         let (_temp_dir, reader) = index_reader_for_graph(&graph);
 
-        let outcome = search_default_rows_with_graph_index(&reader, "src/special%_dir/", false, 20)
-            .expect("sql search")
-            .expect("sql outcome");
-
-        assert_eq!(outcome.path, DefaultSearchExecutionPath::SqlPathPrefix);
-        assert_eq!(
-            selectors_from_search_rows(&outcome.rows),
-            vec![
-                "symbol:src/special%_dir/mod.rs#EscapedSymbol:function".to_string(),
-                "dir:src/special%_dir".to_string(),
-                "file:src/special%_dir/mod.rs".to_string(),
-            ]
-        );
-        assert_eq!(
-            selectors_from_search_rows(&outcome.rows),
-            fallback_selectors(&graph, "src/special%_dir/", false, 20)
-        );
+        let rows = sql_substring_selectors(&reader, "CommonSymbol", false, 10);
+        assert_eq!(rows.len(), 10);
+        assert_eq!(rows, fallback_selectors(&graph, "CommonSymbol", false, 10));
     }
 
     #[test]
-    fn substring_and_regex_shapes_stay_on_scan_path() {
-        let graph = graph_for_sql_search_tests();
-        let (_temp_dir, reader) = index_reader_for_graph(&graph);
-
-        let exact_probe_miss = search_default_rows_with_graph_index(&reader, "nique", false, 20)
-            .expect("substring search after exact miss");
-        let substring = search_default_rows_with_graph_index(&reader, "Unique Symbol", false, 20)
-            .expect("substring search");
-        let regex = search_default_rows_with_graph_index(&reader, "^UniqueSymbol$", false, 20)
-            .expect("regex search");
-
-        assert!(exact_probe_miss.is_none());
-        assert!(substring.is_none());
-        assert!(regex.is_none());
-        assert_eq!(
-            fallback_selectors(&graph, "nique", false, 20),
-            vec!["symbol:src/core/main.rs#UniqueSymbol:function".to_string()]
-        );
-    }
-
-    #[test]
-    fn missing_or_stale_index_falls_back_to_scan_for_all_query_shapes() {
+    fn missing_or_stale_index_yields_no_sql_outcome() {
         let graph = graph_for_sql_search_tests();
         let (temp_dir, _reader) = index_reader_for_graph(&graph);
         let store = GraphObjectStore::new(temp_dir.path().join("graph"));
@@ -719,57 +595,46 @@ mod tests {
                 .expect("open missing index")
                 .is_none()
         );
-
-        for query in [
-            "UniqueSymbol",
-            "src/core/",
-            "Unique Symbol",
-            "^UniqueSymbol$",
-        ] {
-            assert_eq!(
-                fallback_selectors(&graph, query, false, 20),
-                fallback_selectors_when_sql_unavailable(None, &graph, query, false, 20),
-                "missing index fallback changed output for {query}"
-            );
-        }
-    }
-
-    #[test]
-    fn sql_fast_path_honors_user_limit() {
-        let graph = graph_with_repeated_name_leaves(25, "CommonSymbol");
-        let (_temp_dir, reader) = index_reader_for_graph(&graph);
-
-        let outcome = search_default_rows_with_graph_index(&reader, "CommonSymbol", false, 10)
-            .expect("sql search")
-            .expect("sql outcome");
-
-        assert_eq!(outcome.path, DefaultSearchExecutionPath::SqlExactName);
-        assert!(outcome.rows.len() <= 10);
-        assert_eq!(outcome.rows.len(), 10);
     }
 
     #[test]
     #[ignore = "manual latency observation; run when refreshing graph search performance numbers"]
-    fn exact_name_sql_path_outperforms_scan_on_10k_leaf_fixture() {
+    fn substring_sql_path_outperforms_scan_on_10k_leaf_fixture() {
         let graph = graph_with_matching_leaves(10_000);
         let (_temp_dir, reader) = index_reader_for_graph(&graph);
 
         let sql_started = Instant::now();
-        let sql = search_default_rows_with_graph_index(&reader, "fixture_9999", false, 10)
-            .expect("sql search")
-            .expect("sql outcome");
+        let sql = sql_substring_selectors(&reader, "fixture_9999", false, 10);
         let sql_elapsed = sql_started.elapsed();
 
         let scan_started = Instant::now();
         let scan = fallback_selectors(&graph, "fixture_9999", false, 10);
         let scan_elapsed = scan_started.elapsed();
 
-        assert_eq!(sql.rows.len(), 1);
+        assert_eq!(sql.len(), 1);
         assert_eq!(scan.len(), 1);
         assert!(
             scan_elapsed.as_nanos() >= sql_elapsed.as_nanos() * 10,
             "expected SQL at least 10x faster; sql={sql_elapsed:?} scan={scan_elapsed:?}"
         );
+    }
+
+    fn sql_substring_selectors(
+        reader: &GraphIndexReader,
+        query: &str,
+        include_non_code: bool,
+        limit: usize,
+    ) -> Vec<String> {
+        let scan_cap = default_ranking_search_limit(limit);
+        let rows = reader
+            .search_substring(&query.trim().to_lowercase(), scan_cap)
+            .expect("sql substring search");
+        let ranked = rank_sql_default_search_results(rows, include_non_code);
+        ranked
+            .into_iter()
+            .take(limit)
+            .map(|row| selector_for_search_row(&row))
+            .collect()
     }
 
     fn graph_with_matching_leaves(leaf_count: usize) -> CodebaseGraphV1 {
@@ -1051,26 +916,6 @@ mod tests {
             .take(limit)
             .map(|node| service.selector_for_node(node))
             .collect()
-    }
-
-    fn fallback_selectors_when_sql_unavailable(
-        reader: Option<&GraphIndexReader>,
-        graph: &CodebaseGraphV1,
-        query: &str,
-        include_non_code: bool,
-        limit: usize,
-    ) -> Vec<String> {
-        if let Some(reader) = reader
-            && let Ok(Some(outcome)) =
-                search_default_rows_with_graph_index(reader, query, include_non_code, limit)
-        {
-            return selectors_from_search_rows(&outcome.rows);
-        }
-        fallback_selectors(graph, query, include_non_code, limit)
-    }
-
-    fn selectors_from_search_rows(rows: &[GraphIndexSearchRow]) -> Vec<String> {
-        rows.iter().map(selector_for_search_row).collect()
     }
 
     fn leaf_node(

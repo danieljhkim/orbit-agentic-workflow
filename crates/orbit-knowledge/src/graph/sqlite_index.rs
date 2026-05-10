@@ -15,7 +15,11 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavio
 use super::nodes::{BaseNodeFields, CodebaseGraphV1, FileNode, LeafKind};
 use crate::error::KnowledgeError;
 
-pub(crate) const GRAPH_SQLITE_INDEX_SCHEMA_VERSION: u32 = 4;
+// Schema 5 (T20260510-2): replaces the parent_id reverse-lookup `children_of`
+// with a forward-pointer `child` table. The graph's parent_id field is
+// always the containing FILE for leaves, so reverse lookups missed nested
+// leaf-leaf relationships (e.g. Python methods inside a class).
+pub(crate) const GRAPH_SQLITE_INDEX_SCHEMA_VERSION: u32 = 5;
 pub(crate) const GRAPH_SQLITE_INDEX_FILENAME: &str = "graph_index.sqlite";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,68 +130,91 @@ impl GraphIndexReader {
             .map_err(|error| sqlite_error(&self.path, "query graph sqlite node by id", error))
     }
 
-    pub fn search_exact_name(
+    /// Returns rows whose `name_lower` OR `location_lower` contains
+    /// `query_lower` as a substring, ordered by `scan_order` (dirs before
+    /// files before leaves, matching the navigator's scan).
+    ///
+    /// This mirrors `GraphContextService::node_candidate_matches` for the
+    /// default-ranking search path: empty query matches every row (browse
+    /// mode); non-empty query matches via `LIKE '%q%'` on either column.
+    /// SQLite cannot use the `name_lower` / `location_lower` btree indexes for
+    /// leading-wildcard LIKE, but a single-file scan over the compact node
+    /// table is still substantially cheaper than walking the by-id JSON
+    /// objects in the fallback.
+    ///
+    /// Replaces the prior `search_exact_name` / `search_location_prefix`
+    /// methods, whose exact-equality and prefix semantics violated
+    /// output-equivalence with the fallback (T20260510-1).
+    pub fn search_substring(
         &self,
-        name_lower: &str,
+        query_lower: &str,
+        limit: usize,
     ) -> Result<Vec<GraphIndexSearchRow>, KnowledgeError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let limit = i64::try_from(limit).map_err(|_| {
+            KnowledgeError::invalid_data("graph sqlite search limit exceeds i64".to_string())
+        })?;
+
+        if query_lower.is_empty() {
+            // Browse mode: return everything in scan order, capped at `limit`.
+            let mut stmt = self
+                .conn
+                .prepare(
+                    r#"
+                    SELECT id, node_type, kind, name, location, selector, scan_order
+                    FROM node
+                    ORDER BY scan_order ASC
+                    LIMIT ?1
+                    "#,
+                )
+                .map_err(|error| {
+                    sqlite_error(&self.path, "prepare graph sqlite browse search", error)
+                })?;
+            let rows = stmt
+                .query_map(params![limit], graph_index_search_row_from_row)
+                .map_err(|error| {
+                    sqlite_error(&self.path, "query graph sqlite browse search", error)
+                })?;
+            return rows
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| sqlite_error(&self.path, "read graph sqlite browse row", error));
+        }
+
+        let pattern = sqlite_like_substring_pattern(query_lower);
         let mut stmt = self
             .conn
             .prepare(
                 r#"
                 SELECT id, node_type, kind, name, location, selector, scan_order
                 FROM node
-                WHERE name_lower = ?1
+                WHERE name_lower LIKE ?1 ESCAPE '\'
+                   OR location_lower LIKE ?1 ESCAPE '\'
                 ORDER BY scan_order ASC
+                LIMIT ?2
                 "#,
             )
             .map_err(|error| {
-                sqlite_error(&self.path, "prepare graph sqlite exact-name search", error)
+                sqlite_error(&self.path, "prepare graph sqlite substring search", error)
             })?;
         let rows = stmt
-            .query_map(params![name_lower], graph_index_search_row_from_row)
+            .query_map(params![pattern, limit], graph_index_search_row_from_row)
             .map_err(|error| {
-                sqlite_error(&self.path, "query graph sqlite exact-name search", error)
+                sqlite_error(&self.path, "query graph sqlite substring search", error)
             })?;
         rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|error| sqlite_error(&self.path, "read graph sqlite exact-name row", error))
+            .map_err(|error| sqlite_error(&self.path, "read graph sqlite substring row", error))
     }
 
-    pub fn search_location_prefix(
-        &self,
-        location_prefix_lower: &str,
-    ) -> Result<Vec<GraphIndexSearchRow>, KnowledgeError> {
-        let pattern = sqlite_like_prefix_pattern(location_prefix_lower);
-        let mut stmt = self
-            .conn
-            .prepare(
-                r#"
-                SELECT id, node_type, kind, name, location, selector, scan_order
-                FROM node
-                WHERE location_lower LIKE ?1 ESCAPE '\'
-                ORDER BY scan_order ASC
-                "#,
-            )
-            .map_err(|error| {
-                sqlite_error(
-                    &self.path,
-                    "prepare graph sqlite location-prefix search",
-                    error,
-                )
-            })?;
-        let rows = stmt
-            .query_map(params![pattern], graph_index_search_row_from_row)
-            .map_err(|error| {
-                sqlite_error(
-                    &self.path,
-                    "query graph sqlite location-prefix search",
-                    error,
-                )
-            })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|error| {
-            sqlite_error(&self.path, "read graph sqlite location-prefix row", error)
-        })
-    }
-
+    /// Returns the forward children of `parent_id` in stored order, matching
+    /// `GraphNavigator::get_children` semantics.
+    ///
+    /// Uses the `child` edge table (forward pointers) rather than
+    /// `node.parent_id` (reverse pointers). The graph data model stamps every
+    /// leaf's `parent_id` with the containing file id even when the leaf's
+    /// semantic parent is another leaf, so a reverse-pointer query would miss
+    /// nested leaf-leaf relationships. See T20260510-2.
     pub fn children_of(
         &self,
         parent_id: &str,
@@ -204,10 +231,11 @@ impl GraphIndexReader {
             .conn
             .prepare(
                 r#"
-                SELECT id, node_type, kind, location, parent_id, selector, object_hash
-                FROM node
-                WHERE parent_id = ?1
-                ORDER BY ordinal ASC, id ASC
+                SELECT n.id, n.node_type, n.kind, n.location, n.parent_id, n.selector, n.object_hash
+                FROM child c
+                JOIN node n ON n.id = c.child_id
+                WHERE c.parent_id = ?1
+                ORDER BY c.ordinal ASC, n.id ASC
                 LIMIT ?2
                 "#,
             )
@@ -467,6 +495,7 @@ pub(crate) fn write_graph_index(
         r#"
         DROP TABLE IF EXISTS meta;
         DROP TABLE IF EXISTS node;
+        DROP TABLE IF EXISTS child;
         DROP TABLE IF EXISTS file_summary;
 
         CREATE TABLE meta (
@@ -494,6 +523,20 @@ pub(crate) fn write_graph_index(
         CREATE INDEX idx_node_parent ON node(parent_id);
         CREATE INDEX idx_node_parent_ordinal ON node(parent_id, ordinal);
         CREATE UNIQUE INDEX idx_node_selector ON node(selector) WHERE selector IS NOT NULL;
+
+        -- `child` mirrors the navigator's forward child pointers (DirNode.dir_children
+        -- + DirNode.file_children, FileNode.leaf_children, LeafNode.children). The
+        -- node.parent_id column is unreliable for nested leaves: build.rs stamps every
+        -- leaf with parent_id = file_id even when the leaf's semantic parent is
+        -- another leaf (e.g. methods inside a class). T20260510-2 caught this as an
+        -- output-equivalence violation between SQL show and the navigator.
+        CREATE TABLE child (
+          parent_id TEXT NOT NULL,
+          child_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          PRIMARY KEY (parent_id, child_id)
+        );
+        CREATE INDEX idx_child_parent_ordinal ON child(parent_id, ordinal);
 
         CREATE TABLE file_summary (
           file_id TEXT PRIMARY KEY,
@@ -588,6 +631,57 @@ pub(crate) fn write_graph_index(
                     scan_order: (leaf_scan_offset + index) as i64,
                 },
             )?;
+        }
+    }
+
+    {
+        let mut child_insert = tx
+            .prepare(
+                "INSERT OR REPLACE INTO child (parent_id, child_id, ordinal) VALUES (?1, ?2, ?3)",
+            )
+            .map_err(|error| sqlite_error(path, "prepare graph sqlite child insert", error))?;
+
+        // Forward child pointers, mirroring GraphNodeRef::child_ids():
+        //   Dir  -> dir_children + file_children
+        //   File -> leaf_children
+        //   Leaf -> children (nested leaves)
+        for dir in &graph.dirs {
+            for (ordinal, child_id) in dir
+                .dir_children
+                .iter()
+                .chain(dir.file_children.iter())
+                .enumerate()
+            {
+                child_insert
+                    .execute(params![
+                        dir.base.id.as_str(),
+                        child_id.as_str(),
+                        ordinal as i64
+                    ])
+                    .map_err(|error| sqlite_error(path, "insert graph sqlite child edge", error))?;
+            }
+        }
+        for file in &graph.files {
+            for (ordinal, child_id) in file.leaf_children.iter().enumerate() {
+                child_insert
+                    .execute(params![
+                        file.base.id.as_str(),
+                        child_id.as_str(),
+                        ordinal as i64
+                    ])
+                    .map_err(|error| sqlite_error(path, "insert graph sqlite child edge", error))?;
+            }
+        }
+        for leaf in &graph.leaves {
+            for (ordinal, child_id) in leaf.children.iter().enumerate() {
+                child_insert
+                    .execute(params![
+                        leaf.base.id.as_str(),
+                        child_id.as_str(),
+                        ordinal as i64
+                    ])
+                    .map_err(|error| sqlite_error(path, "insert graph sqlite child edge", error))?;
+            }
         }
     }
 
@@ -758,8 +852,9 @@ fn graph_index_search_row_from_row(row: &Row<'_>) -> rusqlite::Result<GraphIndex
     })
 }
 
-fn sqlite_like_prefix_pattern(input: &str) -> String {
-    let mut escaped = String::with_capacity(input.len() + 1);
+fn sqlite_like_substring_pattern(input: &str) -> String {
+    let mut escaped = String::with_capacity(input.len() + 2);
+    escaped.push('%');
     for ch in input.chars() {
         match ch {
             '%' | '_' | '\\' => {
@@ -1024,6 +1119,399 @@ mod tests {
             lineage_locked: false,
             lock_owner: None,
             lock_reason: String::new(),
+        }
+    }
+}
+
+/// SQL/navigator equivalence harness (T20260510-1, T20260510-2).
+///
+/// Holds the SQL fast-path query primitives accountable to the navigator
+/// semantics they claim to mirror. The two production bugs that motivated
+/// this module both shipped because no test asserted equivalence between
+/// `GraphIndexReader::*` and `GraphNavigator::*` for a non-trivial fixture:
+///
+/// - `search_substring` (was `search_exact_name` + `search_location_prefix`)
+///   must match `node_candidate_matches` substring-on-name-or-location.
+/// - `children_of` (now backed by the `child` edge table) must match
+///   `GraphNodeRef::child_ids()` — the forward pointer — even when the
+///   graph's `parent_id` field is uninformative for nested leaf relationships.
+///
+/// New SQL query primitives or new graph data shapes must extend this harness
+/// with a corresponding assertion before they can be considered correct.
+#[cfg(test)]
+mod equivalence_tests {
+    use crate::graph::nodes::{
+        BaseNodeFields, CodebaseGraphV1, DirNode, FileNode, LeafKind, LeafNode,
+    };
+    use crate::graph::object_store::GraphObjectStore;
+    use crate::graph::{GraphIndexReader, navigator::GraphNavigator};
+
+    /// Fixture mirroring the django QuerySet shape from the T-2 reproduction:
+    /// a class leaf with method leaves nested as forward children, where
+    /// every leaf's `parent_id` field still points at the file (per build.rs).
+    /// This is the exact data shape that broke the parent-id reverse lookup.
+    fn nested_class_fixture() -> CodebaseGraphV1 {
+        let dir_id = "dir-root";
+        let file_id = "file-query";
+        let class_id = "leaf-QuerySet";
+        let method_a = "leaf-QuerySet-init";
+        let method_b = "leaf-QuerySet-filter";
+        let method_c = "leaf-QuerySet-exclude";
+        let top_level_fn = "leaf-async-generator";
+
+        CodebaseGraphV1 {
+            root_dir_id: dir_id.to_string(),
+            dirs: vec![DirNode {
+                base: harness_base(dir_id, ".", "./", None),
+                dir_children: Vec::new(),
+                file_children: vec![file_id.to_string()],
+            }],
+            files: vec![FileNode {
+                base: harness_base(
+                    file_id,
+                    "query.py",
+                    "django/db/models/query.py",
+                    Some(dir_id),
+                ),
+                extension: Some("py".to_string()),
+                source_blob_hash: None,
+                source: String::new(),
+                imports: Vec::new(),
+                exports: Vec::new(),
+                re_exports: Vec::new(),
+                // Top-level fn precedes the class — mirrors the bug-report ordering.
+                leaf_children: vec![
+                    top_level_fn.to_string(),
+                    class_id.to_string(),
+                    method_a.to_string(),
+                    method_b.to_string(),
+                    method_c.to_string(),
+                ],
+            }],
+            leaves: vec![
+                harness_leaf(
+                    top_level_fn,
+                    "_async_generator",
+                    "django/db/models/query.py#_async_generator",
+                    Some(file_id),
+                    LeafKind::Function,
+                    Vec::new(),
+                ),
+                // Class leaf names its methods via the forward children pointer.
+                harness_leaf(
+                    class_id,
+                    "QuerySet",
+                    "django/db/models/query.py#QuerySet",
+                    Some(file_id),
+                    LeafKind::Class,
+                    vec![
+                        method_a.to_string(),
+                        method_b.to_string(),
+                        method_c.to_string(),
+                    ],
+                ),
+                // Method leaves all have parent_id = file_id (the bug-shaped data).
+                harness_leaf(
+                    method_a,
+                    "__init__",
+                    "django/db/models/query.py#QuerySet.__init__",
+                    Some(file_id),
+                    LeafKind::Method,
+                    Vec::new(),
+                ),
+                harness_leaf(
+                    method_b,
+                    "filter",
+                    "django/db/models/query.py#QuerySet.filter",
+                    Some(file_id),
+                    LeafKind::Method,
+                    Vec::new(),
+                ),
+                harness_leaf(
+                    method_c,
+                    "exclude",
+                    "django/db/models/query.py#QuerySet.exclude",
+                    Some(file_id),
+                    LeafKind::Method,
+                    Vec::new(),
+                ),
+            ],
+        }
+    }
+
+    fn open_reader(graph: &CodebaseGraphV1) -> (tempfile::TempDir, GraphIndexReader) {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let store = GraphObjectStore::new(temp_dir.path().join("graph"));
+        let current_ref = store.write_graph(graph).expect("write graph");
+        let reader = GraphIndexReader::open_current(
+            store.graph_sqlite_index_path(),
+            &current_ref.root_graph_hash,
+        )
+        .expect("open sqlite index")
+        .expect("current sqlite index");
+        (temp_dir, reader)
+    }
+
+    /// SQL `children_of` must enumerate the forward child pointers of `id` in
+    /// the same set and order as `GraphNavigator::get_children`.
+    #[test]
+    fn children_of_matches_navigator_for_class_with_nested_methods() {
+        let graph = nested_class_fixture();
+        let (_tmp, reader) = open_reader(&graph);
+        let nav = GraphNavigator::new(&graph);
+
+        for node_id in [
+            "dir-root",
+            "file-query",
+            "leaf-QuerySet",      // <-- the case that broke pre-fix
+            "leaf-QuerySet-init", // leaf with no children
+            "leaf-async-generator",
+        ] {
+            let nav_children: Vec<String> = nav
+                .get_children(node_id)
+                .expect("nav children")
+                .into_iter()
+                .map(|node| node.id().to_string())
+                .collect();
+            let sql_children: Vec<String> = reader
+                .children_of(node_id, usize::MAX / 2)
+                .expect("sql children")
+                .into_iter()
+                .map(|row| row.id)
+                .collect();
+            assert_eq!(
+                sql_children, nav_children,
+                "children divergence for `{node_id}` (sql={sql_children:?}, nav={nav_children:?})"
+            );
+        }
+    }
+
+    /// SQL siblings — derived as `children_of(parent_id) minus self` in
+    /// `show.rs` — must match `GraphNavigator::get_siblings`.
+    #[test]
+    fn siblings_via_children_of_match_navigator() {
+        let graph = nested_class_fixture();
+        let (_tmp, reader) = open_reader(&graph);
+        let nav = GraphNavigator::new(&graph);
+
+        for node_id in [
+            "leaf-QuerySet",
+            "leaf-QuerySet-init",
+            "leaf-async-generator",
+            "file-query",
+        ] {
+            let nav_siblings: Vec<String> = nav
+                .get_siblings(node_id)
+                .expect("nav siblings")
+                .into_iter()
+                .map(|node| node.id().to_string())
+                .collect();
+            let sql_siblings: Vec<String> = match reader
+                .node_by_id(node_id)
+                .expect("sql node row")
+                .and_then(|row| row.parent_id)
+            {
+                Some(parent_id) => reader
+                    .children_of(&parent_id, usize::MAX / 2)
+                    .expect("sql children for siblings")
+                    .into_iter()
+                    .filter(|row| row.id != node_id)
+                    .map(|row| row.id)
+                    .collect(),
+                None => Vec::new(),
+            };
+            assert_eq!(
+                sql_siblings, nav_siblings,
+                "sibling divergence for `{node_id}`"
+            );
+        }
+    }
+
+    /// SQL `lineage_for(parent_id, depth)` must match
+    /// `GraphNavigator::get_lineage(id, false)` truncated to depth.
+    #[test]
+    fn lineage_for_matches_navigator_for_all_nodes() {
+        let graph = nested_class_fixture();
+        let (_tmp, reader) = open_reader(&graph);
+        let nav = GraphNavigator::new(&graph);
+
+        let depth = 8usize;
+        for node_id in [
+            "dir-root",
+            "file-query",
+            "leaf-QuerySet",
+            "leaf-QuerySet-init",
+        ] {
+            let nav_lineage: Vec<String> = nav
+                .get_lineage(node_id, false)
+                .expect("nav lineage")
+                .into_iter()
+                .map(|node| node.id().to_string())
+                .collect();
+            let nav_lineage = if nav_lineage.len() > depth {
+                nav_lineage[nav_lineage.len() - depth..].to_vec()
+            } else {
+                nav_lineage
+            };
+            let row = reader
+                .node_by_id(node_id)
+                .expect("sql node row")
+                .expect("row present");
+            let sql_lineage: Vec<String> = reader
+                .lineage_for(row.parent_id.as_deref(), depth)
+                .expect("sql lineage")
+                .into_iter()
+                .map(|row| row.id)
+                .collect();
+            assert_eq!(
+                sql_lineage, nav_lineage,
+                "lineage divergence for `{node_id}`"
+            );
+        }
+    }
+
+    /// SQL `search_substring` must produce the same hit set (in scan order)
+    /// as the navigator's substring-on-name-or-location matching.
+    #[test]
+    fn search_substring_matches_navigator_for_diverse_query_shapes() {
+        let graph = nested_class_fixture();
+        let (_tmp, reader) = open_reader(&graph);
+
+        for query in [
+            "QuerySet",  // exact symbol name
+            "queryset",  // case-insensitive substring
+            "filter",    // matches one nested method
+            "django/db", // location prefix
+            "models",    // location substring
+            "ery",       // partial substring of QuerySet
+            "_async",    // top-level fn match
+            "%",         // LIKE metacharacter as literal
+            "_",         // LIKE metacharacter as literal
+            "",          // browse mode (empty query)
+        ] {
+            let sql_ids = sql_substring_ids(&reader, query);
+            let nav_ids = navigator_substring_ids(&graph, query);
+            assert_eq!(
+                sql_ids, nav_ids,
+                "search divergence for `{query}` (sql={sql_ids:?}, nav={nav_ids:?})"
+            );
+        }
+    }
+
+    /// `find_node_by_selector` must resolve to the same node id as the
+    /// navigator-equivalent selector lookup.
+    #[test]
+    fn find_node_by_selector_matches_in_memory_resolution() {
+        let graph = nested_class_fixture();
+        let (_tmp, reader) = open_reader(&graph);
+
+        let cases = [
+            ("dir:.", "dir-root"),
+            ("file:django/db/models/query.py", "file-query"),
+            (
+                "symbol:django/db/models/query.py#QuerySet:class",
+                "leaf-QuerySet",
+            ),
+            (
+                "symbol:django/db/models/query.py#QuerySet.filter:method",
+                "leaf-QuerySet-filter",
+            ),
+        ];
+        for (selector, expected_id) in cases {
+            let row = reader
+                .find_node_by_selector(selector)
+                .expect("sql selector lookup")
+                .unwrap_or_else(|| panic!("selector `{selector}` not found in sql index"));
+            assert_eq!(row.id, expected_id, "selector `{selector}` mapped wrong");
+        }
+    }
+
+    fn sql_substring_ids(reader: &GraphIndexReader, query: &str) -> Vec<String> {
+        reader
+            .search_substring(&query.to_lowercase(), 1024)
+            .expect("sql substring")
+            .into_iter()
+            .map(|row| row.id)
+            .collect()
+    }
+
+    /// Mirrors `GraphContextService::node_candidate_matches` for browse +
+    /// substring on `name_lower` OR `location_lower`, walking dirs → files →
+    /// leaves to match SQL `ORDER BY scan_order`.
+    fn navigator_substring_ids(graph: &CodebaseGraphV1, query: &str) -> Vec<String> {
+        let q = query.to_lowercase();
+        let browse = q.is_empty();
+        let mut hits = Vec::new();
+        for dir in &graph.dirs {
+            if browse
+                || dir.base.name.to_lowercase().contains(&q)
+                || dir.base.location.to_lowercase().contains(&q)
+            {
+                hits.push(dir.base.id.clone());
+            }
+        }
+        for file in &graph.files {
+            if browse
+                || file.base.name.to_lowercase().contains(&q)
+                || file.base.location.to_lowercase().contains(&q)
+            {
+                hits.push(file.base.id.clone());
+            }
+        }
+        for leaf in &graph.leaves {
+            if browse
+                || leaf.base.name.to_lowercase().contains(&q)
+                || leaf.base.location.to_lowercase().contains(&q)
+            {
+                hits.push(leaf.base.id.clone());
+            }
+        }
+        hits
+    }
+
+    fn harness_base(
+        id: &str,
+        name: &str,
+        location: &str,
+        parent_id: Option<&str>,
+    ) -> BaseNodeFields {
+        BaseNodeFields {
+            id: id.to_string(),
+            identity_key: id.to_string(),
+            object_hash: None,
+            name: name.to_string(),
+            location: location.to_string(),
+            language: "python".to_string(),
+            description: String::new(),
+            parent_id: parent_id.map(str::to_string),
+            is_locked: false,
+            lineage_locked: false,
+            lock_owner: None,
+            lock_reason: String::new(),
+        }
+    }
+
+    fn harness_leaf(
+        id: &str,
+        name: &str,
+        location: &str,
+        parent_id: Option<&str>,
+        kind: LeafKind,
+        children: Vec<String>,
+    ) -> LeafNode {
+        LeafNode {
+            base: harness_base(id, name, location, parent_id),
+            kind,
+            source: String::new(),
+            source_blob_hash: None,
+            source_hash: None,
+            file_hash_at_capture: None,
+            history: Vec::new(),
+            input_signature: Vec::new(),
+            output_signature: Vec::new(),
+            start_line: Some(1),
+            end_line: Some(1),
+            children,
         }
     }
 }

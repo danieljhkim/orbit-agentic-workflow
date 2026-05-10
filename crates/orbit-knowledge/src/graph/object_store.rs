@@ -1097,8 +1097,9 @@ mod tests {
 
         let conn = Connection::open(&index_path).expect("open sqlite index");
         let tables = sqlite_master_names(&conn, "table");
-        assert_eq!(tables, vec!["file_summary", "meta", "node"]);
+        assert_eq!(tables, vec!["child", "file_summary", "meta", "node"]);
         let indexes = sqlite_master_names(&conn, "index");
+        assert!(indexes.contains(&"idx_child_parent_ordinal".to_string()));
         assert!(indexes.contains(&"idx_file_symbol_count".to_string()));
         assert!(indexes.contains(&"idx_node_location_lower".to_string()));
         assert!(indexes.contains(&"idx_node_name_lower".to_string()));
@@ -1107,7 +1108,7 @@ mod tests {
         assert!(indexes.contains(&"idx_node_selector".to_string()));
 
         let meta = sqlite_meta(&conn);
-        assert_eq!(meta.get("schema_version").map(String::as_str), Some("4"));
+        assert_eq!(meta.get("schema_version").map(String::as_str), Some("5"));
         assert_eq!(
             meta.get("graph_ref").map(String::as_str),
             Some(current_ref.root_graph_hash.as_str())
