@@ -1,18 +1,16 @@
 /target
 
 # Agent / tool state
-.claude
-.codex
-.gemini
+.claude/
 .agents
 agentspace
-
+!.claude/settings.json
 # ...except the published plugin's MCP registration, which ships in the package.
 !plugin/.mcp.json
 
 # OS / editor
 .DS_Store
-.vscode
+.vscode/settings.json
 
 # Scratch / session files
 sessions
@@ -25,7 +23,7 @@ schema.md
 critique.md
 
 # Runtime state
-config.toml
+
 orbit.db
 orbit.db-shm
 orbit.db-wal
