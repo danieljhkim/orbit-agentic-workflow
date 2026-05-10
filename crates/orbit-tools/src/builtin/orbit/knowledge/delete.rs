@@ -1,13 +1,8 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::{Selector, TaskGraphService};
+use orbit_knowledge::commands::write as knowledge_write;
 use serde_json::Value;
 
 use crate::{Tool, ToolContext};
-
-use super::write::{
-    resolve_knowledge_dir, resolve_workspace_root_with_override, task_graph_scope,
-    write_err_to_orbit,
-};
 
 pub struct OrbitKnowledgeDeleteTool;
 
@@ -48,33 +43,19 @@ impl Tool for OrbitKnowledgeDeleteTool {
             .filter(|value| !value.trim().is_empty())
             .map(ToOwned::to_owned);
 
-        let selector: Selector = selector_str
-            .parse::<Selector>()
-            .map_err(|error| OrbitError::InvalidInput(error.to_string()))?;
-        if !matches!(selector, Selector::Symbol { .. }) {
-            return Err(OrbitError::InvalidInput(
-                "graph.delete requires a symbol selector (symbol:path#name:kind)".to_string(),
-            ));
-        }
+        let context = knowledge_write::MutationContext {
+            graph: super::command_context(ctx, &input)?,
+            workspace_root: super::resolve_workspace_root_with_override(ctx, &input)?,
+        };
 
-        let workspace_root_buf = resolve_workspace_root_with_override(ctx, &input)?;
-        let workspace_root = workspace_root_buf.as_path();
-        let knowledge_dir = resolve_knowledge_dir(ctx, &input)?;
-        let service = TaskGraphService::new(knowledge_dir, task_graph_scope(ctx));
-
-        let result = service.mutate(
-            &selector,
-            &[],
-            reason.as_deref().unwrap_or("deleting"),
-            workspace_root,
-            |working_graph| {
-                working_graph
-                    .delete_leaf(&selector, reason.as_deref(), workspace_root)
-                    .map_err(write_err_to_orbit)
-            },
-        )?;
-
-        serde_json::to_value(result)
-            .map_err(|error| OrbitError::Execution(format!("serialize result: {error}")))
+        Ok(
+            knowledge_write::run(knowledge_write::MutationInput::Delete {
+                context,
+                selector: selector_str,
+                reason,
+            })
+            .map_err(super::knowledge_error_to_orbit)?
+            .value,
+        )
     }
 }

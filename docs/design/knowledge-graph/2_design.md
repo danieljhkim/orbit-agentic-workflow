@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-10
 
 This document specifies the current knowledge graph: storage, build pipeline, query services, Orbit integration, locking, and limitations. The [T20260430-22] cleanup removes duplicated rationale already covered by [1_overview.md](./1_overview.md), [3_vision.md](./3_vision.md), and ADRs.
 
@@ -109,7 +109,7 @@ Results append to `.orbit/state/scoreboard/graph_bench.json` as a 200-record cap
 
 ## 3. Query Surface
 
-Reads go through `GraphContextService`, which wraps a `GraphNavigator` over a loaded `CodebaseGraphV1` and layers selector resolution on top.
+Canonical read behavior goes through `orbit_knowledge::commands::*` ([T20260510-5]). Tool adapters parse envelopes and shape JSON, while commands own query semantics such as search ranking, overview format selection, reference classification, SQLite fast paths, and service fallback. Lower-level services still wrap loaded graph snapshots and provide reusable primitives for the commands.
 
 ### 3.1 Selectors
 
@@ -123,19 +123,19 @@ All tool inputs that reference a node accept a selector string.
 
 ### 3.2 Services
 
-| Service | Entry point | Notable task |
+| Command | Lower-level primitive | Notable task |
 |---------|-------------|--------------|
-| Overview | `overview(prefix?)` | Compact mode above 50 files added in [T20260412-0645-2]; broad summaries use the SQLite sidecar when current ([T20260509-72]) |
-| Search | `search(query)` / `search_structured` | Source-regex and structured selector search |
-| Context | `bounded_context(selector, budget)` | — |
-| References | `find_references(selector)` | — |
+| Overview | `GraphContextService::overview`, SQLite summary readers | Compact mode above 50 files added in [T20260412-0645-2]; broad summaries use the SQLite sidecar when current ([T20260509-72]) |
+| Search | `search_hits_with_total_bounded`, SQLite substring search | Source-regex and structured selector search; default ranking lives in `commands::search` |
+| Context | `bounded_context(selector, budget)`, SQLite context readers | — |
+| References | `find_references(selector)` | `commands::refs` owns code/doc/config classification |
 | Callers | `transitive_callers(selector, depth)` | [T20260412-0645-3] |
 | Implementors | `trait_implementors(trait)` | [T20260412-0645-3] |
 | Dependencies | `crate_dependencies(crate)` | [T20260412-0645-3] |
 | Lineage | `render_lineage_pack(selector)` | — |
 | Pack | `pack_json(...)` | Agent-friendly field projection ships in the same era as [T20260411-0424]; selector packing is bounded and prompt-first by default after [T20260505-5] |
 
-All services are read-only against a resolved snapshot. Graph mutation code remains internal/deferred; the current public surface does not expose graph write tools.
+All command-backed reads are against a resolved snapshot. Graph mutation code remains internal/deferred; the current public surface does not expose graph write tools.
 
 Search no longer accepts a `task_id` filter. Task-to-commit lookup is handled by `git log --grep '[T...]'`; the graph remains focused on code structure and source queries.
 

@@ -7,9 +7,10 @@ Orbit-specific terms used across the knowledge-graph docs and `orbit-knowledge`.
 | **`.orbitignore`** | Workspace-local, gitignore-compatible exclusion file consumed by the knowledge-graph scan stage. It controls graph inclusion at parse time and is distinct from runtime policy deny rules. See [2_design.md §2.4]. |
 | **Attribution (removed)** | Historical pipeline stage that parsed task IDs from commit messages and attached them to nodes. Removed in [T20260506-11]; see [2_design.md §2.2]. |
 | **CodebaseGraphV1** | Top-level serialized graph shape: `{ root_dir_id, dirs, files, leaves }`. The `V1` is load-bearing — it pins the on-disk schema. |
+| **Command surface** | Canonical `orbit_knowledge::commands::*` entry point for graph operations. Tools parse transport envelopes and shape JSON; commands own query semantics and lower-level service/index selection ([T20260510-5]). |
 | **DirNode / FileNode / LeafNode** | The three Orbit node types. `LeafNode` is the in-code name for what the tool surface calls a "symbol" (renamed under [T20260411-0424]; the type name predates the rename). |
 | **Fingerprint (dirty)** | Orbit-specific encoding of worktree dirtiness: `sha256(git status --porcelain)` + path count + newest mtime of any dirty file. Drives the dirty-refresh debounce; a stable fingerprint reuses the cached graph. |
-| **GraphContextService** | Read-side entry point. Holds a loaded graph plus a location index and serves every `orbit.graph.*` query. Writes do not go through it. |
+| **GraphContextService** | Lower-level read primitive. Holds a loaded graph plus a location index; command modules call it when a query cannot be answered from a sidecar index. Writes do not go through it. |
 | **GraphNavigator** | Low-level traversal primitive wrapped by `GraphContextService`. |
 | **Identity key** | Cross-build stable key distinct from `id` and `object_hash`. `id` is stable per-snapshot; `object_hash` changes on any field edit; `identity_key` is what the working graph uses to track a node's lineage across rebuilds. |
 | **is_locked / lineage_locked** | Two lock flags on every node. `is_locked` blocks body mutations; `lineage_locked` blocks identity changes (rename, re-identification). Both survive rebuilds because they live on the node body. |

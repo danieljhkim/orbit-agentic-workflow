@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-10
 
 The knowledge graph is Orbit's durable, queryable codebase map: a content-addressed, branch-scoped tree of directories, files, and extracted symbols. It sits between raw files and the agent prompt so agents can ask *"where is `AgentRuntime` defined?"* without re-reading the repo from scratch. Task attribution was removed in [T20260506-11]; task IDs now remain local commit-search keys rather than graph fields. This compaction pass [T20260430-22] keeps the overview focused on entry-point concepts and leaves mechanism detail to [2_design.md](./2_design.md).
 
@@ -85,7 +85,7 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 | Storage layout | `src/graph/object_store.rs`, `src/graph/sqlite_index.rs` | [T20260421-0358], [T20260509-70] |
 | Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139], [T20260509-33] |
 | Historical task attribution removal | `src/pipeline/` | [T20260506-11] |
-| Query services | `src/service/`, `crates/orbit-tools/src/builtin/orbit/knowledge/` | [T20260412-0645-2], [T20260412-0645-3], [T20260509-72] |
+| Query commands | `src/commands/` with lower-level `src/service/` helpers | [T20260412-0645-2], [T20260412-0645-3], [T20260509-72], [T20260510-5] |
 | Working graph | `src/working_graph/` | [T20260411-0424] |
 | Locking | `src/lock.rs` | [T20260411-0424], [T20260417-0301-2] |
 | Refresh safety | `src/pipeline/mod.rs` | [T20260417-0307], [T20260416-0719] |
@@ -112,5 +112,6 @@ The graph no longer stores task attribution. `[T...]` commit tags remain useful 
 - **[T20260509-33]** — Skip symlinked directory entries during knowledge scanner traversal.
 - **[T20260509-70]** — Build the SQLite secondary index sidecar during graph persistence.
 - **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
+- **[T20260510-5]** — Move canonical knowledge-graph command semantics into `orbit_knowledge::commands::*`; keep `orbit-tools` as dispatch and envelope shaping.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

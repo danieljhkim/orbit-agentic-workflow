@@ -32,6 +32,7 @@ pub fn default_orbitignore_template() -> String {
     content
 }
 
+pub mod commands;
 mod error;
 pub mod extract;
 pub mod graph;

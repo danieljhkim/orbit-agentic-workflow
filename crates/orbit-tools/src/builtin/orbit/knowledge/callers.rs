@@ -1,12 +1,8 @@
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
-use orbit_knowledge::service::GraphContextService;
-use orbit_knowledge::service::callers::{MAX_CALLER_DEPTH, transitive_callers};
-use orbit_knowledge::{GraphReadOptions, Selector};
+use orbit_knowledge::commands::callers::{self, CallersInput};
 use serde_json::{Value, json};
 
 use crate::{Tool, ToolContext};
-
-const DEFAULT_DEPTH: u64 = 2;
 
 pub struct OrbitKnowledgeCallersTool;
 
@@ -41,31 +37,18 @@ impl Tool for OrbitKnowledgeCallersTool {
     }
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
-        let selector_str = super::super::required_string(&input, &["selector"], "selector")?;
-        let selector: Selector = selector_str
-            .parse()
-            .map_err(|e| OrbitError::InvalidInput(format!("{e}")))?;
+        let result = callers::run(CallersInput {
+            context: super::command_context(ctx, &input)?,
+            selector: super::super::required_string(&input, &["selector"], "selector")?,
+            requested_depth: input
+                .get("depth")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize),
+        })
+        .map_err(super::knowledge_error_to_orbit)?;
 
-        let requested_depth = input
-            .get("depth")
-            .and_then(Value::as_u64)
-            .unwrap_or(DEFAULT_DEPTH) as usize;
-        let depth = requested_depth.min(MAX_CALLER_DEPTH);
-
-        let graph = super::load_graph_for_read(
-            ctx,
-            &input,
-            GraphReadOptions {
-                hydrate_leaf_source: true,
-                ..Default::default()
-            },
-        )?;
-        let svc = GraphContextService::new(&graph);
-
-        let hits = transitive_callers(&svc, &graph, &selector, depth)
-            .map_err(|e| OrbitError::Execution(e.to_string()))?;
-
-        let items: Vec<Value> = hits
+        let items: Vec<Value> = result
+            .callers
             .into_iter()
             .map(|h| {
                 json!({
@@ -80,9 +63,9 @@ impl Tool for OrbitKnowledgeCallersTool {
             .collect();
 
         Ok(json!({
-            "target": selector_str,
-            "depth": depth,
-            "requested_depth": requested_depth,
+            "target": result.target,
+            "depth": result.depth,
+            "requested_depth": result.requested_depth,
             "total": items.len(),
             "callers": items,
         }))
