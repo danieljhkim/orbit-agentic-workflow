@@ -81,6 +81,7 @@ Phase 2 is gated on [docs/design/semantic-search/](../semantic-search/) reaching
 | Learning record schema | [2_design.md §2](./2_design.md) | [T20260510-11] |
 | Scope axis (path globs + tags, phase 1) | [2_design.md §3](./2_design.md), [4_decisions.md ADR-004](./4_decisions.md) | [T20260510-11] |
 | Push-injection pipeline | [2_design.md §4](./2_design.md), [4_decisions.md ADR-001](./4_decisions.md), [4_decisions.md ADR-005](./4_decisions.md) | [T20260510-11] |
+| Prerequisite: `Task.tags` field | [2_design.md §4.1](./2_design.md) | [T20260510-12] |
 | MCP / CLI surface (`orbit.learning.*`) | [2_design.md §5](./2_design.md) | [T20260510-11] |
 | Pull skill (`orbit-learnings`) | [2_design.md §6](./2_design.md) | [T20260510-11] |
 | Curation lifecycle, supersession, staleness | [2_design.md §7](./2_design.md) | [T20260510-11] |
@@ -96,5 +97,6 @@ Phase 2 is gated on [docs/design/semantic-search/](../semantic-search/) reaching
 ## Task References
 
 - [T20260510-11] — Design + build project-learnings system as native Orbit primitive. The task that produced this folder.
+- [T20260510-12] — Add `tags` field to `Task` schema. Hard prerequisite for Layer 1's tag-axis matching.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

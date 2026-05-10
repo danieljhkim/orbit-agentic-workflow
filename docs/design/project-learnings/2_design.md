@@ -174,6 +174,8 @@ Three layers, from coarsest to finest. Each layer adds precision on top of the l
    </system-reminder>
    ```
 
+**Prerequisite.** The tag-matching half of step 3 depends on the `Task` schema carrying a `tags: Vec<String>` field, which does not exist today. That schema change is tracked separately as [T20260510-12] and is a hard prerequisite for this layer's tag axis. Path-glob matching against `context_files` works regardless and is what Layer 1 falls back to until [T20260510-12] lands.
+
 This is the universal layer because every supported agent runtime (Claude, Codex, Gemini, Anthropic API, OpenAI-compat, Ollama, mock) consumes a prompt. The injection is invisible to the runtime.
 
 **Limitation.** This layer fires once per task, before the agent has read its way into the relevant files. Learnings whose scope is narrower than the task's overall scope may not surface here; that's what layers 2 and 3 are for.
@@ -366,5 +368,6 @@ Learnings are workspace-scoped and checked into the repo. They travel exactly wh
 ## Task References
 
 - [T20260510-11] — Design + build project-learnings system as native Orbit primitive. The task that produced this folder.
+- [T20260510-12] — Add `tags` field to `Task` schema. Hard prerequisite for Layer 1's tag-axis matching ([§4.1](#41-layer-1--engine-pre-prompt-injection-universal)).
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
