@@ -197,6 +197,7 @@ Until those exist: cross-review is the enforcement mechanism. When one agent rev
 | Groundhog | [docs/design/groundhog/](./groundhog/) | codex |
 | Knowledge graph | [docs/design/knowledge-graph/](./knowledge-graph/) | claude |
 | Policy & Sandboxing | [docs/design/policy-sandbox/](./policy-sandbox/) | claude |
+| Project Learnings | [docs/design/project-learnings/](./project-learnings/) | claude |
 | Task Sync | [docs/design/task-sync/](./task-sync/) | claude |
 | User Interface | [docs/design/user-interface/](./user-interface/) | gemini |
 
