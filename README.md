@@ -80,24 +80,27 @@ Layered Rust crates. Lower layers do not depend on higher layers.
 ```mermaid
 flowchart LR
   CLI["orbit-cli"] --> Core["orbit-core"]
+  CLI --> MCP["orbit-mcp"]
   Core --> Engine["orbit-engine"]
   Core --> Store["orbit-store"]
   Core --> Tools["orbit-tools"]
+  Core --> Embed["orbit-embed"]
   Engine --> Agent["orbit-agent"]
   Engine --> Store
   Tools --> Exec["orbit-exec"]
   Tools --> Knowledge["orbit-knowledge"]
   Tools --> Policy["orbit-policy"]
-  Tools --> MCP["orbit-mcp"]
   Exec --> Common["orbit-common"]
   Knowledge --> Common
   Policy --> Common
   Store --> Common
   Agent --> Common
+  Embed --> Common
+  MCP --> Common
   Core --> Common
 ```
 
-`orbit-knowledge` provides the graph substrate; `orbit-engine` and `orbit-agent` provide the execution substrate. v1 ships `backend: cli` (CLI-subprocess providers under `orbit-agent::providers/*`). Design docs: [docs/design/](docs/design/).
+`orbit-knowledge` provides the graph substrate; `orbit-engine` and `orbit-agent` provide the execution substrate; `orbit-embed` provides workspace-local semantic search (SQLite-backed vector + FTS5 store, with inference delegated to a separately-installed `orbit-embed-companion` binary). v1 ships `backend: cli` (CLI-subprocess providers under `orbit-agent::providers/*`). Design docs: [docs/design/](docs/design/).
 
 > **Platform:** OS-level sandbox enforcement is **macOS only** (via `sandbox-exec`). On Linux/Windows, FS policies still apply as in-process guards for HTTP-tool calls; the spawned agent subprocess runs without OS-level isolation.
 
