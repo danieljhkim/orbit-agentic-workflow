@@ -1,7 +1,10 @@
 use tree_sitter::{Node, Parser};
 
 use super::FileExtractor;
-use super::common::{ExtractedExport, ExtractedLeaf, ExtractionResult, compute_source_hash};
+use super::common::{
+    ExtractedExport, ExtractedLeaf, ExtractionResult, compute_source_hash,
+    finalize_unique_qualified_names,
+};
 use super::language::{FileKind, Language};
 
 pub struct RustExtractor;
@@ -26,6 +29,7 @@ impl FileExtractor for RustExtractor {
         let mut exports = Vec::new();
         extract_top_level(tree.root_node(), source, &mut leaves, &mut exports);
         sort_and_dedup_exports(&mut exports);
+        finalize_unique_qualified_names(&mut leaves);
         ExtractionResult { leaves, exports }
     }
 }
@@ -300,15 +304,23 @@ fn extract_trait(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {
 
 fn extract_impl(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {
     // For impl blocks, the "type" field has the implementing type name
-    let name = match node.child_by_field_name("type") {
+    let type_name = match node.child_by_field_name("type") {
         Some(n) => n.utf8_text(source.as_bytes()).unwrap_or("").to_string(),
         None => return,
     };
 
-    if name.is_empty() {
+    if type_name.is_empty() {
         return;
     }
 
+    let trait_name = node
+        .child_by_field_name("trait")
+        .map(|node| node_source(node, source))
+        .filter(|name| !name.is_empty());
+    let qualified_name = match trait_name {
+        Some(trait_name) => format!("<{type_name} as {trait_name}>"),
+        None => format!("<{type_name}>"),
+    };
     let src = node_source(node, source);
     let mut children = Vec::new();
 
@@ -317,17 +329,17 @@ fn extract_impl(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {
             if child.kind() == "function_item" {
-                extract_function(child, source, leaves, Some(&name));
+                extract_function(child, source, leaves, Some(&qualified_name));
                 if let Some(method_name) = get_name(child, source) {
-                    children.push(format!("{name}::{method_name}"));
+                    children.push(format!("{qualified_name}::{method_name}"));
                 }
             }
         }
     }
 
     leaves.push(ExtractedLeaf {
-        qualified_name: name.clone(),
-        name,
+        qualified_name: qualified_name.clone(),
+        name: type_name,
         kind: "impl".to_string(),
         start_line: node.start_position().row + 1,
         end_line: node.end_position().row + 1,

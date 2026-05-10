@@ -491,16 +491,15 @@ fn pack_regression_selector_opens_from_branch_ref_layout() -> Result<(), Box<dyn
     })?;
 
     let store = KnowledgeStore::open(&knowledge_dir, &build_ref, None, None)?;
-    let selector: Selector =
-        "symbol:crates/orbit-cli/src/command/observe/graph.rs#GraphSearchArgs::execute:method"
-            .parse()?;
+    let selector: Selector = "symbol:crates/orbit-cli/src/command/observe/graph.rs#<GraphSearchArgs as Execute>::execute:method"
+        .parse()?;
     let pack = store.pack(&[selector])?;
 
     assert_eq!(pack.total_nodes, 1);
     assert!(pack.unresolved_selectors.is_empty());
     assert_eq!(
         pack.entries[0].selector,
-        "symbol:crates/orbit-cli/src/command/observe/graph.rs#GraphSearchArgs::execute:method"
+        "symbol:crates/orbit-cli/src/command/observe/graph.rs#<GraphSearchArgs as Execute>::execute:method"
     );
     Ok(())
 }

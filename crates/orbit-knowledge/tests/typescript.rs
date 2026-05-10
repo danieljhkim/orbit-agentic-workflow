@@ -79,8 +79,8 @@ fn extractor_emits_typescript_and_tsx_symbols() {
     assert_leaf(&leaves, "buildThing", "buildThing", "function", 1, 3);
     assert_leaf(&leaves, "makeThing", "makeThing", "function", 5, 5);
     assert_leaf(&leaves, "runThing", "runThing", "function", 6, 8);
-    assert_leaf(&leaves, "Worker::start", "start", "method", 11, 12);
-    assert_leaf(&leaves, "Worker::stop", "stop", "method", 14, 15);
+    assert_leaf(&leaves, "Worker::start#0", "start", "method", 11, 12);
+    assert_leaf(&leaves, "Worker::stop#0", "stop", "method", 14, 15);
     assert_leaf(&leaves, "Worker", "Worker", "class", 10, 16);
     assert_leaf(&leaves, "WorkerConfig", "WorkerConfig", "interface", 18, 20);
     assert_leaf(&leaves, "WorkerState", "WorkerState", "type_alias", 22, 22);
@@ -152,8 +152,18 @@ export interface DeclaredShape {\n\
         ("symbol:src/types.ts#buildThing:function", "function", 1, 3),
         ("symbol:src/types.ts#makeThing:function", "function", 5, 5),
         ("symbol:src/types.ts#runThing:function", "function", 6, 8),
-        ("symbol:src/types.ts#Worker::start:method", "method", 11, 12),
-        ("symbol:src/types.ts#Worker::stop:method", "method", 14, 15),
+        (
+            "symbol:src/types.ts#Worker::start#0:method",
+            "method",
+            11,
+            12,
+        ),
+        (
+            "symbol:src/types.ts#Worker::stop#0:method",
+            "method",
+            14,
+            15,
+        ),
         ("symbol:src/types.ts#Worker:class", "class", 10, 16),
         (
             "symbol:src/types.ts#WorkerConfig:interface",

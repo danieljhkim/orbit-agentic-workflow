@@ -1,7 +1,9 @@
 use tree_sitter::{Node, Parser};
 
 use super::FileExtractor;
-use super::common::{ExtractedLeaf, ExtractionResult, compute_source_hash};
+use super::common::{
+    ExtractedLeaf, ExtractionResult, compute_source_hash, finalize_unique_qualified_names,
+};
 use super::language::{FileKind, Language};
 
 pub struct RubyExtractor;
@@ -24,6 +26,7 @@ impl FileExtractor for RubyExtractor {
 
         let mut leaves = Vec::new();
         extract_children(tree.root_node(), source, &mut leaves, None);
+        finalize_unique_qualified_names(&mut leaves);
         ExtractionResult {
             leaves,
             ..Default::default()

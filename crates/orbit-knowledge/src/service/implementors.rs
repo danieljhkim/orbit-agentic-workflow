@@ -60,12 +60,9 @@ pub fn trait_implementors<'a>(
         .set_language(&tree_sitter_rust::LANGUAGE.into())
         .map_err(|e| KnowledgeError::invalid_data(format!("tree-sitter init: {e}")))?;
 
-    // The persisted graph collapses impl leaves that share (location, kind) —
-    // e.g. `impl TraitA for Foo` and `impl TraitB for Foo` both hash to
-    // `symbol:file#Foo:impl`, and the loaded `graph.leaves` vector can contain
-    // the same leaf multiple times. Dedupe on leaf id so one surviving leaf is
-    // only parsed once. (See follow-up: graph-build collapses distinct impls
-    // onto a single id, which is a data-loss bug in extract/persist.)
+    // Unique leaf IDs make trait impls addressable as `<Type as Trait>`, but
+    // older graph snapshots may still contain duplicate impl IDs. Dedupe on id
+    // so a stale duplicate is only parsed once while those snapshots fall back.
     let mut seen_ids: HashSet<&str> = HashSet::new();
     let mut hits = Vec::new();
     for leaf in &graph.leaves {

@@ -15,11 +15,9 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavio
 use super::nodes::{BaseNodeFields, CodebaseGraphV1, FileNode, LeafKind};
 use crate::error::KnowledgeError;
 
-// Schema 5 (T20260510-2): replaces the parent_id reverse-lookup `children_of`
-// with a forward-pointer `child` table. The graph's parent_id field is
-// always the containing FILE for leaves, so reverse lookups missed nested
-// leaf-leaf relationships (e.g. Python methods inside a class).
-pub(crate) const GRAPH_SQLITE_INDEX_SCHEMA_VERSION: u32 = 5;
+// Schema 6 (T20260510-7): leaf IDs are unique within a file, so SQL primary-key
+// insertion preserves every extracted leaf instead of replacing duplicates.
+pub(crate) const GRAPH_SQLITE_INDEX_SCHEMA_VERSION: u32 = 6;
 pub(crate) const GRAPH_SQLITE_INDEX_FILENAME: &str = "graph_index.sqlite";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +52,10 @@ impl GraphIndexReader {
         path: impl AsRef<Path>,
         expected_ref: &str,
     ) -> Result<Option<Self>, KnowledgeError> {
+        if graph_index_debug_force_fallback() {
+            return Ok(None);
+        }
+
         let path = path.as_ref();
         if !path.is_file() {
             return Ok(None);
@@ -775,6 +777,12 @@ fn query_meta(conn: &Connection, key: &str) -> Result<Option<String>, KnowledgeE
     }
 }
 
+fn graph_index_debug_force_fallback() -> bool {
+    std::env::var("ORBIT_GRAPH_DEBUG_FORCE_FALLBACK")
+        .map(|value| !matches!(value.as_str(), "" | "0" | "false" | "FALSE"))
+        .unwrap_or(false)
+}
+
 struct NodeInsertValues<'a> {
     node_type: &'a str,
     kind: Option<&'a str>,
@@ -1140,11 +1148,69 @@ mod tests {
 /// with a corresponding assertion before they can be considered correct.
 #[cfg(test)]
 mod equivalence_tests {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
     use crate::graph::nodes::{
         BaseNodeFields, CodebaseGraphV1, DirNode, FileNode, LeafKind, LeafNode,
     };
-    use crate::graph::object_store::GraphObjectStore;
+    use crate::graph::object_store::{GraphObjectStore, RefName};
     use crate::graph::{GraphIndexReader, navigator::GraphNavigator};
+    use crate::pipeline;
+    use crate::pipeline::context::BuildConfig;
+
+    const PYTHON_DUP_METHODS: &str = r#"
+class Alpha:
+    def save(self):
+        return "alpha"
+
+    class Inner:
+        def save(self):
+            return "inner"
+
+class Beta:
+    def save(self):
+        return "beta"
+"#;
+
+    const RUST_MULTI_IMPL: &str = r#"
+trait Runner {
+    fn run(&self);
+}
+
+struct Foo;
+
+impl Foo {
+    fn run(&self) {}
+}
+
+impl Runner for Foo {
+    fn run(&self) {}
+}
+"#;
+
+    const JAVA_OVERLOADS: &str = r#"
+class Client {
+    void connect(int port) {}
+    void connect(int port, String host) {}
+}
+"#;
+
+    const TYPESCRIPT_OVERLOADS: &str = r#"
+function pick(value: string): string;
+function pick(value: number): number;
+function pick(value: string | number) {
+    return value;
+}
+
+class Store {
+    get(value: string): string;
+    get(value: number): number;
+    get(value: string | number) {
+        return String(value);
+    }
+}
+"#;
 
     /// Fixture mirroring the django QuerySet shape from the T-2 reproduction:
     /// a class leaf with method leaves nested as forward children, where
@@ -1424,6 +1490,102 @@ mod equivalence_tests {
                 .unwrap_or_else(|| panic!("selector `{selector}` not found in sql index"));
             assert_eq!(row.id, expected_id, "selector `{selector}` mapped wrong");
         }
+    }
+
+    #[test]
+    fn sql_leaves_equal_fallback_leaves_python_dup_methods() {
+        assert_sql_leaves_equal_fallback_leaves("src/fixture.py", PYTHON_DUP_METHODS);
+    }
+
+    #[test]
+    fn sql_leaves_equal_fallback_leaves_rust_multi_impl() {
+        assert_sql_leaves_equal_fallback_leaves("src/fixture.rs", RUST_MULTI_IMPL);
+    }
+
+    #[test]
+    fn sql_leaves_equal_fallback_leaves_java_overloads() {
+        assert_sql_leaves_equal_fallback_leaves("src/fixture.java", JAVA_OVERLOADS);
+    }
+
+    #[test]
+    fn sql_leaves_equal_fallback_leaves_ts_overloads() {
+        assert_sql_leaves_equal_fallback_leaves("src/fixture.ts", TYPESCRIPT_OVERLOADS);
+    }
+
+    fn assert_sql_leaves_equal_fallback_leaves(path: &str, source: &str) {
+        let graph = fixture_graph_from_source(path, source);
+        let (_tmp, reader) = open_reader(&graph);
+        let expected_node_count = graph.dirs.len() + graph.files.len() + graph.leaves.len();
+        assert_eq!(
+            reader.count_nodes().expect("sql node count"),
+            expected_node_count as u64,
+            "SQL node table dropped rows for fixture `{path}`"
+        );
+
+        assert_eq!(
+            sql_leaf_multiset(&reader, expected_node_count),
+            fallback_leaf_multiset(&graph),
+            "SQL leaves diverged from fallback graph leaves for fixture `{path}`"
+        );
+    }
+
+    type LeafKey = (String, String, String, String);
+
+    fn sql_leaf_multiset(reader: &GraphIndexReader, limit: usize) -> BTreeMap<LeafKey, usize> {
+        let mut leaves = BTreeMap::new();
+        for row in reader
+            .search_substring("", limit)
+            .expect("sql browse rows")
+            .into_iter()
+            .filter(|row| row.node_type == "leaf")
+        {
+            let key = (
+                row.id,
+                row.name,
+                row.location,
+                row.kind.expect("leaf kind present"),
+            );
+            *leaves.entry(key).or_default() += 1;
+        }
+        leaves
+    }
+
+    fn fallback_leaf_multiset(graph: &CodebaseGraphV1) -> BTreeMap<LeafKey, usize> {
+        let mut leaves = BTreeMap::new();
+        for leaf in &graph.leaves {
+            let key = (
+                leaf.base.id.clone(),
+                leaf.base.name.clone(),
+                leaf.base.location.clone(),
+                leaf.kind.to_string(),
+            );
+            *leaves.entry(key).or_default() += 1;
+        }
+        leaves
+    }
+
+    fn fixture_graph_from_source(path: &str, source: &str) -> CodebaseGraphV1 {
+        let repo_dir = tempfile::tempdir().expect("repo tempdir");
+        let repo = repo_dir.path();
+        write_file(repo, path, source);
+
+        let knowledge_dir = tempfile::tempdir().expect("knowledge tempdir");
+        let ctx = pipeline::run_build(BuildConfig {
+            repo_path: repo.to_path_buf(),
+            output_dir: knowledge_dir.path().join("knowledge"),
+            incremental: false,
+            ref_name: Some(RefName::new("main").expect("valid ref")),
+        })
+        .expect("pipeline build succeeds");
+        ctx.graph
+    }
+
+    fn write_file(repo: &Path, rel: &str, content: &str) {
+        let path = repo.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create fixture parent");
+        }
+        std::fs::write(path, content).expect("write fixture file");
     }
 
     fn sql_substring_ids(reader: &GraphIndexReader, query: &str) -> Vec<String> {

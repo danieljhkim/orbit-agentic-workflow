@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use sha2::{Digest, Sha256};
 
 /// A single extracted leaf from a source file.
@@ -58,4 +60,164 @@ pub fn node_id(node_type: &str, location: &str, kind: &str) -> String {
 /// Build a leaf location string: `"{path}#{qualified_name}"`.
 pub fn leaf_location(path: &str, qualified_name: &str) -> String {
     format!("{path}#{qualified_name}")
+}
+
+/// Ensure every `(qualified_name, kind)` pair is unique within one extractor result.
+///
+/// Language extractors should use semantic qualifiers first; this pass is the
+/// deterministic safety net for overloads or future parser shapes that still
+/// collide after extraction.
+pub fn finalize_unique_qualified_names(leaves: &mut [ExtractedLeaf]) {
+    let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+    for (index, leaf) in leaves.iter().enumerate() {
+        groups
+            .entry((leaf.qualified_name.clone(), leaf.kind.clone()))
+            .or_default()
+            .push(index);
+    }
+
+    let mut occupied: HashSet<(String, String)> = leaves
+        .iter()
+        .map(|leaf| (leaf.qualified_name.clone(), leaf.kind.clone()))
+        .collect();
+    let mut duplicate_originals: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for ((original_name, kind), indexes) in groups.iter_mut() {
+        if indexes.len() < 2 {
+            continue;
+        }
+
+        indexes.sort_by(|left, right| {
+            let left_leaf = &leaves[*left];
+            let right_leaf = &leaves[*right];
+            (
+                left_leaf.start_line,
+                left_leaf.end_line,
+                left_leaf.source_hash.as_str(),
+                *left,
+            )
+                .cmp(&(
+                    right_leaf.start_line,
+                    right_leaf.end_line,
+                    right_leaf.source_hash.as_str(),
+                    *right,
+                ))
+        });
+
+        duplicate_originals.insert(original_name.clone(), indexes.clone());
+        let mut ordinal = 2usize;
+        for index in indexes.iter().copied().skip(1) {
+            let new_name = loop {
+                let candidate = format!("{original_name}#{ordinal}");
+                ordinal += 1;
+                if !occupied.contains(&(candidate.clone(), kind.clone())) {
+                    break candidate;
+                }
+            };
+            occupied.insert((new_name.clone(), kind.clone()));
+            leaves[index].qualified_name = new_name;
+        }
+    }
+
+    if duplicate_originals.is_empty() {
+        return;
+    }
+
+    let final_names: Vec<String> = leaves
+        .iter()
+        .map(|leaf| leaf.qualified_name.clone())
+        .collect();
+
+    for child_index in 0..leaves.len() {
+        let Some(parent_name) = leaves[child_index].parent_qualified_name.clone() else {
+            continue;
+        };
+        let Some(parent_indexes) = duplicate_originals.get(&parent_name) else {
+            continue;
+        };
+        if let Some(parent_index) = containing_leaf(leaves, parent_indexes, child_index) {
+            leaves[child_index].parent_qualified_name = Some(final_names[parent_index].clone());
+        }
+    }
+
+    for parent_index in 0..leaves.len() {
+        if leaves[parent_index].children_qualified_names.is_empty() {
+            continue;
+        }
+
+        let mut seen_children_by_name: HashMap<String, usize> = HashMap::new();
+        let children = leaves[parent_index].children_qualified_names.clone();
+        let rewritten_children = children
+            .into_iter()
+            .map(|child_name| {
+                let Some(child_indexes) = duplicate_originals.get(&child_name) else {
+                    return child_name;
+                };
+                let scoped_children = contained_leaves(leaves, child_indexes, parent_index);
+                if scoped_children.is_empty() {
+                    return child_name;
+                }
+                let occurrence = seen_children_by_name.entry(child_name.clone()).or_default();
+                let replacement_index = scoped_children
+                    .get(*occurrence)
+                    .copied()
+                    .unwrap_or_else(|| *scoped_children.last().expect("non-empty"));
+                *occurrence += 1;
+                final_names[replacement_index].clone()
+            })
+            .collect();
+        leaves[parent_index].children_qualified_names = rewritten_children;
+    }
+}
+
+fn containing_leaf(
+    leaves: &[ExtractedLeaf],
+    candidates: &[usize],
+    child_index: usize,
+) -> Option<usize> {
+    let child = &leaves[child_index];
+    candidates
+        .iter()
+        .copied()
+        .filter(|candidate_index| *candidate_index != child_index)
+        .filter(|candidate_index| {
+            let candidate = &leaves[*candidate_index];
+            candidate.start_line <= child.start_line && child.end_line <= candidate.end_line
+        })
+        .min_by_key(|candidate_index| {
+            let candidate = &leaves[*candidate_index];
+            (
+                candidate.end_line.saturating_sub(candidate.start_line),
+                candidate.start_line,
+                candidate.end_line,
+                *candidate_index,
+            )
+        })
+}
+
+fn contained_leaves(
+    leaves: &[ExtractedLeaf],
+    candidates: &[usize],
+    parent_index: usize,
+) -> Vec<usize> {
+    let parent = &leaves[parent_index];
+    let mut contained: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|candidate_index| *candidate_index != parent_index)
+        .filter(|candidate_index| {
+            let candidate = &leaves[*candidate_index];
+            parent.start_line <= candidate.start_line && candidate.end_line <= parent.end_line
+        })
+        .collect();
+    contained.sort_by_key(|candidate_index| {
+        let candidate = &leaves[*candidate_index];
+        (
+            candidate.start_line,
+            candidate.end_line,
+            candidate.source_hash.as_str(),
+            *candidate_index,
+        )
+    });
+    contained
 }

@@ -43,7 +43,7 @@ fn seed_cli_invocation_audit(runtime: &OrbitRuntime, run_id: &str, stderr: &[u8]
                 "schemaVersion": 1,
                 "event_type": "run.started",
                 "event_id": "evt-run",
-                "ts": "2026-05-08T04:12:20Z",
+                "ts": "2099-05-08T04:12:20Z",
                 "run_id": run_id,
                 "body_kind": "run_started"
             })
@@ -53,7 +53,7 @@ fn seed_cli_invocation_audit(runtime: &OrbitRuntime, run_id: &str, stderr: &[u8]
                 "schemaVersion": 1,
                 "event_type": "step.started",
                 "event_id": "evt-step",
-                "ts": "2026-05-08T04:12:21Z",
+                "ts": "2099-05-08T04:12:21Z",
                 "run_id": run_id,
                 "parent_event_id": "evt-run",
                 "body_kind": "step_started",
@@ -64,7 +64,7 @@ fn seed_cli_invocation_audit(runtime: &OrbitRuntime, run_id: &str, stderr: &[u8]
                 "schemaVersion": 1,
                 "event_type": "cli.invocation.finished",
                 "event_id": "evt-cli",
-                "ts": "2026-05-08T04:12:22Z",
+                "ts": "2099-05-08T04:12:22Z",
                 "run_id": run_id,
                 "parent_event_id": "evt-step",
                 "body_kind": "cli_invocation_finished",
@@ -159,7 +159,8 @@ fn diagnostics_friction_row_extracts_failed_cli_stderr_and_step() {
 async fn diagnostics_errors_include_codex_style_stderr_rows() {
     let runtime = OrbitRuntime::in_memory().expect("build runtime");
     let run_id = "jrun-error-api";
-    let stderr = b"2026-05-08T04:12:22.346005Z ERROR codex_core::session: failed to record rollout items\nordinary stderr\nERROR codex_core::tools::router: apply_patch verification failed\n";
+    // The endpoint merges global process-log errors with fixture audit errors before truncating.
+    let stderr = b"2099-05-08T04:12:22.346005Z ERROR codex_core::session: failed to record rollout items\nordinary stderr\nERROR codex_core::tools::router: apply_patch verification failed\n";
     let stderr_ref = seed_cli_invocation_audit(&runtime, run_id, stderr);
 
     let response = request_dashboard_errors(runtime).await;

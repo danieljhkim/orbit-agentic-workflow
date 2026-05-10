@@ -1502,22 +1502,38 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     fn is_default_write_allow_root(path: &Path) -> bool {
-        fn matches_allowed(path: &Path) -> bool {
-            [
-                Path::new("/tmp"),
-                Path::new("/private/tmp"),
-                Path::new("/private/var/folders"),
-                Path::new("/dev"),
-            ]
-            .into_iter()
-            .any(|root| path.starts_with(root))
+        fn default_write_allow_roots() -> Vec<PathBuf> {
+            let mut roots = vec![
+                PathBuf::from("/tmp"),
+                PathBuf::from("/private/tmp"),
+                PathBuf::from("/private/var/folders"),
+                PathBuf::from("/dev"),
+            ];
+            let home = std::env::var_os("HOME");
+            let codex_home = std::env::var_os("CODEX_HOME");
+            let claude_config_dir = std::env::var_os("CLAUDE_CONFIG_DIR");
+            if let Some(home) = non_empty_env_path(home.as_deref()) {
+                roots.push(home.join("Library/Caches"));
+                roots.push(home.join(".orbit"));
+            }
+            roots.extend(provider_state_dirs(
+                home.as_deref(),
+                codex_home.as_deref(),
+                claude_config_dir.as_deref(),
+            ));
+            roots
         }
 
-        if matches_allowed(path) {
+        fn matches_allowed(path: &Path, roots: &[PathBuf]) -> bool {
+            roots.iter().any(|root| path.starts_with(root))
+        }
+
+        let allowed_roots = default_write_allow_roots();
+        if matches_allowed(path, &allowed_roots) {
             return true;
         }
         match path.canonicalize() {
-            Ok(canonical) => matches_allowed(&canonical),
+            Ok(canonical) => matches_allowed(&canonical, &allowed_roots),
             Err(_) => false,
         }
     }
