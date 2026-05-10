@@ -2,11 +2,13 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-10 ([T20260510-28] — codex P1/P2 review fixes; ADR-002 and ADR-006 amended in place; ADR-010 and ADR-011 added)
 
 Append-only ADR log for the ADR-artifact feature. Each entry follows the template in [CONVENTIONS.md §4](../CONVENTIONS.md). Numbers are append-only; superseded entries stay in place with status updated. Every ADR cites at least one cost.
 
 Note: this file is itself written in the markdown ADR form this proposal seeks to replace. It will be migrated into the artifact store as part of v2's first migration step (see [2_design.md §7](./2_design.md) and §8.2).
+
+In-place amendment policy: ADRs in `Proposed` status may be refined directly before they ship; CONVENTIONS §4's append-only rule applies once an ADR reaches `Accepted`. Amendments name the review or task ID that prompted them on the Status line.
 
 ---
 
@@ -29,18 +31,19 @@ Note: this file is itself written in the markdown ADR form this proposal seeks t
 
 ## ADR-002 — Global ADR numbering, not per-feature
 
-**Status:** Proposed · 2026-05
+**Status:** Proposed · 2026-05 (amended 2026-05-10 — codex review feedback)
 
-**Context.** Today's per-feature numbering (`activity-job/ADR-017`, `knowledge-graph/ADR-017`) means the bare string `ADR-017` is ambiguous. Cross-folder reference requires folder qualification, and any cross-feature decision has no natural home for its number.
+**Context.** Today's per-feature numbering (`activity-job/ADR-017`, `knowledge-graph/ADR-017`) means the bare string `ADR-017` is ambiguous. Cross-folder reference requires folder qualification, and any cross-feature decision has no natural home for its number. A subtlety surfaced during cross-review: CONVENTIONS §4a rollups fold N source headings into one body. A scalar `legacy_id` cannot represent the alias relationship — migration would either drop folded paths as resolvable IDs or produce body-less artifacts that violate the required body shape.
 
-**Decision.** ADR IDs are globally unique (`ADR-NNNN`, zero-padded). Per-feature numbers from existing markdown ADRs are preserved on each artifact as `legacy_id` for historical resolution but are not the primary key.
+**Decision.** ADR IDs are globally unique (`ADR-NNNN`, zero-padded). Per-feature paths from existing markdown ADRs are preserved on each artifact as `legacy_ids: array<string>` for historical resolution but are not the primary key. **Rollups carry one `legacy_ids` entry per folded source heading plus the rollup's own source path** — folded headings do not become their own artifacts.
 
 **Consequences.**
 
 - Cross-feature ADRs have one unambiguous ID.
 - A bare `[ADR-0042]` citation in any doc resolves without folder context.
-- Migration must allocate fresh IDs and write `legacy_id` for every existing entry — non-trivial but mechanical.
-- Cost: existing references in git history and commit messages (`see ADR-017`) become ambiguous outside their original folder. `orbit.adr.list --legacy-id=activity-job/ADR-017` resolves them, but no plain grep does. Old PRs and code comments don't get rewritten.
+- Both rollup-own and folded-heading citations resolve to the same global ID via `orbit.adr.list --legacy-id=...`.
+- Migration must allocate fresh IDs and write `legacy_ids` for every existing entry — non-trivial but mechanical.
+- Cost: existing references in git history and commit messages (`see ADR-017`) become ambiguous outside their original folder. `orbit.adr.list --legacy-id=activity-job/ADR-017` resolves them, but no plain grep does. Old PRs and code comments don't get rewritten. The array-valued `legacy_ids` is slightly more complex than a scalar field — parsers must handle the N:1 mapping — but the alternative (dropping rollup aliases or producing body-less artifacts) is worse.
 
 ---
 
@@ -96,18 +99,27 @@ Note: this file is itself written in the markdown ADR form this proposal seeks t
 
 ## ADR-006 — Auto-generate per-feature `4_decisions.md` index
 
-**Status:** Proposed · 2026-05
+**Status:** Proposed · 2026-05 (amended 2026-05-10 — codex review feedback)
 
-**Context.** Once ADRs are first-class artifacts, the hand-maintained per-feature `4_decisions.md` file becomes redundant — the same data lives in the store. Two ways to handle it: delete the file entirely (readers query the store), or replace its contents with a generated index built from `orbit.adr.list --feature=<name>`. Deletion is simpler but removes the affordance of "open one file to see every decision for this feature."
+**Context.** Once ADRs are first-class artifacts, the hand-maintained per-feature `4_decisions.md` file becomes redundant — the same data lives in the store. Two ways to handle it: delete the file entirely (readers query the store), or replace its contents with a generated index built from `orbit.adr.list --feature=<name>`. Deletion is simpler but removes the affordance of "open one file to see every decision for this feature." A subtlety surfaced during cross-review: CONVENTIONS expects ascending ADR order in `4_decisions.md`, but real corpora are not strictly ascending (`activity-job/4_decisions.md` already has ADR-048 before ADR-047). The generator needs a named stable sort, not just "ascending."
 
 **Decision.** Auto-generate. `4_decisions.md` becomes a build artifact, regenerated from the store via `orbit.adr.list --feature=<name> --format=md` (or an equivalent `make` target). The generated file is committed to git so readers without Orbit installed — and reviewers using only a web git host — can still browse it.
+
+**Two named canonical orders apply:**
+
+| Surface | Order |
+|---------|-------|
+| Generated `4_decisions.md` (per-feature) | Ascending by **legacy feature ADR number** when present (preserves the historical reading order, including pre-existing non-monotonic cases like ADR-048-before-ADR-047), then by **global `ADR-NNNN`** for legacy-less entries (new ADRs added post-migration). |
+| Generated `cross-cutting/4_decisions.md` | Ascending by global `ADR-NNNN`. No legacy ordering applies — cross-cutting ADRs are born under the new scheme. |
+| `orbit.adr.list` CLI default | Descending by global `ADR-NNNN` (most recent first; standard browsing order). |
 
 **Consequences.**
 
 - Browsable affordance is preserved; the store remains the source of truth.
 - Generators handle ordering, filtering, and supersession links uniformly across features.
+- Per-feature `4_decisions.md` preserves the *exact* reading order operators are used to — including historical quirks — so migration doesn't shuffle the file under reviewers.
 - `4_decisions.md` becomes off-limits for hand-editing; CONVENTIONS.md is updated to mark it as generated and the migration task adds a CI check that fails on hand-edits.
-- Cost: a generated file in git means every ADR add/update produces diff noise. Generation must be **idempotent** — repeated runs against the same store state must produce byte-identical output, or every commit produces spurious churn. The migration tool implements canonical ordering and stable timestamp formatting from day one.
+- Cost: a generated file in git means every ADR add/update produces diff noise. Generation must be **idempotent** — repeated runs against the same store state must produce byte-identical output, or every commit produces spurious churn. The migration tool implements canonical ordering and stable timestamp formatting from day one. Two named orders also means the generator carries two sort implementations and tests for both.
 
 ---
 
@@ -162,8 +174,43 @@ Note: this file is itself written in the markdown ADR form this proposal seeks t
 
 ---
 
+## ADR-010 — `orbit.adr.search` lives in `orbit-embed`, registered into `orbit-tools`
+
+**Status:** Proposed · 2026-05
+
+**Context.** [2_design.md §4.6](./2_design.md) routes `orbit.adr.search` through `orbit-embed::vector::VectorStore`. The initial design placed all `orbit.adr.*` tools in `orbit-tools`. Codex flagged the contradiction: `orbit-tools` does not depend on `orbit-embed` (CLAUDE.md architecture diagram), and adding that edge widens the dep graph for one tool. `orbit-embed` already exposes its own `commands::*` surface (`install`, `uninstall`, `reindex`, `stats`) for embedding-adjacent operations.
+
+**Decision.** Split the placement. `orbit.adr.{add, show, list, update, supersede}` and the review-thread tools live in `orbit-tools` (no `orbit-embed` dep needed). `orbit.adr.search` lives in `orbit-embed::commands` alongside the existing embedding-related commands, and is registered into the central tool registry from there. `orbit-tools` stays at its current dep set: `orbit-common`, `orbit-exec`, `orbit-knowledge`, `orbit-policy`.
+
+**Consequences.**
+
+- Crate architecture stays intact. No new edges in the dep graph.
+- Search-specific code lives next to the rest of `orbit-embed`'s embedding surface, where the maintainers of `orbit-embed` already operate.
+- The tool registry already supports multi-crate registration (tools from `orbit-tools` and `orbit-knowledge` already register through the same surface), so no new infrastructure.
+- Cost: `orbit.adr.*` tools are split across two crates instead of co-located. A reader looking for "where is `orbit.adr.add` implemented?" finds it in `orbit-tools`; "where is `orbit.adr.search`?" finds it in `orbit-embed`. The split is principled (dep graph) but does require a doc-comment pointer in each crate so the relationship isn't surprising. Alternative — adding `orbit-embed` as an `orbit-tools` dependency — was rejected because it widens the dep graph permanently for one tool's worth of work.
+
+---
+
+## ADR-011 — Lenient migration mode as default
+
+**Status:** Proposed · 2026-05
+
+**Context.** The artifact schema preserves CONVENTIONS §4's strict requirements: every ADR must have Context, Decision, Consequences, and at least one labeled `Cost:` line. Cross-review revealed that the existing `activity-job` corpus already violates these in `Accepted` entries — ADR-042 has no Consequences section, and ADR-044, -047, -048 have Consequences without a labeled Cost. Strict migration would either reject these (blocking the entire migration) or force a rushed pre-migration cleanup task that bundles unrelated fixes under deadline pressure.
+
+**Decision.** Migration runs in **lenient mode by default**. Entries failing the strict rules are imported with `validation_warnings` recorded on the artifact, and listed in `migration-report.md` for owner follow-up. The strict rules still apply to *new* ADRs created via `orbit.adr.add` after migration; existing entries are grandfathered with a `legacy_validation: warned` flag that the validator treats as a permitted exception until follow-up tasks remediate.
+
+**Consequences.**
+
+- Migration ships without being blocked by corpus debt accumulated over the past year of activity-job work.
+- Owners get a concrete punch list (`migration-report.md`) instead of vague "clean up your ADRs" guidance.
+- The strict validator's signal stays clean for new work — strict-mode rejects anything new that lacks a Cost line, so the bar holds going forward.
+- Cost: known corpus gaps remain in place until owners file remediation tasks. Nothing automatic forces the cleanup. The store accepts incomplete ADRs in perpetuity if no one acts. Mitigation: `orbit.adr.list --validation=warned` is a one-line query that surfaces the debt, and the [lead-responsibility rule](../../../CLAUDE.md#design-docs) makes it the feature lead's job to clear it.
+
+---
+
 ## Task References
 
-- [T20260510-27] — Drafted the adr-artifact design folder as a v2 proposal. The nine ADRs above (001–009) are all `Proposed`; each will be flipped to `Accepted` and cite its shipping task ID as v2 implementation work lands.
+- [T20260510-27] — Drafted the adr-artifact design folder as a v2 proposal. The original nine ADRs (001–009) are all `Proposed`; each will be flipped to `Accepted` and cite its shipping task ID as v2 implementation work lands.
+- [T20260510-28] — Addressed codex P1/P2 review findings: ADR-002 amended in place to cover `legacy_ids` array and rollup aliasing; ADR-006 amended in place with two named canonical orders; ADR-010 added (search tool placement in `orbit-embed`); ADR-011 added (lenient migration mode as default).
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
