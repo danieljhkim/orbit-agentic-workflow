@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use orbit_common::types::{
-    ActorIdentity, ExternalRef, OrbitError, ReviewThread, Task, TaskStatus,
+    ActorIdentity, ExternalRef, OrbitError, ReviewThread, Task, TaskStatus, agent_from_model,
     normalize_optional_attribution_label, normalize_task_tags,
 };
 
@@ -202,6 +202,17 @@ pub(super) fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
             .or(legacy_implemented_by.as_deref()),
         model_hint,
     );
+    let model = bundle.doc.model.or(legacy_model);
+    let agent = bundle
+        .doc
+        .agent
+        .or_else(|| {
+            model
+                .as_deref()
+                .and_then(agent_from_model)
+                .map(ToOwned::to_owned)
+        })
+        .or(legacy_agent);
 
     Task {
         id: bundle.doc.id,
@@ -219,8 +230,8 @@ pub(super) fn bundle_to_task(state: TaskStateDir, bundle: TaskBundle) -> Task {
         created_by,
         planned_by,
         implemented_by,
-        agent: bundle.doc.agent.or(legacy_agent),
-        model: bundle.doc.model.or(legacy_model),
+        agent,
+        model,
         status: state.to_status(),
         priority: bundle.doc.priority,
         complexity: bundle.doc.complexity,

@@ -18,6 +18,18 @@ struct MigrationStats {
     scoreboard_files: usize,
 }
 
+#[derive(Default)]
+struct TaskMigrationReport {
+    changed_files: usize,
+    affected_task_ids: Vec<String>,
+}
+
+#[derive(Default)]
+struct TaskYamlNormalization {
+    changed: bool,
+    affected_task_id: Option<String>,
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("error: {err}");
@@ -28,9 +40,13 @@ fn main() {
 fn run() -> Result<(), OrbitError> {
     let mut args = std::env::args().skip(1);
     let mut root_override: Option<PathBuf> = None;
+    let mut dry_run = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--dry-run" => {
+                dry_run = true;
+            }
             "--root" => {
                 let Some(value) = args.next() else {
                     return Err(OrbitError::InvalidInput(
@@ -54,8 +70,17 @@ fn run() -> Result<(), OrbitError> {
     let runtime = OrbitRuntime::initialize_with_root_override(root_override.as_deref())?;
     let rules = build_rules()?;
     let data_root = runtime.data_root();
+    let task_report = normalize_task_artifacts(&data_root.join("tasks"), &rules, dry_run)?;
+    if dry_run {
+        println!("would normalize {} task files", task_report.changed_files);
+        for task_id in task_report.affected_task_ids {
+            println!("{task_id}");
+        }
+        return Ok(());
+    }
+
     let mut stats = MigrationStats {
-        task_files: normalize_task_artifacts(&data_root.join("tasks"), &rules)?,
+        task_files: task_report.changed_files,
         scoreboard_files: normalize_scoreboard_artifacts(
             &data_root.join("state/scoreboard"),
             &rules,
@@ -103,29 +128,51 @@ fn build_rules() -> Result<NormalizationRules, OrbitError> {
 fn normalize_task_artifacts(
     tasks_dir: &Path,
     rules: &NormalizationRules,
-) -> Result<usize, OrbitError> {
+    dry_run: bool,
+) -> Result<TaskMigrationReport, OrbitError> {
     if !tasks_dir.exists() {
-        return Ok(0);
+        return Ok(TaskMigrationReport::default());
     }
 
-    let mut changed = 0usize;
+    let mut report = TaskMigrationReport::default();
     visit_files(tasks_dir, &mut |path| {
         let file_changed = match path.file_name().and_then(|name| name.to_str()) {
-            Some("task.yaml") => normalize_task_yaml(path, rules)?,
-            _ => normalize_text_file(path, &rules.legacy_label)?,
+            Some("task.yaml") => {
+                let normalization = normalize_task_yaml(path, rules, dry_run)?;
+                if let Some(task_id) = normalization.affected_task_id {
+                    report.affected_task_ids.push(task_id);
+                }
+                normalization.changed
+            }
+            _ => normalize_text_file(path, &rules.legacy_label, dry_run)?,
         };
         if file_changed {
-            changed += 1;
+            report.changed_files += 1;
         }
         Ok(())
     })?;
-    Ok(changed)
+    report.affected_task_ids.sort();
+    report.affected_task_ids.dedup();
+    Ok(report)
 }
 
-fn normalize_task_yaml(path: &Path, rules: &NormalizationRules) -> Result<bool, OrbitError> {
+fn normalize_task_yaml(
+    path: &Path,
+    rules: &NormalizationRules,
+    dry_run: bool,
+) -> Result<TaskYamlNormalization, OrbitError> {
     let Some(raw) = read_optional_utf8(path)? else {
-        return Ok(false);
+        return Ok(TaskYamlNormalization::default());
     };
+
+    let agent_line_present = has_top_level_key(&raw, "agent");
+    let agent_value = top_level_scalar_value(&raw, "agent");
+    let task_id = infer_task_id(path, &raw);
+    if agent_value.is_some() && top_level_scalar_value(&raw, "model").is_none() {
+        return Err(OrbitError::InvalidInput(format!(
+            "task {task_id} has `agent` but no `model`; add the model before running migration"
+        )));
+    }
 
     let model_hint = infer_task_model_hint(&raw, rules);
     let mut normalized = String::with_capacity(raw.len());
@@ -135,6 +182,9 @@ fn normalize_task_yaml(path: &Path, rules: &NormalizationRules) -> Result<bool, 
         } else {
             (segment, "")
         };
+        if line.starts_with("agent:") {
+            continue;
+        }
         normalized.push_str(&normalize_task_yaml_line(
             line,
             rules,
@@ -144,11 +194,19 @@ fn normalize_task_yaml(path: &Path, rules: &NormalizationRules) -> Result<bool, 
     }
 
     if normalized == raw {
-        return Ok(false);
+        return Ok(TaskYamlNormalization {
+            changed: false,
+            affected_task_id: None,
+        });
     }
 
-    write_atomic_text(path, &normalized)?;
-    Ok(true)
+    if !dry_run {
+        write_atomic_text(path, &normalized)?;
+    }
+    Ok(TaskYamlNormalization {
+        changed: true,
+        affected_task_id: agent_line_present.then_some(task_id),
+    })
 }
 
 fn infer_task_model_hint(task_yaml: &str, rules: &NormalizationRules) -> Option<String> {
@@ -180,7 +238,7 @@ fn normalize_task_yaml_line(
     rules: &NormalizationRules,
     model_hint: Option<&str>,
 ) -> String {
-    if line.starts_with("agent:") || line.starts_with("actor_identity:") {
+    if line.starts_with("actor_identity:") {
         return line.to_string();
     }
 
@@ -209,7 +267,11 @@ fn normalize_task_yaml_line(
     normalize_legacy_text(line, &rules.legacy_label)
 }
 
-fn normalize_text_file(path: &Path, legacy_label: &Regex) -> Result<bool, OrbitError> {
+fn normalize_text_file(
+    path: &Path,
+    legacy_label: &Regex,
+    dry_run: bool,
+) -> Result<bool, OrbitError> {
     let Some(raw) = read_optional_utf8(path)? else {
         return Ok(false);
     };
@@ -217,7 +279,9 @@ fn normalize_text_file(path: &Path, legacy_label: &Regex) -> Result<bool, OrbitE
     if normalized == raw {
         return Ok(false);
     }
-    write_atomic_text(path, &normalized)?;
+    if !dry_run {
+        write_atomic_text(path, &normalized)?;
+    }
     Ok(true)
 }
 
@@ -422,6 +486,30 @@ fn parse_scalar(value: &str) -> Option<&str> {
     }
 }
 
+fn has_top_level_key(task_yaml: &str, key: &str) -> bool {
+    task_yaml
+        .lines()
+        .any(|line| line.starts_with(&format!("{key}:")))
+}
+
+fn top_level_scalar_value(task_yaml: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key}:");
+    task_yaml.lines().find_map(|line| {
+        let value = line.strip_prefix(&prefix)?;
+        parse_scalar(value).map(ToOwned::to_owned)
+    })
+}
+
+fn infer_task_id(path: &Path, task_yaml: &str) -> String {
+    top_level_scalar_value(task_yaml, "id").unwrap_or_else(|| {
+        path.parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("<unknown>")
+            .to_string()
+    })
+}
+
 fn is_model_like(value: &str) -> bool {
     let trimmed = value.trim();
     !trimmed.is_empty()
@@ -434,6 +522,6 @@ fn is_model_like(value: &str) -> bool {
 }
 
 fn print_help() {
-    println!("Usage: migrate-task-attribution [--root <path>]");
+    println!("Usage: migrate-task-attribution [--dry-run] [--root <path>]");
     println!("Rewrites Orbit task and scoreboard artifacts to the model-only attribution schema.");
 }

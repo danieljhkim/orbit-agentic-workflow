@@ -96,6 +96,26 @@ fn task_dependency_params_remain_in_agent_tool_schemas() {
 }
 
 #[test]
+fn task_add_update_schemas_use_model_only_identity() {
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    for tool_name in ["orbit.task.add", "orbit.task.update"] {
+        let schema = registry
+            .get_schema(tool_name)
+            .unwrap_or_else(|| panic!("{tool_name} schema"));
+        assert!(
+            schema.parameters.iter().any(|param| param.name == "model"),
+            "{tool_name} should expose model attribution"
+        );
+        assert!(
+            schema.parameters.iter().all(|param| param.name != "agent"),
+            "{tool_name} should not expose agent attribution"
+        );
+    }
+}
+
+#[test]
 fn task_delete_schema_exposes_optional_force_boolean() {
     let mut registry = ToolRegistry::new();
     registry.register_builtins();

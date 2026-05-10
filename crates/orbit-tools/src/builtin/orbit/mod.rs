@@ -125,6 +125,29 @@ pub(super) fn identity_params() -> Vec<ToolParam> {
     ]
 }
 
+pub(super) fn model_identity_params() -> Vec<ToolParam> {
+    vec![ToolParam {
+        name: "model".to_string(),
+        description:
+            "Preferred provenance field. Exact LLM model identifier used to infer agent family when possible (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
+                .to_string(),
+        param_type: "string".to_string(),
+        required: false,
+    }]
+}
+
+pub(super) fn reject_agent_field(input: &Value, tool_name: &str) -> Result<(), OrbitError> {
+    if input
+        .as_object()
+        .is_some_and(|object| object.contains_key("agent"))
+    {
+        return Err(OrbitError::InvalidInput(format!(
+            "{tool_name} no longer accepts `agent`; use `model` for attribution"
+        )));
+    }
+    Ok(())
+}
+
 pub(super) fn scored_identity_params() -> Vec<ToolParam> {
     vec![
         ToolParam {

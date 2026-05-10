@@ -30,7 +30,6 @@ pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStat
         "created_by": task.created_by,
         "planned_by": task.planned_by,
         "implemented_by": task.implemented_by,
-        "agent": task.agent,
         "model": task.model,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),

@@ -56,7 +56,10 @@ pub use activity_job::{
     V2_TOOL_WILDCARD_ROOTS, V2AuditEnvelope, V2AuditEvent, V2AuditEventKind, load_activity_asset,
     load_job_asset, tool_allowed, validate_tool_allowlist,
 };
-pub use actor::{ActorIdentity, normalize_attribution_label, normalize_optional_attribution_label};
+pub use actor::{
+    ActorIdentity, agent_from_model, normalize_attribution_label,
+    normalize_optional_attribution_label, provider_from_model,
+};
 pub use agent_pair::{
     AgentModelPair, agent_family_from_cli, all_agent_families, infer_agent_family_from_model,
     normalize_agent_family_for_model, resolve_agent_model_pair,

@@ -372,7 +372,7 @@ fn task_add_tool_infers_agent_from_model_only_input() {
         )
         .expect("task add tool succeeds");
 
-    assert_eq!(output.get("agent").and_then(Value::as_str), Some("codex"));
+    assert!(output.get("agent").is_none());
     assert_eq!(output.get("model").and_then(Value::as_str), Some("gpt-5.5"));
     assert_eq!(
         output.get("created_by").and_then(Value::as_str),
@@ -405,7 +405,7 @@ fn task_update_tool_infers_agent_from_model_only_input() {
         )
         .expect("task update tool succeeds");
 
-    assert_eq!(output.get("agent").and_then(Value::as_str), Some("gemini"));
+    assert!(output.get("agent").is_none());
     assert_eq!(
         output.get("model").and_then(Value::as_str),
         Some("gemini-3.1-pro-preview")
@@ -738,7 +738,7 @@ fn task_tool_rejects_mismatched_agent_and_model() {
             None,
             None,
         )
-        .expect_err("mismatched identity should fail");
+        .expect_err("agent input should fail");
 
-    assert!(error.to_string().contains("does not match `model`"));
+    assert!(error.to_string().contains("use `model`"));
 }
