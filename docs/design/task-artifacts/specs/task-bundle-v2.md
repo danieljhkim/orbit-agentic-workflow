@@ -184,7 +184,7 @@ Indexes are generated data. The bundle envelope is canonical, and repair/rebuild
 
 ## Local Locks
 
-Task lock reservations are not task artifacts. They remain local operational state in SQLite, keyed by workspace binding and canonical task IDs, with TTL/release semantics and audit events. Cutover must rewrite active reservations to canonical IDs or release stale reservations with an audit event.
+Task lock reservations are not task artifacts. They remain local operational state in SQLite, keyed by workspace binding and canonical task IDs, with TTL/release semantics and audit events. File-overlap checks remain the conflict mechanism for actual work exclusion. During cutover, v2 reservations carry `workspace_id` alongside the legacy `.orbit` path so cleanup can still find older path-scoped rows; a later old-store removal can make `workspace_id` mandatory.
 
 ## Artifacts
 

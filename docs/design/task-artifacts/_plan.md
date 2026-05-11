@@ -175,7 +175,7 @@ Work:
 - Update artifact writes to use `artifacts/manifest.yaml` and `artifacts/files/`. Done in working tree for the current UTF-8 `TaskArtifact` API.
 - Maintain generated indexes for status, terminal month, relations, and tags. First registry-backed slice implemented in working tree.
 - Replace current O(N x files-per-task) v2 list/search scans with generated indexes. Implemented for status, priority, and tag prefiltering; full-text search still scans matched bundle content until Phase 5.
-- Move task-lock keying to workspace binding plus canonical task IDs.
+- Move task-lock keying to workspace binding plus canonical task IDs. Implemented in working tree for reservation scope metadata; file-overlap conflict semantics are preserved.
 - Preserve lifecycle validation rules, including execution summary before review.
 - Decide and implement v2 delete semantics.
 
@@ -195,10 +195,10 @@ Implemented in working tree:
 - V2 list/filter/tag paths read through generated status, priority, and tag indexes when coverage is complete.
 - Forward and inverse relation lookup helpers over `task_bundle_relations`.
 - Mutation hooks for create, document update, history/status update, review-thread update, and artifact update to refresh generated index rows.
+- Task reservation records can carry the v2 `workspace_id`; runtime lock tools pass it from `.orbit/config.yaml`, and reservation queries prefer that binding while still seeing legacy path-scoped rows for cleanup.
 
 Still open in Phase 4:
 
-- Re-key task reservations from path-first workspace identity to workspace binding plus canonical `ORB-*` IDs while preserving file-overlap conflict semantics.
 - Use relation indexes in public lineage/query surfaces once those surfaces expose typed v2 relations.
 - Decide v2 delete semantics.
 

@@ -62,6 +62,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             CREATE TABLE IF NOT EXISTS task_reservations (
                 reservation_id TEXT PRIMARY KEY,
                 workspace_orbit_dir TEXT NOT NULL,
+                workspace_id TEXT,
                 task_ids_json TEXT NOT NULL,
                 files_json TEXT NOT NULL,
                 actor TEXT NOT NULL,
@@ -462,6 +463,10 @@ fn ensure_task_reservations_schema(conn: &Connection) -> Result<(), OrbitError> 
 
     add_column_if_missing(
         conn,
+        "ALTER TABLE task_reservations ADD COLUMN workspace_id TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
         "ALTER TABLE task_reservations ADD COLUMN owner_run_id TEXT",
     )?;
     add_column_if_missing(
@@ -481,6 +486,12 @@ fn ensure_task_reservations_schema(conn: &Connection) -> Result<(), OrbitError> 
         r#"
             CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_owner_release
             ON task_reservations(workspace_orbit_dir, owner_run_id, released_at);
+
+            CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_id_release
+            ON task_reservations(workspace_id, released_at);
+
+            CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_id_expires
+            ON task_reservations(workspace_id, expires_at);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -584,6 +595,9 @@ mod tests {
 
         apply_schema(&conn).expect("migrate legacy reservation table");
 
+        assert!(
+            table_has_column(&conn, "task_reservations", "workspace_id").expect("workspace column")
+        );
         assert!(
             table_has_column(&conn, "task_reservations", "owner_run_id").expect("owner column")
         );

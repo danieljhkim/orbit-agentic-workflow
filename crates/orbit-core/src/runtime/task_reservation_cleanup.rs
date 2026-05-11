@@ -12,6 +12,7 @@ use crate::OrbitRuntime;
 
 use super::orbit_tool_host::{
     emit_expired_reservation_events, emit_task_lock_release_event, workspace_orbit_dir,
+    workspace_task_reservation_id,
 };
 
 impl OrbitRuntime {
@@ -41,6 +42,7 @@ impl OrbitRuntime {
         let result = self.stores().task_reservations().release_by_owner_run_id(
             TaskReservationReleaseByOwnerParams {
                 workspace_orbit_dir: workspace_orbit_dir(self),
+                workspace_id: workspace_task_reservation_id(self)?,
                 owner_run_id: owner_run_id.to_string(),
                 release_reason,
                 release_metadata_json: Some(
@@ -83,6 +85,7 @@ impl OrbitRuntime {
         let candidates = self.stores().task_reservations().list_owned_conflicts(
             TaskReservationOwnedConflictsParams {
                 workspace_orbit_dir: workspace_orbit_dir(self),
+                workspace_id: workspace_task_reservation_id(self)?,
                 requested_files: requested_files.to_vec(),
                 limit,
             },
@@ -246,7 +249,12 @@ mod tests {
         runtime
             .stores()
             .task_reservations()
-            .list_active(&workspace_orbit_dir(runtime))
+            .list_active(
+                &workspace_orbit_dir(runtime),
+                workspace_task_reservation_id(runtime)
+                    .expect("workspace reservation id")
+                    .as_deref(),
+            )
             .expect("list active")
             .reservations
             .len()
@@ -321,7 +329,12 @@ mod tests {
         let active = runtime
             .stores()
             .task_reservations()
-            .list_active(&workspace_orbit_dir(&runtime))
+            .list_active(
+                &workspace_orbit_dir(&runtime),
+                workspace_task_reservation_id(&runtime)
+                    .expect("workspace reservation id")
+                    .as_deref(),
+            )
             .expect("list active");
         assert_eq!(active.reservations.len(), 1);
         assert_eq!(
@@ -361,6 +374,8 @@ mod tests {
             .task_reservations()
             .reserve(TaskReservationReserveParams {
                 workspace_orbit_dir: workspace_orbit_dir(&runtime),
+                workspace_id: workspace_task_reservation_id(&runtime)
+                    .expect("workspace reservation id"),
                 task_ids: vec!["T-manual".to_string()],
                 requested_files: vec!["file:src/lib.rs".to_string()],
                 actor: "manual".to_string(),
@@ -383,7 +398,12 @@ mod tests {
         let active = runtime
             .stores()
             .task_reservations()
-            .list_active(&workspace_orbit_dir(&runtime))
+            .list_active(
+                &workspace_orbit_dir(&runtime),
+                workspace_task_reservation_id(&runtime)
+                    .expect("workspace reservation id")
+                    .as_deref(),
+            )
             .expect("list active");
         assert_eq!(active.reservations.len(), 1);
         assert_eq!(active.reservations[0].owner_run_id, None);

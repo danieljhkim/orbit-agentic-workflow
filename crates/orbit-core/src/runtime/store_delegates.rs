@@ -330,9 +330,10 @@ impl TaskReservationRecords<'_> {
     pub(crate) fn list_active(
         &self,
         workspace_orbit_dir: &str,
+        workspace_id: Option<&str>,
     ) -> Result<TaskReservationListResult, OrbitError> {
         self.store
-            .list_active_task_reservations(workspace_orbit_dir)
+            .list_active_task_reservations(workspace_orbit_dir, workspace_id)
     }
 
     pub(crate) fn check(

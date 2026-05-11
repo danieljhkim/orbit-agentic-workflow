@@ -181,6 +181,7 @@ impl TaskReservationReleaseReason {
 #[derive(Debug, Clone)]
 pub struct TaskReservationCheckParams {
     pub workspace_orbit_dir: String,
+    pub workspace_id: Option<String>,
     pub requested_files: Vec<String>,
 }
 
@@ -193,6 +194,7 @@ pub struct TaskReservationCheckResult {
 #[derive(Debug, Clone)]
 pub struct TaskReservationReserveParams {
     pub workspace_orbit_dir: String,
+    pub workspace_id: Option<String>,
     pub task_ids: Vec<String>,
     pub requested_files: Vec<String>,
     pub actor: String,
@@ -214,6 +216,7 @@ pub struct TaskReservationReserveResult {
 #[derive(Debug, Clone)]
 pub struct TaskReservationReleaseParams {
     pub workspace_orbit_dir: String,
+    pub workspace_id: Option<String>,
     pub reservation_id: String,
     pub release_reason: TaskReservationReleaseReason,
     pub release_metadata_json: Option<String>,
@@ -230,6 +233,7 @@ pub struct TaskReservationReleaseResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveTaskReservation {
     pub reservation_id: String,
+    pub workspace_id: Option<String>,
     pub task_ids: Vec<String>,
     pub files: Vec<String>,
     pub actor: String,
@@ -242,6 +246,7 @@ pub struct ActiveTaskReservation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleasedTaskReservation {
     pub reservation_id: String,
+    pub workspace_id: Option<String>,
     pub task_ids: Vec<String>,
     pub files: Vec<String>,
     pub actor: String,
@@ -263,6 +268,7 @@ pub struct TaskReservationListResult {
 #[derive(Debug, Clone)]
 pub struct TaskReservationReleaseByOwnerParams {
     pub workspace_orbit_dir: String,
+    pub workspace_id: Option<String>,
     pub owner_run_id: String,
     pub release_reason: TaskReservationReleaseReason,
     pub release_metadata_json: Option<String>,
@@ -277,6 +283,7 @@ pub struct TaskReservationReleaseByOwnerResult {
 #[derive(Debug, Clone)]
 pub struct TaskReservationOwnedConflictsParams {
     pub workspace_orbit_dir: String,
+    pub workspace_id: Option<String>,
     pub requested_files: Vec<String>,
     pub limit: usize,
 }
@@ -401,6 +408,7 @@ pub trait TaskReservationStoreBackend: Send + Sync {
     fn list_active_task_reservations(
         &self,
         workspace_orbit_dir: &str,
+        workspace_id: Option<&str>,
     ) -> Result<TaskReservationListResult, OrbitError>;
 
     fn check_task_reservation_conflicts(

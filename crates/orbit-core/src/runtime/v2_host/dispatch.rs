@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::OrbitRuntime;
 use crate::runtime::orbit_tool_host::{
     emit_expired_reservation_events, merge_task_lock_conflicts, parse_task_ids,
-    requested_task_files, task_lock_conflicts, workspace_orbit_dir,
+    requested_task_files, task_lock_conflicts, workspace_orbit_dir, workspace_task_reservation_id,
 };
 
 use super::{backlog_exclusion, pipeline_actions};
@@ -126,6 +126,12 @@ pub(super) fn run_deterministic(
                 .task_reservations()
                 .check(orbit_store::TaskReservationCheckParams {
                     workspace_orbit_dir: workspace_orbit_dir(runtime),
+                    workspace_id: workspace_task_reservation_id(runtime).map_err(|error| {
+                        DispatchError::DeterministicActionFailed {
+                            action: action.to_string(),
+                            message: error.to_string(),
+                        }
+                    })?,
                     requested_files,
                 })
                 .map_err(|error| DispatchError::DeterministicActionFailed {

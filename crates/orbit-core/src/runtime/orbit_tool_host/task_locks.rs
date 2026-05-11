@@ -8,6 +8,7 @@ use orbit_common::types::{
 };
 use orbit_common::utility::path::workspace_relative_paths_overlap;
 use orbit_common::utility::selector::Selector;
+use orbit_store::sqlite::task_registry::read_workspace_config_optional;
 use orbit_store::{
     ExpiredTaskReservation, ReleasedTaskReservation, TaskLockConflict, TaskLockHolder,
     TaskReservationCheckParams, TaskReservationReleaseParams, TaskReservationReleaseReason,
@@ -22,10 +23,11 @@ use crate::command::task::canonicalize_context_files_for_read;
 use super::json::{task_lock_status_rank, task_lock_to_json};
 
 pub(super) fn list(runtime: &OrbitRuntime) -> Result<Value, OrbitError> {
+    let workspace_id = workspace_task_reservation_id(runtime)?;
     let reservation_result = runtime
         .stores()
         .task_reservations()
-        .list_active(&workspace_orbit_dir(runtime))?;
+        .list_active(&workspace_orbit_dir(runtime), workspace_id.as_deref())?;
     emit_expired_reservation_events(runtime, &reservation_result.expired_reservations)?;
 
     let mut tasks: Vec<_> = runtime
@@ -57,6 +59,7 @@ pub(super) fn list(runtime: &OrbitRuntime) -> Result<Value, OrbitError> {
         .map(|reservation| {
             json!({
                 "reservation_id": reservation.reservation_id.clone(),
+                "workspace_id": reservation.workspace_id.clone(),
                 "task_ids": reservation.task_ids.clone(),
                 "files": reservation.files.clone(),
                 "actor": reservation.actor.clone(),
@@ -94,6 +97,7 @@ pub(super) fn release(
         .task_reservations()
         .release(TaskReservationReleaseParams {
             workspace_orbit_dir: workspace_orbit_dir(runtime),
+            workspace_id: workspace_task_reservation_id(runtime)?,
             reservation_id: reservation_id.clone(),
             release_reason: TaskReservationReleaseReason::Explicit,
             release_metadata_json: Some(
@@ -151,6 +155,7 @@ pub(super) fn reserve(
     }
 
     let actor = reservation_actor_label(runtime, agent.as_deref(), model.as_deref());
+    let workspace_id = workspace_task_reservation_id(runtime)?;
     let (task_ids, requested_files) = match &reservation_scope {
         TaskLockReservationScope::TaskIds(task_ids) => {
             (task_ids.clone(), requested_task_files(runtime, task_ids)?)
@@ -180,6 +185,7 @@ pub(super) fn reserve(
             .task_reservations()
             .reserve(TaskReservationReserveParams {
                 workspace_orbit_dir: workspace_orbit_dir(runtime),
+                workspace_id: workspace_id.clone(),
                 task_ids: task_ids.clone(),
                 requested_files: requested_files.clone(),
                 actor: actor.clone(),
@@ -197,6 +203,7 @@ pub(super) fn reserve(
             .task_reservations()
             .check(TaskReservationCheckParams {
                 workspace_orbit_dir: workspace_orbit_dir(runtime),
+                workspace_id: workspace_id.clone(),
                 requested_files: requested_files.clone(),
             })?;
         conflicts = merge_task_lock_conflicts(conflicts, check.conflicts);
@@ -327,6 +334,13 @@ fn parse_file_lock_selectors(files: Vec<String>) -> Result<Vec<String>, OrbitErr
 
 pub(crate) fn workspace_orbit_dir(runtime: &OrbitRuntime) -> String {
     runtime.paths().orbit_dir.to_string_lossy().into_owned()
+}
+
+pub(crate) fn workspace_task_reservation_id(
+    runtime: &OrbitRuntime,
+) -> Result<Option<String>, OrbitError> {
+    read_workspace_config_optional(&runtime.paths().orbit_dir)
+        .map(|config| config.map(|config| config.workspace_id))
 }
 
 fn task_workspace_root(runtime: &OrbitRuntime, task: &Task) -> PathBuf {

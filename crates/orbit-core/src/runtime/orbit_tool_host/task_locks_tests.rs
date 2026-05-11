@@ -1,6 +1,9 @@
 use orbit_common::types::TaskStatus;
 use orbit_store::{TaskLockConflict, TaskLockHolder};
 use serde_json::{Value, json};
+use tempfile::TempDir;
+
+use crate::OrbitRuntime;
 
 use super::task_locks::{
     TaskLockReservationScope, parse_task_lock_reservation_scope, requested_task_files,
@@ -9,6 +12,23 @@ use super::task_locks::{
 use super::test_support::{
     create_context_task, invalid_input_message, test_runtime, unmanaged_tool_env_guard,
 };
+
+fn v2_test_runtime() -> (TempDir, OrbitRuntime, std::path::PathBuf) {
+    let root = tempfile::tempdir().expect("create tempdir");
+    let global_root = root.path().join("global");
+    let repo_root = root.path().join("repo");
+    let workspace_root = repo_root.join(".orbit");
+    std::fs::create_dir_all(&global_root).expect("create global root");
+    std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+    std::fs::write(
+        workspace_root.join("config.toml"),
+        "[task]\nartifact_store = \"v2\"\n",
+    )
+    .expect("write v2 config");
+    let runtime =
+        OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build v2 runtime");
+    (root, runtime, repo_root)
+}
 
 #[test]
 fn parse_task_lock_reservation_scope_requires_exactly_one_shape() {
@@ -298,6 +318,44 @@ fn reservation_conflicts_clear_immediately_after_release() {
         )
         .expect("second reservation succeeds after release");
     assert_eq!(second_reserve["reserved"], true);
+}
+
+#[test]
+fn v2_task_locks_store_workspace_binding_id() {
+    let _env = unmanaged_tool_env_guard();
+    let (_root, runtime, repo_root) = v2_test_runtime();
+    std::fs::create_dir_all(repo_root.join("src")).expect("create src dir");
+    std::fs::write(repo_root.join("src/lib.rs"), "pub fn ok() {}\n").expect("write source file");
+
+    let task = create_context_task(
+        &runtime,
+        &repo_root,
+        TaskStatus::Backlog,
+        &["file:src/lib.rs"],
+    );
+    assert_eq!(task.id, "ORB-00000");
+
+    let reservation = runtime
+        .execute_tool_command(
+            "orbit.task.locks.reserve",
+            json!({
+                "task_ids": [task.id],
+                "ttl_seconds": 3600,
+                "model": "gpt-5.5",
+            }),
+            None,
+            None,
+        )
+        .expect("reserve v2 task");
+    assert_eq!(reservation["reserved"], true);
+
+    let locks = runtime
+        .execute_tool_command("orbit.task.locks", json!({}), None, None)
+        .expect("list locks");
+    let workspace_id = locks["by_reservation"][0]["workspace_id"]
+        .as_str()
+        .expect("reservation carries workspace_id");
+    assert!(workspace_id.starts_with("repo-"), "{workspace_id}");
 }
 
 #[test]
