@@ -1,0 +1,15 @@
+schema_version: 1
+id: ORB-00000
+title: Minimal v2 task
+status: backlog
+type: chore
+priority: medium
+relations: []
+tags: []
+context_files: []
+external_refs: []
+created_by: codex:gpt-5.5
+planned_by: null
+implemented_by: null
+created_at: 2026-05-11T00:00:00Z
+updated_at: 2026-05-11T00:00:00Z

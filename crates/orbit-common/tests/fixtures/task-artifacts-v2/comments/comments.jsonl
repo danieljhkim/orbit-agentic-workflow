@@ -1,0 +1,2 @@
+{"schema_version":1,"comment_id":"C-0001","at":"2026-05-11T00:02:30Z","by":"daniel","body":"Please keep comments in JSONL."}
+{"schema_version":1,"comment_id":"C-0002","at":"2026-05-11T00:03:00Z","by":"codex:gpt-5.5","body":"Confirmed. Bodies stay Markdown strings inside one JSONL row."}
