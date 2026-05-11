@@ -4,78 +4,13 @@
 **Owner:** codex
 **Last updated:** 2026-05-11
 
-This document describes the current task artifact implementation and the target v2 shape. The current implementation is still the source of truth until a cutover task lands. The v2 sections are intentionally prescriptive: they define the schema direction the next implementation should converge on instead of preserving every historical convenience. This is a transitional document: when the cutover ships, the implementing change should prune or archive the current-implementation section so `2_design.md` again describes only the live implementation.
+This document describes the v2 task artifact implementation. The v2 store is the only task backend; the legacy status-directory store and its `[task] artifact_store` config gate were removed once Phase 6 began (`e9582eba`). Sections below are prescriptive about invariants the live store maintains rather than aspirational about a target.
 
 ---
 
-## 1. Current Implementation
+## 1. Bundle Layout
 
-### 1.1 Storage layout
-
-The current store is file-backed under `.orbit/tasks/`. Non-terminal statuses live directly under status directories:
-
-```text
-.orbit/tasks/
-  proposed/<task-id>/
-  backlog/<task-id>/
-  someday/<task-id>/
-  in_progress/<task-id>/
-  review/<task-id>/
-  blocked/<task-id>/
-```
-
-Terminal statuses are date-partitioned:
-
-```text
-.orbit/tasks/
-  done/<yyyy-mm>/<task-id>/
-  archived/<yyyy-mm>/<task-id>/
-  rejected/<yyyy-mm>/<task-id>/
-```
-
-Each task directory contains:
-
-- `task.yaml`
-- `plan.md`
-- `execution-summary.md`
-- `artifacts/`
-
-This is implemented in [crates/orbit-store/src/file/task_store/layout.rs](../../../crates/orbit-store/src/file/task_store/layout.rs) and [constants.rs](../../../crates/orbit-store/src/file/task_store/constants.rs).
-
-### 1.2 Current YAML envelope
-
-`task.yaml` currently carries both metadata and content. The persisted document includes:
-
-- Identity: `id`, `parent_id`, `type`, `priority`, `complexity`.
-- Content: `title`, `description`, `acceptance_criteria`, `dependencies`, `tags`.
-- Context: `context_files`, `workspace_path`, `repo_root`.
-- Ownership: `created_by`, `planned_by`, `implemented_by`.
-- Implementation metadata: `model`, `pr_status`, `external_refs`.
-- Attribution: `source_task_id`, `batch_id`.
-- Timestamps: `created_at`, `updated_at`.
-- Audit arrays: `history`, `comments`, `review_threads`.
-
-The store splits only `plan` and `execution_summary` into Markdown companions. On read, [bundle.rs](../../../crates/orbit-store/src/file/task_store/bundle.rs) reconstructs a flat `Task` with string fields for `description`, `plan`, and `execution_summary`.
-
-### 1.3 Current ID allocation
-
-Current IDs have the form `T<YYYYMMDD>-<N>`, with optional legacy numeric suffixes. Allocation scans task directories for the current date and increments the highest suffix. The local task allocation lock serializes concurrent writers on one machine, but the allocator has no cross-workspace authority.
-
-The validator rejects any other ID shape. That makes the format deeply embedded in lookup, lock, update, artifact, and delete entry points.
-
-### 1.4 Current mutation model
-
-Task mutations read a full bundle, update in memory, and rewrite the bundle. Lifecycle transitions also move the task directory between status paths. Comments, history entries, and review threads are YAML arrays, so append-only operations rewrite `task.yaml`.
-
-This model is simple and inspectable on one machine. It becomes awkward under sync because directory moves and YAML-array appends create avoidable conflicts.
-
----
-
-## 2. Target V2 Artifact Shape
-
-### 2.1 Layout
-
-The target v2 task bundle is status-neutral. The canonical bundle lives in the user's local Orbit home, partitioned by workspace identity:
+The v2 task bundle is status-neutral. The canonical bundle lives in the user's local Orbit home, partitioned by workspace identity:
 
 ```text
 ~/.orbit/tasks/
@@ -111,7 +46,7 @@ Status lives in `task.yaml`. Directory moves are not part of lifecycle transitio
 
 The canonical task directory is outside the checkout. `.orbit/tasks/` should remain ignored by Git and treated as a projection that Orbit can rebuild. ADRs and design docs remain committed project memory.
 
-### 2.2 Envelope schema
+## 2. Envelope Schema
 
 `task.yaml` should be small and structured:
 
@@ -138,7 +73,7 @@ updated_at: 2026-05-11T00:00:00Z
 
 The envelope should not include prose bodies, comments, review message bodies, execution summaries, `workspace_path`, or `repo_root`. Local execution bindings live in the local task registry, keyed by task ID and workspace binding. `schema_version` restarts at `1` because the reset defines a new artifact family; the cutover command knows how to read the old schema but v2 does not continue its compatibility stream.
 
-### 2.3 Prose documents
+## 3. Prose Documents
 
 The v2 store treats these sidecars as first-class documents:
 
@@ -159,7 +94,7 @@ The v2 store treats these sidecars as first-class documents:
 
 APIs should treat the Markdown file as the source of truth. They may offer parsed checkbox views for UI convenience, but v2 storage should not preserve the old YAML array as a compatibility contract.
 
-### 2.4 Append-only logs
+## 4. Append-only Logs
 
 `events.jsonl` records lifecycle and metadata events. Each row includes at least:
 
@@ -179,7 +114,7 @@ JSONL appends use a single-line JSON record, append mode, flush, and file sync b
 
 V2 does not provide cross-file transactions. A crash can leave an appended event before the envelope status update, artifact files before the manifest update, or updated review-thread files before stale thread files are removed. The store must keep every intermediate state readable and recoverable, but generated repair/indexing passes are responsible for reconciling partial multi-file mutations.
 
-### 2.5 Artifact manifest
+## 5. Artifact Manifest
 
 Artifacts should support text and binary files. The current `TaskArtifact { path, content }` model only accepts UTF-8 text. V2 artifacts should use `artifacts/manifest.yaml`:
 
@@ -197,7 +132,7 @@ Manifest paths are stored in canonical relative form: slash-separated, no absolu
 
 Text artifacts may still be rendered inline by `orbit.task.show --field artifacts`, but storage should not require UTF-8.
 
-### 2.6 Local task store and symlink projection
+## 6. Local Task Store and Symlink Projection
 
 Local-first Orbit uses `~/.orbit/tasks/` as the canonical store for task artifacts. `index.sqlite` owns allocation and local operational metadata; `workspaces/<workspace-id>/` owns the actual bundles:
 
@@ -228,13 +163,11 @@ workspace_id: orbit-a3f9c2
 
 `workspace_id` is assigned once as `<slug>-<6char>`, where the slug is human-readable and the suffix prevents collisions. It survives repo renames and moves because Orbit reads it from `.orbit/config.yaml`, not from the directory name, remote URL, or path hash.
 
-During the cutover window, the runtime selects this store only when workspace `config.toml` sets `[task] artifact_store = "v2"`. That gate is transitional: once v2 covers indexes, locks, and delete semantics, the legacy status-directory store should be removed rather than preserved as a long-term compatibility mode.
-
 The workspace projection under `.orbit/tasks/<task-id>` is a symlink to the canonical bundle. Task writes through either the canonical path or the projection update the same files; there is no second writable copy and no bundle-level divergence protocol. If `.orbit/tasks/` is deleted, Orbit rebuilds the symlinks from `.orbit/config.yaml` and `index.sqlite`. If `.orbit/config.yaml` is lost, Orbit prompts to rebind by matching the current path, repo root, and optional remote fingerprints against `index.sqlite`; if no confident match exists, the user chooses or creates a workspace binding.
 
 Task delete first verifies that any projection entry is a symlink, then unregisters the binding from `index.sqlite`, deletes the canonical home bundle, and removes the projection. Generated index rows and relation edges involving the deleted task are removed with the binding. If deletion is interrupted after unregistering, the remaining bundle is orphaned storage rather than a listed task and a retry may finish cleanup.
 
-### 2.7 Generated local indexes
+## 7. Generated Local Indexes
 
 The bundle remains canonical. The registry maintains generated projections from each task envelope:
 
@@ -244,7 +177,7 @@ The bundle remains canonical. The registry maintains generated projections from 
 
 Task mutations rewrite the generated rows after the envelope write. The index row `updated_at` is a version stamp for the canonical envelope. V2 list and filter paths may use the index only when every registered task has an index row and every indexed `updated_at` matches the bundle envelope. Count or version mismatches trigger a lazy rebuild from registered bundles; if rebuild fails, queries fall back to reading bundles directly. Full-text search still scans task content until the Phase 5 lexical/semantic indexes land.
 
-### 2.8 Crash Consistency
+## 8. Crash Consistency
 
 The v2 bundle is local and file-backed, so multi-file mutations are not fully transactional. The implementation keeps the envelope canonical and makes generated data rebuildable, but the following interrupted states are expected repair cases:
 
@@ -258,9 +191,9 @@ Task lock reservations in v2 mode require `.orbit/config.yaml` to provide the wo
 
 ---
 
-## 3. ID Allocation
+## 9. ID Allocation
 
-### 3.1 Format
+### 9.1 Format
 
 The target canonical ID format is:
 
@@ -272,11 +205,11 @@ ORB-00000
 
 The local OSS authority is one `~/.orbit/tasks/index.sqlite` allocator shared across all local workspaces, so a single machine will not mint the same `ORB-00042` for two repositories. Bare IDs are still not universally unique across unrelated machines or hosted tenants. Cross-registry references must carry registry/workspace context through the sync registry, hosted tenant, or an explicit external reference. Code should not infer universal uniqueness from the `ORB-` prefix alone.
 
-### 3.2 Flat storage
+### 9.2 Flat storage
 
 Canonical task bundles live under `~/.orbit/tasks/workspaces/<workspace-id>/<task-id>/`; projected workspace paths live at `.orbit/tasks/<task-id>`. The initial design deliberately avoids numeric partition directories. Expected local and small-team task counts do not justify the extra path complexity, and a later ADR can add fanout with a migration if a real corpus hits filesystem limits.
 
-### 3.3 Allocation authority
+### 9.3 Allocation authority
 
 Uniqueness requires an authority:
 
@@ -286,13 +219,13 @@ Uniqueness requires an authority:
 
 The implementation should not claim authority-scoped uniqueness by scanning one workspace's `.orbit/tasks/` tree. Allocation reserves an ID. Workspace binding, symlink projection, sync upload, and hosted publication are separate APIs.
 
-### 3.4 No legacy aliases
+### 9.4 No legacy aliases
 
 V2 task bundles do not carry `legacy_ids`, and lookup surfaces should not resolve old `T<YYYYMMDD>-<N>` values. During a one-time cutover, Orbit may print a local report that maps old IDs to new IDs, but that report is an operator aid rather than part of the task schema. New commits and docs should cite only `ORB-00000` IDs.
 
 ---
 
-## 4. API Contract
+## 10. API Contract
 
 The public task API should expose the v2 bundle model directly:
 
@@ -304,11 +237,11 @@ The public task API should expose the v2 bundle model directly:
 
 CLI and tool selectors may keep friendly names such as `description`, `plan`, and `execution-summary`, but they should be implemented as first-class document reads and writes. New internal code should operate on a bundle abstraction with explicit envelope, document, log, thread, and artifact fields.
 
-`orbit.task.locks.*` remains a local operational surface, not a task artifact. Lock reservations live in SQLite keyed by workspace binding and task IDs, expire by TTL, and are rebuilt or released during cutover when old IDs are replaced.
+`orbit.task.locks.*` remains a local operational surface, not a task artifact. Lock reservations live in SQLite keyed by workspace binding and canonical `ORB-*` task IDs, and expire by TTL.
 
 ---
 
-## 5. Search and Indexing
+## 11. Search and Indexing
 
 Lexical and semantic search should index each logical field independently:
 
@@ -334,7 +267,7 @@ Status and retention views are also generated indexes. Terminal tasks remain in 
 
 ---
 
-## 6. Cutover Path
+## 12. Cutover Path
 
 The reset should be a one-time cutover rather than a long-lived compatibility layer:
 
@@ -357,7 +290,7 @@ The cutover command may emit a human-readable mapping from old IDs to new IDs, b
 
 ---
 
-## 7. Concerns & Honest Limitations
+## 13. Concerns & Honest Limitations
 
 `ORB-00000` IDs look universal but are only unique inside an allocation authority. Local-only Orbit uses one machine-local authority across all repos, but sync and hosted modes need shared allocation. That is a deliberate tradeoff: a context-free global ID cannot be produced across machines without a registry.
 

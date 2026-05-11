@@ -4,9 +4,9 @@
 **Owner:** codex
 **Last updated:** 2026-05-11
 
-Tasks are Orbit's durable intent records: they explain what an agent or human is trying to change, how the work should be validated, what context is relevant, who acted on the work, and how the work connects to other Orbit artifacts. The current implementation stores task bundles as YAML plus Markdown sidecars under `.orbit/tasks/`; this feature documents those task artifacts and the v2 reset direction that moves prose into Markdown files, narrows YAML to metadata, replaces date-scoped local IDs with authority-scoped `ORB-00000` IDs, and makes `~/.orbit/tasks/` the canonical local task store.
+Tasks are Orbit's durable intent records: they explain what an agent or human is trying to change, how the work should be validated, what context is relevant, who acted on the work, and how the work connects to other Orbit artifacts. The v2 task artifact store keeps prose in Markdown sidecars, narrows `task.yaml` to a metadata envelope, allocates authority-scoped `ORB-00000` IDs from `~/.orbit/tasks/index.sqlite`, makes `~/.orbit/tasks/workspaces/<workspace-id>/` the canonical local bundle home, and projects each task into the workspace as a `.orbit/tasks/<task-id>` symlink.
 
-This document is the entry point. [2_design.md](./2_design.md) describes the current store and the target v2 artifact shape; [3_vision.md](./3_vision.md) names open questions and prior work; [4_decisions.md](./4_decisions.md) captures the design decisions that should constrain implementation.
+This document is the entry point. [2_design.md](./2_design.md) describes the live v2 store; [3_vision.md](./3_vision.md) names open questions and prior work; [4_decisions.md](./4_decisions.md) captures the design decisions that constrain implementation.
 
 ---
 
@@ -19,18 +19,14 @@ Orbit tasks sit between transient agent sessions and durable code history. A goo
 - Automation needs structured fields for lifecycle, dependencies, locks, PR generation, semantic search, and audit.
 - Git history needs a compact identifier that can be cited in commits and traced later.
 
-The current schema got Orbit this far, but it mixes those concerns too tightly. `task.yaml` carries human prose (`description`, `acceptance_criteria`) next to metadata and append-heavy arrays (`history`, `comments`, `review_threads`). The directory path encodes lifecycle state, so status changes become file moves. The `T<YYYYMMDD>-<N>` ID format is easy to allocate locally but intentionally not globally resolvable; that assumption was made explicit after graph task attribution was removed in [T20260506-11].
+The v2 artifact matches the work to its readers:
 
-Orbit is still pre-release, so the reset should not preserve historical compatibility as a product constraint. Existing local task records may be converted or discarded during a deliberate cutover, but v2 readers and writers should not carry alias lookup, dual schemas, or fallback projections indefinitely.
-
-The reset opportunity is to make the artifact match the work:
-
-- YAML should be a small, mergeable envelope.
-- Markdown should hold prose and long-form human/agent reasoning.
-- Append-only logs should carry events, comments, and review traffic.
-- IDs should be stable inside the configured allocation authority and explicitly scoped when tasks cross registries.
-- Workspace task bundles should live in one canonical local store while each checkout gets a lightweight `.orbit/tasks/` projection.
-- Local execution bindings should stay local, not leak into synced task identity.
+- `task.yaml` is a small, mergeable envelope of metadata.
+- Markdown sidecars (`description.md`, `acceptance.md`, `plan.md`, `execution-summary.md`) hold prose and long-form human/agent reasoning.
+- Append-only logs (`events.jsonl`, `comments.jsonl`, `review-threads/`) carry events, comments, and review traffic without rewriting the envelope.
+- `ORB-00000` IDs are stable inside the configured allocation authority and explicitly scoped when tasks cross registries; bare task IDs remain local search keys, in line with the graph-attribution removal in [T20260506-11].
+- Workspace task bundles live in one canonical local store under `~/.orbit/tasks/workspaces/<workspace-id>/`; each checkout gets a lightweight `.orbit/tasks/` symlink projection.
+- Local execution bindings stay in `~/.orbit/tasks/index.sqlite` rather than leaking into synced task identity.
 
 ---
 
@@ -38,7 +34,7 @@ The reset opportunity is to make the artifact match the work:
 
 ### 2.1 Task bundle
 
-A task bundle is the complete on-disk representation of one task. In the current implementation, it is a directory containing `task.yaml`, `plan.md`, `execution-summary.md`, and optional `artifacts/`. In the v2 target shape, the canonical bundle lives under `~/.orbit/tasks/workspaces/<workspace-id>/<task-id>/` and the checkout exposes a symlink projection:
+A task bundle is the complete on-disk representation of one task. The canonical bundle lives under `~/.orbit/tasks/workspaces/<workspace-id>/<task-id>/`, and each checkout exposes a symlink projection:
 
 ```text
 ~/.orbit/tasks/
@@ -62,11 +58,11 @@ A task bundle is the complete on-disk representation of one task. In the current
   ORB-00000 -> ~/.orbit/tasks/workspaces/orbit-a3f9c2/ORB-00000
 ```
 
-The canonical directory name is the task ID. Status is stored in `task.yaml`; it is not encoded in the path in the v2 target shape. `.orbit/config.yaml` stores the checkout's `workspace_id` so Orbit can rebuild the symlink projection after cleanup or checkout recreation.
+The canonical directory name is the task ID. Status lives in `task.yaml`; it is not encoded in the path. `.orbit/config.yaml` stores the checkout's `workspace_id` so Orbit can rebuild the symlink projection after cleanup or checkout recreation.
 
 ### 2.2 Envelope
 
-`task.yaml` is the envelope. It owns identity, lifecycle state, priority, type, typed relations, context selectors, external references, actor attribution, timestamps, and schema version. It should not carry long prose or append-heavy conversation history in the v2 artifact.
+`task.yaml` is the envelope. It owns identity, lifecycle state, priority, type, typed relations, context selectors, external references, actor attribution, timestamps, and schema version. It does not carry long prose or append-heavy conversation history.
 
 ### 2.3 Prose sidecars
 
@@ -77,25 +73,25 @@ Long-form fields are Markdown sidecars:
 - `plan.md` records the execution plan.
 - `execution-summary.md` records what changed, validation performed, and residual risk.
 
-The public API should expose these as first-class task documents, using names that match the v2 sidecars instead of preserving old embedded-YAML field shapes.
+The public API exposes these as first-class task documents.
 
 ### 2.4 Authority-scoped task ID
 
-The proposed v2 ID format is `ORB-00000`: `ORB` identifies Orbit and the five-digit decimal suffix is unique within the configured allocation authority. A local-only installation uses one machine-local allocator in `~/.orbit/tasks/index.sqlite` across all local workspaces; synced or hosted workspaces must allocate against their shared registry before a task is visible. Two unrelated machines may both allocate `ORB-00042`, so cross-machine references still need registry, hosted-tenant, or external-reference context.
+The canonical ID format is `ORB-00000`: `ORB` identifies Orbit and the five-digit decimal suffix is unique within the configured allocation authority. A local-only installation uses one machine-local allocator in `~/.orbit/tasks/index.sqlite` across all local workspaces; synced or hosted workspaces must allocate against their shared registry before a task is visible. Two unrelated machines may both allocate `ORB-00042`, so cross-machine references still need registry, hosted-tenant, or external-reference context.
 
-Old `T<YYYYMMDD>-<N>` values are not part of the v2 identity contract. A one-time cutover may map current local tasks to new IDs for operator convenience, but Orbit should not expose old IDs as supported aliases.
+V2 bundles do not carry `legacy_ids` and lookup surfaces do not resolve old `T<YYYYMMDD>-<N>` values.
 
 ### 2.5 Task event stream
 
-Lifecycle changes, comments, review messages, and automation updates are naturally append-heavy. The v2 artifact moves those out of YAML arrays into append-only JSON Lines files or per-thread records so concurrent writes can be merged intentionally and audited without rewriting the whole envelope.
+Lifecycle changes, comments, review messages, and automation updates are naturally append-heavy. The store keeps those out of YAML arrays in append-only JSON Lines files (`events.jsonl`, `comments.jsonl`) and per-thread records under `review-threads/`, so concurrent writes can be merged intentionally and audited without rewriting the envelope.
 
 ### 2.6 Typed relations
 
-The current model has several separate edge-like fields (`parent_id`, `dependencies`, `source_task_id`, `batch_id`). The v2 target collapses these into directed typed relations such as `parent_of`, `blocks`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. Read-side projections can expose inverse labels such as `blocked_by`, but the bundle stores one directed edge. Consumers should reason about relation meaning rather than infer it from field names.
+Task-to-task links live in a single directed `relations` array on the envelope, with explicit types such as `parent_of`, `blocks`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. Read-side projections can expose inverse labels such as `blocked_by`, but the bundle stores one directed edge per relationship. Consumers reason about relation meaning rather than inferring it from field names.
 
 ### 2.7 Local task store and projection
 
-The v2 canonical bundle lives in the local task store under `~/.orbit/tasks/workspaces/<workspace-id>/<task-id>/`. `.orbit/tasks/` is a symlink forest pointing at that store so agents can keep using workspace-relative task paths without creating a second writable copy. `~/.orbit/tasks/index.sqlite` keeps the machine-global allocator, workspace bindings, local execution overlays, generated indexes, and enough binding metadata to repair missing or stale projection links.
+The canonical bundle lives in the local task store under `~/.orbit/tasks/workspaces/<workspace-id>/<task-id>/`. `.orbit/tasks/` is a symlink forest pointing at that store so agents can keep using workspace-relative task paths without creating a second writable copy. `~/.orbit/tasks/index.sqlite` holds the machine-local allocator, workspace bindings, local execution overlays, generated indexes, and enough binding metadata to repair missing or stale projection links.
 
 ---
 
@@ -103,15 +99,16 @@ The v2 canonical bundle lives in the local task store under `~/.orbit/tasks/work
 
 | Concern | File | Task |
 |---------|------|------|
-| Current task schema and public `Task` struct | [crates/orbit-common/src/types/task.rs](../../../crates/orbit-common/src/types/task.rs) | — |
-| Current file-backed task store | [crates/orbit-store/src/file/task_store/](../../../crates/orbit-store/src/file/task_store/) | — |
-| Current bundle constants | [crates/orbit-store/src/file/task_store/constants.rs](../../../crates/orbit-store/src/file/task_store/constants.rs) | — |
-| Current YAML document fields | [crates/orbit-store/src/file/task_store/doc.rs](../../../crates/orbit-store/src/file/task_store/doc.rs) | — |
-| Current local ID allocation and validation | [crates/orbit-store/src/file/task_store/layout.rs](../../../crates/orbit-store/src/file/task_store/layout.rs) | — |
-| Target local task store and symlink projection | [2_design.md §2.6](./2_design.md#26-local-task-store-and-symlink-projection) | — |
-| Task sync design that preserves current `T<YYYYMMDD>-<N>` IDs | [docs/design/task-sync/2_design.md](../task-sync/2_design.md) | [T20260505-12] |
+| V2 envelope, relations, JSONL rows, and manifest types | [crates/orbit-common/src/types/task_artifacts.rs](../../../crates/orbit-common/src/types/task_artifacts.rs) | — |
+| Public `Task` DTO (still flat during Phase 6 consumer wiring) | [crates/orbit-common/src/types/task.rs](../../../crates/orbit-common/src/types/task.rs) | — |
+| V2 bundle primitives (file layout, atomic writes, JSONL append) | [crates/orbit-store/src/file/task_store/v2_bundle.rs](../../../crates/orbit-store/src/file/task_store/v2_bundle.rs) | — |
+| V2 task backend adapter (create/get/list/search/mutations) | [crates/orbit-store/src/file/task_store/v2_store.rs](../../../crates/orbit-store/src/file/task_store/v2_store.rs) | — |
+| Home registry: allocator, workspace bindings, generated indexes | [crates/orbit-store/src/sqlite/task_registry.rs](../../../crates/orbit-store/src/sqlite/task_registry.rs) | — |
+| V2 runtime wiring (`build_v2_task_backends`) | [crates/orbit-core/src/runtime/builder.rs](../../../crates/orbit-core/src/runtime/builder.rs) | — |
+| Local task store and symlink projection | [2_design.md §6](./2_design.md#6-local-task-store-and-symlink-projection) | — |
+| Task sync design over `ORB-*` IDs | [docs/design/task-sync/2_design.md](../task-sync/2_design.md) | [T20260505-12] |
 | Task ID local-only doctrine after graph attribution removal | [docs/POSITIONING.md](../../POSITIONING.md), [knowledge-graph/4_decisions.md](../knowledge-graph/4_decisions.md) | [T20260506-11] |
-| v2 task bundle contract | [specs/task-bundle-v2.md](./specs/task-bundle-v2.md) | — |
+| V2 task bundle contract | [specs/task-bundle-v2.md](./specs/task-bundle-v2.md) | — |
 | Glossary | [references/glossary.md](./references/glossary.md) | — |
 | ADR log | [4_decisions.md](./4_decisions.md) | — |
 

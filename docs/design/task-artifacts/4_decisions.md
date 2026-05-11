@@ -12,7 +12,7 @@ ADR numbers are local to this folder. Cross-folder references use full paths. AD
 
 ## ADR-001 — Authority-scoped `ORB-00000` task IDs
 
-**Status:** Proposed · 2026-05 · *implementing task TBD*
+**Status:** Accepted · 2026-05 · Phase 1 v2 domain contracts (`c1f72a32`); Phase 2 home registry allocator (`1ae83804`); legacy gate removed (`e9582eba`)
 
 **Context.** The current `T<YYYYMMDD>-<N>` format is allocated by scanning one workspace's task directories. That shape is useful as a local search key but fails the moment tasks need to be referenced across local workspaces, through an explicit registry, hosted Team, or durable design docs without explaining which machine allocated them.
 
@@ -30,7 +30,7 @@ ADR numbers are local to this folder. Cross-folder references use full paths. AD
 
 ## ADR-002 — Envelope YAML plus Markdown sidecars for prose
 
-**Status:** Proposed · 2026-05 · *implementing task TBD*
+**Status:** Accepted · 2026-05 · Phase 3 v2 bundle primitives (`c14fa640`); Phase 4 document update hardening (`06847332`)
 
 **Context.** `task.yaml` currently stores metadata, long prose, acceptance criteria, comments, history, and review threads together. This makes simple tasks easy to inspect, but it turns every content edit or append into a YAML rewrite and makes Markdown-hostile fields harder for humans and agents to author.
 
@@ -46,7 +46,7 @@ ADR numbers are local to this folder. Cross-folder references use full paths. AD
 
 ## ADR-003 — Status-neutral task directories
 
-**Status:** Proposed · 2026-05 · *implementing task TBD*
+**Status:** Accepted · 2026-05 · Phase 3 v2 runtime backend (`3be9bd5f`, `c14fa640`); Phase 6 legacy gate removed (`e9582eba`)
 
 **Context.** Current lifecycle state is encoded in the directory path, so moving `backlog -> in-progress -> review` physically moves the task bundle. That is readable in a local file browser, but it makes lifecycle transitions conflict-prone under sync and forces lookup to scan every status directory.
 
@@ -64,7 +64,7 @@ ADR numbers are local to this folder. Cross-folder references use full paths. AD
 
 ## ADR-004 — Append-heavy task data leaves `task.yaml`
 
-**Status:** Proposed · 2026-05 · *implementing task TBD*
+**Status:** Accepted · 2026-05 · Phase 3 v2 bundle primitives (`c14fa640`); Phase 4 hardening of append/tail-repair (`06847332`)
 
 **Context.** Comments, history entries, and review messages are append-heavy. Keeping them as arrays in `task.yaml` causes whole-file rewrites and bad merge behavior for the exact fields most likely to be touched by parallel agents.
 
@@ -112,7 +112,7 @@ ADR numbers are local to this folder. Cross-folder references use full paths. AD
 
 ## ADR-007 — Home task store with workspace symlink projection
 
-**Status:** Proposed · 2026-05 · *implementing task TBD*
+**Status:** Accepted · 2026-05 · Phase 2 home registry foundation (`1ae83804`); Phase 3 v2 runtime backend and symlink projection (`3be9bd5f`, `c14fa640`)
 
 **Context.** Task bundles need to be close to the workspace so agents can inspect and update them with project context, but keeping the canonical copy inside every checkout makes gitignored task data fragile. `~/.orbit` already needs to allocate IDs and remember workspace bindings, so it can own canonical local task storage while the checkout exposes a projection.
 
