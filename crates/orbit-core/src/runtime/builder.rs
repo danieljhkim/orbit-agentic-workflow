@@ -12,7 +12,7 @@ use orbit_store::{
     Store, audit_event_store_sqlite, global_executor_def_store, global_policy_def_store,
     layered_policy_def_store, task_reservation_store_sqlite, tool_store_sqlite,
     workspace_adr_backends, workspace_job_run_store, workspace_learning_backend,
-    workspace_policy_def_store, workspace_task_backends, workspace_task_backends_v2,
+    workspace_policy_def_store, workspace_task_backends_v2,
 };
 
 use orbit_common::types::{DEFAULT_POLICY_NAME, OrbitError, WorkspacePaths};
@@ -22,7 +22,7 @@ use orbit_tools::external::ExternalTool;
 use crate::OrbitContext;
 use crate::command::init::global_skills_dir;
 use crate::command::policy::seed_default_policies;
-use crate::config::{RuntimeConfig, TaskArtifactStoreMode};
+use crate::config::RuntimeConfig;
 use crate::context::{
     ActorIdentity, OrbitExecutionAssets, OrbitPolicyContext, OrbitRuntimeSettings, OrbitStores,
 };
@@ -60,12 +60,7 @@ pub(crate) fn build_context_from_roots(
         global_root.to_path_buf(),
     );
 
-    let task_backends = match runtime_config.task_artifact_store() {
-        TaskArtifactStoreMode::Legacy => {
-            workspace_task_backends(persistence.task_dir.clone(), store.clone())
-        }
-        TaskArtifactStoreMode::V2 => build_v2_task_backends(global_root, &paths)?,
-    };
+    let task_backends = build_v2_task_backends(global_root, &paths)?;
     let adr_store = workspace_adr_backends(persistence.adr_dir.clone(), store.clone());
     let learning_store =
         workspace_learning_backend(persistence.learning_dir.clone(), store.clone());
@@ -146,7 +141,6 @@ pub(crate) fn build_context_from_roots(
             task_delegate_approval,
             scoring_enabled,
             graph_editing,
-            runtime_config.task_artifact_store(),
             pr_config,
             v2_backend,
             workflow_base_branch,

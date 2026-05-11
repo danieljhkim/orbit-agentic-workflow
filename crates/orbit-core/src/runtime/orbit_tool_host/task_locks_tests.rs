@@ -381,7 +381,7 @@ fn v2_task_locks_fail_when_workspace_binding_config_disappears() {
     assert!(matches!(
         err,
         OrbitError::Store(message)
-            if message.contains("task artifact v2 workspace config is missing")
+            if message.contains("task artifact workspace config is missing")
     ));
 }
 

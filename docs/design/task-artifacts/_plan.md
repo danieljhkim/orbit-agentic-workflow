@@ -246,7 +246,7 @@ Still open in Phase 5:
 
 ## Phase 6 - Remove Old Store Shape
 
-**Status:** Not started
+**Status:** In progress
 
 Goal: delete the old task artifact assumptions once v2 is working.
 
@@ -267,6 +267,24 @@ Exit criteria:
 - Repository docs describe the live implementation, not a target state.
 - Task artifacts are usable enough that future work can be tracked in Orbit itself.
 
+### Phase 6 Progress
+
+Implemented in working tree:
+
+- Config gate `[task] artifact_store` is removed: v2 is the only backend. The setting is accepted as a no-op for `"v2"` and rejected with a migration error for `"legacy"`; `TaskArtifactStoreMode` and the legacy `workspace_task_backends` selector are gone from runtime/builder/context.
+
+Still open in Phase 6:
+
+- Drop legacy envelope-only fields (`workspace_path`, `repo_root`) from the runtime path. `TaskAutomationUpdate` and the worktree/dispatch callers still write `workspace_path`/`batch_id` through `update_task_document`, and the v2 store rejects them. Nine `orbit-core` lib tests are marked `#[ignore = "Phase 6: ..."]` until these are routed correctly.
+- Route `parent_id`, `batch_id`, `dependencies`, and `source_task_id` through the v2 relations API on both create and update; v2 currently hard-errors when these arrive as envelope fields. Same nine ignored tests will be re-enabled once relations are wired.
+- Delete `crates/orbit-store/src/file/task_store/{api,bundle,doc,lock,artifacts,constants,layout,type_migration}.rs` (legacy status-directory store) and stop re-exporting `workspace_task_backends` from `orbit-store`.
+- Remove `T<YYYYMMDD>-<N>` allocator, validator, and date-partitioned status directory logic from any remaining callers.
+- Drop the legacy `Task` DTO fields that have no v2 home: `workspace_path`, `repo_root`, `comments`, `history`, `review_threads` (and the `agent`/`model` execution-routing fields if they stay ephemeral). Audit CLI/MCP/engine/web for callers and re-wire to v2 trait methods.
+- Remove the legacy proposed/friction → task migration code paths tied to old task bundles.
+- Remove text-only artifact assumptions left in the v2 store (e.g. `fs::read_to_string` in artifact lexical search).
+- Prune the "current implementation" section from `2_design.md` and the parallel current/v2 framing in `1_overview.md`.
+- Flip `Proposed` task-artifacts ADRs in `4_decisions.md` to `Accepted` once the corresponding code lands.
+
 ## Status Board
 
 | Phase | Status | Notes |
@@ -277,7 +295,7 @@ Exit criteria:
 | Phase 3 - V2 Bundle Store | Implemented in working tree | V2 create/get/list/update/review/artifact backend is wired behind `[task] artifact_store = "v2"`. |
 | Phase 4 - Task Operations And Local Indexes | In progress | Generated indexes, lock rekeying, relation query acceleration, delete semantics, and review-found repair guards are implemented; public relation query surfaces remain. |
 | Phase 5 - Consumers And Search | In progress | First search slice covers v2 review threads/artifacts and semantic field names; consumer audit remains. |
-| Phase 6 - Remove Old Store Shape | Not started | Cleanup after v2 passes. |
+| Phase 6 - Remove Old Store Shape | In progress | Config gate removed (v2 mandatory); legacy store files, DTO fields, doc pruning, and ADR flips still open. |
 
 ## Latest Validation
 
