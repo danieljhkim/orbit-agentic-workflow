@@ -127,6 +127,7 @@ pub fn validate_task_relations_for_source(
     relations: &[TaskRelation],
     existing_edges: &[TaskRelationEdge],
 ) -> Result<(), OrbitError> {
+    // Existing edges are assumed acyclic; this check only rejects new edges that close a cycle.
     validate_orb_task_id(source_id)?;
     let mut seen = BTreeSet::new();
     for edge in existing_edges {
@@ -324,6 +325,7 @@ impl ArtifactManifestV2 {
 pub struct ArtifactManifestFileV2 {
     pub path: String,
     pub blob: String,
+    /// Lowercase hex SHA-256 digest; writers should format bytes with `{:x}`.
     pub sha256: String,
     pub media_type: String,
     pub size_bytes: u64,
@@ -386,6 +388,7 @@ pub fn validate_relative_artifact_path(path: &str) -> Result<(), OrbitError> {
                 )));
             }
             Component::CurDir => {
+                // Manifest paths are stored canonical; writers may strip a leading "./" before validation.
                 return Err(OrbitError::InvalidInput(format!(
                     "artifact path '{trimmed}' must not contain '.' components"
                 )));
@@ -430,6 +433,7 @@ fn cyclic_relation_family(relation_type: TaskRelationType) -> Option<RelationCyc
     match relation_type {
         TaskRelationType::Blocks => Some(RelationCycleFamily::Blocking),
         TaskRelationType::ParentOf => Some(RelationCycleFamily::Hierarchy),
+        // Temporal and associative relation types are queryable metadata, not reachability families.
         TaskRelationType::SpawnedFrom => None,
         TaskRelationType::RegressionFrom
         | TaskRelationType::Supersedes

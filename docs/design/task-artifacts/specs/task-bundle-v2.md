@@ -187,13 +187,13 @@ files:
   - path: planning-duel/winner.json
     blob: files/planning-duel/winner.json
     media_type: application/json
-    sha256: "<hex>"
+    sha256: "<64 lowercase hex chars>"
     size_bytes: 1234
     created_by: codex:gpt-5.5
     created_at: 2026-05-11T00:00:00Z
 ```
 
-Artifact paths must be relative, UTF-8, slash-separated, and must not contain `..` components.
+Artifact paths must be relative, UTF-8, slash-separated, canonical paths and must not contain `.`, `..`, or leading `./` components. Writers that ingest hand-authored manifests should normalize leading `./` before validation. `sha256` must be a 64-character lowercase hex SHA-256 digest; writer code should format digest bytes with lowercase hex (`{:x}`), not uppercase.
 
 ## Cutover
 

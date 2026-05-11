@@ -187,9 +187,11 @@ files:
   - path: planning-duel/winner.json
     blob: files/planning-duel/winner.json
     media_type: application/json
-    sha256: "<hex>"
+    sha256: "<64 lowercase hex chars>"
     created_by: codex:gpt-5.5
 ```
+
+Manifest paths are stored in canonical relative form: slash-separated, no absolute paths, no `..`, no `.`, and no leading `./`. Writers that ingest hand-authored manifests should normalize a leading `./` before validation. SHA-256 values are lowercase hex; writer code should format digest bytes with lowercase hex (`{:x}`).
 
 Text artifacts may still be rendered inline by `orbit.task.show --field artifacts`, but storage should not require UTF-8.
 

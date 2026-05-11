@@ -6,6 +6,8 @@
 
 This is the temporary execution tracker for the task-artifacts reset until Orbit tasks can track this work again. It intentionally assumes a pre-release reset: existing task artifacts were deleted, no external users depend on the old layout, and the implementation does not need a migration command, legacy lookup aliases, or old-schema compatibility shims.
 
+**Temporary exception:** this file is not stable design-contract material and does not belong in `references/`. It should be deleted or archived once Orbit task artifacts can track the remaining implementation work again.
+
 ## Current Position
 
 The design baseline is in place:
@@ -15,7 +17,7 @@ The design baseline is in place:
 - `docs/design/task-artifacts/specs/task-bundle-v2.md` defines the storage contract.
 - `docs/design/task-artifacts/4_decisions.md` records the proposed ADRs.
 
-Implementation has started. Phase 0 and Phase 1 are implemented in the working tree, pending review and commit. The next meaningful milestone is to make the home task registry and workspace binding real, then replace the current task store with the v2 bundle store.
+Implementation has started. Phase 0 and Phase 1 landed in `c1f72a32`. Phase 2 is implemented in the working tree, pending review and commit. The next meaningful milestone is to replace the current task store with the v2 bundle store.
 
 ## Non-Goals
 
@@ -85,7 +87,7 @@ Exit criteria:
 
 ## Phase 2 - Home Registry And Workspace Binding
 
-**Status:** Not started
+**Status:** Implemented in working tree
 
 Goal: make `~/.orbit/tasks/index.sqlite` and `.orbit/config.yaml` load-bearing.
 
@@ -210,7 +212,7 @@ Exit criteria:
 |-------|--------|-------|
 | Phase 0 - Prep And Guardrails | Implemented in working tree | Inventory recorded and v2 fixtures parse under test. |
 | Phase 1 - V2 Domain Types | Implemented in working tree | `orbit-common` domain contracts and focused tests are in place. |
-| Phase 2 - Home Registry And Workspace Binding | Not started | Highest-risk foundation. Do early. |
+| Phase 2 - Home Registry And Workspace Binding | Implemented in working tree | `orbit-store` registry foundation and projection rebuild tests are in place. |
 | Phase 3 - V2 Bundle Store | Not started | Main storage replacement. |
 | Phase 4 - Task Operations And Local Indexes | Not started | Restores workflow completeness. |
 | Phase 5 - Consumers And Search | Not started | Updates surfaces outside storage. |
@@ -222,6 +224,8 @@ Exit criteria:
 
 - `cargo fmt -p orbit-common`
 - `cargo test -p orbit-common`
+- `cargo fmt -p orbit-store`
+- `cargo test -p orbit-store`
 
 ## Suggested First PR
 
