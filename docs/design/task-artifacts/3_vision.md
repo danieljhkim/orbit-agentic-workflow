@@ -10,7 +10,7 @@ This document captures open questions for the task-artifacts reset, prior work t
 
 ## 1. Open Questions
 
-### 1.1 How global should global IDs be?
+### 1.1 How broad should allocation authorities be?
 
 `ORB-00000` can mean at least three things:
 
@@ -18,11 +18,11 @@ This document captures open questions for the task-artifacts reset, prior work t
 2. Unique in one synced repository registry.
 3. Unique across hosted Orbit Team.
 
-The v2 design should pick the narrowest authority that serves the product surface being implemented. For OSS local-first, a machine-global allocator is enough. For task sync, repository-registry-global is enough. Hosted Team may later introduce org-global or tenant-global allocation.
+The v2 design picks the narrowest authority that serves the product surface being implemented. For OSS local-first, one machine-local allocator across all local workspaces is enough. For task sync, repository-registry-global is enough. Hosted Team may later introduce org-global or tenant-global allocation. A bare `ORB-00000` is therefore scoped by its authority; cross-authority references need registry or workspace context.
 
 ### 1.2 What happens after `ORB-99999`?
 
-The v2 design deliberately keeps the initial format short: five decimal digits and 100-task storage partitions. Most local and team registries should never exhaust that range. If a registry reaches `ORB-99999`, the likely expansion path is to grow the decimal width (`ORB-100000`) while keeping the same partition formula, but that should be ratified by a later ADR rather than preloaded into the initial contract.
+The v2 design deliberately keeps the initial format short: five decimal digits and flat task directories. Most local and team registries should never exhaust that range. If a registry reaches `ORB-99999`, the likely expansion path is to grow the decimal width (`ORB-100000`) while keeping the same flat layout, but that should be ratified by a later ADR rather than preloaded into the initial contract.
 
 ### 1.3 How structured should acceptance criteria become?
 
@@ -40,7 +40,7 @@ The v2 artifact introduces append-only logs, but the envelope remains a snapshot
 
 ### 1.5 How much local execution context belongs in a task?
 
-`workspace_path` and `repo_root` are currently persisted in task YAML. In a shared task world, those are often local bindings, not task identity. The open question is whether to store them in a local overlay keyed by task ID, or keep a portable workspace selector in the task envelope and resolve it locally at runtime.
+`workspace_path` and `repo_root` are currently persisted in task YAML. In v2 they are local bindings, not task identity, and belong in the local task registry's workspace-binding table. The checkout points at that binding with `.orbit/config.yaml` and `workspace_id`. A future sync registry may add a portable workspace selector, but the task envelope should not carry machine-local paths.
 
 ### 1.6 Should old task IDs survive the reset?
 
@@ -52,7 +52,7 @@ Orbit currently stores review threads on tasks and can sync them with GitHub rev
 
 ### 1.8 Should archived tasks be compacted?
 
-Status-neutral directories make old tasks easy to keep forever. That is good for audit but bad for repository size. Possible compaction strategies:
+Status-neutral directories make old tasks easy to keep forever. Generated indexes should restore the old ability to list terminal tasks by month, but compaction remains a separate retention question. Possible compaction strategies:
 
 - Keep the envelope and summaries, drop bulky artifacts.
 - Move archived tasks into a cold store.
@@ -60,9 +60,9 @@ Status-neutral directories make old tasks easy to keep forever. That is good for
 
 No compaction should land until retention and audit requirements are clearer.
 
-### 1.9 How should local backup conflicts be repaired?
+### 1.9 What is the projection fallback when symlinks are unavailable?
 
-The v2 design keeps a workspace materialization under `.orbit/tasks/` and a recoverable backup under `~/.orbit/tasks/`. That creates a divergence question when a user edits one copy manually, an update crashes between writes, or a stale checkout is restored. Append-only logs can merge by stable IDs, but envelopes and Markdown documents need explicit revision markers, checksums, and repair commands so Orbit never silently discards human-authored task content.
+The v2 design uses symlinks for `.orbit/tasks/<task-id>` so workspace-relative paths point at canonical bundles under `~/.orbit/tasks/workspaces/<workspace-id>/`. Some filesystems and Windows configurations restrict symlink creation. The reset should prefer symlinks where possible and define a fallback before implementation ships: junctions on platforms that support them, generated read-only command views, or a copy projection with explicit degraded-mode warnings.
 
 ---
 
@@ -114,7 +114,7 @@ The reset keeps `task.yaml` readable by moving audit traffic into append-only lo
 
 ### 3.5 Recoverable local-first task state
 
-Orbit tasks should feel local and inspectable without being fragile. Keeping task bundles near the code gives agents fast context; backing those bundles with `~/.orbit/tasks/` makes accidental checkout cleanup or `.orbit/tasks/` deletion a repairable event instead of a data-loss event.
+Orbit tasks should feel local and inspectable without forcing every user into a conflict protocol. Keeping canonical bundles under `~/.orbit/tasks/workspaces/` gives local-first durability; projecting them into `.orbit/tasks/` keeps agent ergonomics near the code; local registry metadata makes allocation and workspace resolution durable.
 
 ---
 
@@ -124,7 +124,7 @@ Orbit tasks should feel local and inspectable without being fragile. Keeping tas
 
 - [docs/design/CONVENTIONS.md](../CONVENTIONS.md) - design folder layout and ADR rules.
 - [docs/design/task-sync/](../task-sync/) - current sync proposal over the existing task layout.
-- [docs/design/adr-artifact/](../adr-artifact/) - internal precedent for global IDs plus envelope and Markdown body.
+- [docs/design/adr-artifact/](../adr-artifact/) - internal precedent for envelope plus Markdown body and monotonic artifact IDs.
 - [docs/design/task-lineage/](../task-lineage/) - typed task relationships and derivation questions.
 - [docs/design/semantic-search/](../semantic-search/) - per-field indexing of task text.
 - [docs/POSITIONING.md](../../POSITIONING.md) - product doctrine that currently treats task IDs as local search keys.
