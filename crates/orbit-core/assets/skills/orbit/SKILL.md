@@ -26,6 +26,7 @@ Orbit tools are reachable via two surfaces. Both accept identical JSON arguments
 
 - Task lifecycle (`orbit.task.*`): both surfaces.
 - Graph read tools (`search`, `show`, `pack`, `callers`, `refs`, `implementors`, `deps`, `overview`, `history`): both surfaces.
+- Semantic read tools (`orbit.semantic.search`, `orbit.semantic.related`): both surfaces. Require the `orbit-embed-companion` binary (`orbit semantic install`); calls fail with an install-pointer error otherwise.
 - State handoff (`orbit.state.*`), graph writes, and duel/scoreboard tools: **CLI only** — used inside activity steps where the agent has shell access.
 
 **Always include `model` in the JSON** so Orbit can attribute the call to the right agent family:
@@ -49,7 +50,9 @@ orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments", "mod
 orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "model": "<model_name>"}'         # Load only plan
 # Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
 orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<model_name>"}'       # List by status
-orbit tool run orbit.task.search --input '{"query": "search text", "model": "<model_name>"}'  # Search title/description text
+orbit tool run orbit.task.search --input '{"query": "search text", "model": "<model_name>"}'  # Lexical title/description substring match
+orbit tool run orbit.semantic.search --input '{"query": "topic phrase", "limit": 5, "model": "<model_name>"}'  # Hybrid BM25 + cosine over indexed task fields (requires `orbit semantic install`)
+orbit tool run orbit.semantic.related --input '{"id": "<task-id>", "limit": 5, "model": "<model_name>"}'        # Cosine neighbors of an indexed task
 orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": ".", "model": "<model_name>"}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "model": "<model_name>"}'
 orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "model": "<model_name>"}' # backlog -> in-progress
@@ -104,6 +107,7 @@ Command surface determines provenance by default:
 - `orbit-review-task`: Review someone else's work and file findings as review threads, without transitioning the task.
 - `orbit-track-issues`: Capture agent-discovered, self-reported friction as append-only reports.
 - `orbit-graph`: Navigate or inspect the codebase via the knowledge graph when the activity allowlist includes graph tools.
+- `orbit-semantic`: Find tasks by topic — pre-create dedup checks, related-task lookups, "didn't we have a task about X?" queries. Complementary to `orbit-graph` (code structure vs task content).
 
 ## Voice Your Opinion
 

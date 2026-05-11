@@ -50,6 +50,8 @@ MCP form: `orbit_task_review_thread_add({...})` / `orbit_task_review_thread_repl
 
 Read the task with `orbit.task.show`. Pull the `description`, `acceptance_criteria`, `plan`, and `execution_summary`. Inspect the diff (`git diff` or PR view) and the changed files. Run `make build` and the relevant test target to confirm the change actually works.
 
+Optional: if `orbit.semantic.*` is available, call `orbit.semantic.related` on the task ID to surface prior similar tasks whose decisions or review threads may inform this review. Skim snippets; ignore if no hit is relevant. No mandate — review threads remain grounded in the diff plus the task's own acceptance criteria. See `orbit-semantic`.
+
 ### 2. Two-stage review
 
 **Stage 1 — spec compliance** (do this first):

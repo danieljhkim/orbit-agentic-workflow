@@ -56,6 +56,8 @@ orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<model_n
 - `context_files` — treat these as selectors first. Prefer `file:`, `dir:`, or `symbol:` forms, use `orbit.graph.pack` when available, and fall back to `fs.read` only for unresolved selectors.
 - `status` — confirm the task is ready to start.
 
+Then, if `orbit.semantic.*` is available, call `orbit.semantic.related` on the task ID with `limit: 5`. Rationale: surface prior tasks the original author may not have linked via `context_files` — past decisions, prior attempts at the same problem, related review threads. Skim snippets; usually one hit is genuinely useful and the rest are noise. **This step is non-blocking** — if the companion binary is missing (install-pointer error) or no hit is relevant, continue. See `orbit-semantic`.
+
 **If this is a new task** (no task ID), clarify intent and success criteria with the human, then create via `orbit-create-task`.
 
 ### Step 2: Plan

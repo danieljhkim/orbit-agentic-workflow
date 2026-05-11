@@ -46,7 +46,10 @@ spec:
        recover its description, acceptance criteria, plan, and context
        files. Read context selectors via `orbit.graph.pack`, falling back
        to `fs.read` only when the graph is unavailable or a selector is
-       unresolved.
+       unresolved. If `orbit.semantic.related` is available, optionally
+       call it on the task id to surface prior similar tasks whose review
+       threads or decisions may inform this review; skip if the companion
+       binary is not installed.
     3. For each blocking issue you find — correctness bug, broken contract,
        acceptance-criteria miss, obvious regression — record it with
        `orbit.task.review_thread.add` against the most relevant task. Use
@@ -67,6 +70,7 @@ spec:
     - orbit.task.*
     - orbit.friction.*
     - orbit.graph.*
+    - orbit.semantic.*
     - fs.read
     - fs.delete
     - proc.spawn

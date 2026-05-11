@@ -38,7 +38,10 @@ spec:
     3. Read the task description, acceptance criteria, and plan first. Treat
        `context_files` as Orbit graph selectors: prefer `orbit.graph.pack` to
        gather context, and fall back to `fs.read` only for selectors that stay
-       unresolved or when the knowledge graph is unavailable.
+       unresolved or when the knowledge graph is unavailable. If
+       `orbit.semantic.related` is available, call it on the task id to surface
+       prior tasks not linked via `context_files` (past decisions, related
+       review threads); skip if the companion binary is not installed.
     4. Use `input.workspace_path` and `input.repo_root` when provided; they
        override the task snapshot's paths.
     5. Implement only the task's scoped work. If a blocker appears, add a task
@@ -57,6 +60,7 @@ spec:
     - orbit.task.*
     - orbit.friction.*
     - orbit.graph.*
+    - orbit.semantic.*
     - fs.read
     - fs.delete
     - proc.spawn
