@@ -350,22 +350,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
-        Commands::Migrate(cmd) => {
-            use crate::command::migrate::MigrateSubcommand;
-            let sub = match &cmd.command {
-                MigrateSubcommand::Frictions(_) => "frictions",
-                MigrateSubcommand::TaskTypes(_) => "task-types",
-            };
-            CommandMeta {
-                command: "migrate".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("migration".to_string()),
-                target_id: Some(sub.to_string()),
-                role: "admin".to_string(),
-                arguments_json: None,
-            }
-        }
         Commands::Activity(cmd) => {
             use crate::command::activity::ActivitySubcommand;
             let (sub, target_id): (&str, Option<&str>) = match &cmd.command {

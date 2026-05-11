@@ -10,7 +10,7 @@ pub mod semantic;
 pub mod task;
 pub mod web;
 
-pub use definitions::{activity, executor, job, migrate, policy, skill, tool};
+pub use definitions::{activity, executor, job, policy, skill, tool};
 pub use environment::{config, init, workspace};
 pub use observe::{audit, graph, metrics, scoreboard};
 
@@ -50,7 +50,6 @@ Operate:
   adr         Architecture Decision Record operations
   learning    Create, search, and curate project learnings
   semantic    Manage local semantic-search indexing
-  migrate     Run one-shot data migrations
 
 Observe:
   graph       Query the knowledge graph
@@ -95,7 +94,6 @@ pub enum Commands {
     Adr(adr::AdrCommand),
     Learning(learning::LearningCommand),
     Semantic(semantic::SemanticCommand),
-    Migrate(migrate::MigrateCommand),
 
     // ── Observe ──
     Graph(graph::GraphCommand),
@@ -135,7 +133,6 @@ impl Execute for Commands {
             Commands::Adr(cmd) => cmd.execute(runtime),
             Commands::Learning(cmd) => cmd.execute(runtime),
             Commands::Semantic(cmd) => cmd.execute(runtime),
-            Commands::Migrate(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Log(cmd) => cmd.execute(runtime),

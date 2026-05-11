@@ -17,7 +17,7 @@ use crate::file::executor_def_store::ExecutorDefFileStore;
 use crate::file::job_store::JobFileStore;
 use crate::file::learning_store::LearningFileStore;
 use crate::file::policy_def_store::PolicyDefFileStore;
-use crate::file::task_store::{TaskFileStore, TaskV2Store};
+use crate::file::task_store::TaskV2Store;
 use crate::sqlite::task_registry::TaskRegistryStore;
 
 pub struct WorkspaceTaskBackends {
@@ -26,17 +26,6 @@ pub struct WorkspaceTaskBackends {
     pub history: Arc<dyn TaskHistoryStoreBackend>,
     pub review: Arc<dyn TaskReviewStoreBackend>,
     pub artifact: Arc<dyn TaskArtifactStoreBackend>,
-}
-
-pub fn workspace_task_backends(root: PathBuf, task_index: Store) -> WorkspaceTaskBackends {
-    let store = Arc::new(TaskFileStore::new_with_index(root, task_index));
-    WorkspaceTaskBackends {
-        task: store.clone(),
-        document: store.clone(),
-        history: store.clone(),
-        review: store.clone(),
-        artifact: store,
-    }
 }
 
 pub fn workspace_task_backends_v2(

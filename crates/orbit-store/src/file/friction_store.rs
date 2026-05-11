@@ -8,7 +8,6 @@ use orbit_common::types::{
     normalize_optional_attribution_label,
 };
 use orbit_common::utility::fs::{atomic_write_text, with_exclusive_file_lock};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 const TAGS_FILENAME: &str = "tags.yaml";
@@ -41,12 +40,6 @@ pub struct FrictionListFilter {
     pub tag: Option<String>,
     pub from: Option<DateTime<Utc>>,
     pub to: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FrictionMigrationSummary {
-    pub created: u64,
-    pub skipped: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -192,55 +185,6 @@ pub fn friction_stats(frictions_root: &Path, tasks: &[Task]) -> Result<Value, Or
         "by_model": Value::Object(by_model),
         "by_tag": Value::Object(by_tag),
     }))
-}
-
-pub fn migrate_legacy_friction_tasks(
-    frictions_root: &Path,
-    tasks: &[Task],
-) -> Result<FrictionMigrationSummary, OrbitError> {
-    let existing = list_frictions(frictions_root, &FrictionListFilter::default())?;
-    let migrated_task_ids: BTreeSet<String> = existing
-        .iter()
-        .filter_map(|stored| stored.record.during_task.clone())
-        .collect();
-    let mut legacy = tasks
-        .iter()
-        .filter(|task| task.status == TaskStatus::Friction)
-        .collect::<Vec<_>>();
-    legacy.sort_by(|left, right| {
-        left.created_at
-            .cmp(&right.created_at)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-
-    let mut created = 0;
-    let mut skipped = 0;
-    for task in legacy {
-        if migrated_task_ids.contains(&task.id) {
-            skipped += 1;
-            continue;
-        }
-        let model = task
-            .model
-            .as_deref()
-            .or(task.implemented_by.as_deref())
-            .or(task.created_by.as_deref())
-            .and_then(|raw| normalize_optional_attribution_label(Some(raw), task.model.as_deref()))
-            .unwrap_or_else(|| "unknown".to_string());
-        add_friction(
-            frictions_root,
-            FrictionAddParams {
-                model,
-                body: task.description.clone(),
-                tags: vec!["other".to_string()],
-                during_task: Some(task.id.clone()),
-                created_at: task.created_at,
-            },
-        )?;
-        created += 1;
-    }
-
-    Ok(FrictionMigrationSummary { created, skipped })
 }
 
 pub fn ensure_default_tag_taxonomy(frictions_root: &Path) -> Result<PathBuf, OrbitError> {
@@ -543,39 +487,6 @@ mod tests {
         assert_eq!(
             stats["by_model"]["gpt-done"]["frictions_per_10_tasks"],
             json!(0.0)
-        );
-    }
-
-    #[test]
-    fn migration_is_idempotent() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let root = temp.path();
-        let mut friction = task("T1", TaskStatus::Friction);
-        friction.model = Some("gpt-5.5".to_string());
-        friction.description = "Body text.".to_string();
-
-        let first = migrate_legacy_friction_tasks(root, &[friction.clone()]).expect("migrate");
-        let second = migrate_legacy_friction_tasks(root, &[friction]).expect("migrate again");
-
-        assert_eq!(
-            first,
-            FrictionMigrationSummary {
-                created: 1,
-                skipped: 0
-            }
-        );
-        assert_eq!(
-            second,
-            FrictionMigrationSummary {
-                created: 0,
-                skipped: 1
-            }
-        );
-        assert_eq!(
-            list_frictions(root, &FrictionListFilter::default())
-                .expect("list")
-                .len(),
-            1
         );
     }
 

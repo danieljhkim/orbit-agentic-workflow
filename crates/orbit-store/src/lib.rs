@@ -39,15 +39,8 @@ pub mod skill_store {
 
 pub mod friction_store {
     pub use crate::file::friction_store::{
-        FrictionAddParams, FrictionListFilter, FrictionMigrationSummary, StoredFrictionRecord,
-        add_friction, ensure_default_tag_taxonomy, friction_stats, list_frictions,
-        migrate_legacy_friction_tasks, show_friction,
-    };
-}
-
-pub mod task_type_migration {
-    pub use crate::file::task_store::{
-        TaskTypeMigrationChange, TaskTypeMigrationSummary, migrate_task_types,
+        FrictionAddParams, FrictionListFilter, StoredFrictionRecord, add_friction,
+        ensure_default_tag_taxonomy, friction_stats, list_frictions, show_friction,
     };
 }
 
@@ -118,7 +111,7 @@ pub use backend::{
     audit_event_store_sqlite, global_executor_def_store, global_policy_def_store,
     layered_policy_def_store, task_reservation_store_sqlite, tool_store_sqlite,
     workspace_adr_backends, workspace_job_run_store, workspace_learning_backend,
-    workspace_policy_def_store, workspace_task_backends, workspace_task_backends_v2,
+    workspace_policy_def_store, workspace_task_backends_v2,
 };
 pub use invocation_store_impl::{
     ActivityInvocationMetrics, AgentInvocationMetrics, InvocationInsertParams, InvocationQuery,
