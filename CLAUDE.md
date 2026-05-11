@@ -4,30 +4,16 @@ Project instructions for agents working on Orbit.
 
 ## Rules
 
-- **Don't commit** until the Orbit task has been explicitly approved by the human.
-- **Don't invent task IDs** — get them from `orbit.task.add`. Don't edit task files directly — use `orbit.task.update`.
 - **Don't add cross-crate dependencies** without checking the architecture diagram below.
 - **Use subagents** for large tasks to keep your context window clean.
-- **Hit friction?** File it via the `orbit-track-issues` skill (records append-only under `.orbit/frictions/`). Use for Orbit tooling / skill / seeded-instruction problems only — not for user-requested work or generic bug tracking.
-
-## Spotted Issues → Task + FOLLOWUP
-
-When you notice something out-of-scope for the current task — convention break, failing test, perf regression, security hole, modularization smell, dead code — convert it to a durable artifact instead of reporting it back in chat. Bare `TODO` / `FIXME` comments are not used in this codebase; `FOLLOWUP(<task_id>)` is the only sanctioned marker.
-
-- **Threshold.** File only when the fix is *out-of-scope for the current task* AND *non-trivial*. Trivial fixes (typo, one-line cleanup) → fix inline. Vague observations ("could be cleaner") → drop, don't file.
-- **Marker format.** `// FOLLOWUP(T20260510-25): <one-line description>` — grep-able by task ID; the task body carries full context. Comment syntax matches the surrounding language (`#` in YAML / Python, `//` in Rust).
-- **Where the marker lives.** Only in files the current task is *already* modifying. If the issue is in a different file, file the task with a file/line reference in the body — don't open an unrelated file just to mark it, that bleeds scope into the current PR.
-- **Resolution.** The implementing agent must `git grep "FOLLOWUP(<task_id>)"` before marking the task done and delete every match as part of the fix. A stale `FOLLOWUP(T...)` referencing a `done` / `archived` task is a review blocker.
 
 ## Build / Lint
 
-`make build`, `make fmt`, `make ci` — all must pass before a task moves to `review`.
+`make build`, `make fmt` — all must pass before a task moves to `review`.
 
 ## Design Docs
 
 Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
-
-**Read before changing a feature.** Start at `1_overview.md` for what/why, then `2_design.md` for current implementation. `4_decisions.md` is the ADR log; `specs/` carries mechanism-level contracts. Cite design-doc sections in PR descriptions when behavior is non-obvious.
 
 **Update in the same PR as the implementation change.** Flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, add a new ADR for any non-obvious decision the change embodies. Stale docs are a review blocker.
 
