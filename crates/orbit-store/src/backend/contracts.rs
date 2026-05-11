@@ -95,8 +95,6 @@ pub struct TaskDocumentUpdateParams {
     pub plan: Option<String>,
     pub execution_summary: Option<String>,
     pub context_files: Option<Vec<String>>,
-    pub workspace_path: Option<Option<String>>,
-    pub repo_root: Option<Option<String>>,
     pub created_by: Option<Option<String>>,
     pub planned_by: Option<Option<String>>,
     pub implemented_by: Option<Option<String>>,

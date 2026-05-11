@@ -57,7 +57,6 @@ pub(in crate::executor::automation) fn setup_worktree<H: RuntimeHost + TaskHost 
             task_id,
             TaskAutomationUpdate {
                 batch_id: Some(run_id.clone()),
-                workspace_path: Some(Some(workspace_path_str.clone())),
                 ..TaskAutomationUpdate::default()
             },
         )?;

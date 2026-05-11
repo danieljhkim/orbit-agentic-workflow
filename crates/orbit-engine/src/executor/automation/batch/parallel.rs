@@ -42,7 +42,6 @@ struct PendingTask {
     task_id: String,
     context_files: Vec<String>,
     original_status: TaskStatus,
-    original_workspace_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -199,7 +198,7 @@ pub(in crate::executor::automation) fn run_parallel_task_pipeline<
     let shared_worktree = resolve_shared_worktree_path(repo_root, &run_id)?;
     ensure_shared_worktree(repo_root, &shared_worktree, &start_point, &run_id)?;
     let shared_worktree_str = shared_worktree.to_string_lossy().to_string();
-    prepare_tasks_for_worker_launch(host, &selected_tasks, &shared_worktree_str)?;
+    prepare_tasks_for_worker_launch(host, &selected_tasks)?;
 
     let runner = PipelineToolWorkerRunner {
         host,
@@ -453,7 +452,6 @@ impl From<Task> for PendingTask {
             task_id: task.id,
             context_files: task.context_files,
             original_status: task.status,
-            original_workspace_path: task.workspace_path,
         }
     }
 }
@@ -461,7 +459,6 @@ impl From<Task> for PendingTask {
 fn prepare_tasks_for_worker_launch<H: TaskHost + ?Sized>(
     host: &H,
     tasks: &[PendingTask],
-    workspace_path: &str,
 ) -> Result<(), OrbitError> {
     let mut updated = Vec::with_capacity(tasks.len());
     for task in tasks {
@@ -469,7 +466,6 @@ fn prepare_tasks_for_worker_launch<H: TaskHost + ?Sized>(
             &task.task_id,
             TaskAutomationUpdate {
                 status: Some(TaskStatus::InProgress),
-                workspace_path: Some(Some(workspace_path.to_string())),
                 ..TaskAutomationUpdate::default()
             },
         );
@@ -497,7 +493,6 @@ fn rollback_prelaunch_task_updates<H: TaskHost + ?Sized>(
             &task.task_id,
             TaskAutomationUpdate {
                 status: Some(task.original_status),
-                workspace_path: Some(task.original_workspace_path.clone()),
                 ..TaskAutomationUpdate::default()
             },
         ) {
@@ -747,11 +742,6 @@ mod tests {
 
         let task = host.get_task("T-timeout").expect("task after timeout");
         assert_eq!(task.status, TaskStatus::Blocked);
-        assert!(
-            task.workspace_path
-                .as_deref()
-                .is_some_and(|path| path.contains("parallel-batch"))
-        );
     }
 
     struct ParallelTimeoutTestHost {
@@ -903,9 +893,6 @@ mod tests {
                         update.status_note.unwrap_or_default()
                     ));
                 }
-            }
-            if let Some(workspace_path) = update.workspace_path {
-                task.workspace_path = workspace_path;
             }
             if let Some(execution_summary) = update.execution_summary {
                 task.execution_summary = execution_summary;

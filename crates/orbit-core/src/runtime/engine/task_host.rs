@@ -153,8 +153,6 @@ impl TaskWriteHost for OrbitRuntime {
                     agent: agent.clone().map(Some),
                     model: model.clone().map(Some),
                     status: update.status,
-                    workspace_path: update.workspace_path.clone(),
-                    repo_root: update.repo_root.clone().map(Some),
                     external_refs,
                     batch_id: update.batch_id.clone().map(Some),
                     status_event: update.status_event.clone(),
@@ -359,7 +357,6 @@ mod tests {
                 &task.id,
                 TaskAutomationUpdate {
                     batch_id: Some("jrun-test".to_string()),
-                    workspace_path: Some(Some("/tmp/orbit-worktree".to_string())),
                     status: Some(TaskStatus::InProgress),
                     ..TaskAutomationUpdate::default()
                 },
@@ -376,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 6: worktree_setup writes workspace_path through update_task_document; v2 rejects that legacy field. Re-enable once the worktree caller stops writing workspace_path."]
+    #[ignore = "Phase 6: worktree_setup writes batch_id through update_task_document; v2 stores batch membership as a relation, not a document field. Re-enable once batch_id is routed through the v2 relations API."]
     fn worktree_setup_admits_unplanned_workflow_statuses() {
         let (root, runtime) = test_runtime();
         let repo = root.path().join("repo");

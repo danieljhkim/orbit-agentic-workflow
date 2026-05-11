@@ -191,8 +191,6 @@ pub struct TaskAutomationUpdate {
     /// semantics in `orbit-store`). Only set deliberately — most automation
     /// call sites should leave this at `None`.
     pub context_files: Option<Vec<String>>,
-    pub workspace_path: Option<Option<String>>,
-    pub repo_root: Option<String>,
     pub external_refs: Vec<ExternalRef>,
     pub execution_summary: Option<String>,
     pub status_event: Option<String>,

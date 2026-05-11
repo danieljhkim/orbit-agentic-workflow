@@ -841,14 +841,6 @@ fn reject_unsupported_document_fields(fields: &TaskDocumentUpdateParams) -> Resu
             "update_task_document.dependencies",
         ));
     }
-    if fields.workspace_path.is_some() {
-        return Err(unsupported_v2_operation(
-            "update_task_document.workspace_path",
-        ));
-    }
-    if fields.repo_root.is_some() {
-        return Err(unsupported_v2_operation("update_task_document.repo_root"));
-    }
     if fields.pr_status.as_ref().is_some_and(Option::is_some) {
         return Err(unsupported_v2_operation("update_task_document.pr_status"));
     }
@@ -1571,18 +1563,6 @@ mod tests {
                 .len(),
             1
         );
-
-        let err = store
-            .update_task_document(
-                "ORB-00000",
-                &TaskDocumentUpdateParams {
-                    actor: "codex:gpt-5.5".to_string(),
-                    workspace_path: Some(Some("/tmp/other".to_string())),
-                    ..Default::default()
-                },
-            )
-            .expect_err("workspace_path is not a v2 envelope field");
-        assert!(err.to_string().contains("workspace_path"), "{err}");
     }
 
     #[test]

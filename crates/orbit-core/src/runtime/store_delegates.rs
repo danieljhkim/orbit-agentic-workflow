@@ -32,8 +32,6 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) plan: Option<String>,
     pub(crate) execution_summary: Option<String>,
     pub(crate) context_files: Option<Vec<String>>,
-    pub(crate) workspace_path: Option<Option<String>>,
-    pub(crate) repo_root: Option<Option<String>>,
     pub(crate) created_by: Option<Option<String>>,
     pub(crate) planned_by: Option<Option<String>>,
     pub(crate) implemented_by: Option<Option<String>>,
@@ -66,8 +64,6 @@ impl TaskRecordUpdateParams {
             || self.plan.is_some()
             || self.execution_summary.is_some()
             || self.context_files.is_some()
-            || self.workspace_path.is_some()
-            || self.repo_root.is_some()
             || self.created_by.is_some()
             || self.planned_by.is_some()
             || self.implemented_by.is_some()
@@ -235,8 +231,6 @@ impl TaskRecords<'_> {
                     plan: params.plan.clone(),
                     execution_summary: params.execution_summary.clone(),
                     context_files: params.context_files.clone(),
-                    workspace_path: params.workspace_path.clone(),
-                    repo_root: params.repo_root.clone(),
                     created_by: params.created_by.clone(),
                     planned_by: params.planned_by.clone(),
                     implemented_by: params.implemented_by.clone(),
