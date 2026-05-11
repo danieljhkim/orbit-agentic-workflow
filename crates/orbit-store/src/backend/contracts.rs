@@ -568,6 +568,9 @@ pub struct LearningCreateParams {
     pub body: String,
     pub evidence: Vec<LearningEvidence>,
     pub created_by: Option<String>,
+    /// Optional explicit priority. Used as a secondary key in `search`
+    /// ranking; `None` ranks below any `Some(_)`.
+    pub priority: Option<u8>,
 }
 
 /// Partial update to an existing learning. Fields that are `None` are left
@@ -578,6 +581,9 @@ pub struct LearningUpdateParams {
     pub scope: Option<LearningScope>,
     pub body: Option<String>,
     pub evidence: Option<Vec<LearningEvidence>>,
+    /// `Some(Some(N))` sets the priority; `Some(None)` clears it; `None`
+    /// leaves it unchanged.
+    pub priority: Option<Option<u8>>,
 }
 
 /// Search query for [`LearningStoreBackend::search_learnings`]. All fields
@@ -617,6 +623,11 @@ pub trait LearningStoreBackend: Send + Sync {
         params: LearningUpdateParams,
     ) -> Result<Learning, OrbitError>;
     fn supersede_learning(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError>;
+    /// Archive a learning without a replacement record. Flips
+    /// `status = superseded`, sets `superseded_by = None`, and moves the
+    /// YAML under `superseded/`. Returns `false` when the record does not
+    /// exist. Used by `prune --delete` (§7.3).
+    fn archive_learning(&self, id: &str) -> Result<bool, OrbitError>;
     fn delete_learning(&self, id: &str) -> Result<bool, OrbitError>;
     fn reindex_learnings(&self) -> Result<(), OrbitError>;
 }

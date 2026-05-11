@@ -153,6 +153,10 @@ pub struct Learning {
     pub updated_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
+    /// Optional priority used as a secondary key in `search` ranking.
+    /// Higher values rank first; `None` sorts after all `Some(_)` values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<u8>,
 }
 
 /// Lowercase + trim + dedupe a list of tag strings. Mirrors
@@ -211,6 +215,7 @@ mod tests {
             created_at: ts,
             updated_at: ts,
             created_by: Some("claude-opus-4-7".to_string()),
+            priority: None,
         }
     }
 

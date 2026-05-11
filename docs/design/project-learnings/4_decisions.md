@@ -84,7 +84,7 @@ The cross-workspace case ([3_vision.md §1.4](./3_vision.md)) is real but second
 
 ## ADR-004 — Phase-1 scope = path globs + tags, ranked by recency; semantic and symbol-aware deferred
 
-**Status:** Proposed · 2026-05 · [T20260510-11]
+**Status:** Accepted · 2026-05 · [T20260511-6]
 
 **Context.** A learning's scope (when does it match?) and ranking (which match wins?) have multiple plausible designs:
 

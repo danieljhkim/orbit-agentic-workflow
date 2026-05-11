@@ -13,6 +13,7 @@ use super::activity_v2::{ActivityV2, ActivityV2Spec};
 pub const V2_TOOL_WILDCARD_ROOTS: &[&str] = &[
     "orbit.graph.",
     "orbit.friction.",
+    "orbit.learning.",
     "orbit.task.",
     "orbit.state.",
     "orbit.semantic.",

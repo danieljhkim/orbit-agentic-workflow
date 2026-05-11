@@ -1,6 +1,7 @@
 pub mod adr;
 pub mod definitions;
 pub mod environment;
+pub mod learning;
 pub mod log;
 pub mod mcp;
 pub mod observe;
@@ -47,6 +48,7 @@ Operate:
   run         Run a workflow (ship, ship-auto, duel-plan, job)
   task        Create, update, and manage tasks
   adr         Architecture Decision Record operations
+  learning    Create, search, and curate project learnings
   semantic    Manage local semantic-search indexing
   migrate     Run one-shot data migrations
 
@@ -91,6 +93,7 @@ pub enum Commands {
     Run(run::RunCommand),
     Task(task::TaskCommand),
     Adr(adr::AdrCommand),
+    Learning(learning::LearningCommand),
     Semantic(semantic::SemanticCommand),
     Migrate(migrate::MigrateCommand),
 
@@ -130,6 +133,7 @@ impl Execute for Commands {
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Adr(cmd) => cmd.execute(runtime),
+            Commands::Learning(cmd) => cmd.execute(runtime),
             Commands::Semantic(cmd) => cmd.execute(runtime),
             Commands::Migrate(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),

@@ -369,6 +369,10 @@ impl LearningStoreBackend for LearningFileStore {
         self.supersede_learning(old_id, new_id)
     }
 
+    fn archive_learning(&self, id: &str) -> Result<bool, OrbitError> {
+        self.archive_learning(id)
+    }
+
     fn delete_learning(&self, id: &str) -> Result<bool, OrbitError> {
         self.delete_learning(id)
     }

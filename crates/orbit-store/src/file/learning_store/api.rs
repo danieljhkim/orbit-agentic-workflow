@@ -75,6 +75,12 @@ impl LearningFileStore {
                 "learning summary must not be empty".to_string(),
             ));
         }
+        if params.summary.chars().count() > 280 {
+            return Err(OrbitError::InvalidInput(format!(
+                "learning summary must be at most 280 characters (got {})",
+                params.summary.chars().count()
+            )));
+        }
 
         let _allocation_lock = acquire_learning_allocation_lock(&self.root)?;
         let id = next_learning_id(&self.root, now)?;
@@ -95,6 +101,7 @@ impl LearningFileStore {
             created_at: now,
             updated_at: now,
             created_by: params.created_by,
+            priority: params.priority,
         };
 
         let path = learning_doc_path(&self.root, LearningStateDir::Active, &id);
@@ -167,7 +174,19 @@ impl LearningFileStore {
         };
         let mut learning = read_learning_file(&path)?;
 
+        if learning.status == LearningStatus::Superseded {
+            return Err(OrbitError::InvalidInput(format!(
+                "learning '{id}' is superseded and cannot be updated"
+            )));
+        }
+
         if let Some(summary) = params.summary {
+            if summary.chars().count() > 280 {
+                return Err(OrbitError::InvalidInput(format!(
+                    "learning summary must be at most 280 characters (got {})",
+                    summary.chars().count()
+                )));
+            }
             learning.summary = summary;
         }
         if let Some(mut scope) = params.scope {
@@ -180,6 +199,9 @@ impl LearningFileStore {
         }
         if let Some(evidence) = params.evidence {
             learning.evidence = evidence;
+        }
+        if let Some(priority) = params.priority {
+            learning.priority = priority;
         }
         learning.updated_at = Utc::now();
         write_learning_file(&path, &learning, state.to_status())?;
@@ -248,6 +270,36 @@ impl LearningFileStore {
         self.upsert_index_row(&new);
         self.invalidate_envelope_cache();
         Ok(())
+    }
+
+    /// Archive a learning without a replacement: flip `status` to
+    /// `Superseded` with `superseded_by = None`, move the YAML under
+    /// `superseded/`, and mirror the state into the index. Used by the
+    /// §7.3 `prune --delete` semantics: stale records are archived, not
+    /// hard-deleted.
+    pub(crate) fn archive_learning(&self, id: &str) -> Result<bool, OrbitError> {
+        validate_learning_id(id)?;
+        let _allocation_lock = acquire_learning_allocation_lock(&self.root)?;
+        let _lock = acquire_learning_lock(&self.root, id)?;
+
+        let Some((state, path)) = locate_learning(&self.root, id)? else {
+            return Ok(false);
+        };
+        if state == LearningStateDir::Superseded {
+            // Already archived; idempotent no-op.
+            return Ok(true);
+        }
+        let mut learning = read_learning_file(&path)?;
+        learning.status = LearningStatus::Superseded;
+        learning.superseded_by = None;
+        learning.updated_at = Utc::now();
+
+        let target_path = learning_doc_path(&self.root, LearningStateDir::Superseded, id);
+        write_learning_file(&path, &learning, LearningStatus::Superseded)?;
+        move_learning_dir(&path, &target_path)?;
+        self.upsert_index_row(&learning);
+        self.invalidate_envelope_cache();
+        Ok(true)
     }
 
     pub(crate) fn delete_learning(&self, id: &str) -> Result<bool, OrbitError> {
@@ -344,12 +396,14 @@ impl LearningFileStore {
             matched.push((envelope, axes));
         }
 
-        // Sort by `updated_at` desc. RFC3339 string compare is correct here
-        // because `Learning::updated_at` is `DateTime<Utc>` (always `Z`
-        // suffix) so the string ordering matches the chronological one.
+        // Sort by `priority` desc (Some(N) ranks above None; higher N wins),
+        // then `updated_at` desc, then `id` asc. RFC3339 string compare is
+        // correct because `Learning::updated_at` is `DateTime<Utc>` (always
+        // `Z` suffix) so the string ordering matches the chronological one.
         matched.sort_by(|a, b| {
-            b.0.updated_at_key
-                .cmp(&a.0.updated_at_key)
+            priority_rank(b.0.priority)
+                .cmp(&priority_rank(a.0.priority))
+                .then_with(|| b.0.updated_at_key.cmp(&a.0.updated_at_key))
                 .then_with(|| a.0.id.cmp(&b.0.id))
         });
 
@@ -372,6 +426,7 @@ impl LearningFileStore {
                 created_at: updated_at,
                 updated_at,
                 created_by: None,
+                priority: envelope.priority,
             };
             results.push(LearningSearchResult {
                 learning,
@@ -401,7 +456,16 @@ impl LearningFileStore {
         let built: Vec<EnvelopeSnapshot> = if let Some(index) = &self.index {
             let rows = index.list_active_learning_rows()?;
             rows.into_iter()
-                .map(|row| build_envelope(row.id, row.paths, row.tags, row.summary, row.updated_at))
+                .map(|row| {
+                    build_envelope(
+                        row.id,
+                        row.paths,
+                        row.tags,
+                        row.summary,
+                        row.updated_at,
+                        row.priority,
+                    )
+                })
                 .collect()
         } else {
             let active = self.list_learnings(Some(LearningStatus::Active))?;
@@ -414,6 +478,7 @@ impl LearningFileStore {
                         l.scope.tags,
                         l.summary,
                         l.updated_at.to_rfc3339(),
+                        l.priority,
                     )
                 })
                 .collect()
@@ -458,6 +523,7 @@ struct EnvelopeSnapshot {
     tags: Vec<String>,
     summary: String,
     updated_at_key: String,
+    priority: Option<u8>,
 }
 
 fn build_envelope(
@@ -466,6 +532,7 @@ fn build_envelope(
     tags: Vec<String>,
     summary: String,
     updated_at_key: String,
+    priority: Option<u8>,
 ) -> EnvelopeSnapshot {
     let path_regexes = paths
         .iter()
@@ -478,6 +545,7 @@ fn build_envelope(
         tags,
         summary,
         updated_at_key,
+        priority,
     }
 }
 
@@ -485,6 +553,17 @@ fn parse_rfc3339_or_epoch(raw: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(raw)
         .map(|dt| dt.with_timezone(&Utc))
         .unwrap_or_else(|_| DateTime::<Utc>::from_timestamp(0, 0).expect("epoch is valid"))
+}
+
+/// Map an optional priority to a comparable rank where `Some(N)` always
+/// outranks `None` and higher `N` wins among `Some`. Used as the primary
+/// sort key in `search_learnings`.
+fn priority_rank(priority: Option<u8>) -> i16 {
+    match priority {
+        // None ranks below every Some; pick a value strictly below 0.
+        None => -1,
+        Some(value) => value as i16,
+    }
 }
 
 // =============================================================================
@@ -512,6 +591,7 @@ mod tests {
             body: String::new(),
             evidence: Vec::new(),
             created_by: Some("test".to_string()),
+            priority: None,
         }
     }
 
@@ -545,6 +625,7 @@ mod tests {
                     reference: "T20260510-1".to_string(),
                 }],
                 created_by: Some("claude-opus-4-7".to_string()),
+                priority: None,
             };
             let learning = store.create_learning(params).expect("create");
             (learning.id.clone(), learning)
@@ -761,6 +842,7 @@ mod tests {
                 body: String::new(),
                 evidence: Vec::new(),
                 created_by: None,
+                priority: None,
             })
             .expect("create hit");
 
@@ -1027,6 +1109,7 @@ mod tests {
                     body: String::new(),
                     evidence: Vec::new(),
                     created_by: Some("bench".to_string()),
+                    priority: None,
                 })
                 .expect("seed");
         }

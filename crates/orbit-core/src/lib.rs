@@ -48,17 +48,21 @@ pub use command::workflow::{
 pub use context::{ActorIdentity, ActorKind, OrbitContext};
 pub use orbit_common::types::OrbitError;
 pub use orbit_common::types::{
-    Activity, AuditEvent, AuditEventStatus, AuditStats, ExecutorDef, ExternalRef,
+    Activity, AuditEvent, AuditEventStatus, AuditStats, EvidenceKind, ExecutorDef, ExternalRef,
     GITHUB_PR_EXTERNAL_REF_SYSTEM, Job, JobRun, JobRunState, JobRunStep, JobScheduleState, JobStep,
-    JobTargetType, ResolvedTaskDependency, ReviewMessage, ReviewThread, ReviewThreadStatus, Role,
-    Skill, Task, TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType,
-    build_task_status_index, normalize_task_dependencies, normalize_task_tags,
-    push_external_ref_if_missing, resolve_task_dependencies, task_dependencies_ready,
-    task_matches_tags, unmet_task_dependencies, validate_task_dependencies,
+    JobTargetType, Learning, LearningEvidence, LearningScope, LearningStatus,
+    ResolvedTaskDependency, ReviewMessage, ReviewThread, ReviewThreadStatus, Role, Skill, Task,
+    TaskComment, TaskComplexity, TaskPriority, TaskStatus, TaskType, build_task_status_index,
+    normalize_task_dependencies, normalize_task_tags, push_external_ref_if_missing,
+    resolve_task_dependencies, task_dependencies_ready, task_matches_tags, unmet_task_dependencies,
+    validate_task_dependencies,
 };
 pub use orbit_common::utility::redaction::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
     redact_sensitive_env_text,
 };
 pub use orbit_store::AuditEventInsertParams;
+pub use orbit_store::{
+    LearningCreateParams, LearningSearchParams, LearningSearchResult, LearningUpdateParams,
+};
 pub use runtime::OrbitRuntime;

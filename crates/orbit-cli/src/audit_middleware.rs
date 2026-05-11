@@ -328,6 +328,28 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Learning(cmd) => {
+            use crate::command::learning::LearningSubcommand;
+            let sub = match &cmd.command {
+                LearningSubcommand::Add(_) => "add",
+                LearningSubcommand::List(_) => "list",
+                LearningSubcommand::Search(_) => "search",
+                LearningSubcommand::Show(_) => "show",
+                LearningSubcommand::Update(_) => "update",
+                LearningSubcommand::Supersede(_) => "supersede",
+                LearningSubcommand::Reindex(_) => "reindex",
+                LearningSubcommand::Prune(_) => "prune",
+            };
+            CommandMeta {
+                command: "learning".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("learning".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Migrate(cmd) => {
             use crate::command::migrate::MigrateSubcommand;
             let sub = match &cmd.command {

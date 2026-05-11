@@ -4,6 +4,7 @@ mod friction_tools;
 mod host;
 mod input;
 mod json;
+mod learning_tools;
 mod pipeline_tools;
 mod review_threads;
 mod semantic_tools;
@@ -11,6 +12,8 @@ mod state_tools;
 mod task_locks;
 mod task_tools;
 
+#[cfg(test)]
+mod learning_tools_tests;
 #[cfg(test)]
 mod review_threads_tests;
 #[cfg(test)]

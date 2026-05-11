@@ -175,7 +175,17 @@ fn ensure_learning_index_schema(conn: &Connection) -> Result<(), OrbitError> {
                 ON learnings_index(status) WHERE status = 'active';
         "#,
     )
-    .map_err(|e| OrbitError::Store(e.to_string()))
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    // C2 (T20260511-6) adds an optional `priority` column used as the
+    // secondary ranking key in `search`. NULL is acceptable; the search
+    // path orders Some(N) ahead of None and falls back to updated_at.
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE learnings_index ADD COLUMN priority INTEGER",
+    )?;
+
+    Ok(())
 }
 
 fn ensure_agent_sessions_schema(conn: &Connection) -> Result<(), OrbitError> {

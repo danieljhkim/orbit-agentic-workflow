@@ -7,9 +7,9 @@ use orbit_engine::PrConfig;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
     AdrStoreBackend, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunStoreBackend,
-    PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskDocumentStoreBackend,
-    TaskHistoryStoreBackend, TaskReservationStoreBackend, TaskReviewStoreBackend, TaskStoreBackend,
-    ToolStoreBackend,
+    LearningStoreBackend, PolicyDefStoreBackend, TaskArtifactStoreBackend,
+    TaskDocumentStoreBackend, TaskHistoryStoreBackend, TaskReservationStoreBackend,
+    TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use orbit_tools::ToolRegistry;
 
@@ -80,6 +80,7 @@ pub(crate) struct OrbitStores {
     pub(crate) task_review: Arc<dyn TaskReviewStoreBackend>,
     pub(crate) task_artifact: Arc<dyn TaskArtifactStoreBackend>,
     pub(crate) adr: Arc<dyn AdrStoreBackend>,
+    pub(crate) learning: Arc<dyn LearningStoreBackend>,
     pub(crate) semantic_vector: Arc<VectorStore>,
     pub(crate) semantic_worker: Arc<EmbedWorker>,
     pub(crate) task_reservation: Arc<dyn TaskReservationStoreBackend>,
@@ -99,6 +100,7 @@ impl OrbitStores {
         task_review: Arc<dyn TaskReviewStoreBackend>,
         task_artifact: Arc<dyn TaskArtifactStoreBackend>,
         adr: Arc<dyn AdrStoreBackend>,
+        learning: Arc<dyn LearningStoreBackend>,
         semantic_vector: Arc<VectorStore>,
         semantic_worker: Arc<EmbedWorker>,
         task_reservation: Arc<dyn TaskReservationStoreBackend>,
@@ -115,6 +117,7 @@ impl OrbitStores {
             task_review,
             task_artifact,
             adr,
+            learning,
             semantic_vector,
             semantic_worker,
             task_reservation,

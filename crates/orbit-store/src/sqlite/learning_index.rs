@@ -24,6 +24,7 @@ pub(crate) struct LearningIndexRow {
     pub(crate) tags: Vec<String>,
     pub(crate) summary: String,
     pub(crate) updated_at: String,
+    pub(crate) priority: Option<u8>,
 }
 
 impl Store {
@@ -35,17 +36,19 @@ impl Store {
         let status = learning.status.as_str().to_string();
         let updated_at = learning.updated_at.to_rfc3339();
 
+        let priority = learning.priority.map(|value| value as i64);
         self.with_transaction(|tx| {
             tx.tx
                 .execute(
-                    "INSERT INTO learnings_index (id, status, paths, tags, summary, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                    "INSERT INTO learnings_index (id, status, paths, tags, summary, updated_at, priority)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                      ON CONFLICT(id) DO UPDATE SET
                         status = excluded.status,
                         paths = excluded.paths,
                         tags = excluded.tags,
                         summary = excluded.summary,
-                        updated_at = excluded.updated_at",
+                        updated_at = excluded.updated_at,
+                        priority = excluded.priority",
                     params![
                         learning.id,
                         status,
@@ -53,6 +56,7 @@ impl Store {
                         tags_json,
                         learning.summary,
                         updated_at,
+                        priority,
                     ],
                 )
                 .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -85,7 +89,7 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, status, paths, tags, summary, updated_at
+                "SELECT id, status, paths, tags, summary, updated_at, priority
                  FROM learnings_index
                  WHERE status = 'active'
                  ORDER BY updated_at DESC, id ASC",
@@ -113,7 +117,7 @@ impl Store {
             .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, status, paths, tags, summary, updated_at
+                "SELECT id, status, paths, tags, summary, updated_at, priority
                  FROM learnings_index
                  WHERE id = ?1",
             )
@@ -136,6 +140,7 @@ fn decode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LearningIndexRow> {
     let tags_json: String = row.get(3)?;
     let summary: String = row.get(4)?;
     let updated_at: String = row.get(5)?;
+    let priority_raw: Option<i64> = row.get(6)?;
 
     let status: LearningStatus = status_raw.parse().map_err(|e: String| {
         rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::from(e))
@@ -146,6 +151,17 @@ fn decode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LearningIndexRow> {
     let tags: Vec<String> = serde_json::from_str(&tags_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
     })?;
+    let priority = priority_raw
+        .map(|value| {
+            u8::try_from(value).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    6,
+                    rusqlite::types::Type::Integer,
+                    Box::new(e),
+                )
+            })
+        })
+        .transpose()?;
 
     Ok(LearningIndexRow {
         id,
@@ -154,5 +170,6 @@ fn decode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LearningIndexRow> {
         tags,
         summary,
         updated_at,
+        priority,
     })
 }

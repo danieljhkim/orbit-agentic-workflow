@@ -71,6 +71,9 @@ spec:
     - orbit.friction.*
     - orbit.graph.*
     - orbit.semantic.*
+    - orbit.learning.search
+    - orbit.learning.show
+    - orbit.learning.list
     - fs.read
     - fs.delete
     - proc.spawn

@@ -1,21 +1,22 @@
 use orbit_common::types::{
     Adr, AdrStatus, AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics,
-    OrbitError, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
-    TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
+    Learning, LearningStatus, OrbitError, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact,
+    TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType,
 };
 use orbit_embed::vector::{EmbedWorker, VectorStore};
 use orbit_store::{
     AdrCreateParams, AdrDocumentUpdateParams, AdrStoreBackend, AuditEventFilter,
     AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunQuery,
-    JobRunStepParams, JobRunStoreBackend, PolicyDefStoreBackend, TaskArtifactStoreBackend,
-    TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend, TaskDocumentUpdateParams,
-    TaskHistoryStoreBackend, TaskHistoryUpdateParams, TaskReservationCheckParams,
-    TaskReservationCheckResult, TaskReservationListResult, TaskReservationOwnedConflictsParams,
-    TaskReservationOwnedConflictsResult, TaskReservationReleaseByOwnerParams,
-    TaskReservationReleaseByOwnerResult, TaskReservationReleaseParams,
-    TaskReservationReleaseResult, TaskReservationReserveParams, TaskReservationReserveResult,
-    TaskReservationStoreBackend, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
-    ToolStoreBackend,
+    JobRunStepParams, JobRunStoreBackend, LearningCreateParams, LearningSearchParams,
+    LearningSearchResult, LearningStoreBackend, LearningUpdateParams, PolicyDefStoreBackend,
+    TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend,
+    TaskDocumentUpdateParams, TaskHistoryStoreBackend, TaskHistoryUpdateParams,
+    TaskReservationCheckParams, TaskReservationCheckResult, TaskReservationListResult,
+    TaskReservationOwnedConflictsParams, TaskReservationOwnedConflictsResult,
+    TaskReservationReleaseByOwnerParams, TaskReservationReleaseByOwnerResult,
+    TaskReservationReleaseParams, TaskReservationReleaseResult, TaskReservationReserveParams,
+    TaskReservationReserveResult, TaskReservationStoreBackend, TaskReviewStoreBackend,
+    TaskReviewUpdateParams, TaskStoreBackend, ToolStoreBackend,
 };
 
 use crate::context::OrbitStores;
@@ -114,6 +115,12 @@ impl OrbitStores {
     pub(crate) fn adrs(&self) -> AdrRecords<'_> {
         AdrRecords {
             store: self.adr.as_ref(),
+        }
+    }
+
+    pub(crate) fn learnings(&self) -> LearningRecords<'_> {
+        LearningRecords {
+            store: self.learning.as_ref(),
         }
     }
 
@@ -699,5 +706,58 @@ impl AdrRecords<'_> {
 
     pub(crate) fn supersede(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError> {
         self.store.supersede_adr(old_id, new_id)
+    }
+}
+
+pub(crate) struct LearningRecords<'a> {
+    store: &'a dyn LearningStoreBackend,
+}
+
+impl LearningRecords<'_> {
+    pub(crate) fn add(&self, params: LearningCreateParams) -> Result<Learning, OrbitError> {
+        self.store.create_learning(params)
+    }
+
+    pub(crate) fn get(&self, id: &str) -> Result<Option<Learning>, OrbitError> {
+        self.store.get_learning(id)
+    }
+
+    pub(crate) fn list(&self, status: Option<LearningStatus>) -> Result<Vec<Learning>, OrbitError> {
+        self.store.list_learnings(status)
+    }
+
+    pub(crate) fn search(
+        &self,
+        params: LearningSearchParams,
+    ) -> Result<Vec<LearningSearchResult>, OrbitError> {
+        self.store.search_learnings(params)
+    }
+
+    pub(crate) fn update(
+        &self,
+        id: &str,
+        params: LearningUpdateParams,
+    ) -> Result<Learning, OrbitError> {
+        self.store.update_learning(id, params)
+    }
+
+    pub(crate) fn supersede(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError> {
+        self.store.supersede_learning(old_id, new_id)
+    }
+
+    pub(crate) fn archive(&self, id: &str) -> Result<bool, OrbitError> {
+        self.store.archive_learning(id)
+    }
+
+    /// Hard-deletes a learning's YAML file and index row. Reserved for
+    /// maintenance / migration tooling; the tool surface uses `archive`
+    /// for stale-record cleanup per §7.3.
+    #[allow(dead_code)]
+    pub(crate) fn delete(&self, id: &str) -> Result<bool, OrbitError> {
+        self.store.delete_learning(id)
+    }
+
+    pub(crate) fn reindex(&self) -> Result<(), OrbitError> {
+        self.store.reindex_learnings()
     }
 }

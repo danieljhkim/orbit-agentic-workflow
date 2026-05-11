@@ -46,6 +46,8 @@ impl<'de> Deserialize<'de> for LearningFileDocument {
             updated_at: DateTime<Utc>,
             #[serde(default)]
             created_by: Option<String>,
+            #[serde(default)]
+            priority: Option<u8>,
         }
 
         let raw = RawLearningFileDocument::deserialize(deserializer)?;
@@ -63,6 +65,7 @@ impl<'de> Deserialize<'de> for LearningFileDocument {
                 created_at: raw.created_at,
                 updated_at: raw.updated_at,
                 created_by: raw.created_by,
+                priority: raw.priority,
             },
         })
     }

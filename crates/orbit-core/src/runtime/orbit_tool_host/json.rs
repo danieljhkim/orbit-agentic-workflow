@@ -1,13 +1,58 @@
 use std::collections::BTreeMap;
 
 use orbit_common::types::{
-    OrbitError, Task, TaskComment, TaskHistoryEntry, TaskStatus, build_task_status_index,
+    Learning, OrbitError, Task, TaskComment, TaskHistoryEntry, TaskStatus, build_task_status_index,
     resolve_task_dependencies,
 };
+use orbit_store::LearningSearchResult;
 use serde_json::{Map, Value, json};
 
 use crate::OrbitRuntime;
 use crate::command::task::TaskLintReport;
+
+pub(super) fn learning_to_json(learning: &Learning) -> Value {
+    json!({
+        "id": learning.id,
+        "status": learning.status.as_str(),
+        "scope": {
+            "paths": learning.scope.paths,
+            "tags": learning.scope.tags,
+            "symbols": learning.scope.symbols,
+            "semantic_seed": learning.scope.semantic_seed,
+        },
+        "summary": learning.summary,
+        "body": learning.body,
+        "evidence": learning
+            .evidence
+            .iter()
+            .map(|e| json!({"kind": e.kind.to_string(), "ref": e.reference}))
+            .collect::<Vec<_>>(),
+        "supersedes": learning.supersedes,
+        "superseded_by": learning.superseded_by,
+        "created_at": learning.created_at.to_rfc3339(),
+        "updated_at": learning.updated_at.to_rfc3339(),
+        "created_by": learning.created_by,
+        "priority": learning.priority,
+    })
+}
+
+/// Search result projection — envelope-only per §4.5. Excludes `body`,
+/// `evidence`, and `created_by`; carries `matched_by` annotation so
+/// callers can attribute matches to their scope axis (§5.3).
+pub(super) fn learning_search_result_to_json(result: &LearningSearchResult) -> Value {
+    let learning = &result.learning;
+    json!({
+        "id": learning.id,
+        "summary": learning.summary,
+        "scope": {
+            "paths": learning.scope.paths,
+            "tags": learning.scope.tags,
+        },
+        "updated_at": learning.updated_at.to_rfc3339(),
+        "priority": learning.priority,
+        "matched_by": result.matched_by,
+    })
+}
 
 pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStatus>) -> Value {
     json!({
