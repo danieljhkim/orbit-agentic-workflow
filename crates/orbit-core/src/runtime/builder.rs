@@ -346,6 +346,14 @@ mod tests {
                 .len(),
             1
         );
+
+        runtime
+            .delete_task_guarded(&updated.id, true)
+            .expect("delete v2 task");
+        assert!(matches!(
+            runtime.get_task(&updated.id),
+            Err(OrbitError::TaskNotFound(_))
+        ));
     }
 
     #[test]

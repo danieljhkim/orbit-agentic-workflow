@@ -232,6 +232,8 @@ During the cutover window, the runtime selects this store only when workspace `c
 
 The workspace projection under `.orbit/tasks/<task-id>` is a symlink to the canonical bundle. Task writes through either the canonical path or the projection update the same files; there is no second writable copy and no bundle-level divergence protocol. If `.orbit/tasks/` is deleted, Orbit rebuilds the symlinks from `.orbit/config.yaml` and `index.sqlite`. If `.orbit/config.yaml` is lost, Orbit prompts to rebind by matching the current path, repo root, and optional remote fingerprints against `index.sqlite`; if no confident match exists, the user chooses or creates a workspace binding.
 
+Task delete removes the projection entry, deletes the canonical home bundle, and unregisters the task from `index.sqlite`. Generated index rows and relation edges involving the deleted task are removed with the binding.
+
 ### 2.7 Generated local indexes
 
 The bundle remains canonical. The registry maintains generated projections from each task envelope:

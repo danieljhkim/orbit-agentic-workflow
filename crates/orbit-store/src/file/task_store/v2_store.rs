@@ -247,8 +247,13 @@ impl TaskV2Store {
         Ok(tasks)
     }
 
-    pub(crate) fn delete_task(&self, _id: &str) -> Result<bool, OrbitError> {
-        Err(unsupported_v2_operation("delete_task"))
+    pub(crate) fn delete_task(&self, id: &str) -> Result<bool, OrbitError> {
+        orbit_common::types::validate_orb_task_id(id)?;
+        let bundle_dir = self.bundle_store.bundle_path(id)?;
+        if !bundle_dir.exists() {
+            return self.bundle_store.delete_bundle(id);
+        }
+        self.with_task_lock(id, || self.bundle_store.delete_bundle(id))
     }
 
     pub(crate) fn update_task_document(
@@ -1123,6 +1128,27 @@ mod tests {
 
         assert_eq!(first.id, "ORB-00000");
         assert_eq!(second.id, "ORB-00001");
+    }
+
+    #[test]
+    fn delete_task_removes_v2_bundle_and_index_rows() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        store
+            .create_task(create_params("Delete me", TaskStatus::Rejected))
+            .expect("create task");
+
+        assert!(store.delete_task("ORB-00000").expect("delete task"));
+        assert_eq!(store.get_task("ORB-00000").expect("get deleted"), None);
+        assert!(store.list_tasks().expect("list tasks").is_empty());
+        assert_eq!(
+            store
+                .registry
+                .indexed_task_count_for_workspace(&store.workspace_id)
+                .expect("index count"),
+            0
+        );
+        assert!(!store.delete_task("ORB-00000").expect("delete missing"));
     }
 
     #[test]

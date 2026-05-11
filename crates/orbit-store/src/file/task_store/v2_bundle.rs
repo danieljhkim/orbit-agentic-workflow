@@ -146,6 +146,22 @@ impl TaskBundleStoreV2 {
         read_bundle_at(&bundle_dir)
     }
 
+    pub(crate) fn delete_bundle(&self, task_id: &str) -> Result<bool, OrbitError> {
+        orbit_common::types::validate_orb_task_id(task_id)?;
+        let bundle_dir = self.bundle_path(task_id)?;
+
+        remove_projection_entry(&self.workspace_orbit_dir, task_id)?;
+        let removed_bundle = match fs::remove_dir_all(&bundle_dir) {
+            Ok(()) => true,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+            Err(err) => return Err(OrbitError::Io(err.to_string())),
+        };
+        let unregistered = self
+            .registry
+            .unregister_task_bundle(task_id, &self.workspace_id)?;
+        Ok(removed_bundle || unregistered)
+    }
+
     /// List bundles registered to this workspace.
     ///
     /// This is intentionally fail-fast for now: one corrupt registered bundle
@@ -243,6 +259,21 @@ fn create_lock_path(bundle_dir: &Path, task_id: &str) -> Result<PathBuf, OrbitEr
         ))
     })?;
     Ok(parent.join(format!(".{task_id}.create")))
+}
+
+fn remove_projection_entry(workspace_orbit_dir: &Path, task_id: &str) -> Result<(), OrbitError> {
+    let projection_path = workspace_orbit_dir.join("tasks").join(task_id);
+    match fs::symlink_metadata(&projection_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            fs::remove_file(&projection_path).map_err(|err| OrbitError::Io(err.to_string()))
+        }
+        Ok(_) => Err(OrbitError::Store(format!(
+            "projection entry '{}' already exists and is not a symlink",
+            projection_path.display()
+        ))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(OrbitError::Io(err.to_string())),
+    }
 }
 
 impl TaskDocumentV2 {
@@ -881,6 +912,54 @@ mod tests {
             .map(|bundle| bundle.envelope.id)
             .collect();
         assert_eq!(ids, vec!["ORB-00000", "ORB-00001"]);
+    }
+
+    #[test]
+    fn delete_bundle_removes_canonical_projection_and_registry_rows() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = bundle_store(&temp);
+        store
+            .create_bundle(&sample_bundle("ORB-00000"))
+            .expect("create bundle");
+        let bundle_dir = store.bundle_path("ORB-00000").expect("bundle path");
+        assert!(bundle_dir.is_dir());
+
+        assert!(store.delete_bundle("ORB-00000").expect("delete bundle"));
+        assert!(!bundle_dir.exists());
+        assert!(!store.workspace_orbit_dir.join("tasks/ORB-00000").exists());
+        assert_eq!(
+            store
+                .registry
+                .tasks_for_workspace(&store.workspace_id)
+                .expect("registry tasks"),
+            Vec::new()
+        );
+        assert!(matches!(
+            store.read_bundle("ORB-00000"),
+            Err(OrbitError::TaskNotFound(_))
+        ));
+        assert!(!store.delete_bundle("ORB-00000").expect("delete missing"));
+    }
+
+    #[test]
+    fn delete_bundle_unregisters_stale_binding_when_canonical_dir_is_missing() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = bundle_store(&temp);
+        store
+            .create_bundle(&sample_bundle("ORB-00000"))
+            .expect("create bundle");
+        let bundle_dir = store.bundle_path("ORB-00000").expect("bundle path");
+        fs::remove_dir_all(&bundle_dir).expect("remove canonical bundle");
+
+        assert!(store.delete_bundle("ORB-00000").expect("delete stale"));
+        assert!(fs::symlink_metadata(store.workspace_orbit_dir.join("tasks/ORB-00000")).is_err());
+        assert_eq!(
+            store
+                .registry
+                .tasks_for_workspace(&store.workspace_id)
+                .expect("registry tasks"),
+            Vec::new()
+        );
     }
 
     #[test]

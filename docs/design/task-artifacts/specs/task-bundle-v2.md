@@ -72,6 +72,8 @@ workspace_id: orbit-a3f9c2
 
 `.orbit/tasks/` is a symlink projection to canonical bundles. Task mutations must make the canonical bundle and registry metadata durable before reporting success. If `.orbit/tasks/` is deleted, Orbit rebuilds projection links from `.orbit/config.yaml` and `index.sqlite`. If `.orbit/config.yaml` is missing, Orbit must prompt to rebind by matching the checkout path, repo root, and optional remote fingerprints against `index.sqlite`; ambiguous matches must not silently attach to a workspace.
 
+Delete removes the projection entry, removes the canonical bundle directory, and unregisters the task binding and generated index rows. A projection path that exists as a non-symlink must stop the delete rather than removing unrelated workspace files.
+
 ## Envelope
 
 `task.yaml` must contain only structured metadata:

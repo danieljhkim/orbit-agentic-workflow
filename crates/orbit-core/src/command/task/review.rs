@@ -29,9 +29,9 @@ impl OrbitRuntime {
         );
 
         let now = Utc::now();
-        let nanos_suffix = now.timestamp_subsec_nanos() % 10000;
-        let thread_id = format!("rt-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
-        let message_id = format!("rm-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let nanos_suffix = now.timestamp_subsec_nanos();
+        let thread_id = format!("rt-{}-{:09}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let message_id = format!("rm-{}-{:09}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
 
         let thread = ReviewThread {
             thread_id: thread_id.clone(),
@@ -108,8 +108,8 @@ impl OrbitRuntime {
         );
 
         let now = Utc::now();
-        let nanos_suffix = now.timestamp_subsec_nanos() % 10000;
-        let message_id = format!("rm-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let nanos_suffix = now.timestamp_subsec_nanos();
+        let message_id = format!("rm-{}-{:09}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
 
         let reply_thread = ReviewThread {
             thread_id: thread_id.to_string(),

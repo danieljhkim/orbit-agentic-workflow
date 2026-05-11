@@ -277,6 +277,45 @@ impl TaskRegistryStore {
         Ok(binding)
     }
 
+    pub fn unregister_task_bundle(
+        &self,
+        task_id: &str,
+        workspace_id: &str,
+    ) -> Result<bool, OrbitError> {
+        validate_orb_task_id(task_id)?;
+        let workspace_id = validate_workspace_id(workspace_id)?;
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        tx.execute(
+            "DELETE FROM task_bundle_relations
+             WHERE source_task_id = ?1 OR target_task_id = ?1",
+            [task_id],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+        tx.execute("DELETE FROM task_bundle_tags WHERE task_id = ?1", [task_id])
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        tx.execute(
+            "DELETE FROM task_bundle_index WHERE task_id = ?1",
+            [task_id],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let deleted = tx
+            .execute(
+                "DELETE FROM task_bundle_bindings
+                 WHERE task_id = ?1 AND workspace_id = ?2",
+                params![task_id, workspace_id],
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        tx.commit().map_err(|e| OrbitError::Store(e.to_string()))?;
+        Ok(deleted > 0)
+    }
+
     pub fn tasks_for_workspace(
         &self,
         workspace_id: &str,
@@ -1488,6 +1527,64 @@ mod tests {
                 )
                 .expect("sources"),
             vec!["ORB-00000"]
+        );
+    }
+
+    #[test]
+    fn unregister_task_bundle_removes_binding_indexes_and_relation_edges() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        let workspace = bind(&store, temp.path());
+        for task_id in ["ORB-00000", "ORB-00001"] {
+            let bundle_dir = create_canonical_bundle(&store, &workspace, task_id);
+            store
+                .register_task_bundle(task_id, &workspace.workspace_id, &bundle_dir)
+                .expect("register bundle");
+        }
+        store
+            .replace_task_index(
+                &workspace.workspace_id,
+                &envelope(
+                    "ORB-00000",
+                    TaskStatus::Backlog,
+                    vec!["v2".into()],
+                    vec![TaskRelation {
+                        relation_type: TaskRelationType::Blocks,
+                        target: "ORB-00001".to_string(),
+                    }],
+                ),
+            )
+            .expect("index source relation");
+
+        assert!(
+            store
+                .unregister_task_bundle("ORB-00000", &workspace.workspace_id)
+                .expect("unregister")
+        );
+        assert_eq!(
+            store
+                .tasks_for_workspace(&workspace.workspace_id)
+                .expect("tasks")
+                .into_iter()
+                .map(|binding| binding.task_id)
+                .collect::<Vec<_>>(),
+            vec!["ORB-00001"]
+        );
+        assert_eq!(
+            store
+                .indexed_task_count_for_workspace(&workspace.workspace_id)
+                .expect("index count"),
+            0
+        );
+        assert_eq!(
+            store
+                .indexed_relation_sources(
+                    &workspace.workspace_id,
+                    "ORB-00001",
+                    TaskRelationType::Blocks,
+                )
+                .expect("inverse relation"),
+            Vec::<String>::new()
         );
     }
 

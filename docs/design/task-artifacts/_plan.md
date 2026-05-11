@@ -177,7 +177,7 @@ Work:
 - Replace current O(N x files-per-task) v2 list/search scans with generated indexes. Implemented for status, priority, and tag prefiltering; full-text search still scans matched bundle content until Phase 5.
 - Move task-lock keying to workspace binding plus canonical task IDs. Implemented in working tree for reservation scope metadata; file-overlap conflict semantics are preserved.
 - Preserve lifecycle validation rules, including execution summary before review.
-- Decide and implement v2 delete semantics.
+- Decide and implement v2 delete semantics. Implemented in working tree as canonical bundle removal plus projection and registry/index cleanup.
 
 Exit criteria:
 
@@ -196,11 +196,11 @@ Implemented in working tree:
 - Forward and inverse relation lookup helpers over `task_bundle_relations`.
 - Mutation hooks for create, document update, history/status update, review-thread update, and artifact update to refresh generated index rows.
 - Task reservation records can carry the v2 `workspace_id`; runtime lock tools pass it from `.orbit/config.yaml`, and reservation queries prefer that binding while still seeing legacy path-scoped rows for cleanup.
+- V2 delete removes the `.orbit/tasks/<task-id>` projection, deletes the canonical home bundle, and unregisters task binding/index/relation rows.
 
 Still open in Phase 4:
 
 - Use relation indexes in public lineage/query surfaces once those surfaces expose typed v2 relations.
-- Decide v2 delete semantics.
 
 ## Phase 5 - Consumers And Search
 
