@@ -1,10 +1,10 @@
-# Task — Vision
+# Task Artifacts — Vision
 
 **Status:** Draft
 **Owner:** codex
 **Last updated:** 2026-05-11
 
-This document captures open questions for the task artifact reset, prior work that should inform the design, what may be distinctive about Orbit's task model, and references for future implementers. The near-term design is in [2_design.md](./2_design.md); this file is deliberately forward-looking.
+This document captures open questions for the task-artifacts reset, prior work that should inform the design, what may be distinctive about Orbit's task model, and references for future implementers. The near-term design is in [2_design.md](./2_design.md); this file is deliberately forward-looking.
 
 ---
 
@@ -78,7 +78,7 @@ The existing `orbit-store::file::task_store` implementation is the baseline. It 
 
 ### 2.3 Orbit task sync
 
-[docs/design/task-sync/](../task-sync/) documents a git-orphan-branch registry around the current task layout. It preserves `T<YYYYMMDD>-<N>` and status directories because it was designed as an incremental sync layer. The task reset intentionally reopens those decisions.
+[docs/design/task-sync/](../task-sync/) documents a git-orphan-branch registry around the current task layout. It preserves `T<YYYYMMDD>-<N>` and status directories because it was designed as an incremental sync layer. The task-artifacts reset intentionally reopens those decisions.
 
 ### 2.4 Issue trackers
 

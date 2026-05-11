@@ -1,10 +1,10 @@
-# Task — Overview
+# Task Artifacts — Overview
 
 **Status:** Draft
 **Owner:** codex
 **Last updated:** 2026-05-11
 
-Tasks are Orbit's durable intent records: they explain what an agent or human is trying to change, how the work should be validated, what context is relevant, who acted on the work, and how the work connects to other Orbit artifacts. The current implementation stores task bundles as YAML plus Markdown sidecars under `.orbit/tasks/`; this folder documents that implementation and the v2 reset direction that moves prose into Markdown files, narrows YAML to metadata, replaces date-scoped local IDs with an explicit global task ID format, and backs the repo-local working copy with durable task storage under `~/.orbit`.
+Tasks are Orbit's durable intent records: they explain what an agent or human is trying to change, how the work should be validated, what context is relevant, who acted on the work, and how the work connects to other Orbit artifacts. The current implementation stores task bundles as YAML plus Markdown sidecars under `.orbit/tasks/`; this feature documents those task artifacts and the v2 reset direction that moves prose into Markdown files, narrows YAML to metadata, replaces date-scoped local IDs with an explicit global task ID format, and backs the repo-local working copy with durable task storage under `~/.orbit`.
 
 This document is the entry point. [2_design.md](./2_design.md) describes the current store and the target v2 artifact shape; [3_vision.md](./3_vision.md) names open questions and prior work; [4_decisions.md](./4_decisions.md) captures the design decisions that should constrain implementation.
 

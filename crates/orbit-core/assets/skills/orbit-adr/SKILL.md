@@ -17,7 +17,7 @@ Both surfaces accept the same JSON. Use the CLI examples below when shell access
 |------|-----|-----|
 | `orbit.adr.add` | `orbit_adr_add({...})` | `orbit tool run orbit.adr.add --input-file adr.json` |
 | `orbit.adr.show` | `orbit_adr_show({...})` | `orbit tool run orbit.adr.show --input '{"id":"ADR-0042"}'` |
-| `orbit.adr.list` | `orbit_adr_list({...})` | `orbit tool run orbit.adr.list --input '{"feature":"task"}'` |
+| `orbit.adr.list` | `orbit_adr_list({...})` | `orbit tool run orbit.adr.list --input '{"feature":"task-artifacts"}'` |
 | `orbit.adr.update` | `orbit_adr_update({...})` | `orbit tool run orbit.adr.update --input-file update.json` |
 | `orbit.adr.supersede` | `orbit_adr_supersede({...})` | `orbit tool run orbit.adr.supersede --input '{"old_id":"ADR-0041","new_id":"ADR-0042"}'` |
 
@@ -37,7 +37,7 @@ Run `orbit tool show orbit.adr.add` or `orbit tool list` instead of guessing if 
    - Reversal or replacement of an accepted ADR: create the replacement, accept it with a related task, then `orbit.adr.supersede`.
 3. Write the body with exactly the required sections: `## Context`, `## Decision`, `## Consequences`.
 4. Include at least one consequences bullet starting with `Cost:`.
-5. Set `related_features` to feature folder names such as `task`, `activity-job`, or `policy-sandbox`.
+5. Set `related_features` to feature folder names such as `task-artifacts`, `activity-job`, or `policy-sandbox`.
 6. Leave `related_tasks` empty for speculative proposed ADRs when no task exists yet. Do not create or invent a task just to satisfy an ADR proposal. Acceptance requires a real related task.
 7. Verify with `orbit.adr.show` or `orbit.adr.list`.
 
@@ -81,7 +81,7 @@ Create a proposed ADR:
   "title": "Short noun phrase",
   "body": "## Context\nWhat forced the decision.\n\n## Decision\nWhat was chosen.\n\n## Consequences\n- What improves or changes.\n- Cost: The real tradeoff.\n",
   "owner": "codex",
-  "related_features": ["task"],
+  "related_features": ["task-artifacts"],
   "related_tasks": [],
   "model": "<model_name>"
 }
@@ -96,7 +96,7 @@ Attach a legacy per-feature alias after creation:
 ```bash
 orbit tool run orbit.adr.update --input '{
   "id": "ADR-0143",
-  "legacy_ids": ["task/ADR-001"],
+  "legacy_ids": ["task-artifacts/ADR-001"],
   "model": "<model_name>"
 }'
 ```

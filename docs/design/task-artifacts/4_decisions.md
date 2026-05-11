@@ -1,10 +1,10 @@
-# Task — Decisions
+# Task Artifacts — Decisions
 
 **Status:** Draft
 **Owner:** codex
 **Last updated:** 2026-05-11
 
-ADR log for the task artifact feature. Format follows [docs/design/CONVENTIONS.md §4](../CONVENTIONS.md): each entry is `Context · Decision · Consequences`, every entry names at least one Cost, and numbers are append-only.
+ADR log for the task-artifacts feature. Format follows [docs/design/CONVENTIONS.md §4](../CONVENTIONS.md): each entry is `Context · Decision · Consequences`, every entry names at least one Cost, and numbers are append-only.
 
 ADR numbers are local to this folder. Cross-folder references use full paths. ADRs whose status is `Proposed` flip to `Accepted` when their implementing task lands; the implementing task ID is appended to the Status line.
 

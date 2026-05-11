@@ -1,4 +1,4 @@
-# Task — Design
+# Task Artifacts — Design
 
 **Status:** Draft
 **Owner:** codex

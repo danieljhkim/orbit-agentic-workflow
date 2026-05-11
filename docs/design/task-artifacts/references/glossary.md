@@ -1,4 +1,4 @@
-# Glossary: Task
+# Glossary: Task Artifacts
 
 This glossary covers Orbit-specific task artifact terms. Generic issue-tracker or version-control vocabulary is excluded unless Orbit gives the term a narrower meaning.
 
