@@ -277,10 +277,31 @@ Landed:
 - **`workspace_path`/`repo_root` removed from the task update path** (`6beb14a2`). `TaskAutomationUpdate`, `TaskRecordUpdateParams`, and `TaskDocumentUpdateParams` no longer carry these fields; the v2 store's rejection arms for them are gone; worktree/parallel callers and the parallel-timeout mock no longer write them. `Task.workspace_path` and `Task.repo_root` remain on the public DTO (projected at read time from workspace metadata) pending the DTO surgery slice.
 - **Binary-capable artifact lexical search** (`6e7e9e4c`). `get_task_artifacts` gates each manifest entry on `is_text_artifact_media_type` and bytes-then-validate UTF-8 (logging and skipping on failure), so a non-text artifact no longer poisons `search_tasks`. Regression test: `search_tasks_skips_binary_artifacts_without_poisoning_results`.
 
-Still open in Phase 6:
+Still open in Phase 6 (codex hand-off):
 
-- Route `parent_id`, `batch_id`, `dependencies`, and `source_task_id` through the v2 relations API on both create and update; v2 currently hard-errors when these arrive as envelope fields. `batch_id` has no current home in `TaskRelationType` and needs an ADR-005 design decision (new variant vs. envelope attribute vs. tag-like field). Re-enables nine ignored tests (3 in `v2_host/backlog_exclusion_tests` for parent_id, 2 in `task_tools_tests` for dependencies, 1 in `engine/task_host` for batch_id+restamp, 1 for worktree_setup_admits_unplanned_workflow_statuses where batch_id is the remaining blocker, plus 2 dispatch/agent-model tests) and lets ADR-005 flip to `Accepted`.
-- Drop the legacy `Task` DTO fields that have no v2 home: `workspace_path`, `repo_root`, `comments`, `history`, `review_threads` (and the `agent`/`model` execution-routing fields if they stay ephemeral). Audit CLI/MCP/engine/web for callers and re-wire to v2 trait methods. This is the biggest blast radius slice; expect a multi-crate ripple. Closing this enables ADR-006 (binary-capable artifact manifest) to flip to `Accepted` once the public `TaskArtifact` DTO carries bytes + media type.
+**Slice A — relations API + `job_run_id`.** Resolves nine ignored tests; accepts ADR-005.
+
+Design calls already taken (in this thread; need to land in ADR-005):
+
+- `batch_id` is `job_run_id` — a foreign reference to a job run, not a relation between tasks. Keep it as an envelope attribute (rename to `job_run_id` for clarity, or keep `batch_id` for back-compat with engine code; pick one). Add to `task_bundle_index` so filter queries don't scan.
+- `TaskRelationType` flips to source-implied uniformly: `ParentOf → ChildOf`, `Blocks → BlockedBy`. Every directed variant then reads "T1 \<rel\> T2" with T1 always the source — same as the already-source-implied `SpawnedFrom`, `RegressionFrom`, `Supersedes`. Eliminates the fan-out write (no more "create child, then update parent" with no atomicity between them); single-bundle writes for the common "create subtask" / "create task that depends on X" paths. Reverse queries stay cheap — `task_registry.rs:573` (`indexed_relation_sources`) and the matching `indexed_relation_targets` already index both directions.
+
+Implementation steps:
+
+1. **`TaskEnvelopeV2`:** add `job_run_id: Option<String>` (or keep the `batch_id` name; pick one and be consistent). Index it. Update `task_bundle_index` schema + writes + filter queries.
+2. **`TaskRelationType`:** rename `ParentOf → ChildOf`, `Blocks → BlockedBy` in [`crates/orbit-common/src/types/task_artifacts.rs`](crates/orbit-common/src/types/task_artifacts.rs). Update `cyclic_relation_family` and `relation_graph_for_family` — direction-flip is isomorphic for cycle detection but make sure the graph build still reads edges in the new "source carries the outbound" direction. Update fixtures at [task_artifacts.rs:531-577](crates/orbit-common/src/types/task_artifacts.rs:531).
+3. **`TaskCreateParams` → envelope `relations`:** wire `parent_id` → `relations: [{ChildOf → parent}]`, each `dependencies[i]` → `{BlockedBy → dep_i}`, `source_task_id` → `{RegressionFrom → src}`. All single-bundle writes on the new task; no fan-out.
+4. **`TaskRecordUpdateParams` → envelope `relations`:** wire `dependencies` updates to replace `BlockedBy` edges on the task's own envelope.
+5. **Revise ADR-005** in `4_decisions.md` to reflect the source-implied uniformity rationale and the renamed variants. Flip Status `Proposed → Accepted`.
+6. **Un-ignore nine tests** with the `Phase 6:` reason and run them: `automation_can_restamp_in_progress_task_without_plan`, `dispatch_batch_claim_records_start_and_comment_as_system`, `worktree_setup_admits_unplanned_workflow_statuses`, `task_add_tool_persists_dependencies`, `task_update_tool_replaces_dependencies`, `load_epic_treats_review_subtasks_as_shipped_terminal_state`, `load_epic_keeps_in_progress_subtasks_open_when_review_is_shipped`, `list_backlog_tasks_reports_group_member_conflicts_with_trigger_conflicts`. (Plus check `task_add_tool_infers_agent_from_model_only_input` and the update variant — these were softened to assert `model` is null in `6beb14a2`, but the user-visible behavior is the same as before; verify nothing regressed.)
+7. **Grep for direction-dependent consumers** of the old variant names: any code that builds a `ParentOf` edge expecting "T is parent of target" needs to flip. Likely callers: anything constructing `TaskRelation` literals in `orbit-engine` lineage / batch dispatch, plus the engine's parent-child traversal in `v2_host/backlog_exclusion.rs`.
+
+**Slice B — public `Task` DTO surgery.** Biggest blast radius. Accepts ADR-006.
+
+- Drop legacy fields from [`crates/orbit-common/src/types/task.rs`](crates/orbit-common/src/types/task.rs) that have no v2 home: `workspace_path`, `repo_root`, `comments`, `history`, `review_threads`. The v2 store currently projects these from sidecar reads; consumers that need them should call the dedicated v2 read endpoints (`get_task_artifacts`, history/comment list, review-thread list) instead of expecting them on the flat DTO.
+- Decide whether `agent` and `model` stay on the DTO as ephemeral routing or move entirely to `OrbitContext`. Doc comment already says "internal execution routing only, hidden from task display JSON and YAML"; the test softening in `6beb14a2` implies they should be dropped, not just hidden.
+- `TaskArtifact { path: String, content: String }` → `TaskArtifact { path: String, content: Bytes, media_type: String }` (or similar). The manifest already stores bytes; this just lifts that capability to the public DTO. Once landed, flip ADR-006 to `Accepted`.
+- Multi-crate ripple: CLI (`crates/orbit-cli`), MCP/tool host (`crates/orbit-tools`, `crates/orbit-core/src/runtime/orbit_tool_host`), engine (`crates/orbit-engine`), web (anything that serializes `Task` to JSON). Plan for a survey-then-execute pass; the survey is itself non-trivial.
 
 ## Status Board
 
