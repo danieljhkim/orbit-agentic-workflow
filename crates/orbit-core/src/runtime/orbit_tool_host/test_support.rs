@@ -7,7 +7,7 @@ use tempfile::tempdir;
 
 use crate::OrbitRuntime;
 
-pub(super) fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf) {
+pub(crate) fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf) {
     let root = tempdir().expect("create tempdir");
     let global_root = root.path().join("global");
     let repo_root = root.path().join("repo");

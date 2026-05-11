@@ -18,7 +18,7 @@ mod task_locks_tests;
 #[cfg(test)]
 mod task_tools_tests;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 pub(crate) use host::build_orbit_tool_host;
 pub(crate) use task_locks::{

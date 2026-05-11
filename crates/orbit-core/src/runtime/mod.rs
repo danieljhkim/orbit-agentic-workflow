@@ -16,7 +16,7 @@ pub mod builder;
 mod engine;
 pub mod event_bus;
 pub mod mutation;
-mod orbit_tool_host;
+pub(crate) mod orbit_tool_host;
 pub mod pipeline;
 mod resolve;
 pub mod run_audit;

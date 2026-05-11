@@ -313,6 +313,21 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Adr(cmd) => {
+            use crate::command::adr::AdrSubcommand;
+            let sub = match &cmd.command {
+                AdrSubcommand::Migrate(_) => "migrate",
+            };
+            CommandMeta {
+                command: "adr".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("adr".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Migrate(cmd) => {
             use crate::command::migrate::MigrateSubcommand;
             let sub = match &cmd.command {
