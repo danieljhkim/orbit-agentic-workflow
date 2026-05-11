@@ -220,25 +220,13 @@ impl TaskV2Store {
     ) -> Result<Vec<Task>, OrbitError> {
         let lowered = query.to_lowercase();
         let mut tasks = self.list_tasks_by_tags(tags)?;
-        tasks.retain(|task| {
-            task.title.to_lowercase().contains(&lowered)
-                || task.description.to_lowercase().contains(&lowered)
-                || task.plan.to_lowercase().contains(&lowered)
-                || task.execution_summary.to_lowercase().contains(&lowered)
-                || task
-                    .acceptance_criteria
-                    .iter()
-                    .any(|criterion| criterion.to_lowercase().contains(&lowered))
-                || task
-                    .comments
-                    .iter()
-                    .any(|comment| comment.message.to_lowercase().contains(&lowered))
-                || task
-                    .external_refs
-                    .iter()
-                    .any(|external_ref| external_ref.id.to_lowercase().contains(&lowered))
-        });
-        Ok(tasks)
+        let mut matches = Vec::new();
+        for task in tasks.drain(..) {
+            if self.task_matches_query(&task, &lowered)? {
+                matches.push(task);
+            }
+        }
+        Ok(matches)
     }
 
     pub(crate) fn delete_task(&self, id: &str) -> Result<bool, OrbitError> {
@@ -496,9 +484,25 @@ impl TaskV2Store {
         let bundle_dir = self.bundle_store.bundle_path(id)?;
         let mut artifacts = Vec::new();
         for file in manifest.files {
-            let content =
-                fs::read_to_string(bundle_dir.join(TASK_ARTIFACTS_DIR_NAME).join(file.blob))
-                    .map_err(|err| OrbitError::Io(err.to_string()))?;
+            if !is_text_artifact_media_type(&file.media_type) {
+                continue;
+            }
+            let artifact_file = bundle_dir.join(TASK_ARTIFACTS_DIR_NAME).join(&file.blob);
+            let bytes = fs::read(&artifact_file).map_err(|err| OrbitError::Io(err.to_string()))?;
+            let content = match String::from_utf8(bytes) {
+                Ok(content) => content,
+                Err(err) => {
+                    orbit_common::tracing::warn!(
+                        target: "orbit.store.task_v2",
+                        task_id = id,
+                        artifact_path = %file.path,
+                        media_type = %file.media_type,
+                        error = %err,
+                        "skipping task artifact because it is not valid UTF-8",
+                    );
+                    continue;
+                }
+            };
             artifacts.push(TaskArtifact {
                 path: file.path,
                 content,
@@ -640,6 +644,27 @@ impl TaskV2Store {
             .collect()
     }
 
+    fn task_matches_query(&self, task: &Task, lowered: &str) -> Result<bool, OrbitError> {
+        if task_in_memory_fields_match_query(task, lowered) {
+            return Ok(true);
+        }
+
+        // Phase 5 bridge: artifact search reads text artifact files on demand until
+        // generated full-text indexes carry artifact paths, content, and snippets.
+        self.task_artifacts_match_query(&task.id, lowered)
+    }
+
+    fn task_artifacts_match_query(&self, id: &str, lowered: &str) -> Result<bool, OrbitError> {
+        let Some(artifacts) = self.get_task_artifacts(id)? else {
+            // A task may be deleted after the indexed/listed candidate set is built.
+            return Ok(false);
+        };
+        Ok(artifacts.iter().any(|artifact| {
+            artifact.path.to_lowercase().contains(lowered)
+                || artifact.content.to_lowercase().contains(lowered)
+        }))
+    }
+
     fn replace_index_best_effort(&self, envelope: &TaskEnvelopeV2, operation: &str) {
         if let Err(err) = self
             .registry
@@ -729,6 +754,56 @@ impl TaskV2Store {
         let lock_target = self.bundle_store.bundle_path(id)?.join("task.yaml");
         with_exclusive_file_lock(&lock_target, "task artifact v2", op)
     }
+}
+
+fn task_in_memory_fields_match_query(task: &Task, lowered: &str) -> bool {
+    task.title.to_lowercase().contains(lowered)
+        || task.description.to_lowercase().contains(lowered)
+        || task.plan.to_lowercase().contains(lowered)
+        || task.execution_summary.to_lowercase().contains(lowered)
+        || task
+            .acceptance_criteria
+            .iter()
+            .any(|criterion| criterion.to_lowercase().contains(lowered))
+        || task
+            .comments
+            .iter()
+            .any(|comment| comment.message.to_lowercase().contains(lowered))
+        || task.review_threads.iter().any(|thread| {
+            thread.messages.iter().any(|message| {
+                message.body.to_lowercase().contains(lowered)
+                    || message.by.to_lowercase().contains(lowered)
+            }) || thread
+                .path
+                .as_deref()
+                .is_some_and(|path| path.to_lowercase().contains(lowered))
+        })
+        || task.external_refs.iter().any(|external_ref| {
+            external_ref.system.to_lowercase().contains(lowered)
+                || external_ref.id.to_lowercase().contains(lowered)
+        })
+}
+
+fn is_text_artifact_media_type(media_type: &str) -> bool {
+    let base = media_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    base.starts_with("text/")
+        || matches!(
+            base.as_str(),
+            "application/json"
+                | "application/javascript"
+                | "application/toml"
+                | "application/x-toml"
+                | "application/x-yaml"
+                | "application/xml"
+                | "application/yaml"
+        )
+        || base.ends_with("+json")
+        || base.ends_with("+xml")
 }
 
 pub(crate) fn unsupported_v2_operation(operation: &str) -> OrbitError {
@@ -1244,6 +1319,140 @@ mod tests {
                 .map(|task| task.title)
                 .collect::<Vec<_>>(),
             vec!["Review task"]
+        );
+    }
+
+    #[test]
+    fn search_tasks_matches_review_threads_and_text_artifacts() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        store
+            .create_task(create_params("Searchable", TaskStatus::Backlog))
+            .expect("create task");
+        let at = Utc.with_ymd_and_hms(2026, 5, 11, 14, 0, 0).unwrap();
+        store
+            .update_task_reviews(
+                "ORB-00000",
+                &TaskReviewUpdateParams {
+                    append_review_threads: vec![ReviewThread {
+                        thread_id: "rt-search".to_string(),
+                        path: Some("src/lib.rs".to_string()),
+                        line: Some(7),
+                        status: ReviewThreadStatus::Open,
+                        messages: vec![ReviewMessage {
+                            message_id: "rm-search".to_string(),
+                            at,
+                            by: "reviewer".to_string(),
+                            body: "needle-review-body".to_string(),
+                            github_comment_id: None,
+                        }],
+                        github_thread_id: None,
+                    }],
+                    replace_review_threads: None,
+                },
+            )
+            .expect("add review thread");
+        store
+            .upsert_task_artifacts(
+                "ORB-00000",
+                &TaskArtifactUpdateParams {
+                    actor: "codex:gpt-5.5".to_string(),
+                    upsert_artifacts: vec![TaskArtifact {
+                        path: "reports/search.md".to_string(),
+                        content: "needle-artifact-body\n".to_string(),
+                    }],
+                },
+            )
+            .expect("upsert artifact");
+
+        for query in [
+            "needle-review-body",
+            "needle-artifact-body",
+            "reports/search.md",
+            "src/lib.rs",
+            "reviewer",
+            "linear",
+        ] {
+            assert_eq!(
+                store
+                    .search_tasks(query)
+                    .expect("search")
+                    .into_iter()
+                    .map(|task| task.id)
+                    .collect::<Vec<_>>(),
+                vec!["ORB-00000"],
+                "query {query} should match v2 non-envelope content"
+            );
+        }
+        assert!(
+            store
+                .search_tasks("definitely-missing-query")
+                .expect("search no match")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn search_tasks_skips_binary_artifacts_without_poisoning_results() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        store
+            .create_task(create_params("Binary artifact task", TaskStatus::Backlog))
+            .expect("create binary task");
+        store
+            .create_task(create_params("Text artifact task", TaskStatus::Backlog))
+            .expect("create text task");
+
+        let at = Utc.with_ymd_and_hms(2026, 5, 11, 15, 0, 0).unwrap();
+        let binary = vec![0xff, 0xfe, 0xfd, 0x00];
+        let binary_dir = store
+            .bundle_store
+            .bundle_path("ORB-00000")
+            .expect("binary bundle path")
+            .join(TASK_ARTIFACTS_DIR_NAME)
+            .join(TASK_ARTIFACT_FILES_DIR_NAME);
+        std::fs::create_dir_all(&binary_dir).expect("create binary artifact dir");
+        std::fs::write(binary_dir.join("payload.bin"), &binary).expect("write binary artifact");
+        store
+            .bundle_store
+            .rewrite_artifact_manifest(
+                "ORB-00000",
+                &ArtifactManifestV2 {
+                    schema_version: TASK_ARTIFACT_SCHEMA_VERSION,
+                    files: vec![ArtifactManifestFileV2 {
+                        path: "payload.bin".to_string(),
+                        blob: "files/payload.bin".to_string(),
+                        sha256: format!("{:x}", Sha256::digest(&binary)),
+                        media_type: "application/octet-stream".to_string(),
+                        size_bytes: binary.len() as u64,
+                        created_by: "codex:gpt-5.5".to_string(),
+                        created_at: at,
+                    }],
+                },
+            )
+            .expect("write binary manifest");
+
+        store
+            .upsert_task_artifacts(
+                "ORB-00001",
+                &TaskArtifactUpdateParams {
+                    actor: "codex:gpt-5.5".to_string(),
+                    upsert_artifacts: vec![TaskArtifact {
+                        path: "reports/text.txt".to_string(),
+                        content: "needle-safe-text\n".to_string(),
+                    }],
+                },
+            )
+            .expect("upsert text artifact");
+
+        assert_eq!(
+            store
+                .search_tasks("needle-safe-text")
+                .expect("search skips binary")
+                .into_iter()
+                .map(|task| task.id)
+                .collect::<Vec<_>>(),
+            vec!["ORB-00001"]
         );
     }
 

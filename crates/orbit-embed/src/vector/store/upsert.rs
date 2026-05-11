@@ -5,6 +5,8 @@
 //! `embeddings` (vector storage) and `tasks_fts` (FTS5 lexical mirror, when
 //! the source is a task). Unchanged fields short-circuit via `content_hash`.
 
+use std::collections::BTreeSet;
+
 use chrono::Utc;
 use orbit_common::types::OrbitError;
 use rusqlite::{Connection, params};
@@ -18,6 +20,10 @@ const TARGET_CHUNK_TOKENS: usize = 400;
 const OVERLAP_TOKENS: usize = 50;
 
 impl VectorStore {
+    /// Replace the indexed field set for a source.
+    ///
+    /// `fields` is the complete current field set, not a partial patch; rows
+    /// for previously indexed fields absent from this slice are removed.
     pub fn upsert_embeddings(
         &self,
         source_kind: &str,
@@ -34,6 +40,11 @@ impl VectorStore {
         let tx = conn
             .transaction()
             .map_err(|error| OrbitError::Store(error.to_string()))?;
+        let expected_fields = fields
+            .iter()
+            .map(|field| field.field.as_str())
+            .collect::<BTreeSet<_>>();
+        delete_unexpected_field_rows(&tx, source_kind, source_id, &expected_fields)?;
 
         for field in fields {
             if field.text.trim().is_empty() {
@@ -187,6 +198,82 @@ pub(super) fn delete_field_rows(
             WHERE source_kind = ?1 AND source_id = ?2 AND field = ?3 AND model_id = ?4
         "#,
         params![source_kind, source_id, field, model_id],
+    )
+    .map_err(|error| OrbitError::Store(error.to_string()))?;
+    if source_kind == SOURCE_KIND_TASK {
+        conn.execute(
+            "DELETE FROM tasks_fts WHERE source_id = ?1 AND field = ?2",
+            params![source_id, field],
+        )
+        .map_err(|error| OrbitError::Store(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn delete_unexpected_field_rows(
+    conn: &Connection,
+    source_kind: &str,
+    source_id: &str,
+    expected_fields: &BTreeSet<&str>,
+) -> Result<(), OrbitError> {
+    let mut stored_fields = BTreeSet::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                r#"
+                    SELECT DISTINCT field
+                    FROM embeddings
+                    WHERE source_kind = ?1 AND source_id = ?2
+                "#,
+            )
+            .map_err(|error| OrbitError::Store(error.to_string()))?;
+        let rows = stmt
+            .query_map(params![source_kind, source_id], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|error| OrbitError::Store(error.to_string()))?;
+        for row in rows {
+            stored_fields.insert(row.map_err(|error| OrbitError::Store(error.to_string()))?);
+        }
+    }
+    if source_kind == SOURCE_KIND_TASK {
+        let mut stmt = conn
+            .prepare(
+                r#"
+                    SELECT DISTINCT field
+                    FROM tasks_fts
+                    WHERE source_id = ?1
+                "#,
+            )
+            .map_err(|error| OrbitError::Store(error.to_string()))?;
+        let rows = stmt
+            .query_map(params![source_id], |row| row.get::<_, String>(0))
+            .map_err(|error| OrbitError::Store(error.to_string()))?;
+        for row in rows {
+            stored_fields.insert(row.map_err(|error| OrbitError::Store(error.to_string()))?);
+        }
+    }
+
+    for field in stored_fields {
+        if !expected_fields.contains(field.as_str()) {
+            delete_source_field_rows(conn, source_kind, source_id, &field)?;
+        }
+    }
+    Ok(())
+}
+
+fn delete_source_field_rows(
+    conn: &Connection,
+    source_kind: &str,
+    source_id: &str,
+    field: &str,
+) -> Result<(), OrbitError> {
+    conn.execute(
+        r#"
+            DELETE FROM embeddings
+            WHERE source_kind = ?1 AND source_id = ?2 AND field = ?3
+        "#,
+        params![source_kind, source_id, field],
     )
     .map_err(|error| OrbitError::Store(error.to_string()))?;
     if source_kind == SOURCE_KIND_TASK {

@@ -23,7 +23,7 @@ impl Tool for OrbitSemanticSearchTool {
             ToolParam {
                 name: "field".to_string(),
                 description:
-                    "Optional indexed task field filter, such as purpose, summary, or plan."
+                    "Optional indexed task field filter, such as title, description, plan, acceptance, or execution_summary."
                         .to_string(),
                 param_type: "string".to_string(),
                 required: false,

@@ -206,7 +206,7 @@ Still open in Phase 4:
 
 ## Phase 5 - Consumers And Search
 
-**Status:** Not started
+**Status:** In progress
 
 Goal: update readers outside the core task store.
 
@@ -224,6 +224,25 @@ Exit criteria:
 - CLI, MCP/tool-host JSON, and web API agree on task field names.
 - Search returns snippets from the correct v2 field.
 - No consumer depends on old task directory paths.
+
+### Phase 5 Progress
+
+Implemented in working tree:
+
+- V2 lexical search now matches review-thread messages, review-thread paths, external-ref systems, text artifact paths, and text artifact contents in addition to envelope fields, Markdown documents, acceptance criteria, comments, and external-ref IDs.
+- Semantic task embedding field names now use v2 logical document names: `title`, `description`, `acceptance`, `plan`, and `execution_summary`.
+- Semantic reindex sweeps legacy field rows such as `purpose`, `summary`, and `acceptance_criteria` for each task before writing the renamed v2 fields.
+- V2 artifact search skips binary media types and invalid UTF-8 artifact blobs instead of failing the whole task search.
+- The `orbit.semantic.search` tool schema and seeded `orbit-semantic` skill now advertise v2 task field names.
+
+Still open in Phase 5:
+
+- Add generated full-text indexes/snippets instead of per-query artifact reads.
+- Add semantic parity for review-thread paths/authors, external refs, artifact paths, and artifact text, or explicitly keep those fields lexical-only.
+- Update the semantic-search design docs that still describe the pre-v2 field names.
+- Decide whether `execution-summary.md` versus logical field `execution_summary` needs an ADR or glossary row.
+- Audit web/API/dashboard consumers for old task directory assumptions.
+- Update any remaining user-facing docs that describe task sync over old status directories.
 
 ## Phase 6 - Remove Old Store Shape
 
@@ -257,7 +276,7 @@ Exit criteria:
 | Phase 2 - Home Registry And Workspace Binding | Implemented in working tree | `orbit-store` registry foundation and projection rebuild tests are in place. |
 | Phase 3 - V2 Bundle Store | Implemented in working tree | V2 create/get/list/update/review/artifact backend is wired behind `[task] artifact_store = "v2"`. |
 | Phase 4 - Task Operations And Local Indexes | In progress | Generated indexes, lock rekeying, relation query acceleration, delete semantics, and review-found repair guards are implemented; public relation query surfaces remain. |
-| Phase 5 - Consumers And Search | Not started | Updates surfaces outside storage. |
+| Phase 5 - Consumers And Search | In progress | First search slice covers v2 review threads/artifacts and semantic field names; consumer audit remains. |
 | Phase 6 - Remove Old Store Shape | Not started | Cleanup after v2 passes. |
 
 ## Latest Validation
@@ -274,8 +293,10 @@ Exit criteria:
 - `cargo test -p orbit-core v2_task_backend`
 - `cargo test -p orbit-store`
 - `cargo test -p orbit-core`
+- `cargo test -p orbit-embed`
+- `cargo test -p orbit-tools`
 - `git diff --check`
 
 ## Suggested Next Slice
 
-Implement generated local indexes for status, tags, relations, and terminal grouping on top of v2 bundles, then re-key task lock reservations to workspace binding plus canonical `ORB-*` IDs. Decide whether v2 deletion removes canonical bundles immediately, tombstones them, or moves them into a local trash view before exposing delete through the runtime.
+Replace Phase 5's per-query artifact reads with generated full-text search rows and snippets, then audit web/API/dashboard consumers for old status-directory assumptions. Decide whether semantic search should index review-thread paths/authors, external refs, and artifact text or keep those as lexical-only fields.

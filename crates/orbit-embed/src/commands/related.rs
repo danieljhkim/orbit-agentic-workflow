@@ -57,7 +57,7 @@ pub(crate) fn run_with_embedder(
     let query = query.trim();
     if query.is_empty() {
         return Err(OrbitError::InvalidInput(format!(
-            "task {} has no embeddable purpose/summary",
+            "task {} has no embeddable title/description",
             target.id
         )));
     }

@@ -78,6 +78,26 @@ fn workflow_critical_tools_remain_registered() {
 }
 
 #[test]
+fn semantic_search_schema_uses_v2_task_field_names() {
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    let schema = registry
+        .get_schema("orbit.semantic.search")
+        .expect("semantic search schema");
+    let field = schema
+        .parameters
+        .iter()
+        .find(|param| param.name == "field")
+        .expect("field parameter");
+
+    assert_eq!(
+        field.description,
+        "Optional indexed task field filter, such as title, description, plan, acceptance, or execution_summary."
+    );
+}
+
+#[test]
 fn friction_surface_is_append_only() {
     let names = registered_tool_names();
 

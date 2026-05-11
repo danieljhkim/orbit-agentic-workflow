@@ -63,7 +63,7 @@ fn reindex_report_shape_is_stable_across_runs() {
     assert_eq!(first.skipped_fields, 0, "first run: nothing to skip");
     assert!(
         first.embedded_chunks >= 8,
-        "first run: each task has 4 fields (purpose/summary/plan/acceptance_criteria) × 2 tasks; got {}",
+        "first run: each task has 4 fields (title/description/plan/acceptance) × 2 tasks; got {}",
         first.embedded_chunks
     );
 

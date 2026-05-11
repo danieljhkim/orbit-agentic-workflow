@@ -44,7 +44,7 @@ Do not chain `semantic.search` → `semantic.related` → `semantic.search` to w
 # Topic search across all indexed task fields (hybrid BM25 + cosine)
 orbit tool run orbit.semantic.search --input '{"query":"slow inference after nomic swap","limit":5,"model":"<model_name>"}'
 
-# Restrict to a specific field (purpose, summary, plan, comments, review)
+# Restrict to a specific field (title, description, plan, acceptance, execution_summary)
 orbit tool run orbit.semantic.search --input '{"query":"agent loop deadlock","field":"plan","limit":5,"model":"<model_name>"}'
 
 # Neighbors of a known task — useful before starting execution

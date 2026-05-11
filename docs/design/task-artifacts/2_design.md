@@ -316,14 +316,17 @@ Lexical and semantic search should index each logical field independently:
 - `description`
 - `acceptance`
 - `plan`
-- `execution-summary`
+- `execution_summary`
 - `comments`
-- `review_threads`
-- selected artifact text, when media type permits
+- `review_threads` (message bodies, message authors, and paths)
+- `external_refs` (system and id)
+- artifact paths plus selected artifact text, when media type permits
 
-This preserves field-aware semantic search while making file boundaries visible in snippets. The embedding index should store field names that match the v2 document names.
+This preserves field-aware semantic search while making file boundaries visible in snippets. The embedding index should store field names that match the v2 logical document names; `execution-summary.md` is exposed as `execution_summary` to match the tool/API field.
 
-Until the generated indexes land, the working implementation performs O(N x files-per-task) scans for list/search by reading every registered bundle and its sidecars. That is acceptable only as a cutover bridge; Phase 4 replaces it with generated status, tag, relation, terminal-month, and search inputs.
+The current Phase 5 implementation is intentionally asymmetric while indexes are still being wired. Lexical search scans the broader set above. Semantic search indexes task title, description, acceptance, plan, execution summary, comments, and review message bodies; semantic parity for review paths/authors, external refs, and artifacts remains Phase 5 follow-up work.
+
+Until generated full-text indexes land, the working implementation performs O(N x files-per-task) lexical scans by reading every registered bundle and any candidate text artifact files. That is acceptable only as a cutover bridge; generated search rows will replace the per-query artifact reads.
 
 Relations need their own generated index. The bundle stores directed relation entries; local indexes materialize `(source_task_id, relation_type, target_task_id)` and optional inverse views for efficient lineage queries. The initial relation type set is `blocks`, `parent_of`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. Writers validate relation types, reject self-edges and duplicates, and reject cycles for hierarchy and blocking relation families. Reciprocal labels such as `blocked_by` are read-side projections, not separately stored peer edges.
 
