@@ -7,8 +7,8 @@ use orbit_common::types::{
     ArtifactManifestFileV2, ArtifactManifestV2, ExternalRef, OrbitError, OrbitId, ReviewMessage,
     ReviewThread, ReviewThreadMessageMetadataV2, ReviewThreadMetadataV2,
     TASK_ARTIFACT_FILES_DIR_NAME, TASK_ARTIFACT_SCHEMA_VERSION, TASK_ARTIFACTS_DIR_NAME, Task,
-    TaskArtifact, TaskComment, TaskCommentRowV2, TaskEventRowV2, TaskHistoryEntry, TaskPriority,
-    TaskStatus, normalize_task_tags, task_matches_tags, validate_relative_artifact_path,
+    TaskArtifact, TaskComment, TaskCommentRowV2, TaskEnvelopeV2, TaskEventRowV2, TaskHistoryEntry,
+    TaskPriority, TaskStatus, normalize_task_tags, validate_relative_artifact_path,
 };
 use orbit_common::utility::fs::{atomic_write_text, with_exclusive_file_lock};
 use sha2::{Digest, Sha256};
@@ -21,7 +21,7 @@ use crate::file::sort::sort_by_created_desc_id_asc;
 use crate::file::task_store::v2_bundle::{
     TaskBundleStoreV2, TaskBundleV2, TaskDocumentV2, TaskReviewThreadV2,
 };
-use crate::sqlite::task_registry::TaskRegistryStore;
+use crate::sqlite::task_registry::{TaskIndexFilter, TaskRegistryStore};
 
 pub(crate) struct TaskV2Store {
     registry: TaskRegistryStore,
@@ -118,10 +118,19 @@ impl TaskV2Store {
         };
 
         self.bundle_store.create_bundle(&bundle)?;
+        self.replace_index_best_effort(&bundle.envelope, "task creation");
         self.task_from_bundle(bundle)
     }
 
     pub(crate) fn list_tasks(&self) -> Result<Vec<Task>, OrbitError> {
+        if let Some(tasks) = self.indexed_tasks(TaskIndexFilter {
+            status: None,
+            priority: None,
+            tags: Vec::new(),
+        })? {
+            return Ok(tasks);
+        }
+
         let mut tasks = self
             .bundle_store
             .list_bundles()?
@@ -141,12 +150,21 @@ impl TaskV2Store {
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        let mut tasks = self.list_tasks()?;
+        if parent_id.is_some() || batch_id.is_some() {
+            return Ok(Vec::new());
+        }
+
+        let mut tasks = match self.indexed_tasks(TaskIndexFilter {
+            status,
+            priority,
+            tags: Vec::new(),
+        })? {
+            Some(tasks) => tasks,
+            None => self.list_tasks()?,
+        };
         tasks.retain(|task| {
             status.is_none_or(|value| task.status == value)
                 && priority.is_none_or(|value| task.priority == value)
-                && parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value))
-                && batch_id.is_none_or(|value| task.batch_id.as_deref() == Some(value))
                 && external_ref.is_none_or(|value| {
                     task.external_refs.iter().any(|candidate| {
                         candidate.system == value.system && candidate.id == value.id
@@ -166,8 +184,25 @@ impl TaskV2Store {
         if required_tags.is_empty() {
             return self.list_tasks();
         }
+        if let Some(tasks) = self.indexed_tasks(TaskIndexFilter {
+            status: None,
+            priority: None,
+            tags: required_tags.clone(),
+        })? {
+            let mut tasks = tasks;
+            tasks.retain(|task| {
+                required_tags
+                    .iter()
+                    .all(|required| task.tags.iter().any(|tag| tag == required))
+            });
+            return Ok(tasks);
+        }
         let mut tasks = self.list_tasks()?;
-        tasks.retain(|task| task_matches_tags(task, &required_tags));
+        tasks.retain(|task| {
+            required_tags
+                .iter()
+                .all(|required| task.tags.iter().any(|tag| tag == required))
+        });
         Ok(tasks)
     }
 
@@ -325,6 +360,7 @@ impl TaskV2Store {
             {
                 bundle.envelope.updated_at = Utc::now();
                 self.bundle_store.rewrite_envelope(id, &bundle.envelope)?;
+                self.replace_index_best_effort(&bundle.envelope, "task document update");
             }
             Ok(())
         })
@@ -409,6 +445,7 @@ impl TaskV2Store {
                 bundle.envelope.status = target_status;
                 bundle.envelope.updated_at = now;
                 self.bundle_store.rewrite_envelope(id, &bundle.envelope)?;
+                self.replace_index_best_effort(&bundle.envelope, "task history update");
             }
             Ok(())
         })
@@ -440,6 +477,7 @@ impl TaskV2Store {
             self.bundle_store.rewrite_review_threads(id, &threads)?;
             bundle.envelope.updated_at = Utc::now();
             self.bundle_store.rewrite_envelope(id, &bundle.envelope)?;
+            self.replace_index_best_effort(&bundle.envelope, "task review update");
             Ok(())
         })
     }
@@ -535,8 +573,52 @@ impl TaskV2Store {
             self.bundle_store.rewrite_artifact_manifest(id, &manifest)?;
             bundle.envelope.updated_at = now;
             self.bundle_store.rewrite_envelope(id, &bundle.envelope)?;
+            self.replace_index_best_effort(&bundle.envelope, "task artifact update");
             Ok(())
         })
+    }
+
+    fn indexed_tasks(&self, filter: TaskIndexFilter) -> Result<Option<Vec<Task>>, OrbitError> {
+        if !self.index_is_complete()? {
+            return Ok(None);
+        }
+        let ids = self
+            .registry
+            .indexed_task_ids_filtered(&self.workspace_id, &filter)?;
+        self.tasks_from_ids(ids).map(Some)
+    }
+
+    fn index_is_complete(&self) -> Result<bool, OrbitError> {
+        let registered = self.registry.tasks_for_workspace(&self.workspace_id)?.len();
+        let indexed = self
+            .registry
+            .indexed_task_count_for_workspace(&self.workspace_id)?;
+        Ok(registered == indexed)
+    }
+
+    fn tasks_from_ids(&self, ids: Vec<String>) -> Result<Vec<Task>, OrbitError> {
+        ids.into_iter()
+            .map(|id| {
+                let bundle = self.read_existing_bundle(&id)?;
+                self.task_from_bundle(bundle)
+            })
+            .collect()
+    }
+
+    fn replace_index_best_effort(&self, envelope: &TaskEnvelopeV2, operation: &str) {
+        if let Err(err) = self
+            .registry
+            .replace_task_index(&self.workspace_id, envelope)
+        {
+            orbit_common::tracing::warn!(
+                target: "orbit.store.task_v2",
+                task_id = %envelope.id,
+                workspace_id = %self.workspace_id,
+                operation,
+                error = %err,
+                "task bundle was updated but generated task index update failed",
+            );
+        }
     }
 
     fn task_from_bundle(&self, bundle: TaskBundleV2) -> Result<Task, OrbitError> {
@@ -1146,6 +1228,20 @@ mod tests {
         assert_eq!(task.execution_summary, "Updated summary");
         assert_eq!(task.priority, TaskPriority::Low);
         assert!(task.history.iter().any(|entry| entry.event == "renamed"));
+        assert_eq!(
+            store
+                .list_tasks_by_tags(&["task-artifacts".to_string()])
+                .expect("old tag should leave generated index")
+                .len(),
+            0
+        );
+        assert_eq!(
+            store
+                .list_tasks_filtered(None, Some(TaskPriority::Low), None, None, None, None)
+                .expect("priority filter should use updated generated index")
+                .len(),
+            1
+        );
 
         let err = store
             .update_task_document(
@@ -1199,6 +1295,13 @@ mod tests {
             .expect("get task")
             .expect("task exists");
         assert_eq!(task.status, TaskStatus::InProgress);
+        assert_eq!(
+            store
+                .list_tasks_filtered(Some(TaskStatus::InProgress), None, None, None, None, None,)
+                .expect("status filter should use updated generated index")
+                .len(),
+            1
+        );
         assert!(
             task.comments
                 .iter()

@@ -216,7 +216,7 @@ Local-first Orbit uses `~/.orbit/tasks/` as the canonical store for task artifac
 - the machine-local allocation authority and its next available numeric suffix;
 - workspace bindings, including `workspace_id`, slug, repo root, workspace path, `.orbit` path, and optional remote/path fingerprints for rebind;
 - task-to-workspace bindings for resolving local operations such as `orbit task start`;
-- generated status, terminal-month, relation, and tag indexes for fast list/search surfaces;
+- generated status, terminal-month, relation, and tag indexes for fast list/filter/relation surfaces;
 - task-lock reservations or pointers to the existing `task_reservations` SQLite store, keyed by workspace binding and canonical task IDs.
 
 `.orbit/config.yaml` stores the checkout binding:
@@ -231,6 +231,16 @@ workspace_id: orbit-a3f9c2
 During the cutover window, the runtime selects this store only when workspace `config.toml` sets `[task] artifact_store = "v2"`. That gate is transitional: once v2 covers indexes, locks, and delete semantics, the legacy status-directory store should be removed rather than preserved as a long-term compatibility mode.
 
 The workspace projection under `.orbit/tasks/<task-id>` is a symlink to the canonical bundle. Task writes through either the canonical path or the projection update the same files; there is no second writable copy and no bundle-level divergence protocol. If `.orbit/tasks/` is deleted, Orbit rebuilds the symlinks from `.orbit/config.yaml` and `index.sqlite`. If `.orbit/config.yaml` is lost, Orbit prompts to rebind by matching the current path, repo root, and optional remote fingerprints against `index.sqlite`; if no confident match exists, the user chooses or creates a workspace binding.
+
+### 2.7 Generated local indexes
+
+The bundle remains canonical. The registry maintains generated projections from each task envelope:
+
+- `task_bundle_index`: one row per registered task with workspace, status, priority, timestamps, and terminal month.
+- `task_bundle_tags`: normalized tag rows with AND-style filtering semantics.
+- `task_bundle_relations`: directed `(source_task_id, relation_type, target_task_id)` rows plus an inverse lookup index.
+
+Task mutations rewrite the generated rows after the envelope write. A failed index update should be diagnosed and repaired from bundles rather than treated as a second canonical copy. V2 list and filter paths may use the index when every registered task has an index row; otherwise they fall back to reading the registered bundles directly. Full-text search still scans task content until the Phase 5 lexical/semantic indexes land.
 
 ---
 

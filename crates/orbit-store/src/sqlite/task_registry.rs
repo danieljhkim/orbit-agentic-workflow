@@ -1,15 +1,19 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
-use orbit_common::types::{ORB_TASK_ID_MAX, OrbitError, format_orb_task_id, validate_orb_task_id};
+use orbit_common::types::{
+    ORB_TASK_ID_MAX, OrbitError, TaskEnvelopeV2, TaskPriority, TaskRelationType, TaskStatus,
+    format_orb_task_id, normalize_task_tags, validate_orb_task_id,
+};
 use orbit_common::utility::fs::{atomic_write_text, create_dir_symlink};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 
 const CONFIG_SCHEMA_VERSION: u32 = 1;
-const REGISTRY_SCHEMA_VERSION: u32 = 1;
+const REGISTRY_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceConfig {
@@ -53,6 +57,13 @@ pub struct TaskBundleBinding {
     pub canonical_path: PathBuf,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskIndexFilter {
+    pub status: Option<TaskStatus>,
+    pub priority: Option<TaskPriority>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,6 +301,238 @@ impl TaskRegistryStore {
             .map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    pub fn replace_task_index(
+        &self,
+        workspace_id: &str,
+        envelope: &TaskEnvelopeV2,
+    ) -> Result<(), OrbitError> {
+        let workspace_id = validate_workspace_id(workspace_id)?;
+        envelope.validate()?;
+
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let binding = task_bundle_by_id(&tx, &envelope.id)?
+            .ok_or_else(|| OrbitError::TaskNotFound(envelope.id.clone()))?;
+        if binding.workspace_id != workspace_id {
+            return Err(OrbitError::InvalidInput(format!(
+                "task '{}' is registered to workspace '{}', not '{}'",
+                envelope.id, binding.workspace_id, workspace_id
+            )));
+        }
+
+        tx.execute(
+            "DELETE FROM task_bundle_tags WHERE task_id = ?1",
+            [&envelope.id],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+        tx.execute(
+            "DELETE FROM task_bundle_relations WHERE source_task_id = ?1",
+            [&envelope.id],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        tx.execute(
+            "INSERT INTO task_bundle_index (
+                task_id, workspace_id, status, priority, created_at, updated_at, terminal_month
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ON CONFLICT(task_id) DO UPDATE SET
+                workspace_id = excluded.workspace_id,
+                status = excluded.status,
+                priority = excluded.priority,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at,
+                terminal_month = excluded.terminal_month",
+            params![
+                &envelope.id,
+                &workspace_id,
+                envelope.status.to_string(),
+                envelope.priority.to_string(),
+                envelope.created_at.to_rfc3339(),
+                envelope.updated_at.to_rfc3339(),
+                terminal_month(envelope.status, envelope.updated_at),
+            ],
+        )
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        for tag in normalize_task_tags(envelope.tags.clone()) {
+            tx.execute(
+                "INSERT OR IGNORE INTO task_bundle_tags(task_id, workspace_id, tag)
+                 VALUES (?1, ?2, ?3)",
+                params![&envelope.id, &workspace_id, &tag],
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        }
+
+        for relation in &envelope.relations {
+            tx.execute(
+                "INSERT OR IGNORE INTO task_bundle_relations(
+                    source_task_id, workspace_id, relation_type, target_task_id
+                ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    &envelope.id,
+                    &workspace_id,
+                    relation_type_name(relation.relation_type),
+                    &relation.target
+                ],
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        }
+
+        tx.commit().map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    pub fn indexed_task_count_for_workspace(
+        &self,
+        workspace_id: &str,
+    ) -> Result<usize, OrbitError> {
+        let workspace_id = validate_workspace_id(workspace_id)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM task_bundle_index WHERE workspace_id = ?1",
+                [workspace_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        usize::try_from(count).map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    pub fn indexed_task_ids_filtered(
+        &self,
+        workspace_id: &str,
+        filter: &TaskIndexFilter,
+    ) -> Result<Vec<String>, OrbitError> {
+        let workspace_id = validate_workspace_id(workspace_id)?;
+        let required_tags = normalize_task_tags(filter.tags.clone());
+        let mut sql = String::from("SELECT task_id FROM task_bundle_index WHERE workspace_id = ?");
+        let mut values = vec![workspace_id.clone()];
+        if let Some(status) = filter.status {
+            sql.push_str(" AND status = ?");
+            values.push(status.to_string());
+        }
+        if let Some(priority) = filter.priority {
+            sql.push_str(" AND priority = ?");
+            values.push(priority.to_string());
+        }
+        sql.push_str(" ORDER BY created_at DESC, task_id ASC");
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let rows = stmt
+            .query_map(params_from_iter(values.iter()), |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let mut ids = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        if required_tags.is_empty() {
+            return Ok(ids);
+        }
+
+        let mut tag_sets = Vec::new();
+        let mut tag_stmt = conn
+            .prepare(
+                "SELECT task_id FROM task_bundle_tags
+                 WHERE workspace_id = ?1 AND tag = ?2
+                 ORDER BY task_id ASC",
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        for tag in required_tags {
+            let rows = tag_stmt
+                .query_map(params![&workspace_id, &tag], |row| row.get::<_, String>(0))
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            let set = rows
+                .collect::<Result<BTreeSet<_>, _>>()
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            tag_sets.push(set);
+        }
+
+        ids.retain(|id| tag_sets.iter().all(|set| set.contains(id)));
+        Ok(ids)
+    }
+
+    pub fn indexed_relation_targets(
+        &self,
+        workspace_id: &str,
+        source_task_id: &str,
+        relation_type: TaskRelationType,
+    ) -> Result<Vec<String>, OrbitError> {
+        let workspace_id = validate_workspace_id(workspace_id)?;
+        validate_orb_task_id(source_task_id)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT target_task_id FROM task_bundle_relations
+                 WHERE workspace_id = ?1 AND source_task_id = ?2 AND relation_type = ?3
+                 ORDER BY target_task_id ASC",
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let rows = stmt
+            .query_map(
+                params![
+                    workspace_id,
+                    source_task_id,
+                    relation_type_name(relation_type)
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    pub fn indexed_relation_sources(
+        &self,
+        workspace_id: &str,
+        target_task_id: &str,
+        relation_type: TaskRelationType,
+    ) -> Result<Vec<String>, OrbitError> {
+        let workspace_id = validate_workspace_id(workspace_id)?;
+        validate_orb_task_id(target_task_id)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT source_task_id FROM task_bundle_relations
+                 WHERE workspace_id = ?1 AND target_task_id = ?2 AND relation_type = ?3
+                 ORDER BY source_task_id ASC",
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        let rows = stmt
+            .query_map(
+                params![
+                    workspace_id,
+                    target_task_id,
+                    relation_type_name(relation_type)
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
     pub fn find_rebind_candidates(
         &self,
         repo_root: &Path,
@@ -490,6 +733,49 @@ fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
         );
         CREATE INDEX IF NOT EXISTS idx_task_bundle_bindings_workspace
             ON task_bundle_bindings(workspace_id, task_id);
+
+        CREATE TABLE IF NOT EXISTS task_bundle_index (
+            task_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            terminal_month TEXT,
+            FOREIGN KEY(task_id) REFERENCES task_bundle_bindings(task_id) ON DELETE CASCADE,
+            FOREIGN KEY(workspace_id) REFERENCES workspace_bindings(workspace_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_created
+            ON task_bundle_index(workspace_id, created_at DESC, task_id ASC);
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_status
+            ON task_bundle_index(workspace_id, status, created_at DESC, task_id ASC);
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_priority
+            ON task_bundle_index(workspace_id, priority, created_at DESC, task_id ASC);
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_terminal
+            ON task_bundle_index(workspace_id, terminal_month, task_id);
+
+        CREATE TABLE IF NOT EXISTS task_bundle_tags (
+            task_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            PRIMARY KEY(task_id, tag),
+            FOREIGN KEY(task_id) REFERENCES task_bundle_bindings(task_id) ON DELETE CASCADE,
+            FOREIGN KEY(workspace_id) REFERENCES workspace_bindings(workspace_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_tags_workspace_tag
+            ON task_bundle_tags(workspace_id, tag, task_id);
+
+        CREATE TABLE IF NOT EXISTS task_bundle_relations (
+            source_task_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            target_task_id TEXT NOT NULL,
+            PRIMARY KEY(source_task_id, relation_type, target_task_id),
+            FOREIGN KEY(source_task_id) REFERENCES task_bundle_bindings(task_id) ON DELETE CASCADE,
+            FOREIGN KEY(workspace_id) REFERENCES workspace_bindings(workspace_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_relations_workspace_type_target
+            ON task_bundle_relations(workspace_id, relation_type, target_task_id, source_task_id);
         ",
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -705,6 +991,25 @@ fn now_string() -> String {
     Utc::now().to_rfc3339()
 }
 
+fn terminal_month(status: TaskStatus, updated_at: DateTime<Utc>) -> Option<String> {
+    matches!(
+        status,
+        TaskStatus::Done | TaskStatus::Archived | TaskStatus::Rejected
+    )
+    .then(|| updated_at.format("%Y-%m").to_string())
+}
+
+fn relation_type_name(relation_type: TaskRelationType) -> &'static str {
+    match relation_type {
+        TaskRelationType::Blocks => "blocks",
+        TaskRelationType::ParentOf => "parent_of",
+        TaskRelationType::SpawnedFrom => "spawned_from",
+        TaskRelationType::RegressionFrom => "regression_from",
+        TaskRelationType::Supersedes => "supersedes",
+        TaskRelationType::RelatedTo => "related_to",
+    }
+}
+
 fn parse_timestamp(raw: &str) -> rusqlite::Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(raw)
         .map(|parsed| parsed.with_timezone(&Utc))
@@ -749,6 +1054,8 @@ fn enable_best_effort_wal_mode(conn: &Connection) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+    use orbit_common::types::{TaskRelation, TaskType};
     use tempfile::TempDir;
 
     fn registry_path(temp: &TempDir) -> PathBuf {
@@ -784,6 +1091,33 @@ mod tests {
             .expect("canonical bundle path");
         fs::create_dir_all(&bundle_dir).expect("create bundle");
         bundle_dir
+    }
+
+    fn envelope(
+        task_id: &str,
+        status: TaskStatus,
+        tags: Vec<String>,
+        relations: Vec<TaskRelation>,
+    ) -> TaskEnvelopeV2 {
+        let now = Utc.with_ymd_and_hms(2026, 5, 11, 12, 0, 0).unwrap();
+        TaskEnvelopeV2 {
+            schema_version: orbit_common::types::TASK_ARTIFACT_SCHEMA_VERSION,
+            id: task_id.to_string(),
+            title: format!("Task {task_id}"),
+            status,
+            task_type: TaskType::Feature,
+            priority: TaskPriority::High,
+            complexity: None,
+            relations,
+            tags,
+            context_files: Vec::new(),
+            external_refs: Vec::new(),
+            created_by: Some("codex:gpt-5.5".to_string()),
+            planned_by: None,
+            implemented_by: None,
+            created_at: now,
+            updated_at: now,
+        }
     }
 
     fn projection_links_supported(result: &ProjectionRebuildResult) -> bool {
@@ -1032,6 +1366,129 @@ mod tests {
             store.register_task_bundle("ORB-00000", &workspace.workspace_id, &wrong_path),
             Err(OrbitError::InvalidInput(_))
         ));
+    }
+
+    #[test]
+    fn generated_task_index_filters_by_status_priority_and_tags() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        let workspace = bind(&store, temp.path());
+
+        for task_id in ["ORB-00000", "ORB-00001"] {
+            let bundle_dir = create_canonical_bundle(&store, &workspace, task_id);
+            store
+                .register_task_bundle(task_id, &workspace.workspace_id, &bundle_dir)
+                .expect("register bundle");
+        }
+
+        store
+            .replace_task_index(
+                &workspace.workspace_id,
+                &envelope(
+                    "ORB-00000",
+                    TaskStatus::Backlog,
+                    vec!["Task-Artifacts".into(), "v2".into()],
+                    Vec::new(),
+                ),
+            )
+            .expect("index first task");
+        store
+            .replace_task_index(
+                &workspace.workspace_id,
+                &envelope(
+                    "ORB-00001",
+                    TaskStatus::Review,
+                    vec!["v2".into(), "review".into()],
+                    Vec::new(),
+                ),
+            )
+            .expect("index second task");
+
+        assert_eq!(
+            store
+                .indexed_task_count_for_workspace(&workspace.workspace_id)
+                .expect("index count"),
+            2
+        );
+        assert_eq!(
+            store
+                .indexed_task_ids_filtered(
+                    &workspace.workspace_id,
+                    &TaskIndexFilter {
+                        status: Some(TaskStatus::Review),
+                        priority: Some(TaskPriority::High),
+                        tags: vec!["review".into()],
+                    },
+                )
+                .expect("filtered ids"),
+            vec!["ORB-00001"]
+        );
+        assert_eq!(
+            store
+                .indexed_task_ids_filtered(
+                    &workspace.workspace_id,
+                    &TaskIndexFilter {
+                        status: None,
+                        priority: None,
+                        tags: vec!["task-artifacts".into(), "v2".into()],
+                    },
+                )
+                .expect("tagged ids"),
+            vec!["ORB-00000"]
+        );
+    }
+
+    #[test]
+    fn generated_relation_index_supports_forward_and_inverse_lookup() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        let workspace = bind(&store, temp.path());
+        let bundle_dir = create_canonical_bundle(&store, &workspace, "ORB-00000");
+        store
+            .register_task_bundle("ORB-00000", &workspace.workspace_id, &bundle_dir)
+            .expect("register bundle");
+
+        store
+            .replace_task_index(
+                &workspace.workspace_id,
+                &envelope(
+                    "ORB-00000",
+                    TaskStatus::Backlog,
+                    Vec::new(),
+                    vec![
+                        TaskRelation {
+                            relation_type: TaskRelationType::Blocks,
+                            target: "ORB-00001".to_string(),
+                        },
+                        TaskRelation {
+                            relation_type: TaskRelationType::RelatedTo,
+                            target: "ORB-00002".to_string(),
+                        },
+                    ],
+                ),
+            )
+            .expect("index relations");
+
+        assert_eq!(
+            store
+                .indexed_relation_targets(
+                    &workspace.workspace_id,
+                    "ORB-00000",
+                    TaskRelationType::Blocks,
+                )
+                .expect("targets"),
+            vec!["ORB-00001"]
+        );
+        assert_eq!(
+            store
+                .indexed_relation_sources(
+                    &workspace.workspace_id,
+                    "ORB-00001",
+                    TaskRelationType::Blocks,
+                )
+                .expect("sources"),
+            vec!["ORB-00000"]
+        );
     }
 
     #[test]

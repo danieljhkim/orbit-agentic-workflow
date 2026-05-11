@@ -174,6 +174,14 @@ Local indexes should materialize `(source_task_id, relation_type, target_task_id
 
 The local registry must maintain generated status and terminal-month views or rebuild them from bundles/events on demand. These views replace the current `review/` and `done/<yyyy-mm>/` directory browsing affordances without making lifecycle state part of the path.
 
+The initial registry projections are:
+
+- `task_bundle_index(task_id, workspace_id, status, priority, created_at, updated_at, terminal_month)`.
+- `task_bundle_tags(task_id, workspace_id, tag)`.
+- `task_bundle_relations(source_task_id, workspace_id, relation_type, target_task_id)`.
+
+Indexes are generated data. The bundle envelope is canonical, and repair/rebuild paths may delete and regenerate index rows from bundles. Query paths should treat a missing or incomplete index as a reason to fall back to bundle reads, not as proof that tasks do not exist.
+
 ## Local Locks
 
 Task lock reservations are not task artifacts. They remain local operational state in SQLite, keyed by workspace binding and canonical task IDs, with TTL/release semantics and audit events. Cutover must rewrite active reservations to canonical IDs or release stale reservations with an audit event.
