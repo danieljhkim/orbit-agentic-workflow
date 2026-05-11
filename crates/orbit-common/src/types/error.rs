@@ -18,6 +18,10 @@ pub enum OrbitError {
     JobRunNotFound(String),
     #[error("activity not found: {0}")]
     ActivityNotFound(String),
+    #[error("Invalid ADR status transition: {0}")]
+    AdrInvalidTransition(String),
+    #[error("ADR not found: {0}")]
+    AdrNotFound(String),
     #[error("agent session not found: {0}")]
     AgentSessionNotFound(String),
     #[error("companion not installed: {0}")]

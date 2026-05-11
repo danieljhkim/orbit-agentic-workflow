@@ -6,6 +6,7 @@
 //! [`orbit_common::utility::fs::atomic_write_text_volatile`] to prevent partial writes
 //! from corrupting state.
 
+pub(crate) mod adr_store;
 pub(crate) mod diagnostics {
     pub(crate) mod friction_log;
     pub(crate) mod metrics_log;

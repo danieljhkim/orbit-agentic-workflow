@@ -91,6 +91,10 @@ pub fn redact_sensitive_env_error(error: OrbitError) -> OrbitError {
         OrbitError::ActivityNotFound(m) => {
             OrbitError::ActivityNotFound(redact_sensitive_env_text(&m))
         }
+        OrbitError::AdrInvalidTransition(m) => {
+            OrbitError::AdrInvalidTransition(redact_sensitive_env_text(&m))
+        }
+        OrbitError::AdrNotFound(m) => OrbitError::AdrNotFound(redact_sensitive_env_text(&m)),
         OrbitError::AgentSessionNotFound(m) => {
             OrbitError::AgentSessionNotFound(redact_sensitive_env_text(&m))
         }

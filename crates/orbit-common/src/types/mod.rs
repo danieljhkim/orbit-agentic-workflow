@@ -23,6 +23,7 @@
 pub mod activity;
 pub mod activity_job;
 pub mod actor;
+pub mod adr;
 pub mod agent_pair;
 pub mod audit;
 pub mod audit_event;
@@ -60,6 +61,7 @@ pub use actor::{
     ActorIdentity, agent_from_model, normalize_attribution_label,
     normalize_optional_attribution_label, provider_from_model,
 };
+pub use adr::{Adr, AdrStatus, LegacyValidation, legacy_id_for, validate_adr_id};
 pub use agent_pair::{
     AgentModelPair, agent_family_from_cli, all_agent_families, infer_agent_family_from_model,
     normalize_agent_family_for_model, resolve_agent_model_pair,
