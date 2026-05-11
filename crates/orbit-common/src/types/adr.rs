@@ -92,16 +92,12 @@ impl AdrStatus {
             | (AdrStatus::Proposed, AdrStatus::Superseded)
             | (AdrStatus::Proposed, AdrStatus::Deleted)
             | (AdrStatus::Accepted, AdrStatus::Superseded) => Ok(()),
-            (AdrStatus::Accepted, AdrStatus::Proposed) => {
-                Err(OrbitError::AdrInvalidTransition(format!(
-                    "{from} -> {to} (accepted ADRs cannot revert to proposed)"
-                )))
-            }
-            (AdrStatus::Accepted, AdrStatus::Deleted) => {
-                Err(OrbitError::AdrInvalidTransition(format!(
-                    "{from} -> {to} (accepted ADRs must be superseded, not deleted)"
-                )))
-            }
+            (AdrStatus::Accepted, AdrStatus::Proposed) => Err(OrbitError::AdrInvalidTransition(
+                format!("{from} -> {to} (accepted ADRs cannot revert to proposed)"),
+            )),
+            (AdrStatus::Accepted, AdrStatus::Deleted) => Err(OrbitError::AdrInvalidTransition(
+                format!("{from} -> {to} (accepted ADRs must be superseded, not deleted)"),
+            )),
             (AdrStatus::Superseded, _) => Err(OrbitError::AdrInvalidTransition(format!(
                 "{from} -> {to} (superseded is terminal)"
             ))),
@@ -300,11 +296,7 @@ mod tests {
 
     #[test]
     fn transition_superseded_to_anything_is_rejected() {
-        for target in [
-            AdrStatus::Proposed,
-            AdrStatus::Accepted,
-            AdrStatus::Deleted,
-        ] {
+        for target in [AdrStatus::Proposed, AdrStatus::Accepted, AdrStatus::Deleted] {
             let err = AdrStatus::validate_transition(AdrStatus::Superseded, target)
                 .expect_err("superseded is terminal");
             assert!(matches!(err, OrbitError::AdrInvalidTransition(_)));
@@ -434,9 +426,6 @@ last_updated: 2026-05-11T00:00:00Z
 
     #[test]
     fn legacy_id_for_pads_local_number_to_three_digits() {
-        assert_eq!(
-            legacy_id_for("activity-job", 17),
-            "activity-job/ADR-017"
-        );
+        assert_eq!(legacy_id_for("activity-job", 17), "activity-job/ADR-017");
     }
 }

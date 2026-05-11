@@ -13,7 +13,9 @@ pub(super) fn acquire_adr_lock(root: &Path, id: &str) -> Result<File, OrbitError
 }
 
 pub(super) fn acquire_adr_allocation_lock(root: &Path) -> Result<File, OrbitError> {
-    let path = root.join(LOCKS_DIR_NAME).join(ADR_ALLOCATION_LOCK_FILE_NAME);
+    let path = root
+        .join(LOCKS_DIR_NAME)
+        .join(ADR_ALLOCATION_LOCK_FILE_NAME);
     acquire_lock(path, "adr allocation")
 }
 

@@ -53,5 +53,7 @@ fn error_code(error: &OrbitError) -> &'static str {
         OrbitError::WorkspaceNotFound(_) => "workspace_not_found",
         OrbitError::WorkspaceError(_) => "workspace_error",
         OrbitError::Io(_) => "io_error",
+        OrbitError::AdrNotFound(_) => "adr_not_found",
+        OrbitError::AdrInvalidTransition(_) => "adr_invalid_transition",
     }
 }

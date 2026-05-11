@@ -1,15 +1,17 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, OrbitError, PipelineState, PolicyDef,
-    Task, TaskArtifact, TaskPriority, TaskStatus,
+    Adr, AdrStatus, ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, OrbitError,
+    PipelineState, PolicyDef, Task, TaskArtifact, TaskPriority, TaskStatus,
 };
 
 use super::contracts::{
-    ExecutorDefStoreBackend, JobRunQuery, JobRunStepParams, JobRunStoreBackend,
-    PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams,
-    TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
-    TaskHistoryUpdateParams, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
+    AdrCreateParams, AdrDocumentUpdateParams, AdrStoreBackend, ExecutorDefStoreBackend,
+    JobRunQuery, JobRunStepParams, JobRunStoreBackend, PolicyDefStoreBackend,
+    TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend,
+    TaskDocumentUpdateParams, TaskHistoryStoreBackend, TaskHistoryUpdateParams,
+    TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
 };
+use crate::file::adr_store::AdrFileStore;
 use crate::file::executor_def_store::ExecutorDefFileStore;
 use crate::file::job_store::JobFileStore;
 use crate::file::policy_def_store::PolicyDefFileStore;
@@ -269,5 +271,91 @@ impl PolicyDefStoreBackend for PolicyDefFileStore {
 
     fn upsert_policy_def(&self, def: &PolicyDef) -> Result<(), OrbitError> {
         self.upsert_policy_def(def)
+    }
+}
+
+impl AdrStoreBackend for AdrFileStore {
+    fn add_adr(&self, params: AdrCreateParams) -> Result<Adr, OrbitError> {
+        self.add_adr(params)
+    }
+
+    fn get_adr(&self, id: &str) -> Result<Option<Adr>, OrbitError> {
+        // ADRs use the WorkspaceOnly strategy per `CLAUDE.md`.
+        resolve::<Adr, _>(self, id)
+    }
+
+    fn list_adrs(&self) -> Result<Vec<Adr>, OrbitError> {
+        self.list_adrs()
+    }
+
+    fn list_adrs_filtered(
+        &self,
+        status: Option<AdrStatus>,
+        owner: Option<&str>,
+        feature: Option<&str>,
+        task_id: Option<&str>,
+        legacy_id: Option<&str>,
+        validation_warned: Option<bool>,
+    ) -> Result<Vec<Adr>, OrbitError> {
+        self.list_adrs_filtered(
+            status,
+            owner,
+            feature,
+            task_id,
+            legacy_id,
+            validation_warned,
+        )
+    }
+
+    fn update_adr_status(&self, id: &str, new_status: AdrStatus) -> Result<(), OrbitError> {
+        self.update_adr_status(id, new_status)
+    }
+
+    fn update_adr_document(
+        &self,
+        id: &str,
+        fields: &AdrDocumentUpdateParams,
+    ) -> Result<(), OrbitError> {
+        self.update_adr_document(id, fields)
+    }
+
+    fn delete_adr(&self, id: &str) -> Result<bool, OrbitError> {
+        self.delete_adr(id)
+    }
+
+    fn rebuild_index(&self) -> Result<(), OrbitError> {
+        self.rebuild_index()
+    }
+}
+
+impl ScopedStore<Adr> for AdrFileStore {
+    type Err = OrbitError;
+
+    fn strategy(&self) -> ScopeStrategy {
+        ScopeStrategy::WorkspaceOnly
+    }
+
+    fn get_workspace(&self, key: &str) -> Result<Option<Adr>, OrbitError> {
+        self.get_adr(key)
+    }
+
+    fn get_global(&self, _key: &str) -> Result<Option<Adr>, OrbitError> {
+        Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn adr_file_store_returns_workspace_only_strategy() {
+        let store = AdrFileStore::new(PathBuf::from("/tmp/unused-adr-root"));
+        assert_eq!(
+            ScopedStore::<Adr>::strategy(&store),
+            ScopeStrategy::WorkspaceOnly
+        );
     }
 }

@@ -110,6 +110,33 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 PRIMARY KEY(invocation_id, seq),
                 FOREIGN KEY(invocation_id) REFERENCES invocations(id) ON DELETE CASCADE
             );
+
+            -- ADR envelope index. Bodies live on disk under <root>/<state>/<id>/body.md;
+            -- this table indexes the YAML envelope fields for filter queries.
+            -- Arrays (related_features, related_tasks, legacy_ids, supersedes,
+            -- validation_warnings) are stored as JSON-encoded strings so filters
+            -- can use `LIKE '%"<value>"%'` until the corpus warrants junction
+            -- tables. Per ADR-010 in docs/design/adr-artifact, FTS5 over body
+            -- content is owned by `orbit-embed::vector`, not this schema.
+            CREATE TABLE IF NOT EXISTS adrs (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                title TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                related_features TEXT NOT NULL DEFAULT '[]',
+                related_tasks TEXT NOT NULL DEFAULT '[]',
+                legacy_ids TEXT NOT NULL DEFAULT '[]',
+                supersedes TEXT NOT NULL DEFAULT '[]',
+                superseded_by TEXT,
+                validation_warnings TEXT NOT NULL DEFAULT '[]',
+                legacy_validation TEXT NOT NULL DEFAULT 'none',
+                created_at TEXT NOT NULL,
+                accepted_at TEXT,
+                last_updated TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_adrs_status ON adrs(status);
+            CREATE INDEX IF NOT EXISTS idx_adrs_owner ON adrs(owner);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -541,6 +568,43 @@ mod tests {
             )
             .expect("query owner index");
         assert_eq!(owner_index, 1);
+    }
+
+    #[test]
+    fn apply_schema_creates_adrs_table_and_indexes() {
+        let conn = Connection::open_in_memory().expect("open in-memory connection");
+
+        apply_schema(&conn).expect("apply schema");
+
+        assert!(table_exists(&conn, "adrs").expect("adrs table exists"));
+
+        let primary_key_columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(adrs)")
+            .expect("prepare pragma")
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                let pk: i64 = row.get(5)?;
+                Ok((name, pk))
+            })
+            .expect("query pragma")
+            .filter_map(|row| {
+                let (name, pk) = row.expect("pragma row");
+                (pk > 0).then_some(name)
+            })
+            .collect();
+        assert_eq!(primary_key_columns, vec!["id"]);
+
+        for index_name in ["idx_adrs_status", "idx_adrs_owner"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master
+                     WHERE type = 'index' AND name = ?1",
+                    [index_name],
+                    |row| row.get(0),
+                )
+                .expect("query index");
+            assert_eq!(count, 1, "expected index {index_name} to exist");
+        }
     }
 
     #[test]

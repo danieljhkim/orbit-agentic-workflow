@@ -65,8 +65,8 @@ mod tests {
     use orbit_common::types::{Adr, AdrStatus, LegacyValidation};
     use tempfile::tempdir;
 
-    use super::*;
     use super::super::constants::ADR_SCHEMA_VERSION;
+    use super::*;
 
     fn sample_bundle(id: &str) -> AdrBundle {
         let ts = Utc.with_ymd_and_hms(2026, 5, 11, 0, 0, 0).unwrap();

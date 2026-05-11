@@ -3,50 +3,43 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use orbit_common::types::{Adr, AdrStatus, LegacyValidation, OrbitError};
+use rusqlite::params;
 
 use super::bundle::{AdrBundle, bundle_to_adr, read_bundle_at, validate_bundle, write_bundle_at};
 use super::constants::ADR_SCHEMA_VERSION;
 use super::doc::AdrFileDocument;
-use super::layout::{
-    AdrStateDir, adr_dir, next_adr_id, state_dir_path, validate_adr_id,
-};
+use super::layout::{AdrStateDir, adr_dir, next_adr_id, state_dir_path, validate_adr_id};
 use super::lock::{acquire_adr_allocation_lock, acquire_adr_lock};
+use crate::Store;
+use crate::backend::{AdrCreateParams, AdrDocumentUpdateParams};
 use crate::file::layout::read_child_dirs;
 
 pub(crate) struct AdrFileStore {
     root: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AdrCreateParams {
-    pub title: String,
-    pub owner: String,
-    pub related_features: Vec<String>,
-    pub related_tasks: Vec<String>,
-    pub body: String,
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct AdrDocumentUpdateParams {
-    pub title: Option<String>,
-    pub owner: Option<String>,
-    pub body: Option<String>,
-    pub related_features: Option<Vec<String>>,
-    pub related_tasks: Option<Vec<String>>,
-    pub supersedes: Option<Vec<String>>,
-    /// Double-`Option` so callers can distinguish "leave unchanged" (`None`)
-    /// from "clear this field" (`Some(None)`).
-    pub superseded_by: Option<Option<String>>,
-    pub legacy_ids: Option<Vec<String>>,
-    pub validation_warnings: Option<Vec<String>>,
-    pub legacy_validation: Option<LegacyValidation>,
+    index: Option<Store>,
 }
 
 impl AdrFileStore {
+    #[cfg(test)]
     pub(crate) fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self { root, index: None }
     }
 
+    pub(crate) fn new_with_index(root: PathBuf, index: Store) -> Self {
+        Self {
+            root,
+            index: Some(index),
+        }
+    }
+
+    /// Creates a new ADR.
+    ///
+    /// Filesystem write happens first (atomic via `write_bundle_at`); if it
+    /// succeeds and an index is attached, the envelope is upserted. A failed
+    /// index write is logged but does **not** roll back the filesystem: the
+    /// filesystem is the source of truth and `rebuild_index` can recover.
+    /// The inverse direction (FS failure → index rollback) is implicit since
+    /// the index INSERT is gated on FS success.
     pub(crate) fn add_adr(&self, params: AdrCreateParams) -> Result<Adr, OrbitError> {
         if params.title.trim().is_empty() {
             return Err(OrbitError::InvalidInput(
@@ -90,7 +83,9 @@ impl AdrFileStore {
         let target_dir = adr_dir(&self.root, AdrStateDir::Proposed, &id);
         write_bundle_at(&target_dir, &bundle)?;
 
-        Ok(bundle_to_adr(bundle))
+        let adr = bundle_to_adr(bundle);
+        self.upsert_index_row(&adr);
+        Ok(adr)
     }
 
     pub(crate) fn get_adr(&self, id: &str) -> Result<Option<Adr>, OrbitError> {
@@ -122,15 +117,65 @@ impl AdrFileStore {
         Ok(adrs)
     }
 
+    /// Lists ADRs filtered by envelope fields.
+    ///
+    /// When an index is attached, the filter pushes WHERE clauses down to
+    /// SQLite, then reads each matching bundle from disk (filesystem is the
+    /// source of truth). Without an index, the call falls back to listing
+    /// every ADR and filtering in-memory.
+    ///
+    /// IDs are sorted lexicographic-descending, which matches numeric
+    /// descending given the `ADR-NNNN` zero-padded format.
     pub(crate) fn list_adrs_filtered(
         &self,
-        _status: Option<AdrStatus>,
-        _owner: Option<&str>,
-        _legacy_id: Option<&str>,
+        status: Option<AdrStatus>,
+        owner: Option<&str>,
+        feature: Option<&str>,
+        task_id: Option<&str>,
+        legacy_id: Option<&str>,
+        validation_warned: Option<bool>,
     ) -> Result<Vec<Adr>, OrbitError> {
-        todo!("wired in Phase 3 SQLite integration")
+        if self.index.is_none() {
+            // Fall back to filesystem walk + in-memory filter. Preserves
+            // test ergonomics where `AdrFileStore::new` skips the index.
+            let mut adrs = self.list_adrs()?;
+            adrs.retain(|adr| {
+                matches_filter(
+                    adr,
+                    status,
+                    owner,
+                    feature,
+                    task_id,
+                    legacy_id,
+                    validation_warned,
+                )
+            });
+            sort_by_id_desc(&mut adrs);
+            return Ok(adrs);
+        }
+
+        let ids = self.query_filtered_ids(
+            status,
+            owner,
+            feature,
+            task_id,
+            legacy_id,
+            validation_warned,
+        )?;
+
+        let mut adrs = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(adr) = self.get_adr(&id)? {
+                adrs.push(adr);
+            }
+        }
+        sort_by_id_desc(&mut adrs);
+        Ok(adrs)
     }
 
+    /// Updates ADR status, moving the bundle between state directories and
+    /// refreshing the index row. Index update is best-effort: a failure is
+    /// logged but does not roll back the filesystem move.
     pub(crate) fn update_adr_status(
         &self,
         id: &str,
@@ -163,9 +208,13 @@ impl AdrFileStore {
             bundle.doc.adr.accepted_at = Some(now);
         }
         write_bundle_at(&target_dir, &bundle)?;
+        self.upsert_index_row(&bundle.doc.adr);
         Ok(())
     }
 
+    /// Updates an ADR's document fields in place and refreshes the index row.
+    /// Index update is best-effort: a failure is logged but does not roll back
+    /// the filesystem write.
     pub(crate) fn update_adr_document(
         &self,
         id: &str,
@@ -212,9 +261,13 @@ impl AdrFileStore {
 
         bundle.doc.adr.last_updated = Utc::now();
         write_bundle_at(&current_dir, &bundle)?;
+        self.upsert_index_row(&bundle.doc.adr);
         Ok(())
     }
 
+    /// Deletes an ADR bundle and removes the index row. Index delete is
+    /// best-effort: a failure is logged but does not roll back the filesystem
+    /// delete.
     pub(crate) fn delete_adr(&self, id: &str) -> Result<bool, OrbitError> {
         validate_adr_id(id)?;
         let _lock = acquire_adr_lock(&self.root, id)?;
@@ -223,11 +276,29 @@ impl AdrFileStore {
             return Ok(false);
         };
         fs::remove_dir_all(dir).map_err(|e| OrbitError::Io(e.to_string()))?;
+        self.delete_index_row(id);
         Ok(true)
     }
 
+    /// Rebuilds the SQLite envelope index from the filesystem source of truth.
+    ///
+    /// Without an attached index this is a no-op (filesystem-only stores have
+    /// nothing to rebuild). Otherwise wipes the `adrs` table inside a
+    /// transaction and reinserts every ADR found on disk.
     pub(crate) fn rebuild_index(&self) -> Result<(), OrbitError> {
-        todo!("wired in Phase 3 SQLite integration")
+        let Some(index) = &self.index else {
+            return Ok(());
+        };
+        let adrs = self.list_adrs()?;
+        index.with_transaction(|tx| {
+            tx.tx
+                .execute("DELETE FROM adrs", [])
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            for adr in &adrs {
+                insert_adr_row(&tx.tx, adr)?;
+            }
+            Ok(())
+        })
     }
 
     fn locate_adr(&self, id: &str) -> Result<Option<(AdrStateDir, PathBuf)>, OrbitError> {
@@ -242,6 +313,207 @@ impl AdrFileStore {
         }
         Ok(None)
     }
+
+    fn upsert_index_row(&self, adr: &Adr) {
+        let Some(index) = &self.index else {
+            return;
+        };
+        let result = index.with_transaction(|tx| {
+            tx.tx
+                .execute("DELETE FROM adrs WHERE id = ?1", params![adr.id])
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            insert_adr_row(&tx.tx, adr)?;
+            Ok(())
+        });
+        if let Err(err) = result {
+            orbit_common::tracing::warn!(
+                target: "orbit.store.adr",
+                adr_id = adr.id.as_str(),
+                error = %err,
+                "failed to upsert ADR envelope into index; filesystem is source of truth",
+            );
+        }
+    }
+
+    fn delete_index_row(&self, id: &str) {
+        let Some(index) = &self.index else {
+            return;
+        };
+        let result = index.with_transaction(|tx| {
+            tx.tx
+                .execute("DELETE FROM adrs WHERE id = ?1", params![id])
+                .map_err(|e| OrbitError::Store(e.to_string()))?;
+            Ok(())
+        });
+        if let Err(err) = result {
+            orbit_common::tracing::warn!(
+                target: "orbit.store.adr",
+                adr_id = id,
+                error = %err,
+                "failed to delete ADR envelope from index; filesystem is source of truth",
+            );
+        }
+    }
+
+    fn query_filtered_ids(
+        &self,
+        status: Option<AdrStatus>,
+        owner: Option<&str>,
+        feature: Option<&str>,
+        task_id: Option<&str>,
+        legacy_id: Option<&str>,
+        validation_warned: Option<bool>,
+    ) -> Result<Vec<String>, OrbitError> {
+        let index = self
+            .index
+            .as_ref()
+            .expect("query_filtered_ids only invoked when index is attached");
+
+        let mut sql = String::from("SELECT id FROM adrs WHERE 1=1");
+        let mut bound: Vec<String> = Vec::new();
+
+        if let Some(status) = status {
+            sql.push_str(" AND status = ?");
+            bound.push(status.cli_name().to_string());
+        }
+        if let Some(owner) = owner {
+            sql.push_str(" AND owner = ?");
+            bound.push(owner.to_string());
+        }
+        if let Some(feature) = feature {
+            // JSON-encoded substring match so partial values (e.g. "feature-a"
+            // vs "feature-ab") don't collide.
+            sql.push_str(" AND related_features LIKE ?");
+            bound.push(format!("%\"{feature}\"%"));
+        }
+        if let Some(task_id) = task_id {
+            sql.push_str(" AND related_tasks LIKE ?");
+            bound.push(format!("%\"{task_id}\"%"));
+        }
+        if let Some(legacy_id) = legacy_id {
+            sql.push_str(" AND legacy_ids LIKE ?");
+            bound.push(format!("%\"{legacy_id}\"%"));
+        }
+        if let Some(warned) = validation_warned {
+            sql.push_str(" AND legacy_validation = ?");
+            bound.push(
+                if warned {
+                    LegacyValidation::Warned
+                } else {
+                    LegacyValidation::None
+                }
+                .to_string(),
+            );
+        }
+        sql.push_str(" ORDER BY id DESC");
+
+        let conn_arc = index.connection();
+        let conn = conn_arc
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            bound.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| row.get::<_, String>(0))
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row.map_err(|e| OrbitError::Store(e.to_string()))?);
+        }
+        Ok(ids)
+    }
+}
+
+fn matches_filter(
+    adr: &Adr,
+    status: Option<AdrStatus>,
+    owner: Option<&str>,
+    feature: Option<&str>,
+    task_id: Option<&str>,
+    legacy_id: Option<&str>,
+    validation_warned: Option<bool>,
+) -> bool {
+    if let Some(status) = status
+        && adr.status != status
+    {
+        return false;
+    }
+    if let Some(owner) = owner
+        && adr.owner != owner
+    {
+        return false;
+    }
+    if let Some(feature) = feature
+        && !adr.related_features.iter().any(|f| f == feature)
+    {
+        return false;
+    }
+    if let Some(task_id) = task_id
+        && !adr.related_tasks.iter().any(|t| t == task_id)
+    {
+        return false;
+    }
+    if let Some(legacy_id) = legacy_id
+        && !adr.legacy_ids.iter().any(|l| l == legacy_id)
+    {
+        return false;
+    }
+    if let Some(warned) = validation_warned {
+        let is_warned = matches!(adr.legacy_validation, LegacyValidation::Warned);
+        if warned != is_warned {
+            return false;
+        }
+    }
+    true
+}
+
+fn sort_by_id_desc(adrs: &mut [Adr]) {
+    adrs.sort_by(|a, b| b.id.cmp(&a.id));
+}
+
+fn insert_adr_row(conn: &rusqlite::Connection, adr: &Adr) -> Result<(), OrbitError> {
+    let related_features = serde_json::to_string(&adr.related_features)
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    let related_tasks =
+        serde_json::to_string(&adr.related_tasks).map_err(|e| OrbitError::Store(e.to_string()))?;
+    let legacy_ids =
+        serde_json::to_string(&adr.legacy_ids).map_err(|e| OrbitError::Store(e.to_string()))?;
+    let supersedes =
+        serde_json::to_string(&adr.supersedes).map_err(|e| OrbitError::Store(e.to_string()))?;
+    let validation_warnings = serde_json::to_string(&adr.validation_warnings)
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    conn.execute(
+        "INSERT INTO adrs (
+            id, status, title, owner,
+            related_features, related_tasks, legacy_ids, supersedes,
+            superseded_by, validation_warnings, legacy_validation,
+            created_at, accepted_at, last_updated
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        params![
+            adr.id,
+            adr.status.cli_name(),
+            adr.title,
+            adr.owner,
+            related_features,
+            related_tasks,
+            legacy_ids,
+            supersedes,
+            adr.superseded_by,
+            validation_warnings,
+            adr.legacy_validation.to_string(),
+            adr.created_at.to_rfc3339(),
+            adr.accepted_at.map(|ts| ts.to_rfc3339()),
+            adr.last_updated.to_rfc3339(),
+        ],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -306,9 +578,7 @@ mod tests {
     fn update_adr_status_proposed_to_accepted_moves_dir_and_sets_accepted_at() {
         let tempdir = tempdir().expect("tempdir");
         let store = AdrFileStore::new(tempdir.path().to_path_buf());
-        let adr = store
-            .add_adr(create_params("Decide", "Body"))
-            .expect("add");
+        let adr = store.add_adr(create_params("Decide", "Body")).expect("add");
 
         store
             .update_adr_status(&adr.id, AdrStatus::Accepted)
@@ -321,10 +591,7 @@ mod tests {
         let accepted_dir = tempdir.path().join("accepted").join(&adr.id);
         assert!(accepted_dir.is_dir(), "accepted dir must exist");
 
-        let loaded = store
-            .get_adr(&adr.id)
-            .expect("get")
-            .expect("adr exists");
+        let loaded = store.get_adr(&adr.id).expect("get").expect("adr exists");
         assert_eq!(loaded.status, AdrStatus::Accepted);
         assert!(loaded.accepted_at.is_some(), "accepted_at must be set");
         assert!(
@@ -337,18 +604,13 @@ mod tests {
     fn update_adr_status_same_state_is_idempotent_no_op() {
         let tempdir = tempdir().expect("tempdir");
         let store = AdrFileStore::new(tempdir.path().to_path_buf());
-        let adr = store
-            .add_adr(create_params("Decide", "Body"))
-            .expect("add");
+        let adr = store.add_adr(create_params("Decide", "Body")).expect("add");
 
         store
             .update_adr_status(&adr.id, AdrStatus::Proposed)
             .expect("idempotent same-state");
 
-        let loaded = store
-            .get_adr(&adr.id)
-            .expect("get")
-            .expect("adr exists");
+        let loaded = store.get_adr(&adr.id).expect("get").expect("adr exists");
         assert_eq!(loaded.status, AdrStatus::Proposed);
         assert!(loaded.accepted_at.is_none());
     }
@@ -357,9 +619,7 @@ mod tests {
     fn update_adr_status_rejects_accepted_to_proposed() {
         let tempdir = tempdir().expect("tempdir");
         let store = AdrFileStore::new(tempdir.path().to_path_buf());
-        let adr = store
-            .add_adr(create_params("Decide", "Body"))
-            .expect("add");
+        let adr = store.add_adr(create_params("Decide", "Body")).expect("add");
         store
             .update_adr_status(&adr.id, AdrStatus::Accepted)
             .expect("accept");
@@ -394,10 +654,7 @@ mod tests {
             )
             .expect("update");
 
-        let loaded = store
-            .get_adr(&adr.id)
-            .expect("get")
-            .expect("adr exists");
+        let loaded = store.get_adr(&adr.id).expect("get").expect("adr exists");
         assert_eq!(loaded.title, "Revised");
         let body = fs::read_to_string(
             tempdir
@@ -415,9 +672,7 @@ mod tests {
     fn delete_adr_on_proposed_removes_directory_and_returns_true() {
         let tempdir = tempdir().expect("tempdir");
         let store = AdrFileStore::new(tempdir.path().to_path_buf());
-        let adr = store
-            .add_adr(create_params("Doomed", "Bye"))
-            .expect("add");
+        let adr = store.add_adr(create_params("Doomed", "Bye")).expect("add");
 
         let removed = store.delete_adr(&adr.id).expect("delete");
         assert!(removed);
@@ -468,7 +723,196 @@ mod tests {
         let statuses: Vec<AdrStatus> = listed.iter().map(|adr| adr.status).collect();
         assert_eq!(
             statuses,
-            vec![AdrStatus::Proposed, AdrStatus::Accepted, AdrStatus::Superseded]
+            vec![
+                AdrStatus::Proposed,
+                AdrStatus::Accepted,
+                AdrStatus::Superseded
+            ]
         );
+    }
+
+    // ----- Index-integration tests (Phase 3) -------------------------------
+
+    fn store_with_index() -> (tempfile::TempDir, AdrFileStore) {
+        let dir = tempdir().expect("tempdir");
+        let index = Store::open_in_memory().expect("open in-memory store");
+        let store = AdrFileStore::new_with_index(dir.path().to_path_buf(), index);
+        (dir, store)
+    }
+
+    fn count_index_rows(store: &AdrFileStore) -> i64 {
+        let index = store.index.as_ref().expect("index attached");
+        let conn = index.connection();
+        let guard = conn.lock().expect("lock");
+        guard
+            .query_row("SELECT COUNT(*) FROM adrs", [], |row| row.get(0))
+            .expect("query count")
+    }
+
+    #[test]
+    fn add_adr_with_index_populates_index_row() {
+        let (_dir, store) = store_with_index();
+        let adr = store
+            .add_adr(create_params("Indexed", "body"))
+            .expect("add");
+        assert_eq!(count_index_rows(&store), 1);
+
+        let listed = store
+            .list_adrs_filtered(None, None, None, None, None, None)
+            .expect("list filtered");
+        let ids: Vec<String> = listed.iter().map(|a| a.id.clone()).collect();
+        assert_eq!(ids, vec![adr.id]);
+    }
+
+    #[test]
+    fn update_adr_status_with_index_reflects_in_filter() {
+        let (_dir, store) = store_with_index();
+        let adr = store
+            .add_adr(create_params("Promote", "body"))
+            .expect("add");
+        store
+            .update_adr_status(&adr.id, AdrStatus::Accepted)
+            .expect("accept");
+
+        let accepted = store
+            .list_adrs_filtered(Some(AdrStatus::Accepted), None, None, None, None, None)
+            .expect("list accepted");
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].id, adr.id);
+
+        let proposed = store
+            .list_adrs_filtered(Some(AdrStatus::Proposed), None, None, None, None, None)
+            .expect("list proposed");
+        assert!(proposed.is_empty(), "no proposed ADRs after promotion");
+    }
+
+    #[test]
+    fn delete_adr_with_index_removes_row() {
+        let (_dir, store) = store_with_index();
+        let adr = store.add_adr(create_params("Doomed", "body")).expect("add");
+        assert_eq!(count_index_rows(&store), 1);
+
+        let removed = store.delete_adr(&adr.id).expect("delete");
+        assert!(removed);
+        assert_eq!(count_index_rows(&store), 0);
+
+        let listed = store
+            .list_adrs_filtered(None, None, None, None, None, None)
+            .expect("list filtered");
+        assert!(listed.is_empty());
+    }
+
+    #[test]
+    fn list_adrs_filtered_by_owner() {
+        let (_dir, store) = store_with_index();
+        let claude = store
+            .add_adr(AdrCreateParams {
+                title: "by claude".to_string(),
+                owner: "claude".to_string(),
+                related_features: Vec::new(),
+                related_tasks: Vec::new(),
+                body: "body".to_string(),
+            })
+            .expect("add claude");
+        let _codex = store
+            .add_adr(AdrCreateParams {
+                title: "by codex".to_string(),
+                owner: "codex".to_string(),
+                related_features: Vec::new(),
+                related_tasks: Vec::new(),
+                body: "body".to_string(),
+            })
+            .expect("add codex");
+
+        let filtered = store
+            .list_adrs_filtered(None, Some("claude"), None, None, None, None)
+            .expect("filter by owner");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, claude.id);
+        assert_eq!(filtered[0].owner, "claude");
+    }
+
+    #[test]
+    fn list_adrs_filtered_by_legacy_id() {
+        let (_dir, store) = store_with_index();
+        let target = store
+            .add_adr(create_params("Target", "body"))
+            .expect("add target");
+        let _other = store
+            .add_adr(create_params("Other", "body"))
+            .expect("add other");
+
+        store
+            .update_adr_document(
+                &target.id,
+                &AdrDocumentUpdateParams {
+                    legacy_ids: Some(vec!["activity-job/ADR-039".to_string()]),
+                    ..Default::default()
+                },
+            )
+            .expect("set legacy id");
+
+        let filtered = store
+            .list_adrs_filtered(None, None, None, None, Some("activity-job/ADR-039"), None)
+            .expect("filter by legacy id");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, target.id);
+    }
+
+    #[test]
+    fn rebuild_index_after_index_clear_recovers() {
+        let (_dir, store) = store_with_index();
+        let a = store.add_adr(create_params("A", "ba")).expect("a");
+        let b = store.add_adr(create_params("B", "bb")).expect("b");
+        let c = store.add_adr(create_params("C", "bc")).expect("c");
+
+        // Wipe the index out from under the store.
+        {
+            let index = store.index.as_ref().expect("index attached");
+            let conn = index.connection();
+            let guard = conn.lock().expect("lock");
+            guard.execute("DELETE FROM adrs", []).expect("wipe index");
+        }
+        assert_eq!(count_index_rows(&store), 0);
+
+        store.rebuild_index().expect("rebuild");
+        assert_eq!(count_index_rows(&store), 3);
+
+        let listed = store
+            .list_adrs_filtered(None, None, None, None, None, None)
+            .expect("list rebuilt");
+        let mut ids: Vec<String> = listed.iter().map(|a| a.id.clone()).collect();
+        ids.sort();
+        assert_eq!(ids, vec![a.id, b.id, c.id]);
+    }
+
+    #[test]
+    fn list_adrs_filtered_without_index_falls_back_to_filesystem() {
+        // AdrFileStore::new constructs without an index; the filter path must
+        // still work via in-memory filtering.
+        let tempdir = tempdir().expect("tempdir");
+        let store = AdrFileStore::new(tempdir.path().to_path_buf());
+        let a = store
+            .add_adr(create_params("First", "body"))
+            .expect("add a");
+        let b = store
+            .add_adr(create_params("Second", "body"))
+            .expect("add b");
+        store
+            .update_adr_status(&b.id, AdrStatus::Accepted)
+            .expect("accept b");
+
+        let accepted = store
+            .list_adrs_filtered(Some(AdrStatus::Accepted), None, None, None, None, None)
+            .expect("fallback filter");
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].id, b.id);
+
+        let all = store
+            .list_adrs_filtered(None, None, None, None, None, None)
+            .expect("fallback list");
+        // ID-desc sort: b was allocated after a.
+        let ids: Vec<String> = all.iter().map(|adr| adr.id.clone()).collect();
+        assert_eq!(ids, vec![b.id, a.id]);
     }
 }

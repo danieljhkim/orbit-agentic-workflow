@@ -23,8 +23,8 @@ mod tests {
     use chrono::Utc;
     use orbit_common::types::{AdrStatus, LegacyValidation};
 
-    use super::*;
     use super::super::constants::ADR_SCHEMA_VERSION;
+    use super::*;
 
     fn sample_doc() -> AdrFileDocument {
         let ts = Utc.with_ymd_and_hms(2026, 5, 11, 0, 0, 0).unwrap();

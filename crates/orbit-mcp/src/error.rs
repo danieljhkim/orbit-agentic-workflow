@@ -29,15 +29,16 @@ fn error_code(err: &OrbitError) -> &'static str {
         | OrbitError::JobRunNotFound(_)
         | OrbitError::ActivityNotFound(_)
         | OrbitError::AgentSessionNotFound(_)
-        | OrbitError::WorkspaceNotFound(_) => "not_found",
+        | OrbitError::WorkspaceNotFound(_)
+        | OrbitError::AdrNotFound(_) => "not_found",
         OrbitError::CompanionNotInstalled(_) => "companion_not_installed",
         OrbitError::PolicyDenied(_) => "policy_denied",
         OrbitError::TaskApprovalRequired(_) => "approval_required",
         OrbitError::InvalidInput(_) => "invalid_input",
         OrbitError::SkillValidation(_) | OrbitError::JobValidation(_) => "validation_failed",
-        OrbitError::TaskStatusTransition(_) | OrbitError::JobRunStateTransition(_) => {
-            "invalid_transition"
-        }
+        OrbitError::TaskStatusTransition(_)
+        | OrbitError::JobRunStateTransition(_)
+        | OrbitError::AdrInvalidTransition(_) => "invalid_transition",
         OrbitError::AgentProtocolViolation(_) => "agent_protocol_violation",
         OrbitError::UnsupportedAgentProvider(_) => "unsupported_provider",
         OrbitError::Execution(_) => "execution_failed",

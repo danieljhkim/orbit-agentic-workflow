@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError,
-    OrbitId, PipelineState, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
-    TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, normalize_task_tags,
-    task_matches_tags,
+    Adr, AdrStatus, AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics,
+    LegacyValidation, OrbitError, OrbitId, PipelineState, PolicyDef, ReviewThread, StoredTool,
+    Task, TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
+    TaskType, normalize_task_tags, task_matches_tags,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,6 +12,34 @@ use crate::sqlite::audit_event_store::{
     AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
     AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
 };
+
+#[derive(Debug, Clone)]
+pub struct AdrCreateParams {
+    pub title: String,
+    pub owner: String,
+    pub related_features: Vec<String>,
+    pub related_tasks: Vec<String>,
+    pub body: String,
+}
+
+/// Parameters for a partial update to an existing ADR document.
+///
+/// Fields that are `None` are left unchanged. `superseded_by` follows the
+/// double-`Option` convention to distinguish "leave unchanged" (`None`) from
+/// "clear this field" (`Some(None)`).
+#[derive(Debug, Clone, Default)]
+pub struct AdrDocumentUpdateParams {
+    pub title: Option<String>,
+    pub owner: Option<String>,
+    pub body: Option<String>,
+    pub related_features: Option<Vec<String>>,
+    pub related_tasks: Option<Vec<String>>,
+    pub supersedes: Option<Vec<String>>,
+    pub superseded_by: Option<Option<String>>,
+    pub legacy_ids: Option<Vec<String>>,
+    pub validation_warnings: Option<Vec<String>>,
+    pub legacy_validation: Option<LegacyValidation>,
+}
 
 #[derive(Debug, Clone)]
 pub struct TaskCreateParams {
@@ -296,6 +324,29 @@ pub trait TaskStoreBackend: Send + Sync {
         Ok(tasks)
     }
     fn delete_task(&self, id: &str) -> Result<bool, OrbitError>;
+}
+
+pub trait AdrStoreBackend: Send + Sync {
+    fn add_adr(&self, params: AdrCreateParams) -> Result<Adr, OrbitError>;
+    fn get_adr(&self, id: &str) -> Result<Option<Adr>, OrbitError>;
+    fn list_adrs(&self) -> Result<Vec<Adr>, OrbitError>;
+    fn list_adrs_filtered(
+        &self,
+        status: Option<AdrStatus>,
+        owner: Option<&str>,
+        feature: Option<&str>,
+        task_id: Option<&str>,
+        legacy_id: Option<&str>,
+        validation_warned: Option<bool>,
+    ) -> Result<Vec<Adr>, OrbitError>;
+    fn update_adr_status(&self, id: &str, new_status: AdrStatus) -> Result<(), OrbitError>;
+    fn update_adr_document(
+        &self,
+        id: &str,
+        fields: &AdrDocumentUpdateParams,
+    ) -> Result<(), OrbitError>;
+    fn delete_adr(&self, id: &str) -> Result<bool, OrbitError>;
+    fn rebuild_index(&self) -> Result<(), OrbitError>;
 }
 
 pub trait TaskDocumentStoreBackend: Send + Sync {
