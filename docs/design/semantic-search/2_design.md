@@ -330,6 +330,85 @@ All embeddings stay local. Task content never leaves the workspace. This is stru
 
 ---
 
+## 9. Phase-2 Graph Corpus (Designed, Deferred)
+
+**Status: Designed; deferred until [adr-artifact](../adr-artifact/) v2 ships and bandwidth is available.**
+
+Phase 2 extends the existing `embeddings` table to a second `source_kind` covering both code symbols and design-doc sections, with ADRs joining as a third `source_kind` once adr-artifact v2 lands ([adr-artifact §4.6](../adr-artifact/2_design.md)). No schema migration; the phase-1 `source_kind` discriminator is the seam this section commits against.
+
+The audience this corpus serves is the **task-creating / task-executing agent**. The five concrete use cases it enables — "find code that does X", duplicate / near-duplicate detection, task-creation grounding, "have we decided this before?", and glossary resolution — all collapse to one primitive: `orbit.semantic.search` filtered by `--kind`.
+
+### 9.1 Corpus: knowledge-graph leaves
+
+The corpus is **`LeafKind`-filtered leaves of the knowledge graph**. The graph already represents code symbols *and* markdown sections as `LeafKind` variants in [graph/nodes.rs:12](../../../crates/orbit-knowledge/src/graph/nodes.rs), so one indexer covers both code and design docs uniformly.
+
+Allowlist for the first cut:
+
+| Kind | Source |
+|---|---|
+| `Function`, `Method`, `Module`, `Struct`, `Enum`, `Trait` | code |
+| `Section { depth }` | markdown — `docs/design/**/*.md`, glossaries, READMEs |
+
+Excluded as low-signal pending recall evidence: `Field`, `Property`, `Constant`, `ConfigKey`, `Column`, `Macro`, `Delegate`, `Event`, `Global`, `Namespace`, `Package`, `Object`, `CompanionObject`, `SingletonClass`, `SingletonMethod`, `FunctionDeclaration`, `Record`, `Interface`, `TypeAlias`, `Impl`.
+
+**ADR markdown (`docs/design/*/4_decisions.md`) is explicitly excluded** from the doc-section path. Those files are migrating into the ADR artifact store per [adr-artifact §1](../adr-artifact/1_overview.md) and will be retired as hand-maintained docs. Indexing them ahead of the migration would force a re-index pass to remove them.
+
+### 9.2 Schema reuse
+
+- `source_kind = "symbol"` — the slot already reserved in [§3.1](#31-schema). Used for all graph leaves regardless of `LeafKind`.
+- `source_id` = `BaseNodeFields.identity_key` from the leaf. Stable across rebuilds.
+- `content_hash` = `LeafNode.source_hash`. The existing upsert gate skips unchanged leaves for free.
+
+`orbit.semantic.search` extends `--kind` to accept multiple values (`--kind=task,symbol`). The exact encoding of `LeafKind` into the existing `field` column (or whether kind-filtering goes through a join against the graph's identity-key→kind map) is left for the implementing task — both shapes work without schema changes.
+
+### 9.3 Embedded text per leaf
+
+- **Code leaves** (`Function`, `Method`, `Struct`, `Enum`, `Trait`, `Module`): `LeafNode.source` as the primary input, chunked at paragraph boundaries by the existing 400-token / 50-token-overlap chunker ([§4.2](#42-chunking-long-fields)). Doc-comments and inline `//` comments are inside the span and embedded along with the body. Names and qualified names ride the FTS5 side rather than the embedding side.
+- **`Section` leaves**: `LeafNode.source` (heading + body up to the next same-or-higher heading). The parent-heading path is prepended to the first chunk so the section's context survives — a body excerpt under `## Lifecycle and Audit` should still retrieve for queries about lifecycles even when the heading text isn't repeated in the body.
+
+Per-leaf field tuning beyond this sketch is left for the implementing task; the corpus and storage are fixed, the field-level knobs aren't.
+
+### 9.4 Indexer placement: `orbit-embed::graph_indexer`
+
+A new module under `orbit-embed`, consistent with [ADR-007](./4_decisions.md#adr-007--semantic-search-ownership-relocated-to-orbit-embed)'s "semantic ownership lives in `orbit-embed`" rule. The indexer consumes a leaf-diff stream emitted by [`orbit-knowledge::pipeline::ensure_fresh`](../../../crates/orbit-knowledge/src/pipeline/mod.rs) after each *clean* rebuild, batches `EmbedJob`s through the same channel pattern the task path uses ([§7.1](#71-on-mutation-indexing)), and writes to the existing `VectorStore`.
+
+Async by design: graph rebuild commits first, embedding lags behind in a background worker. `orbit-knowledge` does not gain a dependency on `orbit-embed` — the indexer pulls the diff via a public API on the pipeline. The exact diff-stream contract (push channel vs. pull-after-rebuild, `LeafDiff` shape) is deferred to the implementing task; both shapes are viable.
+
+### 9.5 Freshness and stale-row removal
+
+Three loops at increasing scope:
+
+1. **Per-rebuild diff (primary).** `hash::detect_changes()` in the pipeline already produces the diff the indexer needs:
+   - new `identity_key` (within the kind allowlist) → embed → INSERT
+   - same key, changed `source_hash` → re-embed → UPDATE (`content_hash` gate skips no-ops)
+   - key absent from the new graph → DELETE — the primary stale-row mechanism
+2. **Mark-and-sweep (safety net).** After each clean rebuild, anti-join `embeddings` against the current leaf set:
+   ```sql
+   DELETE FROM embeddings
+    WHERE source_kind = 'symbol'
+      AND source_id NOT IN (SELECT identity_key FROM <current-leaves>);
+   ```
+   Catches anything Loop 1 missed (crashed rebuild, branch switch, partial extraction). Single SQL statement, milliseconds at workspace scale.
+3. **Explicit reindex (recovery).** `orbit semantic reindex --kind=symbol [--force]` walks every allowlisted leaf. `--force` ignores `content_hash` — used for model migrations or after a chunker change.
+
+**Dirty-rebuild indexing is deliberately skipped.** `ensure_fresh()` rebuilds the graph on uncommitted edits too (debounced), but the indexer only consumes diffs from *clean* rebuilds. Mid-edit re-embedding would churn for negligible recall gain — the agent's queries are "find prior work like X", not "find code I literally just typed." Cost: a freshly-written symbol isn't searchable until commit.
+
+### 9.6 Scope boundaries
+
+This section deliberately does not commit to:
+
+- **Symbol → ADR back-link as a precomputed edge.** Falls out of `semantic.search(symbol_body, kind=adr)` once ADRs are indexed. Precomputing top-k matches per symbol is a phase-3 optimization tied to the task-lineage feature, not a v1 requirement.
+- **Code-aware embedding model.** CodeBERT, voyage-code, and similar outperform general-text models on code retrieval but are larger and weaker on English. v1 ships with the BGE-small default ([ADR-001](./4_decisions.md#adr-001--fastembed-rs-onnx-backend-over-candle-llamacpp-or-external-ollama)) and revisits if recall on code queries underperforms.
+- **HNSW upgrade.** The graph corpus may cross the brute-force ceiling. Schema is already forward-compatible with `sqlite-vec` per [ADR-002](./4_decisions.md#adr-002--brute-force-cosine-over-sqlite-blobs-sqlite-vec-reserved-as-phase-2-upgrade); the decision to switch is a separate ADR at the point of operational evidence — see [3_vision.md §1.3](./3_vision.md).
+- **Free-floating file-scope comments.** Comments not attached to any leaf's source span (e.g. section dividers between two `fn`s) are not embedded. The project convention is "default to no comments" so this gap is small and low-signal.
+- **Multi-workspace ADR scoping.** ADRs flow in via the adr-artifact feature, which itself defers cross-workspace scoping ([adr-artifact §8.5](../adr-artifact/2_design.md)).
+
+### 9.7 Sequencing
+
+Phase 2 is gated on adr-artifact v2 shipping. Implementing the doc-section indexer ahead of that migration would index every `4_decisions.md` and then re-index them out, churning the corpus and the doc-citation graph. Once ADRs are first-class artifacts, the doc-section indexer cleanly excludes `4_decisions.md` and ADRs join as `source_kind = "adr"` through `orbit-embed::vector` per [adr-artifact §4.6](../adr-artifact/2_design.md).
+
+---
+
 ## Task References
 
 - [T20260510-3] — Design semantic search over task artifacts and graph (v2). The task that produced this folder.
