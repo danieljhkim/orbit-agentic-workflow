@@ -9,8 +9,12 @@ use orbit_common::utility::fs::write_text_with_parent;
 use crate::OrbitRuntime;
 use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};
 
-const DEFAULT_SKILL_FILES: [(&str, &str); 6] = [
+const DEFAULT_SKILL_FILES: [(&str, &str); 7] = [
     ("orbit", include_str!("../../assets/skills/orbit/SKILL.md")),
+    (
+        "orbit-adr",
+        include_str!("../../assets/skills/orbit-adr/SKILL.md"),
+    ),
     (
         "orbit-create-task",
         include_str!("../../assets/skills/orbit-create-task/SKILL.md"),
@@ -48,7 +52,7 @@ pub struct SkillDoctorResult {
     pub message: String,
 }
 
-pub(crate) fn default_skill_ids() -> [&'static str; 6] {
+pub(crate) fn default_skill_ids() -> [&'static str; 7] {
     DEFAULT_SKILL_FILES.map(|(id, _)| id)
 }
 

@@ -1,0 +1,15 @@
+schema_version: 1
+id: ADR-0147
+title: Typed relations over scattered link fields
+status: proposed
+owner: codex
+created_at: 2026-05-11T03:11:25.659324Z
+last_updated: 2026-05-11T03:11:30.112736Z
+related_features:
+- task
+related_tasks: []
+supersedes: []
+legacy_ids:
+- task/ADR-005
+validation_warnings: []
+legacy_validation: none

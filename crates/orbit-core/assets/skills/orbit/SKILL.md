@@ -25,6 +25,7 @@ Orbit tools are reachable via two surfaces. Both accept identical JSON arguments
 **Surface coverage:**
 
 - Task lifecycle (`orbit.task.*`): both surfaces.
+- ADR artifacts (`orbit.adr.*`): both surfaces.
 - Graph read tools (`search`, `show`, `pack`, `callers`, `refs`, `implementors`, `deps`, `overview`, `history`): both surfaces.
 - Semantic read tools (`orbit.semantic.search`, `orbit.semantic.related`): both surfaces. Require the `orbit-embed-companion` binary (`orbit semantic install`); calls fail with an install-pointer error otherwise.
 - State handoff (`orbit.state.*`), graph writes, and duel/scoreboard tools: **CLI only** — used inside activity steps where the agent has shell access.
@@ -102,6 +103,7 @@ Command surface determines provenance by default:
 ## Skill Selection
 
 - `orbit-create-task`: Create a new task with description, acceptance criteria, and context.
+- `orbit-adr`: Create, update, inspect, accept, or supersede ADR artifacts through `orbit.adr.*`.
 - `orbit-debug-job-failure`: Diagnose failed, stuck, cancelled, or suspicious Orbit job runs.
 - `orbit-execute-task`: Carry a change through implementation, validation, and review.
 - `orbit-review-task`: Review someone else's work and file findings as review threads, without transitioning the task.

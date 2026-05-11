@@ -38,6 +38,7 @@ Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS
 | Knowledge graph | `knowledge-graph/` | `claude` |
 | Policy & Sandboxing | `policy-sandbox/` | `claude` |
 | Project Learnings | `project-learnings/` | `claude` |
+| Task | `task/` | `codex` |
 | Task Lineage | `task-lineage/` | `claude` |
 | Semantic Search | `semantic-search/` | `claude` |
 | Task Sync | `task-sync/` | `claude` |
