@@ -1,15 +1,15 @@
 schema_version: 1
-id: ADR-0143
-title: Global `ORB-00000` task IDs
+id: ADR-0149
+title: Repo-local task bundles backed by `~/.orbit`
 status: proposed
 owner: codex
-created_at: 2026-05-11T03:10:33.022956Z
-last_updated: 2026-05-11T03:55:53.268799Z
+created_at: 2026-05-11T03:49:14.172180Z
+last_updated: 2026-05-11T03:55:53.334270Z
 related_features:
 - task
 related_tasks: []
 supersedes: []
 legacy_ids:
-- task/ADR-001
+- task/ADR-007
 validation_warnings: []
 legacy_validation: none

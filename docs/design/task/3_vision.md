@@ -12,7 +12,7 @@ This document captures open questions for the task artifact reset, prior work th
 
 ### 1.1 How global should global IDs be?
 
-`ORB-A0001` can mean at least three things:
+`ORB-00000` can mean at least three things:
 
 1. Unique on one machine across all local workspaces.
 2. Unique in one synced repository registry.
@@ -20,9 +20,9 @@ This document captures open questions for the task artifact reset, prior work th
 
 The v2 design should pick the narrowest authority that serves the product surface being implemented. For OSS local-first, a machine-global allocator is enough. For task sync, repository-registry-global is enough. Hosted Team may later introduce org-global or tenant-global allocation.
 
-### 1.2 Does the allocation series encode anything?
+### 1.2 What happens after `ORB-99999`?
 
-The `A` in `ORB-A0001` could remain a simple series marker, or it could encode allocator generation, tenancy, or artifact type. Encoding meaning makes debugging easier but ossifies the format. The current recommendation is to keep it as an allocation series only.
+The v2 design deliberately keeps the initial format short: five decimal digits and 100-task storage partitions. Most local and team registries should never exhaust that range. If a registry reaches `ORB-99999`, the likely expansion path is to grow the decimal width (`ORB-100000`) while keeping the same partition formula, but that should be ratified by a later ADR rather than preloaded into the initial contract.
 
 ### 1.3 How structured should acceptance criteria become?
 
@@ -42,15 +42,9 @@ The v2 artifact introduces append-only logs, but the envelope remains a snapshot
 
 `workspace_path` and `repo_root` are currently persisted in task YAML. In a shared task world, those are often local bindings, not task identity. The open question is whether to store them in a local overlay keyed by task ID, or keep a portable workspace selector in the task envelope and resolve it locally at runtime.
 
-### 1.6 How should old task IDs appear in commits?
+### 1.6 Should old task IDs survive the reset?
 
-After migration, old commits still contain `[T...]`. New commits should use `[ORB-A0001]`, but tasks with legacy history may benefit from dual tags during a transition:
-
-```text
-[ORB-A0001] [legacy task ID] Reset task schema
-```
-
-That is noisy. A better approach may be to teach `orbit task show` and search surfaces to resolve aliases and keep commit messages canonical going forward.
+No. Orbit is pre-release, so v2 should not carry old `T<YYYYMMDD>-<N>` IDs as supported aliases. A cutover command may print a local old-to-new mapping for humans, but commits and docs after the reset should cite only `[ORB-00000]` IDs.
 
 ### 1.7 Are review threads task artifacts or PR artifacts?
 
@@ -66,6 +60,10 @@ Status-neutral directories make old tasks easy to keep forever. That is good for
 
 No compaction should land until retention and audit requirements are clearer.
 
+### 1.9 How should local backup conflicts be repaired?
+
+The v2 design keeps a workspace materialization under `.orbit/tasks/` and a recoverable backup under `~/.orbit/tasks/`. That creates a divergence question when a user edits one copy manually, an update crashes between writes, or a stale checkout is restored. Append-only logs can merge by stable IDs, but envelopes and Markdown documents need explicit revision markers, checksums, and repair commands so Orbit never silently discards human-authored task content.
+
 ---
 
 ## 2. Prior Work
@@ -76,7 +74,7 @@ The existing `orbit-store::file::task_store` implementation is the baseline. It 
 
 ### 2.2 Orbit ADR artifacts
 
-[docs/design/adr-artifact/](../adr-artifact/) uses the same envelope-plus-Markdown pattern this design recommends. The ADR design also introduces globally unique monotonic IDs (`ADR-NNNN`) and legacy ID aliases. That is the closest internal precedent for `ORB-A0001` plus `legacy_ids`.
+[docs/design/adr-artifact/](../adr-artifact/) uses the same envelope-plus-Markdown pattern this design recommends. The ADR design also introduces globally unique monotonic IDs (`ADR-NNNN`). That is the closest internal precedent for `ORB-00000`, though task artifacts deliberately avoid old task ID aliases.
 
 ### 2.3 Orbit task sync
 
@@ -113,6 +111,10 @@ The design treats prose as Markdown, not as unstructured junk. Search and semant
 ### 3.4 Audit without making YAML unreadable
 
 The reset keeps `task.yaml` readable by moving audit traffic into append-only logs. That preserves the "open the file and understand the task" experience while giving audit and sync systems a better substrate.
+
+### 3.5 Recoverable local-first task state
+
+Orbit tasks should feel local and inspectable without being fragile. Keeping task bundles near the code gives agents fast context; backing those bundles with `~/.orbit/tasks/` makes accidental checkout cleanup or `.orbit/tasks/` deletion a repairable event instead of a data-loss event.
 
 ---
 
