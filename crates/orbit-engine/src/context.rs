@@ -4,7 +4,8 @@ use orbit_common::types::activity_job::{AgentRole, Backend, Provider};
 use orbit_common::types::{
     Activity, AgentModelPair, ExecutorDef, ExternalRef, InvocationTrace, Job, JobRun, JobRunState,
     JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, PipelineState, ReviewThread, Role,
-    Task, TaskArtifact, TaskComment, TaskPriority, TaskStatus, resolve_agent_model_pair,
+    Task, TaskArtifact, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus,
+    resolve_agent_model_pair,
 };
 use orbit_common::utility::redaction::{redact_sensitive_env_json, redact_sensitive_env_option};
 use orbit_exec::EnvironmentMode;
@@ -257,6 +258,15 @@ pub trait JobRunHost {
 pub trait TaskReadHost {
     fn get_task(&self, task_id: &str) -> Result<Task, OrbitError>;
     fn get_task_artifacts(&self, task_id: &str) -> Result<Vec<TaskArtifact>, OrbitError>;
+    fn get_task_comments(&self, _task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        Ok(Vec::new())
+    }
+    fn get_task_history(&self, _task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        Ok(Vec::new())
+    }
+    fn get_task_review_threads(&self, _task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        Ok(Vec::new())
+    }
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
@@ -562,6 +572,18 @@ impl TaskReadHost for AgentExecutorHost<'_> {
         self.task_reader.get_task_artifacts(task_id)
     }
 
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        self.task_reader.get_task_comments(task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        self.task_reader.get_task_history(task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        self.task_reader.get_task_review_threads(task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
@@ -644,6 +666,18 @@ impl TaskReadHost for CliCommandExecutorHost<'_> {
         self.task_reader.get_task_artifacts(task_id)
     }
 
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        self.task_reader.get_task_comments(task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        self.task_reader.get_task_history(task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        self.task_reader.get_task_review_threads(task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
@@ -710,6 +744,18 @@ impl TaskReadHost for AutomationExecutorHost<'_> {
 
     fn get_task_artifacts(&self, task_id: &str) -> Result<Vec<TaskArtifact>, OrbitError> {
         self.task_reader.get_task_artifacts(task_id)
+    }
+
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        self.task_reader.get_task_comments(task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        self.task_reader.get_task_history(task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        self.task_reader.get_task_review_threads(task_id)
     }
 
     fn list_tasks_filtered(
@@ -950,17 +996,10 @@ pub fn execution_working_directory(execution: &ExecutionContext) -> Option<Strin
 /// This is the preferred variant for agent_invoke and cli_command executors
 /// where a [`TaskHost`] is available.
 pub fn execution_working_directory_with_task<H: TaskReadHost + ?Sized>(
-    host: &H,
+    _host: &H,
     execution: &ExecutionContext,
 ) -> Option<String> {
-    execution_working_directory(execution).or_else(|| {
-        execution
-            .input
-            .get("task_id")
-            .and_then(Value::as_str)
-            .and_then(|task_id| host.get_task(task_id).ok())
-            .and_then(|task| task.workspace_path)
-    })
+    execution_working_directory(execution)
 }
 
 /// Resolve `${VAR}` references in a value string from the parent environment.

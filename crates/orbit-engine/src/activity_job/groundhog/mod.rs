@@ -35,7 +35,7 @@ pub fn run_groundhog_activity(
     let tool_ctx = host.tool_context_for_activity(Some(run_id), fs_profile, None);
     let task = load_task(host, &tool_ctx, &task_id)?;
     let plan = parse_groundhog_plan(&task.plan, &task_id)?;
-    let workspace_path = resolve_workspace_path(input, &tool_ctx, &task.workspace_path)?;
+    let workspace_path = resolve_workspace_path(input, &tool_ctx, &None)?;
     let mut chronicle = load_chronicle(host, &tool_ctx, &task_id)?;
     let mut state = load_state(host, &tool_ctx, &task_id)?;
 

@@ -55,6 +55,7 @@ fn show_task_artifacts(
             .map(|a| {
                 serde_json::json!({
                     "path": a.path,
+                    "media_type": a.media_type,
                     "size": a.content.len(),
                 })
             })
@@ -68,8 +69,17 @@ fn show_task_artifacts(
     }
 
     for a in &artifacts {
-        println!("--- {} ({} bytes) ---", a.path, a.content.len());
-        println!("{}", a.content);
+        println!(
+            "--- {} ({}, {} bytes) ---",
+            a.path,
+            a.media_type,
+            a.content.len()
+        );
+        if let Some(content) = a.text_content() {
+            println!("{content}");
+        } else {
+            println!("[binary content omitted]");
+        }
     }
     Ok(())
 }

@@ -41,6 +41,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::types::task_artifacts::{TaskRelation, TaskRelationType};
 use crate::types::{OrbitError, OrbitId};
 use crate::utility::selector::exists_in_workspace;
 
@@ -245,8 +246,7 @@ impl FromStr for TaskComplexity {
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
     Feature,
-    /// An attributable defect — tracks which agent/model introduced the bug
-    /// via the `agent`, `model`, and `source_task_id` fields on [`Task`].
+    /// An attributable defect; lineage is recorded through typed task relations.
     Bug,
     Refactor,
     Chore,
@@ -371,11 +371,28 @@ pub struct TaskHistoryEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskArtifact {
     pub path: String,
-    pub content: String,
+    #[serde(default)]
+    pub content: Vec<u8>,
+    #[serde(default = "default_task_artifact_media_type")]
+    pub media_type: String,
 }
 
 impl TaskArtifact {
-    pub fn from_utf8_source_file(
+    pub fn from_text(path: impl Into<String>, content: impl Into<String>) -> Self {
+        let path = path.into();
+        let content = content.into();
+        Self {
+            media_type: media_type_for_artifact_path(&path).to_string(),
+            path,
+            content: content.into_bytes(),
+        }
+    }
+
+    pub fn text_content(&self) -> Option<&str> {
+        std::str::from_utf8(&self.content).ok()
+    }
+
+    pub fn from_source_file(
         source_path: &Path,
         artifact_path: Option<&str>,
     ) -> Result<Self, OrbitError> {
@@ -404,14 +421,45 @@ impl TaskArtifact {
             }
             None => infer_artifact_path_from_source(source_path)?,
         };
-        let content = std::fs::read_to_string(source_path).map_err(|error| {
+        let content = std::fs::read(source_path).map_err(|error| {
             OrbitError::InvalidInput(format!(
-                "task artifact source '{}' must be a UTF-8 text file; binary or invalid UTF-8 content is not supported: {error}",
+                "cannot read task artifact source '{}': {error}",
                 source_path.display()
             ))
         })?;
 
-        Ok(Self { path, content })
+        Ok(Self {
+            media_type: media_type_for_artifact_path(&path).to_string(),
+            path,
+            content,
+        })
+    }
+}
+
+fn default_task_artifact_media_type() -> String {
+    "application/octet-stream".to_string()
+}
+
+pub fn media_type_for_artifact_path(path: &str) -> &'static str {
+    match Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("md" | "markdown") => "text/markdown",
+        Some("txt" | "log") => "text/plain",
+        Some("json") => "application/json",
+        Some("yaml" | "yml") => "application/yaml",
+        Some("toml") => "application/toml",
+        Some("html" | "htm") => "text/html",
+        Some("csv") => "text/csv",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
     }
 }
 
@@ -553,14 +601,10 @@ fn external_ref_system_regex() -> &'static Regex {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub id: OrbitId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<OrbitId>,
     pub title: String,
     pub description: String,
     #[serde(default)]
     pub acceptance_criteria: Vec<String>,
-    #[serde(default)]
-    pub dependencies: Vec<OrbitId>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, alias = "instructions")]
@@ -569,21 +613,11 @@ pub struct Task {
     pub execution_summary: String,
     pub context_files: Vec<String>,
     #[serde(default)]
-    pub workspace_path: Option<String>,
-    #[serde(default)]
-    pub repo_root: Option<String>,
-    #[serde(default)]
     pub created_by: Option<String>,
     #[serde(default)]
     pub planned_by: Option<String>,
     #[serde(default)]
     pub implemented_by: Option<String>,
-    /// Internal execution routing only. Hidden from task display JSON and YAML.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent: Option<String>,
-    /// Internal execution routing only. Hidden from task display JSON and YAML.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     #[serde(default)]
@@ -593,18 +627,10 @@ pub struct Task {
     pub pr_status: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub external_refs: Vec<ExternalRef>,
-    /// For `Bug` tasks: the originating task whose implementation introduced the defect.
-    #[serde(default)]
-    pub source_task_id: Option<String>,
-    /// Groups tasks that were created together as part of a parallel batch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub batch_id: Option<String>,
-    #[serde(default)]
-    pub comments: Vec<TaskComment>,
-    #[serde(default)]
-    pub history: Vec<TaskHistoryEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub review_threads: Vec<ReviewThread>,
+    pub relations: Vec<TaskRelation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_run_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -630,6 +656,33 @@ impl Task {
             .iter()
             .find(|external_ref| external_ref.system == GITHUB_PR_EXTERNAL_REF_SYSTEM)
             .map(|external_ref| external_ref.id.as_str())
+    }
+
+    pub fn parent_id(&self) -> Option<&str> {
+        self.relation_target(TaskRelationType::ChildOf)
+    }
+
+    pub fn dependencies(&self) -> Vec<OrbitId> {
+        self.relation_targets(TaskRelationType::BlockedBy)
+    }
+
+    pub fn source_task_id(&self) -> Option<&str> {
+        self.relation_target(TaskRelationType::RegressionFrom)
+    }
+
+    fn relation_target(&self, relation_type: TaskRelationType) -> Option<&str> {
+        self.relations
+            .iter()
+            .find(|relation| relation.relation_type == relation_type)
+            .map(|relation| relation.target.as_str())
+    }
+
+    fn relation_targets(&self, relation_type: TaskRelationType) -> Vec<OrbitId> {
+        self.relations
+            .iter()
+            .filter(|relation| relation.relation_type == relation_type)
+            .map(|relation| relation.target.clone())
+            .collect()
     }
 }
 
@@ -719,12 +772,12 @@ pub fn resolve_task_dependencies(
     task: &Task,
     status_by_id: &BTreeMap<OrbitId, TaskStatus>,
 ) -> Vec<ResolvedTaskDependency> {
-    task.dependencies
-        .iter()
+    task.dependencies()
+        .into_iter()
         .map(|dependency_id| ResolvedTaskDependency {
             id: dependency_id.clone(),
             status: status_by_id
-                .get(dependency_id)
+                .get(&dependency_id)
                 .map(|status| status.to_string())
                 .unwrap_or_else(|| "missing".to_string()),
         })
@@ -732,7 +785,7 @@ pub fn resolve_task_dependencies(
 }
 
 pub fn task_dependencies_ready(task: &Task, status_by_id: &BTreeMap<OrbitId, TaskStatus>) -> bool {
-    task.dependencies.iter().all(|dependency_id| {
+    task.dependencies().iter().all(|dependency_id| {
         status_by_id
             .get(dependency_id)
             .is_some_and(|status| status.satisfies_dependency())
@@ -785,7 +838,7 @@ pub fn validate_task_dependencies(
 
     let mut adjacency = tasks
         .iter()
-        .map(|task| (task.id.clone(), task.dependencies.clone()))
+        .map(|task| (task.id.clone(), task.dependencies()))
         .collect::<BTreeMap<_, _>>();
     adjacency.insert(current_task_id.to_string(), dependencies.to_vec());
 
@@ -977,11 +1030,11 @@ updated_at: 2026-01-01T00:00:00Z
         let source = dir.path().join("summary.md");
         std::fs::write(&source, "hello\n").expect("write source");
 
-        let artifact =
-            TaskArtifact::from_utf8_source_file(&source, None).expect("read artifact source");
+        let artifact = TaskArtifact::from_source_file(&source, None).expect("read artifact source");
 
         assert_eq!(artifact.path, "summary.md");
-        assert_eq!(artifact.content, "hello\n");
+        assert_eq!(artifact.text_content(), Some("hello\n"));
+        assert_eq!(artifact.media_type, "text/markdown");
     }
 
     #[test]
@@ -990,18 +1043,18 @@ updated_at: 2026-01-01T00:00:00Z
         let source = dir.path().join("summary.md");
         std::fs::write(&source, "hello\n").expect("write source");
 
-        let artifact = TaskArtifact::from_utf8_source_file(&source, Some("reports/summary.md"))
+        let artifact = TaskArtifact::from_source_file(&source, Some("reports/summary.md"))
             .expect("read artifact source");
 
         assert_eq!(artifact.path, "reports/summary.md");
-        assert_eq!(artifact.content, "hello\n");
+        assert_eq!(artifact.text_content(), Some("hello\n"));
     }
 
     #[test]
     fn artifact_from_source_rejects_directories() {
         let dir = tempfile::tempdir().expect("tempdir");
 
-        let error = TaskArtifact::from_utf8_source_file(dir.path(), None)
+        let error = TaskArtifact::from_source_file(dir.path(), None)
             .unwrap_err()
             .to_string();
 
@@ -1010,16 +1063,16 @@ updated_at: 2026-01-01T00:00:00Z
     }
 
     #[test]
-    fn artifact_from_source_rejects_invalid_utf8() {
+    fn artifact_from_source_accepts_binary() {
         let dir = tempfile::tempdir().expect("tempdir");
         let source = dir.path().join("binary.bin");
         std::fs::write(&source, [0xff, 0xfe, 0xfd]).expect("write source");
 
-        let error = TaskArtifact::from_utf8_source_file(&source, None)
-            .unwrap_err()
-            .to_string();
+        let artifact =
+            TaskArtifact::from_source_file(&source, None).expect("read binary artifact source");
 
-        assert!(error.contains("UTF-8 text file"));
-        assert!(error.contains(source.to_string_lossy().as_ref()));
+        assert_eq!(artifact.path, "binary.bin");
+        assert_eq!(artifact.content, vec![0xff, 0xfe, 0xfd]);
+        assert_eq!(artifact.media_type, "application/octet-stream");
     }
 }

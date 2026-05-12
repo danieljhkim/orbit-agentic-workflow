@@ -75,10 +75,16 @@ pub(super) fn planning_duel_plan_artifacts(
                 && artifact.path.ends_with(PLANNING_DUEL_PLAN_EXTENSION)
         })
         .map(|artifact| {
+            let content = artifact.text_content().ok_or_else(|| {
+                OrbitError::InvalidInput(format!(
+                    "planning duel artifact '{}' is not valid UTF-8",
+                    artifact.path
+                ))
+            })?;
             Ok(PlanningDuelPlanArtifact {
                 path: artifact.path.clone(),
-                content: artifact.content.clone(),
-                author: parse_planning_duel_signature(&artifact.content)?,
+                content: content.to_string(),
+                author: parse_planning_duel_signature(content)?,
             })
         })
         .collect::<Result<Vec<_>, OrbitError>>()?;
@@ -264,8 +270,13 @@ pub(super) fn winner_artifact_from_artifacts(
                 "missing required task artifact `{WINNER_ARTIFACT_PATH}`"
             ))
         })?;
-    let marker = serde_json::from_str::<PlanningDuelWinnerMarker>(&winner_artifact.content)
-        .map_err(|err| {
+    let marker_content = winner_artifact.text_content().ok_or_else(|| {
+        OrbitError::InvalidInput(format!(
+            "`{WINNER_ARTIFACT_PATH}` marker payload is not valid UTF-8"
+        ))
+    })?;
+    let marker =
+        serde_json::from_str::<PlanningDuelWinnerMarker>(marker_content).map_err(|err| {
             OrbitError::InvalidInput(format!(
                 "invalid `{WINNER_ARTIFACT_PATH}` marker payload: {err}"
             ))
@@ -488,10 +499,7 @@ mod tests {
     use serde_json::{Value, json};
 
     fn task_artifact(path: &str, content: String) -> TaskArtifact {
-        TaskArtifact {
-            path: path.to_string(),
-            content,
-        }
+        TaskArtifact::from_text(path, content)
     }
 
     fn plan_artifact(path: &str, agent: &str, model: &str) -> TaskArtifact {

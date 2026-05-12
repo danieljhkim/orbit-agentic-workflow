@@ -312,10 +312,10 @@ mod tests {
                 .filter(|task| status.is_none_or(|status| task.status == status))
                 .filter(|task| priority.is_none_or(|priority| task.priority == priority))
                 .filter(|task| {
-                    parent_id.is_none_or(|parent_id| task.parent_id.as_deref() == Some(parent_id))
+                    parent_id.is_none_or(|parent_id| task.parent_id() == Some(parent_id))
                 })
                 .filter(|task| {
-                    batch_id.is_none_or(|batch_id| task.batch_id.as_deref() == Some(batch_id))
+                    batch_id.is_none_or(|batch_id| task.job_run_id.as_deref() == Some(batch_id))
                 })
                 .filter(|task| {
                     external_ref.is_none_or(|external_ref| {
@@ -722,33 +722,24 @@ mod tests {
         let now = Utc::now();
         Task {
             id: id.to_string(),
-            parent_id: None,
             title: title.to_string(),
             description: String::new(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: String::new(),
             context_files: vec![format!("file:{path}")],
-            workspace_path: None,
-            repo_root: None,
             created_by: None,
             planned_by: None,
             implemented_by: Some(implemented_by.to_string()),
-            agent: None,
-            model: None,
             status: TaskStatus::InProgress,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Chore,
             pr_status: None,
             external_refs: Vec::new(),
-            source_task_id: None,
-            batch_id: Some("batch-1".to_string()),
-            comments: Vec::new(),
-            history: Vec::new(),
-            review_threads: Vec::new(),
+            relations: Vec::new(),
+            job_run_id: Some("batch-1".to_string()),
             created_at: now,
             updated_at: now,
         }

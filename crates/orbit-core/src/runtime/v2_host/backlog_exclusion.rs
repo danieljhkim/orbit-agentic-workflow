@@ -97,13 +97,7 @@ fn task_overlap_conflicts(
 }
 
 fn existing_lock_context_files(task: &Task) -> Vec<String> {
-    let workspace_root = task
-        .workspace_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let workspace_root = PathBuf::from(".");
     let canonical = task
         .context_files
         .iter()
@@ -233,7 +227,7 @@ pub(super) fn list_backlog_tasks(
                 "type": t.task_type.to_string(),
                 "priority": t.priority.to_string(),
                 "context_files": t.context_files,
-                "parent_id": t.parent_id,
+                "parent_id": t.parent_id(),
             })
         })
         .collect();
@@ -400,7 +394,7 @@ pub(super) fn summarize_epic(input: &Value) -> Result<Value, DispatchError> {
 fn task_root_id(task: &Task, task_lookup: &BTreeMap<String, Task>) -> String {
     let mut path = vec![task.id.clone()];
     let mut root_id = task.id.clone();
-    let mut next_parent_id = task.parent_id.clone();
+    let mut next_parent_id = task.parent_id().map(ToOwned::to_owned);
 
     for _ in 0..MAX_TASK_PARENT_CHAIN_DEPTH {
         let Some(parent_id) = next_parent_id else {
@@ -417,7 +411,7 @@ fn task_root_id(task: &Task, task_lookup: &BTreeMap<String, Task>) -> String {
 
         root_id = parent.id.clone();
         path.push(parent.id.clone());
-        next_parent_id = parent.parent_id.clone();
+        next_parent_id = parent.parent_id().map(ToOwned::to_owned);
     }
 
     root_id

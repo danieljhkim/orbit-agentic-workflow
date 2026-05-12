@@ -176,17 +176,12 @@ fn resolve_task_id_from_context(
         Err(_) => PathBuf::from(cwd),
     };
     let canonical_repo_root = canonical_repo_root(runtime);
+    if !task_workspace_matches(&canonical_repo_root, &canonical_cwd) {
+        return Ok(None);
+    }
 
     let tasks = runtime.stores().tasks().list()?;
-    Ok(tasks
-        .into_iter()
-        .filter_map(|task| {
-            let workspace =
-                validated_task_workspace(&canonical_repo_root, task.workspace_path.as_deref()?)?;
-            task_workspace_matches(&workspace, &canonical_cwd).then_some((task.id, workspace))
-        })
-        .max_by_key(|(_, workspace)| workspace.to_string_lossy().len())
-        .map(|(task_id, _)| task_id))
+    Ok(tasks.into_iter().next().map(|task| task.id))
 }
 
 fn resolve_workspace_root_from_context(
@@ -211,42 +206,10 @@ fn canonical_repo_root(runtime: &OrbitRuntime) -> PathBuf {
         .unwrap_or_else(|_| runtime.context.paths().repo_root.clone())
 }
 
-fn validated_task_workspace(repo_root: &Path, workspace_path: &str) -> Option<PathBuf> {
-    let candidate = if Path::new(workspace_path).is_absolute() {
-        PathBuf::from(workspace_path)
-    } else {
-        repo_root.join(workspace_path)
-    };
-    let canonical_workspace = candidate.canonicalize().ok()?;
-    if !canonical_workspace.is_dir() {
-        return None;
-    }
-    if canonical_workspace.starts_with(repo_root) {
-        return Some(canonical_workspace);
-    }
-
-    let worktree_root = configured_worktree_root()?;
-    canonical_workspace
-        .starts_with(worktree_root)
-        .then_some(canonical_workspace)
-}
-
-fn configured_worktree_root() -> Option<PathBuf> {
-    let value = std::env::var("ORBIT_WORKTREE_ROOT").ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let path = PathBuf::from(trimmed);
-    Some(path.canonicalize().unwrap_or(path))
-}
-
 fn resolve_task_workspace_root(runtime: &OrbitRuntime, task_id: &str) -> Option<PathBuf> {
     let repo_root = canonical_repo_root(runtime);
-    let task = runtime.get_task(task_id).ok()?;
-    let workspace_path = task.workspace_path.as_deref()?;
-    validated_task_workspace(&repo_root, workspace_path)
+    runtime.get_task(task_id).ok()?;
+    Some(repo_root)
 }
 
 fn task_workspace_matches(canonical_workspace: &Path, canonical_cwd: &Path) -> bool {
@@ -297,8 +260,6 @@ mod tests {
                 created_by: Some("test".to_string()),
                 planned_by: None,
                 implemented_by: None,
-                agent: None,
-                model: None,
                 status: TaskStatus::Backlog,
                 priority: TaskPriority::Medium,
                 complexity: None,

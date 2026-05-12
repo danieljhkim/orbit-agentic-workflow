@@ -28,7 +28,6 @@ pub(super) struct ActiveCheckpointState {
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct GroundhogTaskSnapshot {
     pub(super) plan: String,
-    pub(super) workspace_path: Option<String>,
 }
 
 pub(super) fn persist_runner_artifacts(
@@ -45,14 +44,8 @@ pub(super) fn persist_runner_artifacts(
     let state_json = serde_json::to_string_pretty(state)
         .map_err(|error| DispatchError::GroundhogFailed(format!("serialize state: {error}")))?;
     let artifacts = vec![
-        TaskArtifact {
-            path: CHRONICLE_ARTIFACT_PATH.to_string(),
-            content: chronicle_json,
-        },
-        TaskArtifact {
-            path: STATE_ARTIFACT_PATH.to_string(),
-            content: state_json,
-        },
+        TaskArtifact::from_text(CHRONICLE_ARTIFACT_PATH, chronicle_json),
+        TaskArtifact::from_text(STATE_ARTIFACT_PATH, state_json),
     ];
 
     let mut args = json!({
@@ -143,7 +136,12 @@ pub(super) fn load_chronicle(
         ));
     };
 
-    serde_json::from_str(&artifact.content).map_err(|error| {
+    let content = artifact.text_content().ok_or_else(|| {
+        DispatchError::GroundhogFailed(format!(
+            "chronicle artifact for task `{task_id}` is not valid UTF-8"
+        ))
+    })?;
+    serde_json::from_str(content).map_err(|error| {
         DispatchError::GroundhogFailed(format!(
             "parse chronicle artifact for task `{task_id}`: {error}"
         ))
@@ -163,7 +161,12 @@ pub(super) fn load_state(
         return Ok(GroundhogRunnerState::default());
     };
 
-    serde_json::from_str(&artifact.content).map_err(|error| {
+    let content = artifact.text_content().ok_or_else(|| {
+        DispatchError::GroundhogFailed(format!(
+            "runner state artifact for task `{task_id}` is not valid UTF-8"
+        ))
+    })?;
+    serde_json::from_str(content).map_err(|error| {
         DispatchError::GroundhogFailed(format!(
             "parse runner state artifact for task `{task_id}`: {error}"
         ))

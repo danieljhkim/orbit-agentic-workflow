@@ -103,8 +103,6 @@ pub(crate) fn seed_list_backlog_task(
                 created_by: Some("test".to_string()),
                 planned_by: Some("test".to_string()),
                 implemented_by: None,
-                agent: None,
-                model: None,
                 status,
                 priority,
                 complexity: None,

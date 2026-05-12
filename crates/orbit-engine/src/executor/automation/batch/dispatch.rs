@@ -215,7 +215,7 @@ fn ensure_unbatched(task: &Task) -> Result<(), OrbitError> {
 }
 
 fn task_batch_id(task: &Task) -> Option<&str> {
-    task.batch_id
+    task.job_run_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -284,8 +284,8 @@ fn complexity_score(task: &Task) -> usize {
 }
 
 fn relatedness_score(seed: &Task, candidate: &Task) -> usize {
-    let parent_bonus =
-        usize::from(seed.parent_id.is_some() && seed.parent_id == candidate.parent_id);
+    let seed_parent = seed.parent_id();
+    let parent_bonus = usize::from(seed_parent.is_some() && seed_parent == candidate.parent_id());
     let path_bonus = shared_path_prefix_score(seed, candidate);
     parent_bonus.saturating_mul(10) + path_bonus
 }

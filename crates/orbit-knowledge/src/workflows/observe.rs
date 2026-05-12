@@ -267,4 +267,3 @@ fn node_details(service: &GraphContextService<'_>, node: GraphNodeRef<'_>) -> Gr
         },
     }
 }
-

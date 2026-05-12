@@ -169,6 +169,7 @@ mod tests {
 
     struct PlanningDuelHost {
         task: Mutex<Task>,
+        comments: Mutex<Vec<TaskComment>>,
         artifacts: Mutex<Vec<TaskArtifact>>,
         data_root: PathBuf,
         scoreboard_dir: PathBuf,
@@ -187,6 +188,7 @@ mod tests {
 
             Self {
                 task: Mutex::new(task_with_status(status)),
+                comments: Mutex::new(Vec::new()),
                 artifacts: Mutex::new(Vec::new()),
                 data_root,
                 scoreboard_dir,
@@ -235,6 +237,13 @@ mod tests {
             _task_id: &str,
         ) -> Result<Vec<TaskArtifact>, orbit_common::types::OrbitError> {
             Ok(self.artifacts.lock().expect("artifacts lock").clone())
+        }
+
+        fn get_task_comments(
+            &self,
+            _task_id: &str,
+        ) -> Result<Vec<TaskComment>, orbit_common::types::OrbitError> {
+            Ok(self.comments.lock().expect("comments lock").clone())
         }
 
         fn list_tasks_filtered(
@@ -305,9 +314,10 @@ mod tests {
             if let Some(context_files) = update.context_files {
                 task.context_files = context_files;
             }
-            task.comments.extend(update.append_comments);
-            task.agent = update.agent;
-            task.model = update.model;
+            self.comments
+                .lock()
+                .expect("comments lock")
+                .extend(update.append_comments);
             task.updated_at = Utc::now();
             Ok(())
         }
@@ -390,12 +400,12 @@ mod tests {
                     self.artifacts
                         .lock()
                         .expect("artifacts lock")
-                        .push(TaskArtifact {
-                            path: format!("planning-duel/{agent_cli}-{model}.md"),
-                            content: format!(
+                        .push(TaskArtifact::from_text(
+                            format!("planning-duel/{agent_cli}-{model}.md"),
+                            format!(
                                 "*authored by: {agent_cli} / {model}*\n## Plan\nPreserve task status.\n"
                             ),
-                        });
+                        ));
                 }
                 "arbitrate_duel_plan" => {
                     let winner =
@@ -403,15 +413,15 @@ mod tests {
                     self.artifacts
                         .lock()
                         .expect("artifacts lock")
-                        .push(TaskArtifact {
-                            path: "planning-duel/winner.json".to_string(),
-                            content: json!({
+                        .push(TaskArtifact::from_text(
+                            "planning-duel/winner.json",
+                            json!({
                                 "winner_agent_cli": winner.agent,
                                 "winner_model": winner.model,
                                 "arbiter_rationale": "Preserves lifecycle state."
                             })
                             .to_string(),
-                        });
+                        ));
                 }
                 other => {
                     return Err(orbit_common::types::OrbitError::Execution(format!(
@@ -488,33 +498,24 @@ mod tests {
         let now = Utc::now();
         Task {
             id: "T20260430-STATUS".to_string(),
-            parent_id: None,
             title: "Planning duel status preservation".to_string(),
             description: "Exercise planning duel without lifecycle admission.".to_string(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: String::new(),
             context_files: Vec::new(),
-            workspace_path: None,
-            repo_root: None,
             created_by: Some("test".to_string()),
             planned_by: None,
             implemented_by: None,
-            agent: None,
-            model: None,
             status,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Bug,
             pr_status: None,
             external_refs: Vec::new(),
-            source_task_id: None,
-            batch_id: None,
-            comments: Vec::<TaskComment>::new(),
-            history: Vec::new(),
-            review_threads: Vec::new(),
+            relations: Vec::new(),
+            job_run_id: None,
             created_at: now,
             updated_at: now,
         }
@@ -542,10 +543,10 @@ mod tests {
             .expect("planning duel succeeds without lifecycle admission");
 
             let expected_status = status.to_string();
-            let task = host
-                .get_task("T20260430-STATUS")
-                .expect("task remains readable");
-            let comment = task.comments.last().expect("planning duel comment");
+            let comments = host
+                .get_task_comments("T20260430-STATUS")
+                .expect("comments remain readable");
+            let comment = comments.last().expect("planning duel comment");
             assert_eq!(host.task_status(), status, "{status}");
             assert_eq!(
                 output["task_status"].as_str(),
@@ -574,23 +575,23 @@ mod tests {
     fn install_planning_duel_artifacts(host: &PlanningDuelHost, plan_body: &str) {
         let mut artifacts = host.artifacts.lock().expect("artifacts lock");
         artifacts.clear();
-        artifacts.push(TaskArtifact {
-            path: "planning-duel/codex-gpt-5.5.md".to_string(),
-            content: "*authored by: codex / gpt-5.5*\n## Plan\nLoser plan.\n".to_string(),
-        });
-        artifacts.push(TaskArtifact {
-            path: "planning-duel/claude-claude-opus-4-7.md".to_string(),
-            content: format!("*authored by: claude / claude-opus-4-7*\n{plan_body}"),
-        });
-        artifacts.push(TaskArtifact {
-            path: "planning-duel/winner.json".to_string(),
-            content: json!({
+        artifacts.push(TaskArtifact::from_text(
+            "planning-duel/codex-gpt-5.5.md",
+            "*authored by: codex / gpt-5.5*\n## Plan\nLoser plan.\n",
+        ));
+        artifacts.push(TaskArtifact::from_text(
+            "planning-duel/claude-claude-opus-4-7.md",
+            format!("*authored by: claude / claude-opus-4-7*\n{plan_body}"),
+        ));
+        artifacts.push(TaskArtifact::from_text(
+            "planning-duel/winner.json",
+            json!({
                 "winner_agent_cli": "claude",
                 "winner_model": "claude-opus-4-7",
                 "arbiter_rationale": "Claude provided more detail."
             })
             .to_string(),
-        });
+        ));
     }
 
     fn run_writeback(host: &PlanningDuelHost) -> serde_json::Value {

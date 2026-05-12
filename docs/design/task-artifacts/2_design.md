@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-11
+**Last updated:** 2026-05-12
 
 This document describes the v2 task artifact implementation. The v2 store is the only task backend; the legacy status-directory store and its `[task] artifact_store` config gate were removed once Phase 6 began (`e9582eba`). Sections below are prescriptive about invariants the live store maintains rather than aspirational about a target.
 
@@ -117,7 +117,7 @@ V2 does not provide cross-file transactions. A crash can leave an appended event
 
 ## 5. Artifact Manifest
 
-Artifacts should support text and binary files. The current `TaskArtifact { path, content }` model only accepts UTF-8 text. V2 artifacts should use `artifacts/manifest.yaml`:
+Artifacts support text and binary files. The public `TaskArtifact` DTO carries `path`, raw byte `content`, and `media_type`; the bundle persists those bytes under `artifacts/files/` and indexes them with `artifacts/manifest.yaml`:
 
 ```yaml
 schema_version: 1
@@ -131,7 +131,7 @@ files:
 
 Manifest paths are stored in canonical relative form: slash-separated, no absolute paths, no `..`, no `.`, and no leading `./`. Writers that ingest hand-authored manifests should normalize a leading `./` before validation. SHA-256 values are lowercase hex; writer code should format digest bytes with lowercase hex (`{:x}`).
 
-Text artifacts may still be rendered inline by `orbit.task.show --field artifacts`, but storage should not require UTF-8.
+Text artifacts may still be rendered inline by `orbit.task.show --field artifacts`, but storage and API DTOs must not require UTF-8.
 
 ## 6. Local Task Store and Symlink Projection
 
@@ -238,6 +238,8 @@ The public task API should expose the v2 bundle model directly:
 
 CLI and tool selectors may keep friendly names such as `description`, `plan`, and `execution-summary`, but they should be implemented as first-class document reads and writes. New internal code should operate on a bundle abstraction with explicit envelope, document, log, thread, and artifact fields.
 
+The public `Task` DTO should not embed legacy relation fields (`parent_id`, `dependencies`, `source_task_id`), local workspace bindings (`workspace_path`, `repo_root`), append-heavy streams (`comments`, `history`, `review_threads`), or internal execution-routing fields (`agent`, `model`). It carries typed `relations`, `job_run_id`, envelope metadata, and durable attribution fields. Consumers that need comments, history, review threads, or workspace binding metadata should call the dedicated bundle/registry APIs.
+
 `orbit.task.locks.*` remains a local operational surface, not a task artifact. Lock reservations live in SQLite keyed by workspace binding and canonical `ORB-*` task IDs, and expire by TTL.
 
 ---
@@ -258,7 +260,7 @@ Lexical and semantic search should index each logical field independently:
 
 This preserves field-aware semantic search while making file boundaries visible in snippets. The embedding index should store field names that match the v2 logical document names; `execution-summary.md` is exposed as `execution_summary` to match the tool/API field.
 
-The current Phase 5 implementation is intentionally asymmetric while indexes are still being wired. Lexical search scans the broader set above. Semantic search indexes task title, description, acceptance, plan, execution summary, comments, and review message bodies; semantic parity for review paths/authors, external refs, and artifacts remains Phase 5 follow-up work.
+The current Phase 5 implementation is intentionally asymmetric while indexes are still being wired. Lexical search scans the broader set above. Semantic search indexes task title, description, acceptance, plan, and execution summary; semantic parity for comments, review messages and paths/authors, external refs, and artifacts remains Phase 5 follow-up work.
 
 Until generated full-text indexes land, the working implementation performs O(N x files-per-task) lexical scans by reading every registered bundle and any candidate text artifact files. That is acceptable only as a cutover bridge; generated search rows will replace the per-query artifact reads.
 

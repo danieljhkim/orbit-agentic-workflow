@@ -25,7 +25,7 @@ pub(crate) fn sync_batch_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
         if task.github_pr_number().is_none() {
             continue;
         }
-        if task.review_threads.is_empty() {
+        if host.get_task_review_threads(&task.id)?.is_empty() {
             continue;
         }
         total += sync_task_review_to_github(host, &task.id)?;
@@ -56,35 +56,28 @@ fn sync_task_review_to_github_with_client<
         return Ok(0);
     };
 
-    if task.review_threads.is_empty() {
+    let mut threads = host.get_task_review_threads(task_id)?;
+    if threads.is_empty() {
         return Ok(0);
     }
 
-    let Some(repo_root) = task.repo_root.as_deref().or(task.workspace_path.as_deref()) else {
-        tracing::warn!(
-            target: "orbit.engine.review_sync",
-            task_id = task_id,
-            "skipping review sync: missing repo_root and workspace_path",
-        );
-        return Ok(0);
-    };
+    let repo_root = host.repo_root()?;
 
-    let owner_repo = gh.get_owner_repo(repo_root)?;
-    let head_sha = gh.get_pr_head_sha(repo_root, pr_number)?;
+    let owner_repo = gh.get_owner_repo(&repo_root)?;
+    let head_sha = gh.get_pr_head_sha(&repo_root, pr_number)?;
     // If patch metadata can't be resolved, fall back to general PR comments
     // instead of failing the entire review sync run.
     let pr_file_patches = gh
-        .load_pr_file_patches(repo_root, &owner_repo, pr_number)
+        .load_pr_file_patches(&repo_root, &owner_repo, pr_number)
         .unwrap_or_default();
 
-    let mut threads = task.review_threads.clone();
     let mut synced_count: u64 = 0;
 
     for thread in threads.iter_mut() {
         let pending_labels = pending_sync_message_labels(thread);
         let thread_synced = sync_thread(
             gh,
-            repo_root,
+            &repo_root,
             &owner_repo,
             pr_number,
             &head_sha,
@@ -322,6 +315,7 @@ mod tests {
 
     struct TestHost {
         task: RefCell<Task>,
+        review_threads: RefCell<Vec<ReviewThread>>,
         data_root: PathBuf,
         scoreboard_dir: PathBuf,
         registry: ActivityExecutorRegistry,
@@ -331,6 +325,7 @@ mod tests {
         fn new(task: Task, data_root: PathBuf, scoreboard_dir: PathBuf) -> Self {
             Self {
                 task: RefCell::new(task),
+                review_threads: RefCell::new(fixture_review_threads(Utc::now())),
                 data_root,
                 scoreboard_dir,
                 registry: ActivityExecutorRegistry::default(),
@@ -352,6 +347,10 @@ mod tests {
 
         fn get_task_artifacts(&self, _task_id: &str) -> Result<Vec<TaskArtifact>, OrbitError> {
             Ok(Vec::new())
+        }
+
+        fn get_task_review_threads(&self, _task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+            Ok(self.review_threads.borrow().clone())
         }
 
         fn list_tasks_filtered(
@@ -402,7 +401,7 @@ mod tests {
             update: TaskAutomationUpdate,
         ) -> Result<(), OrbitError> {
             if let Some(review_threads) = update.review_threads {
-                self.task.borrow_mut().review_threads = review_threads;
+                *self.review_threads.borrow_mut() = review_threads;
             }
             Ok(())
         }
@@ -567,53 +566,48 @@ mod tests {
         }
     }
 
-    fn fixture_task(repo_root: &Path) -> Task {
+    fn fixture_task(_repo_root: &Path) -> Task {
         let now = Utc::now();
         Task {
             id: "T-review-sync".to_string(),
-            parent_id: None,
             title: "Review sync".to_string(),
             description: String::new(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: String::new(),
             context_files: Vec::new(),
-            workspace_path: Some(repo_root.to_string_lossy().to_string()),
-            repo_root: Some(repo_root.to_string_lossy().to_string()),
             created_by: Some("gpt-5.4".to_string()),
             planned_by: None,
             implemented_by: None,
-            agent: Some("codex".to_string()),
-            model: Some("gpt-5.4".to_string()),
             status: TaskStatus::Review,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Chore,
             pr_status: None,
             external_refs: vec![ExternalRef::github_pr("42").expect("github pr ref")],
-            source_task_id: None,
-            batch_id: None,
-            comments: Vec::new(),
-            history: Vec::new(),
-            review_threads: vec![ReviewThread {
-                thread_id: "rt-test".to_string(),
-                path: None,
-                line: None,
-                status: ReviewThreadStatus::Open,
-                messages: vec![ReviewMessage {
-                    message_id: "rm-test".to_string(),
-                    at: now,
-                    by: "gpt-5.4".to_string(),
-                    body: "Review note.".to_string(),
-                    github_comment_id: None,
-                }],
-                github_thread_id: None,
-            }],
+            relations: Vec::new(),
+            job_run_id: None,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn fixture_review_threads(now: chrono::DateTime<Utc>) -> Vec<ReviewThread> {
+        vec![ReviewThread {
+            thread_id: "rt-test".to_string(),
+            path: None,
+            line: None,
+            status: ReviewThreadStatus::Open,
+            messages: vec![ReviewMessage {
+                message_id: "rm-test".to_string(),
+                at: now,
+                by: "gpt-5.4".to_string(),
+                body: "Review note.".to_string(),
+                github_comment_id: None,
+            }],
+            github_thread_id: None,
+        }]
     }
 
     fn read_scoreboard(scoreboard_dir: &Path, file_name: &str) -> Value {

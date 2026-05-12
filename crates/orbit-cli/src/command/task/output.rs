@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
+use orbit_common::types::TaskArtifact;
 use orbit_core::{
     OrbitError, OrbitRuntime, TaskStatus, build_task_status_index, resolve_task_dependencies,
 };
@@ -9,7 +10,7 @@ use serde_json::{Value, json};
 pub(crate) fn task_to_signal_json(task: &orbit_core::Task) -> Value {
     json!({
         "id": task.id,
-        "parent_id": task.parent_id,
+        "parent_id": task.parent_id(),
         "title": task.title,
         "type": task.task_type.to_string(),
         "status": task.status.to_string(),
@@ -24,18 +25,16 @@ pub(crate) fn task_to_json(
 ) -> Value {
     json!({
         "id": task.id,
-        "parent_id": task.parent_id,
+        "parent_id": task.parent_id(),
         "title": task.title,
         "description": task.description,
         "acceptance_criteria": task.acceptance_criteria,
-        "dependencies": task.dependencies,
+        "dependencies": task.dependencies(),
         "resolved_dependencies": dependency_labels(task, status_by_id),
         "tags": task.tags,
         "plan": task.plan,
         "execution_summary": task.execution_summary,
         "context_files": task.context_files,
-        "workspace_path": task.workspace_path,
-        "repo_root": task.repo_root,
         "created_by": task.created_by,
         "planned_by": task.planned_by,
         "implemented_by": task.implemented_by,
@@ -45,11 +44,9 @@ pub(crate) fn task_to_json(
         "type": task.task_type.to_string(),
         "pr_status": task.pr_status,
         "external_refs": task.external_refs,
-        "source_task_id": task.source_task_id,
-        "job_run_id": task.batch_id,
-        "comments": task.comments,
-        "history": task.history,
-        "review_threads": task.review_threads,
+        "relations": task.relations,
+        "source_task_id": task.source_task_id(),
+        "job_run_id": task.job_run_id,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
@@ -60,7 +57,34 @@ pub(crate) fn task_to_json_for_runtime(
     task: &orbit_core::Task,
 ) -> Result<Value, OrbitError> {
     let status_by_id = build_task_status_index(&runtime.list_tasks()?);
-    Ok(task_to_json(task, &status_by_id))
+    task_to_json_with_sidecars(runtime, task, &status_by_id)
+}
+
+pub(crate) fn task_to_json_with_sidecars(
+    runtime: &OrbitRuntime,
+    task: &orbit_core::Task,
+    status_by_id: &BTreeMap<String, TaskStatus>,
+) -> Result<Value, OrbitError> {
+    let mut value = task_to_json(task, &status_by_id);
+    let object = value.as_object_mut().ok_or_else(|| {
+        OrbitError::Execution("task JSON projection did not produce an object".to_string())
+    })?;
+    object.insert(
+        "comments".to_string(),
+        serde_json::to_value(runtime.get_task_comments(&task.id)?)
+            .map_err(|e| OrbitError::Io(e.to_string()))?,
+    );
+    object.insert(
+        "history".to_string(),
+        serde_json::to_value(runtime.get_task_history(&task.id)?)
+            .map_err(|e| OrbitError::Io(e.to_string()))?,
+    );
+    object.insert(
+        "review_threads".to_string(),
+        serde_json::to_value(runtime.get_task_review_threads(&task.id)?)
+            .map_err(|e| OrbitError::Io(e.to_string()))?,
+    );
+    Ok(value)
 }
 
 pub(super) fn task_lock_to_json(task: &orbit_core::Task) -> Value {
@@ -68,7 +92,7 @@ pub(super) fn task_lock_to_json(task: &orbit_core::Task) -> Value {
         "id": task.id,
         "title": task.title,
         "status": task.status.to_string(),
-        "job_run_id": task.batch_id,
+        "job_run_id": task.job_run_id,
         "context_files": task.context_files,
     })
 }
@@ -121,7 +145,7 @@ pub(super) fn print_task_locks(tasks: &[orbit_core::Task], locked_files: &BTreeS
             println!();
         }
 
-        match task.batch_id.as_deref() {
+        match task.job_run_id.as_deref() {
             Some(job_run_id) => println!(
                 "[{}] {} ({}, job_run={})",
                 task.id, task.title, task.status, job_run_id
@@ -148,16 +172,15 @@ pub(super) fn task_field_to_json(
     status_by_id: Option<&BTreeMap<String, TaskStatus>>,
 ) -> Result<Value, OrbitError> {
     match field {
-        "comments" => {
-            serde_json::to_value(&task.comments).map_err(|e| OrbitError::Io(e.to_string()))
-        }
+        "comments" => serde_json::to_value(runtime.get_task_comments(&task.id)?)
+            .map_err(|e| OrbitError::Io(e.to_string())),
         "plan" => Ok(Value::String(task.plan.clone())),
         "execution_summary" => Ok(Value::String(task.execution_summary.clone())),
         "description" => Ok(Value::String(task.description.clone())),
         "acceptance_criteria" => serde_json::to_value(&task.acceptance_criteria)
             .map_err(|e| OrbitError::Io(e.to_string())),
         "dependencies" => {
-            serde_json::to_value(&task.dependencies).map_err(|e| OrbitError::Io(e.to_string()))
+            serde_json::to_value(task.dependencies()).map_err(|e| OrbitError::Io(e.to_string()))
         }
         "tags" => serde_json::to_value(&task.tags).map_err(|e| OrbitError::Io(e.to_string())),
         "resolved_dependencies" => serde_json::to_value(dependency_labels(
@@ -169,12 +192,14 @@ pub(super) fn task_field_to_json(
             })?,
         ))
         .map_err(|e| OrbitError::Io(e.to_string())),
-        "history" => serde_json::to_value(&task.history).map_err(|e| OrbitError::Io(e.to_string())),
+        "history" => serde_json::to_value(runtime.get_task_history(&task.id)?)
+            .map_err(|e| OrbitError::Io(e.to_string())),
         "context_files" => {
             serde_json::to_value(&task.context_files).map_err(|e| OrbitError::Io(e.to_string()))
         }
-        "artifacts" => serde_json::to_value(runtime.get_task_artifacts(&task.id)?)
-            .map_err(|e| OrbitError::Io(e.to_string())),
+        "artifacts" => Ok(task_artifacts_to_json(
+            &runtime.get_task_artifacts(&task.id)?,
+        )),
         other => Err(OrbitError::InvalidInput(format!(
             "unknown field selector `{other}`. Valid values: comments, plan, execution_summary, description, acceptance_criteria, dependencies, resolved_dependencies, tags, history, context_files, artifacts"
         ))),
@@ -231,7 +256,7 @@ pub(super) fn print_single_task_field(
     match field {
         "comments" => {
             use crate::output::color::dimmed;
-            for comment in &task.comments {
+            for comment in runtime.get_task_comments(&task.id)? {
                 println!(
                     "{} {}: {}",
                     dimmed(&format!("[{}]", comment.at.to_rfc3339())),
@@ -260,7 +285,7 @@ pub(super) fn print_single_task_field(
             Ok(())
         }
         "dependencies" => {
-            for dependency in &task.dependencies {
+            for dependency in task.dependencies() {
                 println!("{}", dependency);
             }
             Ok(())
@@ -286,7 +311,7 @@ pub(super) fn print_single_task_field(
         }
         "history" => {
             use crate::output::color::dimmed;
-            for entry in &task.history {
+            for entry in runtime.get_task_history(&task.id)? {
                 if let Some(note) = &entry.note {
                     println!(
                         "{} {}: {} ({})",
@@ -319,8 +344,18 @@ pub(super) fn print_single_task_field(
                 if index > 0 {
                     println!();
                 }
-                println!("{} {}", bold("Artifact:"), artifact.path);
-                print!("{}", artifact.content);
+                println!(
+                    "{} {} ({}, {} bytes)",
+                    bold("Artifact:"),
+                    artifact.path,
+                    artifact.media_type,
+                    artifact.content.len()
+                );
+                if let Some(content) = artifact.text_content() {
+                    print!("{content}");
+                } else {
+                    println!("[binary content omitted]");
+                }
             }
             Ok(())
         }
@@ -328,6 +363,30 @@ pub(super) fn print_single_task_field(
             "unknown field selector `{other}`. Valid values: comments, plan, execution_summary, description, acceptance_criteria, dependencies, resolved_dependencies, tags, history, context_files, artifacts"
         ))),
     }
+}
+
+pub(crate) fn task_artifacts_to_json(artifacts: &[TaskArtifact]) -> Value {
+    Value::Array(
+        artifacts
+            .iter()
+            .map(|artifact| {
+                let mut object = serde_json::Map::new();
+                object.insert("path".to_string(), Value::String(artifact.path.clone()));
+                object.insert(
+                    "media_type".to_string(),
+                    Value::String(artifact.media_type.clone()),
+                );
+                object.insert(
+                    "size".to_string(),
+                    Value::Number(serde_json::Number::from(artifact.content.len())),
+                );
+                if let Some(content) = artifact.text_content() {
+                    object.insert("content".to_string(), Value::String(content.to_string()));
+                }
+                Value::Object(object)
+            })
+            .collect(),
+    )
 }
 
 fn dependency_labels(

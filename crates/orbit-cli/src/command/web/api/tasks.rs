@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{bad_request, map_runtime_error, server_error, validate_id};
-use crate::command::task::output::task_to_json;
+use crate::command::task::output::task_to_json_with_sidecars;
 
 const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
     TaskStatus::InProgress,
@@ -81,7 +81,7 @@ fn default_priority() -> TaskPriority {
 /// Partial-update body for `PATCH /tasks/:id`. Each field is `Option<...>`;
 /// fields absent from the JSON body remain unchanged.
 ///
-/// Note: `pr_status` and `batch_id` are intentionally omitted from this v1
+/// Note: `pr_status` and `job_run_id` are intentionally omitted from this v1
 /// surface. They use `Option<Option<String>>` in `TaskUpdateParams` to
 /// distinguish absent vs. clear; the dashboard does not currently need to set
 /// them. Add them via a `deserialize_with` adapter when a UI use case appears.
@@ -115,10 +115,14 @@ pub(super) async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Resp
     match list_dashboard_tasks(&runtime) {
         Ok(tasks) => match dashboard_status_index(&runtime) {
             Ok(status_by_id) => {
-                let values: Vec<Value> = tasks
+                let values = match tasks
                     .iter()
-                    .map(|task| task_to_json(task, &status_by_id))
-                    .collect();
+                    .map(|task| task_to_json_with_sidecars(&runtime, task, &status_by_id))
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(values) => values,
+                    Err(error) => return server_error(error),
+                };
                 Json(Value::Array(values)).into_response()
             }
             Err(e) => server_error(e),
@@ -151,7 +155,10 @@ pub(super) async fn get_task(
     };
     match runtime.get_task(id) {
         Ok(task) => match dashboard_status_index(&runtime) {
-            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
+            Ok(status_by_id) => match task_to_json_with_sidecars(&runtime, &task, &status_by_id) {
+                Ok(value) => Json(value).into_response(),
+                Err(e) => server_error(e),
+            },
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -183,7 +190,10 @@ pub(super) async fn create_task_action(
     };
     match runtime.add_task_with_identity(params, None, None) {
         Ok(task) => match dashboard_status_index(&runtime) {
-            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
+            Ok(status_by_id) => match task_to_json_with_sidecars(&runtime, &task, &status_by_id) {
+                Ok(value) => Json(value).into_response(),
+                Err(e) => server_error(e),
+            },
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -220,7 +230,10 @@ pub(super) async fn update_task_action(
     };
     match runtime.update_task_with_identity(id, params, None, None) {
         Ok(task) => match dashboard_status_index(&runtime) {
-            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
+            Ok(status_by_id) => match task_to_json_with_sidecars(&runtime, &task, &status_by_id) {
+                Ok(value) => Json(value).into_response(),
+                Err(e) => server_error(e),
+            },
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -239,7 +252,10 @@ pub(super) async fn approve_task_action(
     let body = body.map(|Json(b)| b).unwrap_or_default();
     match runtime.approve_task(id, body.note, body.comment) {
         Ok(task) => match dashboard_status_index(&runtime) {
-            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
+            Ok(status_by_id) => match task_to_json_with_sidecars(&runtime, &task, &status_by_id) {
+                Ok(value) => Json(value).into_response(),
+                Err(e) => server_error(e),
+            },
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),
@@ -257,7 +273,10 @@ pub(super) async fn reject_task_action(
     };
     match runtime.reject_task(id, body.note, body.comment) {
         Ok(task) => match dashboard_status_index(&runtime) {
-            Ok(status_by_id) => Json(task_to_json(&task, &status_by_id)).into_response(),
+            Ok(status_by_id) => match task_to_json_with_sidecars(&runtime, &task, &status_by_id) {
+                Ok(value) => Json(value).into_response(),
+                Err(e) => server_error(e),
+            },
             Err(e) => server_error(e),
         },
         Err(e) => map_runtime_error(e),

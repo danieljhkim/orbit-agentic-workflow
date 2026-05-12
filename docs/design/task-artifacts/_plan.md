@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-11
+**Last updated:** 2026-05-12
 
 This is the temporary execution tracker for the task-artifacts reset until Orbit tasks can track this work again. It intentionally assumes a pre-release reset: existing task artifacts were deleted, no external users depend on the old layout, and the implementation does not need a migration command, legacy lookup aliases, or old-schema compatibility shims.
 
@@ -17,7 +17,7 @@ The design baseline is in place:
 - `docs/design/task-artifacts/specs/task-bundle-v2.md` defines the storage contract.
 - `docs/design/task-artifacts/4_decisions.md` records the accepted and pending ADRs.
 
-Implementation is in final cutover. Phase 0 through the core Phase 5 search slices have landed. Phase 6 has removed the config gate, deleted the legacy status-directory store, pruned the transitional design-doc section, accepted five ADRs, removed `workspace_path`/`repo_root` from runtime task updates, and made lexical artifact search tolerate binary files. The remaining final-phase work is concentrated in two live surfaces: typed relation/job-run wiring, and public DTO/API surgery.
+Implementation is in final cutover. Phase 0 through the core Phase 5 search slices have landed. Phase 6 has removed the config gate, deleted the legacy status-directory store, pruned the transitional design-doc section, accepted six ADRs, removed `workspace_path`/`repo_root` from runtime task updates and the public task DTO, made lexical artifact search tolerate binary files, wired typed relations/job-run filtering, and lifted task artifacts to a binary-capable DTO. The remaining final-phase work is final naming and documentation cleanup.
 
 ## Non-Goals
 
@@ -293,17 +293,19 @@ Implementation status:
 3. **Done:** `TaskRelationType` uses source-implied `ChildOf` and `BlockedBy`; cycle validation still applies to hierarchy and blocking families.
 4. **Done:** create maps `parent_id` to `ChildOf`, `dependencies` to `BlockedBy`, and `source_task_id` to `RegressionFrom`.
 5. **Done:** document updates can replace `BlockedBy` and `RegressionFrom` relations and set or clear `job_run_id`.
-6. **Done:** public read projections still fill `parent_id`, `dependencies`, `source_task_id`, and the legacy `Task.batch_id` field from v2 relations/job-run state until Slice B removes those DTO fields.
+6. **Done:** public read projections expose `parent_id`, `dependencies`, and `source_task_id` as friendly API/CLI fields derived from typed relations; the legacy `Task.batch_id` DTO field is gone after Slice B.
 7. **Done:** ADR-005 is accepted.
 8. **Done:** the eight Phase 6 tests listed below are unignored and pass in focused validation.
 9. **Done:** direction-dependent `ParentOf`/`Blocks` literals were removed from task-artifacts code and fixtures.
 
-**Slice B — public `Task` DTO surgery.** Biggest blast radius. Accepts ADR-006.
+**Slice B — public `Task` DTO surgery.** Implemented in working tree. Accepts ADR-006.
 
-- Drop legacy fields from [`crates/orbit-common/src/types/task.rs`](crates/orbit-common/src/types/task.rs): `parent_id`, `dependencies`, `source_task_id`, `batch_id`, `workspace_path`, `repo_root`, `comments`, `history`, and `review_threads`. Consumers that need those concepts should use typed relations, `job_run_id`, workspace binding metadata, or dedicated history/comment/review-thread endpoints.
-- Drop `agent` and `model` from `Task` and task document/update params. Internal execution routing belongs in `OrbitContext`, job-run/activity records, and tool call provenance, not in task artifacts or the public task DTO. Keep durable task attribution on the explicit `created_by`, `planned_by`, and `implemented_by` fields.
-- `TaskArtifact { path: String, content: String }` → `TaskArtifact { path: String, content: Bytes, media_type: String }` (or similar). The manifest already stores bytes; this just lifts that capability to the public DTO. Once landed, flip ADR-006 to `Accepted`.
-- Multi-crate ripple: CLI (`crates/orbit-cli`), MCP/tool host (`crates/orbit-tools`, `crates/orbit-core/src/runtime/orbit_tool_host`), engine (`crates/orbit-engine`), web (anything that serializes `Task` to JSON). Plan for a survey-then-execute pass; the survey is itself non-trivial.
+- **Done:** Dropped legacy fields from [`crates/orbit-common/src/types/task.rs`](crates/orbit-common/src/types/task.rs): `parent_id`, `dependencies`, `source_task_id`, `batch_id`, `workspace_path`, `repo_root`, `comments`, `history`, and `review_threads`. The DTO now carries typed `relations` and `job_run_id`; compatibility helper methods project `parent_id()`, `dependencies()`, and `source_task_id()` for callers that still render those concepts.
+- **Done:** Added dedicated read APIs for sidecar streams: `get_task_comments`, `get_task_history`, and `get_task_review_threads`. CLI/tool-host `comments`, `history`, and `review_threads` output uses those APIs instead of embedded DTO arrays.
+- **Done:** Dropped `agent` and `model` from `TaskCreateParams`/`TaskDocumentUpdateParams` plumbing. Internal execution routing stays in `OrbitContext`, job-run/activity records, and tool call provenance; durable task attribution remains `created_by`, `planned_by`, and `implemented_by`.
+- **Done:** Deleted the obsolete `migrate-task-attribution` compatibility helper, wrapper script, and tests; there is no longer an on-disk `agent`/`model` task-field compatibility path to normalize.
+- **Done:** Lifted task artifacts to `TaskArtifact { path: String, content: Vec<u8>, media_type: String }`, added binary-safe file ingestion, wrote artifact files as bytes, and made CLI/tool JSON include media type and size while rendering inline content only for valid text.
+- **Done:** Updated CLI, runtime tool-host JSON, engine automation, task locks, semantic embedding tests, and v2 store projections away from the old flat DTO fields.
 
 **Slice C — final naming/doc cleanup.**
 
@@ -322,9 +324,23 @@ Implementation status:
 | Phase 3 - V2 Bundle Store | Implemented in working tree | V2 create/get/list/update/review/artifact backend is the runtime task store. |
 | Phase 4 - Task Operations And Local Indexes | In progress | Generated indexes, lock rekeying, relation query acceleration, delete semantics, and review-found repair guards are implemented; public relation query surfaces remain. |
 | Phase 5 - Consumers And Search | In progress | First search slice covers v2 review threads/artifacts and semantic field names; consumer audit remains. |
-| Phase 6 - Remove Old Store Shape | In progress | Config gate, legacy task_store files, legacy migration commands, runtime `workspace_path`/`repo_root` cleanup, lexical artifact binary-skip, v2 relations API, `job_run_id`, and ADR-005 landed in working tree. Remaining: DTO/API surgery and final naming/doc cleanup. |
+| Phase 6 - Remove Old Store Shape | In progress | Config gate, legacy task_store files, legacy migration commands, runtime/public DTO `workspace_path`/`repo_root` cleanup, lexical artifact binary-skip, v2 relations API, `job_run_id`, ADR-005, DTO/API surgery, and ADR-006 landed in working tree. Remaining: final naming/doc cleanup. |
 
 ## Latest Validation
+
+2026-05-12:
+
+- `make fmt`
+- `cargo check -p orbit-common -p orbit-store -p orbit-core -p orbit-tools -p orbit-engine -p orbit-cli -p orbit-embed --tests`
+- `make build`
+- `git diff --check`
+- `cargo test -p orbit-common task_artifacts -- --nocapture`
+- `cargo test -p orbit-store v2_store -- --nocapture`
+- `cargo test -p orbit-core runtime::engine::task_host -- --nocapture`
+- `cargo test -p orbit-core command::task::review -- --nocapture`
+- `cargo test -p orbit-core parse_artifacts -- --nocapture`
+- `cargo test -p orbit-cli task -- --nocapture`
+- `cargo test -p orbit-engine groundhog -- --nocapture`
 
 2026-05-11:
 
@@ -357,4 +373,4 @@ Implementation status:
 
 ## Suggested Next Slice
 
-Implement Slice A first: add `job_run_id`, wire typed relations through create/update/list surfaces, rename `ParentOf`/`Blocks` to `ChildOf`/`BlockedBy`, and un-ignore the eight Phase 6 tests. That removes the largest current behavior gap before the DTO surgery starts.
+Implement Slice C: rename the last v2-only backend constructors to unqualified names, decide whether `[task] artifact_store = "v2"` remains a no-op or is rejected, update task-sync/agent-facing docs from `T...`/status-directory examples to `ORB-*` bundle projection, and run the full validation gate.

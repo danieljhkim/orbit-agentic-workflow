@@ -191,8 +191,6 @@ impl OrbitRuntime {
                             actor: effective_label.clone(),
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
-                            agent: canonical_agent.clone().map(Some),
-                            model: canonical_model.clone().map(Some),
                             append_history: vec![TaskHistoryEntry {
                                 at,
                                 by: effective_label.clone(),
@@ -226,8 +224,6 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
                             status_note: note.clone(),
-                            agent: canonical_agent.clone().map(Some),
-                            model: canonical_model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },

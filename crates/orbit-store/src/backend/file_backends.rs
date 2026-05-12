@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
     Adr, AdrStatus, ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, Learning,
-    LearningStatus, OrbitError, PipelineState, PolicyDef, Task, TaskArtifact, TaskPriority,
-    TaskStatus,
+    LearningStatus, OrbitError, PipelineState, PolicyDef, ReviewThread, Task, TaskArtifact,
+    TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus,
 };
 
 use super::contracts::{
@@ -97,6 +97,14 @@ impl TaskDocumentStoreBackend for TaskV2Store {
 }
 
 impl TaskHistoryStoreBackend for TaskV2Store {
+    fn get_task_comments(&self, id: &str) -> Result<Option<Vec<TaskComment>>, OrbitError> {
+        self.get_task_comments(id)
+    }
+
+    fn get_task_history(&self, id: &str) -> Result<Option<Vec<TaskHistoryEntry>>, OrbitError> {
+        self.get_task_history(id)
+    }
+
     fn update_task_history(
         &self,
         id: &str,
@@ -107,6 +115,10 @@ impl TaskHistoryStoreBackend for TaskV2Store {
 }
 
 impl TaskReviewStoreBackend for TaskV2Store {
+    fn get_task_review_threads(&self, id: &str) -> Result<Option<Vec<ReviewThread>>, OrbitError> {
+        self.get_task_review_threads(id)
+    }
+
     fn update_task_reviews(
         &self,
         id: &str,

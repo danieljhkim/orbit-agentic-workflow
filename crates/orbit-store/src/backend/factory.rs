@@ -160,8 +160,6 @@ mod tests {
                 created_by: Some("codex:gpt-5.5".to_string()),
                 planned_by: None,
                 implemented_by: None,
-                agent: None,
-                model: None,
                 status: TaskStatus::Backlog,
                 priority: TaskPriority::Medium,
                 complexity: None,

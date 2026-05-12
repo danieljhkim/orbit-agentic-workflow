@@ -328,8 +328,9 @@ mod tests {
             .expect("update task");
         assert_eq!(updated.status, TaskStatus::Review);
         assert!(
-            updated
-                .comments
+            runtime
+                .get_task_comments(&task.id)
+                .expect("read task comments")
                 .iter()
                 .any(|comment| comment.message == "Runtime comment")
         );

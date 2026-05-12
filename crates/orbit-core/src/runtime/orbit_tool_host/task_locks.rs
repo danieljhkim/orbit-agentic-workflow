@@ -349,19 +349,8 @@ pub(crate) fn workspace_task_reservation_id(
 }
 
 fn task_workspace_root(runtime: &OrbitRuntime, task: &Task) -> PathBuf {
-    task.workspace_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                runtime.paths().repo_root.join(path)
-            }
-        })
-        .unwrap_or_else(|| runtime.paths().repo_root.clone())
+    let _ = task;
+    runtime.paths().repo_root.clone()
 }
 
 fn existing_context_files(runtime: &OrbitRuntime, task: &Task) -> Vec<String> {

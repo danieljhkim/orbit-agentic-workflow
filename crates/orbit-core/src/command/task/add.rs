@@ -76,8 +76,6 @@ impl OrbitRuntime {
                 created_by: Some(create_label.clone()),
                 planned_by,
                 implemented_by: None,
-                agent: canonical_agent.clone(),
-                model: canonical_model.clone(),
                 status: initial_status,
                 priority: params.priority,
                 complexity: params.complexity,

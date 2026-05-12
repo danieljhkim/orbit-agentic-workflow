@@ -69,7 +69,10 @@ pub fn run_resolved_graph_build(
     };
 
     let ctx = crate::pipeline::run_build(config).map_err(|error| {
-        KnowledgeError::knowledge_unavailable(format!("knowledge {} failed: {error}", resolved.mode))
+        KnowledgeError::knowledge_unavailable(format!(
+            "knowledge {} failed: {error}",
+            resolved.mode
+        ))
     })?;
 
     Ok(GraphBuildOutput {

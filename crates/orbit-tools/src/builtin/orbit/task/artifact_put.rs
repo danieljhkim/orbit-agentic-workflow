@@ -49,7 +49,7 @@ impl Tool for OrbitTaskArtifactPutTool {
         )?;
         let resolved_source_path = resolve_source_path(ctx, &source_path);
         let artifact =
-            TaskArtifact::from_utf8_source_file(&resolved_source_path, artifact_path.as_deref())?;
+            TaskArtifact::from_source_file(&resolved_source_path, artifact_path.as_deref())?;
 
         let mut update_input = input.as_object().cloned().unwrap_or_else(Map::new);
         update_input.insert("id".to_string(), Value::String(id));
@@ -61,7 +61,11 @@ impl Tool for OrbitTaskArtifactPutTool {
         update_input.remove("artifactPath");
         update_input.insert(
             "artifacts".to_string(),
-            json!([{ "path": artifact.path, "content": artifact.content }]),
+            json!([{
+                "path": artifact.path,
+                "media_type": artifact.media_type,
+                "content": artifact.content,
+            }]),
         );
 
         super::super::execute_host_action(

@@ -208,10 +208,7 @@ fn parse_artifact_args(raw_values: &[String]) -> Result<Vec<TaskArtifact>, Orbit
                     "task artifact path must not be empty".to_string(),
                 ));
             }
-            Ok(TaskArtifact {
-                path: path.to_string(),
-                content: content.to_string(),
-            })
+            Ok(TaskArtifact::from_text(path, content))
         })
         .collect()
 }

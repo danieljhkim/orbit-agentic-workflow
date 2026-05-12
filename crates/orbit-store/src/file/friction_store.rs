@@ -410,8 +410,8 @@ fn completed_tasks_by_model(tasks: &[Task]) -> BTreeMap<String, u64> {
             continue;
         }
         let Some(model) = normalize_optional_attribution_label(
-            task.model.as_deref().or(task.implemented_by.as_deref()),
-            task.model.as_deref(),
+            task.implemented_by.as_deref(),
+            task.implemented_by.as_deref(),
         ) else {
             continue;
         };
@@ -477,7 +477,7 @@ mod tests {
         let root = temp.path();
         add_friction(root, params("gpt-zero", Utc::now(), vec!["tooling"])).expect("add friction");
         let mut done = task("T1", TaskStatus::Done);
-        done.model = Some("gpt-done".to_string());
+        done.implemented_by = Some("gpt-done".to_string());
 
         let stats = friction_stats(root, &[done]).expect("stats");
         assert_eq!(
@@ -504,33 +504,24 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 5, 10, 0, 0, 0).unwrap();
         Task {
             id: id.to_string(),
-            parent_id: None,
             title: id.to_string(),
             description: String::new(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: String::new(),
             context_files: Vec::new(),
-            workspace_path: None,
-            repo_root: None,
             created_by: None,
             planned_by: None,
             implemented_by: None,
-            agent: None,
-            model: None,
             status,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Chore,
             pr_status: None,
             external_refs: Vec::new(),
-            source_task_id: None,
-            batch_id: None,
-            comments: Vec::new(),
-            history: Vec::new(),
-            review_threads: Vec::new(),
+            relations: Vec::new(),
+            job_run_id: None,
             created_at: now,
             updated_at: now,
         }

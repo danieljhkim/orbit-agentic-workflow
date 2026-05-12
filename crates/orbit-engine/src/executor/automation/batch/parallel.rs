@@ -668,8 +668,7 @@ mod tests {
 
     use chrono::Utc;
     use orbit_common::types::{
-        Activity, ExternalRef, Job, JobTargetType, OrbitEvent, TaskArtifact, TaskComment,
-        TaskPriority, TaskType,
+        Activity, ExternalRef, Job, JobTargetType, OrbitEvent, TaskArtifact, TaskPriority, TaskType,
     };
 
     use crate::context::{TaskReadHost, TaskWriteHost};
@@ -815,10 +814,10 @@ mod tests {
                 .filter(|task| status.is_none_or(|status| task.status == status))
                 .filter(|task| priority.is_none_or(|priority| task.priority == priority))
                 .filter(|task| {
-                    parent_id.is_none_or(|parent_id| task.parent_id.as_deref() == Some(parent_id))
+                    parent_id.is_none_or(|parent_id| task.parent_id() == Some(parent_id))
                 })
                 .filter(|task| {
-                    batch_id.is_none_or(|batch_id| task.batch_id.as_deref() == Some(batch_id))
+                    batch_id.is_none_or(|batch_id| task.job_run_id.as_deref() == Some(batch_id))
                 })
                 .filter(|task| {
                     external_ref.is_none_or(|external_ref| {
@@ -1025,33 +1024,24 @@ mod tests {
         let now = Utc::now();
         Task {
             id: id.to_string(),
-            parent_id: None,
             title: "Never returning parallel worker".to_string(),
             description: "Exercise timeout handling.".to_string(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: String::new(),
             context_files: vec![format!("file:{id}.rs")],
-            workspace_path: None,
-            repo_root: None,
             created_by: Some("test".to_string()),
             planned_by: None,
             implemented_by: None,
-            agent: None,
-            model: None,
             status: TaskStatus::Backlog,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Bug,
             pr_status: None,
             external_refs: Vec::new(),
-            source_task_id: None,
-            batch_id: Some(batch_id.to_string()),
-            comments: Vec::<TaskComment>::new(),
-            history: Vec::new(),
-            review_threads: Vec::new(),
+            relations: Vec::new(),
+            job_run_id: Some(batch_id.to_string()),
             created_at: now,
             updated_at: now,
         }

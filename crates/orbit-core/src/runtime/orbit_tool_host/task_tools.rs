@@ -125,21 +125,18 @@ pub(super) fn list(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitE
     let job_run_id = optional_string(&input, "job_run_id")?;
     let tags = optional_csv_or_string_list_alias(&input, &["tags", "tag"])?.unwrap_or_default();
     let ready = optional_bool_alias(&input, &["ready"])?;
-    let all_tasks = runtime.list_tasks_by_tags(&tags)?;
+    let all_tasks = runtime.list_tasks_filtered(
+        status,
+        None,
+        parent_id.as_deref(),
+        job_run_id.as_deref(),
+        None,
+        None,
+    )?;
     let status_by_id = build_task_status_index(&runtime.list_tasks()?);
     let tasks = all_tasks
         .into_iter()
-        .filter(|task| status.is_none_or(|value| task.status == value))
-        .filter(|task| {
-            parent_id
-                .as_deref()
-                .is_none_or(|value| task.parent_id.as_deref() == Some(value))
-        })
-        .filter(|task| {
-            job_run_id
-                .as_deref()
-                .is_none_or(|value| task.batch_id.as_deref() == Some(value))
-        })
+        .filter(|task| orbit_common::types::task_matches_tags(task, &tags))
         .filter(|task| ready != Some(true) || task_dependencies_ready(task, &status_by_id))
         .collect::<Vec<_>>();
     Ok(Value::Array(

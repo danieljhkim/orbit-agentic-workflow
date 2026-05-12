@@ -66,12 +66,10 @@ pub(super) fn implementation_label(
     explicit_model: Option<&str>,
 ) -> Option<String> {
     normalize_optional_attribution_label(
-        task.model
-            .as_deref()
-            .or(explicit_model)
+        explicit_model
             .or(task.implemented_by.as_deref())
             .or((!actor_label.trim().is_empty()).then_some(actor_label)),
-        task.model.as_deref().or(explicit_model),
+        explicit_model,
     )
 }
 

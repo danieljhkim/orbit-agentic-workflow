@@ -123,13 +123,11 @@ fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Pa
     let workspace_path = input
         .get("workspace_path")
         .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| task.workspace_path.clone());
+        .map(ToOwned::to_owned);
     let repo_root = input
         .get("repo_root")
         .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| task.repo_root.clone());
+        .map(ToOwned::to_owned);
 
     // Read-time safety net: drop any `context_files` entries whose resolved
     // paths no longer exist on disk. The authoritative fix lives at write-time

@@ -49,8 +49,6 @@ pub(super) fn create_task(
             created_by: Some("test".to_string()),
             planned_by: None,
             implemented_by: None,
-            agent: None,
-            model: None,
             status,
             priority: TaskPriority::Medium,
             complexity: None,

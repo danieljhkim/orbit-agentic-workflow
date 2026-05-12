@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-11 (claude-opus-4-7)
+**Last updated:** 2026-05-12 (gpt-5.5)
 
 ADR log for the task-artifacts feature. Format follows [docs/design/CONVENTIONS.md §4](../CONVENTIONS.md): each entry is `Context · Decision · Consequences`, every entry names at least one Cost, and numbers are append-only.
 
@@ -100,11 +100,11 @@ Relation types are source-implied: `child_of`, `blocked_by`, `spawned_from`, `re
 
 ## ADR-006 — Artifact manifest with binary-capable files
 
-**Status:** Proposed · 2026-05 · *implementing task TBD*
+**Status:** Accepted · 2026-05 · Phase 6 public artifact DTO surgery (working tree)
 
 **Context.** Current task artifacts are `path + UTF-8 content`. That is enough for planning duel Markdown or JSON, but it excludes screenshots, binary logs, trace bundles, and generated media. It also lacks checksums and media-type metadata.
 
-**Decision.** Store artifacts under `artifacts/files/` and track them with `artifacts/manifest.yaml`. Each manifest entry records logical path, blob path, media type, checksum, size, and attribution.
+**Decision.** Store artifacts under `artifacts/files/` and track them with `artifacts/manifest.yaml`. Each manifest entry records logical path, blob path, media type, checksum, size, and attribution. Public `TaskArtifact` values carry raw bytes plus media type so writers and readers do not reintroduce UTF-8-only assumptions above the manifest layer.
 
 **Consequences.**
 - Tasks can carry screenshots, binary traces, and structured generated outputs without abusing text fields.

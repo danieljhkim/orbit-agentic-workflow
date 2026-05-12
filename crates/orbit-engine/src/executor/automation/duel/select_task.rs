@@ -45,7 +45,7 @@ pub(in crate::executor::automation) fn select_duel_task<H: TaskReadHost + ?Sized
 }
 
 fn duel_batch_id(task: &Task) -> Option<&str> {
-    task.batch_id
+    task.job_run_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())

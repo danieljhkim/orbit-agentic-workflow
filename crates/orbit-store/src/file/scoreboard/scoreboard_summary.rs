@@ -296,8 +296,8 @@ pub fn generate_summary_with_inputs(
     for task in tasks {
         if matches!(task.status, TaskStatus::Done | TaskStatus::Archived)
             && let Some(model) = normalize_optional_attribution_label(
-                task.model.as_deref().or(task.implemented_by.as_deref()),
-                task.model.as_deref(),
+                task.implemented_by.as_deref(),
+                task.implemented_by.as_deref(),
             )
         {
             let summary = agents.entry(model_key(&model)).or_default();
@@ -409,22 +409,11 @@ fn build_recent_summary(
     }
 }
 
-/// Best-effort timestamp for when a task entered `done`/`archived`. Reads
-/// the most recent matching transition from `task.history`; falls back to
-/// `updated_at` so legacy rows missing history transitions still count.
+/// Best-effort timestamp for when a task entered `done`/`archived`.
+/// Task history is no longer embedded in the public task DTO, so summary
+/// generation uses the envelope `updated_at` timestamp.
 fn task_done_at(task: &Task) -> Option<DateTime<Utc>> {
-    let from_history = task
-        .history
-        .iter()
-        .rev()
-        .find(|entry| {
-            matches!(
-                entry.to_status,
-                Some(TaskStatus::Done) | Some(TaskStatus::Archived)
-            )
-        })
-        .map(|entry| entry.at);
-    from_history.or(Some(task.updated_at))
+    Some(task.updated_at)
 }
 
 /// Best-effort completion timestamp for a JobRun. `finished_at` is set when
@@ -871,16 +860,7 @@ mod tests {
             "claude-opus-4-7",
         );
         t_inside.created_at = inside;
-        t_inside
-            .history
-            .push(orbit_common::types::TaskHistoryEntry {
-                at: inside,
-                by: "claude-opus-4-7".to_string(),
-                event: "transitioned".to_string(),
-                note: None,
-                from_status: None,
-                to_status: Some(TaskStatus::Done),
-            });
+        t_inside.updated_at = inside;
 
         let mut t_inside2 = test_task("T-in2", TaskStatus::Backlog, "gpt-5.5", "gpt-5.5");
         t_inside2.created_at = inside;
@@ -1012,33 +992,24 @@ mod tests {
         use orbit_common::types::{Task, TaskPriority, TaskType};
         Task {
             id: id.to_string(),
-            parent_id: None,
             title: id.to_string(),
             description: String::new(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: String::new(),
             context_files: Vec::new(),
-            workspace_path: None,
-            repo_root: None,
             created_by: None,
             planned_by: None,
             implemented_by: None,
-            agent: None,
-            model: None,
             status,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Chore,
             pr_status: None,
             external_refs: Vec::new(),
-            source_task_id: None,
-            batch_id: None,
-            comments: Vec::new(),
-            history: Vec::new(),
-            review_threads: Vec::new(),
+            relations: Vec::new(),
+            job_run_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

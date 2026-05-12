@@ -40,8 +40,7 @@ impl OrbitRuntime {
     pub fn lint_task(&self, id: &str) -> Result<TaskLintReport, OrbitError> {
         let started_at = Instant::now();
         let task = self.get_task(id)?;
-        let workspace_root =
-            context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
+        let workspace_root = context_workspace_root(&self.paths().repo_root, None);
         let canonical_context_files =
             canonicalize_context_files_for_read(&task.context_files, &workspace_root);
         emit_graph_unavailable_warning_if_needed(&canonical_context_files, self.data_root_path());

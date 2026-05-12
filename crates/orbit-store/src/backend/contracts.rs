@@ -66,8 +66,6 @@ pub struct TaskCreateParams {
     pub created_by: Option<String>,
     pub planned_by: Option<String>,
     pub implemented_by: Option<String>,
-    pub agent: Option<String>,
-    pub model: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     pub complexity: Option<TaskComplexity>,
@@ -98,8 +96,6 @@ pub struct TaskDocumentUpdateParams {
     pub created_by: Option<Option<String>>,
     pub planned_by: Option<Option<String>>,
     pub implemented_by: Option<Option<String>>,
-    pub agent: Option<Option<String>>,
-    pub model: Option<Option<String>>,
     pub priority: Option<TaskPriority>,
     pub complexity: Option<TaskComplexity>,
     pub task_type: Option<TaskType>,
@@ -378,6 +374,8 @@ pub trait TaskDocumentStoreBackend: Send + Sync {
 }
 
 pub trait TaskHistoryStoreBackend: Send + Sync {
+    fn get_task_comments(&self, id: &str) -> Result<Option<Vec<TaskComment>>, OrbitError>;
+    fn get_task_history(&self, id: &str) -> Result<Option<Vec<TaskHistoryEntry>>, OrbitError>;
     fn update_task_history(
         &self,
         id: &str,
@@ -386,6 +384,7 @@ pub trait TaskHistoryStoreBackend: Send + Sync {
 }
 
 pub trait TaskReviewStoreBackend: Send + Sync {
+    fn get_task_review_threads(&self, id: &str) -> Result<Option<Vec<ReviewThread>>, OrbitError>;
     fn update_task_reviews(
         &self,
         id: &str,

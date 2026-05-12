@@ -93,12 +93,12 @@ impl Execute for TaskListArgs {
             .filter(|t| {
                 parent_id
                     .as_deref()
-                    .is_none_or(|p| t.parent_id.as_deref() == Some(p))
+                    .is_none_or(|p| t.parent_id() == Some(p))
             })
             .filter(|t| {
                 job_run_id
                     .as_deref()
-                    .is_none_or(|value| t.batch_id.as_deref() == Some(value))
+                    .is_none_or(|value| t.job_run_id.as_deref() == Some(value))
             })
             .filter(|t| {
                 external_ref.as_ref().is_none_or(|external_ref| {

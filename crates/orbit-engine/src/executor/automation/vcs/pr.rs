@@ -133,14 +133,18 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     let _ =
         super::git::git_command_success(&workspace_path, &["push", "origin", "--delete", &head]);
 
-    let batch_requires_revision = batch_tasks.iter().any(task_required_revision);
+    let batch_requires_revision = batch_tasks
+        .iter()
+        .map(|task| task_required_revision(host, task))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .any(|requires_revision| requires_revision);
     let batch_author = batch_tasks.iter().find_map(|task| {
         normalize_optional_attribution_label(
             task.implemented_by
                 .as_deref()
-                .or(task.model.as_deref())
                 .or(task.created_by.as_deref()),
-            task.model.as_deref(),
+            task.implemented_by.as_deref(),
         )
     });
 
@@ -206,7 +210,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     let mut completed_tasks = Vec::new();
     for task_id in &completed_task_ids {
         let task = host.get_task(task_id)?;
-        if task.batch_id.as_deref() != Some(batch_id) {
+        if task.job_run_id.as_deref() != Some(batch_id) {
             return Err(OrbitError::Execution(format!(
                 "open_batch_pr: task '{}' no longer belongs to batch '{}'",
                 task.id, batch_id
@@ -582,18 +586,19 @@ fn batch_pr_signature(tasks: &[Task]) -> Option<String> {
     })
 }
 
-fn task_required_revision(task: &Task) -> bool {
-    task.history.iter().any(|entry| {
+fn task_required_revision<H: TaskHost + ?Sized>(host: &H, task: &Task) -> Result<bool, OrbitError> {
+    let history = host.get_task_history(&task.id)?;
+    let review_threads = host.get_task_review_threads(&task.id)?;
+    Ok(history.iter().any(|entry| {
         entry.event == "status_changed"
             && entry.from_status == Some(TaskStatus::Review)
             && matches!(
                 entry.to_status,
                 Some(TaskStatus::Backlog | TaskStatus::InProgress | TaskStatus::Rejected)
             )
-    }) || task
-        .review_threads
+    }) || review_threads
         .iter()
-        .any(|thread| thread.status == ReviewThreadStatus::Resolved)
+        .any(|thread| thread.status == ReviewThreadStatus::Resolved))
 }
 
 #[cfg(test)]
@@ -697,10 +702,10 @@ mod tests {
                 .filter(|task| status.is_none_or(|status| task.status == status))
                 .filter(|task| priority.is_none_or(|priority| task.priority == priority))
                 .filter(|task| {
-                    parent_id.is_none_or(|parent_id| task.parent_id.as_deref() == Some(parent_id))
+                    parent_id.is_none_or(|parent_id| task.parent_id() == Some(parent_id))
                 })
                 .filter(|task| {
-                    batch_id.is_none_or(|batch_id| task.batch_id.as_deref() == Some(batch_id))
+                    batch_id.is_none_or(|batch_id| task.job_run_id.as_deref() == Some(batch_id))
                 })
                 .filter(|task| {
                     external_ref.is_none_or(|external_ref| {
@@ -878,33 +883,24 @@ mod tests {
         let now = Utc::now();
         Task {
             id: id.to_string(),
-            parent_id: None,
             title: title.to_string(),
             description: String::new(),
             acceptance_criteria: Vec::new(),
-            dependencies: Vec::new(),
             tags: Vec::new(),
             plan: String::new(),
             execution_summary: execution_summary.to_string(),
             context_files: Vec::new(),
-            workspace_path: None,
-            repo_root: None,
             created_by: Some("gpt-5.5".to_string()),
             planned_by: None,
             implemented_by: None,
-            agent: None,
-            model: None,
             status: TaskStatus::Review,
             priority: TaskPriority::Medium,
             complexity: None,
             task_type: TaskType::Chore,
             pr_status: None,
             external_refs: Vec::new(),
-            source_task_id: None,
-            batch_id: None,
-            comments: Vec::new(),
-            history: Vec::new(),
-            review_threads: Vec::new(),
+            relations: Vec::new(),
+            job_run_id: None,
             created_at: now,
             updated_at: now,
         }
@@ -913,7 +909,7 @@ mod tests {
     fn batch_task(id: &str, title: &str, execution_summary: &str) -> Task {
         let mut task = task(id, title, execution_summary);
         task.status = TaskStatus::InProgress;
-        task.batch_id = Some("batch-1".to_string());
+        task.job_run_id = Some("batch-1".to_string());
         task
     }
 

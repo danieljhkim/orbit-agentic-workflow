@@ -11,7 +11,7 @@ use orbit_common::types::{
     TaskPriority, TaskRelation, TaskRelationType, TaskStatus, normalize_task_tags,
     validate_relative_artifact_path,
 };
-use orbit_common::utility::fs::{atomic_write_text, with_exclusive_file_lock};
+use orbit_common::utility::fs::{atomic_write_bytes, with_exclusive_file_lock};
 use sha2::{Digest, Sha256};
 
 use crate::backend::{
@@ -28,8 +28,6 @@ pub(crate) struct TaskV2Store {
     registry: TaskRegistryStore,
     bundle_store: TaskBundleStoreV2,
     workspace_id: String,
-    workspace_path: Option<String>,
-    repo_root: Option<String>,
 }
 
 impl TaskV2Store {
@@ -37,8 +35,8 @@ impl TaskV2Store {
         registry: TaskRegistryStore,
         workspace_id: String,
         workspace_orbit_dir: PathBuf,
-        workspace_path: Option<String>,
-        repo_root: Option<String>,
+        _workspace_path: Option<String>,
+        _repo_root: Option<String>,
     ) -> Self {
         Self {
             bundle_store: TaskBundleStoreV2::new(
@@ -48,8 +46,6 @@ impl TaskV2Store {
             ),
             registry,
             workspace_id,
-            workspace_path,
-            repo_root,
         }
     }
 
@@ -165,8 +161,8 @@ impl TaskV2Store {
         tasks.retain(|task| {
             status.is_none_or(|value| task.status == value)
                 && priority.is_none_or(|value| task.priority == value)
-                && parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value))
-                && job_run_id.is_none_or(|value| task.batch_id.as_deref() == Some(value))
+                && parent_id.is_none_or(|value| task.parent_id() == Some(value))
+                && job_run_id.is_none_or(|value| task.job_run_id.as_deref() == Some(value))
                 && external_ref.is_none_or(|value| {
                     task.external_refs.iter().any(|candidate| {
                         candidate.system == value.system && candidate.id == value.id
@@ -513,27 +509,12 @@ impl TaskV2Store {
         let bundle_dir = self.bundle_store.bundle_path(id)?;
         let mut artifacts = Vec::new();
         for file in manifest.files {
-            if !is_text_artifact_media_type(&file.media_type) {
-                continue;
-            }
             let artifact_file = bundle_dir.join(TASK_ARTIFACTS_DIR_NAME).join(&file.blob);
-            let bytes = fs::read(&artifact_file).map_err(|err| OrbitError::Io(err.to_string()))?;
-            let content = match String::from_utf8(bytes) {
-                Ok(content) => content,
-                Err(err) => {
-                    orbit_common::tracing::warn!(
-                        target: "orbit.store.task_v2",
-                        task_id = id,
-                        artifact_path = %file.path,
-                        media_type = %file.media_type,
-                        error = %err,
-                        "skipping task artifact because it is not valid UTF-8",
-                    );
-                    continue;
-                }
-            };
+            let content =
+                fs::read(&artifact_file).map_err(|err| OrbitError::Io(err.to_string()))?;
             artifacts.push(TaskArtifact {
                 path: file.path,
+                media_type: file.media_type,
                 content,
             });
         }
@@ -581,15 +562,15 @@ impl TaskV2Store {
                 let path = normalize_v2_artifact_path(&artifact.path)?;
                 let blob = format!("{TASK_ARTIFACT_FILES_DIR_NAME}/{path}");
                 let destination = files_dir.join(&path);
-                atomic_write_text(&destination, &artifact.content)
+                atomic_write_bytes(&destination, &artifact.content)
                     .map_err(|err| OrbitError::Io(err.to_string()))?;
                 by_path.insert(
                     path.clone(),
                     ArtifactManifestFileV2 {
                         path: path.clone(),
                         blob,
-                        sha256: format!("{:x}", Sha256::digest(artifact.content.as_bytes())),
-                        media_type: media_type_for_artifact_path(&path).to_string(),
+                        sha256: format!("{:x}", Sha256::digest(&artifact.content)),
+                        media_type: artifact.media_type.clone(),
                         size_bytes: artifact.content.len() as u64,
                         created_by: fields.actor.clone(),
                         created_at: now,
@@ -678,9 +659,37 @@ impl TaskV2Store {
             return Ok(true);
         }
 
+        if self.task_sidecars_match_query(&task.id, lowered)? {
+            return Ok(true);
+        }
+
         // Phase 5 bridge: artifact search reads text artifact files on demand until
         // generated full-text indexes carry artifact paths, content, and snippets.
         self.task_artifacts_match_query(&task.id, lowered)
+    }
+
+    fn task_sidecars_match_query(&self, id: &str, lowered: &str) -> Result<bool, OrbitError> {
+        let Some(comments) = self.get_task_comments(id)? else {
+            return Ok(false);
+        };
+        if comments
+            .iter()
+            .any(|comment| comment.message.to_lowercase().contains(lowered))
+        {
+            return Ok(true);
+        }
+        let Some(review_threads) = self.get_task_review_threads(id)? else {
+            return Ok(false);
+        };
+        Ok(review_threads.iter().any(|thread| {
+            thread.messages.iter().any(|message| {
+                message.body.to_lowercase().contains(lowered)
+                    || message.by.to_lowercase().contains(lowered)
+            }) || thread
+                .path
+                .as_deref()
+                .is_some_and(|path| path.to_lowercase().contains(lowered))
+        }))
     }
 
     fn task_artifacts_match_query(&self, id: &str, lowered: &str) -> Result<bool, OrbitError> {
@@ -690,7 +699,10 @@ impl TaskV2Store {
         };
         Ok(artifacts.iter().any(|artifact| {
             artifact.path.to_lowercase().contains(lowered)
-                || artifact.content.to_lowercase().contains(lowered)
+                || (is_text_artifact_media_type(&artifact.media_type)
+                    && artifact
+                        .text_content()
+                        .is_some_and(|content| content.to_lowercase().contains(lowered)))
         }))
     }
 
@@ -712,63 +724,94 @@ impl TaskV2Store {
 
     fn task_from_bundle(&self, bundle: TaskBundleV2) -> Result<Task, OrbitError> {
         let status = bundle.envelope.status;
-        let (parent_id, dependencies, source_task_id) =
-            legacy_relation_projections(&bundle.envelope.relations);
         Ok(Task {
             id: bundle.envelope.id,
-            parent_id,
             title: bundle.envelope.title,
             description: bundle.description,
             acceptance_criteria: parse_acceptance(&bundle.acceptance),
-            dependencies,
             tags: normalize_task_tags(bundle.envelope.tags),
             plan: bundle.plan,
             execution_summary: bundle.execution_summary,
             context_files: bundle.envelope.context_files,
-            workspace_path: self.workspace_path.clone(),
-            repo_root: self.repo_root.clone(),
             created_by: bundle.envelope.created_by,
             planned_by: bundle.envelope.planned_by,
             implemented_by: bundle.envelope.implemented_by,
-            agent: None,
-            model: None,
             status,
             priority: bundle.envelope.priority,
             complexity: bundle.envelope.complexity,
             task_type: bundle.envelope.task_type,
             pr_status: None,
             external_refs: bundle.envelope.external_refs,
-            source_task_id,
-            batch_id: bundle.envelope.job_run_id,
-            comments: bundle
-                .comments
-                .into_iter()
-                .map(|comment| TaskComment {
-                    at: comment.at,
-                    by: comment.by,
-                    message: comment.body,
-                })
-                .collect(),
-            history: bundle
-                .events
-                .into_iter()
-                .map(|event| TaskHistoryEntry {
-                    at: event.at,
-                    by: event.by,
-                    event: event.event_type,
-                    note: event.note,
-                    from_status: event.from_status,
-                    to_status: event.to_status,
-                })
-                .collect(),
-            review_threads: bundle
-                .review_threads
-                .into_iter()
-                .map(review_thread_from_v2)
-                .collect(),
+            relations: bundle.envelope.relations,
+            job_run_id: bundle.envelope.job_run_id,
             created_at: bundle.envelope.created_at,
             updated_at: bundle.envelope.updated_at,
         })
+    }
+
+    pub(crate) fn get_task_comments(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<TaskComment>>, OrbitError> {
+        orbit_common::types::validate_orb_task_id(id)?;
+        match self.bundle_store.read_bundle(id) {
+            Ok(bundle) => Ok(Some(
+                bundle
+                    .comments
+                    .into_iter()
+                    .map(|comment| TaskComment {
+                        at: comment.at,
+                        by: comment.by,
+                        message: comment.body,
+                    })
+                    .collect(),
+            )),
+            Err(OrbitError::TaskNotFound(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub(crate) fn get_task_history(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<TaskHistoryEntry>>, OrbitError> {
+        orbit_common::types::validate_orb_task_id(id)?;
+        match self.bundle_store.read_bundle(id) {
+            Ok(bundle) => Ok(Some(
+                bundle
+                    .events
+                    .into_iter()
+                    .map(|event| TaskHistoryEntry {
+                        at: event.at,
+                        by: event.by,
+                        event: event.event_type,
+                        note: event.note,
+                        from_status: event.from_status,
+                        to_status: event.to_status,
+                    })
+                    .collect(),
+            )),
+            Err(OrbitError::TaskNotFound(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub(crate) fn get_task_review_threads(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<ReviewThread>>, OrbitError> {
+        orbit_common::types::validate_orb_task_id(id)?;
+        match self.bundle_store.read_bundle(id) {
+            Ok(bundle) => Ok(Some(
+                bundle
+                    .review_threads
+                    .into_iter()
+                    .map(review_thread_from_v2)
+                    .collect(),
+            )),
+            Err(OrbitError::TaskNotFound(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
     fn read_existing_bundle(&self, id: &str) -> Result<TaskBundleV2, OrbitError> {
@@ -796,19 +839,6 @@ fn task_in_memory_fields_match_query(task: &Task, lowered: &str) -> bool {
             .acceptance_criteria
             .iter()
             .any(|criterion| criterion.to_lowercase().contains(lowered))
-        || task
-            .comments
-            .iter()
-            .any(|comment| comment.message.to_lowercase().contains(lowered))
-        || task.review_threads.iter().any(|thread| {
-            thread.messages.iter().any(|message| {
-                message.body.to_lowercase().contains(lowered)
-                    || message.by.to_lowercase().contains(lowered)
-            }) || thread
-                .path
-                .as_deref()
-                .is_some_and(|path| path.to_lowercase().contains(lowered))
-        })
         || task.external_refs.iter().any(|external_ref| {
             external_ref.system.to_lowercase().contains(lowered)
                 || external_ref.id.to_lowercase().contains(lowered)
@@ -882,26 +912,6 @@ fn replace_relations(
 ) {
     relations.retain(|relation| relation.relation_type != relation_type);
     relations.extend(replacements);
-}
-
-fn legacy_relation_projections(
-    relations: &[TaskRelation],
-) -> (Option<OrbitId>, Vec<OrbitId>, Option<String>) {
-    let parent_id = relations
-        .iter()
-        .find(|relation| relation.relation_type == TaskRelationType::ChildOf)
-        .map(|relation| relation.target.clone());
-    let mut dependencies = relations
-        .iter()
-        .filter(|relation| relation.relation_type == TaskRelationType::BlockedBy)
-        .map(|relation| relation.target.clone())
-        .collect::<Vec<_>>();
-    dependencies.sort();
-    let source_task_id = relations
-        .iter()
-        .find(|relation| relation.relation_type == TaskRelationType::RegressionFrom)
-        .map(|relation| relation.target.clone());
-    (parent_id, dependencies, source_task_id)
 }
 
 fn review_thread_from_v2(thread: TaskReviewThreadV2) -> ReviewThread {
@@ -1101,21 +1111,6 @@ fn normalize_v2_artifact_path(raw: &str) -> Result<String, OrbitError> {
     Ok(parts.join("/"))
 }
 
-fn media_type_for_artifact_path(path: &str) -> &'static str {
-    match Path::new(path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-    {
-        Some("md") | Some("markdown") => "text/markdown; charset=utf-8",
-        Some("json") => "application/json",
-        Some("yaml") | Some("yml") => "application/yaml",
-        Some("toml") => "application/toml",
-        Some("html") | Some("htm") => "text/html; charset=utf-8",
-        Some("rs") | Some("txt") => "text/plain; charset=utf-8",
-        _ => "text/plain; charset=utf-8",
-    }
-}
-
 fn render_acceptance(criteria: &[String]) -> String {
     if criteria.is_empty() {
         return String::new();
@@ -1213,8 +1208,6 @@ mod tests {
             created_by: Some("codex:gpt-5.5".to_string()),
             planned_by: None,
             implemented_by: None,
-            agent: Some("codex".to_string()),
-            model: Some("gpt-5.5".to_string()),
             status,
             priority: TaskPriority::High,
             complexity: None,
@@ -1245,15 +1238,28 @@ mod tests {
             created.acceptance_criteria,
             vec!["First criterion", "Second criterion"]
         );
-        assert_eq!(created.comments.len(), 1);
-        assert_eq!(created.history.len(), 1);
+        assert_eq!(
+            store
+                .get_task_comments("ORB-00000")
+                .expect("get comments")
+                .expect("task exists")
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .get_task_history("ORB-00000")
+                .expect("get history")
+                .expect("task exists")
+                .len(),
+            1
+        );
 
         let fetched = store
             .get_task("ORB-00000")
             .expect("get task")
             .expect("task exists");
         assert_eq!(fetched.title, created.title);
-        assert_eq!(fetched.workspace_path, created.workspace_path);
 
         let listed = store.list_tasks().expect("list tasks");
         assert_eq!(listed.len(), 1);
@@ -1316,9 +1322,9 @@ mod tests {
         params.source_task_id = Some(source.id.clone());
 
         let child = store.create_task(params).expect("create related task");
-        assert_eq!(child.parent_id.as_deref(), Some(parent.id.as_str()));
-        assert_eq!(child.dependencies, vec![dependency.id.clone()]);
-        assert_eq!(child.source_task_id.as_deref(), Some(source.id.as_str()));
+        assert_eq!(child.parent_id(), Some(parent.id.as_str()));
+        assert_eq!(child.dependencies(), vec![dependency.id.clone()]);
+        assert_eq!(child.source_task_id(), Some(source.id.as_str()));
 
         let envelope = store
             .bundle_store
@@ -1421,10 +1427,10 @@ mod tests {
                 "ORB-00000",
                 &TaskArtifactUpdateParams {
                     actor: "codex:gpt-5.5".to_string(),
-                    upsert_artifacts: vec![TaskArtifact {
-                        path: "reports/search.md".to_string(),
-                        content: "needle-artifact-body\n".to_string(),
-                    }],
+                    upsert_artifacts: vec![TaskArtifact::from_text(
+                        "reports/search.md",
+                        "needle-artifact-body\n",
+                    )],
                 },
             )
             .expect("upsert artifact");
@@ -1501,10 +1507,10 @@ mod tests {
                 "ORB-00001",
                 &TaskArtifactUpdateParams {
                     actor: "codex:gpt-5.5".to_string(),
-                    upsert_artifacts: vec![TaskArtifact {
-                        path: "reports/text.txt".to_string(),
-                        content: "needle-safe-text\n".to_string(),
-                    }],
+                    upsert_artifacts: vec![TaskArtifact::from_text(
+                        "reports/text.txt",
+                        "needle-safe-text\n",
+                    )],
                 },
             )
             .expect("upsert text artifact");
@@ -1650,7 +1656,14 @@ mod tests {
         assert_eq!(task.plan, "1. Updated plan");
         assert_eq!(task.execution_summary, "Updated summary");
         assert_eq!(task.priority, TaskPriority::Low);
-        assert!(task.history.iter().any(|entry| entry.event == "renamed"));
+        assert!(
+            store
+                .get_task_history("ORB-00000")
+                .expect("get history")
+                .expect("task exists")
+                .iter()
+                .any(|entry| entry.event == "renamed")
+        );
         assert_eq!(
             store
                 .list_tasks_by_tags(&["task-artifacts".to_string()])
@@ -1713,13 +1726,20 @@ mod tests {
                 .len(),
             1
         );
+        let comments = store
+            .get_task_comments("ORB-00000")
+            .expect("get comments")
+            .expect("task exists");
         assert!(
-            task.comments
+            comments
                 .iter()
                 .any(|comment| comment.message == "Working on it")
         );
-        let status_event = task
-            .history
+        let history = store
+            .get_task_history("ORB-00000")
+            .expect("get history")
+            .expect("task exists");
+        let status_event = history
             .iter()
             .find(|event| event.event == "status_changed")
             .expect("status event");
@@ -1784,12 +1804,12 @@ mod tests {
             )
             .expect("merge review thread");
 
-        let task = store
-            .get_task("ORB-00000")
-            .expect("get task")
+        let threads = store
+            .get_task_review_threads("ORB-00000")
+            .expect("get review threads")
             .expect("task exists");
-        assert_eq!(task.review_threads.len(), 1);
-        let thread = &task.review_threads[0];
+        assert_eq!(threads.len(), 1);
+        let thread = &threads[0];
         assert_eq!(thread.path.as_deref(), Some("src/lib.rs"));
         assert_eq!(thread.status, ReviewThreadStatus::Resolved);
         assert_eq!(thread.github_thread_id, Some(99));
@@ -1816,11 +1836,11 @@ mod tests {
                 },
             )
             .expect("replace review threads");
-        let task = store
-            .get_task("ORB-00000")
-            .expect("get task")
+        let threads = store
+            .get_task_review_threads("ORB-00000")
+            .expect("get review threads")
             .expect("task exists");
-        assert_eq!(task.review_threads[0].thread_id, "rt-2");
+        assert_eq!(threads[0].thread_id, "rt-2");
     }
 
     #[test]
@@ -1837,14 +1857,8 @@ mod tests {
                 &TaskArtifactUpdateParams {
                     actor: "codex:gpt-5.5".to_string(),
                     upsert_artifacts: vec![
-                        TaskArtifact {
-                            path: "./reports/summary.md".to_string(),
-                            content: "summary v1\n".to_string(),
-                        },
-                        TaskArtifact {
-                            path: "logs/output.txt".to_string(),
-                            content: "output\n".to_string(),
-                        },
+                        TaskArtifact::from_text("./reports/summary.md", "summary v1\n"),
+                        TaskArtifact::from_text("logs/output.txt", "output\n"),
                     ],
                 },
             )
@@ -1855,10 +1869,10 @@ mod tests {
                 "ORB-00000",
                 &TaskArtifactUpdateParams {
                     actor: "codex:gpt-5.5".to_string(),
-                    upsert_artifacts: vec![TaskArtifact {
-                        path: "reports/summary.md".to_string(),
-                        content: "summary v2\n".to_string(),
-                    }],
+                    upsert_artifacts: vec![TaskArtifact::from_text(
+                        "reports/summary.md",
+                        "summary v2\n",
+                    )],
                 },
             )
             .expect("overwrite artifact");
@@ -1874,7 +1888,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["logs/output.txt", "reports/summary.md"]
         );
-        assert_eq!(artifacts[1].content, "summary v2\n");
+        assert_eq!(artifacts[1].text_content(), Some("summary v2\n"));
 
         let bundle = store
             .bundle_store
@@ -1901,10 +1915,7 @@ mod tests {
                 "ORB-00000",
                 &TaskArtifactUpdateParams {
                     actor: "codex:gpt-5.5".to_string(),
-                    upsert_artifacts: vec![TaskArtifact {
-                        path: "../escape.txt".to_string(),
-                        content: String::new(),
-                    }],
+                    upsert_artifacts: vec![TaskArtifact::from_text("../escape.txt", "")],
                 },
             )
             .expect_err("reject unsafe artifact path");

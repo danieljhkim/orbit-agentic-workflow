@@ -109,9 +109,10 @@ pub use task::{
     ExternalRef, GITHUB_PR_EXTERNAL_REF_SYSTEM, ResolvedTaskDependency, ReviewMessage,
     ReviewThread, ReviewThreadStatus, Task, TaskArtifact, TaskComment, TaskComplexity,
     TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, build_task_status_index,
-    normalize_task_dependencies, normalize_task_tags, prune_missing_context_files,
-    push_external_ref_if_missing, resolve_task_dependencies, task_dependencies_ready,
-    task_matches_tags, unmet_task_dependencies, validate_task_dependencies,
+    media_type_for_artifact_path, normalize_task_dependencies, normalize_task_tags,
+    prune_missing_context_files, push_external_ref_if_missing, resolve_task_dependencies,
+    task_dependencies_ready, task_matches_tags, unmet_task_dependencies,
+    validate_task_dependencies,
 };
 pub use task_artifacts::{
     ArtifactManifestFileV2, ArtifactManifestV2, ORB_TASK_ID_MAX, ORB_TASK_ID_PREFIX,

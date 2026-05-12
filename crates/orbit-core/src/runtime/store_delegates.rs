@@ -35,8 +35,6 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) created_by: Option<Option<String>>,
     pub(crate) planned_by: Option<Option<String>>,
     pub(crate) implemented_by: Option<Option<String>>,
-    pub(crate) agent: Option<Option<String>>,
-    pub(crate) model: Option<Option<String>>,
     pub(crate) status: Option<TaskStatus>,
     pub(crate) priority: Option<TaskPriority>,
     pub(crate) complexity: Option<TaskComplexity>,
@@ -67,8 +65,6 @@ impl TaskRecordUpdateParams {
             || self.created_by.is_some()
             || self.planned_by.is_some()
             || self.implemented_by.is_some()
-            || self.agent.is_some()
-            || self.model.is_some()
             || self.priority.is_some()
             || self.complexity.is_some()
             || self.task_type.is_some()
@@ -186,6 +182,24 @@ impl TaskRecords<'_> {
         self.artifact.get_task_artifacts(id)
     }
 
+    pub(crate) fn get_comments(&self, id: &str) -> Result<Option<Vec<TaskComment>>, OrbitError> {
+        self.history.get_task_comments(id)
+    }
+
+    pub(crate) fn get_history(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<TaskHistoryEntry>>, OrbitError> {
+        self.history.get_task_history(id)
+    }
+
+    pub(crate) fn get_review_threads(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<ReviewThread>>, OrbitError> {
+        self.review.get_task_review_threads(id)
+    }
+
     pub(crate) fn list(&self) -> Result<Vec<Task>, OrbitError> {
         self.store.list_tasks()
     }
@@ -234,8 +248,6 @@ impl TaskRecords<'_> {
                     created_by: params.created_by.clone(),
                     planned_by: params.planned_by.clone(),
                     implemented_by: params.implemented_by.clone(),
-                    agent: params.agent.clone(),
-                    model: params.model.clone(),
                     priority: params.priority,
                     complexity: params.complexity,
                     task_type: params.task_type,

@@ -87,13 +87,11 @@ fn agent_task_context_json(task: &Task, input: &Value, fallback_repo_root: &Path
     let workspace_path = input
         .get("workspace_path")
         .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| task.workspace_path.clone());
+        .map(ToOwned::to_owned);
     let repo_root = input
         .get("repo_root")
         .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| task.repo_root.clone());
+        .map(ToOwned::to_owned);
     let prune_root = context_workspace_root(fallback_repo_root, workspace_path.as_deref());
     let canonical_context_files =
         canonicalize_context_files_for_read(&task.context_files, &prune_root);

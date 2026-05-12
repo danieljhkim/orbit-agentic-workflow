@@ -1,6 +1,6 @@
 use orbit_common::types::{
-    ExternalRef, OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus,
-    normalize_optional_attribution_label, push_external_ref_if_missing,
+    ExternalRef, OrbitError, OrbitEvent, ReviewThread, Task, TaskComment, TaskHistoryEntry,
+    TaskPriority, TaskStatus, normalize_optional_attribution_label, push_external_ref_if_missing,
 };
 use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
 
@@ -18,6 +18,18 @@ impl TaskReadHost for OrbitRuntime {
         task_id: &str,
     ) -> Result<Vec<orbit_common::types::TaskArtifact>, OrbitError> {
         OrbitRuntime::get_task_artifacts(self, task_id)
+    }
+
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        OrbitRuntime::get_task_comments(self, task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        OrbitRuntime::get_task_history(self, task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        OrbitRuntime::get_task_review_threads(self, task_id)
     }
 
     fn list_tasks_filtered(
@@ -116,14 +128,12 @@ impl TaskWriteHost for OrbitRuntime {
                 )
             });
             let implemented_by = normalize_optional_attribution_label(
-                existing_task
-                    .model
+                model
                     .as_deref()
-                    .or(model.as_deref())
                     .or(existing_task.implemented_by.as_deref())
                     .or(explicit_attribution_label.as_deref())
                     .or(Some(actor_label.as_str())),
-                existing_task.model.as_deref().or(model.as_deref()),
+                model.as_deref(),
             );
             let external_refs = if update.external_refs.is_empty() {
                 None
@@ -150,8 +160,6 @@ impl TaskWriteHost for OrbitRuntime {
                     } else {
                         None
                     },
-                    agent: agent.clone().map(Some),
-                    model: model.clone().map(Some),
                     status: update.status,
                     external_refs,
                     job_run_id: update.job_run_id.clone().map(Some),
@@ -350,7 +358,6 @@ mod tests {
             .start_task(&task.id, Some("start approved task".to_string()), None)
             .expect("start backlog task without plan");
         assert_eq!(started.status, TaskStatus::InProgress);
-        let original_workspace_path = started.workspace_path.clone();
 
         runtime
             .apply_task_automation_update(
@@ -365,8 +372,7 @@ mod tests {
 
         let updated = runtime.get_task(&task.id).expect("reload task");
         assert_eq!(updated.status, TaskStatus::InProgress);
-        assert_eq!(updated.batch_id.as_deref(), Some("jrun-test"));
-        assert_eq!(updated.workspace_path, original_workspace_path);
+        assert_eq!(updated.job_run_id.as_deref(), Some("jrun-test"));
     }
 
     #[test]
@@ -424,18 +430,6 @@ mod tests {
             rejected.id.clone(),
             archived.id.clone(),
         ];
-        let workspace_paths_before = task_ids
-            .iter()
-            .map(|task_id| {
-                (
-                    task_id.clone(),
-                    runtime
-                        .get_task(task_id)
-                        .expect("reload pre-worktree task")
-                        .workspace_path,
-                )
-            })
-            .collect::<HashMap<_, _>>();
         let output = run_worktree_setup(&runtime, &task_ids, "jrun-admit");
         let workspace_path = output["workspace_path"]
             .as_str()
@@ -446,14 +440,7 @@ mod tests {
         for task_id in &task_ids {
             let task = runtime.get_task(task_id).expect("reload admitted task");
             assert_eq!(task.status, TaskStatus::InProgress, "{task_id}");
-            assert_eq!(task.batch_id.as_deref(), Some("jrun-admit"));
-            assert_eq!(
-                task.workspace_path,
-                workspace_paths_before
-                    .get(task_id)
-                    .expect("captured workspace path")
-                    .clone()
-            );
+            assert_eq!(task.job_run_id.as_deref(), Some("jrun-admit"));
         }
 
         let admitted_again = runtime
@@ -557,9 +544,8 @@ mod tests {
         )
         .expect("run update_task automation");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let status_entry = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let status_entry = history
             .iter()
             .rev()
             .find(|entry| {
@@ -628,11 +614,13 @@ mod tests {
             )
             .expect("activity update");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let comment = updated.comments.last().expect("activity comment");
+        let comments = runtime
+            .get_task_comments(&task.id)
+            .expect("reload comments");
+        let comment = comments.last().expect("activity comment");
         assert_eq!(comment.by, SYSTEM_ACTOR_LABEL);
-        let comment_history = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let comment_history = history
             .iter()
             .find(|entry| entry.event == "commented")
             .expect("comment history");
@@ -669,8 +657,8 @@ mod tests {
             .expect("automation update");
 
         let updated = runtime.get_task(&task.id).expect("reload task");
-        let status_entry = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let status_entry = history
             .iter()
             .rev()
             .find(|entry| {
@@ -703,11 +691,13 @@ mod tests {
             )
             .expect("update task");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let comment = updated.comments.last().expect("human comment");
+        let comments = runtime
+            .get_task_comments(&task.id)
+            .expect("reload comments");
+        let comment = comments.last().expect("human comment");
         assert_eq!(comment.by, "human");
-        let comment_history = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let comment_history = history
             .iter()
             .find(|entry| entry.event == "commented")
             .expect("comment history");
@@ -741,15 +731,16 @@ mod tests {
         )
         .expect("dispatch batch");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let start_entry = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let start_entry = history
             .iter()
             .find(|entry| entry.event == "started")
             .expect("start history");
         assert_eq!(start_entry.by, SYSTEM_ACTOR_LABEL);
-        let batch_comment = updated
-            .comments
+        let comments = runtime
+            .get_task_comments(&task.id)
+            .expect("reload comments");
+        let batch_comment = comments
             .iter()
             .find(|comment| comment.message.starts_with("Batch dispatched:"))
             .expect("batch dispatch comment");
