@@ -13,6 +13,7 @@ jsonschema.workspace = true
 orbit-common = { path = "../orbit-common" }
 orbit-embed = { path = "../orbit-embed" }
 orbit-engine = { path = "../orbit-engine" }
+orbit-knowledge = { path = "../orbit-knowledge" }
 orbit-policy = { path = "../orbit-policy" }
 orbit-store = { path = "../orbit-store" }
 orbit-tools = { path = "../orbit-tools" }

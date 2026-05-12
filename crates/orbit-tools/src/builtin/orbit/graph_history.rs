@@ -2,9 +2,9 @@
 
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use orbit_knowledge::Selector;
+use orbit_knowledge::workflows::observe::REMOVED_GRAPH_HISTORY_MESSAGE;
 use serde_json::Value;
 
-use crate::graph::REMOVED_GRAPH_HISTORY_MESSAGE;
 use crate::{Tool, ToolContext};
 
 pub struct OrbitGraphHistoryTool;

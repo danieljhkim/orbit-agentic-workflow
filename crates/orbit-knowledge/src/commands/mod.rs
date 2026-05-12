@@ -100,3 +100,15 @@ pub(crate) fn knowledge_error_from_orbit(error: OrbitError) -> KnowledgeError {
         other => KnowledgeError::knowledge_unavailable(other.to_string()),
     }
 }
+
+/// Translate a [`KnowledgeError`] into an [`OrbitError`] for crates that
+/// expose a workspace-wide error surface (orbit-core, orbit-tools). The
+/// `knowledge_invalid` kind maps to `InvalidInput` because callers treat it
+/// as user-input error; every other kind maps to `Execution`.
+pub fn knowledge_error_to_orbit(error: KnowledgeError) -> OrbitError {
+    if error.kind == "knowledge_invalid" {
+        OrbitError::InvalidInput(error.reason)
+    } else {
+        OrbitError::Execution(error.to_string())
+    }
+}

@@ -18,8 +18,8 @@ mod write;
 use std::path::{Path, PathBuf};
 
 use orbit_common::types::OrbitError;
-use orbit_knowledge::KnowledgeError;
 use orbit_knowledge::commands::{GraphCommandContext, TaskGraphScope, default_knowledge_dir};
+pub(super) use orbit_knowledge::knowledge_error_to_orbit;
 use serde_json::Value;
 
 use crate::ToolContext;
@@ -44,14 +44,6 @@ pub(super) fn command_context(
         explicit_knowledge_dir: has_explicit_knowledge_dir(input),
         task_scope: task_graph_scope(ctx),
     })
-}
-
-pub(super) fn knowledge_error_to_orbit(error: KnowledgeError) -> OrbitError {
-    if error.kind == "knowledge_invalid" {
-        OrbitError::InvalidInput(error.reason)
-    } else {
-        OrbitError::Execution(error.to_string())
-    }
 }
 
 pub(super) fn resolve_workspace_root_with_override(

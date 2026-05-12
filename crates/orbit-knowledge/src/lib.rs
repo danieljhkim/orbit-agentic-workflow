@@ -43,8 +43,10 @@ pub mod pipeline;
 mod selector;
 pub mod service;
 mod store;
+pub mod workflows;
 pub mod working_graph;
 
+pub use commands::knowledge_error_to_orbit;
 pub use error::KnowledgeError;
 pub use graph::GraphReadOptions;
 pub use selector::{Selector, SelectorParseError};

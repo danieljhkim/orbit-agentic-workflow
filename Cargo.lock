@@ -2114,6 +2114,7 @@ dependencies = [
  "orbit-common",
  "orbit-embed",
  "orbit-engine",
+ "orbit-knowledge",
  "orbit-policy",
  "orbit-store",
  "orbit-tools",

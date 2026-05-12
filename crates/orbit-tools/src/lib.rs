@@ -30,7 +30,6 @@
 
 pub mod builtin;
 pub mod external;
-pub mod graph;
 pub mod registry;
 
 use std::path::PathBuf;

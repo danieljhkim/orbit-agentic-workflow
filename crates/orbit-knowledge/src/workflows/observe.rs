@@ -1,45 +1,26 @@
-use std::path::{Path, PathBuf};
+//! Knowledge-graph read/observe workflow for CLI display.
+//!
+//! Consumed by the `orbit observe graph show|search|history` CLI subcommands.
+//! Returns shapes optimized for human display (lineage names, structural
+//! child/sibling counts, JSON payload) — distinct from the agent-facing
+//! [`crate::commands::show`] / [`crate::commands::search`] surfaces which
+//! return semantic content (imports, exports, source bodies).
+//!
+//! Returns [`KnowledgeError`]; host crates translate to `OrbitError` at the
+//! edge.
 
-use orbit_common::types::OrbitError;
-use orbit_knowledge::graph::navigator::GraphNodeRef;
-use orbit_knowledge::graph::nodes::CodebaseGraphV1;
-use orbit_knowledge::graph::object_store::RefName;
-use orbit_knowledge::pipeline::context::BuildConfig;
-use orbit_knowledge::service::GraphContextService;
-use orbit_knowledge::{GraphReadOptions, Selector, TaskGraphScope, TaskGraphService};
 use serde_json::{Value, json};
 
-pub(crate) const REMOVED_GRAPH_HISTORY_MESSAGE: &str = "Knowledge-graph task attribution has been removed. Use `git log --grep '[T<task-id>]'` for local forward lookup, and use `external_refs` for cross-engineer task references.";
+use crate::graph::navigator::GraphNodeRef;
+use crate::service::GraphContextService;
+use crate::workflows::{load_graph, parse_ref_name};
+use crate::{GraphReadOptions, KnowledgeError, Selector};
 
-#[derive(Debug, Clone)]
-pub struct GraphBuildOptions {
-    pub data_root: PathBuf,
-    pub repo_override: Option<PathBuf>,
-    pub ref_name: Option<String>,
-    pub incremental: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResolvedGraphBuild {
-    pub mode: &'static str,
-    pub repo_path: PathBuf,
-    pub output_dir: PathBuf,
-    incremental: bool,
-    ref_name: Option<RefName>,
-}
-
-#[derive(Debug, Clone)]
-pub struct GraphBuildOutput {
-    pub mode: &'static str,
-    pub output_dir: PathBuf,
-    pub dirs: usize,
-    pub files: usize,
-    pub leaves: usize,
-}
+pub const REMOVED_GRAPH_HISTORY_MESSAGE: &str = "Knowledge-graph task attribution has been removed. Use `git log --grep '[T<task-id>]'` for local forward lookup, and use `external_refs` for cross-engineer task references.";
 
 #[derive(Debug, Clone)]
 pub struct GraphShowOptions {
-    pub data_root: PathBuf,
+    pub data_root: std::path::PathBuf,
     pub selector: String,
     pub depth: usize,
     pub siblings: usize,
@@ -79,7 +60,7 @@ pub enum GraphNodeDetails {
 
 #[derive(Debug, Clone)]
 pub struct GraphSearchOptions {
-    pub data_root: PathBuf,
+    pub data_root: std::path::PathBuf,
     pub query: String,
     pub node_types: Vec<String>,
     pub prefix: Option<String>,
@@ -98,57 +79,7 @@ pub struct GraphHistoryOptions {
     pub ref_name: Option<String>,
 }
 
-pub fn default_orbitignore_template() -> String {
-    orbit_knowledge::default_orbitignore_template()
-}
-
-pub fn resolve_graph_build(options: GraphBuildOptions) -> Result<ResolvedGraphBuild, OrbitError> {
-    let repo_path = options
-        .repo_override
-        .unwrap_or_else(|| repo_from_data_root(&options.data_root));
-    let output_dir = options.data_root.join("knowledge");
-    let mode = if options.incremental {
-        "update"
-    } else {
-        "build"
-    };
-    Ok(ResolvedGraphBuild {
-        mode,
-        repo_path,
-        output_dir,
-        incremental: options.incremental,
-        ref_name: parse_ref_name(options.ref_name)?,
-    })
-}
-
-pub fn run_resolved_graph_build(
-    resolved: ResolvedGraphBuild,
-) -> Result<GraphBuildOutput, OrbitError> {
-    let config = BuildConfig {
-        repo_path: resolved.repo_path,
-        output_dir: resolved.output_dir.clone(),
-        incremental: resolved.incremental,
-        ref_name: resolved.ref_name,
-    };
-
-    let ctx = orbit_knowledge::pipeline::run_build(config).map_err(|error| {
-        OrbitError::Execution(format!("knowledge {} failed: {error}", resolved.mode))
-    })?;
-
-    Ok(GraphBuildOutput {
-        mode: resolved.mode,
-        output_dir: ctx.output_dir,
-        dirs: ctx.graph.dirs.len(),
-        files: ctx.graph.files.len(),
-        leaves: ctx.graph.leaves.len(),
-    })
-}
-
-pub fn build_graph(options: GraphBuildOptions) -> Result<GraphBuildOutput, OrbitError> {
-    run_resolved_graph_build(resolve_graph_build(options)?)
-}
-
-pub fn show_graph(options: GraphShowOptions) -> Result<GraphShowOutput, OrbitError> {
+pub fn show_graph(options: GraphShowOptions) -> Result<GraphShowOutput, KnowledgeError> {
     let graph = load_graph(
         &options.data_root,
         options.ref_name.as_deref(),
@@ -162,20 +93,20 @@ pub fn show_graph(options: GraphShowOptions) -> Result<GraphShowOutput, OrbitErr
     let selector: Selector = options
         .selector
         .parse()
-        .map_err(|error| OrbitError::InvalidInput(format!("{error}")))?;
+        .map_err(|error| KnowledgeError::invalid_data(format!("{error}")))?;
 
     let node = service
         .resolve_selector(&selector)
-        .map_err(|error| OrbitError::InvalidInput(error.to_string()))?;
+        .map_err(|error| KnowledgeError::invalid_data(error.to_string()))?;
 
     let context = service
         .bounded_context(node.id(), options.depth, options.siblings, options.children)
-        .map_err(|error| OrbitError::Execution(error.to_string()))?;
+        .map_err(|error| KnowledgeError::knowledge_unavailable(error.to_string()))?;
 
     Ok(show_output_from_context(&service, &context))
 }
 
-pub fn search_graph(options: GraphSearchOptions) -> Result<GraphSearchOutput, OrbitError> {
+pub fn search_graph(options: GraphSearchOptions) -> Result<GraphSearchOutput, KnowledgeError> {
     let graph = load_graph(
         &options.data_root,
         options.ref_name.as_deref(),
@@ -205,21 +136,21 @@ pub fn search_graph(options: GraphSearchOptions) -> Result<GraphSearchOutput, Or
     Ok(GraphSearchOutput { selectors })
 }
 
-pub fn history_graph(options: GraphHistoryOptions) -> Result<(), OrbitError> {
+pub fn history_graph(options: GraphHistoryOptions) -> Result<(), KnowledgeError> {
     let _selector: Selector = options
         .selector
         .parse()
-        .map_err(|error| OrbitError::InvalidInput(format!("{error}")))?;
+        .map_err(|error| KnowledgeError::invalid_data(format!("{error}")))?;
     parse_ref_name(options.ref_name)?;
 
-    Err(OrbitError::InvalidInput(
+    Err(KnowledgeError::invalid_data(
         REMOVED_GRAPH_HISTORY_MESSAGE.to_string(),
     ))
 }
 
-pub(crate) fn node_context_payload(
+pub fn node_context_payload(
     service: &GraphContextService<'_>,
-    context: &orbit_knowledge::service::NodeContext<'_>,
+    context: &crate::service::NodeContext<'_>,
 ) -> Value {
     let node = context.node;
 
@@ -276,27 +207,9 @@ pub(crate) fn node_context_payload(
     value
 }
 
-fn load_graph(
-    data_root: &Path,
-    explicit_ref: Option<&str>,
-    options: GraphReadOptions,
-) -> Result<CodebaseGraphV1, OrbitError> {
-    let knowledge_dir = data_root.join("knowledge");
-    let repo_path = repo_from_data_root(data_root);
-    let service = TaskGraphService::new(knowledge_dir, TaskGraphScope::default());
-    service.read_graph(Some(&repo_path), false, explicit_ref, options)
-}
-
-fn repo_from_data_root(data_root: &Path) -> PathBuf {
-    data_root
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
 fn show_output_from_context(
     service: &GraphContextService<'_>,
-    context: &orbit_knowledge::service::NodeContext<'_>,
+    context: &crate::service::NodeContext<'_>,
 ) -> GraphShowOutput {
     let node = context.node;
     let selector = service.selector_for_node(node);
@@ -355,10 +268,3 @@ fn node_details(service: &GraphContextService<'_>, node: GraphNodeRef<'_>) -> Gr
     }
 }
 
-fn parse_ref_name(ref_name: Option<String>) -> Result<Option<RefName>, OrbitError> {
-    ref_name
-        .filter(|value| !value.trim().is_empty())
-        .map(RefName::new)
-        .transpose()
-        .map_err(|error| OrbitError::InvalidInput(error.to_string()))
-}
