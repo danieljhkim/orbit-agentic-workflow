@@ -1,15 +1,17 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
 //! Shared leaf crate for the Orbit workspace.
 //!
-//! The public surface is intentionally split into three namespaces:
+//! The public surface is intentionally split into four namespaces:
 //! - [`groundhog`] for Groundhog checkpoint lineage and append-only chronicle
 //!   serialization
+//! - [`migration`] for forward-only schema migrations of YAML artifacts
 //! - [`types`] for Orbit domain types, `OrbitError`, IDs, and the v2 schemas
 //! - [`utility`] for generic helpers like filesystem, redaction, logging,
 //!   and blob storage
 //! - [`tracing`] as the shared structured-event facade used by Orbit crates
 
 pub mod groundhog;
+pub mod migration;
 pub mod types;
 pub mod utility;
 

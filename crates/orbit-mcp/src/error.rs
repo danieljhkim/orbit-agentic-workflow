@@ -46,5 +46,6 @@ fn error_code(err: &OrbitError) -> &'static str {
         OrbitError::Store(_) => "store_error",
         OrbitError::WorkspaceError(_) => "workspace_error",
         OrbitError::Io(_) => "io_error",
+        OrbitError::Migration(_) => "migration_failed",
     }
 }

@@ -56,5 +56,6 @@ fn error_code(error: &OrbitError) -> &'static str {
         OrbitError::AdrNotFound(_) => "adr_not_found",
         OrbitError::AdrInvalidTransition(_) => "adr_invalid_transition",
         OrbitError::LearningNotFound(_) => "learning_not_found",
+        OrbitError::Migration(_) => "migration_failed",
     }
 }

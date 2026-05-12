@@ -52,6 +52,8 @@ pub enum OrbitError {
     WorkspaceError(String),
     #[error("io error: {0}")]
     Io(String),
+    #[error("schema migration failed: {0}")]
+    Migration(String),
 }
 
 impl From<std::io::Error> for OrbitError {

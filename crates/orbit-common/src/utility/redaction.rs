@@ -128,6 +128,7 @@ pub fn redact_sensitive_env_error(error: OrbitError) -> OrbitError {
             OrbitError::WorkspaceNotFound(redact_sensitive_env_text(&m))
         }
         OrbitError::WorkspaceError(m) => OrbitError::WorkspaceError(redact_sensitive_env_text(&m)),
+        OrbitError::Migration(m) => OrbitError::Migration(redact_sensitive_env_text(&m)),
     }
 }
 

@@ -1,3 +1,4 @@
+pub(crate) mod task_migrations;
 pub(crate) mod v2_bundle;
 pub(crate) mod v2_store;
 

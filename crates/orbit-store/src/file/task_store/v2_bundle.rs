@@ -2,6 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use orbit_common::migration::Plan;
 use orbit_common::types::{
     ArtifactManifestV2, OrbitError, ReviewThreadMetadataV2, TASK_ACCEPTANCE_FILE_NAME,
     TASK_ARTIFACT_FILES_DIR_NAME, TASK_ARTIFACT_MANIFEST_FILE_NAME, TASK_ARTIFACTS_DIR_NAME,
@@ -13,6 +14,7 @@ use orbit_common::utility::fs::{atomic_write_text, with_exclusive_file_lock};
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 
+use crate::file::task_store::task_migrations;
 use crate::sqlite::task_registry::{ProjectionRebuildResult, TaskBundleBinding, TaskRegistryStore};
 
 const REVIEW_THREAD_TOMBSTONES_FILE: &str = ".tombstones";
@@ -363,7 +365,8 @@ pub(crate) fn read_bundle_at(bundle_dir: &Path) -> Result<TaskBundleV2, OrbitErr
     if !envelope_path.is_file() {
         return Err(OrbitError::TaskNotFound(expected_task_id));
     }
-    let envelope: TaskEnvelopeV2 = read_yaml_file(&envelope_path)?;
+    let envelope: TaskEnvelopeV2 =
+        read_migrated_yaml_file(&envelope_path, task_migrations::envelope_plan())?;
     validate_bundle_dir_matches_task_id(bundle_dir, &envelope.id)?;
 
     let bundle = TaskBundleV2 {
@@ -460,6 +463,23 @@ where
 {
     let raw = read_required_text(path)?;
     serde_yaml::from_str(&raw)
+        .map_err(|err| OrbitError::Store(format!("invalid YAML at {}: {err}", path.display())))
+}
+
+fn read_migrated_yaml_file<T>(path: &Path, plan: &Plan) -> Result<T, OrbitError>
+where
+    T: DeserializeOwned,
+{
+    let raw = read_required_text(path)?;
+    let value: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|err| OrbitError::Store(format!("invalid YAML at {}: {err}", path.display())))?;
+    let migrated = plan.migrate(value).map_err(|err| match err {
+        OrbitError::Migration(msg) => {
+            OrbitError::Migration(format!("{} ({})", msg, path.display()))
+        }
+        other => other,
+    })?;
+    serde_yaml::from_value(migrated)
         .map_err(|err| OrbitError::Store(format!("invalid YAML at {}: {err}", path.display())))
 }
 
