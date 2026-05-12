@@ -1,4 +1,4 @@
-.PHONY: help build release run check test fmt fmt-check clippy clean install uninstall dev watch audit tree ci bench
+.PHONY: help build release run check test fmt fmt-check clippy clean install uninstall dev watch audit tree ci bench check-design-docs
 
 # ------------------------------------------------------------
 # Config
@@ -49,6 +49,7 @@ help:
 	@echo "  make audit        Cargo audit (security)"
 	@echo "  make tree         Print dependency tree"
 	@echo "  make ci           Full CI pass"
+	@echo "  make check-design-docs  Flag docs/design/* stale relative to referenced code"
 	@echo "  make install      Install CLI locally (INSTALL_PROFILE=debug optional)"
 	@echo "  make uninstall    Remove installed binary"
 	@echo "  make clean        Clean build artifacts"
@@ -105,6 +106,10 @@ tree:
 # Full CI pass
 ci:
 	./scripts/ci-guardrails.sh
+
+# Flag design docs older than the code they reference
+check-design-docs:
+	./scripts/check_design_doc_decay.py
 
 # ------------------------------------------------------------
 # Install
