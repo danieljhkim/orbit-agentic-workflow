@@ -14,22 +14,11 @@ impl Drop for Guard {
 }
 ```
 
-## When to reach for it
+Four shapes in the codebase carry distinct lessons.
 
-- **Cleanup must run on every exit path** — `?`, panic, conditional early-return. `Drop` is the only mechanism that runs all three.
-- **Symmetric mutation of global / thread-local state.** Installing a signal handler, swapping a thread-local, taking a file lock — the "uninstall" is exactly mirror-image and must be paired.
-- **The default outcome is rollback.** Stage something speculatively; either explicitly `commit()`, or let `Drop` undo it.
-- **A scope has a "result" worth recording once.** Mark success/failure during the scope; emit one row on drop.
+## Reference: `AuditGuard` — record the scope's outcome once
 
-## When NOT to
-
-- **Cleanup is just memory.** `Box`/`Vec`/`Arc` already drop. Don't wrap a trivial owned value.
-- **Errors during cleanup must be handled by the caller.** `Drop` can't return `Result`. If the cleanup *routinely* fails in actionable ways, expose an explicit `release() -> Result<...>` and use `Drop` as the fallback that logs. See `GraphLockGuard` below for this hybrid.
-- **You'd reach for "panic if not closed."** A consuming `finish(self) -> Result<...>` is clearer than scope-bound cleanup when the close is the natural end of the API.
-
-## Reference: `AuditGuard`
-
-The canonical "record the outcome of this scope once" guard. From `crates/orbit-cli/src/audit_middleware.rs:39`:
+From `crates/orbit-cli/src/audit_middleware.rs:39`:
 
 ```rust
 pub struct AuditGuard<'a> {
@@ -64,9 +53,9 @@ Patterns to copy:
 - **Mutation methods on `&mut self`, not constructor params.** Caller updates the outcome as it learns; `Drop` reads final state.
 - **`catch_unwind` around the side effect.** A panic *during audit emission* can't double-panic the unwind.
 
-## Reference: `StagedTextFile`
+## Reference: `StagedTextFile` — `Drop` as rollback
 
-The variant where `Drop` is the *rollback* path, not the success path. From `crates/orbit-common/src/utility/fs.rs:74`:
+From `crates/orbit-common/src/utility/fs.rs:74`:
 
 ```rust
 pub struct StagedTextFile {
@@ -93,9 +82,9 @@ Patterns to copy:
 - **`committed: bool` is the lever.** Caller explicitly opts into the success path by calling `commit()`. Drop = rollback by default.
 - **Shape for "stage → validate → commit-or-bail."** Between `new()` and `commit()`, the caller can inspect the staged content; any early-return cleans up the temp file automatically.
 
-## Reference: `SignalHandlerGuard`
+## Reference: `SignalHandlerGuard` — restore global state
 
-The "modify global state, restore on drop" case. From `crates/orbit-exec/src/supervision/signal.rs:9`:
+From `crates/orbit-exec/src/supervision/signal.rs:9`:
 
 ```rust
 pub(super) struct SignalHandlerGuard {
@@ -144,9 +133,9 @@ Patterns to copy:
 - **Hold a `'static` mutex as a field.** `_lock: MutexGuard<'static, ()>` makes "one guard at a time, process-wide" structurally impossible to violate.
 - **Hand-rollback on partial install.** `Drop` only runs on values that successfully return; mid-construction failures must unwind their own work before returning `Err`.
 
-## Reference: `GraphLockGuard`
+## Reference: `GraphLockGuard` — explicit release with `Drop` fallback
 
-The "explicit release with `Result`, Drop as fallback" hybrid. From `crates/orbit-knowledge/src/lock.rs:209`:
+From `crates/orbit-knowledge/src/lock.rs:209`:
 
 ```rust
 pub struct GraphLockGuard {
