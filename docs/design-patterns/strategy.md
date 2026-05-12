@@ -23,37 +23,65 @@ A registry holds the candidates and matches `applies_to` against the input-deriv
 - **Single impl, planned single impl.** A trait with one `impl` is just an abstraction boundary. Don't pay the `Box<dyn ...>` cost for an interface you'll never swap.
 - **A few variants known up front.** `match kind { Yaml => …, Json => … }` is clearer than a trait + registry when the set is small, closed, and trivial.
 
-## Reference: `FileExtractor`
+## Reference: linear-scan registry (`FileExtractor`)
 
-The canonical example. One operation — *extract structural anchors from a source file* — implemented per language and per file kind. The trait at `crates/orbit-knowledge/src/extract/mod.rs:53`:
+The canonical example. One operation — *extract structural anchors from a source file* — implemented per language and per file kind. From `crates/orbit-knowledge/src/extract/mod.rs:53`:
 
 ```rust
 pub trait FileExtractor: Send + Sync {
     fn file_kind(&self) -> FileKind;
     fn extract(&self, source: &str) -> ExtractionResult;
 }
+
+pub struct ExtractorRegistry {
+    extractors: Vec<Box<dyn FileExtractor>>,
+}
+
+impl ExtractorRegistry {
+    pub fn get(&self, kind: FileKind) -> Option<&dyn FileExtractor> {
+        self.extractors.iter().find(|e| e.file_kind() == kind).map(|e| e.as_ref())
+    }
+}
 ```
 
-The registry at `crates/orbit-knowledge/src/extract/mod.rs:59` owns `Vec<Box<dyn FileExtractor>>` and selects via `get(kind: FileKind)` by scanning for a matching `file_kind()`. Concrete strategies live in sibling modules:
+Concrete strategies live in sibling modules — `rust.rs`, `python.rs`, `typescript.rs`, …, `markdown.rs`, `config.rs`, `table.rs`. The pipeline derives `FileKind` from the file, asks the registry, calls `extract(source)`, and never branches on language.
 
-- **Tree-sitter code extractors** — `rust.rs`, `python.rs`, `typescript.rs`, `go.rs`, `java.rs`, `c.rs`, `csharp.rs`, `kotlin.rs`, `javascript.rs`, `ruby.rs`
-- **Document anchors** — `markdown.rs`
-- **File-level capture only (no symbol leaves)** — `config.rs`, `table.rs`
+Patterns to copy:
 
-The pipeline derives `FileKind` from the file, asks the registry, and calls `extract(source)`. It never branches on language.
+- **`applies_to()` predicate on the trait.** Each strategy declares its own key. New strategies need no change to the registry or any central `match` — just `Box::new(NewExtractor)` in the constructor.
+- **Linear scan is fine for small, bounded candidate sets.** ~15 extractors with `==` comparison beats a `HashMap`'s hashing overhead.
 
-## Reference: `ActivityExecutor`
+Use this shape when strategies are known at compile time and selection is a simple equality check on a small enum.
 
-A second textbook instance. One operation — *execute one attempt of an activity* — implemented per execution mechanic. The trait at `crates/orbit-engine/src/executor/traits.rs:17`:
+## Reference: hash-map registry, string keys (`ActivityExecutor`)
+
+One operation — *execute one attempt of an activity* — implemented per execution mechanic. From `crates/orbit-engine/src/executor/traits.rs:17`:
 
 ```rust
 pub trait ActivityExecutor: Send + Sync {
     fn spec_type(&self) -> &str;
     fn execute(&self, host: ExecutorHost<'_>, execution: &ExecutionContext) -> AttemptOutcome;
 }
+
+pub struct ActivityExecutorRegistry {
+    executors: HashMap<String, Box<dyn ActivityExecutor>>,
+}
+
+impl ActivityExecutorRegistry {
+    pub fn get(&self, spec_type: &str) -> Option<&dyn ActivityExecutor> {
+        self.executors.get(spec_type).map(Box::as_ref)
+    }
+}
 ```
 
-The registry at `crates/orbit-engine/src/executor/registry.rs:11` keys strategies by `spec_type` in a `HashMap<String, Box<dyn ActivityExecutor>>` and dispatches on the activity's declared `spec_type`. Concrete strategies under `crates/orbit-engine/src/executor/`: `CliCommandExecutor`, `DirectAgentExecutor`, `AutomationExecutor`, plus `OrbitToolCallExecutor` (registered from `activity_job/`). The retry loop in `activity_runner` calls `registry.get(spec_type).execute(...)` without knowing which mechanic actually runs.
+Built-ins (`CliCommandExecutor`, `DirectAgentExecutor`, `AutomationExecutor`, `OrbitToolCallExecutor`) are registered in `register_builtins`. YAML-loaded definitions (`load_from_defs`) can override built-ins by name. The retry loop in `activity_runner` calls `registry.get(spec_type).execute(...)` without knowing which mechanic actually runs.
+
+Patterns to copy:
+
+- **String keys when selection is data-driven.** Activity YAML carries `spec_type: "cli_command"`. A string-keyed map lets externally-defined activities pick strategies that were registered after the registry was constructed.
+- **Open registration via `register_named`.** New `spec_type`s can be added at runtime from config, without touching the registry struct or any central enum.
+
+Use this shape when the strategy set is open — config-loaded, plugin-loaded, anything beyond a closed enum.
 
 ---
 
