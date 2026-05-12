@@ -122,7 +122,7 @@ pub(super) fn list(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitE
         .map(|value| parse_task_type("type", &value))
         .transpose()?;
     let parent_id = optional_string_alias(&input, &["parent_id", "parent", "parentId"])?;
-    let batch_id = optional_string(&input, "batch_id")?;
+    let job_run_id = optional_string(&input, "job_run_id")?;
     let tags = optional_csv_or_string_list_alias(&input, &["tags", "tag"])?.unwrap_or_default();
     let ready = optional_bool_alias(&input, &["ready"])?;
     let all_tasks = runtime.list_tasks_by_tags(&tags)?;
@@ -136,7 +136,7 @@ pub(super) fn list(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitE
                 .is_none_or(|value| task.parent_id.as_deref() == Some(value))
         })
         .filter(|task| {
-            batch_id
+            job_run_id
                 .as_deref()
                 .is_none_or(|value| task.batch_id.as_deref() == Some(value))
         })
@@ -259,7 +259,7 @@ pub(super) fn update(
             implemented_by: optional_raw_string(&input, "implemented_by")?
                 .map(empty_string_to_none),
             pr_status: optional_raw_string(&input, "pr_status")?.map(empty_string_to_none),
-            batch_id: optional_raw_string(&input, "batch_id")?.map(empty_string_to_none),
+            job_run_id: optional_raw_string(&input, "job_run_id")?.map(empty_string_to_none),
             context_files: optional_csv_or_string_list_alias(
                 &input,
                 &["context_files", "context"],

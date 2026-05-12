@@ -213,7 +213,7 @@ pub(super) async fn update_task_action(
         planned_by: None,
         implemented_by: None,
         pr_status: None,
-        batch_id: None,
+        job_run_id: None,
         context_files: body.context_files,
         upsert_artifacts: Vec::new(),
         append_review_threads: Vec::new(),

@@ -6,9 +6,9 @@ type: feature
 priority: high
 complexity: hard
 relations:
-  - type: parent_of
+  - type: child_of
     target: ORB-00003
-  - type: blocks
+  - type: blocked_by
     target: ORB-00004
   - type: supersedes
     target: ORB-00001

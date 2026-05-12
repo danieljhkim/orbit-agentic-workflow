@@ -8,7 +8,8 @@ use orbit_common::types::{
     ReviewThread, ReviewThreadMessageMetadataV2, ReviewThreadMetadataV2,
     TASK_ARTIFACT_FILES_DIR_NAME, TASK_ARTIFACT_SCHEMA_VERSION, TASK_ARTIFACTS_DIR_NAME, Task,
     TaskArtifact, TaskComment, TaskCommentRowV2, TaskEnvelopeV2, TaskEventRowV2, TaskHistoryEntry,
-    TaskPriority, TaskStatus, normalize_task_tags, validate_relative_artifact_path,
+    TaskPriority, TaskRelation, TaskRelationType, TaskStatus, normalize_task_tags,
+    validate_relative_artifact_path,
 };
 use orbit_common::utility::fs::{atomic_write_text, with_exclusive_file_lock};
 use sha2::{Digest, Sha256};
@@ -63,7 +64,7 @@ impl TaskV2Store {
                 "task actor must not be empty".to_string(),
             ));
         }
-        reject_unsupported_create_fields(&params)?;
+        let relations = relations_from_create_params(&params)?;
 
         let now = Utc::now();
         let id = self.registry.allocate_task_id(&self.workspace_id)?;
@@ -88,7 +89,8 @@ impl TaskV2Store {
                 task_type: params.task_type,
                 priority: params.priority,
                 complexity: params.complexity,
-                relations: Vec::new(),
+                job_run_id: None,
+                relations,
                 tags: normalize_task_tags(params.tags),
                 context_files: params.context_files,
                 external_refs: params.external_refs,
@@ -126,6 +128,7 @@ impl TaskV2Store {
         if let Some(tasks) = self.indexed_tasks(TaskIndexFilter {
             status: None,
             priority: None,
+            job_run_id: None,
             tags: Vec::new(),
         })? {
             return Ok(tasks);
@@ -146,17 +149,14 @@ impl TaskV2Store {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        if parent_id.is_some() || batch_id.is_some() {
-            return Err(unsupported_v2_operation("lineage filters"));
-        }
-
         let mut tasks = match self.indexed_tasks(TaskIndexFilter {
             status,
             priority,
+            job_run_id: job_run_id.map(ToOwned::to_owned),
             tags: Vec::new(),
         })? {
             Some(tasks) => tasks,
@@ -165,6 +165,8 @@ impl TaskV2Store {
         tasks.retain(|task| {
             status.is_none_or(|value| task.status == value)
                 && priority.is_none_or(|value| task.priority == value)
+                && parent_id.is_none_or(|value| task.parent_id.as_deref() == Some(value))
+                && job_run_id.is_none_or(|value| task.batch_id.as_deref() == Some(value))
                 && external_ref.is_none_or(|value| {
                     task.external_refs.iter().any(|candidate| {
                         candidate.system == value.system && candidate.id == value.id
@@ -187,6 +189,7 @@ impl TaskV2Store {
         if let Some(tasks) = self.indexed_tasks(TaskIndexFilter {
             status: None,
             priority: None,
+            job_run_id: None,
             tags: required_tags.clone(),
         })? {
             return Ok(tasks);
@@ -295,6 +298,32 @@ impl TaskV2Store {
             }
             if let Some(value) = fields.task_type {
                 bundle.envelope.task_type = value;
+                envelope_changed = true;
+            }
+            if let Some(value) = &fields.dependencies {
+                replace_relations(
+                    &mut bundle.envelope.relations,
+                    TaskRelationType::BlockedBy,
+                    value.iter().cloned().map(|target| TaskRelation {
+                        relation_type: TaskRelationType::BlockedBy,
+                        target,
+                    }),
+                );
+                envelope_changed = true;
+            }
+            if let Some(value) = &fields.source_task_id {
+                replace_relations(
+                    &mut bundle.envelope.relations,
+                    TaskRelationType::RegressionFrom,
+                    value.iter().cloned().map(|target| TaskRelation {
+                        relation_type: TaskRelationType::RegressionFrom,
+                        target,
+                    }),
+                );
+                envelope_changed = true;
+            }
+            if let Some(value) = &fields.job_run_id {
+                bundle.envelope.job_run_id = value.clone();
                 envelope_changed = true;
             }
             if let Some(value) = &fields.external_refs {
@@ -683,13 +712,15 @@ impl TaskV2Store {
 
     fn task_from_bundle(&self, bundle: TaskBundleV2) -> Result<Task, OrbitError> {
         let status = bundle.envelope.status;
+        let (parent_id, dependencies, source_task_id) =
+            legacy_relation_projections(&bundle.envelope.relations);
         Ok(Task {
             id: bundle.envelope.id,
-            parent_id: None,
+            parent_id,
             title: bundle.envelope.title,
             description: bundle.description,
             acceptance_criteria: parse_acceptance(&bundle.acceptance),
-            dependencies: Vec::new(),
+            dependencies,
             tags: normalize_task_tags(bundle.envelope.tags),
             plan: bundle.plan,
             execution_summary: bundle.execution_summary,
@@ -707,8 +738,8 @@ impl TaskV2Store {
             task_type: bundle.envelope.task_type,
             pr_status: None,
             external_refs: bundle.envelope.external_refs,
-            source_task_id: None,
-            batch_id: None,
+            source_task_id,
+            batch_id: bundle.envelope.job_run_id,
             comments: bundle
                 .comments
                 .into_iter()
@@ -812,47 +843,65 @@ pub(crate) fn unsupported_v2_operation(operation: &str) -> OrbitError {
     ))
 }
 
-fn reject_unsupported_create_fields(params: &TaskCreateParams) -> Result<(), OrbitError> {
-    if params.parent_id.is_some() {
-        return Err(unsupported_v2_create_field("parent_id"));
-    }
-    if !params.dependencies.is_empty() {
-        return Err(unsupported_v2_create_field("dependencies"));
-    }
-    if params.source_task_id.is_some() {
-        return Err(unsupported_v2_create_field("source_task_id"));
-    }
-    Ok(())
-}
-
-fn unsupported_v2_create_field(field: &str) -> OrbitError {
-    OrbitError::Store(format!(
-        "task artifact v2 create does not support '{field}' yet"
-    ))
-}
-
 fn reject_unsupported_document_fields(fields: &TaskDocumentUpdateParams) -> Result<(), OrbitError> {
-    if fields
-        .dependencies
-        .as_ref()
-        .is_some_and(|dependencies| !dependencies.is_empty())
-    {
-        return Err(unsupported_v2_operation(
-            "update_task_document.dependencies",
-        ));
-    }
     if fields.pr_status.as_ref().is_some_and(Option::is_some) {
         return Err(unsupported_v2_operation("update_task_document.pr_status"));
     }
-    if fields.source_task_id.as_ref().is_some_and(Option::is_some) {
-        return Err(unsupported_v2_operation(
-            "update_task_document.source_task_id",
-        ));
-    }
-    if fields.batch_id.as_ref().is_some_and(Option::is_some) {
-        return Err(unsupported_v2_operation("update_task_document.batch_id"));
-    }
     Ok(())
+}
+
+fn relations_from_create_params(
+    params: &TaskCreateParams,
+) -> Result<Vec<TaskRelation>, OrbitError> {
+    let mut relations = Vec::new();
+    if let Some(parent_id) = &params.parent_id {
+        relations.push(TaskRelation {
+            relation_type: TaskRelationType::ChildOf,
+            target: parent_id.clone(),
+        });
+    }
+    for dependency in &params.dependencies {
+        relations.push(TaskRelation {
+            relation_type: TaskRelationType::BlockedBy,
+            target: dependency.clone(),
+        });
+    }
+    if let Some(source_task_id) = &params.source_task_id {
+        relations.push(TaskRelation {
+            relation_type: TaskRelationType::RegressionFrom,
+            target: source_task_id.clone(),
+        });
+    }
+    Ok(relations)
+}
+
+fn replace_relations(
+    relations: &mut Vec<TaskRelation>,
+    relation_type: TaskRelationType,
+    replacements: impl IntoIterator<Item = TaskRelation>,
+) {
+    relations.retain(|relation| relation.relation_type != relation_type);
+    relations.extend(replacements);
+}
+
+fn legacy_relation_projections(
+    relations: &[TaskRelation],
+) -> (Option<OrbitId>, Vec<OrbitId>, Option<String>) {
+    let parent_id = relations
+        .iter()
+        .find(|relation| relation.relation_type == TaskRelationType::ChildOf)
+        .map(|relation| relation.target.clone());
+    let mut dependencies = relations
+        .iter()
+        .filter(|relation| relation.relation_type == TaskRelationType::BlockedBy)
+        .map(|relation| relation.target.clone())
+        .collect::<Vec<_>>();
+    dependencies.sort();
+    let source_task_id = relations
+        .iter()
+        .find(|relation| relation.relation_type == TaskRelationType::RegressionFrom)
+        .map(|relation| relation.target.clone());
+    (parent_id, dependencies, source_task_id)
 }
 
 fn review_thread_from_v2(thread: TaskReviewThreadV2) -> ReviewThread {
@@ -1249,21 +1298,44 @@ mod tests {
     }
 
     #[test]
-    fn create_task_rejects_unwired_lineage_fields_without_allocating_id() {
+    fn create_task_persists_lineage_relations() {
         let temp = TempDir::new().expect("tempdir");
         let store = store(&temp);
-        let mut params = create_params("Has parent", TaskStatus::Backlog);
-        params.parent_id = Some("ORB-99999".to_string());
+        let parent = store
+            .create_task(create_params("Parent", TaskStatus::Backlog))
+            .expect("create parent");
+        let dependency = store
+            .create_task(create_params("Dependency", TaskStatus::Backlog))
+            .expect("create dependency");
+        let source = store
+            .create_task(create_params("Source", TaskStatus::Done))
+            .expect("create source");
+        let mut params = create_params("Child", TaskStatus::Backlog);
+        params.parent_id = Some(parent.id.clone());
+        params.dependencies = vec![dependency.id.clone()];
+        params.source_task_id = Some(source.id.clone());
 
-        assert!(matches!(
-            store.create_task(params),
-            Err(OrbitError::Store(message)) if message.contains("parent_id")
-        ));
+        let child = store.create_task(params).expect("create related task");
+        assert_eq!(child.parent_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(child.dependencies, vec![dependency.id.clone()]);
+        assert_eq!(child.source_task_id.as_deref(), Some(source.id.as_str()));
 
-        let created = store
-            .create_task(create_params("First valid", TaskStatus::Backlog))
-            .expect("create valid task");
-        assert_eq!(created.id, "ORB-00000");
+        let envelope = store
+            .bundle_store
+            .read_bundle(&child.id)
+            .expect("read related bundle")
+            .envelope;
+        assert!(envelope.relations.iter().any(|relation| {
+            relation.relation_type == TaskRelationType::ChildOf && relation.target == parent.id
+        }));
+        assert!(envelope.relations.iter().any(|relation| {
+            relation.relation_type == TaskRelationType::BlockedBy
+                && relation.target == dependency.id
+        }));
+        assert!(envelope.relations.iter().any(|relation| {
+            relation.relation_type == TaskRelationType::RegressionFrom
+                && relation.target == source.id
+        }));
     }
 
     #[test]
@@ -1449,14 +1521,44 @@ mod tests {
     }
 
     #[test]
-    fn list_tasks_filtered_rejects_unwired_lineage_filters() {
+    fn list_tasks_filtered_supports_lineage_and_job_run_filters() {
         let temp = TempDir::new().expect("tempdir");
         let store = store(&temp);
+        let parent = store
+            .create_task(create_params("Parent", TaskStatus::Backlog))
+            .expect("create parent");
+        let mut child = create_params("Child", TaskStatus::Backlog);
+        child.parent_id = Some(parent.id.clone());
+        let child = store.create_task(child).expect("create child");
+        store
+            .update_task_document(
+                &child.id,
+                &TaskDocumentUpdateParams {
+                    actor: "codex:gpt-5.5".to_string(),
+                    job_run_id: Some(Some("jrun-store".to_string())),
+                    ..Default::default()
+                },
+            )
+            .expect("assign job run");
 
-        let err = store
-            .list_tasks_filtered(None, None, Some("ORB-00000"), None, None, None)
-            .expect_err("lineage filters are not wired for v2");
-        assert!(err.to_string().contains("lineage filters"), "{err}");
+        assert_eq!(
+            store
+                .list_tasks_filtered(None, None, Some(&parent.id), None, None, None)
+                .expect("filter by parent")
+                .into_iter()
+                .map(|task| task.id)
+                .collect::<Vec<_>>(),
+            vec![child.id.clone()]
+        );
+        assert_eq!(
+            store
+                .list_tasks_filtered(None, None, None, Some("jrun-store"), None, None)
+                .expect("filter by job run")
+                .into_iter()
+                .map(|task| task.id)
+                .collect::<Vec<_>>(),
+            vec![child.id]
+        );
     }
 
     #[test]

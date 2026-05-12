@@ -39,7 +39,7 @@ impl TaskStoreBackend for TaskV2Store {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
@@ -47,7 +47,7 @@ impl TaskStoreBackend for TaskV2Store {
             status,
             priority,
             parent_id,
-            batch_id,
+            job_run_id,
             external_ref,
             has_external_ref_system,
         )

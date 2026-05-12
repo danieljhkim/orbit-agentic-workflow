@@ -58,6 +58,7 @@ status: proposed
 type: feature
 priority: high
 complexity: hard
+job_run_id: null
 relations:
   - type: supersedes
     target: ORB-00000
@@ -71,7 +72,7 @@ created_at: 2026-05-11T00:00:00Z
 updated_at: 2026-05-11T00:00:00Z
 ```
 
-The envelope should not include prose bodies, comments, review message bodies, execution summaries, `workspace_path`, or `repo_root`. Local execution bindings live in the local task registry, keyed by task ID and workspace binding. `schema_version` restarts at `1` because the reset defines a new artifact family; the cutover command knows how to read the old schema but v2 does not continue its compatibility stream.
+The envelope should not include prose bodies, comments, review message bodies, execution summaries, `workspace_path`, `repo_root`, `agent`, `model`, or the old `batch_id` name. Local execution bindings live in the local task registry, keyed by task ID and workspace binding. Execution fan-out membership is `job_run_id`, a foreign reference to the job-run store rather than a task relation. `schema_version` restarts at `1` because the reset defines a new artifact family; the cutover command knows how to read the old schema but v2 does not continue its compatibility stream.
 
 ## 3. Prose Documents
 
@@ -171,7 +172,7 @@ Task delete first verifies that any projection entry is a symlink, then unregist
 
 The bundle remains canonical. The registry maintains generated projections from each task envelope:
 
-- `task_bundle_index`: one row per registered task with workspace, status, priority, timestamps, and terminal month.
+- `task_bundle_index`: one row per registered task with workspace, status, priority, `job_run_id`, timestamps, and terminal month.
 - `task_bundle_tags`: normalized tag rows with AND-style filtering semantics.
 - `task_bundle_relations`: directed `(source_task_id, relation_type, target_task_id)` rows plus an inverse lookup index.
 
@@ -261,7 +262,7 @@ The current Phase 5 implementation is intentionally asymmetric while indexes are
 
 Until generated full-text indexes land, the working implementation performs O(N x files-per-task) lexical scans by reading every registered bundle and any candidate text artifact files. That is acceptable only as a cutover bridge; generated search rows will replace the per-query artifact reads.
 
-Relations need their own generated index. The bundle stores directed relation entries; local indexes materialize `(source_task_id, relation_type, target_task_id)` and optional inverse views for efficient lineage queries. The initial relation type set is `blocks`, `parent_of`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. Writers validate relation types, reject self-edges and duplicates, and reject cycles for hierarchy and blocking relation families. Reciprocal labels such as `blocked_by` are read-side projections, not separately stored peer edges.
+Relations need their own generated index. The bundle stores directed relation entries; local indexes materialize `(source_task_id, relation_type, target_task_id)` and optional inverse views for efficient lineage queries. The initial relation type set is `blocked_by`, `child_of`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. Types are source-implied: a task that depends on another stores `blocked_by -> dependency`, and a subtask stores `child_of -> parent`. Writers validate relation types, reject self-edges and duplicates, and reject cycles for hierarchy and blocking relation families.
 
 Status and retention views are also generated indexes. Terminal tasks remain in `.orbit/tasks/<task-id>/`, but CLI/list surfaces can group by terminal month using status-transition events. Compaction is out of scope for the reset, but the index must preserve the old ergonomic affordance of listing active tasks and closed tasks separately.
 

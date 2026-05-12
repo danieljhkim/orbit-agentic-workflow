@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, param
 use serde::{Deserialize, Serialize};
 
 const CONFIG_SCHEMA_VERSION: u32 = 1;
-const REGISTRY_SCHEMA_VERSION: u32 = 2;
+const REGISTRY_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceConfig {
@@ -63,6 +63,7 @@ pub struct TaskBundleBinding {
 pub struct TaskIndexFilter {
     pub status: Option<TaskStatus>,
     pub priority: Option<TaskPriority>,
+    pub job_run_id: Option<String>,
     pub tags: Vec<String>,
 }
 
@@ -493,6 +494,10 @@ impl TaskRegistryStore {
             sql.push_str(" AND priority = ?");
             values.push(priority.to_string());
         }
+        if let Some(job_run_id) = &filter.job_run_id {
+            sql.push_str(" AND job_run_id = ?");
+            values.push(job_run_id.clone());
+        }
         sql.push_str(" ORDER BY created_at DESC, task_id ASC");
 
         let conn = self
@@ -809,6 +814,7 @@ fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             workspace_id TEXT NOT NULL,
             status TEXT NOT NULL,
             priority TEXT NOT NULL,
+            job_run_id TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             terminal_month TEXT,
@@ -821,6 +827,8 @@ fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             ON task_bundle_index(workspace_id, status, created_at DESC, task_id ASC);
         CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_priority
             ON task_bundle_index(workspace_id, priority, created_at DESC, task_id ASC);
+        CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_job_run
+            ON task_bundle_index(workspace_id, job_run_id, created_at DESC, task_id ASC);
         CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_terminal
             ON task_bundle_index(workspace_id, terminal_month, task_id);
 
@@ -850,6 +858,19 @@ fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
 
+    add_column_if_missing(
+        conn,
+        "task_bundle_index",
+        "job_run_id",
+        "ALTER TABLE task_bundle_index ADD COLUMN job_run_id TEXT",
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_bundle_index_workspace_job_run
+            ON task_bundle_index(workspace_id, job_run_id, created_at DESC, task_id ASC)",
+        [],
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
     conn.execute(
         "INSERT OR IGNORE INTO allocator_state(authority, next_number, updated_at)
          VALUES ('local', 0, ?1)",
@@ -867,6 +888,27 @@ fn reject_unsupported_registry_schema(conn: &Connection) -> Result<(), OrbitErro
         return Err(OrbitError::Store(format!(
             "task registry schema version {version} is newer than supported version {REGISTRY_SCHEMA_VERSION}"
         )));
+    }
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    alter_sql: &str,
+) -> Result<(), OrbitError> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| OrbitError::Store(e.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| OrbitError::Store(e.to_string()))?;
+    if !columns.iter().any(|candidate| candidate == column) {
+        conn.execute(alter_sql, [])
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
     }
     Ok(())
 }
@@ -958,12 +1000,13 @@ fn write_task_index_rows(
 ) -> Result<(), OrbitError> {
     tx.execute(
         "INSERT INTO task_bundle_index (
-            task_id, workspace_id, status, priority, created_at, updated_at, terminal_month
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            task_id, workspace_id, status, priority, job_run_id, created_at, updated_at, terminal_month
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(task_id) DO UPDATE SET
             workspace_id = excluded.workspace_id,
             status = excluded.status,
             priority = excluded.priority,
+            job_run_id = excluded.job_run_id,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             terminal_month = excluded.terminal_month",
@@ -972,6 +1015,7 @@ fn write_task_index_rows(
             workspace_id,
             envelope.status.to_string(),
             envelope.priority.to_string(),
+            envelope.job_run_id.as_deref(),
             envelope.created_at.to_rfc3339(),
             envelope.updated_at.to_rfc3339(),
             terminal_month(envelope.status, envelope.updated_at),
@@ -1144,8 +1188,8 @@ fn terminal_month(status: TaskStatus, updated_at: DateTime<Utc>) -> Option<Strin
 
 fn relation_type_name(relation_type: TaskRelationType) -> &'static str {
     match relation_type {
-        TaskRelationType::Blocks => "blocks",
-        TaskRelationType::ParentOf => "parent_of",
+        TaskRelationType::BlockedBy => "blocked_by",
+        TaskRelationType::ChildOf => "child_of",
         TaskRelationType::SpawnedFrom => "spawned_from",
         TaskRelationType::RegressionFrom => "regression_from",
         TaskRelationType::Supersedes => "supersedes",
@@ -1251,6 +1295,7 @@ mod tests {
             task_type: TaskType::Feature,
             priority: TaskPriority::High,
             complexity: None,
+            job_run_id: None,
             relations,
             tags,
             context_files: Vec::new(),
@@ -1560,6 +1605,7 @@ mod tests {
                     &TaskIndexFilter {
                         status: Some(TaskStatus::Review),
                         priority: Some(TaskPriority::High),
+                        job_run_id: None,
                         tags: vec!["review".into()],
                     },
                 )
@@ -1573,6 +1619,7 @@ mod tests {
                     &TaskIndexFilter {
                         status: None,
                         priority: None,
+                        job_run_id: None,
                         tags: vec!["task-artifacts".into(), "v2".into()],
                     },
                 )
@@ -1600,7 +1647,7 @@ mod tests {
                     Vec::new(),
                     vec![
                         TaskRelation {
-                            relation_type: TaskRelationType::Blocks,
+                            relation_type: TaskRelationType::BlockedBy,
                             target: "ORB-00001".to_string(),
                         },
                         TaskRelation {
@@ -1617,7 +1664,7 @@ mod tests {
                 .indexed_relation_targets(
                     &workspace.workspace_id,
                     "ORB-00000",
-                    TaskRelationType::Blocks,
+                    TaskRelationType::BlockedBy,
                 )
                 .expect("targets"),
             vec!["ORB-00001"]
@@ -1627,7 +1674,7 @@ mod tests {
                 .indexed_relation_sources(
                     &workspace.workspace_id,
                     "ORB-00001",
-                    TaskRelationType::Blocks,
+                    TaskRelationType::BlockedBy,
                 )
                 .expect("sources"),
             vec!["ORB-00000"]
@@ -1653,7 +1700,7 @@ mod tests {
                     TaskStatus::Backlog,
                     vec!["v2".into()],
                     vec![TaskRelation {
-                        relation_type: TaskRelationType::Blocks,
+                        relation_type: TaskRelationType::BlockedBy,
                         target: "ORB-00001".to_string(),
                     }],
                 ),
@@ -1685,7 +1732,7 @@ mod tests {
                 .indexed_relation_sources(
                     &workspace.workspace_id,
                     "ORB-00001",
-                    TaskRelationType::Blocks,
+                    TaskRelationType::BlockedBy,
                 )
                 .expect("inverse relation"),
             Vec::<String>::new()

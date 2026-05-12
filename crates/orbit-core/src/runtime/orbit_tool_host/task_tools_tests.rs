@@ -291,7 +291,6 @@ fn task_delete_tool_allows_forced_protected_statuses() {
 }
 
 #[test]
-#[ignore = "Phase 6: v2 stores dependencies as relations, not envelope fields; the create path still rejects them. Re-enable once orbit.task.add routes dependencies through the v2 relations API."]
 fn task_add_tool_persists_dependencies() {
     let (_root, runtime, repo_root) = test_runtime();
     let dependency = create_task(
@@ -550,7 +549,6 @@ fn task_update_tool_rejects_dropped_task_types() {
 }
 
 #[test]
-#[ignore = "Phase 6: v2 stores dependencies as relations, not envelope fields; the update path still rejects them. Re-enable once orbit.task.update routes dependencies through the v2 relations API."]
 fn task_update_tool_replaces_dependencies() {
     let (_root, runtime, repo_root) = test_runtime();
     let first_dependency = create_task(

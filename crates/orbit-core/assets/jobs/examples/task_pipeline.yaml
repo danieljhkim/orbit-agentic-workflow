@@ -59,7 +59,7 @@ spec:
     - id: pr_open
       target: activity:pr_open
       default_input:
-        batch_id: "{{ steps.worktree.output.batch_id }}"
+        job_run_id: "{{ steps.worktree.output.job_run_id }}"
         base: agent-main
         title: "{{ input.title }}"
         workspace_path: "{{ steps.worktree.output.workspace_path }}"
@@ -70,7 +70,7 @@ spec:
       when: "{{ input.auto_merge }} == true"
       target: activity:git_merge
       default_input:
-        batch_id: "{{ steps.worktree.output.batch_id }}"
+        job_run_id: "{{ steps.worktree.output.job_run_id }}"
         base: agent-main
         strategy: pr_merge
 

@@ -14,7 +14,7 @@ const DEFAULT_BASE: &str = "main";
 const DEFAULT_BRANCH_PREFIX: &str = "orbit";
 
 /// Create a worktree and branch for a single task or task bundle, stamp
-/// `batch_id` and `workspace_path` on every task in scope, and move them to
+/// `job_run_id` and `workspace_path` on every task in scope, and move them to
 /// `in_progress`.
 ///
 /// Generic automation — not tied to duel or any specific workflow. Any
@@ -56,14 +56,14 @@ pub(in crate::executor::automation) fn setup_worktree<H: RuntimeHost + TaskHost 
         host.apply_task_automation_update(
             task_id,
             TaskAutomationUpdate {
-                batch_id: Some(run_id.clone()),
+                job_run_id: Some(run_id.clone()),
                 ..TaskAutomationUpdate::default()
             },
         )?;
     }
 
     Ok(json!({
-        "batch_id": run_id,
+        "job_run_id": run_id,
         "workspace_path": workspace_path_str,
         "head_ref": branch_name,
         "base_ref": start_point,

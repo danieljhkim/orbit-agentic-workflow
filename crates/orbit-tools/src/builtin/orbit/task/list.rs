@@ -27,8 +27,8 @@ impl Tool for OrbitTaskListTool {
                 required: false,
             },
             ToolParam {
-                name: "batch_id".to_string(),
-                description: "Filter by batch ID".to_string(),
+                name: "job_run_id".to_string(),
+                description: "Filter by job run ID".to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },

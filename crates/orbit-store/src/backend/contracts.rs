@@ -106,7 +106,7 @@ pub struct TaskDocumentUpdateParams {
     pub external_refs: Option<Vec<ExternalRef>>,
     pub pr_status: Option<Option<String>>,
     pub source_task_id: Option<Option<String>>,
-    pub batch_id: Option<Option<String>>,
+    pub job_run_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -316,7 +316,7 @@ pub trait TaskStoreBackend: Send + Sync {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;

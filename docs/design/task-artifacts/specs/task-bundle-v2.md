@@ -86,6 +86,7 @@ status: proposed
 type: chore
 priority: medium
 complexity: null
+job_run_id: null
 relations: []
 tags: []
 context_files: []
@@ -99,6 +100,7 @@ updated_at: 2026-05-11T00:00:00Z
 
 The envelope must not contain `description`, `acceptance_criteria`, `plan`, `execution_summary`, `history`, `comments`, or `review_threads`.
 The envelope must not contain local-only `workspace_path` or `repo_root`; those live in the local registry workspace binding.
+The envelope must not contain the old `batch_id` name or internal execution-routing fields such as `agent` and `model`; job-run membership is stored as `job_run_id`, while durable task attribution uses `created_by`, `planned_by`, and `implemented_by`.
 
 ## Documents
 
@@ -161,14 +163,14 @@ Review-thread rewrites must validate the complete replacement set before writing
 
 Relations are directed entries stored in the task envelope. The initial relation type set is:
 
-- `blocks`: source task blocks target task.
-- `parent_of`: source task owns or contains target task.
+- `blocked_by`: source task is blocked by target task.
+- `child_of`: source task is a child/subtask of target task.
 - `spawned_from`: source task was created from target task.
 - `regression_from`: source task tracks a regression introduced by target task.
 - `supersedes`: source task replaces target task.
 - `related_to`: source task is associated with target task without stronger semantics.
 
-Writers must validate the relation type set, reject self-edges, reject duplicate `(type, target)` entries on one source task, and reject cycles for hierarchy and blocking relation families. Inverse labels such as `blocked_by` are read-side projections generated from a stored `blocks` edge, not separately stored peer records.
+Writers must validate the relation type set, reject self-edges, reject duplicate `(type, target)` entries on one source task, and reject cycles for hierarchy and blocking relation families. Relation types are source-implied: create-subtask writes only `child_of -> parent` on the child, and create-dependent-task writes only `blocked_by -> dependency` on the blocked task. Inverse lookup is generated from indexes, not stored as peer records.
 
 Local indexes should materialize `(source_task_id, relation_type, target_task_id)` and inverse lookup rows so lineage queries do not scan every task bundle.
 
@@ -178,7 +180,7 @@ The local registry must maintain generated status and terminal-month views or re
 
 The initial registry projections are:
 
-- `task_bundle_index(task_id, workspace_id, status, priority, created_at, updated_at, terminal_month)`.
+- `task_bundle_index(task_id, workspace_id, status, priority, job_run_id, created_at, updated_at, terminal_month)`.
 - `task_bundle_tags(task_id, workspace_id, tag)`.
 - `task_bundle_relations(source_task_id, workspace_id, relation_type, target_task_id)`.
 

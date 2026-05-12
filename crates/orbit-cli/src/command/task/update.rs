@@ -50,9 +50,9 @@ pub struct TaskUpdateArgs {
     /// PR review status (approve, request-changes)
     #[arg(long)]
     pub pr_status: Option<String>,
-    /// Batch ID to associate with the task (empty string clears)
+    /// Job run ID to associate with the task (empty string clears)
     #[arg(long)]
-    pub batch_id: Option<String>,
+    pub job_run_id: Option<String>,
     /// Comma-separated task context selectors (empty string clears). Prefer
     /// `file:`, `dir:`, or `symbol:` forms; legacy raw paths are accepted and upgraded.
     #[arg(long = "context", alias = "context-files")]
@@ -88,7 +88,7 @@ impl Execute for TaskUpdateArgs {
             planned_by,
             implemented_by,
             pr_status,
-            batch_id,
+            job_run_id,
             context_files,
             artifacts,
             agent,
@@ -103,7 +103,7 @@ impl Execute for TaskUpdateArgs {
                 Some(value)
             }
         });
-        let batch_id = batch_id.map(|value| {
+        let job_run_id = job_run_id.map(|value| {
             if value.trim().is_empty() {
                 None
             } else {
@@ -145,7 +145,7 @@ impl Execute for TaskUpdateArgs {
                 planned_by,
                 implemented_by,
                 pr_status,
-                batch_id,
+                job_run_id,
                 context_files: context_files.map(|c| crate::parse::csv_to_vec(&c)),
                 upsert_artifacts,
                 ..Default::default()

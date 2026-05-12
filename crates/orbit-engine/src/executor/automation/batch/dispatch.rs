@@ -32,7 +32,7 @@ pub(in crate::executor::automation) fn dispatch_batch<H: TaskHost + ?Sized>(
     let selected = claim_selected_tasks(host, &selected, run_id, rationale)?;
 
     Ok(json!({
-        "batch_id": run_id,
+        "job_run_id": run_id,
         "task_ids": selected.iter().map(|task| task.id.to_string()).collect::<Vec<_>>(),
         "batch_size": selected.len(),
     }))
@@ -208,7 +208,7 @@ fn ensure_unbatched(task: &Task) -> Result<(), OrbitError> {
         return Ok(());
     }
     Err(OrbitError::InvalidInput(format!(
-        "task '{}' is already assigned to batch '{}'",
+        "task '{}' is already assigned to job run '{}'",
         task.id,
         task_batch_id(task).unwrap_or_default()
     )))
@@ -240,7 +240,7 @@ fn tag_task<H: TaskHost + ?Sized>(
     host.apply_task_automation_update(
         task.id.as_ref(),
         TaskAutomationUpdate {
-            batch_id: Some(run_id.to_string()),
+            job_run_id: Some(run_id.to_string()),
             append_comments: vec![TaskComment {
                 at: Utc::now(),
                 by: SYSTEM_ACTOR_LABEL.to_string(),

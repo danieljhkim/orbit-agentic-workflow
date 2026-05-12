@@ -75,7 +75,6 @@ pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStat
         "created_by": task.created_by,
         "planned_by": task.planned_by,
         "implemented_by": task.implemented_by,
-        "model": task.model,
         "status": task.status.to_string(),
         "priority": task.priority.to_string(),
         "complexity": task.complexity.map(|value| value.to_string()),
@@ -83,6 +82,7 @@ pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStat
         "pr_status": task.pr_status,
         "external_refs": task.external_refs,
         "source_task_id": task.source_task_id,
+        "job_run_id": task.batch_id,
         "comments": task.comments,
         "history": task.history,
         "review_threads": task.review_threads,
@@ -102,7 +102,7 @@ pub(super) fn task_lock_to_json(task: &Task) -> Value {
         "id": task.id,
         "title": task.title,
         "status": task.status.to_string(),
-        "batch_id": task.batch_id,
+        "job_run_id": task.batch_id,
         "context_files": task.context_files,
     })
 }

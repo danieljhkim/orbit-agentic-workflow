@@ -15,18 +15,18 @@ pub(super) fn required_input_string<'a>(
         .ok_or_else(|| OrbitError::InvalidInput(format!("missing required input.{key}")))
 }
 
-pub(super) fn required_batch_id<'a>(
+pub(super) fn required_job_run_id<'a>(
     input: &'a Value,
     activity: &str,
 ) -> Result<&'a str, OrbitError> {
     input
         .as_object()
-        .and_then(|map| map.get("batch_id").or_else(|| map.get("run_id")))
+        .and_then(|map| map.get("job_run_id").or_else(|| map.get("run_id")))
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| {
             OrbitError::InvalidInput(format!(
-                "{activity} requires input.batch_id or input.run_id"
+                "{activity} requires input.job_run_id or input.run_id"
             ))
         })
 }

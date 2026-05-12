@@ -14,7 +14,7 @@ use orbit_common::types::Task;
 
 use crate::context::{RuntimeHost, TaskHost};
 
-use super::super::input::{canonicalize_existing_dir, input_string_field, required_batch_id};
+use super::super::input::{canonicalize_existing_dir, input_string_field, required_job_run_id};
 use super::git::git_success;
 use author::{append_co_author_trailers, commit_author_for_tasks, git_author_for_task};
 use git_ops::{
@@ -46,7 +46,7 @@ pub(super) fn commit_task_artifact_changes<H: TaskHost + RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "commit_task_artifact_changes")?;
+    let batch_id = required_job_run_id(input, "commit_task_artifact_changes")?;
     let explicit_completed_task_ids = completed_task_ids_field(input);
     if explicit_completed_task_ids
         .as_ref()
@@ -121,7 +121,7 @@ pub(super) fn commit_finalize_artifact_changes<H: TaskHost + RuntimeHost + ?Size
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "commit_finalize_artifact_changes")?;
+    let batch_id = required_job_run_id(input, "commit_finalize_artifact_changes")?;
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     if batch_tasks.is_empty() {
         return Ok(json!({}));
@@ -174,7 +174,7 @@ pub(super) fn commit_batch_changes<H: TaskHost + RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "commit_batch_changes")?;
+    let batch_id = required_job_run_id(input, "commit_batch_changes")?;
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     if batch_tasks.is_empty() {
         return Ok(json!({}));
@@ -513,7 +513,7 @@ mod tests {
             let host = CommitTestHost::new(vec![task], workspace.to_path_buf());
             let input = json!({
                 "scope": "per_task",
-                "batch_id": "batch-1",
+                "job_run_id": "batch-1",
                 "workspace_path": workspace.to_string_lossy().to_string(),
                 "completed_task_ids": ["T1"],
             });
@@ -581,7 +581,7 @@ mod tests {
         let host = CommitTestHost::new(vec![task], workspace.to_path_buf());
         let input = json!({
             "scope": "per_task",
-            "batch_id": "batch-1",
+            "job_run_id": "batch-1",
             "workspace_path": workspace.to_string_lossy().to_string(),
             "completed_task_ids": ["T1"],
         });
@@ -617,7 +617,7 @@ mod tests {
         let host = CommitTestHost::new(tasks, workspace.to_path_buf());
         let input = json!({
             "scope": "all",
-            "batch_id": "batch-1",
+            "job_run_id": "batch-1",
             "workspace_path": workspace.to_string_lossy().to_string(),
         });
 

@@ -31,7 +31,7 @@ spec:
   output_schema_json:
     type: object
     properties:
-      batch_id:
+      job_run_id:
         type: string
       workspace_path:
         type: string

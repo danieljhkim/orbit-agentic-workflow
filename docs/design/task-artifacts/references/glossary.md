@@ -15,5 +15,5 @@ This glossary covers Orbit-specific task artifact terms. Generic issue-tracker o
 | **Projection link** | A symlink under `.orbit/tasks/<task-id>` that points to the canonical task bundle in `~/.orbit/tasks/workspaces/<workspace-id>/`. See [4_decisions.md ADR-007](../4_decisions.md#adr-007--home-task-store-with-workspace-symlink-projection). |
 | **Status-neutral directory** | The v2 layout where `.orbit/tasks/<task-id>/` does not encode lifecycle state in the path. See [4_decisions.md ADR-003](../4_decisions.md#adr-003--status-neutral-task-directories). |
 | **Task event stream** | Append-only lifecycle and metadata rows stored in `events.jsonl`. See [1_overview.md §2.5](../1_overview.md). |
-| **Typed relation** | A structured task-to-task link with an explicit relation type such as `blocks` or `supersedes`. See [1_overview.md §2.6](../1_overview.md). |
+| **Typed relation** | A structured task-to-task link with an explicit relation type such as `blocked_by` or `supersedes`. See [1_overview.md §2.6](../1_overview.md). |
 | **Workspace ID** | A stable `<slug>-<6char>` identifier stored in `.orbit/config.yaml` and used to bind a checkout to canonical bundles under `~/.orbit/tasks/workspaces/`. See [2_design.md §2.6](../2_design.md). |

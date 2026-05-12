@@ -178,7 +178,7 @@ pub(in crate::executor::automation) fn run_parallel_task_pipeline<
     let run_id = require_run_id(input, "parallel_dispatch_tasks")?.to_string();
     let Some(selected_tasks) = load_selected_tasks(host, &run_id)? else {
         // Planning can legitimately drain a batch by returning every selected
-        // task to backlog and clearing its batch_id. Treat that as a clean no-op
+        // task to backlog and clearing its job run assignment. Treat that as a clean no-op
         // so the rest of the local pipeline can short-circuit successfully.
         return Ok(json!({
             "launched": 0,

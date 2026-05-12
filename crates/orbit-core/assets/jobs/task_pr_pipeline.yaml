@@ -68,7 +68,7 @@ spec:
       recovery_activity: step_failure_recovery
       target: activity:pr_open
       default_input:
-        batch_id: "{{ steps.worktree.output.batch_id }}"
+        job_run_id: "{{ steps.worktree.output.job_run_id }}"
         base: "{{ input.base_branch }}"
         base_sync: "{{ input.base_sync }}"
         body: "{{ input.body }}"

@@ -25,7 +25,7 @@ impl TaskReadHost for OrbitRuntime {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
@@ -34,7 +34,7 @@ impl TaskReadHost for OrbitRuntime {
             status,
             priority,
             parent_id,
-            batch_id,
+            job_run_id,
             external_ref,
             has_external_ref_system,
         )
@@ -154,7 +154,7 @@ impl TaskWriteHost for OrbitRuntime {
                     model: model.clone().map(Some),
                     status: update.status,
                     external_refs,
-                    batch_id: update.batch_id.clone().map(Some),
+                    job_run_id: update.job_run_id.clone().map(Some),
                     status_event: update.status_event.clone(),
                     status_note: update.status_note.clone(),
                     append_comments: update.append_comments.clone(),
@@ -333,7 +333,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 6: TaskAutomationUpdate still threads workspace_path and batch_id into update_task_document; v2 rejects those legacy envelope fields. Re-enable once the runtime drops workspace_path and routes batch_id through the v2 relations API."]
     fn automation_can_restamp_in_progress_task_without_plan() {
         let (_root, runtime) = test_runtime();
         let task = runtime
@@ -351,12 +350,13 @@ mod tests {
             .start_task(&task.id, Some("start approved task".to_string()), None)
             .expect("start backlog task without plan");
         assert_eq!(started.status, TaskStatus::InProgress);
+        let original_workspace_path = started.workspace_path.clone();
 
         runtime
             .apply_task_automation_update(
                 &task.id,
                 TaskAutomationUpdate {
-                    batch_id: Some("jrun-test".to_string()),
+                    job_run_id: Some("jrun-test".to_string()),
                     status: Some(TaskStatus::InProgress),
                     ..TaskAutomationUpdate::default()
                 },
@@ -366,14 +366,10 @@ mod tests {
         let updated = runtime.get_task(&task.id).expect("reload task");
         assert_eq!(updated.status, TaskStatus::InProgress);
         assert_eq!(updated.batch_id.as_deref(), Some("jrun-test"));
-        assert_eq!(
-            updated.workspace_path.as_deref(),
-            Some("/tmp/orbit-worktree")
-        );
+        assert_eq!(updated.workspace_path, original_workspace_path);
     }
 
     #[test]
-    #[ignore = "Phase 6: worktree_setup writes batch_id through update_task_document; v2 stores batch membership as a relation, not a document field. Re-enable once batch_id is routed through the v2 relations API."]
     fn worktree_setup_admits_unplanned_workflow_statuses() {
         let (root, runtime) = test_runtime();
         let repo = root.path().join("repo");
@@ -428,19 +424,35 @@ mod tests {
             rejected.id.clone(),
             archived.id.clone(),
         ];
+        let workspace_paths_before = task_ids
+            .iter()
+            .map(|task_id| {
+                (
+                    task_id.clone(),
+                    runtime
+                        .get_task(task_id)
+                        .expect("reload pre-worktree task")
+                        .workspace_path,
+                )
+            })
+            .collect::<HashMap<_, _>>();
         let output = run_worktree_setup(&runtime, &task_ids, "jrun-admit");
         let workspace_path = output["workspace_path"]
             .as_str()
             .expect("workspace path output")
             .to_string();
+        assert!(!workspace_path.is_empty());
 
         for task_id in &task_ids {
             let task = runtime.get_task(task_id).expect("reload admitted task");
             assert_eq!(task.status, TaskStatus::InProgress, "{task_id}");
             assert_eq!(task.batch_id.as_deref(), Some("jrun-admit"));
             assert_eq!(
-                task.workspace_path.as_deref(),
-                Some(workspace_path.as_str())
+                task.workspace_path,
+                workspace_paths_before
+                    .get(task_id)
+                    .expect("captured workspace path")
+                    .clone()
             );
         }
 
@@ -703,7 +715,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 6: dispatch writes batch_id through update_task_document; v2 stores batch membership as a relation, not a document field. Re-enable once dispatch routes batch_id through the v2 relations API."]
     fn dispatch_batch_claim_records_start_and_comment_as_system() {
         let (_root, runtime) = test_runtime();
         let task = runtime

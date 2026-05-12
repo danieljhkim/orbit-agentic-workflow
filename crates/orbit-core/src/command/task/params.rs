@@ -67,7 +67,7 @@ pub struct TaskUpdateParams {
     pub planned_by: Option<Option<String>>,
     pub implemented_by: Option<Option<String>>,
     pub pr_status: Option<Option<String>>,
-    pub batch_id: Option<Option<String>>,
+    pub job_run_id: Option<Option<String>>,
     pub context_files: Option<Vec<String>>,
     pub upsert_artifacts: Vec<TaskArtifact>,
     pub append_review_threads: Vec<ReviewThread>,
@@ -91,7 +91,7 @@ impl TaskUpdateParams {
             || self.planned_by.is_some()
             || self.implemented_by.is_some()
             || self.pr_status.is_some()
-            || self.batch_id.is_some()
+            || self.job_run_id.is_some()
             || self.context_files.is_some()
             || !self.upsert_artifacts.is_empty()
             || !self.append_review_threads.is_empty()
@@ -117,7 +117,7 @@ impl From<TaskUpdateParams> for TaskRecordUpdateParams {
             planned_by: p.planned_by,
             implemented_by: p.implemented_by,
             pr_status: p.pr_status,
-            batch_id: p.batch_id,
+            job_run_id: p.job_run_id,
             context_files: p.context_files,
             upsert_artifacts: p.upsert_artifacts,
             append_review_threads: p.append_review_threads,

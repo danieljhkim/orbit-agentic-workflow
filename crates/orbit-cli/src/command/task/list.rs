@@ -33,9 +33,9 @@ pub struct TaskListArgs {
     /// Filter to subtasks belonging to a parent task
     #[arg(long = "parent")]
     pub parent_id: Option<String>,
-    /// Filter by batch ID
+    /// Filter by job run ID
     #[arg(long)]
-    pub batch_id: Option<String>,
+    pub job_run_id: Option<String>,
     /// Filter by tag. Repeat for AND semantics.
     #[arg(long = "tag", action = ArgAction::Append, value_delimiter = ',')]
     pub tags: Vec<String>,
@@ -66,7 +66,7 @@ impl Execute for TaskListArgs {
         let priority = self.priority;
         let task_type = self.task_type;
         let parent_id = self.parent_id;
-        let batch_id = self.batch_id;
+        let job_run_id = self.job_run_id;
         let tags = self.tags;
         let external_ref = self
             .external_ref
@@ -83,7 +83,7 @@ impl Execute for TaskListArgs {
         let status_by_id = build_task_status_index(&runtime.list_tasks()?);
         let active_statuses = [TaskStatus::Backlog, TaskStatus::InProgress];
         let status_filter =
-            default_task_list_status_filter(all, &status, batch_id.as_deref(), &active_statuses);
+            default_task_list_status_filter(all, &status, job_run_id.as_deref(), &active_statuses);
 
         let tasks: Vec<_> = tasks_matching_tags
             .into_iter()
@@ -96,9 +96,9 @@ impl Execute for TaskListArgs {
                     .is_none_or(|p| t.parent_id.as_deref() == Some(p))
             })
             .filter(|t| {
-                batch_id
+                job_run_id
                     .as_deref()
-                    .is_none_or(|b| t.batch_id.as_deref() == Some(b))
+                    .is_none_or(|value| t.batch_id.as_deref() == Some(value))
             })
             .filter(|t| {
                 external_ref.as_ref().is_none_or(|external_ref| {
@@ -140,14 +140,14 @@ fn validate_external_ref_system(system: &str) -> Result<String, OrbitError> {
 fn default_task_list_status_filter<'a>(
     all: bool,
     status: &'a [TaskStatus],
-    batch_id: Option<&str>,
+    job_run_id: Option<&str>,
     active_statuses: &'a [TaskStatus],
 ) -> &'a [TaskStatus] {
     if all {
         &[]
     } else if !status.is_empty() {
         status
-    } else if batch_id.is_some() {
+    } else if job_run_id.is_some() {
         &[]
     } else {
         active_statuses

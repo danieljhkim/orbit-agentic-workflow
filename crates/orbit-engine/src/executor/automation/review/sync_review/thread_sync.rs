@@ -7,7 +7,7 @@ use orbit_store::pr_scoreboard;
 
 use crate::context::{RuntimeHost, TaskAutomationUpdate, TaskHost};
 
-use crate::executor::automation::input::required_batch_id;
+use crate::executor::automation::input::required_job_run_id;
 
 use super::client::{GhClient, RealGhClient};
 use super::patch_match::{PrFilePatchMap, patch_supports_right_side_line};
@@ -16,7 +16,7 @@ pub(crate) fn sync_batch_review_to_github<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "sync_batch_review_to_github")?;
+    let batch_id = required_job_run_id(input, "sync_batch_review_to_github")?;
 
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     let mut total: u64 = 0;

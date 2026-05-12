@@ -11,8 +11,8 @@ use serde_json::{Value, json};
 use crate::context::{PrConfig, RuntimeHost, TaskAutomationUpdate, TaskHost};
 
 use super::super::input::{
-    canonicalize_existing_dir, input_string_field, json_number_to_string, required_batch_id,
-    required_input_string,
+    canonicalize_existing_dir, input_string_field, json_number_to_string, required_input_string,
+    required_job_run_id,
 };
 use super::freshness::{ensure_branch_fresh_against_base, ensure_branch_rebased_onto_base};
 use super::git::{base_sync_mode_from_input, git_output};
@@ -29,7 +29,7 @@ pub(in crate::executor::automation) fn git_merge<H: RuntimeHost + TaskHost + Syn
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "git_merge")?;
+    let batch_id = required_job_run_id(input, "git_merge")?;
     if host
         .list_tasks_filtered(None, None, None, Some(batch_id), None, None)?
         .is_empty()
@@ -54,12 +54,12 @@ pub(super) fn merge_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "merge_batch_pr")?;
+    let batch_id = required_job_run_id(input, "merge_batch_pr")?;
 
     let batch_tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
     if batch_tasks.is_empty() {
         return Err(OrbitError::InvalidInput(format!(
-            "merge_batch_pr: no tasks found for batch_id '{batch_id}'"
+            "merge_batch_pr: no tasks found for job_run_id '{batch_id}'"
         )));
     }
 
@@ -186,7 +186,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     let workspace_path_str = required_input_string(input, "workspace_path")?;
     let workspace_path = canonicalize_existing_dir(workspace_path_str, "workspace_path")?;
 
-    let batch_id = required_batch_id(input, "open_batch_pr")?;
+    let batch_id = required_job_run_id(input, "open_batch_pr")?;
 
     let completed_task_ids = match completed_task_ids_from_input(input) {
         Some(task_ids) => task_ids,
@@ -199,7 +199,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
 
     if completed_task_ids.is_empty() {
         return Err(OrbitError::InvalidInput(format!(
-            "open_batch_pr: no tasks found for batch_id '{batch_id}'"
+            "open_batch_pr: no tasks found for job_run_id '{batch_id}'"
         )));
     }
 
@@ -984,7 +984,7 @@ mod tests {
     fn pr_open_input(repo: &Path, completed_task_ids: Vec<&str>) -> Value {
         json!({
             "workspace_path": repo.to_string_lossy(),
-            "batch_id": "batch-1",
+            "job_run_id": "batch-1",
             "completed_task_ids": completed_task_ids,
             "base": "agent-main",
             "base_sync": "local",

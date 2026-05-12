@@ -1,7 +1,7 @@
 use orbit_common::types::OrbitError;
 use serde_json::{Value, json};
 
-use super::super::input::required_batch_id;
+use super::super::input::required_job_run_id;
 use super::normalize_review_decision;
 use crate::context::TaskHost;
 
@@ -39,11 +39,11 @@ pub(in crate::executor::automation) fn check_task_value<H: TaskHost + ?Sized>(
             value.eq_ignore_ascii_case(expected)
         }
         "all" | "any" => {
-            let batch_id = required_batch_id(input, "check_task_value")?;
+            let batch_id = required_job_run_id(input, "check_task_value")?;
             let tasks = host.list_tasks_filtered(None, None, None, Some(batch_id), None, None)?;
             if tasks.is_empty() {
                 return Err(OrbitError::InvalidInput(format!(
-                    "no tasks found for batch_id '{batch_id}'"
+                    "no tasks found for job_run_id '{batch_id}'"
                 )));
             }
             let check_fn = |task: &orbit_common::types::Task| -> bool {

@@ -63,6 +63,8 @@ pub struct TaskEnvelopeV2 {
     pub priority: TaskPriority,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub complexity: Option<TaskComplexity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<TaskRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -97,8 +99,8 @@ impl TaskEnvelopeV2 {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskRelationType {
-    Blocks,
-    ParentOf,
+    BlockedBy,
+    ChildOf,
     SpawnedFrom,
     RegressionFrom,
     Supersedes,
@@ -431,8 +433,8 @@ enum RelationCycleFamily {
 
 fn cyclic_relation_family(relation_type: TaskRelationType) -> Option<RelationCycleFamily> {
     match relation_type {
-        TaskRelationType::Blocks => Some(RelationCycleFamily::Blocking),
-        TaskRelationType::ParentOf => Some(RelationCycleFamily::Hierarchy),
+        TaskRelationType::BlockedBy => Some(RelationCycleFamily::Blocking),
+        TaskRelationType::ChildOf => Some(RelationCycleFamily::Hierarchy),
         // Temporal and associative relation types are queryable metadata, not reachability families.
         TaskRelationType::SpawnedFrom => None,
         TaskRelationType::RegressionFrom
@@ -528,18 +530,18 @@ updated_at: 2026-05-10T12:00:00Z
     fn relation_validation_rejects_duplicate_and_self_edges() {
         let duplicate = vec![
             TaskRelation {
-                relation_type: TaskRelationType::Blocks,
+                relation_type: TaskRelationType::BlockedBy,
                 target: "ORB-00002".to_string(),
             },
             TaskRelation {
-                relation_type: TaskRelationType::Blocks,
+                relation_type: TaskRelationType::BlockedBy,
                 target: "ORB-00002".to_string(),
             },
         ];
         assert!(validate_task_relations_for_source("ORB-00001", &duplicate, &[]).is_err());
 
         let self_edge = vec![TaskRelation {
-            relation_type: TaskRelationType::Blocks,
+            relation_type: TaskRelationType::BlockedBy,
             target: "ORB-00001".to_string(),
         }];
         assert!(validate_task_relations_for_source("ORB-00001", &self_edge, &[]).is_err());
@@ -549,22 +551,22 @@ updated_at: 2026-05-10T12:00:00Z
     fn relation_validation_rejects_blocking_and_hierarchy_cycles() {
         let existing = vec![TaskRelationEdge {
             source: "ORB-00002".to_string(),
-            relation_type: TaskRelationType::Blocks,
+            relation_type: TaskRelationType::BlockedBy,
             target: "ORB-00001".to_string(),
         }];
         let relations = vec![TaskRelation {
-            relation_type: TaskRelationType::Blocks,
+            relation_type: TaskRelationType::BlockedBy,
             target: "ORB-00002".to_string(),
         }];
         assert!(validate_task_relations_for_source("ORB-00001", &relations, &existing).is_err());
 
         let existing = vec![TaskRelationEdge {
             source: "ORB-00002".to_string(),
-            relation_type: TaskRelationType::ParentOf,
+            relation_type: TaskRelationType::ChildOf,
             target: "ORB-00003".to_string(),
         }];
         let relations = vec![TaskRelation {
-            relation_type: TaskRelationType::ParentOf,
+            relation_type: TaskRelationType::ChildOf,
             target: "ORB-00002".to_string(),
         }];
         assert!(validate_task_relations_for_source("ORB-00003", &relations, &existing).is_err());
@@ -671,6 +673,7 @@ updated_at: 2026-05-10T12:00:00Z
             task_type: TaskType::Feature,
             priority: TaskPriority::Medium,
             complexity: None,
+            job_run_id: None,
             relations: Vec::new(),
             tags: Vec::new(),
             context_files: Vec::new(),

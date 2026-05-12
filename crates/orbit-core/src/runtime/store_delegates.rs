@@ -44,7 +44,7 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) external_refs: Option<Vec<ExternalRef>>,
     pub(crate) pr_status: Option<Option<String>>,
     pub(crate) source_task_id: Option<Option<String>>,
-    pub(crate) batch_id: Option<Option<String>>,
+    pub(crate) job_run_id: Option<Option<String>>,
     pub(crate) status_event: Option<String>,
     pub(crate) status_note: Option<String>,
     pub(crate) append_history: Vec<TaskHistoryEntry>,
@@ -75,7 +75,7 @@ impl TaskRecordUpdateParams {
             || self.external_refs.is_some()
             || self.pr_status.is_some()
             || self.source_task_id.is_some()
-            || self.batch_id.is_some()
+            || self.job_run_id.is_some()
     }
 
     fn has_history_changes(&self) -> bool {
@@ -199,7 +199,7 @@ impl TaskRecords<'_> {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
@@ -207,7 +207,7 @@ impl TaskRecords<'_> {
             status,
             priority,
             parent_id,
-            batch_id,
+            job_run_id,
             external_ref,
             has_external_ref_system,
         )
@@ -242,7 +242,7 @@ impl TaskRecords<'_> {
                     external_refs: params.external_refs.clone(),
                     pr_status: params.pr_status.clone(),
                     source_task_id: params.source_task_id.clone(),
-                    batch_id: params.batch_id.clone(),
+                    job_run_id: params.job_run_id.clone(),
                 },
             )?;
         }

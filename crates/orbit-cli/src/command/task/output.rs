@@ -46,6 +46,7 @@ pub(crate) fn task_to_json(
         "pr_status": task.pr_status,
         "external_refs": task.external_refs,
         "source_task_id": task.source_task_id,
+        "job_run_id": task.batch_id,
         "comments": task.comments,
         "history": task.history,
         "review_threads": task.review_threads,
@@ -67,7 +68,7 @@ pub(super) fn task_lock_to_json(task: &orbit_core::Task) -> Value {
         "id": task.id,
         "title": task.title,
         "status": task.status.to_string(),
-        "batch_id": task.batch_id,
+        "job_run_id": task.batch_id,
         "context_files": task.context_files,
     })
 }
@@ -121,9 +122,9 @@ pub(super) fn print_task_locks(tasks: &[orbit_core::Task], locked_files: &BTreeS
         }
 
         match task.batch_id.as_deref() {
-            Some(batch_id) => println!(
-                "[{}] {} ({}, batch={})",
-                task.id, task.title, task.status, batch_id
+            Some(job_run_id) => println!(
+                "[{}] {} ({}, job_run={})",
+                task.id, task.title, task.status, job_run_id
             ),
             None => println!("[{}] {} ({})", task.id, task.title, task.status),
         }

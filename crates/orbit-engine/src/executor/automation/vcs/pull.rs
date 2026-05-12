@@ -5,14 +5,14 @@ use serde_json::{Value, json};
 
 use crate::context::RuntimeHost;
 
-use super::super::input::{canonicalize_existing_dir, input_string_field, required_batch_id};
+use super::super::input::{canonicalize_existing_dir, input_string_field, required_job_run_id};
 use super::git::git_success;
 
 pub(in crate::executor::automation) fn pull_batch_changes<H: RuntimeHost + ?Sized>(
     host: &H,
     input: &Value,
 ) -> Result<Value, OrbitError> {
-    let batch_id = required_batch_id(input, "pull_batch_changes")?;
+    let batch_id = required_job_run_id(input, "pull_batch_changes")?;
     let workspace_path = match input_string_field(input, "workspace_path") {
         Some(ws) => canonicalize_existing_dir(&ws, "workspace_path")?,
         None => {

@@ -199,7 +199,7 @@ pub struct TaskAutomationUpdate {
     pub agent: Option<String>,
     pub model: Option<String>,
     pub review_threads: Option<Vec<ReviewThread>>,
-    pub batch_id: Option<String>,
+    pub job_run_id: Option<String>,
 }
 
 pub trait JobRunHost {
@@ -262,7 +262,7 @@ pub trait TaskReadHost {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;
@@ -567,7 +567,7 @@ impl TaskReadHost for AgentExecutorHost<'_> {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
@@ -575,7 +575,7 @@ impl TaskReadHost for AgentExecutorHost<'_> {
             status,
             priority,
             parent_id,
-            batch_id,
+            job_run_id,
             external_ref,
             has_external_ref_system,
         )
@@ -649,7 +649,7 @@ impl TaskReadHost for CliCommandExecutorHost<'_> {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
@@ -657,7 +657,7 @@ impl TaskReadHost for CliCommandExecutorHost<'_> {
             status,
             priority,
             parent_id,
-            batch_id,
+            job_run_id,
             external_ref,
             has_external_ref_system,
         )
@@ -717,7 +717,7 @@ impl TaskReadHost for AutomationExecutorHost<'_> {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
         external_ref: Option<&ExternalRef>,
         has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
@@ -725,7 +725,7 @@ impl TaskReadHost for AutomationExecutorHost<'_> {
             status,
             priority,
             parent_id,
-            batch_id,
+            job_run_id,
             external_ref,
             has_external_ref_system,
         )

@@ -87,7 +87,7 @@ Lifecycle changes, comments, review messages, and automation updates are natural
 
 ### 2.6 Typed relations
 
-Task-to-task links live in a single directed `relations` array on the envelope, with explicit types such as `parent_of`, `blocks`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. Read-side projections can expose inverse labels such as `blocked_by`, but the bundle stores one directed edge per relationship. Consumers reason about relation meaning rather than inferring it from field names.
+Task-to-task links live in a single directed `relations` array on the envelope, with explicit source-implied types such as `child_of`, `blocked_by`, `spawned_from`, `regression_from`, `supersedes`, and `related_to`. The bundle stores one directed edge per relationship. Consumers reason about relation meaning rather than inferring it from legacy field names.
 
 ### 2.7 Local task store and projection
 

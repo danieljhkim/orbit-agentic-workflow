@@ -870,6 +870,7 @@ mod tests {
                 task_type: TaskType::Feature,
                 priority: TaskPriority::High,
                 complexity: None,
+                job_run_id: None,
                 relations: Vec::new(),
                 tags: vec!["task-artifacts".to_string()],
                 context_files: vec!["docs/design/task-artifacts/2_design.md".to_string()],
