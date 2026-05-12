@@ -1,0 +1,99 @@
+name: Bug report
+description: Report a defect in Orbit (CLI, runtime, crate behavior, or docs).
+title: "[bug] <short summary>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill in every required field. For suspected
+        security vulnerabilities, **do not file a public issue** — use the
+        private advisory channel linked in SECURITY.md.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing the bug.
+      placeholder: "`orbit task show` panics when --field is omitted on an empty workspace"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Orbit version / commit
+      description: Output of `orbit --version`, or the commit SHA you're on.
+      placeholder: "orbit 0.x.y (abc1234)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal, deterministic steps. Include commands, inputs, and any required setup. A repo or gist link is welcome.
+      placeholder: |
+        1. `git clone …`
+        2. `cargo build -p orbit-cli`
+        3. `orbit tool run orbit.task.show --input '{"id": "ORB-00001"}'`
+        4. Observe panic
+      render: bash
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead. Include the full error / panic / stack trace if any, ideally with `RUST_BACKTRACE=1`.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: crates
+    attributes:
+      label: Affected crate(s)
+      description: Best-guess area(s). Select "Other / not sure" if unclear.
+      multiple: true
+      options:
+        - orbit-agent
+        - orbit-cli
+        - orbit-common
+        - orbit-core
+        - orbit-embed
+        - orbit-embed-companion
+        - orbit-engine
+        - orbit-exec
+        - orbit-knowledge
+        - orbit-mcp
+        - orbit-policy
+        - orbit-registry
+        - orbit-store
+        - orbit-tools
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Rust toolchain, anything else that might matter.
+      placeholder: |
+        macOS 14.5 (aarch64) — rustc 1.83.0 — zsh 5.9
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Logs, screenshots, hypotheses, related task IDs — anything that helps triage.
