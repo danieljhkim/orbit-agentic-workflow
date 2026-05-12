@@ -25,6 +25,7 @@ mod pipeline_durability_tests;
 mod recovery_tests;
 mod step_tests;
 mod target_tests;
+mod templating_tests;
 
 fn test_writer(run_id: &str) -> V2AuditWriter {
     let inner: std::sync::Arc<dyn AuditSink> = std::sync::Arc::new(NullSink);

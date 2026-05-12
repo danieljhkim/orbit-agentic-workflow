@@ -6,7 +6,7 @@ spec:
   type: deterministic
   description: >
     Create a worktree and branch for one task or a task bundle, stamp the task
-    records with batch/workspace metadata, and move them to `in-progress`.
+    records with job-run/workspace metadata, and move them to `in-progress`.
   input_schema_json:
     type: object
     properties:
@@ -33,6 +33,9 @@ spec:
     properties:
       job_run_id:
         type: string
+      batch_id:
+        type: string
+        description: Deprecated compatibility alias for job_run_id.
       workspace_path:
         type: string
       head_ref:

@@ -62,12 +62,27 @@ pub(in crate::executor::automation) fn setup_worktree<H: RuntimeHost + TaskHost 
         )?;
     }
 
-    Ok(json!({
+    Ok(worktree_setup_output(
+        &run_id,
+        workspace_path_str,
+        branch_name,
+        start_point,
+    ))
+}
+
+fn worktree_setup_output(
+    run_id: &str,
+    workspace_path: String,
+    head_ref: String,
+    base_ref: String,
+) -> Value {
+    json!({
         "job_run_id": run_id,
-        "workspace_path": workspace_path_str,
-        "head_ref": branch_name,
-        "base_ref": start_point,
-    }))
+        "batch_id": run_id,
+        "workspace_path": workspace_path,
+        "head_ref": head_ref,
+        "base_ref": base_ref,
+    })
 }
 
 fn ensure_task_can_enter_workflow<H: TaskHost + ?Sized>(
@@ -212,6 +227,19 @@ mod tests {
         ensure_worktree(&repo, &worktree, &second_base, "orbit/test").unwrap();
 
         assert_eq!(git(&worktree, &["rev-parse", "HEAD"]), second_base);
+    }
+
+    #[test]
+    fn worktree_setup_output_includes_legacy_batch_id_alias() {
+        let output = worktree_setup_output(
+            "jrun-test",
+            "/tmp/orbit-worktree".to_string(),
+            "orbit/ORB-00010".to_string(),
+            "main".to_string(),
+        );
+
+        assert_eq!(output["job_run_id"], json!("jrun-test"));
+        assert_eq!(output["batch_id"], output["job_run_id"]);
     }
 
     fn init_repo(path: &Path, branch: &str) {
