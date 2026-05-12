@@ -6,59 +6,34 @@ Project instructions for agents working on Orbit.
 
 - **Don't commit** until the Orbit task has been explicitly approved by the human.
 - **Don't invent task IDs** — get them from `orbit.task.add`. Don't edit task files directly — use `orbit.task.update`.
-- **Don't add cross-crate dependencies** without checking the architecture diagram below.
+- **Don't add cross-crate dependencies** without checking [`ARCHITECTURE.md`](ARCHITECTURE.md). If a new edge is genuinely needed, file a task and an ADR before adding it.
 - **Use subagents** for large tasks to keep your context window clean.
 
 ## Build / Lint
 
-`make build`, `make fmt`, `make ci` — all must pass before a task moves to `review`.
+`make build`, `make fmt`, `make ci` — all must pass before a task moves to `review`. `make ci` runs `cargo clippy --workspace --all-targets -- -D warnings`; mechanical rules live in `[workspace.lints]` in the root `Cargo.toml`, not in this file. Add to the lint table rather than to prose when something can be checked automatically.
+
+## Architecture
+
+Crate layering, per-crate responsibilities, and scoping rules live in [`ARCHITECTURE.md`](ARCHITECTURE.md). Read it before adding a new crate, a new dependency edge, or a new persisted artifact.
+
+Reusable codebase-specific patterns (Command, RAII guard, newtype, crate-boundary error translation) live in [`docs/design-patterns/`](docs/design-patterns/). When you reach for one of those shapes, copy from the documented reference instead of inventing a new one.
 
 ## Design Docs
 
-Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
+- **Layout.** Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
+- **Same-PR updates.** Change the doc in the same PR as the code: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `**Last updated:**`, add a new ADR for any non-obvious decision the change embodies. Stale docs are a review blocker.
+- **Decay check.** `make check-design-docs` flags `docs/design/*` docs whose `**Last updated:**` date precedes the last commit on any `crates/...rs` file they reference. Run it before review; fix flagged docs or update their `Last updated`.
 
-**Update in the same PR as the implementation change.** Flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, add a new ADR for any non-obvious decision the change embodies. Stale docs are a review blocker.
+## Rust Practices
 
-**Feature Lead responsibility.** The lead is accountable for their feature's design-doc hygiene and create tasks to ensure the docs are maintained, as well as proactively identifying design-related concerns via filing friction tasks.
+Judgment calls that the workspace lint table can't catch:
 
-| Feature | Folder | Lead |
-|---------|--------|------|
-| Knowledge graph | `knowledge-graph/` | `claude` |
-| Policy & Sandboxing | `policy-sandbox/` | `claude` |
-| Project Learnings | `project-learnings/` | `claude` |
-| Task | `task/` | `codex` |
-| Task Lineage | `task-lineage/` | `claude` |
-| Semantic Search | `semantic-search/` | `claude` |
-| Task Sync | `task-sync/` | `claude` |
-| Activity / Job | `activity-job/` | `codex` |
-| Auditability | `auditability/` | `codex` |
-| Groundhog | `groundhog/` | `codex` |
-| User Interface | `user-interface/` | `gemini` |
-
-## Crate Architecture
-
-```
-orbit-common → orbit-policy, orbit-exec, orbit-knowledge, orbit-embed → orbit-tools → orbit-agent → orbit-engine → orbit-core → orbit-cli
-            ↘ orbit-store ──────────────────────────────────────────────────────────────────────────↗            ↗
-            ↘ orbit-embed-companion (depends on orbit-embed; not linked into the default `orbit` binary)
-            ↘ orbit-mcp ─────────────────────────────────────────────────────────────────────────────────────────↗
-```
-
-`orbit-core` also depends directly on `orbit-knowledge` for graph workflow wrappers in `command::graph`.
-
-## Maintainer Conventions
-
-- Order files for the next maintainer's first read: lead with the module's primary concept or entry point, then move into supporting detail.
-- Data-heavy modules usually start with their core structs/enums; orchestration modules usually start with the main public function.
-
-**Rust practices:**
-
-- **Errors:** propagate via `OrbitError` at crate boundaries; reach for typed `thiserror` variants over ad-hoc strings. `?` over manual `match`. Don't `unwrap` / `expect` in non-test code unless the invariant is local and stated in the message.
-- **Logging:** use `tracing` (never `println!` / `eprintln!` / `log`). The default subscriber handles redaction — don't reach around it. Prefer structured fields (`tracing::info!(run_id, ...)`) over string interpolation.
-- **Visibility:** default to `pub(crate)`; reserve `pub` for items in the crate's documented public surface (see the architecture diagram). Re-export at the crate root only for types that are genuinely part of the API.
-- **Async locking:** never hold a `Mutex` / `RwLock` guard across `.await`. Scope the lock to a block, or use `tokio::sync` primitives when state is genuinely cross-task. Bounded channels by default.
+- **Errors:** propagate via `OrbitError` at crate boundaries; reach for typed `thiserror` variants over ad-hoc strings. Don't `unwrap` / `expect` in non-test code unless the invariant is local and stated in the message. See [`docs/design-patterns/error_translation.md`](docs/design-patterns/error_translation.md) for the boundary-translator shape.
+- **Logging vs user output:** `tracing` for diagnostics; `println!` / `eprintln!` only for genuine CLI user-facing output in `orbit-cli` (and example binaries). Prefer structured fields (`tracing::info!(run_id, ...)`) over string interpolation. The default subscriber handles redaction — don't reach around it.
+- **Visibility:** default to `pub(crate)`; reserve `pub` for items in the crate's documented public surface (see `ARCHITECTURE.md`). Re-export at the crate root only for types genuinely part of the API.
+- **Async locking:** never hold a `std::sync::Mutex` / `RwLock` guard across `.await`. Scope the lock to a block, or use `tokio::sync` primitives when state is genuinely cross-task. Bounded channels by default.
 - **Tests:** in-file unit tests under `#[cfg(test)] mod tests`; integration tests under `tests/`. Match nearby scaffolding (e.g. sibling `*_tests.rs` files in `orbit-engine::activity_job::job_executor`). Don't introduce a new test harness when an existing one fits.
-- **Comments & docs:** `///` doc-comment public items. Explain *why* in code comments, not *what* — well-named identifiers carry the *what*. Remove commented-out code instead of fencing it.
 
 ## Commits & Authorship
 

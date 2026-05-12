@@ -22,6 +22,11 @@ version = "0.4.0"
 edition = "2024"
 license = "MIT"
 
+# Workspace-wide lint config. Each crate opts in via `[lints] workspace = true`.
+# Keep this list short — only rules that are mechanically true everywhere.
+[workspace.lints.clippy]
+dbg_macro = "deny"
+
 [workspace.dependencies]
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio"] }
 chrono = { version = "0.4", features = ["serde"] }
