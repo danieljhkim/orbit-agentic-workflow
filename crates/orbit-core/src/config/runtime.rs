@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 use orbit_common::types::{OrbitError, activity_job::Backend};
@@ -230,10 +229,9 @@ fn workflow_base_branch_from_raw(raw: Option<&RawWorkflowConfig>) -> Result<Stri
 
 fn warn_deprecated_task_id_pattern(config_path: &Path) {
     let path = redact_home_dir(&config_path.display().to_string());
-    let mut stderr = std::io::stderr().lock();
-    let _ = writeln!(
-        stderr,
-        "warning: knowledge.task_id_pattern in '{path}' is deprecated and ignored"
+    tracing::warn!(
+        config = %path,
+        "knowledge.task_id_pattern is deprecated and ignored",
     );
 }
 

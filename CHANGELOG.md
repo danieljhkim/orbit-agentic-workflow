@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.5.1
+
+### Fixes
+
+- **Deprecation warning routes through `tracing`**: the `knowledge.task_id_pattern` deprecation notice was emitted via `writeln!` directly to stderr from `orbit-core`, contradicting the `CLAUDE.md` "`tracing` for diagnostics; `eprintln!` only in `orbit-cli`" rule and leaking into `cargo test` output. Now goes through `tracing::warn!` with a structured `config` field.
+
+### Chores
+
+- **Release metadata recovery**: backfilled the CHANGELOG entry for v0.5.0 (tagged without one) and aligned `Cargo.toml` workspace version + `Cargo.lock` to v0.5.1. v0.5.0 binaries shipped reporting `orbit --version` `0.4.0` because the workspace Cargo version was not bumped at tag time; v0.5.1 binaries report `0.5.1`. Tag-message and commit-message formats now follow `RELEASING.md`.
+
+## 0.5.0
+
+### Release scope
+
+- **Task artifact v2 cutover**: the v1 single-file task store is replaced end-to-end by a bundle-based v2 store with status-neutral directories, append-heavy sidecar layout, a SQLite registry for fast lookups, a runtime backend, generated indexes, atomic delete, reservation scoping by workspace binding, search refinements (binary-artifact gating, UTF-8 validation), and a forward-only YAML migration framework keyed on `schema_version`. ADRs 001/002/003/004/007 for the v2 design flipped to Accepted; the v1 store, the legacy migration helpers, and the `[task] artifact_store = "legacy"` config gate are all gone.
+
+### Breaking Changes
+
+- **Legacy task artifact store removed**: the v1 single-file task store and its migration helpers were deleted in favor of the v2 bundle store. `[task] artifact_store` accepts `"v2"` as a no-op for forward compatibility and rejects `"legacy"` with an explicit migration error. Workspaces still on legacy storage must migrate under v0.4.0 before upgrading. ([commit e9582eba], [commit 222f6020], [commit 123f89f7])
+- **`Task.workspace_path` / `Task.repo_root` dropped from the update path**: `TaskAutomationUpdate`, `TaskRecordUpdateParams`, and `TaskDocumentUpdateParams` no longer accept these fields, and the v2 document layer rejects them at load. Worktree setup and parallel-batch dispatch no longer thread them through. The fields remain on the public DTO via projection from workspace metadata, but write-path inputs that include them now fail. ([commit 6beb14a2])
+
+### Features
+
+- **ADR-artifact subsystem (`orbit.adr.*`)**: ADRs lift out of per-feature `4_decisions.md` markdown into first-class artifacts at `.orbit/adrs/<status>/<id>/{adr.yaml,body.md}` with globally-unique `ADR-NNNN` IDs and a three-state lifecycle (proposed/accepted/superseded). Ships domain types, a SQLite envelope index, a file store with per-ADR `fs2` locks, five tools (`add`, `show`, `list`, `update`, `supersede`) with lifecycle audit rows, an `orbit adr migrate` one-shot, and a parser/sweeper hardened against rollup-bullet form and code-fenced examples. Migration imported 142 ADRs (97 accepted / 39 proposed / 6 superseded) across the existing corpus. The envelope's `legacy_id: String` field was renamed to `legacy_ids: Vec<String>` mid-development per the ADR-002 amendment; pre-GA churn, no external consumers yet. ([T20260510-27], [T20260510-28], [T20260511-1], [T20260511-2], [T20260511-3], [T20260511-11])
+- **Project learnings subsystem (`orbit.learning.*`)**: workspace-scoped `LearningFileStore` under `.orbit/learnings/<id>.yaml` with a SQLite `learnings_index` for fast scope-glob lookups on the injection hot path. Eight MCP tools (`add`, `list`, `search`, `show`, `update`, `supersede`, `reindex`, `prune`) plus matching `orbit learning <verb>` CLI; learnings travel with the repo via a carved-out `.gitignore` entry. End-to-end dispatch latency p95 ≈ 0.04 ms at 500 records. ([T20260511-5], [T20260511-6])
+- **Plugin install contract locked down**: `make release-check` enforces version lockstep across `plugin/npm/package.json`, `plugin/.claude-plugin/plugin.json`, `npm view @orbit-tools/cli`, and `gh release list -L 1`; `scripts/smoke-plugin-install.sh` exercises the published `@orbit-tools/cli@latest` postinstall + MCP `tools/list` handshake; `.github/workflows/smoke-plugin-install.yml` runs the smoke weekly and on every `v*` tag on macOS and Linux; `docs/RELEASE.md` codifies the chain. v0.5.0 switched the npm publish step to manual after the workflow ran into account-level 2FA. ([ORB-00012], [ORB-00014])
+- **Typed error discriminators**: `KnowledgeError.kind` is now the typed `KnowledgeErrorKind` enum, and ten per-kind `OrbitError::*NotFound(String)` variants consolidate into `NotFound { kind: NotFoundKind, id: String }` with exhaustive matches in every error-code translator. JSON wire shape is preserved via `#[serde]`; internal Rust matchers move to the typed kind. ([ORB-00001])
+- **Property + snapshot tests on protocol boundaries**: proptest-backed `Selector` display/parse roundtrip (256 cases per variant), multi-threaded `GraphLockGuard`/`LockStore` concurrency with a 5-second deadline, and committed JSON-snapshot coverage for `AuditGuard` success/failure/denied events. ([ORB-00002])
+- **Knowledge graph workflow relocation**: `build`/`show`/`search`/`history` workflows moved from `orbit-tools` into a new `orbit_knowledge::workflows` module, so `orbit-knowledge` owns both the tool surface (`commands/`) and the host application surface (`workflows/`). ([commit 5fc2b72c])
+- **Forward-only YAML migration framework**: `orbit_common::migration::Plan` chains `Value → Value` steps keyed on `schema_version`; `OrbitError::Migration` separates chain failures from store/parse errors; the v2 task-bundle envelope read path now flows through `task_migrations::envelope_plan()` (empty chain today — next schema bump adds one `add_step` call). ([commit 01928e76])
+- **Semantic companion install hardening**: companion installation is version-aware, `--force` reinstalls supported, and background-companion stderr is suppressed during task-mutation indexing. ([T20260510-26])
+
+### Fixes
+
+- **`pr_open` template tolerates legacy `batch_id` overrides**: `worktree_setup` emits `batch_id` as a deprecated alias equal to `job_run_id`, and `required_job_run_id` accepts `job_run_id` → `run_id` → legacy `batch_id` in that precedence. Recovers `task_pr_pipeline` runs whose stale resource overrides still reference `{{ steps.worktree.output.batch_id }}`. ([ORB-00010])
+- **Retired v1 / stub paths fail loudly instead of silent success**: `OrbitRuntime::get_job` and `RuntimeHost` v1 job lookup return an explicit retired-v1 error instead of `Ok(None)`; the `promote_agent_main` and `revert_on_red` deterministic actions fail with a "retired stub" error instead of returning skipped JSON. Tightens validation on inputs that were already invalid by spec. ([ORB-00007])
+- **Architecture and design-doc drift fixed**: `ARCHITECTURE.md` was regenerated from `cargo metadata` to reflect the live workspace graph; `make check-design-docs` was cleared by refreshing stale `Last updated:` metadata and replacing moved/deleted file references across ten design folders. ([ORB-00006])
+- **Smoke plugin-install assertion fixed**: assertion was checking `"orbit\.` but MCP wire names use underscores (`sanitize_tool_name` in `orbit-mcp/src/adapter.rs` replaces `.` with `_`). Without this fix the on-tag smoke would have false-failed. ([ORB-00014])
+
+### Chores
+
+- **Per-crate stability tier markers**: `[package.metadata.orbit] stability = ...` added to all fourteen workspace crates (`stable`: `orbit-common`, `orbit-store`; `experimental`: `orbit-embed-companion`, `orbit-registry`; `internal`: the remaining ten). `scripts/check-stability.sh` enumerates members via `cargo metadata`, validates the marker, and fails closed with named offenders; wired into `make stability` and `make ci`. ([ORB-00005])
+- **Missing-docs guardrail**: workspace-wide `missing_docs = "warn"` in `[workspace.lints.rust]`; `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --workspace` wired into `scripts/ci-guardrails.sh`; 278 accidentally-`pub` items narrowed to `pub(crate)` (6.8% of the 4,116-item baseline). Legacy allow-fences in place for the remainder. ([ORB-00004])
+- **Community health files**: `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1, contact via GitHub Security Advisories), `.github/PULL_REQUEST_TEMPLATE.md` with linked Orbit task ID + `make ci` / `make check-design-docs` checkboxes, and three `.github/ISSUE_TEMPLATE/*.yml` issue forms with a 14-crate dropdown sourced from live `crates/` listing. ([ORB-00011])
+- **Release runbook (`RELEASING.md`)**: pre-1.0 versioning policy with explicit breaking-vs-non-breaking criteria, 11-step release checklist, CHANGELOG conventions, and tag-push CI workflow description. ([T20260510-24])
+- **Semantic search surfaced in agent instructions**: new `orbit-semantic` SKILL.md modeled on `orbit-graph`, plus pointers from `orbit-create-task`, `orbit-execute-task`, `orbit-review-task`, `agent_implement.yaml`, `agent_review.yaml`, `epic_orchestrator.yaml`, and `dispatch_agent.yaml`. All references use "if available" / "optional" language so missing companion never hard-fails a workflow. ([T20260511-4])
+- **Design-pattern reference docs added**: `docs/design-patterns/{command,strategy,raii_guard,newtype,error_translation}.md` so feature work can copy from documented references instead of inventing new shapes. ([commit 3adcd838], [commit c713cc30], [commit 66389575], [commit f2f82bf1], [commit aa407aa0])
+- **Design-doc decay check**: new `scripts/check_design_doc_decay.py` and `make check-design-docs` flag `docs/design/*` docs whose `Last updated:` precedes the last commit on any referenced `crates/.../*.rs` file. ([commit 18c48744])
+- **Workspace lint table introduced**: `[workspace.lints]` in root `Cargo.toml` with each crate inheriting via `lints.workspace = true`; mechanical lint rules moved out of `CLAUDE.md` prose. ([commit 0cbb037d])
+- **`CLAUDE.md` refactored to point at `ARCHITECTURE.md`**: crate layering moved to a dedicated architecture doc; `CLAUDE.md` shrinks to project rules and judgment calls. ([commit b7c590aa], [commit 9362730b], [commit 7582af9d])
+- **MCP server configuration for additional environments**: `.codex/config.toml`, `.gemini/settings.json`, and `.vscode/mcp.json` added so Codex/Gemini/VS Code agents pick up Orbit MCP out of the box. ([commit 200ee6fd])
+- **README simplification**: Quick Start trimmed; positioning sentences moved to design docs. ([commit 75699824])
+- **Agent skills symlink**: `.agents/skills` symlink added so external agent harnesses pick up the seeded skill set. ([commit 9f7bf89b])
+- **Lessons log update**: `docs/LESSONS.md` extended with a workflow lesson. ([commit 024013af])
+
 ## 0.4.0
 
 ### Release scope
