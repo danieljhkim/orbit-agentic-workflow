@@ -245,6 +245,33 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         .filter(|line| !line.is_empty())
         .collect();
 
+    if freshness.commits_ahead == 0 {
+        for task in &completed_tasks {
+            host.apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    status: if task.status == TaskStatus::InProgress {
+                        Some(TaskStatus::Review)
+                    } else {
+                        None
+                    },
+                    ..TaskAutomationUpdate::default()
+                },
+            )?;
+        }
+
+        return Ok(json!({
+            "pr_created": false,
+            "reason": "no repository commits between base and head; completed tasks moved to review without a GitHub PR",
+            "base": base,
+            "head": head,
+            "base_ref": freshness.base_ref,
+            "head_ref": freshness.head_ref,
+            "commits_behind": freshness.commits_behind,
+            "commits_ahead": freshness.commits_ahead,
+        }));
+    }
+
     let title = input_string_field(input, "title")
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| default_pr_title(&completed_tasks));
@@ -316,7 +343,17 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
         )?;
     }
 
-    Ok(json!({}))
+    Ok(json!({
+        "pr_created": true,
+        "pr_number": pr_number,
+        "pr_url": pr_url,
+        "base": base,
+        "head": head,
+        "base_ref": freshness.base_ref,
+        "head_ref": freshness.head_ref,
+        "commits_behind": freshness.commits_behind,
+        "commits_ahead": freshness.commits_ahead,
+    }))
 }
 
 fn resolve_batch_workspace_path<H: RuntimeHost + ?Sized>(
@@ -977,6 +1014,22 @@ mod tests {
         PrWorkspace { _temp: temp, repo }
     }
 
+    fn no_diff_pr_workspace() -> PrWorkspace {
+        let temp = tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("create repo dir");
+        git(&repo, &["init"]);
+        git(&repo, &["checkout", "-b", "agent-main"]);
+        git(&repo, &["config", "user.name", "Orbit Test"]);
+        git(&repo, &["config", "user.email", "orbit-test@example.com"]);
+        fs::write(repo.join("README.md"), "base\n").expect("write readme");
+        git(&repo, &["add", "README.md"]);
+        git(&repo, &["commit", "-m", "base"]);
+        git(&repo, &["checkout", "-b", "orbit/test-batch"]);
+
+        PrWorkspace { _temp: temp, repo }
+    }
+
     fn pr_open_input(repo: &Path, completed_task_ids: Vec<&str>) -> Value {
         json!({
             "workspace_path": repo.to_string_lossy(),
@@ -1272,6 +1325,40 @@ mod tests {
     }
 
     #[test]
+    fn pr_open_completes_no_diff_branch_without_github_pr() {
+        let workspace = no_diff_pr_workspace();
+        let host = PrOpenTestHost::new(
+            vec![batch_task(
+                "T20260513-16",
+                "Create a user-global skill",
+                "Outcome: success\n\nChanges:\n- Created files outside the repository.",
+            )],
+            workspace.repo.clone(),
+        );
+
+        let result = pr_open(&host, &pr_open_input(&workspace.repo, vec!["T20260513-16"]))
+            .expect("pr_open should complete no-diff handoff without a GitHub PR");
+
+        assert_eq!(result["pr_created"], json!(false));
+        assert_eq!(result["base"], json!("agent-main"));
+        assert_eq!(result["head"], json!("orbit/test-batch"));
+        assert_eq!(result["commits_behind"], json!(0));
+        assert_eq!(result["commits_ahead"], json!(0));
+        assert!(
+            result["reason"]
+                .as_str()
+                .expect("no-diff reason")
+                .contains("no repository commits")
+        );
+        assert!(host.tool_calls().is_empty());
+
+        let task = host.get_task("T20260513-16").expect("updated task");
+        assert_eq!(task.status, TaskStatus::Review);
+        assert!(task.external_refs.is_empty());
+        assert_eq!(task.github_pr_number(), None);
+    }
+
+    #[test]
     fn pr_open_generates_body_with_all_completed_task_summaries() {
         let workspace = pr_workspace();
         let first_summary =
@@ -1286,11 +1373,17 @@ mod tests {
             workspace.repo.clone(),
         );
 
-        pr_open(
+        let result = pr_open(
             &host,
             &pr_open_input(&workspace.repo, vec!["T20260430-31A", "T20260430-31B"]),
         )
         .expect("pr_open should create PR");
+        assert_eq!(result["pr_created"], json!(true));
+        assert_eq!(result["pr_number"], json!("42"));
+        assert_eq!(
+            result["pr_url"],
+            json!("https://github.example/orbit/orbit/pull/42")
+        );
         let body = host.pr_create_body();
 
         assert!(body.contains("- T20260430-31A First completed task"));
@@ -1302,6 +1395,13 @@ mod tests {
                 .count(),
             2
         );
+
+        let first_task = host.get_task("T20260430-31A").expect("first task");
+        let second_task = host.get_task("T20260430-31B").expect("second task");
+        assert_eq!(first_task.status, TaskStatus::Review);
+        assert_eq!(second_task.status, TaskStatus::Review);
+        assert_eq!(first_task.github_pr_number(), Some("42"));
+        assert_eq!(second_task.github_pr_number(), Some("42"));
     }
 
     #[test]
