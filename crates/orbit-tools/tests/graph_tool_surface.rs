@@ -1,4 +1,6 @@
 #![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::fs;
 use std::path::Path;
@@ -341,9 +343,6 @@ fn show_selector_sql_path_microbenchmark_10k_leaf_fixture() {
     let sql_ms = sql_elapsed.as_secs_f64() * 1000.0;
     let fallback_ms = fallback_elapsed.as_secs_f64() * 1000.0;
     let speedup = fallback_ms / sql_ms.max(f64::EPSILON);
-    println!(
-        "show selector 10k leaves: sql={sql_ms:.3}ms fallback={fallback_ms:.3}ms speedup={speedup:.1}x"
-    );
     assert!(
         speedup >= 10.0,
         "expected SQL selector path to be at least 10x faster, got {speedup:.1}x"
@@ -615,9 +614,6 @@ fn overview_summary_sql_path_microbenchmark_10k_leaf_fixture() {
     let sql_ms = sql_elapsed.as_secs_f64() * 1000.0;
     let fallback_ms = fallback_elapsed.as_secs_f64() * 1000.0;
     let speedup = fallback_ms / sql_ms.max(f64::EPSILON);
-    println!(
-        "overview summary 10k leaves: sql={sql_ms:.3}ms fallback={fallback_ms:.3}ms speedup={speedup:.1}x"
-    );
     assert!(
         speedup >= 5.0,
         "expected SQL overview path to be at least 5x faster, got {speedup:.1}x"

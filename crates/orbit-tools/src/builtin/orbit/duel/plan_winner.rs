@@ -1,3 +1,6 @@
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use orbit_common::types::{OrbitError, ToolParam, ToolSchema};
 use serde_json::{Value, json};
 

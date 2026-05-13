@@ -2,6 +2,9 @@
 //!
 //! Reads and writes the same on-disk format as Python's `orbit_map/graph/store.py`.
 
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
@@ -985,7 +988,7 @@ fn write_json_file(path: &Path, payload: &Value) -> Result<(), KnowledgeError> {
 
 fn canonical_json(value: &Value) -> String {
     let sorted = sort_json_value(value.clone());
-    serde_json::to_string(&sorted).unwrap()
+    serde_json::to_string(&sorted).expect("sorted JSON value serialization is infallible")
 }
 
 fn hash_prefix<'a>(hash: &'a str, label: &str) -> Result<&'a str, KnowledgeError> {

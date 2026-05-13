@@ -1,4 +1,11 @@
 #![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
 
 //! Phase 3 end-to-end smoke for the v2 job DAG executor.
 //!

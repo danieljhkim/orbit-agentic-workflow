@@ -1,3 +1,6 @@
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
@@ -126,14 +129,18 @@ impl<'de> Deserialize<'de> for JobV2Step {
 
         let body = match (has_parallel, has_fan_out, has_loop, has_target, has_spec) {
             (true, false, false, false, false) => {
-                let block = obj.remove("parallel").unwrap();
+                let block = obj
+                    .remove("parallel")
+                    .expect("parallel key was checked before step body dispatch");
                 JobV2StepBody::Parallel {
                     parallel: serde_json::from_value(block)
                         .map_err(|e| D::Error::custom(format!("parallel: {e}")))?,
                 }
             }
             (false, true, false, false, false) => {
-                let fan_out_block = obj.remove("fan_out").unwrap();
+                let fan_out_block = obj
+                    .remove("fan_out")
+                    .expect("fan_out key was checked before step body dispatch");
                 let fan_in_block = obj
                     .remove("fan_in")
                     .ok_or_else(|| D::Error::custom("fan_out step missing matching `fan_in`"))?;
@@ -145,7 +152,9 @@ impl<'de> Deserialize<'de> for JobV2Step {
                 }
             }
             (false, false, true, false, false) => {
-                let block = obj.remove("loop").unwrap();
+                let block = obj
+                    .remove("loop")
+                    .expect("loop key was checked before step body dispatch");
                 JobV2StepBody::Loop {
                     loop_: serde_json::from_value(block)
                         .map_err(|e| D::Error::custom(format!("loop: {e}")))?,

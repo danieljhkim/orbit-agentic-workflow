@@ -1,4 +1,11 @@
 #![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
 
 //! Smoke: load every schemaVersion 2 activity + job YAML through the asset
 //! loader. Used as the AC2 / AC1 validation path per the Phase 2 plan in

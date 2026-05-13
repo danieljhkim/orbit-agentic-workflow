@@ -30,6 +30,9 @@
 //!
 //! See [`TaskStatus::validate_transition`] for the blocklist implementation.
 
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::path::Path;

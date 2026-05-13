@@ -11,7 +11,7 @@ Project instructions for agents working on Orbit.
 
 ## Build / Lint
 
-`make build`, `make fmt`, `make ci` — all must pass before a task moves to `review`. `make ci` runs `cargo clippy --workspace --all-targets -- -D warnings`; mechanical rules live in `[workspace.lints]` in the root `Cargo.toml`, not in this file. Add to the lint table rather than to prose when something can be checked automatically.
+`make build`, `make fmt`, `make ci` — all must pass before a task moves to `review`. `make ci` runs `cargo clippy --workspace --all-targets -- -D warnings`; lint-enforced mechanical rules live in `[workspace.lints]` in the root `Cargo.toml`, not in this file. Add to the lint table rather than to prose when something can be checked automatically.
 
 ## Architecture
 
@@ -27,13 +27,22 @@ Reusable codebase-specific patterns (Command, RAII guard, newtype, crate-boundar
 
 ## Rust Practices
 
-Judgment calls that the workspace lint table can't catch:
+Lint-enforced rules:
 
-- **Errors:** propagate via `OrbitError` at crate boundaries; reach for typed `thiserror` variants over ad-hoc strings. Don't `unwrap` / `expect` in non-test code unless the invariant is local and stated in the message. See [`docs/design-patterns/error_translation.md`](docs/design-patterns/error_translation.md) for the boundary-translator shape.
-- **Logging vs user output:** `tracing` for diagnostics; `println!` / `eprintln!` only for genuine CLI user-facing output in `orbit-cli` (and example binaries). Prefer structured fields (`tracing::info!(run_id, ...)`) over string interpolation. The default subscriber handles redaction — don't reach around it.
+- **Panic surfaces:** `[workspace.lints.clippy].unwrap_used` and `[workspace.lints.clippy].expect_used` are `warn` and therefore fail under `make ci`'s `-D warnings`, except for scoped test/example/invariant allowlists with comments. Prefer `OrbitError` propagation at crate boundaries, and use `expect("<invariant>")` only when the invariant is local and documented. See [`docs/design-patterns/error_translation.md`](docs/design-patterns/error_translation.md) for the boundary-translator shape.
+- **Logging vs user output:** `[workspace.lints.clippy].print_stdout` and `[workspace.lints.clippy].print_stderr` are `warn` and therefore fail under `make ci`'s `-D warnings`, except for genuine CLI/example user-facing output allowlists. Use `tracing` for diagnostics, prefer structured fields (`tracing::info!(run_id, ...)`) over string interpolation, and rely on the default subscriber for redaction.
+- **Async locking:** `[workspace.lints.clippy].await_holding_lock` is `deny`; never hold a `std::sync::Mutex` / `RwLock` guard across `.await`. Scope the lock to a block, or use `tokio::sync` primitives when state is genuinely cross-task.
+
+Conventions (not lint-enforced):
+
+- **Errors:** reach for typed `thiserror` variants over ad-hoc strings when translating into `OrbitError`.
 - **Visibility:** default to `pub(crate)`; reserve `pub` for items in the crate's documented public surface (see `ARCHITECTURE.md`). Re-export at the crate root only for types genuinely part of the API.
-- **Async locking:** never hold a `std::sync::Mutex` / `RwLock` guard across `.await`. Scope the lock to a block, or use `tokio::sync` primitives when state is genuinely cross-task. Bounded channels by default.
+- **Channels:** bounded channels by default.
 - **Tests:** in-file unit tests under `#[cfg(test)] mod tests`; integration tests under `tests/`. Match nearby scaffolding (e.g. sibling `*_tests.rs` files in `orbit-engine::activity_job::job_executor`). Don't introduce a new test harness when an existing one fits.
+
+Related lint work:
+
+- **Public docs:** `[workspace.lints.rust].missing_docs` is owned by sibling task ORB-00004; keep that migration separate from this broader Rust Practices lint pass.
 
 ## Commits & Authorship
 

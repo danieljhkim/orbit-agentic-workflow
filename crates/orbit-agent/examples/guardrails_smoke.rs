@@ -1,4 +1,11 @@
 #![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
 
 //! Network-free smoke: each of the three loop guardrails trips and returns a
 //! distinct structured error variant. Uses an inline mock transport so this
