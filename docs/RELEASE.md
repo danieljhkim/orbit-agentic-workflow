@@ -7,12 +7,12 @@ plugin manifest, and the GitHub Release tag must all agree, or the
 [`plugin/.mcp.json`](../plugin/.mcp.json) downloads a binary that does not
 match the plugin manifest.
 
-## One-time setup (maintainer)
+## Account setup (one-time)
 
-- Provision an `NPM_TOKEN` repository secret with publish rights on the
-  `@orbit-tools` npm scope. Required by the `publish-npm` job in
-  [`.github/workflows/release.yml`](../.github/workflows/release.yml).
-  Without it, the workflow fails loudly on the next `v*` tag.
+The `@orbit-tools` scope has **publish-time 2FA** enabled, and npm no longer
+honors automation tokens to bypass it for this account. Releases publish to
+npm **manually** from a maintainer's laptop, prompting for an OTP. No
+`NPM_TOKEN` secret is needed in this repository.
 
 ## Steps to cut a release
 
@@ -29,11 +29,12 @@ Each step names the exact file or command. Do them in order.
    [`plugin/.claude-plugin/plugin.json`](../plugin/.claude-plugin/plugin.json)
    (`.version`). Must match step 1.
 
-3. **Run `make release-check`.** Pre-tag, it will report that
+3. **Run `make release-check`.** Pre-tag, it will exit non-zero because
    `npm view @orbit-tools/cli version` and the latest `gh release list -L 1`
-   tag are still on the previous version — that is expected and not a
-   blocker. The local-source check (npm package vs plugin manifest) must
-   pass.
+   tag still point at the previous version. **That is expected.** Read the
+   stderr lines to confirm the only drift reported is `local > remote` on
+   exactly the previous version — anything else means an unrelated regression
+   in one of the files the check inspects.
 
 4. **Commit the version bumps** and merge to the release branch
    (`agent-main`). One commit, one PR, one bump pair — do not let the two
@@ -52,18 +53,34 @@ Each step names the exact file or command. Do them in order.
    - `build-release` — builds platform binaries.
    - `publish-release` — uploads tarballs + `orbit-checksums.txt` to the
      GitHub Release.
-   - `publish-npm` — version-guards against the tag, then runs
-     `npm publish --provenance --access public` from `plugin/npm/`.
+   - `bump-homebrew-tap` — updates the formula in `danieljhkim/homebrew-tap`.
 
-   `publish-npm` will not run unless `publish-release` succeeds, and will
-   fail loudly if the tag and `plugin/npm/package.json` disagree.
+   All three must be green before step 7.
 
-7. **Verify.** After both jobs are green:
+7. **Publish to npm manually.** From the merged commit on your laptop:
+
+   ```bash
+   cd plugin/npm
+   npm publish --access public
+   # Enter the OTP from your authenticator when prompted.
+   ```
+
+   `--provenance` requires GitHub OIDC and is not available for manual
+   publishes from a laptop. Skip it.
+
+   Brief window: between step 6 going green and this step completing,
+   `bump-homebrew-tap` has already shipped the new formula but
+   `npx @orbit-tools/cli@latest` still hands users the previous version.
+   Keep this window short — publish to npm immediately after step 6.
+
+8. **Verify.** After npm publish completes:
 
    - `make release-check` should now pass (all four sources agree).
    - The on-tag run of
      [`.github/workflows/smoke-plugin-install.yml`](../.github/workflows/smoke-plugin-install.yml)
-     should be green on macOS and Linux.
+     should be green on macOS and Linux. (If you re-run via
+     `workflow_dispatch` it'll pull the freshly-published npm and exercise
+     the full chain.)
    - Optionally re-run the smoke locally:
 
      ```bash
@@ -78,11 +95,18 @@ and on every `v*` tag. It pulls the published `@orbit-tools/cli@latest`
 from npm, exercises the postinstall download + sha256 verification, and
 drives the orbit MCP server through a JSON-RPC `initialize` + `tools/list`
 handshake. The pass criterion is that the response advertises at least one
-`orbit.*` tool.
+`orbit_*` tool. (Tool names are emitted with underscores on the wire — see
+`crates/orbit-mcp/src/adapter.rs::sanitize_tool_name` — even though the
+canonical selectors used in skills and CLI args are dot-form.)
 
 The smoke runs against published artifacts, not the local working tree, so
 it catches version drift that local builds would miss. Windows is not
 covered — the npm proxy only ships `darwin` and `linux` builds.
+
+Because npm publish is manual, the on-tag smoke run will fail if it fires
+before step 7 completes. That is expected and not actionable on its own;
+re-run via `workflow_dispatch` after publishing to npm. The weekly cron
+catches a lingering broken state.
 
 ## What `make release-check` enforces
 
@@ -96,14 +120,16 @@ asserts equality across four sources, when each is reachable:
 
 Missing `npm` or `gh` is treated as a skip with a stderr note, not a hard
 failure, so the target stays usable on a fresh checkout without
-credentials. Mismatch across any reachable sources exits non-zero.
+credentials. Mismatch across any reachable sources exits non-zero — so
+the pre-tag failure described in step 3 is by design.
 
 ## Out-of-band fixes
 
 If a release lands and the smoke fails:
 
 1. Re-run [`.github/workflows/smoke-plugin-install.yml`](../.github/workflows/smoke-plugin-install.yml)
-   via `workflow_dispatch` to rule out a transient network failure.
+   via `workflow_dispatch` to rule out a transient network failure or a
+   "smoke fired before manual npm publish" race.
 2. If the failure is reproducible, cut a patch release (`vX.Y.Z+1`) with
    the fix. Do **not** retag — npm publishes are immutable and the
    marketplace already cached the broken assets.

@@ -134,61 +134,6 @@ jobs:
             dist/orbit-checksums.txt
           generate_release_notes: true
 
-  publish-npm:
-    name: Publish @orbit-tools/cli to npm
-    needs: publish-release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # OIDC token for npm provenance
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Verify version lockstep against tag
-        shell: bash
-        env:
-          TAG_VERSION: ${{ needs.publish-release.outputs.version }}
-        run: |
-          set -euo pipefail
-          npm_pkg_version="$(node -p "require('./plugin/npm/package.json').version")"
-          plugin_manifest_version="$(node -p "require('./plugin/.claude-plugin/plugin.json').version")"
-
-          echo "tag           : v${TAG_VERSION}"
-          echo "npm package   : ${npm_pkg_version}"
-          echo "plugin manifest: ${plugin_manifest_version}"
-
-          if [ "${TAG_VERSION}" != "${npm_pkg_version}" ]; then
-            echo "version drift: tag v${TAG_VERSION} != plugin/npm/package.json ${npm_pkg_version}" >&2
-            exit 1
-          fi
-          if [ "${TAG_VERSION}" != "${plugin_manifest_version}" ]; then
-            echo "version drift: tag v${TAG_VERSION} != plugin/.claude-plugin/plugin.json ${plugin_manifest_version}" >&2
-            exit 1
-          fi
-
-      - name: Publish to npm
-        working-directory: plugin/npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # The publish-side install must not try to fetch a release binary;
-          # `binaries/` is excluded by `.npmignore` anyway, but be explicit.
-          ORBIT_SKIP_DOWNLOAD: "1"
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret is not configured. See docs/RELEASE.md." >&2
-            exit 1
-          fi
-          npm publish --provenance --access public
-
   bump-homebrew-tap:
     name: Update Homebrew tap
     needs: publish-release

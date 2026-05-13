@@ -103,9 +103,12 @@ if ! grep -q '"jsonrpc":"2.0"' "$RPC_OUT"; then
   exit 1
 fi
 
-# tools/list response should advertise at least one orbit.* tool.
-if ! grep -q '"orbit\.' "$RPC_OUT"; then
-  echo "FAIL: tools/list response contained no orbit.* tools" >&2
+# tools/list response should advertise at least one orbit_* tool.
+# Tool names are emitted with underscores on the MCP wire (orbit-mcp's
+# sanitize_tool_name replaces `.` with `_` for client compatibility), so the
+# canonical `orbit.task.show` selector arrives here as `orbit_task_show`.
+if ! grep -q '"orbit_' "$RPC_OUT"; then
+  echo "FAIL: tools/list response contained no orbit_* tools" >&2
   echo "--- stdout ---" >&2
   cat "$RPC_OUT" >&2
   echo "--- stderr ---" >&2
@@ -113,7 +116,7 @@ if ! grep -q '"orbit\.' "$RPC_OUT"; then
   exit 1
 fi
 
-orbit_tool_count="$(grep -o '"orbit\.[a-z_.]*"' "$RPC_OUT" | sort -u | wc -l | tr -d '[:space:]')"
-echo "tools/list returned $orbit_tool_count distinct orbit.* tools"
+orbit_tool_count="$(grep -o '"orbit_[a-z_]*"' "$RPC_OUT" | sort -u | wc -l | tr -d '[:space:]')"
+echo "tools/list returned $orbit_tool_count distinct orbit_* tools"
 
 echo "PASS: /plugin install orbit chain serves MCP successfully (orbit $binary_version)"
