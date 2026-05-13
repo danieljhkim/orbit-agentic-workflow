@@ -12,6 +12,9 @@
 //! `.orbit/state/audit` as that root; tests use [`InMemorySink`], callers with
 //! no need for persistence use [`NullSink`].
 
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};

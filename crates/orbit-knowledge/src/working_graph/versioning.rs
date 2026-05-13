@@ -1,3 +1,6 @@
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -286,7 +289,12 @@ impl WorkingGraph {
         let seq = if chain.edits.is_empty() {
             1 // 0 is reserved for original
         } else {
-            chain.edits.last().unwrap().edit_sequence + 1
+            chain
+                .edits
+                .last()
+                .expect("non-empty edit chain has a last edit")
+                .edit_sequence
+                + 1
         };
 
         chain.edits.push(LeafEdit {

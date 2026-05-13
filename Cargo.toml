@@ -25,7 +25,12 @@ license = "MIT"
 # Workspace-wide lint config. Each crate opts in via `[lints] workspace = true`.
 # Keep this list short — only rules that are mechanically true everywhere.
 [workspace.lints.clippy]
+await_holding_lock = "deny"
 dbg_macro = "deny"
+expect_used = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+unwrap_used = "warn"
 
 [workspace.lints.rust]
 missing_docs = "warn"

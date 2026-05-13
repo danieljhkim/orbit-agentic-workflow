@@ -11,6 +11,9 @@
 //! smoke runs this is what lets reviewers open the emitted file and confirm
 //! the `run.*`/`step.*`/`activity.*`/`tool.denied` tree.
 
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
