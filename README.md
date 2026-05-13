@@ -41,6 +41,12 @@ curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install
 # or, in Claude Code:
 #   /plugin marketplace add danieljhkim/orbit
 #   /plugin install orbit
+# Claude Code plugin install takes ~30s on first use (downloads the
+# platform-matched orbit binary from GitHub Releases via @orbit-tools/cli).
+# After install you get the Orbit MCP tool surface (orbit.task.*,
+# orbit.graph.*, etc.) plus the orbit skills and orchestration subagents.
+# Verified weekly on macOS and Linux; Windows is not supported by the npm
+# install path. Release procedure: docs/RELEASE.md.
 
 # initialize
 orbit init                                 # global state (~/.orbit)

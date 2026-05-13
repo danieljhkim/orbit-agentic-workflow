@@ -1,4 +1,4 @@
-.PHONY: help build release run check test fmt fmt-check clippy clean install uninstall dev watch audit tree ci bench check-design-docs stability
+.PHONY: help build release run check test fmt fmt-check clippy clean install uninstall dev watch audit tree ci bench check-design-docs stability release-check
 
 # ------------------------------------------------------------
 # Config
@@ -51,6 +51,7 @@ help:
 	@echo "  make ci           Full CI pass"
 	@echo "  make check-design-docs  Flag docs/design/* stale relative to referenced code"
 	@echo "  make stability    Verify per-crate stability tier markers"
+	@echo "  make release-check  Verify /plugin install orbit version lockstep (see docs/RELEASE.md)"
 	@echo "  make install      Install CLI locally (INSTALL_PROFILE=debug optional)"
 	@echo "  make uninstall    Remove installed binary"
 	@echo "  make clean        Clean build artifacts"
@@ -115,6 +116,10 @@ check-design-docs:
 # Verify every workspace crate declares its stability tier
 stability:
 	./scripts/check-stability.sh
+
+# Verify /plugin install orbit version invariant before cutting a release
+release-check:
+	./scripts/release-check.sh
 
 # ------------------------------------------------------------
 # Install
