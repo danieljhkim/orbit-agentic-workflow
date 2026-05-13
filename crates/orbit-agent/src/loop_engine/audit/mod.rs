@@ -19,7 +19,6 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use serde_json::Value;
 
 // Re-exports for existing `orbit_agent::...` callers. New code should import
 // directly from `orbit_common` — these aliases preserve the public surface
@@ -248,10 +247,6 @@ impl AuditSink for JsonlFileSink {
             .write(content)
             .unwrap_or_else(|err| format!("error:{err}"))
     }
-}
-
-pub fn json_value_to_vec(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap_or_default()
 }
 
 #[cfg(test)]

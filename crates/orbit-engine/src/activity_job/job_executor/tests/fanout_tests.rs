@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Fan-out / fan-in invariants for `fan_out.rs`: empty-items audit pair,
 //! spawn-index-ordered collection, `max_workers` semaphore cap, structural
 //! error surfacing under unsatisfied join, `fan_in.collect` alias, and

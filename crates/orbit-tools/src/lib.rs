@@ -1,4 +1,11 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy tool-registry surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Builtin tool registry providing the standard Orbit toolset for agents and jobs.
 //!
 //! Implements and registers all built-in tools that agents can invoke during
@@ -28,9 +35,9 @@
 //! # Dependency direction
 //! `orbit-types` → `orbit-exec` → `orbit-tools` → orbit-engine, orbit-core
 
-pub mod builtin;
+pub(crate) mod builtin;
 pub mod external;
-pub mod registry;
+mod registry;
 
 use std::path::PathBuf;
 use std::sync::Arc;

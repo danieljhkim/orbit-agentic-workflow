@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Four precedence smokes for `Backend::Auto` resolution per §3.1.
 //!
 //! AC #2 of T20260419-0104: verify each tier of the flag → env → config →

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Pipeline durability invariants for `exec_ctx.rs` and `fan_out.rs`:
 //! cross-step value visibility and snapshot inheritance into fan-out
 //! workers. See task T20260509-7.

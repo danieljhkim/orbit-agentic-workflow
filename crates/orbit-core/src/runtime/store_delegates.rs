@@ -4,7 +4,7 @@ use orbit_common::types::{
     TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
     TaskType,
 };
-use orbit_embed::vector::{EmbedWorker, VectorStore};
+use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_store::{
     AdrCreateParams, AdrDocumentUpdateParams, AdrStoreBackend, AuditEventFilter,
     AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunQuery,

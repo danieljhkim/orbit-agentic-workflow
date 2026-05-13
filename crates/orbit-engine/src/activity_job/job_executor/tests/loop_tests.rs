@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Loop-block invariants for `loop_block.rs`: items-vs-`max_iterations`
 //! validation, `break_when` exit, `LoopDidNotConverge` after exhaustion, and
 //! body-failure exit. See task T20260509-7.

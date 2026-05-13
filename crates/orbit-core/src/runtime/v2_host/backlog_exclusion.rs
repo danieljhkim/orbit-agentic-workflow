@@ -4,7 +4,7 @@ use std::path::Path;
 use orbit_common::types::{Task, TaskStatus, TaskType, prune_missing_context_files};
 use orbit_common::utility::path::workspace_relative_paths_overlap;
 use orbit_common::utility::selector::canonical_selector_in_workspace;
-use orbit_engine::activity_job::DispatchError;
+use orbit_engine::DispatchError;
 use serde::Serialize;
 use serde_json::Value;
 

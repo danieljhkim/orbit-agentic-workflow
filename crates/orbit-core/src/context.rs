@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use orbit_common::types::WorkspacePaths;
-use orbit_embed::vector::{EmbedWorker, VectorStore};
+use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_engine::PrConfig;
 use orbit_policy::PolicyEngine;
 use orbit_store::{

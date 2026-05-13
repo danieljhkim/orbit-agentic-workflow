@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use super::*;
 
 use orbit_common::types::activity_job::{AgentLoopSpec, AgentRole, Backend, OnDenial, Provider};

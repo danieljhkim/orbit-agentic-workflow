@@ -15,7 +15,7 @@ use orbit_common::types::activity_job::{
     validate_activity_tool_allowlist_against_registered_tools,
 };
 use orbit_common::types::{OrbitError, OrbitEvent};
-use orbit_engine::activity_job::{V2AuditWriter, V2DispatchInput, dispatch_v2_activity};
+use orbit_engine::{V2AuditWriter, V2DispatchInput, dispatch_v2_activity};
 use serde_json::Value;
 
 use crate::OrbitRuntime;

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 #[cfg(target_os = "macos")]
 mod orchestrator_macos_tests;
 mod orchestrator_tests;

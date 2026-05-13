@@ -22,7 +22,7 @@ const ROLE_DESCRIPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Injectable seam for prompt I/O. Real CLI uses [`StdinPrompter`]; tests use
-/// [`testing::CannedPrompter`].
+/// `testing::CannedPrompter`.
 pub trait Prompter {
     /// Display non-interactive text to the user.
     fn message(&mut self, text: &str) -> io::Result<()>;

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Phase 4 prerequisite smoke — T20260418-2019.
 //!
 //! Exercises:
@@ -26,7 +28,7 @@ use orbit_common::types::activity_job::{
     LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog, load_job_asset,
     resolve_job_backends, resolve_job_target_refs, validate_job_loop_session_backends,
 };
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, ResolvedCliExecutor, V2AuditWriter, V2DispatchInput, V2RuntimeHost,
     dispatch_v2_activity,
 };

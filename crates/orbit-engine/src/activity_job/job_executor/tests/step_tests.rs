@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Step retry, short-circuit, and backoff invariants for `step.rs`.
 //! Each test names the specific invariant or failure mode it guards.
 //! See task T20260509-7.

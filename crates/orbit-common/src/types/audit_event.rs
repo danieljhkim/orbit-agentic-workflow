@@ -62,7 +62,7 @@ impl FromStr for AuditEventStatus {
 /// Captures execution context including timing, exit code, role, tool name, and
 /// truncated stdout/stderr for post-hoc review.
 ///
-/// Contrast with [`orbit_common::types::Audit`], which is the lightweight in-memory
+/// Contrast with [`Audit`](crate::types::Audit), which is the lightweight in-memory
 /// event log entry produced by the runtime for internal observability.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditEvent {

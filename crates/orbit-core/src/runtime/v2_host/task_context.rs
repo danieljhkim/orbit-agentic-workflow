@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use orbit_common::types::{Task, prune_missing_context_files};
-use orbit_engine::activity_job::DispatchError;
+use orbit_engine::DispatchError;
 use serde_json::Value;
 
 use crate::OrbitRuntime;
@@ -120,7 +120,7 @@ fn push_unique_task_id(task_ids: &mut Vec<String>, task_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use orbit_engine::activity_job::V2RuntimeHost;
+    use orbit_engine::V2RuntimeHost;
     use serde_json::json;
 
     use crate::OrbitRuntime;

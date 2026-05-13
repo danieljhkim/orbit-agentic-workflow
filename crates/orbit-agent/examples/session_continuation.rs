@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Three-turn Anthropic session verifying (a) history replay and (b)
 //! prompt-cache hits on turn 2+. The system prompt is padded past Anthropic's
 //! 1024-token cacheable minimum so the `cache_read_input_tokens` assertion is

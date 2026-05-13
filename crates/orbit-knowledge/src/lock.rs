@@ -558,7 +558,7 @@ mod tests {
                         guard.release().map_err(|error| error.to_string())?;
                     }
                 }
-                Err(error) if error.kind == "knowledge_invalid" => {
+                Err(error) if error.kind == crate::error::KnowledgeErrorKind::Invalid => {
                     stats.contended += 1;
                     thread::yield_now();
                 }

@@ -14,7 +14,7 @@ use std::env;
 use std::path::PathBuf;
 
 /// Injectable seam for probing the host environment. Real code uses
-/// [`RealAgentEnvProbe`]; tests construct [`MockAgentEnvProbe`].
+/// [`RealAgentEnvProbe`]; tests construct `MockAgentEnvProbe`.
 pub trait AgentEnvProbe {
     /// Returns true when an executable named `name` is found on `PATH`.
     fn binary_on_path(&self, name: &str) -> bool;

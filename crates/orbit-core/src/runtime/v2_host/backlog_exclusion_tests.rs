@@ -1,5 +1,5 @@
 use orbit_common::types::{TaskPriority, TaskStatus, TaskType};
-use orbit_engine::activity_job::V2RuntimeHost;
+use orbit_engine::V2RuntimeHost;
 use orbit_tools::ToolContext;
 use serde_json::{Value, json};
 

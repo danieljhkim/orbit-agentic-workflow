@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Round-trip smoke for v2 reference YAMLs (closes T20260418-2010 AC1).
 //!
 //! For each v2 reference under `crates/orbit-core/assets/activities/`:

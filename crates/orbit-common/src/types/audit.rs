@@ -4,10 +4,10 @@ use serde_json::Value;
 use std::fmt::{Display, Formatter};
 
 /// A lightweight in-memory event log entry produced by the runtime for internal
-/// observability. Created by converting [`orbit_common::types::OrbitEvent`] values as
+/// observability. Created by converting [`OrbitEvent`](crate::types::OrbitEvent) values as
 /// they flow through the system (e.g., ToolExecuted).
 ///
-/// Contrast with [`orbit_common::types::AuditEvent`], which is the persistent, detailed
+/// Contrast with [`AuditEvent`](crate::types::AuditEvent), which is the persistent, detailed
 /// CLI audit trail stored in SQLite and exposed via `orbit audit`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Audit {

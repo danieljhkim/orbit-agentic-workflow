@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Parallel-block invariants for `parallel.rs`: JoinMode semantics,
 //! `StepJoin` event ordering, and audit parent-stack inheritance into branch
 //! threads. See task T20260509-7.

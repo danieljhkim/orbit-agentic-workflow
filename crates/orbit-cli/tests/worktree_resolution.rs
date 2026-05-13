@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::fs;
 use std::path::Path;
 use std::process::Command as StdCommand;

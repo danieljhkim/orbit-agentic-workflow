@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use super::*;
 
 // ----- Role override regression tests (ADR-029, T20260428-12) ---------

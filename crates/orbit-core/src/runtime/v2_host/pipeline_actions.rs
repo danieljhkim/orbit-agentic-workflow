@@ -1,5 +1,5 @@
 use orbit_common::types::{AuditEventStatus, Role, audit_execution_id};
-use orbit_engine::activity_job::DispatchError;
+use orbit_engine::DispatchError;
 use orbit_store::AuditEventInsertParams;
 use orbit_tools::ToolContext;
 use serde_json::Value;

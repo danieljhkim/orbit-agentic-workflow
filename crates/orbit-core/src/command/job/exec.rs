@@ -3,7 +3,7 @@
 //! Mirrors `activity_v2::run_activity_v2_from_yaml`: reads the YAML, routes
 //! through the two-pass loader, and dispatches via the Phase 3 DAG executor.
 //! orbit-core never names orbit-agent types — transport/session construction
-//! lives below the boundary in `orbit_engine::activity_job::job_executor`.
+//! lives below the boundary in `orbit_engine::job_executor`.
 
 use std::path::{Path, PathBuf};
 
@@ -14,7 +14,7 @@ use orbit_common::types::activity_job::{
 use orbit_common::types::{
     JobRun, JobRunState, JobTargetType, NotFoundKind, OrbitError, OrbitEvent, PipelineState,
 };
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, JobOutcome, V2AuditWriter, execute_job, resolve_job_catalog_refs_for_execution,
 };
 use orbit_store::{JobRunStepParams, TaskReservationReleaseReason};

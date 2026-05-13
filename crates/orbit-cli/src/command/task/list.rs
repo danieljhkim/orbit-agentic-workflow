@@ -39,7 +39,7 @@ pub struct TaskListArgs {
     /// Filter by tag. Repeat for AND semantics.
     #[arg(long = "tag", action = ArgAction::Append, value_delimiter = ',')]
     pub tags: Vec<String>,
-    /// Filter by exact external reference in <system>:<id> form
+    /// Filter by exact external reference in `system:id` form
     #[arg(long = "ref")]
     pub external_ref: Option<String>,
     /// Filter by external reference system

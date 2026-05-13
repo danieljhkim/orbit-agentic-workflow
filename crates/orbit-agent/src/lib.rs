@@ -1,4 +1,11 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy public provider surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Agent provider abstraction for Orbit. Two transport families coexist:
 //!
 //! - **CLI transports** — drive `claude`, `codex`, `gemini`, `ollama`, or

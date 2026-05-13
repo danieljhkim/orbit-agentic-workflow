@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;

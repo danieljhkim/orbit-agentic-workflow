@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::BTreeSet;
 
 use orbit_tools::ToolRegistry;

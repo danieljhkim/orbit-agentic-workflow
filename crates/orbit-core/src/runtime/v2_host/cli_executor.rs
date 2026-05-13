@@ -1,5 +1,5 @@
 use orbit_common::types::ExecutorType;
-use orbit_engine::activity_job::{DispatchError, ResolvedCliExecutor};
+use orbit_engine::{DispatchError, ResolvedCliExecutor};
 
 use crate::OrbitRuntime;
 
@@ -73,7 +73,7 @@ pub(super) fn resolve_cli_executor(
 
 #[cfg(test)]
 mod tests {
-    use orbit_engine::activity_job::V2RuntimeHost;
+    use orbit_engine::V2RuntimeHost;
 
     use crate::OrbitRuntime;
     use crate::runtime::v2_host::test_support::seed_executor;

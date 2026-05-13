@@ -1,4 +1,11 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy semantic-indexing surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Slim embedding client surface for Orbit semantic indexing.
 //!
 //! This crate intentionally contains no inference backend. The main `orbit`
@@ -17,14 +24,21 @@
 //! - [`vector`] — workspace-local SQLite storage for embeddings + FTS5 rows.
 //! - [`commands`] — install / uninstall / reindex / stats command surface.
 
-pub mod commands;
-pub mod companion;
-pub mod embedder;
-pub mod noop;
-pub mod rpc;
-pub mod subprocess;
-pub mod vector;
+mod commands;
+mod companion;
+mod embedder;
+mod noop;
+mod rpc;
+mod subprocess;
+mod vector;
 
+pub use commands::{
+    CompanionStatus, ScoreBreakdown, SemanticHit, SemanticInstallParams, SemanticInstallResult,
+    SemanticReindexParams, SemanticReindexResult, SemanticRelatedParams, SemanticRelatedResult,
+    SemanticSearchParams, SemanticSearchResult, SemanticStatsResult, SemanticUninstallParams,
+    SemanticUninstallResult, semantic_install, semantic_reindex, semantic_related, semantic_search,
+    semantic_stats, semantic_uninstall,
+};
 pub use companion::{
     CompanionPaths, INSTALL_REMEDIATION, locate_companion, platform_companion_filename, platform_id,
 };
@@ -32,3 +46,4 @@ pub use embedder::{DEFAULT_MODEL, Embedder, ModelSpec, default_model, supported_
 pub use noop::NoopEmbedder;
 pub use rpc::{RpcError, RpcRequest, RpcResponse, RpcResult};
 pub use subprocess::SubprocessEmbedder;
+pub use vector::{EmbedWorker, SemanticStats, UpsertReport, VectorStore};

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! 1-turn Anthropic prompt demonstrating the HTTP agent loop.
 //!
 //! Skips cleanly (exit 0, printed notice) when `ANTHROPIC_API_KEY` is unset so

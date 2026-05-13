@@ -7,6 +7,7 @@ cd "$repo_root"
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
 "$repo_root/scripts/check-dependency-direction.sh"
 "$repo_root/scripts/check-cli-imports.sh"
 "$repo_root/scripts/check-stability.sh"

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! CLI parity tests for `orbit learning <subcommand>`.
 //!
 //! Per AC #9 of T20260511-6: every MCP-side `orbit.learning.*` tool has a

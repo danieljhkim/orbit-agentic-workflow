@@ -13,11 +13,9 @@
 //! and the small `pub(super)` constants shared across the submodules above.
 
 mod queries;
-pub mod schema;
+mod schema;
 mod tasks;
 mod upsert;
-
-pub use schema::ensure_vector_schema;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use orbit_common::types::Role;
-use orbit_engine::activity_job::DispatchError;
+use orbit_engine::DispatchError;
 use orbit_engine::{StateExecutionContext, execute_deterministic_action};
 use orbit_tools::ToolContext;
 use serde_json::Value;
@@ -247,7 +247,7 @@ pub(super) fn run_deterministic(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orbit_engine::activity_job::V2RuntimeHost;
+    use orbit_engine::V2RuntimeHost;
     use orbit_tools::ToolContext;
     use serde_json::json;
 

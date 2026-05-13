@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! v2 `backend: cli` smoke suite — T20260419-0104.
 //!
 //! Exercises the new §3.1 dispatch path, the §7.6 envelope events, the §6
@@ -26,7 +28,7 @@ use orbit_common::types::activity_job::{
     JobV2StepBody, LoopBlock, OnDenial, Provider, TargetStep, load_activity_asset,
     resolve_job_backends, validate_job_loop_session_backends,
 };
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, ResolvedCliExecutor, V2AuditWriter, V2DispatchInput, V2RuntimeHost,
     dispatch_v2_activity,
 };

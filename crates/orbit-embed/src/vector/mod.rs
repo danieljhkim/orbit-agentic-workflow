@@ -16,16 +16,14 @@
 //! (`cosine_similarity`, `encode_f32_blob`, `decode_f32_blob`) shared across
 //! those submodules.
 
-pub mod chunker;
-pub mod query;
-pub mod store;
-pub mod task_fields;
-pub mod worker;
+pub(crate) mod chunker;
+pub(crate) mod query;
+pub(crate) mod store;
+pub(crate) mod task_fields;
+pub(crate) mod worker;
 
-pub use chunker::chunk_text;
-pub use store::{VectorStore, ensure_vector_schema};
-pub use task_fields::task_embedding_fields;
-pub use worker::{EmbedJob, EmbedWorker};
+pub use store::VectorStore;
+pub use worker::EmbedWorker;
 
 use orbit_common::types::OrbitError;
 use serde::{Deserialize, Serialize};

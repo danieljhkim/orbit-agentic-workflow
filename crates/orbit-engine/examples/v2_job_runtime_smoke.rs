@@ -1,7 +1,9 @@
+#![allow(missing_docs)]
+
 //! Phase 3 end-to-end smoke for the v2 job DAG executor.
 //!
 //! Runs each sample under `crates/orbit-core/assets/jobs/` through
-//! `orbit_engine::activity_job::execute_job` and asserts the expected §7 envelope
+//! `orbit_engine::execute_job` and asserts the expected §7 envelope
 //! events appear (or — for the denial sample — don't appear).
 //!
 //! No credentials needed: shell samples exec real `sh`; the loop + denial
@@ -17,7 +19,7 @@ use std::sync::Arc;
 
 use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
 use orbit_common::types::activity_job::{V2AuditEventKind, load_job_asset};
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, ResolvedCliExecutor, V2AuditWriter, V2JsonlSink, V2RuntimeHost, execute_job,
     reset_replay_transport,
 };

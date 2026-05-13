@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use orbit_embed::vector::{EmbedWorker, VectorStore};
+use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_policy::PolicyEngine;
 use orbit_store::sqlite::task_registry::{
     BindWorkspaceParams, TaskRegistryStore, WorkspaceConfig, read_workspace_config_optional,

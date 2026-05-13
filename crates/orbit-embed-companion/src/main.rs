@@ -1,3 +1,11 @@
+// ORB-00004: legacy companion binary surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
+
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;

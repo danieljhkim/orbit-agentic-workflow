@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
 use std::sync::Mutex as StdMutex;

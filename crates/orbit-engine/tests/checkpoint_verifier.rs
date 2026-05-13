@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::time::{Duration, Instant};
 
 use orbit_engine::{

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! 1-turn OpenAI-compatible prompt demonstrating the HTTP agent loop.
 //!
 //! Hosted OpenAI requires `OPENAI_API_KEY`; local OpenAI-compatible endpoints

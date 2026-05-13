@@ -1,4 +1,11 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy persistence surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! File-based (YAML) and SQLite persistence backends for Orbit data.
 //!
 //! Provides two storage backends — a file store for human-readable, git-friendly
@@ -24,12 +31,12 @@
 //! # Dependency direction
 //! `orbit-types` → `orbit-store` → orbit-core
 
-pub mod backend;
+pub(crate) mod backend;
 mod file;
 #[path = "sqlite/invocation_store.rs"]
 mod invocation_store_impl;
-pub mod json_schema;
-pub mod scope;
+pub(crate) mod json_schema;
+pub(crate) mod scope;
 pub mod sqlite;
 pub mod state_io;
 

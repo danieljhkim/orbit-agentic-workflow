@@ -27,6 +27,9 @@ license = "MIT"
 [workspace.lints.clippy]
 dbg_macro = "deny"
 
+[workspace.lints.rust]
+missing_docs = "warn"
+
 [workspace.dependencies]
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio"] }
 chrono = { version = "0.4", features = ["serde"] }

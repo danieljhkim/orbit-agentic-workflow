@@ -7,7 +7,7 @@ use orbit_common::types::ExecutorSandboxKind;
 use orbit_common::types::{ResolvedFsProfile, UNRESTRICTED_FS_PROFILE};
 #[cfg(target_os = "macos")]
 use orbit_engine::EnvironmentHost;
-use orbit_engine::activity_job::{DispatchError, ResolvedSandbox};
+use orbit_engine::{DispatchError, ResolvedSandbox};
 
 use crate::OrbitRuntime;
 
@@ -238,7 +238,7 @@ fn absolutize_rule(workspace_root: &str, rule: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use orbit_engine::activity_job::V2RuntimeHost;
+    use orbit_engine::V2RuntimeHost;
 
     use crate::runtime::v2_host::test_support::seeded_runtime_with_executor;
     #[cfg(target_os = "macos")]

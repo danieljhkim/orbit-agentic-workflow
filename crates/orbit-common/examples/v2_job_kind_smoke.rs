@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use orbit_common::types::{JobKind, JobV2, load_job_asset};
 
 fn main() -> Result<(), String> {

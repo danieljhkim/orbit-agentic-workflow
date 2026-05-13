@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Tool-allowlist enforcement demonstrated against the real Anthropic
 //! transport: an allowlist of `["fs.read"]` with a user prompt that pressures
 //! the model to call `fs.delete`. The loop must emit a `PolicyDenial` audit

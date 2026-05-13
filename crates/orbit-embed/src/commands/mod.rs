@@ -5,12 +5,12 @@
 //! top-level `OrbitRuntime` exposes thin delegates that build the runtime's
 //! shared state into these calls.
 
-pub mod install;
-pub mod reindex;
-pub mod related;
-pub mod search;
-pub mod stats;
-pub mod uninstall;
+mod install;
+mod reindex;
+mod related;
+mod search;
+mod stats;
+mod uninstall;
 
 pub use install::{SemanticInstallParams, SemanticInstallResult};
 pub use reindex::{SemanticReindexParams, SemanticReindexResult};
@@ -21,8 +21,9 @@ pub use uninstall::{SemanticUninstallParams, SemanticUninstallResult};
 
 use std::fs;
 
-use orbit_common::types::OrbitError;
+use orbit_common::types::{OrbitError, Task};
 
+use crate::vector::VectorStore;
 use crate::{CompanionPaths, ModelSpec, default_model};
 
 pub(crate) const DEFAULT_RELEASE_BASE_URL: &str =
@@ -59,4 +60,46 @@ pub(crate) fn remove_file_if_exists(path: &std::path::Path) -> Result<bool, Orbi
     } else {
         Ok(false)
     }
+}
+
+pub fn semantic_install(
+    params: SemanticInstallParams,
+) -> Result<SemanticInstallResult, OrbitError> {
+    install::run(params)
+}
+
+pub fn semantic_uninstall(
+    params: SemanticUninstallParams,
+) -> Result<SemanticUninstallResult, OrbitError> {
+    uninstall::run(params)
+}
+
+pub fn semantic_reindex(
+    vector_store: &VectorStore,
+    tasks: &[Task],
+    params: SemanticReindexParams,
+) -> Result<SemanticReindexResult, OrbitError> {
+    reindex::run(vector_store, tasks, params)
+}
+
+pub fn semantic_stats(
+    vector_store: &VectorStore,
+    task_ids: &[String],
+) -> Result<SemanticStatsResult, OrbitError> {
+    stats::run(vector_store, task_ids)
+}
+
+pub fn semantic_search(
+    vector_store: &VectorStore,
+    params: SemanticSearchParams,
+) -> Result<SemanticSearchResult, OrbitError> {
+    search::run(vector_store, params)
+}
+
+pub fn semantic_related(
+    vector_store: &VectorStore,
+    tasks: &[Task],
+    params: SemanticRelatedParams,
+) -> Result<SemanticRelatedResult, OrbitError> {
+    related::run(vector_store, tasks, params)
 }

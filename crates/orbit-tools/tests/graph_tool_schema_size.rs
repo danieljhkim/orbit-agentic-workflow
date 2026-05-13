@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use orbit_tools::ToolRegistry;
 
 const BASELINE_BYTES: usize = 10_995;

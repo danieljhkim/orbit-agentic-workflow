@@ -37,7 +37,7 @@ pub struct TaskAddArgs {
     /// Append an initial task comment
     #[arg(long)]
     pub comment: Option<String>,
-    /// External tracker reference in <system>:<id> form. Repeat for multiple refs.
+    /// External tracker reference in `system:id` form. Repeat for multiple refs.
     #[arg(long = "ref", action = ArgAction::Append)]
     pub external_refs: Vec<String>,
     /// Comma-separated task context selectors. Prefer `file:`, `dir:`, or

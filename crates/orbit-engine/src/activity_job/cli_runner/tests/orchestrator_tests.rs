@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

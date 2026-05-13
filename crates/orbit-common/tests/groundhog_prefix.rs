@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use chrono::{Duration, Utc};
 use orbit_common::groundhog::{
     Attempt, CheckpointId, Chronicle, Day, DayOutcome, FailureReport, SideEffect, SideEffectKind,

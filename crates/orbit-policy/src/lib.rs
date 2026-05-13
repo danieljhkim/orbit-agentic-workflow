@@ -1,4 +1,11 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy policy surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Filesystem-profile policy evaluation for Orbit runtime activities.
 //!
 //! # Role

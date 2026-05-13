@@ -1,3 +1,11 @@
+// ORB-00004: legacy CLI binary surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
+
 //! CLI entry point for Orbit: command parsing, dispatch, and output formatting.
 //!
 //! Parses command-line arguments with `clap`, initializes the [`OrbitRuntime`],

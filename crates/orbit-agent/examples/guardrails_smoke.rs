@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Network-free smoke: each of the three loop guardrails trips and returns a
 //! distinct structured error variant. Uses an inline mock transport so this
 //! runs in `cargo build --examples` and `cargo run --example guardrails_smoke`

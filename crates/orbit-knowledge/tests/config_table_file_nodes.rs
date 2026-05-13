@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::path::Path;
 
 use orbit_knowledge::Selector;

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use orbit_tools::ToolRegistry;
 
 #[test]

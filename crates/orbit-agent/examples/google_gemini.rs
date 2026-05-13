@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! 1-turn Gemini prompt demonstrating the HTTP agent loop.
 //!
 //! Requires `GEMINI_API_KEY`. If unset, the example exits cleanly to

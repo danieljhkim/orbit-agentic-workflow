@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Smoke: load every schemaVersion 2 activity + job YAML through the asset
 //! loader. Used as the AC2 / AC1 validation path per the Phase 2 plan in
 //! T20260418-2010.

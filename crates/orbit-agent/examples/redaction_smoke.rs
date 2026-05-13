@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Network-free smoke for AC13 (redaction applied at write time).
 //!
 //! Sends a raw request body containing `Authorization: Bearer secret-xyz`
