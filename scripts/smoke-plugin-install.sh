@@ -44,6 +44,37 @@ trap 'rm -rf "$TMPDIR_ROOT"' EXIT
 export npm_config_cache="$TMPDIR_ROOT/npm-cache"
 mkdir -p "$npm_config_cache"
 
+# Sandbox HOME so `orbit init` writes to the temp tree instead of the
+# runner/user's real ~/.orbit. Without this, repeat runs locally would
+# accumulate state in the developer's global Orbit root.
+SMOKE_HOME="$TMPDIR_ROOT/home"
+mkdir -p "$SMOKE_HOME"
+export HOME="$SMOKE_HOME"
+
+# Pick a timeout binary. macOS runners ship neither `timeout` nor `gtimeout`
+# unless coreutils is installed; fall back to perl, which is preinstalled on
+# both macOS-15 and ubuntu-22.04 GitHub runners. Perl's `alarm` survives exec,
+# so the target process gets SIGALRM at the deadline and exits with rc 142.
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_KIND=gnu
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_KIND=gnu_g
+elif command -v perl >/dev/null 2>&1; then
+  TIMEOUT_KIND=perl
+else
+  echo "smoke-plugin-install: need timeout, gtimeout, or perl on PATH" >&2
+  exit 2
+fi
+
+run_with_timeout() {
+  local secs="$1"; shift
+  case "$TIMEOUT_KIND" in
+    gnu) timeout "$secs" "$@" ;;
+    gnu_g) gtimeout "$secs" "$@" ;;
+    perl) perl -e '$t=shift @ARGV; alarm $t; exec @ARGV or die "exec failed: $!\n"' "$secs" "$@" ;;
+  esac
+}
+
 echo "--- step 1: npx -y $NPM_PKG@latest --version ---"
 VERSION_OUT="$TMPDIR_ROOT/version.txt"
 if ! npx -y "$NPM_PKG@latest" --version >"$VERSION_OUT" 2>"$TMPDIR_ROOT/version.err"; then
@@ -64,7 +95,31 @@ echo "orbit --version => $binary_version"
 npm_version="$(npm view "$NPM_PKG" version 2>/dev/null || echo '<unknown>')"
 echo "$NPM_PKG@latest on npm => $npm_version"
 
-echo "--- step 2: MCP handshake over stdio ---"
+echo "--- step 2: orbit init + workspace init ---"
+# `orbit mcp serve` deliberately refuses to bootstrap a workspace (see
+# OrbitRuntime::try_initialize_existing) — so without these two commands the
+# MCP server attaches but serves an empty tool surface. Initializing first
+# matches the documented /plugin install orbit flow.
+if ! npx -y "$NPM_PKG@latest" init --non-interactive >"$TMPDIR_ROOT/init.out" 2>"$TMPDIR_ROOT/init.err"; then
+  echo "FAIL: orbit init exited non-zero" >&2
+  echo "--- stderr ---" >&2
+  cat "$TMPDIR_ROOT/init.err" >&2
+  exit 1
+fi
+echo "orbit init => OK ($SMOKE_HOME/.orbit)"
+
+WORKSPACE_DIR="$TMPDIR_ROOT/workspace"
+mkdir -p "$WORKSPACE_DIR"
+if ! ( cd "$WORKSPACE_DIR" && npx -y "$NPM_PKG@latest" workspace init ) \
+     >"$TMPDIR_ROOT/ws-init.out" 2>"$TMPDIR_ROOT/ws-init.err"; then
+  echo "FAIL: orbit workspace init exited non-zero" >&2
+  echo "--- stderr ---" >&2
+  cat "$TMPDIR_ROOT/ws-init.err" >&2
+  exit 1
+fi
+echo "orbit workspace init => OK ($WORKSPACE_DIR/.orbit)"
+
+echo "--- step 3: MCP handshake over stdio ---"
 RPC_IN="$TMPDIR_ROOT/rpc-in.txt"
 RPC_OUT="$TMPDIR_ROOT/rpc-out.txt"
 RPC_ERR="$TMPDIR_ROOT/rpc-err.txt"
@@ -76,16 +131,21 @@ cat >"$RPC_IN" <<'EOF'
 EOF
 
 # Feed the requests, then keep stdin open briefly so the server has time
-# to flush its responses before EOF closes the channel.
+# to flush its responses before EOF closes the channel. `mcp serve` runs
+# from inside the initialized workspace so it can discover `.orbit/`.
 {
   cat "$RPC_IN"
   sleep 5
-} | timeout 120 npx -y "$NPM_PKG@latest" mcp serve >"$RPC_OUT" 2>"$RPC_ERR" || rc=$?
+} | ( cd "$WORKSPACE_DIR" && run_with_timeout 120 npx -y "$NPM_PKG@latest" mcp serve ) \
+     >"$RPC_OUT" 2>"$RPC_ERR" || rc=$?
 rc="${rc:-0}"
 
-# `timeout` returns 124 when it kills the server; that's expected because
-# we never send `shutdown`. Anything else from the binary side is a fail.
-if [[ "$rc" -ne 0 && "$rc" -ne 124 && "$rc" -ne 143 ]]; then
+# Accepted post-handshake exit codes:
+#   0   — server saw stdin EOF and exited cleanly (the expected happy path).
+#   124 — GNU `timeout` killed it (we never send `shutdown`).
+#   143 — SIGTERM (128+15), via GNU `timeout --signal` or external kill.
+#   142 — SIGALRM (128+14), via the perl-based timeout fallback on macOS.
+if [[ "$rc" -ne 0 && "$rc" -ne 124 && "$rc" -ne 142 && "$rc" -ne 143 ]]; then
   echo "FAIL: mcp serve exited with $rc" >&2
   echo "--- stderr ---" >&2
   cat "$RPC_ERR" >&2
