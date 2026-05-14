@@ -10,7 +10,9 @@
 
 **Orbit brings engineering rigor to AI-assisted coding. Tasks for every change, ADRs for load-bearing decisions, structured audit of every tool call and provider exchange, conflict-aware parallel dispatch — local-first.**
 
-You drive Claude Code, Codex, or Gemini CLI against real code, often in parallel. Agents make it easy to skip the disciplines that keep code maintainable — no plan, no decision record, no audit trail, just prompt-and-merge. Six months later you can't reconstruct why an agent wrote a given line, and parallel runs collide because nothing reserved the files. Orbit makes those disciplines cheap and enforces them by default: tasks before edits, ADRs for load-bearing decisions, every tool call landing in a structured audit log, parallel runs sandboxed into worktrees with file-level locks. The constraints are the point — they're what keep agent-assisted code shippable at volume.
+You drive Claude Code, Codex, or Gemini CLI against real code, often in parallel. Agents make it easy to skip the disciplines that keep code maintainable — no plan, no decision record, no audit trail, just prompt-and-merge. Six months later you can't reconstruct why an agent wrote a given line. Orbit makes those disciplines cheap and enforces them by default: tasks before edits, ADRs for load-bearing decisions, every tool call landing in a structured audit log, parallel runs sandboxed into worktrees with file-level locks.
+
+The constraints are the point — they're what keep agent-assisted code shippable at volume. And the history of decisions lives right alongside the code, so that agents (and you) can reconstruct how the code came to be.
 
 ---
 
@@ -153,6 +155,23 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | workflows (i.e. `orbit run ship-auto`) | No | Yes |
 
 </details>
+
+---
+
+## Agent Skills
+
+`orbit workspace init` seeds skill files under `~/.orbit/skills/` and symlinks them into `~/.claude/skills/` and `~/.agents/skills/`, so Claude Code, Codex, and Gemini CLI discover them at session start with no per-agent configuration. The router skill (`orbit`) classifies intent; workflow-specific skills do the work:
+
+- `orbit-create-task` — author a task with strong acceptance criteria
+- `orbit-execute-task` — carry an approved task through implementation and review
+- `orbit-review-task` — file findings on another agent's work without transitioning status
+- `orbit-adr` — author, accept, or supersede an Architecture Decision Record
+- `orbit-graph` — query the parsed knowledge graph (callers, implementors, refs)
+- `orbit-semantic` — find tasks by topic; dedup and related-task lookups
+- `orbit-debug-job-failure` — diagnose failed, stuck, or cancelled runs
+- `orbit-track-issues` — capture agent-self-reported friction with Orbit tooling itself
+
+`orbit skill doctor` flags drift between the local copy and the upstream definition. Edit any seeded `SKILL.md` to customize behavior for your team.
 
 ---
 
