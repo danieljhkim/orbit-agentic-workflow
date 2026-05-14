@@ -21,6 +21,10 @@ pub(super) fn execute(
         OrbitBuiltinAction::AdrSupersede => {
             super::adr_tools::supersede(runtime, input, agent, model)
         }
+        OrbitBuiltinAction::DesignCheck => super::design_tools::check(runtime, input),
+        OrbitBuiltinAction::DesignInit => super::design_tools::init(runtime, input, agent, model),
+        OrbitBuiltinAction::DesignList => super::design_tools::list(runtime, input),
+        OrbitBuiltinAction::DesignShow => super::design_tools::show(runtime, input),
         OrbitBuiltinAction::FrictionAdd => super::friction_tools::add(runtime, input, model),
         OrbitBuiltinAction::FrictionList => super::friction_tools::list(runtime, input),
         OrbitBuiltinAction::FrictionShow => super::friction_tools::show(runtime, input),

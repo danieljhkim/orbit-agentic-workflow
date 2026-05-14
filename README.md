@@ -20,6 +20,8 @@ You drive Claude Code, Codex, or Gemini CLI against real code, often in parallel
 
 - **ADRs as first-class state.** Capture load-bearing decisions as ADR artifacts with status lifecycle (`proposed → accepted → superseded`), owner, related_tasks/features, and supersession chains — authored and queried via `orbit.adr.*`, cross-referenced from task IDs and commit messages. → [docs/design/adr-artifact/](docs/design/adr-artifact/)
 
+- **Design docs with decay checks.** Scaffold, inspect, and lint `docs/design/<feature>/` folders through `orbit.design.*`; `orbit design check` flags docs whose `**Last updated:**` predates referenced `crates/...rs` code, with conventions anchored in [docs/design/CONVENTIONS.md](docs/design/CONVENTIONS.md).
+
 - **Auditability.** Every tool call, provider request/response, and task transition becomes a structured, queryable event with agent identity attached — append-only, tamper-evident, exportable. → [docs/design/auditability/](docs/design/auditability/)
 
 - **Knowledge-graph–aware tooling.** Agents query a parsed, content-addressed graph (symbols, imports, callers, implementors) instead of grep. Branch-scoped and safe for parallel rebuild; numbers in [`benchmarks/graph/`](benchmarks/graph/). → [docs/design/knowledge-graph/](docs/design/knowledge-graph/)
@@ -40,6 +42,7 @@ Cloning is the recommended and best way to get started with Orbit. Curl/brew/plu
 - If you don't like any orbit conventions, ask the agent to tweak it.
 - If something doesn't work, ask the agent to fix it.
 - If you need a new feature, ask the agent to add it.
+- If you are unsure about any orbit features, ask the agent to help you.
 
 Paste the prompt below into your agent (Claude Code, Codex CLI, or Gemini CLI) **from inside the repo where you want to use Orbit**. The agent clones Orbit, builds from source, sets up MCP, and reads the key docs so it can drive the workflow on your behalf afterwards.
 
@@ -65,7 +68,9 @@ Paste the prompt below into your agent (Claude Code, Codex CLI, or Gemini CLI) *
 </details>
 <br>
 
-### Manual Setup (not recommended) 
+### Manual Setup (old school way)
+
+Not recommended unless you're a contrarian or you're in a highly restricted environment where you can't clone things. This way is harder and less flexible - really makes little sense to choose this route. But if you must:
 
 **Prerequisites:** at least one supported agent CLI (Codex, Claude Code, or Gemini CLI), authenticated. For PR-based workflows (i.e., `orbit run ship-auto`), `gh` installed and authenticated; otherwise use `--mode local`.
 
@@ -127,7 +132,7 @@ After install, task writes are embedded automatically in the background; `reinde
 
 ## Plugin vs CLI
 
-Two install surfaces. Same binary and MCP tool surface underneath — the difference is what Claude Code wires up for you.
+Two install surfaces. Cli gives you the full power of Orbit. Choose plugin if you just want to have a taste of orbit.
 
 |   | **Claude Code plugin** | **CLI (curl / brew)** |
 |---|---|---|
@@ -149,7 +154,7 @@ Two install surfaces. Same binary and MCP tool surface underneath — the differ
 `orbit workspace init --mcp` registers the Orbit MCP server with the local agent CLI (Claude Code, Codex, Gemini). Names are canonically dot-separated (`orbit.task.add`); MCP clients that reject `.` see the underscored form (`orbit_task_add`) — both resolve to the same tool.
 
 <details>
-<summary><strong>Full tool reference</strong> — task, review, graph, semantic, adr, learning, friction (click to expand)
+<summary><strong>Full tool reference</strong> — task, review, graph, semantic, adr, design, learning, friction (click to expand)
 </summary>
 
 | Namespace | Tool | Purpose |
@@ -181,6 +186,10 @@ Two install surfaces. Same binary and MCP tool surface underneath — the differ
 | | `orbit.adr.show` | Fetch an ADR |
 | | `orbit.adr.list` | List ADRs by status |
 | | `orbit.adr.supersede` | Mark an ADR superseded by another |
+| **design** | `orbit.design.init` | Scaffold a feature design-doc folder |
+| | `orbit.design.list` | List design-doc feature folders |
+| | `orbit.design.show` | Fetch one design-doc feature summary |
+| | `orbit.design.check` | Return structured stale-doc findings |
 | **learning** | `orbit.learning.add` | Author a project learning |
 | | `orbit.learning.update` | Edit a learning |
 | | `orbit.learning.show` | Fetch a learning |

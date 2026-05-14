@@ -1,5 +1,6 @@
 pub mod adr;
 pub mod definitions;
+pub mod design;
 pub mod environment;
 pub mod learning;
 pub mod log;
@@ -48,6 +49,7 @@ Operate:
   run         Run a workflow (ship, ship-auto, duel-plan, job)
   task        Create, update, and manage tasks
   adr         Architecture Decision Record operations
+  design      Design doc operations
   learning    Create, search, and curate project learnings
   semantic    Manage local semantic-search indexing
 
@@ -92,6 +94,7 @@ pub enum Commands {
     Run(run::RunCommand),
     Task(task::TaskCommand),
     Adr(adr::AdrCommand),
+    Design(design::DesignCommand),
     Learning(learning::LearningCommand),
     Semantic(semantic::SemanticCommand),
 
@@ -131,6 +134,7 @@ impl Execute for Commands {
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => cmd.execute(runtime),
             Commands::Adr(cmd) => cmd.execute(runtime),
+            Commands::Design(cmd) => cmd.execute(runtime),
             Commands::Learning(cmd) => cmd.execute(runtime),
             Commands::Semantic(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
@@ -157,7 +161,8 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        Cli, Commands, mcp::McpSubcommand, semantic::SemanticSubcommand, web::WebSubcommand,
+        Cli, Commands, design::DesignSubcommand, mcp::McpSubcommand, semantic::SemanticSubcommand,
+        web::WebSubcommand,
     };
 
     #[test]
@@ -242,6 +247,17 @@ mod tests {
                 _ => panic!("expected semantic related"),
             },
             _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_design_check() {
+        let cli = Cli::parse_from(["orbit", "design", "check", "--warn-only"]);
+        match cli.command {
+            Commands::Design(command) => match command.command {
+                DesignSubcommand::Check(args) => assert!(args.warn_only),
+            },
+            _ => panic!("expected top-level design command"),
         }
     }
 

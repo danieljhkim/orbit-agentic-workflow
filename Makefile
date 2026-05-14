@@ -111,7 +111,7 @@ ci:
 
 # Flag design docs older than the code they reference
 check-design-docs:
-	./scripts/check_design_doc_decay.py
+	$(CARGO) run --quiet -p $(BIN_CRATE) --bin $(BINARY) -- design check
 
 # Verify every workspace crate declares its stability tier
 stability:
