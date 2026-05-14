@@ -89,9 +89,6 @@ curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/agent-main/install
 orbit init                                 # global state (~/.orbit)
 cd <repo> && orbit workspace init --mcp    # workspace state + MCP integration
 
-# launch interactive dashboard
-orbit web serve
-
 # create, approve, and ship a task
 TASK_ID=$(orbit task add \
   --title "..." \
@@ -100,19 +97,21 @@ TASK_ID=$(orbit task add \
   --workspace .)
 
 # or simply ask an agent to create a task:
-"Claude can you create an orbit task to refactor the authentication 
-logic in ..."
+# "Claude can you create an orbit task to refactor the authentication logic in ..."
 
 orbit task approve "$TASK_ID"
 
-orbit run ship-auto # conflict-aware, parallel flush of the backlog tasks to PRs
+# launch interactive dashboard
+orbit web serve
+
+# conflict-aware, parallel flush of the backlog tasks to PRs
+orbit run ship-auto
 ```
 
 </details>
 <br>
 
 Full command reference: `orbit --help` and [orbit-cli.com](https://orbit-cli.com).
-
 
 ---
 
@@ -215,7 +214,6 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | | `orbit.friction.delete` | Delete a friction |
 
 </details>
-<br>
 
 ---
 
