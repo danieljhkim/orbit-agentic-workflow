@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-15
 
 Project learnings is a system for preserving and surfacing non-obvious project knowledge — gotchas, root causes from incidents, validated approaches, hard-won workflow insights — at the moment of action so agents stop repeating the same mistakes. The system is **push-first**: relevant learnings inject into agent context automatically when an agent is about to touch code, files, or workflows the learning applies to. A pull surface exists for active exploration, but pull is the secondary mode.
 

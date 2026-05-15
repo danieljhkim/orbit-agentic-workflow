@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-12
+**Last updated:** 2026-05-15
 
 This document specifies phase-1 project-learnings: the placement of learning storage in `orbit-store`, the schema of a learning record, the phase-1 scope-matching algorithm (path globs + tags), the three-layer push-injection pipeline (engine pre-prompt + MCP sidecar + optional Claude Code hook), the pull surface (skill + tools), the curation lifecycle, and the concerns the design deliberately leaves to follow-ups.
 
@@ -31,7 +31,7 @@ orbit-store/
 
 The third push layer — a Claude Code `PreToolUse` hook on `Edit | Write | Read` — is not part of any Orbit crate; it ships as a hook configuration in [.claude/settings.json](../../../.claude/settings.json) (or whichever scope is appropriate; see [§4.3](#43-layer-3-claude-code-pretooluse-hook-optional)).
 
-No cross-crate dependencies that violate the architecture diagram in [CLAUDE.md](../../../CLAUDE.md) are introduced. The dependency edges added are `orbit-store` (extended internally), `orbit-tools → orbit-store` (already present), `orbit-engine → orbit-store` (already present via task storage), and `orbit-mcp → orbit-store` (already present).
+No cross-crate dependencies that violate the architecture diagram in [CLAUDE.md](../../../CLAUDE.md) are introduced. The dependency edges added are `orbit-store` (extended internally), `orbit-tools → orbit-store` (already present), and `orbit-engine → orbit-store` (already present). `orbit-mcp` remains a transport adapter that depends only on `orbit-common`; Layer 2 asks the injected host to run `orbit.learning.search` instead of reading the learning store directly.
 
 ---
 
@@ -214,9 +214,11 @@ A naive implementation injects the same learning multiple times across layers (e
 
 - The agent process tracks injected learning IDs in a per-session set.
 - Each layer consults the set before emitting a `<system-reminder>`; already-injected IDs are skipped.
-- Per-call cap of **5** learnings (configurable). Hard cap of **20** per session to bound total context cost.
+- Per-call cap of **5** learnings (configurable via `ORBIT_LEARNING_PER_CALL_CAP`). Hard cap of **20** per session (configurable via `ORBIT_LEARNING_SESSION_CAP`) to bound total context cost.
 
 Implementation note: the per-session set lives in the agent's working memory. The Orbit-side store does not need to track session state; it just provides idempotent search. Layers consult the set; the store is stateless.
+
+Cross-process deduplication is best-effort via `ORBIT_SESSION_ID` plus `.orbit/state/sessions/<id>/learnings.json`. In-process Layer 1 + Layer 2 dedup is exact; when Layer 2 or Layer 3 runs without `ORBIT_SESSION_ID` (for example, an `orbit-mcp` server started outside an engine-spawned session, or a Claude session not initiated through Orbit), they fall back to per-process state and may double-emit. The dedup layer is belt-and-braces; the agent's own context window remains the practical backstop.
 
 ### 4.5 What gets injected
 
