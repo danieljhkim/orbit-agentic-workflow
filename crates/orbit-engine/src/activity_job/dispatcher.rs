@@ -11,7 +11,8 @@ use orbit_common::types::activity_job::{
 
 use crate::context::AgentRoleConfig;
 use orbit_common::types::{
-    ExecutorSandboxKind, InvocationTrace, OrbitError, ResolvedFsProfile, TokenUsage, ToolCallTrace,
+    ExecutorSandboxKind, InvocationTrace, LearningInjectionCaps, LearningReminder, OrbitError,
+    ResolvedFsProfile, TokenUsage, ToolCallTrace,
 };
 use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, ToolContext};
 use serde_json::Value;
@@ -115,6 +116,17 @@ pub trait V2RuntimeHost: Send + Sync {
     /// without leaking store or task-query details into orbit-engine.
     fn task_context_for_agent_input(&self, _input: &Value) -> Result<Option<Value>, DispatchError> {
         Ok(None)
+    }
+
+    /// Return project-learning reminders relevant to the task represented by
+    /// `input`. Implementors that do not own task storage can ignore this; the
+    /// engine preserves the original prompt when the returned set is empty.
+    fn learning_reminders_for_task(
+        &self,
+        _input: &Value,
+        _caps: LearningInjectionCaps,
+    ) -> Result<Vec<LearningReminder>, DispatchError> {
+        Ok(Vec::new())
     }
 
     fn tool_context_for_activity(

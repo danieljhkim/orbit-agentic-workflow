@@ -10,6 +10,7 @@ pub(super) fn cli_agent_envelope_json(
     run_id: &str,
     input: &Value,
     task_ctx: Option<&Value>,
+    prompt_override: Option<&str>,
 ) -> Result<Vec<u8>, DispatchError> {
     let mut envelope = serde_json::Map::new();
     envelope.insert("schemaVersion".to_string(), Value::from(1));
@@ -19,7 +20,10 @@ pub(super) fn cli_agent_envelope_json(
     );
     envelope.insert(
         "prompt".to_string(),
-        Value::String(user_prompt_from_input(input)?),
+        Value::String(match prompt_override {
+            Some(prompt) => prompt.to_string(),
+            None => user_prompt_from_input(input)?,
+        }),
     );
     envelope.insert("input".to_string(), input.clone());
     envelope.insert("run_id".to_string(), Value::String(run_id.to_string()));
@@ -63,7 +67,7 @@ pub(super) fn parse_cli_invocation_trace(
         .ok()
 }
 
-fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
+pub(super) fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
     match input {
         Value::Object(map) => match map.get("prompt") {
             Some(Value::String(text)) => Ok(text.clone()),
@@ -162,9 +166,14 @@ mod tests {
             "workspace_path": "/tmp/orbit-worktree"
         });
 
-        let raw =
-            cli_agent_envelope_json(&spec, "jrun-context", &input, host.task_context.as_ref())
-                .expect("build cli agent envelope");
+        let raw = cli_agent_envelope_json(
+            &spec,
+            "jrun-context",
+            &input,
+            host.task_context.as_ref(),
+            None,
+        )
+        .expect("build cli agent envelope");
         let envelope: Value = serde_json::from_slice(&raw).expect("parse envelope json");
 
         assert_eq!(envelope["schemaVersion"], 1);

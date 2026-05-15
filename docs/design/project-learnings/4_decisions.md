@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-11
+**Last updated:** 2026-05-15
 
 ADR-style log of non-obvious project-learnings decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
@@ -12,7 +12,7 @@ Format for each entry: **Status · Date · Task(s)**, then *Context → Decision
 
 ## ADR-001 — Push-based discovery via context injection, not pull-only via search
 
-**Status:** Proposed · 2026-05 · [T20260510-11]
+**Status:** Accepted · 2026-05 · [T20260510-11] · [ORB-00009]
 
 **Context.** Three classes of discovery were on the table:
 
@@ -117,7 +117,7 @@ Phase 2 ([3_vision.md §1.1](./3_vision.md), [§1.2](./3_vision.md)) layers symb
 
 ## ADR-005 — Three-layer push pipeline (engine pre-prompt + MCP sidecar + Claude Code hook), not single-layer
 
-**Status:** Proposed · 2026-05 · [T20260510-11]
+**Status:** Accepted · 2026-05 · [T20260510-11] · [ORB-00009]
 
 **Context.** The push-injection layer ([2_design.md §4](./2_design.md)) has multiple natural placements, each with different coverage:
 

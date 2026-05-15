@@ -13,6 +13,7 @@
 //! without loss.
 
 use std::collections::BTreeSet;
+use std::env;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -159,6 +160,144 @@ pub struct Learning {
     pub priority: Option<u8>,
 }
 
+pub const DEFAULT_LEARNING_REMINDER_PER_CALL_CAP: usize = 5;
+pub const DEFAULT_LEARNING_REMINDER_SESSION_CAP: usize = 20;
+
+/// Envelope projected into agent context by the project-learnings injection
+/// layers. It deliberately carries only the summary, never the body.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LearningReminder {
+    pub id: OrbitId,
+    pub summary: String,
+}
+
+/// Budget controls for project-learning injection.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LearningInjectionCaps {
+    pub per_call: usize,
+    pub per_session_hard: usize,
+}
+
+impl Default for LearningInjectionCaps {
+    fn default() -> Self {
+        Self {
+            per_call: DEFAULT_LEARNING_REMINDER_PER_CALL_CAP,
+            per_session_hard: DEFAULT_LEARNING_REMINDER_SESSION_CAP,
+        }
+    }
+}
+
+impl LearningInjectionCaps {
+    /// Read documented cap overrides from the environment.
+    ///
+    /// Invalid or zero values fall back to defaults so a bad shell export does
+    /// not disable the learning-injection path.
+    pub fn from_env() -> Self {
+        let defaults = Self::default();
+        Self {
+            per_call: read_cap_env("ORBIT_LEARNING_PER_CALL_CAP").unwrap_or(defaults.per_call),
+            per_session_hard: read_cap_env("ORBIT_LEARNING_SESSION_CAP")
+                .unwrap_or(defaults.per_session_hard),
+        }
+    }
+}
+
+fn read_cap_env(name: &str) -> Option<usize> {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+}
+
+/// Per-session deduplication state for all learning-injection layers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct LearningInjectionState {
+    #[serde(default)]
+    pub emitted_ids: BTreeSet<OrbitId>,
+    #[serde(default)]
+    pub count: usize,
+}
+
+impl LearningInjectionState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn seeded(ids: impl IntoIterator<Item = OrbitId>) -> Self {
+        let emitted_ids: BTreeSet<_> = ids.into_iter().collect();
+        let count = emitted_ids.len();
+        Self { emitted_ids, count }
+    }
+
+    /// Admit a learning ID if it is new and the hard cap has not been reached.
+    ///
+    /// Deduplication and the hard cap are intentionally separate gates:
+    /// duplicates never consume cap, while new IDs stop once the hard cap is
+    /// reached.
+    pub fn try_admit(&mut self, id: &str, caps: LearningInjectionCaps) -> bool {
+        if self.emitted_ids.contains(id) {
+            return false;
+        }
+        if self.count >= caps.per_session_hard {
+            return false;
+        }
+        self.emitted_ids.insert(id.to_string());
+        self.count += 1;
+        true
+    }
+
+    /// Return the reminders newly admitted for this call, honoring both the
+    /// per-call cap and the per-session hard cap.
+    pub fn admit_reminders(
+        &mut self,
+        reminders: &[LearningReminder],
+        caps: LearningInjectionCaps,
+    ) -> Vec<LearningReminder> {
+        let mut admitted = Vec::with_capacity(caps.per_call.min(reminders.len()));
+        for reminder in reminders {
+            if admitted.len() >= caps.per_call {
+                break;
+            }
+            if self.try_admit(&reminder.id, caps) {
+                admitted.push(reminder.clone());
+            }
+        }
+        admitted
+    }
+}
+
+/// Render a project-learning reminder block in the prompt format documented in
+/// `docs/design/project-learnings/2_design.md` §4.1.
+pub fn render_reminder_block(reminders: &[LearningReminder]) -> String {
+    if reminders.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("<system-reminder>\n");
+    out.push_str("Project learnings relevant to this task:\n\n");
+    for reminder in reminders {
+        out.push_str(&format!("- [{}] {}\n", reminder.id, reminder.summary));
+    }
+    out.push('\n');
+    out.push_str("Read full body via `orbit.learning.show <id>` if needed.\n");
+    out.push_str("</system-reminder>");
+    out
+}
+
+/// Prepend rendered reminders to an existing prompt, preserving byte-for-byte
+/// identity when there are no reminders.
+pub fn prepend_reminder_block(prompt: &str, reminders: &[LearningReminder]) -> String {
+    let block = render_reminder_block(reminders);
+    if block.is_empty() {
+        return prompt.to_string();
+    }
+    if prompt.is_empty() {
+        block
+    } else {
+        format!("{block}\n\n{prompt}")
+    }
+}
+
 /// Lowercase + trim + dedupe a list of tag strings. Mirrors
 /// [`crate::types::normalize_task_tags`].
 pub fn normalize_learning_tags(raw_tags: Vec<String>) -> Vec<String> {
@@ -281,6 +420,68 @@ updated_at: 2026-05-11T00:00:00Z
             assert_eq!(parsed, status);
         }
         assert!(LearningStatus::from_str("nope").is_err());
+    }
+
+    #[test]
+    fn render_reminder_block_returns_empty_for_no_reminders() {
+        assert_eq!(render_reminder_block(&[]), "");
+        assert_eq!(prepend_reminder_block("baseline", &[]), "baseline");
+    }
+
+    #[test]
+    fn render_reminder_block_matches_design_shape() {
+        let block = render_reminder_block(&[LearningReminder {
+            id: "L20260509-0001".to_string(),
+            summary: "Verify output equivalence before freezing a result.".to_string(),
+        }]);
+
+        assert_eq!(
+            block,
+            "<system-reminder>\n\
+Project learnings relevant to this task:\n\n\
+- [L20260509-0001] Verify output equivalence before freezing a result.\n\n\
+Read full body via `orbit.learning.show <id>` if needed.\n\
+</system-reminder>"
+        );
+    }
+
+    #[test]
+    fn learning_injection_state_dedupes_without_consuming_hard_cap() {
+        let caps = LearningInjectionCaps {
+            per_call: 5,
+            per_session_hard: 2,
+        };
+        let mut state = LearningInjectionState::new();
+
+        assert!(state.try_admit("L1", caps));
+        assert!(!state.try_admit("L1", caps));
+        assert!(state.try_admit("L2", caps));
+        assert!(!state.try_admit("L3", caps));
+        assert_eq!(state.count, 2);
+        assert_eq!(state.emitted_ids.len(), 2);
+    }
+
+    #[test]
+    fn admit_reminders_enforces_per_call_cap() {
+        let caps = LearningInjectionCaps {
+            per_call: 2,
+            per_session_hard: 20,
+        };
+        let mut state = LearningInjectionState::new();
+        let reminders: Vec<_> = (0..4)
+            .map(|idx| LearningReminder {
+                id: format!("L{idx}"),
+                summary: format!("summary {idx}"),
+            })
+            .collect();
+
+        let admitted = state.admit_reminders(&reminders, caps);
+
+        assert_eq!(
+            admitted.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["L0", "L1"]
+        );
+        assert_eq!(state.count, 2);
     }
 
     #[test]

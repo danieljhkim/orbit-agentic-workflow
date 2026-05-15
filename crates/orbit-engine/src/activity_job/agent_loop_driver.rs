@@ -26,6 +26,10 @@ use orbit_agent::loop_engine::{
 };
 use orbit_agent::providers::anthropic::AnthropicMessagesTransport;
 use orbit_common::types::activity_job::AgentLoopSpec;
+use orbit_common::types::{LearningInjectionCaps, LearningReminder, prepend_reminder_block};
+use orbit_common::utility::learning_session::{
+    learning_session_state_path, write_learning_session_state,
+};
 use orbit_tools::ToolContext;
 use serde_json::Value;
 
@@ -56,7 +60,16 @@ pub fn drive_agent_loop(
         fs_profile,
         Some(v2_fs_audit_logger(audit.clone())),
     );
-    drive_inner(spec, api_key, run_id, audit, &mut session, input, tool_ctx)
+    drive_inner(
+        spec,
+        api_key,
+        run_id,
+        audit,
+        &mut session,
+        input,
+        tool_ctx,
+        Some(host),
+    )
 }
 
 /// Drive a v2 agent_loop activity reusing an existing `Session`.
@@ -80,7 +93,16 @@ pub fn drive_agent_loop_with_session(
         fs_profile,
         Some(v2_fs_audit_logger(audit.clone())),
     );
-    drive_inner(spec, api_key, run_id, audit, session, input, tool_ctx)
+    drive_inner(
+        spec,
+        api_key,
+        run_id,
+        audit,
+        session,
+        input,
+        tool_ctx,
+        Some(host),
+    )
 }
 
 /// Drive a v2 agent_loop activity with a caller-supplied ToolContext.
@@ -98,9 +120,19 @@ pub fn drive_agent_loop_with_tool_context(
     let model = resolve_model(spec);
     let provider = expected_provider();
     let mut session = Session::new(provider, model.clone(), &spec.instruction, None);
-    drive_inner(spec, api_key, run_id, audit, &mut session, input, tool_ctx)
+    drive_inner(
+        spec,
+        api_key,
+        run_id,
+        audit,
+        &mut session,
+        input,
+        tool_ctx,
+        None,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn drive_inner(
     spec: &AgentLoopSpec,
     api_key: Option<&str>,
@@ -109,9 +141,12 @@ fn drive_inner(
     session: &mut Session,
     input: &Value,
     tool_ctx: ToolContext,
+    host: Option<&dyn V2RuntimeHost>,
 ) -> Result<LoopOutcome, DispatchError> {
     let model = resolve_model(spec);
     let user_prompt = user_prompt_from_input(input)?;
+    let user_prompt =
+        maybe_prepend_learning_reminders(user_prompt, host, input, session, &tool_ctx)?;
 
     if replay_active() {
         // Reuse the same ReplayTransport across calls so the cursor advances
@@ -151,6 +186,44 @@ fn drive_inner(
             tool_ctx,
         )
     }
+}
+
+fn maybe_prepend_learning_reminders(
+    user_prompt: String,
+    host: Option<&dyn V2RuntimeHost>,
+    input: &Value,
+    session: &mut Session,
+    tool_ctx: &ToolContext,
+) -> Result<String, DispatchError> {
+    let Some(host) = host else {
+        return Ok(user_prompt);
+    };
+    let caps = LearningInjectionCaps::from_env();
+    let reminders = host.learning_reminders_for_task(input, caps)?;
+    if reminders.is_empty() {
+        return Ok(user_prompt);
+    }
+    let admitted = session
+        .learning_injection_state_mut()
+        .admit_reminders(&reminders, caps);
+    if admitted.is_empty() {
+        return Ok(user_prompt);
+    }
+    persist_session_learning_state(tool_ctx, session, &admitted)?;
+    Ok(prepend_reminder_block(&user_prompt, &admitted))
+}
+
+fn persist_session_learning_state(
+    tool_ctx: &ToolContext,
+    session: &Session,
+    _admitted: &[LearningReminder],
+) -> Result<(), DispatchError> {
+    let Some(workspace_root) = tool_ctx.workspace_root.as_deref() else {
+        return Ok(());
+    };
+    let path = learning_session_state_path(workspace_root, session.id());
+    write_learning_session_state(&path, session.learning_injection_state())
+        .map_err(|err| DispatchError::AgentLoopFailed(format!("persist learning state: {err}")))
 }
 
 fn user_prompt_from_input(input: &Value) -> Result<String, DispatchError> {
@@ -365,7 +438,9 @@ mod tests {
     use std::sync::Arc;
 
     use orbit_agent::loop_engine::audit::{AuditSink, NullSink};
+    use orbit_agent::loop_engine::transport::MessageRole;
     use orbit_common::types::activity_job::{Backend, OnDenial, Provider};
+    use orbit_common::types::{LearningInjectionCaps, LearningReminder};
     use tempfile::NamedTempFile;
 
     use super::*;
@@ -440,6 +515,56 @@ mod tests {
         }
     }
 
+    struct LearningReplayHost {
+        reminders: Vec<LearningReminder>,
+    }
+
+    impl V2RuntimeHost for LearningReplayHost {
+        fn run_deterministic(
+            &self,
+            _action: &str,
+            _config: &Value,
+            _input: &Value,
+            _tool_context: ToolContext,
+        ) -> Result<Value, DispatchError> {
+            Err(DispatchError::DeterministicActionNotRegistered(
+                "learning replay host: not used".to_string(),
+            ))
+        }
+
+        fn api_key_for(&self, _provider: &str) -> Result<String, DispatchError> {
+            Err(DispatchError::AgentLoopFailed(
+                "learning replay host: no credentials".to_string(),
+            ))
+        }
+
+        fn resolve_cli_executor(
+            &self,
+            _provider: &str,
+        ) -> Result<super::super::dispatcher::ResolvedCliExecutor, DispatchError> {
+            Err(DispatchError::CliInvocationFailed(
+                "learning replay host: no CLI mapping".to_string(),
+            ))
+        }
+
+        fn learning_reminders_for_task(
+            &self,
+            _input: &Value,
+            caps: LearningInjectionCaps,
+        ) -> Result<Vec<LearningReminder>, DispatchError> {
+            Ok(self.reminders.iter().take(caps.per_call).cloned().collect())
+        }
+
+        fn tool_context_for_activity(
+            &self,
+            _run_id: Option<&str>,
+            _fs_profile: Option<&str>,
+            _fs_audit: Option<Arc<dyn orbit_tools::FsAuditLogger>>,
+        ) -> ToolContext {
+            ToolContext::default()
+        }
+    }
+
     fn replay_spec(on_denial: OnDenial) -> AgentLoopSpec {
         AgentLoopSpec {
             instruction: "test".to_string(),
@@ -467,6 +592,24 @@ mod tests {
         )
         .expect("write fixture");
         file
+    }
+
+    fn replay_done_fixture() -> NamedTempFile {
+        write_fixture(serde_json::json!({
+            "turns": [{
+                "content": [{ "kind": "text", "text": "done" }],
+                "stop_reason": "end_turn"
+            }]
+        }))
+    }
+
+    fn first_user_text(session: &Session) -> &str {
+        let message = session.history().first().expect("first message");
+        assert_eq!(message.role, MessageRole::User);
+        match message.content.first().expect("first content") {
+            ContentBlock::Text { text } => text,
+            _ => panic!("expected text content"),
+        }
     }
 
     #[test]
@@ -547,5 +690,99 @@ mod tests {
             vec!["fs.delete".to_string()]
         );
         assert!(outcome.trace[1].policy_denials.is_empty());
+    }
+
+    #[test]
+    fn l1_learning_reminder_prepends_prompt_for_matching_task() {
+        let _lock = REPLAY_TEST_ENV_LOCK.lock().expect("replay env lock");
+        let fixture = replay_done_fixture();
+        let _guard = ReplayEnvGuard::set_fixture(fixture.path());
+        let host = LearningReplayHost {
+            reminders: vec![LearningReminder {
+                id: "L20260515-0001".to_string(),
+                summary: "Remember to validate the output.".to_string(),
+            }],
+        };
+        let mut session = Session::new("replay", "test-model", "test", None);
+
+        drive_agent_loop_with_session(
+            &replay_spec(OnDenial::Terminate),
+            None,
+            "run-learning-positive",
+            audit_writer("run-learning-positive"),
+            &mut session,
+            &serde_json::json!({"prompt": "baseline prompt"}),
+            &host,
+            None,
+        )
+        .expect("replay should finish");
+
+        assert_eq!(
+            first_user_text(&session),
+            "<system-reminder>\n\
+Project learnings relevant to this task:\n\n\
+- [L20260515-0001] Remember to validate the output.\n\n\
+Read full body via `orbit.learning.show <id>` if needed.\n\
+</system-reminder>\n\n\
+baseline prompt"
+        );
+    }
+
+    #[test]
+    fn l1_learning_reminder_leaves_prompt_unchanged_without_matches() {
+        let _lock = REPLAY_TEST_ENV_LOCK.lock().expect("replay env lock");
+        let fixture = replay_done_fixture();
+        let _guard = ReplayEnvGuard::set_fixture(fixture.path());
+        let host = LearningReplayHost {
+            reminders: Vec::new(),
+        };
+        let mut session = Session::new("replay", "test-model", "test", None);
+
+        drive_agent_loop_with_session(
+            &replay_spec(OnDenial::Terminate),
+            None,
+            "run-learning-negative",
+            audit_writer("run-learning-negative"),
+            &mut session,
+            &serde_json::json!({"prompt": "baseline prompt"}),
+            &host,
+            None,
+        )
+        .expect("replay should finish");
+
+        assert_eq!(first_user_text(&session), "baseline prompt");
+    }
+
+    #[test]
+    fn l1_learning_reminder_applies_default_per_call_cap() {
+        let _lock = REPLAY_TEST_ENV_LOCK.lock().expect("replay env lock");
+        let fixture = replay_done_fixture();
+        let _guard = ReplayEnvGuard::set_fixture(fixture.path());
+        let host = LearningReplayHost {
+            reminders: (0..7)
+                .map(|idx| LearningReminder {
+                    id: format!("L20260515-{idx:04}"),
+                    summary: format!("Learning {idx}"),
+                })
+                .collect(),
+        };
+        let mut session = Session::new("replay", "test-model", "test", None);
+
+        drive_agent_loop_with_session(
+            &replay_spec(OnDenial::Terminate),
+            None,
+            "run-learning-cap",
+            audit_writer("run-learning-cap"),
+            &mut session,
+            &serde_json::json!({"prompt": "baseline prompt"}),
+            &host,
+            None,
+        )
+        .expect("replay should finish");
+
+        let text = first_user_text(&session);
+        assert!(text.contains("[L20260515-0004] Learning 4"));
+        assert!(!text.contains("L20260515-0005"));
+        assert_eq!(session.learning_injection_state().count, 5);
     }
 }

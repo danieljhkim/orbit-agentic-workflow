@@ -11,6 +11,7 @@
 mod backlog_exclusion;
 mod cli_executor;
 mod dispatch;
+mod learning_reminders;
 mod pipeline_actions;
 mod sandbox;
 mod task_context;
@@ -22,7 +23,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use orbit_common::types::activity_job::AgentRole;
-use orbit_common::types::{InvocationTrace, UNRESTRICTED_FS_PROFILE};
+use orbit_common::types::{
+    InvocationTrace, LearningInjectionCaps, LearningReminder, UNRESTRICTED_FS_PROFILE,
+};
 use orbit_engine::{AgentRoleConfig, EnvironmentHost};
 use orbit_engine::{DispatchError, ResolvedCliExecutor, ResolvedSandbox, V2RuntimeHost};
 use orbit_store::{InvocationInsertParams, Store, token_scoreboard};
@@ -75,6 +78,14 @@ impl V2RuntimeHost for OrbitRuntime {
 
     fn task_context_for_agent_input(&self, input: &Value) -> Result<Option<Value>, DispatchError> {
         task_context::task_context_for_agent_input(self, input)
+    }
+
+    fn learning_reminders_for_task(
+        &self,
+        input: &Value,
+        caps: LearningInjectionCaps,
+    ) -> Result<Vec<LearningReminder>, DispatchError> {
+        learning_reminders::learning_reminders_for_task(self, input, caps)
     }
 
     fn tool_context_for_activity(

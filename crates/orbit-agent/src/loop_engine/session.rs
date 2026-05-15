@@ -9,6 +9,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::Utc;
+use orbit_common::types::LearningInjectionState;
 
 use orbit_tools::{ToolContext, ToolRegistry};
 
@@ -24,6 +25,7 @@ pub struct Session {
     model: String,
     system_prompt: String,
     history: Vec<Message>,
+    learning_injection_state: LearningInjectionState,
     audit_tag: Option<String>,
     spawn_emitted: bool,
 }
@@ -44,6 +46,7 @@ impl Session {
             model: model.into(),
             system_prompt: system_prompt.into(),
             history: Vec::new(),
+            learning_injection_state: LearningInjectionState::default(),
             audit_tag,
             spawn_emitted: false,
         }
@@ -75,6 +78,14 @@ impl Session {
 
     pub fn history_mut(&mut self) -> &mut Vec<Message> {
         &mut self.history
+    }
+
+    pub fn learning_injection_state(&self) -> &LearningInjectionState {
+        &self.learning_injection_state
+    }
+
+    pub fn learning_injection_state_mut(&mut self) -> &mut LearningInjectionState {
+        &mut self.learning_injection_state
     }
 
     pub fn append_message(&mut self, msg: Message) {

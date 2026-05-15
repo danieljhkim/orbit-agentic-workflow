@@ -3,8 +3,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use orbit_agent::{Agent, AgentConfig, AgentOperation, AgentRequest, peek_response_status};
 use orbit_common::types::activity_job::{AgentLoopSpec, V2AuditEventKind};
+use orbit_common::types::{LearningInjectionCaps, LearningInjectionState, prepend_reminder_block};
+use orbit_common::utility::learning_session::{
+    learning_session_state_path, write_learning_session_state,
+};
 use orbit_common::utility::redaction::{PatternRedactor, redact_sensitive_env_text};
 use serde_json::Value;
 
@@ -62,7 +67,14 @@ pub fn run_cli_backend(
     let sandbox =
         host.resolve_executor_sandbox(&provider, fs_profile, subprocess_cwd.as_deref())?;
 
-    let envelope_json = cli_agent_envelope_json(spec, run_id, input, task_ctx.as_ref())?;
+    let learning_context = cli_learning_context(host, input, tool_ctx.workspace_root.as_deref())?;
+    let envelope_json = cli_agent_envelope_json(
+        spec,
+        run_id,
+        input,
+        task_ctx.as_ref(),
+        learning_context.prompt.as_deref(),
+    )?;
 
     let mut provider_config = host.provider_cli_config(&provider);
 
@@ -132,10 +144,13 @@ pub fn run_cli_backend(
         wall_clock_timeout_ms: wall_clock_timeout.as_millis() as u64,
     });
 
-    let child_env = vec![
+    let mut child_env = vec![
         ("ORBIT_RUN_ID".to_string(), run_id.to_string()),
         ("ORBIT_MANAGED_RUN_CONTEXT".to_string(), "1".to_string()),
     ];
+    if let Some(session_id) = learning_context.session_id {
+        child_env.push(("ORBIT_SESSION_ID".to_string(), session_id));
+    }
     let (stdout, stderr, exit_code, duration, timed_out) =
         spawn_with_timeout(SpawnWithTimeoutRequest {
             program: &invocation.program,
@@ -226,6 +241,48 @@ pub fn run_cli_backend(
             model,
             trace,
         }),
+    })
+}
+
+struct CliLearningContext {
+    prompt: Option<String>,
+    session_id: Option<String>,
+}
+
+fn cli_learning_context(
+    host: &dyn V2RuntimeHost,
+    input: &Value,
+    workspace_root: Option<&std::path::Path>,
+) -> Result<CliLearningContext, DispatchError> {
+    let caps = LearningInjectionCaps::from_env();
+    let reminders = host.learning_reminders_for_task(input, caps)?;
+    if reminders.is_empty() {
+        return Ok(CliLearningContext {
+            prompt: None,
+            session_id: None,
+        });
+    }
+
+    let mut state = LearningInjectionState::new();
+    let admitted = state.admit_reminders(&reminders, caps);
+    if admitted.is_empty() {
+        return Ok(CliLearningContext {
+            prompt: None,
+            session_id: None,
+        });
+    }
+    let base_prompt = super::envelope::user_prompt_from_input(input)?;
+    let prompt = prepend_reminder_block(&base_prompt, &admitted);
+    let session_id = format!("S{:x}-cli", Utc::now().timestamp_micros());
+    if let Some(root) = workspace_root {
+        let path = learning_session_state_path(root, &session_id);
+        write_learning_session_state(&path, &state).map_err(|err| {
+            DispatchError::CliInvocationFailed(format!("persist learning state: {err}"))
+        })?;
+    }
+    Ok(CliLearningContext {
+        prompt: Some(prompt),
+        session_id: Some(session_id),
     })
 }
 

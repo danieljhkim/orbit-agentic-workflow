@@ -56,7 +56,7 @@ pub(super) fn task_context_for_agent_input(
     )))
 }
 
-fn singular_task_id_from_input(input: &Value) -> Option<&str> {
+pub(super) fn singular_task_id_from_input(input: &Value) -> Option<&str> {
     fn non_empty(value: &str) -> Option<&str> {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then_some(trimmed)
@@ -105,6 +105,7 @@ fn agent_task_context_json(task: &Task, input: &Value, fallback_repo_root: &Path
         "acceptance_criteria": task.acceptance_criteria.clone(),
         "plan": task.plan.clone(),
         "context_files": kept_context_files,
+        "tags": task.tags.clone(),
         "external_refs": task.external_refs.clone(),
         "workspace_path": workspace_path,
         "repo_root": repo_root,
