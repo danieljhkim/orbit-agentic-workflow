@@ -8,12 +8,12 @@ spec:
   args:
     - --approval-mode
     - yolo
-    - --sandbox
     - --allowed-mcp-server-names
     - orbit
     - -o
     - json
   stdout_format: envelope
+  sandbox: macos-sandbox-exec
   models:
     strong: gemini-3.1-pro
     weak: gemini-3-flash

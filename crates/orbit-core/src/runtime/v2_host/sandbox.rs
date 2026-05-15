@@ -177,6 +177,9 @@ fn append_orbit_child_runtime_write_roots(
         format!("{global}/state/logs/**"),
         format!("{global}/orbit.db*"),
         format!("{global}/tasks/**"),
+        format!("{workspace}/tasks/**"),
+        format!("{workspace}/state/audit/**"),
+        format!("{workspace}/state/logs/**"),
         format!("{workspace}/state/semantic.db*"),
     ] {
         append_unique_modify_root(resolved, root);
@@ -414,6 +417,9 @@ mod tests {
             format!("{global}/state/logs/**"),
             format!("{global}/orbit.db*"),
             format!("{global}/tasks/**"),
+            format!("{workspace_orbit}/tasks/**"),
+            format!("{workspace_orbit}/state/audit/**"),
+            format!("{workspace_orbit}/state/logs/**"),
             format!("{workspace_orbit}/state/semantic.db*"),
         ];
         for root in expected {
