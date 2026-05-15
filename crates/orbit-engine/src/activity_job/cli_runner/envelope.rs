@@ -113,6 +113,7 @@ mod tests {
 
     use super::super::tests::test_support::{TestHost, test_agent_loop_spec};
     use super::*;
+    use orbit_common::types::TokenUsage;
 
     #[test]
     fn user_prompt_from_object_input_without_prompt_serializes_full_input() {
@@ -190,5 +191,53 @@ mod tests {
             Some("T3")
         );
         assert_eq!(task_id_from_input(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn parse_cli_invocation_trace_extracts_gemini_cli_stats_tokens() {
+        let stdout = serde_json::json!({
+            "result": {
+                "schemaVersion": 1,
+                "status": "success",
+                "result": {}
+            },
+            "stats": {
+                "models": {
+                    "gemini-3.1-pro": {
+                        "tokens": {
+                            "input": 12,
+                            "cached": 3,
+                            "candidates": 4,
+                            "total": 19
+                        },
+                        "roles": {
+                            "user": {
+                                "tokens": {
+                                    "input": 12,
+                                    "cached": 3
+                                }
+                            },
+                            "model": {
+                                "tokens": {
+                                    "candidates": 4
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .to_string();
+
+        assert_eq!(
+            parse_cli_invocation_trace(stdout.as_bytes(), b"", Some(0), 99, true)
+                .map(|trace| trace.usage),
+            Some(TokenUsage {
+                input: 12,
+                cache_read: 3,
+                cache_create: 0,
+                output: 4,
+            })
+        );
     }
 }
