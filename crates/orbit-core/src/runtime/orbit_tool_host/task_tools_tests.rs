@@ -133,6 +133,61 @@ fn duel_plan_add_persists_gemini_planner_artifact() {
 }
 
 #[test]
+fn duel_plan_winner_persists_gemini_arbiter_artifact() {
+    // ORB-00037: extends ORB-00027 coverage from planner `plan.add` to arbiter
+    // `plan.winner`. Both delegate to the same TaskUpdate artifact contract;
+    // this test guards against the arbiter path silently regressing when the
+    // planner path is refactored.
+    let (_root, runtime, repo_root) = test_runtime();
+    let task = create_task(
+        &runtime,
+        &repo_root,
+        "Gemini arbiter winner",
+        "Exercise the arbiter winner.json write path used by direct-agent duels.",
+        TaskStatus::InProgress,
+        &[],
+    );
+
+    runtime
+        .execute_tool_command(
+            "orbit.duel.plan.winner",
+            json!({
+                "id": task.id.clone(),
+                "winner_agent_cli": "claude",
+                "winner_model": "claude-opus-4-7",
+                "arbiter_rationale": "Tighter scope and clearer staged plan.",
+            }),
+            Some("gemini".to_string()),
+            Some("gemini-3.1-pro".to_string()),
+        )
+        .expect("gemini duel plan winner succeeds");
+
+    let artifacts = runtime
+        .get_task_artifacts(&task.id)
+        .expect("read task artifacts");
+    let artifact = artifacts
+        .iter()
+        .find(|artifact| artifact.path == "planning-duel/winner.json")
+        .expect("arbiter winner.json artifact");
+    let raw = artifact
+        .text_content()
+        .expect("winner.json must be text content");
+    let payload: Value = serde_json::from_str(raw).expect("winner.json is valid JSON");
+    assert_eq!(payload["winner_agent_cli"], "claude");
+    assert_eq!(payload["winner_model"], "claude-opus-4-7");
+    assert_eq!(payload["arbiter_agent_cli"], "gemini");
+    assert_eq!(payload["arbiter_model"], "gemini-3.1-pro");
+    assert_eq!(
+        payload["artifact_path"],
+        "planning-duel/claude-claude-opus-4-7.md"
+    );
+    assert_eq!(
+        payload["arbiter_rationale"],
+        "Tighter scope and clearer staged plan."
+    );
+}
+
+#[test]
 fn task_add_tool_rejects_dropped_task_types_and_friction_status() {
     let (_root, runtime, _repo_root) = test_runtime();
 
