@@ -76,7 +76,13 @@ pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
     } else {
         Some(type_strs.as_slice())
     };
-    let search_limit = if use_default_ranking {
+    let use_exact_symbol_definition_ranking = should_rank_exact_symbol_definitions(
+        &input.query,
+        input.node_type.as_deref(),
+        input.kind_filter.as_deref(),
+        has_source_regex,
+    );
+    let search_limit = if use_default_ranking || use_exact_symbol_definition_ranking {
         default_ranking_search_limit(input.limit)
     } else {
         input.limit
@@ -106,7 +112,7 @@ pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
 
     if use_default_ranking {
         let nodes = hits.into_iter().map(|hit| hit.node).collect();
-        let ranked = rank_default_search_results(nodes, input.include_non_code);
+        let ranked = rank_default_search_results(nodes, input.include_non_code, &input.query);
         let total = ranked.len();
         let hits = ranked
             .into_iter()
@@ -119,6 +125,14 @@ pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
             used_index: false,
         })
     } else {
+        let hits = if use_exact_symbol_definition_ranking {
+            rank_exact_symbol_definition_hits(hits, &input.query)
+                .into_iter()
+                .take(input.limit)
+                .collect()
+        } else {
+            hits
+        };
         Ok(SearchResult {
             total: service_total,
             hits: hits
@@ -136,7 +150,7 @@ pub fn default_search(input: DefaultSearchInput<'_>) -> Result<SearchResult, Kno
     let (_total, hits) =
         svc.search_hits_with_total(input.query, None, None, None, None, search_limit);
     let nodes = hits.into_iter().map(|hit| hit.node).collect();
-    let ranked = rank_default_search_results(nodes, input.include_non_code);
+    let ranked = rank_default_search_results(nodes, input.include_non_code, input.query);
     let total = ranked.len();
     let hits = ranked
         .into_iter()
@@ -170,7 +184,7 @@ fn try_default_search_via_sql_index(
             ))
         })?;
 
-    let ranked = rank_sql_default_search_results(rows, include_non_code);
+    let ranked = rank_sql_default_search_results(rows, include_non_code, query);
     let total = ranked.len();
     let hits = ranked
         .into_iter()
@@ -233,8 +247,10 @@ fn search_item_for_row(row: GraphIndexSearchRow) -> SearchResultItem {
 fn rank_sql_default_search_results(
     rows: Vec<GraphIndexSearchRow>,
     include_non_code: bool,
+    query: &str,
 ) -> Vec<GraphIndexSearchRow> {
-    let mut ranked: Vec<(usize, usize, GraphIndexSearchRow)> = rows
+    let query = query.trim();
+    let mut ranked: Vec<(usize, usize, usize, GraphIndexSearchRow)> = rows
         .into_iter()
         .enumerate()
         .filter_map(|(index, row)| {
@@ -242,12 +258,22 @@ fn rank_sql_default_search_results(
             if !include_non_code && rank == 2 {
                 return None;
             }
-            Some((rank, index, row))
+            Some((
+                exact_symbol_definition_rank_for_row(&row, query),
+                rank,
+                index,
+                row,
+            ))
         })
         .collect();
 
-    ranked.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-    ranked.into_iter().map(|(_, _, row)| row).collect()
+    ranked.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    ranked.into_iter().map(|(_, _, _, row)| row).collect()
 }
 
 fn default_search_rank_for_row(row: &GraphIndexSearchRow) -> usize {
@@ -300,11 +326,46 @@ fn default_ranking_search_limit(limit: usize) -> usize {
         .min(DEFAULT_RANKING_HARD_CAP)
 }
 
+fn should_rank_exact_symbol_definitions(
+    query: &str,
+    node_type: Option<&str>,
+    kind_filter: Option<&str>,
+    has_source_regex: bool,
+) -> bool {
+    !has_source_regex
+        && kind_filter.is_none()
+        && !query.trim().is_empty()
+        && node_type.is_none_or(|node_type| node_type == "symbol")
+}
+
+fn rank_exact_symbol_definition_hits<'a>(
+    hits: Vec<SearchHit<'a>>,
+    query: &str,
+) -> Vec<SearchHit<'a>> {
+    let query = query.trim();
+    let mut ranked: Vec<(usize, usize, SearchHit<'a>)> = hits
+        .into_iter()
+        .enumerate()
+        .map(|(index, hit)| {
+            (
+                exact_symbol_definition_rank_for_node(hit.node, query),
+                index,
+                hit,
+            )
+        })
+        .collect();
+
+    ranked.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    ranked.into_iter().map(|(_, _, hit)| hit).collect()
+}
+
 fn rank_default_search_results<'a>(
     nodes: Vec<GraphNodeRef<'a>>,
     include_non_code: bool,
+    query: &str,
 ) -> Vec<GraphNodeRef<'a>> {
-    let mut ranked: Vec<(usize, usize, GraphNodeRef<'a>)> = nodes
+    let query = query.trim();
+    let mut ranked: Vec<(usize, usize, usize, GraphNodeRef<'a>)> = nodes
         .into_iter()
         .enumerate()
         .filter_map(|(index, node)| {
@@ -312,12 +373,22 @@ fn rank_default_search_results<'a>(
             if !include_non_code && rank == 2 {
                 return None;
             }
-            Some((rank, index, node))
+            Some((
+                exact_symbol_definition_rank_for_node(node, query),
+                rank,
+                index,
+                node,
+            ))
         })
         .collect();
 
-    ranked.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-    ranked.into_iter().map(|(_, _, node)| node).collect()
+    ranked.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    ranked.into_iter().map(|(_, _, _, node)| node).collect()
 }
 
 fn default_search_rank(node: GraphNodeRef<'_>) -> usize {
@@ -340,11 +411,40 @@ fn is_code_symbol_kind(kind: &str) -> bool {
             | "method"
             | "struct"
             | "trait"
+            | "enum"
+            | "type"
+            | "type_alias"
             | "impl"
             | "class"
             | "interface"
             | "field"
             | "module"
+    )
+}
+
+fn exact_symbol_definition_rank_for_node(node: GraphNodeRef<'_>, query: &str) -> usize {
+    match node {
+        GraphNodeRef::Leaf(leaf)
+            if leaf.base.name == query
+                && is_preferred_exact_definition_kind(leaf.kind.to_string().as_str()) =>
+        {
+            0
+        }
+        _ => 1,
+    }
+}
+
+fn exact_symbol_definition_rank_for_row(row: &GraphIndexSearchRow, query: &str) -> usize {
+    match (row.node_type.as_str(), row.kind.as_deref()) {
+        ("leaf", Some(kind)) if row.name == query && is_preferred_exact_definition_kind(kind) => 0,
+        _ => 1,
+    }
+}
+
+fn is_preferred_exact_definition_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "trait" | "struct" | "enum" | "type" | "type_alias" | "function" | "module"
     )
 }
 
@@ -411,6 +511,125 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn exact_trait_definition_outranks_impl_methods_for_same_trait_name() {
+        let leaves = vec![
+            leaf_node_with_kind(
+                "symbol:src/runtime.rs#<OrbitRuntime as V2RuntimeHost>::start:method",
+                "start",
+                "src/runtime.rs#<OrbitRuntime as V2RuntimeHost>::start",
+                Some("file:src/runtime.rs"),
+                1,
+                LeafKind::Method,
+            ),
+            leaf_node_with_kind(
+                "symbol:src/runtime.rs#<OrbitRuntime as V2RuntimeHost>::stop:method",
+                "stop",
+                "src/runtime.rs#<OrbitRuntime as V2RuntimeHost>::stop",
+                Some("file:src/runtime.rs"),
+                2,
+                LeafKind::Method,
+            ),
+            leaf_node_with_kind(
+                "symbol:src/dispatcher.rs#V2RuntimeHost:trait",
+                "V2RuntimeHost",
+                "src/dispatcher.rs#V2RuntimeHost",
+                Some("file:src/dispatcher.rs"),
+                3,
+                LeafKind::Trait,
+            ),
+        ];
+
+        let ranked =
+            rank_exact_symbol_definition_hits(search_hits_for_leaves(&leaves), "V2RuntimeHost");
+
+        assert_eq!(
+            hit_ids(&ranked),
+            vec![
+                "symbol:src/dispatcher.rs#V2RuntimeHost:trait",
+                "symbol:src/runtime.rs#<OrbitRuntime as V2RuntimeHost>::start:method",
+                "symbol:src/runtime.rs#<OrbitRuntime as V2RuntimeHost>::stop:method",
+            ]
+        );
+    }
+
+    #[test]
+    fn exact_struct_definition_outranks_methods_on_that_struct() {
+        let leaves = vec![
+            leaf_node_with_kind(
+                "symbol:src/widget.rs#Widget::new:method",
+                "new",
+                "src/widget.rs#Widget::new",
+                Some("file:src/widget.rs"),
+                1,
+                LeafKind::Method,
+            ),
+            leaf_node_with_kind(
+                "symbol:src/widget.rs#Widget::render:method",
+                "render",
+                "src/widget.rs#Widget::render",
+                Some("file:src/widget.rs"),
+                2,
+                LeafKind::Method,
+            ),
+            leaf_node_with_kind(
+                "symbol:src/widget.rs#Widget:struct",
+                "Widget",
+                "src/widget.rs#Widget",
+                Some("file:src/widget.rs"),
+                3,
+                LeafKind::Struct,
+            ),
+        ];
+
+        let ranked = rank_exact_symbol_definition_hits(search_hits_for_leaves(&leaves), "Widget");
+
+        assert_eq!(
+            hit_ids(&ranked),
+            vec![
+                "symbol:src/widget.rs#Widget:struct",
+                "symbol:src/widget.rs#Widget::new:method",
+                "symbol:src/widget.rs#Widget::render:method",
+            ]
+        );
+    }
+
+    #[test]
+    fn substring_only_symbol_matches_retain_scan_order() {
+        let leaves = vec![
+            leaf_node_with_kind(
+                "symbol:src/widget.rs#Widget::new:method",
+                "new",
+                "src/widget.rs#Widget::new",
+                Some("file:src/widget.rs"),
+                1,
+                LeafKind::Method,
+            ),
+            leaf_node_with_kind(
+                "symbol:src/adapter.rs#<Adapter as Widget>::run:method",
+                "run",
+                "src/adapter.rs#<Adapter as Widget>::run",
+                Some("file:src/adapter.rs"),
+                2,
+                LeafKind::Method,
+            ),
+            leaf_node_with_kind(
+                "symbol:src/adapter.rs#impl Widget for Adapter:impl",
+                "impl Widget for Adapter",
+                "src/adapter.rs#impl Widget for Adapter",
+                Some("file:src/adapter.rs"),
+                3,
+                LeafKind::Impl,
+            ),
+        ];
+        let hits = search_hits_for_leaves(&leaves);
+        let original_ids = hit_ids(&hits);
+
+        let ranked = rank_exact_symbol_definition_hits(hits, "Widget");
+
+        assert_eq!(hit_ids(&ranked), original_ids);
     }
 
     #[test]
@@ -502,7 +721,7 @@ mod tests {
         let rows = reader
             .search_substring(&query.trim().to_lowercase(), scan_cap)
             .expect("sql substring search");
-        let ranked = rank_sql_default_search_results(rows, include_non_code);
+        let ranked = rank_sql_default_search_results(rows, include_non_code, query);
         ranked
             .into_iter()
             .take(limit)
@@ -855,6 +1074,20 @@ mod tests {
         }
     }
 
+    fn search_hits_for_leaves(leaves: &[LeafNode]) -> Vec<SearchHit<'_>> {
+        leaves
+            .iter()
+            .map(|leaf| SearchHit {
+                node: GraphNodeRef::Leaf(leaf),
+                matched_lines: Vec::new(),
+            })
+            .collect()
+    }
+
+    fn hit_ids(hits: &[SearchHit<'_>]) -> Vec<String> {
+        hits.iter().map(|hit| hit.node.id().to_string()).collect()
+    }
+
     fn leaf_node(
         id: &str,
         name: &str,
@@ -862,9 +1095,20 @@ mod tests {
         parent_id: Option<&str>,
         line: u32,
     ) -> LeafNode {
+        leaf_node_with_kind(id, name, location, parent_id, line, LeafKind::Function)
+    }
+
+    fn leaf_node_with_kind(
+        id: &str,
+        name: &str,
+        location: &str,
+        parent_id: Option<&str>,
+        line: u32,
+        kind: LeafKind,
+    ) -> LeafNode {
         LeafNode {
             base: base_node(id, name, location, "rust", parent_id),
-            kind: LeafKind::Function,
+            kind,
             source: String::new(),
             source_blob_hash: None,
             source_hash: None,
