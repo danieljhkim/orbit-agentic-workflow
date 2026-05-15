@@ -11,9 +11,19 @@ pub enum KnowledgeEntryKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnresolvedSelectorReason {
+    OutsideIndexedRoots,
+    NotFound,
+    StaleSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct KnowledgePackEntry {
     pub selector: String,
     pub kind: KnowledgeEntryKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<UnresolvedSelectorReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

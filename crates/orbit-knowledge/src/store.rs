@@ -27,7 +27,7 @@ pub use task_state::{
 };
 pub use types::{
     KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry, KnowledgePackTimeout, LeafData,
-    SymbolSummary,
+    SymbolSummary, UnresolvedSelectorReason,
 };
 
 use graph_io::{GraphIndexFile, ManifestFile};

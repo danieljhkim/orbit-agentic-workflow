@@ -69,7 +69,12 @@ impl TaskGraphService {
                 read_target.fallback.as_ref(),
                 read_target.default.as_ref(),
             )?;
-            store.pack_with_timeout_options(selectors, selector_timeout_ms, read_options)
+            store.pack_with_timeout_options(
+                selectors,
+                selector_timeout_ms,
+                read_options,
+                workspace_root,
+            )
         };
 
         let pack = match pack_result() {
