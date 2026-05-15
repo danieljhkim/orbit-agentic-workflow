@@ -13,11 +13,11 @@ use orbit_common::types::{
 use crate::backend::JobRunStepParams;
 use crate::file::layout::validate_path_stem;
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::process_identity::process_start_identity_token;
 
 use super::{
     JobFileStore,
     doc::{JobRunFileDocument, JobRunStepFileDocument},
-    resource::process_start_time_token,
 };
 
 impl JobFileStore {
@@ -66,7 +66,7 @@ impl JobFileStore {
             .map_err(OrbitError::JobRunStateTransition)?;
         run.started_at = Some(started_at);
         run.pid = Some(pid);
-        run.pid_start_time = process_start_time_token(pid);
+        run.pid_start_time = process_start_identity_token(pid);
         self.write_run(&job_id, &run)?;
         Ok(true)
     }
@@ -91,7 +91,7 @@ impl JobFileStore {
         }
         run.started_at = run.started_at.or(Some(started_at));
         run.pid = Some(pid);
-        run.pid_start_time = process_start_time_token(pid);
+        run.pid_start_time = process_start_identity_token(pid);
         self.write_run(&job_id, &run)?;
         Ok(true)
     }

@@ -2,13 +2,15 @@ use chrono::{DateTime, Utc};
 use orbit_common::types::{
     JobRun, JobRunState, NotFoundKind, OrbitError, OrbitEvent, PipelineState,
 };
+#[cfg(unix)]
+use orbit_common::utility::process_identity::{
+    STABLE_TOKEN_PREFIX, legacy_lstart_matches, process_start_identity_token,
+};
 use orbit_store::{JobRunQuery, TaskReservationReleaseReason};
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-#[cfg(unix)]
-use std::process::Command;
 #[cfg(unix)]
 use std::thread;
 #[cfg(unix)]
@@ -416,7 +418,7 @@ fn signal_run_owner_process(run: &JobRun) -> Result<String, OrbitError> {
     if pid == std::process::id() {
         return Ok("self_not_signalled".to_string());
     }
-    if !run_owner_identity_matches(run) {
+    if !matches!(classify_run_owner(run), OwnerIdentity::Verified) {
         return Ok("owner_identity_mismatch".to_string());
     }
 
@@ -551,7 +553,10 @@ fn running_run_owner_is_stale(run: &JobRun) -> bool {
     if run.state != JobRunState::Running {
         return false;
     }
-    !run_owner_identity_matches(run)
+    matches!(
+        classify_run_owner(run),
+        OwnerIdentity::Mismatch | OwnerIdentity::Missing
+    )
 }
 
 #[cfg(not(unix))]
@@ -559,36 +564,50 @@ fn running_run_owner_is_stale(_run: &JobRun) -> bool {
     false
 }
 
+/// Outcome of comparing a persisted owner identity against the live process.
+///
+/// `Verified` and `LegacyLiveUnverified` both indicate the live worker is the
+/// likely owner; only `Mismatch` and `Missing` warrant finalizing the run.
+/// `LegacyLiveUnverified` exists so a pre-fix run whose persisted unversioned
+/// token cannot be re-derived under either environment is not falsely
+/// finalized while the PID itself is still alive. Strict cancellation
+/// signaling still refuses anything other than `Verified` to protect against
+/// reused PIDs.
 #[cfg(unix)]
-fn run_owner_identity_matches(run: &JobRun) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OwnerIdentity {
+    Verified,
+    Mismatch,
+    LegacyLiveUnverified,
+    Missing,
+}
+
+#[cfg(unix)]
+fn classify_run_owner(run: &JobRun) -> OwnerIdentity {
     let Some(pid) = run.pid else {
-        return false;
+        return OwnerIdentity::Missing;
     };
-    let Some(expected) = run.pid_start_time.as_deref() else {
-        return process_is_alive(pid);
+    let Some(persisted) = run.pid_start_time.as_deref() else {
+        return if process_is_alive(pid) {
+            OwnerIdentity::LegacyLiveUnverified
+        } else {
+            OwnerIdentity::Missing
+        };
     };
-    match process_start_time_token(pid) {
-        Some(actual) => actual == expected,
-        None => false,
+    if persisted.starts_with(STABLE_TOKEN_PREFIX) {
+        return match process_start_identity_token(pid) {
+            Some(current) if current == persisted => OwnerIdentity::Verified,
+            Some(_) => OwnerIdentity::Mismatch,
+            None => OwnerIdentity::Missing,
+        };
     }
-}
-
-#[cfg(not(unix))]
-fn run_owner_identity_matches(_run: &JobRun) -> bool {
-    false
-}
-
-#[cfg(unix)]
-fn process_start_time_token(pid: u32) -> Option<String> {
-    let output = Command::new("ps")
-        .args(["-o", "lstart=", "-p", &pid.to_string()])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+    if legacy_lstart_matches(pid, persisted) {
+        OwnerIdentity::Verified
+    } else if process_is_alive(pid) {
+        OwnerIdentity::LegacyLiveUnverified
+    } else {
+        OwnerIdentity::Missing
     }
-    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!token.is_empty()).then_some(token)
 }
 
 #[cfg(unix)]
@@ -639,7 +658,7 @@ mod tests {
     use super::*;
     use chrono::Duration;
     #[cfg(unix)]
-    use std::process::Stdio;
+    use std::process::{Command, Stdio};
     #[cfg(unix)]
     use std::time::{Duration as StdDuration, Instant as StdInstant};
     use tempfile::tempdir;
@@ -865,12 +884,18 @@ mod tests {
             .join(&run.job_id)
             .join(&run.run_id)
             .join("jrun.yaml");
+        // Versioned token guarantees we exercise the strict `Mismatch`
+        // classification path; legacy unversioned tokens may flow through the
+        // softer LegacyLiveUnverified branch but must still produce
+        // owner_identity_mismatch from `signal_run_owner_process`.
+        let mismatched_versioned =
+            format!("{STABLE_TOKEN_PREFIX}definitely-not-the-sentinel-start-token");
         let raw = std::fs::read_to_string(&path).expect("read run yaml");
         let edited = if raw.contains("pid_start_time:") {
             raw.lines()
                 .map(|line| {
                     if line.trim_start().starts_with("pid_start_time:") {
-                        "  pid_start_time: definitely-not-the-sentinel-start-token".to_string()
+                        format!("  pid_start_time: {mismatched_versioned}")
                     } else {
                         line.to_string()
                     }
@@ -881,7 +906,7 @@ mod tests {
             raw.lines()
                 .map(|line| {
                     if line.trim_start().starts_with("pid:") {
-                        format!("{line}\n  pid_start_time: definitely-not-the-sentinel-start-token")
+                        format!("{line}\n  pid_start_time: {mismatched_versioned}")
                     } else {
                         line.to_string()
                     }
@@ -997,7 +1022,7 @@ mod tests {
         let (_root, runtime) = test_runtime();
         let run = insert_pending_run(&runtime, "qa_live");
         let pid = std::process::id();
-        if process_start_time_token(pid).is_none() {
+        if process_start_identity_token(pid).is_none() {
             return;
         }
         runtime
@@ -1086,5 +1111,220 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate.run_id == run.run_id)
         );
+    }
+
+    // ---- Timezone regression coverage (ORB-00036) ----
+    //
+    // The bug: persisted `pid_start_time` was derived from ambient `ps -o
+    // lstart=` output, so a run marked Running under one TZ would re-derive a
+    // different token under another, causing read-path reconciliation to
+    // finalize a live worker as Failed. These tests serialize TZ mutation with
+    // `TZ_TEST_LOCK` and assert that switching the caller's TZ between
+    // mark-running and the read paths (`show_job_run`, `list_job_runs`,
+    // `wait_pipeline_runs`) does not produce false stale finalizations.
+    #[cfg(unix)]
+    static TZ_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(unix)]
+    struct TzGuard {
+        prior: Option<String>,
+    }
+
+    #[cfg(unix)]
+    impl TzGuard {
+        fn set(value: &str) -> Self {
+            let prior = std::env::var("TZ").ok();
+            // SAFETY: All TZ-mutating tests in this module take TZ_TEST_LOCK
+            // before constructing a TzGuard, serializing env mutation across
+            // threads; the guard restores the previous value on drop.
+            unsafe { std::env::set_var("TZ", value) };
+            Self { prior }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for TzGuard {
+        fn drop(&mut self) {
+            // SAFETY: see TzGuard::set.
+            unsafe {
+                match &self.prior {
+                    Some(value) => std::env::set_var("TZ", value),
+                    None => std::env::remove_var("TZ"),
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn spawn_sentinel() -> std::process::Child {
+        Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sentinel")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_owner_survives_tz_change_across_read_paths() {
+        let _tz_lock = TZ_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_tz_change");
+        let mut sentinel = spawn_sentinel();
+        let sentinel_pid = sentinel.id();
+
+        // Write the run under a non-UTC ambient TZ. The fix forces the child
+        // ps invocation to TZ=UTC regardless, so the persisted token must
+        // carry the versioned prefix and remain identical across caller
+        // environments.
+        let persisted_token = {
+            let _tz = TzGuard::set("America/Los_Angeles");
+            runtime
+                .stores()
+                .jobs()
+                .mark_run_running(&run.run_id, Utc::now() - Duration::seconds(1), sentinel_pid)
+                .expect("mark running under LA tz");
+            runtime
+                .show_job_run(&run.run_id)
+                .expect("show fresh run")
+                .pid_start_time
+                .expect("token must be persisted")
+        };
+        assert!(
+            persisted_token.starts_with(STABLE_TOKEN_PREFIX),
+            "persisted identity token must be versioned: {persisted_token}"
+        );
+
+        // Switch TZ before driving the read paths. Pre-fix this is exactly
+        // when reconciliation falsely finalized the still-running worker.
+        let _tz = TzGuard::set("UTC");
+
+        let shown = runtime.show_job_run(&run.run_id).expect("show under UTC");
+        assert_eq!(shown.state, JobRunState::Running);
+        assert!(shown.finished_at.is_none());
+        assert!(shown.duration_ms.is_none());
+        assert!(
+            !shown
+                .steps
+                .iter()
+                .any(|step| step.error_message.as_deref().is_some_and(|message| {
+                    message.contains("recorded worker process is no longer alive")
+                })),
+            "live worker must not have a stale-failure step"
+        );
+
+        let listed = runtime
+            .list_job_runs(JobRunListParams {
+                state: Some(JobRunState::Running),
+                ..JobRunListParams::default()
+            })
+            .expect("list running under UTC");
+        assert!(
+            listed
+                .iter()
+                .any(|candidate| candidate.run_id == run.run_id),
+            "live worker must still appear in the Running list after a TZ change"
+        );
+
+        let waited = runtime
+            .wait_pipeline_runs(
+                std::slice::from_ref(&run.run_id),
+                0,
+                1,
+                Some("tz_change_test"),
+            )
+            .expect("wait under UTC");
+        assert_eq!(waited.results.len(), 1);
+        assert_eq!(waited.results[0].run_id, run.run_id);
+        assert_ne!(
+            waited.results[0].status, "failed",
+            "wait must not report failed for a live worker after a TZ change"
+        );
+
+        let final_state = runtime.show_job_run(&run.run_id).expect("final show").state;
+        assert_eq!(final_state, JobRunState::Running);
+
+        let _ = sentinel.kill();
+        let _ = sentinel.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn versioned_token_is_stable_across_tz_change() {
+        let _tz_lock = TZ_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut sentinel = spawn_sentinel();
+        let pid = sentinel.id();
+
+        let utc_token = {
+            let _tz = TzGuard::set("UTC");
+            process_start_identity_token(pid).expect("token under UTC")
+        };
+        let la_token = {
+            let _tz = TzGuard::set("America/Los_Angeles");
+            process_start_identity_token(pid).expect("token under LA")
+        };
+
+        assert!(utc_token.starts_with(STABLE_TOKEN_PREFIX));
+        assert_eq!(
+            utc_token, la_token,
+            "versioned identity token must not depend on the caller's TZ"
+        );
+
+        let _ = sentinel.kill();
+        let _ = sentinel.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_unversioned_token_does_not_falsely_finalize_live_run() {
+        // A pre-fix run with a non-versioned `pid_start_time` whose value
+        // cannot be matched under either environment should classify as
+        // LegacyLiveUnverified, keeping the run Running instead of finalizing
+        // it as Failed.
+        let (_root, runtime) = test_runtime();
+        let run = insert_pending_run(&runtime, "qa_legacy_unverified");
+        let mut sentinel = spawn_sentinel();
+        let sentinel_pid = sentinel.id();
+        runtime
+            .stores()
+            .jobs()
+            .mark_run_running(&run.run_id, Utc::now() - Duration::seconds(1), sentinel_pid)
+            .expect("mark running");
+
+        // Rewrite the stored token to look like a pre-fix unversioned value
+        // that does not match the live process under either env.
+        let yaml_path = runtime
+            .data_root()
+            .join("state")
+            .join("job-runs")
+            .join(&run.job_id)
+            .join(&run.run_id)
+            .join("jrun.yaml");
+        let raw = std::fs::read_to_string(&yaml_path).expect("read run yaml");
+        let edited = raw
+            .lines()
+            .map(|line| {
+                if line.trim_start().starts_with("pid_start_time:") {
+                    "  pid_start_time: legacy-token-that-cannot-be-rederived".to_string()
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&yaml_path, format!("{edited}\n")).expect("write legacy token");
+
+        let shown = runtime.show_job_run(&run.run_id).expect("show legacy run");
+        assert_eq!(shown.state, JobRunState::Running);
+        assert!(shown.finished_at.is_none());
+
+        let _ = sentinel.kill();
+        let _ = sentinel.wait();
     }
 }
