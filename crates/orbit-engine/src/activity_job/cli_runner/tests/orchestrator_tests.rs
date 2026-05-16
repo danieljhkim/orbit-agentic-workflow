@@ -11,7 +11,9 @@ use tempfile::tempdir;
 use super::super::super::audit_writer::V2AuditWriter;
 use super::super::super::dispatcher::DispatchError;
 use super::super::run_cli_backend;
-use super::test_support::{RecordingSink, TestHost, test_agent_loop_spec, write_executable};
+use super::test_support::{
+    RecordingSink, TestHost, test_agent_loop_spec, test_agent_loop_spec_for, write_executable,
+};
 
 #[test]
 fn run_cli_backend_finished_audit_event_keeps_stdout_stderr_blob_refs() {
@@ -365,6 +367,83 @@ fn run_cli_backend_passes_provider_config_to_codex_runtime_args() {
             "--add-dir".to_string(),
             "/tmp/orbit-b".to_string(),
         ]
+    );
+}
+
+#[test]
+fn run_cli_backend_passes_model_to_grok_and_captures_well_formed_stdout() {
+    let temp = tempdir().expect("tempdir");
+    let script = temp.path().join("grok");
+    let grok_stdout = serde_json::json!({
+        "text": "{\"schemaVersion\":1,\"status\":\"success\",\"result\":{\"pong\":\"grok-smoke\"},\"error\":null}",
+        "stopReason": "EndTurn"
+    })
+    .to_string();
+    write_executable(
+        &script,
+        &format!("#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{grok_stdout}'\n"),
+    );
+
+    let sink = Arc::new(RecordingSink::default());
+    let sink_for_writer: Arc<dyn AuditSink> = sink;
+    let audit = Arc::new(V2AuditWriter::new(
+        "job-grok-model",
+        "grok:grok-build",
+        sink_for_writer,
+    ));
+    let host = TestHost {
+        command: script.display().to_string(),
+        executor_args: vec![
+            "--output-format".to_string(),
+            "json".to_string(),
+            "--prompt-file".to_string(),
+            "/dev/stdin".to_string(),
+        ],
+        provider_config: HashMap::new(),
+        sandbox: None,
+        task_context: None,
+    };
+    let mut spec = test_agent_loop_spec_for("grok", Duration::from_secs(5));
+    spec.model = Some("grok-build".to_string());
+
+    let outcome = run_cli_backend(
+        &host,
+        &spec,
+        "job-grok-model",
+        audit.clone(),
+        &serde_json::json!({"prompt": "hi"}),
+        None,
+    )
+    .expect("run succeeds");
+
+    assert!(outcome.success);
+    assert!(outcome.invocation.is_some());
+    assert_eq!(outcome.output["provider"], "grok");
+    assert_eq!(outcome.output["stdout_blob_ref"].as_str(), Some("blob-2"));
+    assert!(
+        outcome
+            .output
+            .get("stdout_text")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|text| text.contains("grok-smoke")),
+        "stdout preview should include the grok response"
+    );
+
+    let events = audit.events_snapshot().expect("events snapshot");
+    let argv = events
+        .iter()
+        .find_map(|event| match &event.kind {
+            V2AuditEventKind::CliInvocationStarted { argv_redacted, .. } => Some(argv_redacted),
+            _ => None,
+        })
+        .expect("cli.invocation.started event");
+    let model_idx = argv
+        .iter()
+        .position(|arg| arg == "--model")
+        .expect("grok argv should include --model");
+    assert_eq!(
+        argv.get(model_idx + 1).map(String::as_str),
+        Some("grok-build")
     );
 }
 

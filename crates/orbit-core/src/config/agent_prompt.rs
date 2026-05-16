@@ -269,6 +269,9 @@ fn agent_options(role: &str, detected: &DetectedAgents) -> Vec<AgentOption> {
     if detected.gemini_cli {
         options.push(agent_option("Gemini CLI", "gemini", "cli"));
     }
+    if detected.grok_cli {
+        options.push(agent_option("Grok CLI", "grok", "cli"));
+    }
     if detected.ollama_cli {
         options.push(agent_option("Ollama CLI", "ollama", "cli"));
     }
@@ -316,6 +319,8 @@ fn agent_label(provider: &str, backend: &str) -> &'static str {
         ("codex", "http") => "Codex API",
         ("gemini", "cli") => "Gemini CLI",
         ("gemini", "http") => "Gemini API",
+        ("grok", "cli") => "Grok CLI",
+        ("grok", "http") => "Grok API",
         ("ollama", "cli") => "Ollama CLI",
         ("ollama", "http") => "Ollama API",
         _ => "Custom agent",
@@ -347,6 +352,7 @@ fn detection_lines(detected: &DetectedAgents) -> String {
         ("Claude CLI", detected.claude_cli),
         ("Codex CLI", detected.codex_cli),
         ("Gemini CLI", detected.gemini_cli),
+        ("Grok CLI", detected.grok_cli),
         ("Ollama CLI", detected.ollama_cli),
         ("ANTHROPIC_API_KEY", detected.anthropic_api_key),
         ("OPENAI_API_KEY", detected.openai_api_key),

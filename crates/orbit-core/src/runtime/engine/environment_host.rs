@@ -110,6 +110,7 @@ fn parse_provider(raw: &str) -> Option<Provider> {
         "claude" => Some(Provider::Claude),
         "codex" => Some(Provider::Codex),
         "gemini" => Some(Provider::Gemini),
+        "grok" => Some(Provider::Grok),
         "ollama" => Some(Provider::Ollama),
         "openai_compat" | "openai-compat" => Some(Provider::OpenaiCompat),
         _ => None,
