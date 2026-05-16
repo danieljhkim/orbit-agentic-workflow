@@ -55,12 +55,14 @@ pub fn compile_macos_sandbox_profile(rules: &ResolvedFsProfile) -> Result<String
     let home = std::env::var_os("HOME");
     let codex_home = std::env::var_os("CODEX_HOME");
     let claude_config_dir = std::env::var_os("CLAUDE_CONFIG_DIR");
+    let grok_home = std::env::var_os("GROK_HOME");
     compile_macos_sandbox_profile_with_env(
         rules,
         SandboxCompileEnv {
             home: home.as_deref(),
             codex_home: codex_home.as_deref(),
             claude_config_dir: claude_config_dir.as_deref(),
+            grok_home: grok_home.as_deref(),
         },
     )
 }
@@ -73,6 +75,7 @@ struct SandboxCompileEnv<'a> {
     home: Option<&'a OsStr>,
     codex_home: Option<&'a OsStr>,
     claude_config_dir: Option<&'a OsStr>,
+    grok_home: Option<&'a OsStr>,
 }
 
 fn compile_macos_sandbox_profile_with_env(
@@ -83,6 +86,7 @@ fn compile_macos_sandbox_profile_with_env(
         home,
         codex_home,
         claude_config_dir,
+        grok_home,
     } = env;
     let mut out = String::new();
     out.push_str("(version 1)\n");
@@ -134,13 +138,14 @@ fn compile_macos_sandbox_profile_with_env(
     // compilation, and per-provider allowances do not widen attack surface,
     // so emit narrow allows for every supported provider's state dir
     // unconditionally.
-    for state_dir in provider_state_dirs(home, codex_home, claude_config_dir) {
+    for state_dir in provider_state_dirs(home, codex_home, claude_config_dir, grok_home) {
         out.push_str(&format!(
             "(allow file-write* (subpath \"{}\"))\n",
             sbpl_escape(&state_dir.display().to_string())
         ));
     }
     emit_claude_home_json_allows(home, claude_config_dir, &mut out);
+    emit_grok_state_file_allows(home, grok_home, &mut out);
 
     for rule in &rules.modify {
         if let Some(deny_path) = rule.strip_prefix('!') {
@@ -172,6 +177,7 @@ fn provider_state_dirs(
     home: Option<&OsStr>,
     codex_home: Option<&OsStr>,
     claude_config_dir: Option<&OsStr>,
+    grok_home: Option<&OsStr>,
 ) -> Vec<PathBuf> {
     let mut dirs = Vec::with_capacity(4);
     if let Some(dir) = codex_state_dir(home, codex_home) {
@@ -183,7 +189,7 @@ fn provider_state_dirs(
     if let Some(dir) = gemini_state_dir(home) {
         dirs.push(dir);
     }
-    if let Some(dir) = grok_state_dir(home) {
+    if let Some(dir) = grok_state_dir(home, grok_home) {
         dirs.push(dir);
     }
     dirs
@@ -222,10 +228,20 @@ fn gemini_state_dir(home: Option<&OsStr>) -> Option<PathBuf> {
     non_empty_env_path(home).map(|path| path.join(".gemini"))
 }
 
-/// Grok Build follows the common CLI convention and stores state under
-/// `$HOME/.grok`.
-fn grok_state_dir(home: Option<&OsStr>) -> Option<PathBuf> {
-    non_empty_env_path(home).map(|path| path.join(".grok"))
+/// Grok Build documents `GROK_HOME` as the override for its config/state
+/// directory; otherwise it writes under `$HOME/.grok`.
+fn grok_state_dir(home: Option<&OsStr>, grok_home: Option<&OsStr>) -> Option<PathBuf> {
+    non_empty_env_path(grok_home)
+        .or_else(|| non_empty_env_path(home).map(|path| path.join(".grok")))
+}
+
+/// Process-env wrapper around [`grok_state_dir`]. Returns the writable state
+/// directory Grok Build uses at runtime — `$GROK_HOME` if set, otherwise
+/// `$HOME/.grok`. Returns `None` only when both env vars are unset or empty.
+pub fn grok_state_dir_from_env() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME");
+    let grok_home = std::env::var_os("GROK_HOME");
+    grok_state_dir(home.as_deref(), grok_home.as_deref())
 }
 
 fn non_empty_env_path(value: Option<&OsStr>) -> Option<PathBuf> {
@@ -271,6 +287,50 @@ fn emit_claude_home_json_allows(
         push_regex_escaped(&mut tmp_regex, c);
     }
     tmp_regex.push_str("/\\.claude\\.json\\.tmp\\.[0-9]+\\.[0-9]+$");
+    out.push_str(&format!(
+        "(allow file-write* (regex \"{}\"))\n",
+        sbpl_escape(&tmp_regex)
+    ));
+}
+
+/// Grok keeps its JSON state and companion lock/tmp files under `GROK_HOME`
+/// (default `$HOME/.grok`). The state-dir `subpath` allow already covers
+/// these, but emitting explicit rules mirrors Claude's lockfile treatment and
+/// keeps the startup-critical files visible in compiled profiles.
+fn emit_grok_state_file_allows(home: Option<&OsStr>, grok_home: Option<&OsStr>, out: &mut String) {
+    let Some(state_dir) = grok_state_dir(home, grok_home) else {
+        return;
+    };
+
+    for file_name in ["auth.json", "mcp_credentials.json", "models_cache.json"] {
+        emit_grok_json_file_allow(&state_dir, file_name, out);
+    }
+
+    let state_dir_str = state_dir.display().to_string();
+    let mut lock_regex = String::from("^");
+    push_regex_escaped_str(&mut lock_regex, &state_dir_str);
+    lock_regex.push_str("/mcp_auth_[^/]+\\.lock$");
+    out.push_str(&format!(
+        "(allow file-write* (regex \"{}\"))\n",
+        sbpl_escape(&lock_regex)
+    ));
+}
+
+fn emit_grok_json_file_allow(state_dir: &Path, file_name: &str, out: &mut String) {
+    let path = state_dir.join(file_name);
+    let path_str = path.display().to_string();
+    out.push_str(&format!(
+        "(allow file-write* (literal \"{}\"))\n",
+        sbpl_escape(&path_str)
+    ));
+    out.push_str(&format!(
+        "(allow file-write* (literal \"{}.lock\"))\n",
+        sbpl_escape(&path_str)
+    ));
+
+    let mut tmp_regex = String::from("^");
+    push_regex_escaped_str(&mut tmp_regex, &path_str);
+    tmp_regex.push_str("\\.tmp(?:\\.[0-9]+)*$");
     out.push_str(&format!(
         "(allow file-write* (regex \"{}\"))\n",
         sbpl_escape(&tmp_regex)
@@ -497,6 +557,12 @@ fn push_regex_escaped(out: &mut String, c: char) {
     out.push(c);
 }
 
+fn push_regex_escaped_str(out: &mut String, value: &str) {
+    for c in value.chars() {
+        push_regex_escaped(out, c);
+    }
+}
+
 /// Strip glob suffixes from a rule so it can be used as a `subpath` root.
 /// `subpath` matches a directory and everything beneath, so `**` wildcards
 /// are redundant and `*` segments cannot be expressed in SBPL — we collapse
@@ -537,6 +603,7 @@ mod tests {
         home: Option<&'a str>,
         codex_home: Option<&'a str>,
         claude_config_dir: Option<&'a str>,
+        grok_home: Option<&'a str>,
     }
 
     fn compile_with_env(resolved: &ResolvedFsProfile, env: EnvOverrides<'_>) -> String {
@@ -546,6 +613,7 @@ mod tests {
                 home: env.home.map(OsStr::new),
                 codex_home: env.codex_home.map(OsStr::new),
                 claude_config_dir: env.claude_config_dir.map(OsStr::new),
+                grok_home: env.grok_home.map(OsStr::new),
             },
         )
         .expect("compile")
@@ -740,6 +808,151 @@ mod tests {
         assert!(
             text.contains("(allow file-write* (subpath \"/Users/test/.gemini\"))"),
             "missing HOME/.gemini write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn grok_state_dir_prefers_grok_home_override() {
+        assert_eq!(
+            grok_state_dir(
+                Some(OsStr::new("/Users/test")),
+                Some(OsStr::new("/tmp/grok-home"))
+            ),
+            Some(PathBuf::from("/tmp/grok-home"))
+        );
+    }
+
+    #[test]
+    fn grok_state_dir_falls_back_to_home_dot_grok() {
+        assert_eq!(
+            grok_state_dir(Some(OsStr::new("/Users/test")), None),
+            Some(PathBuf::from("/Users/test/.grok"))
+        );
+    }
+
+    #[test]
+    fn grok_state_dir_from_env_reads_runtime_env() {
+        const EXPECTED_ENV: &str = "ORBIT_TEST_EXPECTED_GROK_STATE_DIR";
+        if let Some(expected) = std::env::var_os(EXPECTED_ENV) {
+            if expected == OsStr::new("__none__") {
+                assert_eq!(grok_state_dir_from_env(), None);
+            } else {
+                assert_eq!(
+                    grok_state_dir_from_env(),
+                    Some(PathBuf::from(expected)),
+                    "GROK_HOME should take precedence over HOME"
+                );
+            }
+            return;
+        }
+
+        fn run_case(expected: &str, grok_home: Option<&str>, home: Option<&str>) {
+            let mut command = std::process::Command::new(
+                std::env::current_exe().expect("current test executable"),
+            );
+            command
+                .arg("grok_state_dir_from_env_reads_runtime_env")
+                .arg("--exact")
+                .arg("--nocapture")
+                .arg("--test-threads=1")
+                .env(EXPECTED_ENV, expected);
+            match grok_home {
+                Some(value) => {
+                    command.env("GROK_HOME", value);
+                }
+                None => {
+                    command.env_remove("GROK_HOME");
+                }
+            }
+            match home {
+                Some(value) => {
+                    command.env("HOME", value);
+                }
+                None => {
+                    command.env_remove("HOME");
+                }
+            }
+            let status = command.status().expect("run env helper child test");
+            assert!(status.success(), "child env helper case failed: {status:?}");
+        }
+
+        run_case("/tmp/grok-home", Some("/tmp/grok-home"), Some("/tmp/home"));
+        run_case("/tmp/home/.grok", None, Some("/tmp/home"));
+        run_case("__none__", None, None);
+    }
+
+    #[test]
+    fn compile_grants_write_access_to_grok_home_when_set() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                grok_home: Some("/var/folders/test/grok-home"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/var/folders/test/grok-home\"))"),
+            "missing GROK_HOME write allow: {text}"
+        );
+        assert!(
+            !text.contains("(allow file-write* (subpath \"/Users/test/.grok\"))"),
+            "GROK_HOME should take precedence over HOME fallback: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_grants_write_access_to_home_grok_when_grok_home_missing() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (subpath \"/Users/test/.grok\"))"),
+            "missing HOME/.grok write allow: {text}"
+        );
+    }
+
+    #[test]
+    fn compile_emits_explicit_grok_json_lock_and_tmp_allows() {
+        let resolved = profile("default", &["/Users/test/repo"], &["/Users/test/repo/src"]);
+        let text = compile_with_env(
+            &resolved,
+            EnvOverrides {
+                home: Some("/Users/test"),
+                ..Default::default()
+            },
+        );
+        assert!(
+            text.contains("(allow file-write* (literal \"/Users/test/.grok/auth.json\"))"),
+            "missing Grok auth.json write allow: {text}"
+        );
+        assert!(
+            text.contains("(allow file-write* (literal \"/Users/test/.grok/auth.json.lock\"))"),
+            "missing Grok auth.json.lock write allow: {text}"
+        );
+        assert!(
+            text.contains(
+                "(allow file-write* (regex \"^/Users/test/\\\\.grok/auth\\\\.json\\\\.tmp(?:\\\\.[0-9]+)*$\"))"
+            ),
+            "missing Grok auth.json tmp regex allow: {text}"
+        );
+        assert!(
+            text.contains(
+                "(allow file-write* (literal \"/Users/test/.grok/mcp_credentials.json\"))"
+            ),
+            "missing Grok MCP credentials JSON write allow: {text}"
+        );
+        assert!(
+            text.contains(
+                "(allow file-write* (regex \"^/Users/test/\\\\.grok/mcp_auth_[^/]+\\\\.lock$\"))"
+            ),
+            "missing Grok MCP OAuth lock regex allow: {text}"
         );
     }
 
@@ -1447,6 +1660,7 @@ mod tests {
                 home: Some(synthetic_home.path().as_os_str()),
                 codex_home: None,
                 claude_config_dir: None,
+                grok_home: None,
             },
         )
         .expect("compile sbpl");
@@ -1487,6 +1701,85 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn compiled_profile_allows_writes_to_grok_json_lock_and_tmp_files() {
+        use std::process::Command;
+
+        if !sandbox_exec_can_apply() {
+            return;
+        }
+
+        let parent = sandbox_test_parent("grok-json-locks");
+        let _cleanup = ScopeGuard(parent.clone());
+        let synthetic_home = tempfile::Builder::new()
+            .prefix("synthetic-home-")
+            .tempdir_in(&parent)
+            .expect("synthetic home tempdir");
+        let grok_dir = synthetic_home.path().join(".grok");
+        std::fs::create_dir_all(&grok_dir).expect("grok dir");
+
+        let resolved = ResolvedFsProfile {
+            name: "default".to_string(),
+            read: vec![synthetic_home.path().display().to_string()],
+            modify: vec![],
+        };
+        let profile_text = compile_macos_sandbox_profile_with_env(
+            &resolved,
+            SandboxCompileEnv {
+                home: Some(synthetic_home.path().as_os_str()),
+                codex_home: None,
+                claude_config_dir: None,
+                grok_home: None,
+            },
+        )
+        .expect("compile sbpl");
+        let mut profile_file = tempfile::Builder::new()
+            .prefix("orbit-sandbox-test-")
+            .suffix(".sb")
+            .tempfile()
+            .expect("tempfile");
+        use std::io::Write;
+        profile_file
+            .write_all(profile_text.as_bytes())
+            .expect("write profile");
+        profile_file.flush().expect("flush");
+
+        for (label, target) in [
+            ("auth.json", grok_dir.join("auth.json")),
+            ("auth.json.lock", grok_dir.join("auth.json.lock")),
+            (
+                "auth.json.tmp.<pid>.<ts>",
+                grok_dir.join("auth.json.tmp.7969.1778210964004"),
+            ),
+            (
+                "mcp_credentials.json",
+                grok_dir.join("mcp_credentials.json"),
+            ),
+            (
+                "mcp_auth_<name>.lock",
+                grok_dir.join("mcp_auth_linear.lock"),
+            ),
+        ] {
+            let status = Command::new(sandbox_exec_path_for_test())
+                .arg("-f")
+                .arg(profile_file.path())
+                .arg("/bin/sh")
+                .arg("-c")
+                .arg(format!("echo ok > {}", shell_escape(&target)))
+                .status()
+                .expect("run sandbox-exec");
+            assert!(
+                status.success(),
+                "expected write to synthetic Grok {label} to succeed; status={status:?}"
+            );
+            assert!(
+                target.exists(),
+                "{label} target file was not written: {target:?}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn compiled_profile_allows_writes_to_claude_home_json_siblings() {
         // T20260508-13: Claude Code persists `$HOME/.claude.json` (plus
         // `.lock` and atomic-write `.tmp.<pid>.<ms_ts>` siblings) at the home
@@ -1517,6 +1810,7 @@ mod tests {
                 home: Some(synthetic_home.path().as_os_str()),
                 codex_home: None,
                 claude_config_dir: None,
+                grok_home: None,
             },
         )
         .expect("compile sbpl");
@@ -1652,6 +1946,7 @@ mod tests {
             let home = std::env::var_os("HOME");
             let codex_home = std::env::var_os("CODEX_HOME");
             let claude_config_dir = std::env::var_os("CLAUDE_CONFIG_DIR");
+            let grok_home = std::env::var_os("GROK_HOME");
             if let Some(home) = non_empty_env_path(home.as_deref()) {
                 roots.push(home.join("Library/Caches"));
                 roots.push(home.join(".orbit/state/logs"));
@@ -1660,6 +1955,7 @@ mod tests {
                 home.as_deref(),
                 codex_home.as_deref(),
                 claude_config_dir.as_deref(),
+                grok_home.as_deref(),
             ));
             roots
         }
