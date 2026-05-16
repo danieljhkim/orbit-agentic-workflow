@@ -10,13 +10,14 @@ use serde_json::Value;
 
 use crate::OrbitRuntime;
 use crate::command::task::{canonicalize_context_files_for_read, context_workspace_root};
+use crate::runtime::run_input::singular_task_id_from_input;
 
 pub(super) fn learning_reminders_for_task(
     runtime: &OrbitRuntime,
     input: &Value,
     caps: LearningInjectionCaps,
 ) -> Result<Vec<LearningReminder>, DispatchError> {
-    let Some(task_id) = super::task_context::singular_task_id_from_input(input) else {
+    let Some(task_id) = singular_task_id_from_input(input) else {
         return Ok(Vec::new());
     };
     let task = runtime.get_task(task_id).map_err(|err| {
