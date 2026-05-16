@@ -259,6 +259,7 @@ mod tests {
                 args: Vec::new(),
                 stdout_format: None,
                 model_pair_override: None,
+                model_flag: None,
                 timeout_seconds: None,
                 env: HashMap::new(),
                 sandbox: None,
