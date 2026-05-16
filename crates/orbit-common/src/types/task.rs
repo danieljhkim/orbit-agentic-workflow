@@ -9,8 +9,8 @@
 //! 1. **Done is terminal** — no transitions out of done.
 //! 2. **Archived requires dedicated command** — use `orbit task archive`; the
 //!    bare `--status archived` path is rejected.
-//! 3. **Friction is creation-only** — untriaged friction reports start in this
-//!    status and cannot return to it after triage.
+//! 3. **Friction is legacy-only** — new friction reports are stored through
+//!    `orbit.friction.add`, not the task lifecycle.
 //! 4. **InProgress → Review requires execution_summary** — enforced at the
 //!    command layer, not in [`TaskStatus::validate_transition`].
 //!
@@ -18,7 +18,7 @@
 //! | Status       | Purpose |
 //! |--------------|---------|
 //! | Proposed     | Awaiting human approval before entering the backlog. |
-//! | Friction     | Agent self-reported friction awaiting triage. |
+//! | Friction     | Legacy agent self-reported friction task. |
 //! | Backlog      | Approved and queued for work. |
 //! | Someday      | Future-scoped — wanted but not yet actionable. Agents skip someday tasks. |
 //! | InProgress   | Actively being worked on. |
@@ -30,14 +30,21 @@
 //!
 //! See [`TaskStatus::validate_transition`] for the blocklist implementation.
 
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
+use crate::types::task_artifacts::{TaskRelation, TaskRelationType};
 use crate::types::{OrbitError, OrbitId};
 use crate::utility::selector::exists_in_workspace;
 
@@ -50,7 +57,7 @@ use crate::utility::selector::exists_in_workspace;
 pub enum TaskStatus {
     /// Awaiting human approval before entering the backlog.
     Proposed,
-    /// Agent self-reported friction awaiting triage.
+    /// Legacy agent self-reported friction task.
     Friction,
     /// Approved and queued for work; not yet started.
     Backlog,
@@ -127,8 +134,8 @@ impl TaskStatus {
     /// 1. **Done is terminal** — no transitions out of done.
     /// 2. **Archived requires dedicated command** — use `orbit task archive`, not a
     ///    bare status update (enforced upstream; blocked here as defense-in-depth).
-    /// 3. **Friction is creation-only** — enforced here and enriched upstream
-    ///    with prior-transition details when possible.
+    /// 3. **Friction is legacy-only** — new friction reports use
+    ///    `orbit.friction.add`.
     /// 4. **InProgress → Review requires execution_summary** — enforced upstream in
     ///    `update_task_with_status_note`, not here (we lack the task data).
     ///
@@ -155,8 +162,8 @@ impl TaskStatus {
             ));
         }
 
-        // Friction is an entry status for newly filed agent self-reports. It
-        // cannot be entered later without corrupting friction-bounty history.
+        // Friction is retained for legacy persisted tasks only. New friction
+        // reports are append-only records under `.orbit/frictions/`.
         if target == TaskStatus::Friction {
             return Err(format!(
                 "invalid status transition: {} -> {} (friction can only be set at task creation)",
@@ -241,36 +248,20 @@ impl FromStr for TaskComplexity {
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
-    Task,
     Feature,
-    #[serde(alias = "epic")]
-    Epic,
-    /// Agent-reported friction, DX issues, or system problems.
-    /// Self-reported friction path — triggers system attribution and scoreboard hooks.
-    Friction,
-    /// General issue tracking. Valid task type, but not part of friction-bounty scoring.
-    #[serde(alias = "issue")]
-    Issue,
-    /// An attributable defect — tracks which agent/model introduced the bug
-    /// via the `agent`, `model`, and `source_task_id` fields on [`Task`].
+    /// An attributable defect; lineage is recorded through typed task relations.
     Bug,
-    #[cfg_attr(feature = "clap", value(alias = "other"))]
-    #[serde(alias = "other")]
-    Chore,
     Refactor,
+    Chore,
 }
 
 impl Display for TaskType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            TaskType::Task => "task",
             TaskType::Feature => "feature",
-            TaskType::Epic => "epic",
-            TaskType::Friction => "friction",
-            TaskType::Issue => "issue",
             TaskType::Bug => "bug",
-            TaskType::Chore => "chore",
             TaskType::Refactor => "refactor",
+            TaskType::Chore => "chore",
         };
         write!(f, "{s}")
     }
@@ -281,35 +272,21 @@ impl FromStr for TaskType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "task" => Ok(TaskType::Task),
             "feature" => Ok(TaskType::Feature),
-            "epic" => Ok(TaskType::Epic),
-            "friction" => Ok(TaskType::Friction),
-            "issue" => Ok(TaskType::Issue),
             "bug" => Ok(TaskType::Bug),
-            "chore" => Ok(TaskType::Chore),
-            // Backward-compatible mapping for legacy persisted values.
-            "other" => Ok(TaskType::Chore),
             "refactor" => Ok(TaskType::Refactor),
-            other => Err(format!("unknown task type: {other}")),
+            "chore" => Ok(TaskType::Chore),
+            other => Err(format!(
+                "unknown task type: {other} (valid types: {})",
+                TaskType::valid_names().join(", ")
+            )),
         }
     }
 }
 
 impl TaskType {
-    /// Returns true for epic tasks used by the epic pipeline.
-    pub fn is_epic(&self) -> bool {
-        matches!(self, TaskType::Epic)
-    }
-
-    /// Returns true for self-reported friction tasks.
-    pub fn is_friction(&self) -> bool {
-        matches!(self, TaskType::Friction)
-    }
-
-    /// Returns true for task types that should update friction bounty scorekeeping.
-    pub fn counts_toward_friction_bounty(&self) -> bool {
-        self.is_friction()
+    pub fn valid_names() -> &'static [&'static str] {
+        &["feature", "bug", "refactor", "chore"]
     }
 }
 
@@ -397,11 +374,28 @@ pub struct TaskHistoryEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskArtifact {
     pub path: String,
-    pub content: String,
+    #[serde(default)]
+    pub content: Vec<u8>,
+    #[serde(default = "default_task_artifact_media_type")]
+    pub media_type: String,
 }
 
 impl TaskArtifact {
-    pub fn from_utf8_source_file(
+    pub fn from_text(path: impl Into<String>, content: impl Into<String>) -> Self {
+        let path = path.into();
+        let content = content.into();
+        Self {
+            media_type: media_type_for_artifact_path(&path).to_string(),
+            path,
+            content: content.into_bytes(),
+        }
+    }
+
+    pub fn text_content(&self) -> Option<&str> {
+        std::str::from_utf8(&self.content).ok()
+    }
+
+    pub fn from_source_file(
         source_path: &Path,
         artifact_path: Option<&str>,
     ) -> Result<Self, OrbitError> {
@@ -430,14 +424,45 @@ impl TaskArtifact {
             }
             None => infer_artifact_path_from_source(source_path)?,
         };
-        let content = std::fs::read_to_string(source_path).map_err(|error| {
+        let content = std::fs::read(source_path).map_err(|error| {
             OrbitError::InvalidInput(format!(
-                "task artifact source '{}' must be a UTF-8 text file; binary or invalid UTF-8 content is not supported: {error}",
+                "cannot read task artifact source '{}': {error}",
                 source_path.display()
             ))
         })?;
 
-        Ok(Self { path, content })
+        Ok(Self {
+            media_type: media_type_for_artifact_path(&path).to_string(),
+            path,
+            content,
+        })
+    }
+}
+
+fn default_task_artifact_media_type() -> String {
+    "application/octet-stream".to_string()
+}
+
+pub fn media_type_for_artifact_path(path: &str) -> &'static str {
+    match Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("md" | "markdown") => "text/markdown",
+        Some("txt" | "log") => "text/plain",
+        Some("json") => "application/json",
+        Some("yaml" | "yml") => "application/yaml",
+        Some("toml") => "application/toml",
+        Some("html" | "htm") => "text/html",
+        Some("csv") => "text/csv",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
     }
 }
 
@@ -468,59 +493,147 @@ impl ResolvedTaskDependency {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ExternalRef {
+    pub system: String,
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+pub const GITHUB_PR_EXTERNAL_REF_SYSTEM: &str = "github-pr";
+
+impl ExternalRef {
+    pub fn try_new(system: String, id: String, url: Option<String>) -> Result<Self, OrbitError> {
+        let system = Self::validate_system(&system)?;
+
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "external ref id must not be empty".to_string(),
+            ));
+        }
+
+        let url = url
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                Url::parse(&value).map_err(|error| {
+                    OrbitError::InvalidInput(format!(
+                        "external ref url '{value}' must be a valid URL: {error}"
+                    ))
+                })?;
+                Ok::<String, OrbitError>(value)
+            })
+            .transpose()?;
+
+        Ok(Self {
+            system,
+            id: id.to_string(),
+            url,
+        })
+    }
+
+    pub fn is_valid_system(system: &str) -> bool {
+        external_ref_system_regex().is_match(system.trim())
+    }
+
+    pub fn validate_system(system: &str) -> Result<String, OrbitError> {
+        let system = system.trim();
+        if !Self::is_valid_system(system) {
+            return Err(OrbitError::InvalidInput(format!(
+                "external ref system '{system}' must match ^[a-z][a-z0-9-]*$"
+            )));
+        }
+        Ok(system.to_string())
+    }
+
+    pub fn parse_key(raw: &str) -> Result<Self, OrbitError> {
+        let (system, id) = raw.split_once(':').ok_or_else(|| {
+            OrbitError::InvalidInput(
+                "external ref must use <system>:<id> form, for example jira:ENG-1234".to_string(),
+            )
+        })?;
+        Self::try_new(system.to_string(), id.to_string(), None)
+    }
+
+    pub fn github_pr(id: impl Into<String>) -> Result<Self, OrbitError> {
+        Self::try_new(GITHUB_PR_EXTERNAL_REF_SYSTEM.to_string(), id.into(), None)
+    }
+
+    pub fn has_key(&self, system: &str, id: &str) -> bool {
+        self.system == system && self.id == id
+    }
+}
+
+pub fn push_external_ref_if_missing(refs: &mut Vec<ExternalRef>, external_ref: ExternalRef) {
+    if !refs
+        .iter()
+        .any(|candidate| candidate.has_key(&external_ref.system, &external_ref.id))
+    {
+        refs.push(external_ref);
+    }
+}
+
+impl<'de> Deserialize<'de> for ExternalRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawExternalRef {
+            system: String,
+            id: String,
+            #[serde(default)]
+            url: Option<String>,
+        }
+
+        let raw = RawExternalRef::deserialize(deserializer)?;
+        ExternalRef::try_new(raw.system, raw.id, raw.url).map_err(serde::de::Error::custom)
+    }
+}
+
+fn external_ref_system_regex() -> &'static Regex {
+    static SYSTEM_REGEX: OnceLock<Regex> = OnceLock::new();
+    SYSTEM_REGEX.get_or_init(|| {
+        Regex::new(r"^[a-z][a-z0-9-]*$").expect("external ref system regex is valid")
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub id: OrbitId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<OrbitId>,
     pub title: String,
     pub description: String,
     #[serde(default)]
     pub acceptance_criteria: Vec<String>,
     #[serde(default)]
-    pub dependencies: Vec<OrbitId>,
+    pub tags: Vec<String>,
     #[serde(default, alias = "instructions")]
     pub plan: String,
     #[serde(default)]
     pub execution_summary: String,
     pub context_files: Vec<String>,
     #[serde(default)]
-    pub workspace_path: Option<String>,
-    #[serde(default)]
-    pub repo_root: Option<String>,
-    #[serde(default)]
     pub created_by: Option<String>,
     #[serde(default)]
     pub planned_by: Option<String>,
     #[serde(default)]
     pub implemented_by: Option<String>,
-    /// Internal execution routing only. Hidden from task display JSON and YAML.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent: Option<String>,
-    /// Internal execution routing only. Hidden from task display JSON and YAML.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
     pub status: TaskStatus,
     pub priority: TaskPriority,
     #[serde(default)]
     pub complexity: Option<TaskComplexity>,
     pub task_type: TaskType,
-    #[serde(default)]
-    pub pr_number: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_status: Option<String>,
-    /// For `Bug` tasks: the originating task whose implementation introduced the defect.
-    #[serde(default)]
-    pub source_task_id: Option<String>,
-    /// Groups tasks that were created together as part of a parallel batch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub batch_id: Option<String>,
-    #[serde(default)]
-    pub comments: Vec<TaskComment>,
-    #[serde(default)]
-    pub history: Vec<TaskHistoryEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub review_threads: Vec<ReviewThread>,
+    pub external_refs: Vec<ExternalRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<TaskRelation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_run_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -539,6 +652,40 @@ impl Task {
     pub fn parsed_plan(&self) -> Result<crate::types::task_plan::TaskPlan, OrbitError> {
         let label = format!("task '{}' plan", self.id);
         crate::types::task_plan::parse_task_plan(self.plan.as_str(), label.as_str())
+    }
+
+    pub fn github_pr_number(&self) -> Option<&str> {
+        self.external_refs
+            .iter()
+            .find(|external_ref| external_ref.system == GITHUB_PR_EXTERNAL_REF_SYSTEM)
+            .map(|external_ref| external_ref.id.as_str())
+    }
+
+    pub fn parent_id(&self) -> Option<&str> {
+        self.relation_target(TaskRelationType::ChildOf)
+    }
+
+    pub fn dependencies(&self) -> Vec<OrbitId> {
+        self.relation_targets(TaskRelationType::BlockedBy)
+    }
+
+    pub fn source_task_id(&self) -> Option<&str> {
+        self.relation_target(TaskRelationType::RegressionFrom)
+    }
+
+    fn relation_target(&self, relation_type: TaskRelationType) -> Option<&str> {
+        self.relations
+            .iter()
+            .find(|relation| relation.relation_type == relation_type)
+            .map(|relation| relation.target.as_str())
+    }
+
+    fn relation_targets(&self, relation_type: TaskRelationType) -> Vec<OrbitId> {
+        self.relations
+            .iter()
+            .filter(|relation| relation.relation_type == relation_type)
+            .map(|relation| relation.target.clone())
+            .collect()
     }
 }
 
@@ -591,6 +738,32 @@ pub fn normalize_task_dependencies(
     Ok(normalized)
 }
 
+pub fn normalize_task_tags(raw_tags: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::with_capacity(raw_tags.len());
+    let mut seen = BTreeSet::new();
+    for raw in raw_tags {
+        let tag = raw.trim().to_lowercase();
+        if !tag.is_empty() && seen.insert(tag.clone()) {
+            normalized.push(tag);
+        }
+    }
+    normalized
+}
+
+pub fn task_matches_tags(task: &Task, required_tags: &[String]) -> bool {
+    let required_tags = normalize_task_tags(required_tags.to_vec());
+    if required_tags.is_empty() {
+        return true;
+    }
+
+    let available = normalize_task_tags(task.tags.clone())
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    required_tags
+        .iter()
+        .all(|tag| available.contains(tag.as_str()))
+}
+
 pub fn build_task_status_index(tasks: &[Task]) -> BTreeMap<OrbitId, TaskStatus> {
     tasks
         .iter()
@@ -602,12 +775,12 @@ pub fn resolve_task_dependencies(
     task: &Task,
     status_by_id: &BTreeMap<OrbitId, TaskStatus>,
 ) -> Vec<ResolvedTaskDependency> {
-    task.dependencies
-        .iter()
+    task.dependencies()
+        .into_iter()
         .map(|dependency_id| ResolvedTaskDependency {
             id: dependency_id.clone(),
             status: status_by_id
-                .get(dependency_id)
+                .get(&dependency_id)
                 .map(|status| status.to_string())
                 .unwrap_or_else(|| "missing".to_string()),
         })
@@ -615,7 +788,7 @@ pub fn resolve_task_dependencies(
 }
 
 pub fn task_dependencies_ready(task: &Task, status_by_id: &BTreeMap<OrbitId, TaskStatus>) -> bool {
-    task.dependencies.iter().all(|dependency_id| {
+    task.dependencies().iter().all(|dependency_id| {
         status_by_id
             .get(dependency_id)
             .is_some_and(|status| status.satisfies_dependency())
@@ -668,7 +841,7 @@ pub fn validate_task_dependencies(
 
     let mut adjacency = tasks
         .iter()
-        .map(|task| (task.id.clone(), task.dependencies.clone()))
+        .map(|task| (task.id.clone(), task.dependencies()))
         .collect::<BTreeMap<_, _>>();
     adjacency.insert(current_task_id.to_string(), dependencies.to_vec());
 
@@ -726,7 +899,133 @@ fn find_dependency_path(
 
 #[cfg(test)]
 mod tests {
-    use super::TaskArtifact;
+    use super::{
+        ExternalRef, Task, TaskArtifact, normalize_task_tags, push_external_ref_if_missing,
+    };
+
+    #[test]
+    fn task_deserializes_missing_tags_as_empty_vec() {
+        let task = serde_yaml::from_str::<Task>(
+            r#"id: T20260101-1
+title: Legacy task
+description: Existing task record.
+acceptance_criteria: []
+dependencies: []
+plan: ""
+execution_summary: ""
+context_files: []
+status: backlog
+priority: medium
+task_type: chore
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+"#,
+        )
+        .expect("task without tags deserializes");
+
+        assert_eq!(task.tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn normalize_task_tags_trims_lowercases_and_dedupes() {
+        let tags = normalize_task_tags(vec![
+            "  Perf ".to_string(),
+            "BENCH".to_string(),
+            "perf".to_string(),
+            "   ".to_string(),
+        ]);
+
+        assert_eq!(tags, vec!["perf", "bench"]);
+    }
+
+    #[test]
+    fn external_ref_try_new_normalizes_valid_input() {
+        let external_ref = ExternalRef::try_new(
+            " jira ".to_string(),
+            " ENG-1234 ".to_string(),
+            Some(" https://example.com/browse/ENG-1234 ".to_string()),
+        )
+        .expect("valid external ref");
+
+        assert_eq!(external_ref.system, "jira");
+        assert_eq!(external_ref.id, "ENG-1234");
+        assert_eq!(
+            external_ref.url.as_deref(),
+            Some("https://example.com/browse/ENG-1234")
+        );
+    }
+
+    #[test]
+    fn external_ref_rejects_invalid_system() {
+        let error =
+            ExternalRef::try_new("Jira".to_string(), "ENG-1234".to_string(), None).unwrap_err();
+
+        assert!(matches!(error, crate::types::OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("must match"));
+    }
+
+    #[test]
+    fn external_ref_validate_system_normalizes_valid_input() {
+        assert!(ExternalRef::is_valid_system(" jira "));
+        assert_eq!(
+            ExternalRef::validate_system(" github-pr ").expect("valid system"),
+            "github-pr"
+        );
+        assert!(ExternalRef::validate_system("GitHub").is_err());
+    }
+
+    #[test]
+    fn external_ref_rejects_empty_id() {
+        let error = ExternalRef::try_new("jira".to_string(), "   ".to_string(), None).unwrap_err();
+
+        assert!(matches!(error, crate::types::OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("id must not be empty"));
+    }
+
+    #[test]
+    fn external_ref_rejects_invalid_url() {
+        let error = ExternalRef::try_new(
+            "jira".to_string(),
+            "ENG-1234".to_string(),
+            Some("not a url".to_string()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, crate::types::OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("valid URL"));
+    }
+
+    #[test]
+    fn external_ref_deserialization_uses_validator() {
+        let error = serde_json::from_value::<ExternalRef>(serde_json::json!({
+            "system": "jira",
+            "id": "ENG-1234",
+            "url": "not a url"
+        }))
+        .unwrap_err();
+
+        assert!(error.to_string().contains("valid URL"));
+    }
+
+    #[test]
+    fn push_external_ref_if_missing_is_idempotent_by_key() {
+        let mut refs = vec![ExternalRef::github_pr("42").expect("github pr ref")];
+
+        push_external_ref_if_missing(
+            &mut refs,
+            ExternalRef::github_pr("42").expect("duplicate github pr ref"),
+        );
+        push_external_ref_if_missing(
+            &mut refs,
+            ExternalRef::parse_key("jira:ENG-1234").expect("jira ref"),
+        );
+
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].system, "github-pr");
+        assert_eq!(refs[0].id, "42");
+        assert_eq!(refs[1].system, "jira");
+        assert_eq!(refs[1].id, "ENG-1234");
+    }
 
     #[test]
     fn artifact_from_source_defaults_to_file_name() {
@@ -734,11 +1033,11 @@ mod tests {
         let source = dir.path().join("summary.md");
         std::fs::write(&source, "hello\n").expect("write source");
 
-        let artifact =
-            TaskArtifact::from_utf8_source_file(&source, None).expect("read artifact source");
+        let artifact = TaskArtifact::from_source_file(&source, None).expect("read artifact source");
 
         assert_eq!(artifact.path, "summary.md");
-        assert_eq!(artifact.content, "hello\n");
+        assert_eq!(artifact.text_content(), Some("hello\n"));
+        assert_eq!(artifact.media_type, "text/markdown");
     }
 
     #[test]
@@ -747,18 +1046,18 @@ mod tests {
         let source = dir.path().join("summary.md");
         std::fs::write(&source, "hello\n").expect("write source");
 
-        let artifact = TaskArtifact::from_utf8_source_file(&source, Some("reports/summary.md"))
+        let artifact = TaskArtifact::from_source_file(&source, Some("reports/summary.md"))
             .expect("read artifact source");
 
         assert_eq!(artifact.path, "reports/summary.md");
-        assert_eq!(artifact.content, "hello\n");
+        assert_eq!(artifact.text_content(), Some("hello\n"));
     }
 
     #[test]
     fn artifact_from_source_rejects_directories() {
         let dir = tempfile::tempdir().expect("tempdir");
 
-        let error = TaskArtifact::from_utf8_source_file(dir.path(), None)
+        let error = TaskArtifact::from_source_file(dir.path(), None)
             .unwrap_err()
             .to_string();
 
@@ -767,16 +1066,16 @@ mod tests {
     }
 
     #[test]
-    fn artifact_from_source_rejects_invalid_utf8() {
+    fn artifact_from_source_accepts_binary() {
         let dir = tempfile::tempdir().expect("tempdir");
         let source = dir.path().join("binary.bin");
         std::fs::write(&source, [0xff, 0xfe, 0xfd]).expect("write source");
 
-        let error = TaskArtifact::from_utf8_source_file(&source, None)
-            .unwrap_err()
-            .to_string();
+        let artifact =
+            TaskArtifact::from_source_file(&source, None).expect("read binary artifact source");
 
-        assert!(error.contains("UTF-8 text file"));
-        assert!(error.contains(source.to_string_lossy().as_ref()));
+        assert_eq!(artifact.path, "binary.bin");
+        assert_eq!(artifact.content, vec![0xff, 0xfe, 0xfd]);
+        assert_eq!(artifact.media_type, "application/octet-stream");
     }
 }

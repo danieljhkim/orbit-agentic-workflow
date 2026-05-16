@@ -5,13 +5,13 @@ metadata:
 spec:
   type: agent_loop
   description: >
-    Provide advisory backlog-grouping notes for the auto-pipeline. The
-    workflow no longer consumes this activity's final response as data;
-    deterministic singleton bundles from `list_backlog_tasks` drive
-    dispatch so malformed agent text cannot fail the job.
+    Provide advisory backlog-grouping notes for the auto-pipeline. The workflow
+    no longer consumes this activity's final response as data; deterministic
+    singleton bundles from `list_backlog_tasks` drive dispatch so malformed
+    agent text cannot fail the job.
   input_schema_json:
     type: object
-    required: [tasks, max_bundle_size]
+    required: [ tasks, max_bundle_size ]
     properties:
       tasks:
         type: array
@@ -57,7 +57,11 @@ spec:
        - their titles / scope suggest related work (same feature area,
          module, or refactor).
        `orbit.task.show` is available if you need a task's full description
-       to decide an ambiguous case — use it sparingly.
+       to decide an ambiguous case — use it sparingly. When two tasks share
+       no `context_files` but their titles look superficially related,
+       `orbit.semantic.related` on one task id can confirm or refute the
+       overlap; use only on genuinely ambiguous pairs, and skip if the
+       companion binary is not installed.
     2. **Disjoint tasks go in separate bundles.** If two tasks share no
        `context_files` entries, default to separate bundles.
     3. **Empty `context_files`**: put the task in a solo bundle. Merging
@@ -81,9 +85,11 @@ spec:
     and `reasoning` when convenient, but the workflow does not consume it
     and downstream dispatch must not depend on it.
   tools:
-    - orbit.task.show
+    - orbit.task.*
+    - orbit.friction.*
+    - orbit.graph.*
+    - orbit.semantic.related
   on_denial: terminate
   max_iterations: 8
-  backend: http
-  provider: claude
+  role: planner
   wall_clock_timeout_seconds: 300

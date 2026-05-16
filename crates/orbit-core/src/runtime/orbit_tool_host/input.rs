@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use orbit_common::types::{
-    OrbitError, TaskArtifact, TaskComplexity, TaskPriority, TaskStatus, TaskType, optional_string,
-    optional_string_alias, optional_u32_alias,
+    ExternalRef, NotFoundKind, OrbitError, TaskArtifact, TaskComplexity, TaskPriority, TaskStatus,
+    TaskType, media_type_for_artifact_path, optional_string, optional_string_alias,
+    optional_u32_alias,
 };
 use orbit_store::state_io;
 use orbit_tools::OrbitTaskScope;
@@ -49,7 +50,7 @@ pub(super) fn resolve_state_dir(
     })?;
 
     state_io::resolve_active_run_state_dir(&orbit_root, &run_id)?
-        .ok_or(OrbitError::JobRunNotFound(run_id))
+        .ok_or(OrbitError::not_found(NotFoundKind::JobRun, run_id))
 }
 
 pub(super) fn resolve_step_index(input: &Value) -> Result<u32, OrbitError> {
@@ -120,39 +121,88 @@ pub(super) fn parse_artifacts(input: &Value) -> Result<Vec<TaskArtifact>, OrbitE
                 let content = content.as_str().ok_or_else(|| {
                     OrbitError::InvalidInput("`artifacts` values must be strings".to_string())
                 })?;
-                Ok(TaskArtifact {
-                    path: path.to_string(),
-                    content: content.to_string(),
-                })
+                Ok(TaskArtifact::from_text(path, content))
             })
             .collect(),
-        Value::Array(items) => items
+        Value::Array(items) => items.iter().map(parse_artifact_array_entry).collect(),
+        _ => Err(OrbitError::InvalidInput(
+            "`artifacts` must be an object or array".to_string(),
+        )),
+    }
+}
+
+fn parse_artifact_array_entry(item: &Value) -> Result<TaskArtifact, OrbitError> {
+    let path = item.get("path").and_then(Value::as_str).ok_or_else(|| {
+        OrbitError::InvalidInput(
+            "`artifacts` entries must include string `path` values".to_string(),
+        )
+    })?;
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "`artifacts` entry paths must not be empty".to_string(),
+        ));
+    }
+
+    let content_value = item.get("content").ok_or_else(|| {
+        OrbitError::InvalidInput("`artifacts` entries must include `content` values".to_string())
+    })?;
+    let content = parse_artifact_content(content_value)?;
+    let media_type = item
+        .get("media_type")
+        .or_else(|| item.get("mediaType"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| media_type_for_artifact_path(path).to_string());
+
+    Ok(TaskArtifact {
+        path: path.to_string(),
+        content,
+        media_type,
+    })
+}
+
+fn parse_artifact_content(value: &Value) -> Result<Vec<u8>, OrbitError> {
+    match value {
+        Value::String(content) => Ok(content.as_bytes().to_vec()),
+        Value::Array(bytes) => bytes
             .iter()
-            .map(|item| {
-                let path = item.get("path").and_then(Value::as_str).ok_or_else(|| {
+            .map(|byte| {
+                let value = byte.as_u64().ok_or_else(|| {
                     OrbitError::InvalidInput(
-                        "`artifacts` entries must include string `path` values".to_string(),
+                        "`artifacts` byte content must contain unsigned integers".to_string(),
                     )
                 })?;
-                let content = item.get("content").and_then(Value::as_str).ok_or_else(|| {
+                u8::try_from(value).map_err(|_| {
                     OrbitError::InvalidInput(
-                        "`artifacts` entries must include string `content` values".to_string(),
+                        "`artifacts` byte content values must be between 0 and 255".to_string(),
                     )
-                })?;
-                let path = path.trim();
-                if path.is_empty() {
-                    return Err(OrbitError::InvalidInput(
-                        "`artifacts` entry paths must not be empty".to_string(),
-                    ));
-                }
-                Ok(TaskArtifact {
-                    path: path.to_string(),
-                    content: content.to_string(),
                 })
             })
             .collect(),
         _ => Err(OrbitError::InvalidInput(
-            "`artifacts` must be an object or array".to_string(),
+            "`artifacts` entries must include string or byte-array `content` values".to_string(),
+        )),
+    }
+}
+
+pub(super) fn parse_external_refs(input: &Value) -> Result<Vec<ExternalRef>, OrbitError> {
+    let Some(value) = input
+        .get("external_refs")
+        .or_else(|| input.get("externalRefs"))
+        .or_else(|| input.get("external-refs"))
+    else {
+        return Ok(Vec::new());
+    };
+
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(_) => serde_json::from_value::<Vec<ExternalRef>>(value.clone())
+            .map_err(|error| OrbitError::InvalidInput(format!("invalid `external_refs`: {error}"))),
+        _ => Err(OrbitError::InvalidInput(
+            "`external_refs` must be an array of {system, id, url?} objects".to_string(),
         )),
     }
 }
@@ -333,5 +383,32 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("`run_ids` must be a string or array of strings"));
+    }
+
+    #[test]
+    fn parse_artifacts_accepts_text_and_byte_array_content() {
+        let artifacts = parse_artifacts(&json!({
+            "artifacts": [
+                {"path": "notes.txt", "content": "hello"},
+                {"path": "image.bin", "media_type": "application/octet-stream", "content": [0, 159, 255]}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(artifacts[0].text_content(), Some("hello"));
+        assert_eq!(artifacts[0].media_type, "text/plain");
+        assert_eq!(artifacts[1].content, vec![0, 159, 255]);
+        assert_eq!(artifacts[1].media_type, "application/octet-stream");
+    }
+
+    #[test]
+    fn parse_artifacts_rejects_invalid_byte_content() {
+        let error = parse_artifacts(&json!({
+            "artifacts": [{"path": "image.bin", "content": [256]}]
+        }))
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("between 0 and 255"));
     }
 }

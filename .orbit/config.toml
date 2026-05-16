@@ -1,0 +1,44 @@
+[execution.env]
+inherit = false
+pass = [
+    "HOME",
+    "PATH",
+    "CODEX_HOME",
+    "TMPDIR",
+    "USER",
+    "__CF_USER_TEXT_ENCODING",
+]
+
+[execution.codex]
+sandbox = "workspace-write"
+
+[task.approval]
+delegate_approval = true
+required_for_agent = true
+
+[scoring]
+enabled = true
+
+[graph]
+editing = false
+
+[agent.implementer]
+backend = "cli"
+model = "gpt-5.5"
+provider = "codex"
+
+[agent.planner]
+backend = "cli"
+model = "claude-opus-4-7"
+provider = "claude"
+
+[agent.reviewer]
+backend = "cli"
+model = "gpt-5.5"
+provider = "codex"
+
+[workflow]
+base_branch = "agent-main"
+
+[pr]
+task_url_template = "https://orbit-cli.com/tasks/{task_id}"

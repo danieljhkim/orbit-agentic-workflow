@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -74,6 +78,7 @@ fn graph_reads_fall_back_to_default_branch_when_current_branch_ref_is_missing()
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert_eq!(graph.root_dir_id, "dir:.");
     assert_eq!(graph.leaves.len(), 1);
@@ -109,6 +114,7 @@ fn graph_reads_fall_back_to_non_main_default_branch_when_current_branch_ref_is_m
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert_eq!(graph.root_dir_id, "dir:.");
     assert_eq!(graph.leaves.len(), 1);
@@ -163,7 +169,6 @@ fn concurrent_branch_builds_keep_distinct_refs_and_graphs_reachable()
             output_dir: alpha_knowledge_dir,
             incremental: false,
             ref_name: None,
-            task_id_pattern: None,
         })
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -175,7 +180,6 @@ fn concurrent_branch_builds_keep_distinct_refs_and_graphs_reachable()
             output_dir: beta_knowledge_dir,
             incremental: false,
             ref_name: None,
-            task_id_pattern: None,
         })
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -197,11 +201,13 @@ fn concurrent_branch_builds_keep_distinct_refs_and_graphs_reachable()
         &alpha_read_target.requested,
         alpha_read_target.fallback.as_ref(),
         Some(&default_ref),
+        Default::default(),
     )?;
     let beta_graph = store.read_graph(
         &beta_read_target.requested,
         beta_read_target.fallback.as_ref(),
         Some(&default_ref),
+        Default::default(),
     )?;
     assert!(
         alpha_graph
@@ -228,7 +234,6 @@ fn ensure_fresh_waits_for_requested_branch_ref_before_returning()
         output_dir: knowledge_dir.clone(),
         incremental: false,
         ref_name: None,
-        task_id_pattern: None,
     })?;
 
     git(repo.path(), &["branch", "feature/wait"])?;
@@ -273,7 +278,6 @@ fn ensure_fresh_waits_for_requested_branch_ref_before_returning()
         output_dir: knowledge_dir.clone(),
         incremental: true,
         ref_name: None,
-        task_id_pattern: None,
     })?;
 
     let status = status_rx
@@ -289,12 +293,185 @@ fn ensure_fresh_waits_for_requested_branch_ref_before_returning()
         &read_target.requested,
         read_target.fallback.as_ref(),
         read_target.default.as_ref(),
+        Default::default(),
     )?;
     assert!(
         graph
             .leaves
             .iter()
             .any(|leaf| leaf.base.name == "feature_graph")
+    );
+    Ok(())
+}
+
+#[test]
+fn branch_refs_ensure_fresh_rebuilds_clean_worktree_when_branch_ref_is_missing()
+-> Result<(), Box<dyn std::error::Error>> {
+    let repo = init_repo()?;
+    let knowledge_dir = repo.path().join(".orbit/knowledge");
+    run_build(BuildConfig {
+        repo_path: repo.path().to_path_buf(),
+        output_dir: knowledge_dir.clone(),
+        incremental: false,
+        ref_name: None,
+    })?;
+
+    let default_ref = RefName::new("main")?;
+    let graph_store = GraphObjectStore::new(knowledge_dir.join("graph"));
+    assert!(graph_store.ref_path(&default_ref).is_file());
+
+    git(repo.path(), &["branch", "feature/missing-refresh"])?;
+    let feature_worktree = repo.path().join("wt-missing-refresh");
+    git(
+        repo.path(),
+        &[
+            "worktree",
+            "add",
+            feature_worktree.to_str().unwrap(),
+            "feature/missing-refresh",
+        ],
+    )?;
+    write_rust_source(&feature_worktree, "feature_only_graph")?;
+    commit_all_with_date(
+        &feature_worktree,
+        "feature-only graph",
+        "2026-04-10T00:00:00Z",
+    )?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(knowledge_dir.join("manifest.json"))?)?;
+    let generated_at = manifest
+        .get("generated_at")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| io_error("manifest generated_at missing".to_string()))?;
+    let generated_at = chrono::DateTime::parse_from_rfc3339(generated_at)?;
+    let head_ts = chrono::DateTime::parse_from_rfc3339(&git(
+        &feature_worktree,
+        &["log", "-1", "--format=%cI"],
+    )?)?;
+    assert!(head_ts < generated_at);
+
+    let read_target = resolve_graph_read_target(Some(&feature_worktree), None)?;
+    assert_eq!(read_target.requested.as_str(), "feature/missing-refresh");
+    assert_eq!(
+        read_target.fallback.as_ref().map(RefName::as_str),
+        Some("main")
+    );
+    assert!(!graph_store.ref_path(&read_target.requested).exists());
+
+    let status = ensure_fresh(&knowledge_dir, &feature_worktree)?;
+    assert_eq!(status, RefreshStatus::Rebuilt);
+    assert!(graph_store.ref_path(&read_target.requested).is_file());
+
+    let resolved =
+        graph_store.resolve_ref(&read_target.requested, read_target.fallback.as_ref())?;
+    assert!(!resolved.used_fallback);
+
+    let graph = graph_store.read_graph(
+        &read_target.requested,
+        read_target.fallback.as_ref(),
+        read_target.default.as_ref(),
+        Default::default(),
+    )?;
+    assert!(
+        graph
+            .leaves
+            .iter()
+            .any(|leaf| leaf.base.name == "feature_only_graph")
+    );
+    assert!(
+        !graph
+            .leaves
+            .iter()
+            .any(|leaf| leaf.base.name == "main_graph")
+    );
+
+    write_rust_source(&feature_worktree, "feature_dirty_graph")?;
+    let status = ensure_fresh(&knowledge_dir, &feature_worktree)?;
+    assert_eq!(status, RefreshStatus::Rebuilt);
+    let status = ensure_fresh(&knowledge_dir, &feature_worktree)?;
+    assert_eq!(status, RefreshStatus::SkippedDirtyDebounce);
+    Ok(())
+}
+
+#[test]
+fn branch_refs_ensure_fresh_rebuilds_after_reset_to_older_timestamp_head()
+-> Result<(), Box<dyn std::error::Error>> {
+    let repo = init_repo()?;
+    let knowledge_temp = TempDir::new()?;
+    let knowledge_dir = knowledge_temp.path().join("knowledge");
+
+    write_rust_source(repo.path(), "old_graph")?;
+    commit_all_with_date(repo.path(), "old graph", "2026-04-01T00:00:00Z")?;
+    let old_head = git(repo.path(), &["rev-parse", "HEAD"])?;
+
+    write_rust_source(repo.path(), "new_graph")?;
+    commit_all_with_date(repo.path(), "new graph", "2030-01-01T00:00:00Z")?;
+    let new_head = git(repo.path(), &["rev-parse", "HEAD"])?;
+
+    run_build(BuildConfig {
+        repo_path: repo.path().to_path_buf(),
+        output_dir: knowledge_dir.clone(),
+        incremental: false,
+        ref_name: None,
+    })?;
+
+    let read_target = resolve_graph_read_target(Some(repo.path()), None)?;
+    let graph_store = GraphObjectStore::new(knowledge_dir.join("graph"));
+    let current_ref = graph_store.read_ref(&read_target.requested)?;
+    assert_eq!(current_ref.git_head_oid.as_deref(), Some(new_head.as_str()));
+    assert!(current_ref.git_tree_oid.as_deref().is_some());
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(knowledge_dir.join("manifest.json"))?)?;
+    assert_eq!(
+        manifest
+            .get("git_head_oid")
+            .and_then(|value| value.as_str()),
+        Some(new_head.as_str())
+    );
+    assert!(
+        manifest
+            .get("git_tree_oid")
+            .and_then(|value| value.as_str())
+            .is_some()
+    );
+
+    git(repo.path(), &["reset", "--hard", &old_head])?;
+    let generated_at = manifest
+        .get("generated_at")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| io_error("manifest generated_at missing".to_string()))?;
+    let generated_at = chrono::DateTime::parse_from_rfc3339(generated_at)?;
+    let head_ts =
+        chrono::DateTime::parse_from_rfc3339(&git(repo.path(), &["log", "-1", "--format=%cI"])?)?;
+    assert!(head_ts < generated_at);
+
+    let status = ensure_fresh(&knowledge_dir, repo.path())?;
+    assert_eq!(status, RefreshStatus::Rebuilt);
+
+    let refreshed_ref = graph_store.read_ref(&read_target.requested)?;
+    assert_eq!(
+        refreshed_ref.git_head_oid.as_deref(),
+        Some(old_head.as_str())
+    );
+
+    let graph = graph_store.read_graph(
+        &read_target.requested,
+        read_target.fallback.as_ref(),
+        read_target.default.as_ref(),
+        Default::default(),
+    )?;
+    assert!(
+        graph
+            .leaves
+            .iter()
+            .any(|leaf| leaf.base.name == "old_graph")
+    );
+    assert!(
+        !graph
+            .leaves
+            .iter()
+            .any(|leaf| leaf.base.name == "new_graph")
     );
     Ok(())
 }
@@ -315,20 +492,18 @@ fn pack_regression_selector_opens_from_branch_ref_layout() -> Result<(), Box<dyn
         output_dir: knowledge_dir.clone(),
         incremental: false,
         ref_name: Some(build_ref.clone()),
-        task_id_pattern: None,
     })?;
 
     let store = KnowledgeStore::open(&knowledge_dir, &build_ref, None, None)?;
-    let selector: Selector =
-        "symbol:crates/orbit-cli/src/command/observe/graph.rs#GraphSearchArgs::execute:method"
-            .parse()?;
+    let selector: Selector = "symbol:crates/orbit-cli/src/command/observe/graph.rs#<GraphSearchArgs as Execute>::execute:method"
+        .parse()?;
     let pack = store.pack(&[selector])?;
 
     assert_eq!(pack.total_nodes, 1);
     assert!(pack.unresolved_selectors.is_empty());
     assert_eq!(
         pack.entries[0].selector,
-        "symbol:crates/orbit-cli/src/command/observe/graph.rs#GraphSearchArgs::execute:method"
+        "symbol:crates/orbit-cli/src/command/observe/graph.rs#<GraphSearchArgs as Execute>::execute:method"
     );
     Ok(())
 }
@@ -441,8 +616,6 @@ fn base_node(id: &str, name: &str, location: &str, parent_id: Option<&str>) -> B
         lineage_locked: false,
         lock_owner: None,
         lock_reason: String::new(),
-        task_ids: Vec::new(),
-        structural_conflict: false,
     }
 }
 

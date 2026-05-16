@@ -3,7 +3,7 @@ use orbit_core::{OrbitError, OrbitRuntime, build_task_status_index};
 
 use crate::command::Execute;
 
-use super::output::{print_task_fields, task_fields_to_json, task_to_json};
+use super::output::{print_task_fields, task_fields_to_json, task_to_json_for_runtime};
 
 #[derive(Args)]
 pub struct TaskShowArgs {
@@ -14,7 +14,7 @@ pub struct TaskShowArgs {
     pub json: bool,
     /// Print only the specified field projection(s). Valid values: comments, plan,
     /// execution_summary, description, acceptance_criteria, dependencies,
-    /// resolved_dependencies, history, context_files, artifacts.
+    /// resolved_dependencies, tags, history, context_files, artifacts.
     /// Repeat the flag or use a comma-separated value list. Combined with --json,
     /// a single field returns that field as JSON and multiple fields return a JSON object.
     #[arg(long = "fields", alias = "field", value_delimiter = ',', num_args = 1..)]
@@ -40,11 +40,11 @@ impl Execute for TaskShowArgs {
         }
 
         if self.json {
-            crate::output::json::print_pretty(&task_to_json(&task, &status_by_id))
+            crate::output::json::print_pretty(&task_to_json_for_runtime(runtime, &task)?)
         } else {
             use crate::output::color::{bold, dimmed, priority_color, status_color};
             println!("{} {}", bold("ID:"), task.id);
-            if let Some(ref parent_id) = task.parent_id {
+            if let Some(parent_id) = task.parent_id() {
                 println!("{} {}", bold("Parent Task:"), parent_id);
             }
             println!("{} {}", bold("Title:"), task.title);
@@ -71,10 +71,23 @@ impl Execute for TaskShowArgs {
                     println!("  - {}", criterion);
                 }
             }
-            if !task.dependencies.is_empty() {
+            if !task.dependencies().is_empty() {
                 println!("{}", bold("Dependencies:"));
                 for dependency in orbit_core::resolve_task_dependencies(&task, &status_by_id) {
                     println!("  - {}", dependency.label());
+                }
+            }
+            if !task.tags.is_empty() {
+                println!("{} {}", bold("Tags:"), task.tags.join(", "));
+            }
+            if !task.external_refs.is_empty() {
+                println!("{}", bold("External refs:"));
+                for external_ref in &task.external_refs {
+                    if let Some(url) = &external_ref.url {
+                        println!("  - {}: {} [{}]", external_ref.system, external_ref.id, url);
+                    } else {
+                        println!("  - {}: {}", external_ref.system, external_ref.id);
+                    }
                 }
             }
             if !task.plan.is_empty() {
@@ -83,9 +96,10 @@ impl Execute for TaskShowArgs {
             if !task.execution_summary.is_empty() {
                 println!("{} {}", bold("Execution Summary:"), task.execution_summary);
             }
-            if !task.comments.is_empty() {
+            let comments = runtime.get_task_comments(&task.id)?;
+            if !comments.is_empty() {
                 println!("{}", bold("Comments:"));
-                for comment in &task.comments {
+                for comment in &comments {
                     println!(
                         "  {} {}: {}",
                         dimmed(&format!("[{}]", comment.at.to_rfc3339())),
@@ -106,9 +120,10 @@ impl Execute for TaskShowArgs {
             if let Some(ref implemented_by) = task.implemented_by {
                 println!("{} {}", bold("Implemented By:"), implemented_by);
             }
-            if !task.history.is_empty() {
+            let history = runtime.get_task_history(&task.id)?;
+            if !history.is_empty() {
                 println!("{}", bold("History:"));
-                for entry in &task.history {
+                for entry in &history {
                     if let Some(note) = &entry.note {
                         println!(
                             "  {} {}: {} ({})",
@@ -127,13 +142,10 @@ impl Execute for TaskShowArgs {
                     }
                 }
             }
-            if let Some(ref pr_number) = task.pr_number {
-                println!("{} {}", bold("PR Number:"), pr_number);
-            }
             if let Some(ref pr_status) = task.pr_status {
                 println!("{} {}", bold("PR Status:"), pr_status);
             }
-            if let Some(ref source_task_id) = task.source_task_id {
+            if let Some(source_task_id) = task.source_task_id() {
                 println!("{} {}", bold("Source Task:"), source_task_id);
             }
             println!(
@@ -169,12 +181,13 @@ fn normalize_task_show_fields(fields: &[String]) -> Result<Vec<String>, OrbitErr
                 | "acceptance_criteria"
                 | "dependencies"
                 | "resolved_dependencies"
+                | "tags"
                 | "history"
                 | "context_files"
                 | "artifacts"
         ) {
             return Err(OrbitError::InvalidInput(format!(
-                "unknown field selector `{trimmed}`. Valid values: comments, plan, execution_summary, description, acceptance_criteria, dependencies, resolved_dependencies, history, context_files, artifacts"
+                "unknown field selector `{trimmed}`. Valid values: comments, plan, execution_summary, description, acceptance_criteria, dependencies, resolved_dependencies, tags, history, context_files, artifacts"
             )));
         }
         normalized.push(trimmed.to_string());

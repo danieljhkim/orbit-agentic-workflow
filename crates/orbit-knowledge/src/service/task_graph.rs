@@ -4,7 +4,7 @@ use orbit_common::types::OrbitError;
 use serde_json::Value;
 
 use crate::extract::{self, Language};
-use crate::graph::object_store::{GraphObjectStore, resolve_graph_read_target};
+use crate::graph::object_store::{GraphObjectStore, GraphReadOptions, resolve_graph_read_target};
 use crate::lock::GraphLockGuard;
 use crate::pipeline::context::BuildConfig;
 use crate::{
@@ -45,6 +45,8 @@ impl TaskGraphService {
         workspace_root: Option<&Path>,
         explicit_knowledge_dir: bool,
         explicit_ref: Option<&str>,
+        read_options: GraphReadOptions,
+        selector_timeout_ms: Option<u64>,
     ) -> Result<Value, OrbitError> {
         if explicit_ref.is_none() {
             self.maybe_refresh_knowledge_graph(workspace_root, explicit_knowledge_dir);
@@ -67,7 +69,12 @@ impl TaskGraphService {
                 read_target.fallback.as_ref(),
                 read_target.default.as_ref(),
             )?;
-            store.pack(selectors)
+            store.pack_with_timeout_options(
+                selectors,
+                selector_timeout_ms,
+                read_options,
+                workspace_root,
+            )
         };
 
         let pack = match pack_result() {
@@ -83,20 +90,16 @@ impl TaskGraphService {
                     ) {
                         Ok(true) => match pack_result() {
                             Ok(pack) => Ok(pack),
-                            Err(retry_error) => Err(KnowledgeError {
-                                kind: "knowledge_unavailable".to_string(),
-                                reason: format!(
+                            Err(retry_error) => {
+                                Err(KnowledgeError::knowledge_unavailable(format!(
                                     "failed to load knowledge pack: {first_error}; retry after rebuild failed: {retry_error}"
-                                ),
-                            }),
+                                )))
+                            }
                         },
                         Ok(false) => Err(first_error),
-                        Err(rebuild_error) => Err(KnowledgeError {
-                            kind: "knowledge_unavailable".to_string(),
-                            reason: format!(
-                                "failed to load knowledge pack: {first_error}; rebuild attempt failed: {rebuild_error}"
-                            ),
-                        }),
+                        Err(rebuild_error) => Err(KnowledgeError::knowledge_unavailable(format!(
+                            "failed to load knowledge pack: {first_error}; rebuild attempt failed: {rebuild_error}"
+                        ))),
                     }
                 };
 
@@ -188,6 +191,7 @@ impl TaskGraphService {
         workspace_root: Option<&Path>,
         explicit_knowledge_dir: bool,
         explicit_ref: Option<&str>,
+        options: GraphReadOptions,
     ) -> Result<crate::graph::nodes::CodebaseGraphV1, OrbitError> {
         if explicit_ref.is_none() {
             self.maybe_refresh_knowledge_graph(workspace_root, explicit_knowledge_dir);
@@ -199,6 +203,7 @@ impl TaskGraphService {
             &read_target.requested,
             read_target.fallback.as_ref(),
             read_target.default.as_ref(),
+            options,
         ) {
             Ok(graph) => Ok(graph),
             Err(first_error) => {
@@ -229,6 +234,7 @@ impl TaskGraphService {
                         &read_target.requested,
                         read_target.fallback.as_ref(),
                         read_target.default.as_ref(),
+                        options,
                     )
                     .map_err(|retry_error| {
                         OrbitError::Execution(format!(
@@ -287,7 +293,6 @@ impl TaskGraphService {
             output_dir: self.knowledge_dir.clone(),
             incremental,
             ref_name: None,
-            task_id_pattern: None,
         })
         .map_err(|error| error.to_string())?;
         Ok(true)

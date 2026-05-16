@@ -1,17 +1,23 @@
 use orbit_common::types::{
-    AuditEvent, ExecutorDef, JobRun, JobRunState, KnowledgeRunMetrics, OrbitError, PolicyDef,
-    ReviewThread, StoredTool, Task, TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry,
-    TaskPriority, TaskStatus, TaskType,
+    Adr, AdrStatus, AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics,
+    Learning, LearningStatus, NotFoundKind, OrbitError, PolicyDef, ReviewThread, StoredTool, Task,
+    TaskArtifact, TaskComment, TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus,
+    TaskType,
 };
+use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_store::{
-    AuditEventFilter, AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend,
-    JobRunQuery, JobRunStepParams, JobRunStoreBackend, PolicyDefStoreBackend,
+    AdrCreateParams, AdrDocumentUpdateParams, AdrStoreBackend, AuditEventFilter,
+    AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunQuery,
+    JobRunStepParams, JobRunStoreBackend, LearningCreateParams, LearningSearchParams,
+    LearningSearchResult, LearningStoreBackend, LearningUpdateParams, PolicyDefStoreBackend,
     TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend,
     TaskDocumentUpdateParams, TaskHistoryStoreBackend, TaskHistoryUpdateParams,
-    TaskReservationCheckParams, TaskReservationCheckResult, TaskReservationReleaseParams,
-    TaskReservationReleaseResult, TaskReservationReserveParams, TaskReservationReserveResult,
-    TaskReservationStoreBackend, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
-    ToolStoreBackend,
+    TaskReservationCheckParams, TaskReservationCheckResult, TaskReservationListResult,
+    TaskReservationOwnedConflictsParams, TaskReservationOwnedConflictsResult,
+    TaskReservationReleaseByOwnerParams, TaskReservationReleaseByOwnerResult,
+    TaskReservationReleaseParams, TaskReservationReleaseResult, TaskReservationReserveParams,
+    TaskReservationReserveResult, TaskReservationStoreBackend, TaskReviewStoreBackend,
+    TaskReviewUpdateParams, TaskStoreBackend, ToolStoreBackend,
 };
 
 use crate::context::OrbitStores;
@@ -23,24 +29,21 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) description: Option<String>,
     pub(crate) acceptance_criteria: Option<Vec<String>>,
     pub(crate) dependencies: Option<Vec<String>>,
+    pub(crate) tags: Option<Vec<String>>,
     pub(crate) plan: Option<String>,
     pub(crate) execution_summary: Option<String>,
     pub(crate) context_files: Option<Vec<String>>,
-    pub(crate) workspace_path: Option<Option<String>>,
-    pub(crate) repo_root: Option<Option<String>>,
     pub(crate) created_by: Option<Option<String>>,
     pub(crate) planned_by: Option<Option<String>>,
     pub(crate) implemented_by: Option<Option<String>>,
-    pub(crate) agent: Option<Option<String>>,
-    pub(crate) model: Option<Option<String>>,
     pub(crate) status: Option<TaskStatus>,
     pub(crate) priority: Option<TaskPriority>,
     pub(crate) complexity: Option<TaskComplexity>,
     pub(crate) task_type: Option<TaskType>,
-    pub(crate) pr_number: Option<Option<String>>,
+    pub(crate) external_refs: Option<Vec<ExternalRef>>,
     pub(crate) pr_status: Option<Option<String>>,
     pub(crate) source_task_id: Option<Option<String>>,
-    pub(crate) batch_id: Option<Option<String>>,
+    pub(crate) job_run_id: Option<Option<String>>,
     pub(crate) status_event: Option<String>,
     pub(crate) status_note: Option<String>,
     pub(crate) append_history: Vec<TaskHistoryEntry>,
@@ -56,23 +59,20 @@ impl TaskRecordUpdateParams {
             || self.description.is_some()
             || self.acceptance_criteria.is_some()
             || self.dependencies.is_some()
+            || self.tags.is_some()
             || self.plan.is_some()
             || self.execution_summary.is_some()
             || self.context_files.is_some()
-            || self.workspace_path.is_some()
-            || self.repo_root.is_some()
             || self.created_by.is_some()
             || self.planned_by.is_some()
             || self.implemented_by.is_some()
-            || self.agent.is_some()
-            || self.model.is_some()
             || self.priority.is_some()
             || self.complexity.is_some()
             || self.task_type.is_some()
-            || self.pr_number.is_some()
+            || self.external_refs.is_some()
             || self.pr_status.is_some()
             || self.source_task_id.is_some()
-            || self.batch_id.is_some()
+            || self.job_run_id.is_some()
     }
 
     fn has_history_changes(&self) -> bool {
@@ -100,6 +100,20 @@ impl OrbitStores {
             history: self.task_history.as_ref(),
             review: self.task_review.as_ref(),
             artifact: self.task_artifact.as_ref(),
+            semantic_vector: self.semantic_vector.as_ref(),
+            semantic_worker: self.semantic_worker.as_ref(),
+        }
+    }
+
+    pub(crate) fn adrs(&self) -> AdrRecords<'_> {
+        AdrRecords {
+            store: self.adr.as_ref(),
+        }
+    }
+
+    pub(crate) fn learnings(&self) -> LearningRecords<'_> {
+        LearningRecords {
+            store: self.learning.as_ref(),
         }
     }
 
@@ -146,6 +160,8 @@ pub(crate) struct TaskRecords<'a> {
     history: &'a dyn TaskHistoryStoreBackend,
     review: &'a dyn TaskReviewStoreBackend,
     artifact: &'a dyn TaskArtifactStoreBackend,
+    semantic_vector: &'a VectorStore,
+    semantic_worker: &'a EmbedWorker,
 }
 
 pub(crate) struct TaskReservationRecords<'a> {
@@ -154,7 +170,9 @@ pub(crate) struct TaskReservationRecords<'a> {
 
 impl TaskRecords<'_> {
     pub(crate) fn create(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
-        self.store.create_task(params)
+        let task = self.store.create_task(params)?;
+        self.semantic_worker.enqueue(task.clone());
+        Ok(task)
     }
 
     pub(crate) fn get(&self, id: &str) -> Result<Option<Task>, OrbitError> {
@@ -165,8 +183,30 @@ impl TaskRecords<'_> {
         self.artifact.get_task_artifacts(id)
     }
 
+    pub(crate) fn get_comments(&self, id: &str) -> Result<Option<Vec<TaskComment>>, OrbitError> {
+        self.history.get_task_comments(id)
+    }
+
+    pub(crate) fn get_history(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<TaskHistoryEntry>>, OrbitError> {
+        self.history.get_task_history(id)
+    }
+
+    pub(crate) fn get_review_threads(
+        &self,
+        id: &str,
+    ) -> Result<Option<Vec<ReviewThread>>, OrbitError> {
+        self.review.get_task_review_threads(id)
+    }
+
     pub(crate) fn list(&self) -> Result<Vec<Task>, OrbitError> {
         self.store.list_tasks()
+    }
+
+    pub(crate) fn list_by_tags(&self, tags: &[String]) -> Result<Vec<Task>, OrbitError> {
+        self.store.list_tasks_by_tags(tags)
     }
 
     pub(crate) fn list_filtered(
@@ -174,10 +214,18 @@ impl TaskRecords<'_> {
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.store
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.store.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            job_run_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 
     pub(crate) fn update(
@@ -194,23 +242,20 @@ impl TaskRecords<'_> {
                     description: params.description.clone(),
                     acceptance_criteria: params.acceptance_criteria.clone(),
                     dependencies: params.dependencies.clone(),
+                    tags: params.tags.clone(),
                     plan: params.plan.clone(),
                     execution_summary: params.execution_summary.clone(),
                     context_files: params.context_files.clone(),
-                    workspace_path: params.workspace_path.clone(),
-                    repo_root: params.repo_root.clone(),
                     created_by: params.created_by.clone(),
                     planned_by: params.planned_by.clone(),
                     implemented_by: params.implemented_by.clone(),
-                    agent: params.agent.clone(),
-                    model: params.model.clone(),
                     priority: params.priority,
                     complexity: params.complexity,
                     task_type: params.task_type,
-                    pr_number: params.pr_number.clone(),
+                    external_refs: params.external_refs.clone(),
                     pr_status: params.pr_status.clone(),
                     source_task_id: params.source_task_id.clone(),
-                    batch_id: params.batch_id.clone(),
+                    job_run_id: params.job_run_id.clone(),
                 },
             )?;
         }
@@ -243,25 +288,61 @@ impl TaskRecords<'_> {
             self.artifact.upsert_task_artifacts(
                 id,
                 TaskArtifactUpdateParams {
+                    actor: params.actor.clone(),
                     upsert_artifacts: params.upsert_artifacts.clone(),
                 },
             )?;
         }
 
-        self.get(id)?
-            .ok_or_else(|| OrbitError::TaskNotFound(id.to_string()))
+        let task = self
+            .get(id)?
+            .ok_or_else(|| OrbitError::not_found(NotFoundKind::Task, id.to_string()))?;
+        if params.has_document_changes()
+            || params.has_history_changes()
+            || params.has_review_changes()
+            || params.has_artifact_changes()
+        {
+            self.semantic_worker.enqueue(task.clone());
+        }
+        Ok(task)
     }
 
     pub(crate) fn delete(&self, id: &str) -> Result<bool, OrbitError> {
-        self.store.delete_task(id)
+        let deleted = self.store.delete_task(id)?;
+        if deleted && let Err(error) = self.semantic_vector.delete_source("task", id) {
+            orbit_common::tracing::debug!(
+                target: "orbit.semantic.indexer",
+                task_id = id,
+                error = %error,
+                "semantic delete cascade failed after task deletion",
+            );
+        }
+        Ok(deleted)
     }
 
     pub(crate) fn search(&self, query: &str) -> Result<Vec<Task>, OrbitError> {
         self.store.search_tasks(query)
     }
+
+    pub(crate) fn search_filtered(
+        &self,
+        query: &str,
+        tags: &[String],
+    ) -> Result<Vec<Task>, OrbitError> {
+        self.store.search_tasks_filtered(query, tags)
+    }
 }
 
 impl TaskReservationRecords<'_> {
+    pub(crate) fn list_active(
+        &self,
+        workspace_orbit_dir: &str,
+        workspace_id: Option<&str>,
+    ) -> Result<TaskReservationListResult, OrbitError> {
+        self.store
+            .list_active_task_reservations(workspace_orbit_dir, workspace_id)
+    }
+
     pub(crate) fn check(
         &self,
         params: TaskReservationCheckParams,
@@ -281,6 +362,20 @@ impl TaskReservationRecords<'_> {
         params: TaskReservationReleaseParams,
     ) -> Result<TaskReservationReleaseResult, OrbitError> {
         self.store.release_task_reservation(params)
+    }
+
+    pub(crate) fn release_by_owner_run_id(
+        &self,
+        params: TaskReservationReleaseByOwnerParams,
+    ) -> Result<TaskReservationReleaseByOwnerResult, OrbitError> {
+        self.store.release_task_reservations_by_owner_run_id(params)
+    }
+
+    pub(crate) fn list_owned_conflicts(
+        &self,
+        params: TaskReservationOwnedConflictsParams,
+    ) -> Result<TaskReservationOwnedConflictsResult, OrbitError> {
+        self.store.list_owned_task_reservation_conflicts(params)
     }
 }
 
@@ -375,6 +470,16 @@ impl JobRecords<'_> {
     ) -> Result<bool, OrbitError> {
         self.run
             .finalize_job_run(run_id, state, finished_at, duration_ms)
+    }
+
+    pub(crate) fn repair_terminal_run_timing(
+        &self,
+        run_id: &str,
+        finished_at: chrono::DateTime<chrono::Utc>,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OrbitError> {
+        self.run
+            .repair_terminal_job_run_timing(run_id, finished_at, duration_ms)
     }
 
     pub(crate) fn get_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
@@ -492,6 +597,22 @@ impl AuditEventRecords<'_> {
         self.store.get_audit_tool_call_counts_by_role(since)
     }
 
+    pub(crate) fn tool_call_counts_by_surface_and_role(
+        &self,
+        since: Option<&chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Vec<orbit_store::AuditToolCallCountsBySurfaceAndRole>, OrbitError> {
+        self.store
+            .get_audit_tool_call_counts_by_surface_and_role(since)
+    }
+
+    pub(crate) fn top_tool_calls(
+        &self,
+        since: Option<&chrono::DateTime<chrono::Utc>>,
+        limit: usize,
+    ) -> Result<Vec<orbit_store::AuditTopToolCall>, OrbitError> {
+        self.store.get_audit_top_tool_calls(since, limit)
+    }
+
     pub(crate) fn insert(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {
         self.store.insert_audit_event_record(params)
     }
@@ -530,5 +651,122 @@ impl PolicyDefRecords<'_> {
 
     pub(crate) fn upsert(&self, def: &PolicyDef) -> Result<(), OrbitError> {
         self.store.upsert_policy_def(def)
+    }
+}
+
+pub(crate) struct AdrRecords<'a> {
+    store: &'a dyn AdrStoreBackend,
+}
+
+impl AdrRecords<'_> {
+    pub(crate) fn add(&self, params: AdrCreateParams) -> Result<Adr, OrbitError> {
+        self.store.add_adr(params)
+    }
+
+    pub(crate) fn get(&self, id: &str) -> Result<Option<Adr>, OrbitError> {
+        self.store.get_adr(id)
+    }
+
+    /// Unfiltered list. The tool surface uses [`Self::list_filtered`]; this
+    /// helper exists for maintenance / CLI tooling layered on top later.
+    #[allow(dead_code)]
+    pub(crate) fn list(&self) -> Result<Vec<Adr>, OrbitError> {
+        self.store.list_adrs()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn list_filtered(
+        &self,
+        status: Option<AdrStatus>,
+        owner: Option<&str>,
+        feature: Option<&str>,
+        task_id: Option<&str>,
+        legacy_id: Option<&str>,
+        validation_warned: Option<bool>,
+    ) -> Result<Vec<Adr>, OrbitError> {
+        self.store.list_adrs_filtered(
+            status,
+            owner,
+            feature,
+            task_id,
+            legacy_id,
+            validation_warned,
+        )
+    }
+
+    pub(crate) fn update_status(&self, id: &str, new_status: AdrStatus) -> Result<(), OrbitError> {
+        self.store.update_adr_status(id, new_status)
+    }
+
+    pub(crate) fn update_document(
+        &self,
+        id: &str,
+        fields: &AdrDocumentUpdateParams,
+    ) -> Result<(), OrbitError> {
+        self.store.update_adr_document(id, fields)
+    }
+
+    /// Removes an ADR from disk and index. Reserved for the future
+    /// migration / cleanup CLI; not exposed via the tool surface.
+    #[allow(dead_code)]
+    pub(crate) fn delete(&self, id: &str) -> Result<bool, OrbitError> {
+        self.store.delete_adr(id)
+    }
+
+    pub(crate) fn supersede(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError> {
+        self.store.supersede_adr(old_id, new_id)
+    }
+}
+
+pub(crate) struct LearningRecords<'a> {
+    store: &'a dyn LearningStoreBackend,
+}
+
+impl LearningRecords<'_> {
+    pub(crate) fn add(&self, params: LearningCreateParams) -> Result<Learning, OrbitError> {
+        self.store.create_learning(params)
+    }
+
+    pub(crate) fn get(&self, id: &str) -> Result<Option<Learning>, OrbitError> {
+        self.store.get_learning(id)
+    }
+
+    pub(crate) fn list(&self, status: Option<LearningStatus>) -> Result<Vec<Learning>, OrbitError> {
+        self.store.list_learnings(status)
+    }
+
+    pub(crate) fn search(
+        &self,
+        params: LearningSearchParams,
+    ) -> Result<Vec<LearningSearchResult>, OrbitError> {
+        self.store.search_learnings(params)
+    }
+
+    pub(crate) fn update(
+        &self,
+        id: &str,
+        params: LearningUpdateParams,
+    ) -> Result<Learning, OrbitError> {
+        self.store.update_learning(id, params)
+    }
+
+    pub(crate) fn supersede(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError> {
+        self.store.supersede_learning(old_id, new_id)
+    }
+
+    pub(crate) fn archive(&self, id: &str) -> Result<bool, OrbitError> {
+        self.store.archive_learning(id)
+    }
+
+    /// Hard-deletes a learning's YAML file and index row. Reserved for
+    /// maintenance / migration tooling; the tool surface uses `archive`
+    /// for stale-record cleanup per §7.3.
+    #[allow(dead_code)]
+    pub(crate) fn delete(&self, id: &str) -> Result<bool, OrbitError> {
+        self.store.delete_learning(id)
+    }
+
+    pub(crate) fn reindex(&self) -> Result<(), OrbitError> {
+        self.store.reindex_learnings()
     }
 }

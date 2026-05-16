@@ -62,12 +62,17 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             CREATE TABLE IF NOT EXISTS task_reservations (
                 reservation_id TEXT PRIMARY KEY,
                 workspace_orbit_dir TEXT NOT NULL,
+                workspace_id TEXT,
                 task_ids_json TEXT NOT NULL,
                 files_json TEXT NOT NULL,
                 actor TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
-                released_at TEXT
+                released_at TEXT,
+                owner_run_id TEXT,
+                owner_metadata_json TEXT,
+                release_reason TEXT,
+                release_metadata_json TEXT
             );
 
             CREATE TABLE IF NOT EXISTS invocations (
@@ -100,6 +105,33 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 PRIMARY KEY(invocation_id, seq),
                 FOREIGN KEY(invocation_id) REFERENCES invocations(id) ON DELETE CASCADE
             );
+
+            -- ADR envelope index. Bodies live on disk under <root>/<state>/<id>/body.md;
+            -- this table indexes the YAML envelope fields for filter queries.
+            -- Arrays (related_features, related_tasks, legacy_ids, supersedes,
+            -- validation_warnings) are stored as JSON-encoded strings so filters
+            -- can use `LIKE '%"<value>"%'` until the corpus warrants junction
+            -- tables. Per ADR-010 in docs/design/adr-artifact, FTS5 over body
+            -- content is owned by `orbit-embed::vector`, not this schema.
+            CREATE TABLE IF NOT EXISTS adrs (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                title TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                related_features TEXT NOT NULL DEFAULT '[]',
+                related_tasks TEXT NOT NULL DEFAULT '[]',
+                legacy_ids TEXT NOT NULL DEFAULT '[]',
+                supersedes TEXT NOT NULL DEFAULT '[]',
+                superseded_by TEXT,
+                validation_warnings TEXT NOT NULL DEFAULT '[]',
+                legacy_validation TEXT NOT NULL DEFAULT 'none',
+                created_at TEXT NOT NULL,
+                accepted_at TEXT,
+                last_updated TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_adrs_status ON adrs(status);
+            CREATE INDEX IF NOT EXISTS idx_adrs_owner ON adrs(owner);
         "#,
     )
     .map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -108,7 +140,44 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
     ensure_tools_schema(conn)?;
     ensure_audit_events_schema(conn)?;
     ensure_task_reservations_schema(conn)?;
+    ensure_learning_index_schema(conn)?;
     ensure_invocation_schema(conn)?;
+
+    Ok(())
+}
+
+fn ensure_learning_index_schema(conn: &Connection) -> Result<(), OrbitError> {
+    conn.execute_batch(
+        r#"
+            -- Project-learnings envelope index. YAML records live on disk under
+            -- `<root>/<id>.yaml` (active) and `<root>/superseded/<id>.yaml`;
+            -- this table indexes the envelope fields for fast scope-glob
+            -- lookups. Arrays are stored as JSON strings for the same reason
+            -- the ADR index does it: phase-1 corpora are small and a junction
+            -- table is overkill. Per ADR-004, ranking and FTS over body
+            -- content are deferred to phase 2.
+            CREATE TABLE IF NOT EXISTS learnings_index (
+                id          TEXT PRIMARY KEY,
+                status      TEXT NOT NULL,
+                paths       TEXT NOT NULL,
+                tags        TEXT NOT NULL,
+                summary     TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS learnings_active
+                ON learnings_index(status) WHERE status = 'active';
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    // C2 (T20260511-6) adds an optional `priority` column used as the
+    // secondary ranking key in `search`. NULL is acceptable; the search
+    // path orders Some(N) ahead of None and falls back to updated_at.
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE learnings_index ADD COLUMN priority INTEGER",
+    )?;
 
     Ok(())
 }
@@ -353,7 +422,11 @@ fn ensure_task_reservations_schema(conn: &Connection) -> Result<(), OrbitError> 
                 actor TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
-                released_at TEXT
+                released_at TEXT,
+                owner_run_id TEXT,
+                owner_metadata_json TEXT,
+                release_reason TEXT,
+                release_metadata_json TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_expires
@@ -363,7 +436,44 @@ fn ensure_task_reservations_schema(conn: &Connection) -> Result<(), OrbitError> 
             ON task_reservations(workspace_orbit_dir, released_at);
         "#,
     )
-    .map_err(|e| OrbitError::Store(e.to_string()))
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE task_reservations ADD COLUMN workspace_id TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE task_reservations ADD COLUMN owner_run_id TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE task_reservations ADD COLUMN owner_metadata_json TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE task_reservations ADD COLUMN release_reason TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE task_reservations ADD COLUMN release_metadata_json TEXT",
+    )?;
+
+    conn.execute_batch(
+        r#"
+            CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_owner_release
+            ON task_reservations(workspace_orbit_dir, owner_run_id, released_at);
+
+            CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_id_release
+            ON task_reservations(workspace_id, released_at);
+
+            CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_id_expires
+            ON task_reservations(workspace_id, expires_at);
+        "#,
+    )
+    .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+    Ok(())
 }
 
 fn table_exists(conn: &Connection, table: &str) -> Result<bool, OrbitError> {
@@ -415,4 +525,113 @@ fn table_has_foreign_key_to(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_reservation_migration_adds_owner_columns_before_owner_index() {
+        let conn = Connection::open_in_memory().expect("open in-memory connection");
+        conn.execute_batch(
+            r#"
+                CREATE TABLE task_reservations (
+                    reservation_id TEXT PRIMARY KEY,
+                    workspace_orbit_dir TEXT NOT NULL,
+                    task_ids_json TEXT NOT NULL,
+                    files_json TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    released_at TEXT
+                );
+
+                INSERT INTO task_reservations(
+                    reservation_id,
+                    workspace_orbit_dir,
+                    task_ids_json,
+                    files_json,
+                    actor,
+                    created_at,
+                    expires_at,
+                    released_at
+                ) VALUES (
+                    'reservation-legacy',
+                    '/workspace/.orbit',
+                    '["T1"]',
+                    '["file:src/lib.rs"]',
+                    'legacy',
+                    '2026-05-05T00:00:00Z',
+                    '2026-05-05T01:00:00Z',
+                    NULL
+                );
+            "#,
+        )
+        .expect("create legacy reservation table");
+
+        apply_schema(&conn).expect("migrate legacy reservation table");
+
+        assert!(
+            table_has_column(&conn, "task_reservations", "workspace_id").expect("workspace column")
+        );
+        assert!(
+            table_has_column(&conn, "task_reservations", "owner_run_id").expect("owner column")
+        );
+        let owner_run_id: Option<String> = conn
+            .query_row(
+                "SELECT owner_run_id FROM task_reservations WHERE reservation_id = 'reservation-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query migrated row");
+        assert_eq!(owner_run_id, None);
+        let owner_index: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name = 'idx_task_reservations_workspace_owner_release'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query owner index");
+        assert_eq!(owner_index, 1);
+    }
+
+    #[test]
+    fn apply_schema_creates_adrs_table_and_indexes() {
+        let conn = Connection::open_in_memory().expect("open in-memory connection");
+
+        apply_schema(&conn).expect("apply schema");
+
+        assert!(table_exists(&conn, "adrs").expect("adrs table exists"));
+
+        let primary_key_columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(adrs)")
+            .expect("prepare pragma")
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                let pk: i64 = row.get(5)?;
+                Ok((name, pk))
+            })
+            .expect("query pragma")
+            .filter_map(|row| {
+                let (name, pk) = row.expect("pragma row");
+                (pk > 0).then_some(name)
+            })
+            .collect();
+        assert_eq!(primary_key_columns, vec!["id"]);
+
+        for index_name in ["idx_adrs_status", "idx_adrs_owner"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master
+                     WHERE type = 'index' AND name = ?1",
+                    [index_name],
+                    |row| row.get(0),
+                )
+                .expect("query index");
+            assert_eq!(count, 1, "expected index {index_name} to exist");
+        }
+    }
 }

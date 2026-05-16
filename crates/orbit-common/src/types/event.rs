@@ -62,6 +62,18 @@ pub enum OrbitEvent {
     JobRunCancelled {
         job_id: String,
         run_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_state: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        final_state: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal_attempted: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal_outcome: Option<String>,
     },
     JobRunDeleted {
         job_id: String,
@@ -142,5 +154,15 @@ pub enum OrbitEvent {
     ActivityProtocolViolation {
         id: String,
         message: String,
+    },
+    /// Recorded when [planning-duel writeback] drops an entry from the winning
+    /// plan's "Context Files" section because it could not be canonicalized
+    /// into a `file:` / `dir:` / `symbol:` selector. The writeback continues
+    /// without the entry; consumers can use this event to debug stale or
+    /// malformed plan markdown.
+    PlanningDuelContextFileSkipped {
+        task_id: String,
+        raw_entry: String,
+        reason: String,
     },
 }

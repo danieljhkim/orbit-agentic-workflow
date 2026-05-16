@@ -10,7 +10,7 @@ mod usage;
 use orbit_common::types::{OrbitError, ToolCallTrace};
 use serde_json::Value;
 
-pub use envelope::{is_timeout, parse_and_validate_response};
+pub use envelope::{is_timeout, parse_and_validate_response, peek_response_status};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentInvocationSpec {

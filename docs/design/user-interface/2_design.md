@@ -2,49 +2,45 @@
 
 **Status:** Draft
 **Owner:** gemini
-**Last updated:** 2026-04-28
+**Last updated:** 2026-05-08 (T20260508-14)
 
-This document details the active implementation of the Orbit UI, covering the visual design constraints and structural layout of both the local dashboard and the website. It focuses on the mechanisms employed to enforce the "Canon Refined" aesthetic.
+This document describes the current Orbit UI implementation: the local dashboard assets, the Canon Refined visual rules they rely on, and the telemetry behaviors that must stay consistent with backend data.
 
-## 1. High-Density Layout Mechanism
+## 1. Dense Layout
 
-The dashboard prioritizes maximizing data density while maintaining structural clarity. We employ a modular grid system that packs tabular data, telemetry feeds, and state indicators into a single view without scrolling where possible. 
-- Elements use standardized, subtle border radii (`4px` for small elements, `6px` for panels).
-- Expandable rows use sunken backgrounds (`--bg-sunk`) to nest detailed hierarchies without sacrificing the root tabular view.
-- The scoreboard table collapses companion metrics into compact pairs where scan quality improves: tokens render as `total/output`, tools render as `failed/total`, and planning duels render as `wins/participated`. Friction triage outcomes stay out of the primary table; the visible friction column is reported count only [T20260428-15].
+The dashboard favors wide, dense tables and panels over narrative screens. Tight spacing, small radii, and expandable sunken detail rows preserve hierarchy without hiding root lists. The scoreboard compresses companion metrics into pairs: `tokens` is `total/output`, `tool fail/all` is failed over total tool calls, and `duel w/all` is wins over participated duels. The primary friction column remains reported count only [T20260428-15].
 
-## 2. Layered Dark Palette
+## 2. Layered Palette
 
-The entire UI is anchored on a layered dark mode (`#0a0a0a` base, `#17171a` elevated cards) rather than flat pitch black.
-- This mitigates eye strain while providing clear visual depth.
-- Semantic coloring is muted but distinct: `--status-done` (`#4cc38a`), `--status-in-progress` (`#5ec8d4`), and `--status-blocked` (`#ef6b6b`).
-- Accents use a soft blue (`#6e9fff`) rather than harsh neons.
+The UI uses layered dark surfaces instead of flat black: base canvas, elevated panels, sunken wells, and accent washes. Status color should stay muted and distinct; exact token values live in `./specs/theme.md` and the dashboard CSS.
 
-## 3. Typography Rules
+## 3. Typography
 
-The UI employs a dual-typography approach:
-- `Inter` (sans-serif) is used for prose, headers, and UI elements to maximize readability.
-- `JetBrains Mono` is strictly reserved for data points, IDs, metrics, timestamps, and logs to ensure tabular alignment.
-- Base size is `13px` to maintain high density without compromising legibility.
+`Inter` carries labels, headings, and prose. `JetBrains Mono` is reserved for IDs, metrics, timestamps, code, and log streams so numeric and diagnostic data stays aligned.
 
-## 4. Real-Time Status Indication
+## 4. Live Status
 
-To provide a "live telemetry" feel, status markers rely on visual motion and high contrast. Spinners, blinking dots, and updating ticker formats are used to communicate active processing without requiring the user to read underlying text logs.
+Live processing is visible through pulsing dots, spinners, buffered-log counters, periodically refreshed tiles, and compact ticker-style values. The `orbit.log` panel is viewport-bounded; overflowing rows scroll inside the log stream so footer filters and follow-tail controls remain visible [T20260430-29]. Motion is functional: it points to active work without making the operator read raw logs first.
 
 ## 5. Dashboard Telemetry Consistency
 
-Dashboard summary tiles and drill-down panels must be backed by compatible data sources. The Audit > Policy tab is the detail view for the Denials 24h tile, so `/api/diagnostics/denials` combines v2 loop JSONL denial rows with SQLite audit events whose status is `denied`. SQLite filesystem boundary denials that lack an activity fsProfile render under the stable `workspace-boundary` profile label so the table remains filterable and does not silently disagree with `/api/audit/summary` [T20260428-13].
+Summary tiles and drill-down panels must agree. Audit > Policy is the detail view for the Denials 24h tile, so `/api/diagnostics/denials` combines v2 loop JSONL denial rows with SQLite `status = denied` audit events. SQLite filesystem boundary denials without an activity fsProfile use the stable `workspace-boundary` label [T20260428-13].
+
+Run Detail > Steps now includes compact per-step agent log expanders for CLI-backed activity steps [T20260508-14]. The UI renders bounded stdout and stderr previews from `/api/runs/:id/logs`, distinguishes stderr blocks from stdout blocks, highlights structured `ERROR <target>:` lines, and keeps blob references behind the API so operators do not need to resolve content hashes manually.
+
+Diagnostics has an Errors sub-tab after [T20260508-14]. It renders recent backend error rows independently of Metrics, Friction, and Policy, combining Orbit process ERROR events with structured agent stderr rows. Rows with `job_run` provenance route back to the owning Run Detail step so error triage stays connected to workflow context.
 
 ## 6. Concerns & Honest Limitations
 
-- **Accessibility**: The extreme contrast, small font sizes, and dense layouts may pose readability challenges for some users. We lean on the assumption that the primary audience is technical professionals, but true WCAG compliance is currently a secondary priority.
-- **Responsive Design**: True high-density "terminal" layouts are difficult to adapt gracefully to mobile or narrow viewports. The current implementation heavily favors wide desktop displays.
-- **Component Reusability**: Relying strictly on raw CSS variables and HTML currently means component logic is duplicated across the dashboard and website, lacking a formalized UI framework like React or Vue.
+Accessibility still needs a real WCAG pass; responsive behavior remains optimized for wide desktop viewports; raw HTML, CSS variables, and dashboard JavaScript keep the runtime simple but leave duplication across project surfaces.
 
 ## Task References
 
-- [T20260427-29]
-- [T20260428-13]
-- [T20260428-15]
+- [T20260427-29] introduced the Canon Refined UI direction.
+- [T20260428-13] unified dashboard denial sources for the policy drill-down.
+- [T20260428-15] compacted scoreboard ratio columns.
+- [T20260430-24] shortened this design doc while preserving current behavior statements.
+- [T20260430-29] bounded the live `orbit.log` panel to the viewport.
+- [T20260508-14] added Run Detail agent-log previews and Diagnostics > Errors.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

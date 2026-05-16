@@ -5,10 +5,10 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use orbit_common::types::{
-    AuditEventStatus, JobRun, JobRunState, JobScheduleState, JobTargetType, OrbitError, OrbitEvent,
-    PipelineState,
+    AuditEventStatus, JobRun, JobRunState, JobScheduleState, JobTargetType, NotFoundKind,
+    OrbitError, OrbitEvent, PipelineState, audit_execution_id,
 };
-use orbit_store::{AuditEventInsertParams, JobRunStepParams};
+use orbit_store::{AuditEventInsertParams, JobRunStepParams, TaskReservationReleaseReason};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -78,6 +78,7 @@ impl OrbitRuntime {
                 .jobs()
                 .write_run_state(&run.run_id, &initial_state)?;
 
+            self.reconcile_stale_job_runs(Some(job_name))?;
             let active_runs = self.stores().jobs().list_pending_or_running(job_name)?;
             let queued = !pipeline_run_is_runnable(&active_runs, &run.run_id, spec.max_active_runs);
 
@@ -190,6 +191,7 @@ impl OrbitRuntime {
                 )));
             }
 
+            self.reconcile_stale_job_runs(Some(&run.job_id))?;
             let active_runs = self.stores().jobs().list_pending_or_running(&run.job_id)?;
             if !pipeline_run_is_runnable(&active_runs, &run.run_id, spec.max_active_runs) {
                 thread::sleep(Duration::from_secs(PIPELINE_WAIT_MIN_POLL_SECONDS));
@@ -266,11 +268,12 @@ impl OrbitRuntime {
                         self.record_pipeline_failure_step(run, started_at, finished_at, message);
                     JobRunState::Failed
                 };
-                self.stores().jobs().finalize_run(
+                self.finalize_job_run_with_reservation_cleanup(
                     &run.run_id,
                     final_state,
                     finished_at,
                     duration_ms,
+                    TaskReservationReleaseReason::RunTerminal,
                 )?;
                 self.record_event(OrbitEvent::JobRunCompleted {
                     job_id: run.job_id.clone(),
@@ -286,11 +289,12 @@ impl OrbitRuntime {
                     finished_at,
                     &error.to_string(),
                 );
-                self.stores().jobs().finalize_run(
+                self.finalize_job_run_with_reservation_cleanup(
                     &run.run_id,
                     JobRunState::Failed,
                     finished_at,
                     duration_ms,
+                    TaskReservationReleaseReason::RunTerminal,
                 )?;
                 self.record_event(OrbitEvent::JobRunCompleted {
                     job_id: run.job_id.clone(),
@@ -359,14 +363,21 @@ impl OrbitRuntime {
         run_ids
             .iter()
             .map(|run_id| {
-                let Some(run) = self.stores().jobs().get_run(run_id)? else {
-                    return Ok(PipelineWaitEntry {
-                        run_id: run_id.clone(),
-                        status: "failed".to_string(),
-                        finished_at: None,
-                        pipeline: None,
-                        error: Some("unknown run".to_string()),
-                    });
+                let run = match self.show_job_run(run_id) {
+                    Ok(run) => run,
+                    Err(OrbitError::NotFound {
+                        kind: NotFoundKind::JobRun,
+                        ..
+                    }) => {
+                        return Ok(PipelineWaitEntry {
+                            run_id: run_id.clone(),
+                            status: "failed".to_string(),
+                            finished_at: None,
+                            pipeline: None,
+                            error: Some("unknown run".to_string()),
+                        });
+                    }
+                    Err(error) => return Err(error),
                 };
 
                 let terminal = match run.state {
@@ -475,10 +486,7 @@ impl OrbitRuntime {
         let arguments_json = serde_json::to_string(&arguments).map_err(|error| {
             OrbitError::Store(format!("serialize pipeline audit args: {error}"))
         })?;
-        let execution_id = format!(
-            "exec-{}",
-            Utc::now().timestamp_nanos_opt().unwrap_or_default()
-        );
+        let execution_id = audit_execution_id("exec");
         self.record_audit_event(&AuditEventInsertParams {
             execution_id,
             command: "tool".to_string(),

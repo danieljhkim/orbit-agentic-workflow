@@ -1,0 +1,2 @@
+- V2 task envelope parses.
+- Required Markdown sidecars exist.

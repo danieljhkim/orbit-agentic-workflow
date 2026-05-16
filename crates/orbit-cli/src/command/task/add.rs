@@ -1,6 +1,8 @@
-use clap::Args;
+use clap::{ArgAction, Args};
 use orbit_core::command::task::TaskAddParams;
-use orbit_core::{OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskStatus, TaskType};
+use orbit_core::{
+    ExternalRef, OrbitError, OrbitRuntime, TaskComplexity, TaskPriority, TaskStatus, TaskType,
+};
 
 use crate::command::Execute;
 
@@ -23,6 +25,9 @@ pub struct TaskAddArgs {
     /// Comma-separated dependency task IDs
     #[arg(long, alias = "dependency", default_value = "")]
     pub dependencies: String,
+    /// Task tags. Repeat or comma-separate for multiple tags.
+    #[arg(long = "tag", action = ArgAction::Append, value_delimiter = ',')]
+    pub tags: Vec<String>,
     /// Optional task plan payload. Leave blank for the executing agent or planning activity to author later.
     #[arg(long, alias = "instructions", default_value = "")]
     pub plan: String,
@@ -32,6 +37,9 @@ pub struct TaskAddArgs {
     /// Append an initial task comment
     #[arg(long)]
     pub comment: Option<String>,
+    /// External tracker reference in `system:id` form. Repeat for multiple refs.
+    #[arg(long = "ref", action = ArgAction::Append)]
+    pub external_refs: Vec<String>,
     /// Comma-separated task context selectors. Prefer `file:`, `dir:`, or
     /// `symbol:` forms; legacy raw paths are accepted and upgraded.
     #[arg(long, default_value = "")]
@@ -107,6 +115,7 @@ impl Execute for TaskAddArgs {
                 description,
                 acceptance_criteria: self.acceptance_criteria,
                 dependencies: crate::parse::csv_to_vec(&self.dependencies),
+                tags: self.tags,
                 plan,
                 comment: self.comment,
                 context_files: crate::parse::csv_to_vec(&self.context),
@@ -116,6 +125,11 @@ impl Execute for TaskAddArgs {
                 task_type,
                 status: self.status,
                 system_created: false,
+                external_refs: self
+                    .external_refs
+                    .iter()
+                    .map(|raw| ExternalRef::parse_key(raw))
+                    .collect::<Result<Vec<_>, _>>()?,
                 source_task_id: self.source_task.clone(),
             },
             self.agent,

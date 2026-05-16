@@ -16,11 +16,12 @@ pub mod builder;
 mod engine;
 pub mod event_bus;
 pub mod mutation;
-mod orbit_tool_host;
+pub(crate) mod orbit_tool_host;
 pub mod pipeline;
 mod resolve;
 pub mod run_audit;
 mod store_delegates;
+mod task_reservation_cleanup;
 mod v2_host;
 
 use std::path::{Path, PathBuf};
@@ -164,8 +165,10 @@ impl OrbitRuntime {
         Ok(audits)
     }
 
-    pub fn get_job(&self, _job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
-        Ok(None)
+    pub fn get_job(&self, job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
+        Err(OrbitError::Execution(format!(
+            "v1 job lookup is retired; refusing to resolve job '{job_id}' through OrbitRuntime::get_job. Use schemaVersion: 2 job assets with `orbit job run` or `orbit run` instead."
+        )))
     }
 
     pub fn execution_env_config(&self) -> (bool, Vec<String>) {
@@ -224,16 +227,21 @@ impl OrbitRuntime {
         self.context.graph_editing()
     }
 
+    pub fn pr_config(&self) -> &orbit_engine::PrConfig {
+        self.context.pr_config()
+    }
+
     /// Configured default for the v2 `agent_loop` execution backend (§3.1
     /// precedence step 3). Returns `None` when not set.
     pub fn v2_backend_config(&self) -> Option<&str> {
         self.context.v2_backend()
     }
 
-    /// Workspace-configured task-ID extraction regex (T20260426-0507).
-    /// Returns `None` when not set.
-    pub fn task_id_pattern(&self) -> Option<&str> {
-        self.context.task_id_pattern()
+    /// Default base branch for ship/ship-auto/duel-plan workflows. Sourced
+    /// from `[workflow] base_branch` in the active `config.toml`; defaults
+    /// to `"main"` when no key is present.
+    pub fn workflow_base_branch(&self) -> &str {
+        self.context.workflow_base_branch()
     }
 
     /// Build the activity catalog for `target: activity:<name>` resolution
@@ -267,6 +275,13 @@ impl OrbitRuntime {
                 catalog.load_dir_skipping_retired_prefer_existing(&dir)?,
             );
         }
+        let registered_tools: Vec<String> = self
+            .tool_registry()
+            .schemas()
+            .into_iter()
+            .map(|schema| schema.name)
+            .collect();
+        catalog.validate_tool_allowlists(registered_tools.iter().map(String::as_str))?;
 
         Ok(catalog)
     }
@@ -441,6 +456,8 @@ mod tests {
 
     use tempfile::tempdir;
 
+    use crate::command::activity::DEFAULT_ACTIVITY_FILES;
+
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf, PathBuf) {
@@ -524,6 +541,28 @@ spec:
         std::fs::write(path, yaml).expect("write activity yaml");
     }
 
+    fn write_agent_loop_activity(path: &Path, name: &str, tools: &[&str]) {
+        let tools_yaml = tools
+            .iter()
+            .map(|tool| format!("    - {tool}\n"))
+            .collect::<String>();
+        let yaml = format!(
+            r#"schemaVersion: 2
+kind: Activity
+metadata:
+  name: {name}
+spec:
+  type: agent_loop
+  description: Test agent loop.
+  instruction: Test.
+  tools:
+{tools_yaml}"#
+        );
+        std::fs::create_dir_all(path.parent().expect("activity path has parent"))
+            .expect("create activity dir");
+        std::fs::write(path, yaml).expect("write activity yaml");
+    }
+
     #[test]
     fn workspace_activity_overrides_global_default_in_catalog() {
         let (_root, runtime, global_root, workspace_root) = test_runtime();
@@ -562,5 +601,80 @@ spec:
             .v2_activity_catalog()
             .expect_err("duplicate activity name should fail");
         assert!(err.to_string().contains("duplicate activity name"), "{err}");
+    }
+
+    #[test]
+    fn activity_catalog_accepts_registered_task_wildcard() {
+        let (_root, runtime, _global_root, workspace_root) = test_runtime();
+        write_agent_loop_activity(
+            &workspace_root.join("resources/activities/task_tools.yaml"),
+            "task_tools",
+            &["orbit.task.*"],
+        );
+
+        let catalog = runtime.v2_activity_catalog().expect("activity catalog");
+
+        assert!(catalog.get("task_tools").is_some());
+    }
+
+    #[test]
+    fn activity_catalog_rejects_unknown_concrete_tool() {
+        let (_root, runtime, _global_root, workspace_root) = test_runtime();
+        write_agent_loop_activity(
+            &workspace_root.join("resources/activities/unknown_tool.yaml"),
+            "unknown_tool",
+            &["orbit.task.nope"],
+        );
+
+        let err = runtime
+            .v2_activity_catalog()
+            .expect_err("unknown concrete tool should fail");
+        let message = err.to_string();
+
+        assert!(message.contains("unknown_tool"), "{message}");
+        assert!(message.contains("orbit.task.nope"), "{message}");
+        assert!(message.contains("unknown tool name"), "{message}");
+    }
+
+    #[test]
+    fn activity_catalog_accepts_intentionally_empty_audit_wildcard() {
+        let (_root, runtime, _global_root, workspace_root) = test_runtime();
+        write_agent_loop_activity(
+            &workspace_root.join("resources/activities/audit_tools.yaml"),
+            "audit_tools",
+            &["orbit.audit.*"],
+        );
+
+        let catalog = runtime.v2_activity_catalog().expect("activity catalog");
+
+        assert!(catalog.get("audit_tools").is_some());
+    }
+
+    #[test]
+    fn get_job_rejects_retired_v1_lookup() {
+        let (_root, runtime, _global_root, _workspace_root) = test_runtime();
+        let err = runtime
+            .get_job("legacy_job")
+            .expect_err("v1 job lookup should be fenced");
+
+        let message = err.to_string();
+        assert!(message.contains("v1 job lookup is retired"), "{message}");
+        assert!(message.contains("orbit job run"), "{message}");
+    }
+
+    #[test]
+    fn default_activity_catalog_allowlists_resolve_registered_tools() {
+        let (_root, runtime, global_root, _workspace_root) = test_runtime();
+        let activities_dir = global_root.join("resources/activities");
+        for (name, yaml) in DEFAULT_ACTIVITY_FILES {
+            let path = activities_dir.join(format!("{name}.yaml"));
+            std::fs::create_dir_all(path.parent().expect("activity path has parent"))
+                .expect("create activity dir");
+            std::fs::write(path, yaml).expect("write activity yaml");
+        }
+
+        let catalog = runtime.v2_activity_catalog().expect("activity catalog");
+
+        assert_eq!(catalog.len(), DEFAULT_ACTIVITY_FILES.len());
     }
 }

@@ -12,32 +12,52 @@
 /// Supported source-code languages with tree-sitter extractors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
+    C,
+    CSharp,
     Rust,
     Python,
     Go,
     Java,
     JavaScript,
+    Kotlin,
+    TypeScript,
+    Tsx,
+    Ruby,
 }
 
 impl Language {
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
+            "c" | "h" => Some(Self::C),
+            "cs" => Some(Self::CSharp),
             "rs" => Some(Self::Rust),
             "py" => Some(Self::Python),
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
             "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
+            "kt" | "kts" => Some(Self::Kotlin),
+            "ts" | "mts" | "cts" => Some(Self::TypeScript),
+            "tsx" => Some(Self::Tsx),
+            // Ruby tooling commonly uses .rake tasks and .gemspec manifests;
+            // both are plain Ruby syntax for extractor purposes.
+            "rb" | "rake" | "gemspec" => Some(Self::Ruby),
             _ => None,
         }
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::C => "c",
+            Self::CSharp => "csharp",
             Self::Rust => "rust",
             Self::Python => "python",
             Self::Go => "go",
             Self::Java => "java",
             Self::JavaScript => "javascript",
+            Self::Kotlin => "kotlin",
+            Self::TypeScript => "typescript",
+            Self::Tsx => "tsx",
+            Self::Ruby => "ruby",
         }
     }
 }
@@ -117,6 +137,12 @@ mod tests {
 
     #[test]
     fn from_extension_classifies_code() {
+        assert_eq!(FileKind::from_extension("c"), FileKind::Code(Language::C));
+        assert_eq!(FileKind::from_extension("h"), FileKind::Code(Language::C));
+        assert_eq!(
+            FileKind::from_extension("cs"),
+            FileKind::Code(Language::CSharp)
+        );
         assert_eq!(
             FileKind::from_extension("rs"),
             FileKind::Code(Language::Rust)
@@ -134,6 +160,60 @@ mod tests {
             FileKind::from_extension("js"),
             FileKind::Code(Language::JavaScript)
         );
+        assert_eq!(
+            FileKind::from_extension("jsx"),
+            FileKind::Code(Language::JavaScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("mjs"),
+            FileKind::Code(Language::JavaScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("cjs"),
+            FileKind::Code(Language::JavaScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("kt"),
+            FileKind::Code(Language::Kotlin)
+        );
+        assert_eq!(
+            FileKind::from_extension("kts"),
+            FileKind::Code(Language::Kotlin)
+        );
+        assert_eq!(
+            FileKind::from_extension("ts"),
+            FileKind::Code(Language::TypeScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("mts"),
+            FileKind::Code(Language::TypeScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("cts"),
+            FileKind::Code(Language::TypeScript)
+        );
+        assert_eq!(
+            FileKind::from_extension("tsx"),
+            FileKind::Code(Language::Tsx)
+        );
+        assert_eq!(
+            FileKind::from_extension("rb"),
+            FileKind::Code(Language::Ruby)
+        );
+        assert_eq!(
+            FileKind::from_extension("rake"),
+            FileKind::Code(Language::Ruby)
+        );
+        assert_eq!(
+            FileKind::from_extension("gemspec"),
+            FileKind::Code(Language::Ruby)
+        );
+        assert_eq!(FileKind::from_extension("ts").as_str(), "typescript");
+        assert_eq!(FileKind::from_extension("tsx").as_str(), "tsx");
+        assert_eq!(FileKind::from_extension("kt").as_str(), "kotlin");
+        assert_eq!(FileKind::from_extension("h").as_str(), "c");
+        assert_eq!(FileKind::from_extension("cs").as_str(), "csharp");
+        assert_eq!(FileKind::from_extension("rb").as_str(), "ruby");
     }
 
     #[test]
@@ -178,6 +258,8 @@ mod tests {
 
     #[test]
     fn from_extension_returns_unknown_for_unrecognized() {
+        assert_eq!(FileKind::from_extension("csx"), FileKind::Unknown);
+        assert_eq!(FileKind::from_extension("cshtml"), FileKind::Unknown);
         assert_eq!(FileKind::from_extension("xyz"), FileKind::Unknown);
         assert_eq!(FileKind::from_extension(""), FileKind::Unknown);
     }

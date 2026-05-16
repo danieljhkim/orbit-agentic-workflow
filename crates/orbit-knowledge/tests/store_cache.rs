@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -121,8 +125,6 @@ fn base_node(id: &str, name: &str, location: &str, parent_id: Option<&str>) -> B
         lineage_locked: false,
         lock_owner: None,
         lock_reason: String::new(),
-        task_ids: Vec::new(),
-        structural_conflict: false,
     }
 }
 

@@ -1,7 +1,7 @@
-use clap::Args;
+use clap::{ArgAction, Args};
 use orbit_common::types::TaskArtifact;
 use orbit_core::command::task::TaskUpdateParams;
-use orbit_core::{OrbitError, OrbitRuntime, TaskStatus};
+use orbit_core::{OrbitError, OrbitRuntime, TaskStatus, TaskType};
 
 use crate::command::Execute;
 
@@ -23,6 +23,9 @@ pub struct TaskUpdateArgs {
     /// Comma-separated dependency task IDs (empty string clears)
     #[arg(long, alias = "dependency")]
     pub dependencies: Option<String>,
+    /// Replacement task tags. Repeat or comma-separate for multiple tags.
+    #[arg(long = "tag", action = ArgAction::Append, value_delimiter = ',')]
+    pub tags: Vec<String>,
     /// New task plan (empty string clears)
     #[arg(long, alias = "instructions")]
     pub plan: Option<String>,
@@ -35,21 +38,21 @@ pub struct TaskUpdateArgs {
     /// New status
     #[arg(long, value_enum)]
     pub status: Option<TaskUpdateStatusArg>,
+    /// New task type
+    #[arg(long = "type", value_enum)]
+    pub task_type: Option<TaskType>,
     /// Explicit planning attribution label (empty string clears)
     #[arg(long)]
     pub planned_by: Option<String>,
     /// Explicit implementation attribution label (empty string clears)
     #[arg(long)]
     pub implemented_by: Option<String>,
-    /// Pull request number (empty string clears)
-    #[arg(long)]
-    pub pr_number: Option<String>,
     /// PR review status (approve, request-changes)
     #[arg(long)]
     pub pr_status: Option<String>,
-    /// Batch ID to associate with the task (empty string clears)
+    /// Job run ID to associate with the task (empty string clears)
     #[arg(long)]
-    pub batch_id: Option<String>,
+    pub job_run_id: Option<String>,
     /// Comma-separated task context selectors (empty string clears). Prefer
     /// `file:`, `dir:`, or `symbol:` forms; legacy raw paths are accepted and upgraded.
     #[arg(long = "context", alias = "context-files")]
@@ -76,15 +79,16 @@ impl Execute for TaskUpdateArgs {
             description,
             acceptance_criteria,
             dependencies,
+            tags,
             plan,
             execution_summary,
             comment,
             status,
+            task_type,
             planned_by,
             implemented_by,
-            pr_number,
             pr_status,
-            batch_id,
+            job_run_id,
             context_files,
             artifacts,
             agent,
@@ -92,13 +96,6 @@ impl Execute for TaskUpdateArgs {
             json,
         } = self;
 
-        let pr_number = pr_number.map(|value| {
-            if value.trim().is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        });
         let pr_status = pr_status.map(|value| {
             if value.trim().is_empty() {
                 None
@@ -106,7 +103,7 @@ impl Execute for TaskUpdateArgs {
                 Some(value)
             }
         });
-        let batch_id = batch_id.map(|value| {
+        let job_run_id = job_run_id.map(|value| {
             if value.trim().is_empty() {
                 None
             } else {
@@ -129,6 +126,7 @@ impl Execute for TaskUpdateArgs {
         });
         let acceptance_criteria = (!acceptance_criteria.is_empty()).then_some(acceptance_criteria);
         let dependencies = dependencies.map(|value| crate::parse::csv_to_vec(&value));
+        let tags = (!tags.is_empty()).then_some(tags);
         let upsert_artifacts = parse_artifact_args(&artifacts)?;
 
         let task = runtime.update_task_with_identity(
@@ -138,15 +136,16 @@ impl Execute for TaskUpdateArgs {
                 description,
                 acceptance_criteria,
                 dependencies,
+                tags,
                 plan,
                 execution_summary,
                 comment,
                 status: status.map(Into::into),
+                task_type,
                 planned_by,
                 implemented_by,
-                pr_number,
                 pr_status,
-                batch_id,
+                job_run_id,
                 context_files: context_files.map(|c| crate::parse::csv_to_vec(&c)),
                 upsert_artifacts,
                 ..Default::default()
@@ -209,10 +208,7 @@ fn parse_artifact_args(raw_values: &[String]) -> Result<Vec<TaskArtifact>, Orbit
                     "task artifact path must not be empty".to_string(),
                 ));
             }
-            Ok(TaskArtifact {
-                path: path.to_string(),
-                content: content.to_string(),
-            })
+            Ok(TaskArtifact::from_text(path, content))
         })
         .collect()
 }

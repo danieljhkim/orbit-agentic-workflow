@@ -5,6 +5,10 @@ sidebar:
   order: 2
 ---
 
+## Platform Support
+
+Orbit's CLI runs on macOS, Linux, and Windows, but **OS-level sandbox enforcement of agent subprocesses is currently macOS only**, via `sandbox-exec`. The bundled `claude`, `codex`, and `gemini` executors declare `sandbox: macos-sandbox-exec` and require macOS to launch with a sandbox; on Linux and Windows the same activities run, but the spawned agent process is not wrapped in a kernel-level sandbox. Filesystem policies still apply to Orbit's own HTTP-tool builtins on every platform.
+
 ## Install
 
 The recommended install is the install script:
@@ -43,7 +47,7 @@ make install
 ### Pinned versions and custom install directory
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | ORBIT_VERSION=v0.1.0 sh
+curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | ORBIT_VERSION=v0.3.1 sh
 curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | ORBIT_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
@@ -59,22 +63,26 @@ orbit workspace init
 
 `orbit init` seeds default skills under `~/.orbit/skills` and links them into `~/.agents/skills` and `~/.claude/skills`. Workspace skills are optional overrides by skill name.
 
-Pass `--no-mcp` if you want workspace initialization without MCP client setup:
+Pass `--mcp` to also auto-detect and set up MCP client integrations during workspace initialization:
 
 ```bash
-orbit workspace init --no-mcp
+orbit workspace init --mcp
 ```
 
-## Build the Graph
+## Configure Orbit
 
-Build the initial repository graph before asking agents to reason over code structure.
+`orbit init` seeds `~/.orbit/config.toml` and prompts for per-role agent settings (reviewer, implementer, planner). See [Configuration](../../reference/config/) for file locations, shape, and backend precedence.
 
-```bash
-orbit graph build
-```
+## Update the Graph
 
-You can later update it incrementally:
+`orbit workspace init` builds the initial repository graph automatically. Refresh it incrementally as the codebase changes:
 
 ```bash
 orbit graph update
+```
+
+If the initial build fails during `orbit workspace init` (the command prints `graph build: failed (...), run \`orbit graph build\` manually`), retry it with:
+
+```bash
+orbit graph build
 ```

@@ -1,95 +1,84 @@
 # Orbit Positioning
 
-This document names what Orbit is for, what we build for, and what we don't.
-
-Use it as a decision lens. When a design debate feels like it's really about *what Orbit is for*, reference this doc instead of re-litigating case by case.
+This document names what Orbit is for, who it's for, and what it deliberately isn't. Use it as a decision lens — when a design debate feels like it's really about *what Orbit is for*, reference this doc instead of re-litigating case by case.
 
 ## What Orbit is for
 
-**Running coding-agent automation against a team's real production codebase, at single-team scale (~10–50 engineers).**
+**Applying engineering rigor to AI-assisted coding.**
 
-Not a demo. Not a solo-developer productivity boost. Not a Fortune-500 vendor pitch. The work in scope is PR review, refactor passes, backlog execution, and cross-cutting migrations against code that has reviewers, CI, and real consequences when an agent merges something wrong.
+Coding agents are fast enough that the disciplines that keep code maintainable — planning before edits, decision records for load-bearing choices, audit trails, conflict-aware parallel execution — become tempting to skip. Orbit makes those disciplines cheap and enforces them by default: every change starts as a task, every load-bearing decision becomes an ADR, every tool call lands in a structured audit log, and parallel runs are dispatched into worktrees with file-level locks.
 
-The deployment shape that fits:
+The audience is the individual engineer driving multiple coding agents against real code and unwilling to trade engineering rigor for raw throughput. Agent vendors solve in-session execution; Orbit is the layer above that turns individual agent sessions into a coherent, traceable body of work.
 
-- **Self-hosted OSS.** Source does not route through a third-party SaaS.
-- **Bring-your-own credentials.** Anthropic / OpenAI contracts, local model budget — never Orbit's keys.
-- **Real production monorepo.** Real reviewers, real CI, real consequences for bad merges.
-- **Audit trails, reproducibility, observability** as first-class requirements — not because compliance dictates, but because someone has to explain what happened when an agent goes sideways.
-- **Technical configuration surface.** Readable, debuggable, forkable YAML — not a UX patronizing toward non-technical users.
-- **Fleets, not a single assistant.** Multiple agents, possibly multiple providers, running in parallel.
+**Orbit is a free, self-hosted, permissively licensed OSS project. There is no paid tier, no hosted offering, no commercial roadmap. Whatever ships, ships in the OSS repo.**
+
+## Who Orbit is for
+
+The AI-native engineer running multiple coding agents (Claude Code, Codex CLI, Gemini CLI, plus any OpenAI-compatible or Ollama-served model) heavily, who has outgrown the in-session model and wants engineering discipline around their AI-assisted work — tasks, ADRs, audit, sandboxing, parallel dispatch.
+
+Staff and principal engineers, tech leads, and founding engineers fit the same profile. If they bring Orbit into their team's workflow, that's a natural extension — but the project is not positioned for team conversion. Orbit optimizes for the individual engineer who refuses to vibe-code their way through agent-driven development.
 
 ## What Orbit is NOT for
 
-Three use cases we are deliberately not serving. Each would pull Orbit in a direction that makes it worse for the in-scope use case.
-
-**1. Individual developers augmenting personal workflow.** Already well served by Claude Code, Cursor, Aider, Codex CLI. Optimizing for that shape — subscription-backed backends, zero-config installs, personal-context assumptions — compromises the properties team-scale deployment needs (throughput, fleet behavior, clean API accounting).
-
-**2. Enterprise procurement.** SOC 2, SSO, multi-tenant permissions, 24/7 support contracts, sales motions, long procurement cycles. Serving these requires headcount, compliance work, and product management discipline incompatible with how Orbit is built. If enterprise demand appears in volume, the honest path is a commercial fork, a partnership, or an acquisition — not bolting enterprise surface onto the OSS core.
-
-**3. Generic workflow orchestration.** n8n, Airflow, LangGraph, Temporal. Orbit is specifically a coding-agent platform, not a generic workflow engine. Features that are valuable only in non-coding contexts belong elsewhere.
+- **Generic workflow orchestration.** n8n, Airflow, LangGraph, Temporal — Orbit is a coding-agent framework, not a workflow engine.
+- **A framework for building agents.** LangChain, AutoGen, CrewAI, Mastra cover that. Orbit is the layer that governs what agents do *for you*, not the runtime they execute inside.
+- **Hidden cloud dependencies.** Orbit must never phone home.
+- **Vendor lock-in to one LLM provider.** Cross-provider is table stakes.
+- **Black-box agent decisions.** Every agent decision should be inspectable.
+- **Onboarding designed for non-technical users.** Patronizing and misaligned with the audience.
+- **Per-account subscription arbitrage.** The wedge drives multiple agents in parallel against real code; that breaks the single-personal-CLI-account assumption.
+- **Team-scale features.** Cross-engineer aggregation, SSO/SAML, RBAC, multi-tenant hosting are explicitly out of scope. If you need them, fork — don't expect them upstream.
 
 ## Primary focus: auditability
 
-Auditability is not a cross-cutting concern in Orbit — it is a product feature. Orbit runs agents against code that a team has to live with. When something goes wrong (a bad merge, a regression, a mystery refactor), the operator needs to answer three questions without calling the Orbit maintainers:
+Auditability is a product feature, not a cross-cutting concern. When something goes wrong, the operator answers *what / why / who* without asking anyone for help.
 
-1. **What did the agent do, exactly?** Every tool call, every provider request/response, every task state transition recorded with enough fidelity to reconstruct the sequence.
-2. **Why did it do that?** The prompt, system instructions, role configuration, and surrounding context are recoverable, not just the action.
-3. **Who is accountable?** Agent identity, model, provider, and activity context are attached to every event — on commits, on PRs, on audit entries — so a git blame or audit query reaches a concrete agent identity, not "the AI."
+- **Complete coverage** — every operation that touches code, state, or external services emits an audit event. Silent paths are bugs.
+- **Structured, queryable events** — typed records with stable schemas, exportable to your own observability stack.
+- **Faithful reproducibility** — prompts and responses stored verbatim (configurable redaction). Summaries are derived, not replacements.
+- **Tamper-evident retention** — append-only, verifiable.
+- **Agent-identity attribution** — every write carries the identity of the agent (and model) that produced it.
 
-Concrete commitments this implies:
-
-- **Complete coverage.** Every operation that touches code, state, or external services emits an audit event. Silent paths are bugs.
-- **Structured, queryable events.** Not log strings. Typed records with stable schemas the user can query with `orbit.audit.*` tools and export to their own observability stack.
-- **Faithful reproducibility.** Prompts and responses are stored verbatim (with configurable redaction for sensitive paths). Summaries are derived artifacts, not replacements.
-- **Tamper-evident retention.** Audit is append-only. The audit trail's own integrity is verifiable; corrupting history should not be a silent operation.
-- **Agent-identity attribution.** Every write — commit, PR, audit event, task update — carries the identity of the agent (and model) that produced it. No anonymous AI actions.
-
-When auditability conflicts with performance, ergonomics, or feature surface, auditability wins. Undercutting audit fidelity to save a tool call or a storage row is the kind of decision this doc exists to prevent.
+When auditability conflicts with performance, ergonomics, or feature surface, auditability wins.
 
 ## Non-negotiables
 
-- **Self-hostable.** Single binary, no mandatory cloud dependency. Runs on a laptop, in a container, in a CI runner, behind a firewall.
-- **Bring-your-own-credentials.** Orbit never stands between operator and provider. API keys belong to the operator; Orbit is a pass-through.
-- **HTTP/SDK-first provider communication.** Programmatic multi-turn is the deployment shape. CLI shell-out is an escape hatch for experimentation, not the backbone.
-- **Audit trail for everything that touches code.** See the dedicated *Primary focus: auditability* section above. Non-negotiable and promoted to a product feature, not a compliance concession.
-- **Reproducibility where possible, recorded non-determinism where not.** Same task + same repo state should converge. When the provider introduces non-determinism, capture it rather than hide it.
-- **Fleet primitives.** Parallel task execution, cross-provider delegation, per-agent scoreboards, per-agent identity in commits. Single-assistant assumptions are incorrect.
-- **Knowledge-graph–aware tooling.** Agents operate against a parsed graph of the codebase, not raw grep. This is the technical moat and the reason to pick Orbit over a generic agent framework.
-- **Cost-visible.** The operator knows what each run costs in tokens and wall-clock.
-- **Git- and GitHub-native.** Branches, worktrees, PRs, CI status. No custom version control abstractions.
-- **Configurable, not opinionated to the point of rigidity.** Job DAGs, activity definitions, skill loadouts, role profiles are all data (YAML), not code. Forking is expected; feature requests for narrow customization are not.
+- **Self-hostable under permissive license.** Single binary, no mandatory cloud dependency. MIT.
+- **Bring-your-own-credentials.** API keys belong to the operator; Orbit is pass-through.
+- **HTTP/SDK-first provider communication.** CLI shell-out is an escape hatch, not the backbone.
+- **Audit trail for everything that touches code.** See above.
+- **Intent attribution at the codebase level.** `task_id` in commit messages, queryable, durable across rewrites.
+- **Reproducibility where possible, recorded non-determinism where not.**
+- **Knowledge-graph–aware tooling.** Agents query a parsed, symbol-level graph. The graph is what makes audit cheap to populate; benchmark validation in `benchmarks/graph/`.
+- **Sandboxed-by-default execution** on supported platforms. Disciplines that can be machine-enforced should be.
+- **Cost-visible.** Operator knows what each run costs in tokens and wall-clock.
+- **Git- and GitHub-native.** No custom VCS abstractions.
+- **Configurable, not rigidly opinionated.** Job DAGs, activities, skills, role profiles are YAML data, not code.
 
-## What Orbit refuses to add
-
-- Hidden cloud dependencies. Orbit must never phone home.
-- Vendor lock-in to one LLM provider. Cross-provider is table-stakes.
-- Magic. If an agent decision can't be reconstructed, trust erodes permanently.
-- Enterprise surface bolted onto OSS core (tenancy, ACLs, SSO) — adds complexity without serving the in-scope use case.
-- Onboarding designed for non-technical users — patronizing and misaligned with the deployment shape.
-- Subscription-arbitrage architectures that assume a personal CLI account is the backbone. Team-scale workloads break that assumption.
-- Black-box "just trust the agent" patterns. Every agent decision should be inspectable.
+`task_id` is locally meaningful by design — a personal search key for the task author, recorded in local audit. Not resolvable on another engineer's machine; for cross-engineer references, use `external_refs` to link tasks to your team's tracker (Jira, Linear, GitHub Issues, etc.).
 
 ## The decision lens
 
-When a design decision is contested, the tiebreaker is:
+When a design decision is contested, the tiebreaker:
 
-> **Would this hold up against a real production monorepo with real reviewers, real CI, and real consequences for a bad merge?**
+> **Would this hold up for an engineer who insists on engineering rigor while driving multiple agents against real code?**
 
-If the honest answer is no, it doesn't ship — even if it serves individual-developer use cases or looks good in a demo.
+If the honest answer is no, it doesn't ship.
 
 Secondary lenses, in order:
 
-1. **Would this still be true at 10× the current agent fleet size?** If a pattern only works with one orchestrator and three agents, it's wrong.
-2. **Can the operator debug this without asking us?** If the answer requires Orbit maintainers in the loop, the feature is under-instrumented.
-3. **Does this survive losing confidence in a single provider?** If a design fails when Anthropic rate-limits or deprecates a model, it fails.
+1. **Does this make a discipline cheaper to apply, or does it just add ceremony?** Friction-free disciplines get adopted; ceremonial ones get worked around.
+2. **Would this still hold up at 10× the current agent fleet size on a single host?**
+3. **Can the operator debug this without asking the maintainers?** If not, the feature is under-instrumented.
+4. **Does this survive losing confidence in a single provider?**
 
-## Boundaries (when we'd reconsider)
+## Boundaries (when to reconsider)
 
-This positioning is not permanent. We'd reconsider if:
+This positioning is not permanent. Reconsider if:
 
-- Enterprise demand arrives with headcount or funding to serve it properly. The honest response is a commercial arm or partner, not a quiet pivot of the OSS core.
-- Individual-developer demand reaches a scale where a separate "Orbit Lite" makes sense. The honest response is a separate product, not feature-bloat on the core.
-- The team-scale deployment context itself stops being a coherent niche (e.g., team-scale agent automation collapses into solo tooling above and enterprise platforms below). Revisit the whole document in that case — don't patch around it.
+- The "engineering rigor" framing fails to resonate after a serious distribution effort — no substantive replies, no downloads-with-retention, no community.
+- Trust in coding agents matures dramatically faster than expected and the disciplines Orbit enforces start to feel like dead weight rather than safety net.
+- A coherent community fork appears wanting an alternative direction. That's a signal to talk, not to ignore.
+- Auditability stops being differentiating — e.g., agent vendors ship native per-session audit at parity with Orbit's structured event model.
 
 Until one of those happens, the framing above is the lens.

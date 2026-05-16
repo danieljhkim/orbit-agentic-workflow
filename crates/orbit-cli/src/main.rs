@@ -1,3 +1,15 @@
+// ORB-00004: legacy CLI binary surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+// ORB-00013: The CLI binary prints genuine user-facing command output.
+#![allow(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00013: Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
+
 //! CLI entry point for Orbit: command parsing, dispatch, and output formatting.
 //!
 //! Parses command-line arguments with `clap`, initializes the [`OrbitRuntime`],

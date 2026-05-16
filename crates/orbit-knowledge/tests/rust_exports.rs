@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -25,7 +29,6 @@ fn indexes_public_rust_reexport_chain_into_file_exports() -> Result<(), Box<dyn 
         output_dir: knowledge_dir.path().to_path_buf(),
         incremental: false,
         ref_name: Some(build_ref.clone()),
-        task_id_pattern: None,
     })?;
 
     for path in ["a/src/lib.rs", "b/src/lib.rs", "c/src/lib.rs"] {

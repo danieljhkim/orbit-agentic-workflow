@@ -1,18 +1,16 @@
 /target
 
 # Agent / tool state
-.claude
-.codex
-.gemini
-.agents
+.claude/
+
 agentspace
-.mcp.json
+!.claude/settings.json
 # ...except the published plugin's MCP registration, which ships in the package.
 !plugin/.mcp.json
 
 # OS / editor
 .DS_Store
-.vscode
+.vscode/settings.json
 
 # Scratch / session files
 sessions
@@ -25,11 +23,20 @@ schema.md
 critique.md
 
 # Runtime state
-config.toml
+
 orbit.db
 orbit.db-shm
 orbit.db-wal
-.orbit/
+# ADR artifacts are committed source-of-truth (adr-artifact ADR-002 amended,
+# ADR-005); the SQLite index is rebuildable from the YAML+markdown. Other
+# `.orbit/` state (tasks, runs, policies, audit DB, etc.) stays workspace-local.
+.orbit/*
+!.orbit/adrs/
+.orbit/adrs/index.sqlite*
+# Project learnings travel with the repo (ADR-003 in docs/design/project-learnings/4_decisions.md).
+!.orbit/learnings/
+!.orbit/resources/
+!.orbit/config.toml
 .monodev/
 
 # Python
@@ -49,3 +56,6 @@ build/
 # direnv — per-repo env vars (holds secrets like ANTHROPIC_API_KEY)
 .envrc
 .direnv/
+.gstack/
+.locks
+.orbit

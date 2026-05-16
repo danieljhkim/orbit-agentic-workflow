@@ -12,11 +12,14 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone)]
 pub(crate) struct PersistenceConfig {
     pub(crate) task_dir: PathBuf,
+    pub(crate) adr_dir: PathBuf,
+    pub(crate) learning_dir: PathBuf,
     pub(crate) activity_dir: PathBuf,
     pub(crate) job_dir: PathBuf,
     pub(crate) skill_dir: PathBuf,
     pub(crate) executor_dir: PathBuf,
     pub(crate) audit_db: PathBuf,
+    pub(crate) semantic_db: PathBuf,
     pub(crate) policy_dir: PathBuf,
 }
 
@@ -46,24 +49,30 @@ impl PersistenceConfig {
 
         Self {
             task_dir: paths.tasks_dir.clone(),
+            adr_dir: paths.adrs_dir.clone(),
+            learning_dir: paths.learnings_dir.clone(),
             activity_dir: global_resources_dir.join("activities"),
             job_dir: global_resources_dir.join("jobs"),
             skill_dir: paths.skills_dir.clone(),
             executor_dir: global_resources_dir.join("executors"),
             policy_dir: global_resources_dir.join("policies"),
             audit_db: paths.global_dir.join("orbit.db"),
+            semantic_db: paths.state_dir.join("semantic.db"),
         }
     }
 
     pub(crate) fn as_json_value(&self) -> Value {
         json!({
             "task": { "path": self.task_dir.to_string_lossy() },
+            "adr": { "path": self.adr_dir.to_string_lossy() },
+            "learning": { "path": self.learning_dir.to_string_lossy() },
             "activity": { "path": self.activity_dir.to_string_lossy() },
             "job": { "path": self.job_dir.to_string_lossy() },
             "skill": { "path": self.skill_dir.to_string_lossy() },
             "executor": { "path": self.executor_dir.to_string_lossy() },
             "policy": { "path": self.policy_dir.to_string_lossy() },
             "audit": { "path": self.audit_db.to_string_lossy() },
+            "semantic": { "path": self.semantic_db.to_string_lossy() },
         })
     }
 }

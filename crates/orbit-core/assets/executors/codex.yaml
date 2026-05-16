@@ -10,7 +10,7 @@ spec:
     - --json
   stdout_format: envelope
   sandbox: macos-sandbox-exec
-  models:
+  model_pair_override:
     strong: gpt-5.5
     weak: gpt-5.4-mini
   env: {}

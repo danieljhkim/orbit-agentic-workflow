@@ -1,16 +1,18 @@
 use chrono::{DateTime, Utc};
-use orbit_common::types::{JobRun, JobRunState, KnowledgeRunMetrics, OrbitError};
+use orbit_common::types::{JobRun, JobRunState, KnowledgeRunMetrics, NotFoundKind, OrbitError};
 use orbit_engine::JobRunHost;
-use orbit_store::JobRunStepParams;
+use orbit_store::{JobRunStepParams, TaskReservationReleaseReason};
 
 use crate::OrbitRuntime;
 
 impl JobRunHost for OrbitRuntime {
     fn list_all_pending_or_running_runs(&self) -> Result<Vec<JobRun>, OrbitError> {
+        self.reconcile_stale_job_runs(None)?;
         self.stores().jobs().list_all_pending_or_running()
     }
 
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
+        self.reconcile_stale_job_runs(Some(job_id))?;
         self.stores().jobs().list_pending_or_running(job_id)
     }
 
@@ -88,13 +90,24 @@ impl JobRunHost for OrbitRuntime {
         finished_at: DateTime<Utc>,
         duration_ms: Option<u64>,
     ) -> Result<bool, OrbitError> {
-        self.stores()
-            .jobs()
-            .finalize_run(run_id, state, finished_at, duration_ms)
+        self.finalize_job_run_with_reservation_cleanup(
+            run_id,
+            state,
+            finished_at,
+            duration_ms,
+            TaskReservationReleaseReason::RunTerminal,
+        )
     }
 
     fn get_job_run(&self, run_id: &str) -> Result<Option<JobRun>, OrbitError> {
-        self.stores().jobs().get_run(run_id)
+        match self.show_job_run(run_id) {
+            Ok(run) => Ok(Some(run)),
+            Err(OrbitError::NotFound {
+                kind: NotFoundKind::JobRun,
+                ..
+            }) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     fn read_run_state(

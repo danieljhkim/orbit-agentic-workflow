@@ -102,10 +102,6 @@ fn collect_role_settings_for_init(
 
     let probe = RealAgentEnvProbe;
     let detected = detect(&probe);
-    println!(
-        "orbit init will write [agent.<role>] sections for reviewer/implementer/planner.\n\
-         Press Enter at each prompt to accept the bracketed default."
-    );
     let mut prompter = StdinPrompter;
     let collected = collect_role_settings(&detected, &mut prompter)
         .map_err(|err| OrbitError::Io(format!("agent prompts failed: {err}")))?;

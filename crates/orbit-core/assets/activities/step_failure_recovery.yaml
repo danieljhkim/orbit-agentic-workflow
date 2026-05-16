@@ -80,14 +80,13 @@ spec:
     - follow_up: optional string
   tools:
     - orbit.task.*
+    - orbit.friction.*
     - orbit.state.*
     - orbit.graph.*
     - fs.read
-    - fs.write
     - fs.delete
     - proc.spawn
   on_denial: terminate
   max_iterations: 8
-  backend: cli
-  provider: codex
+  role: reviewer
   wall_clock_timeout_seconds: 900

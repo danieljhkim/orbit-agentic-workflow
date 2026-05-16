@@ -44,6 +44,7 @@
         --state-pending: #f59e0b;
         --state-failed: #ef4444;
         --state-error: #ef4444;
+        --state-cancelled: #f87171;
         --state-disabled: #52525b;
       }
       
@@ -612,6 +613,23 @@
         border-color: var(--fg);
         color: var(--fg); 
       }
+
+      .action.status-update {
+        border: 1px solid var(--accent);
+        color: var(--accent-hi);
+        background: var(--bg);
+        min-width: 128px;
+      }
+      .action.status-update:hover:not(:disabled),
+      .action.status-update:focus {
+        border-color: var(--accent-hover);
+        color: var(--fg);
+        outline: none;
+      }
+      .action.status-update option {
+        color: var(--fg);
+        background: var(--bg);
+      }
       
       .action.cancel { 
         border: 1px solid transparent; 
@@ -670,6 +688,16 @@
         font-size: 12px;
         background: rgba(239, 68, 68, 0.1);
       }
+
+      .task-action-notice {
+        padding: 8px 12px;
+        border-left: 3px solid var(--state-success);
+        border-radius: 4px;
+        color: var(--state-success);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: rgba(16, 185, 129, 0.1);
+      }
       
       .pill {
         display: inline-flex;
@@ -684,7 +712,7 @@
       
       .runs-row {
         display: grid;
-        grid-template-columns: 80px 1fr minmax(100px, 0.6fr) 70px 80px;
+        grid-template-columns: 80px 1fr minmax(100px, 0.6fr) 70px 80px 72px;
         gap: 12px;
         padding: 8px 16px;
         font-family: var(--font-mono);
@@ -710,6 +738,17 @@
       .runs-row .run-id:hover { color: var(--accent); }
       .runs-row .duration { color: var(--fg-dim); text-align: right; }
       .runs-row .state { text-align: right; }
+      .runs-row .run-actions {
+        display: flex;
+        justify-content: flex-end;
+        min-height: 26px;
+      }
+      .runs-row .run-actions .action {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        padding: 4px 8px;
+        border-radius: 2px;
+      }
       .runs-row.runs-header {
         color: var(--fg-dim);
         font-size: 10px;
@@ -865,6 +904,8 @@
         color: var(--fg-dim);
         font-size: 12px;
       }
+      tr.clickable { cursor: pointer; }
+      tr.clickable:hover td { background: rgba(255, 255, 255, 0.03); }
 
       /* Audit + Run Detail */
       .audit-status {
@@ -994,6 +1035,63 @@
         gap: 10px;
       }
 
+      .step-log-section {
+        display: grid;
+        gap: 8px;
+      }
+      .step-log-section > .label,
+      .step-log-head .label {
+        color: var(--fg-dim);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .step-log-block {
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        background: var(--bg);
+      }
+      .step-log-block.stderr {
+        border-left: 2px solid var(--state-failed);
+      }
+      .step-log-block.stdout {
+        border-left: 2px solid var(--accent);
+      }
+      .step-log-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+      .step-log-head .meta {
+        color: var(--fg-dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .step-log-block pre {
+        margin: 0;
+        padding: 8px 10px;
+        max-height: 260px;
+        overflow-x: auto;
+        overflow-y: auto;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        line-height: 1.45;
+        color: var(--fg);
+        white-space: pre;
+      }
+      .log-line {
+        display: block;
+      }
+      .log-line.error-line {
+        color: var(--state-failed);
+        background: rgba(255, 86, 86, 0.08);
+      }
+
       .back-action {
         font: inherit;
         font-family: var(--font-mono);
@@ -1009,6 +1107,14 @@
       .back-action:hover {
         color: var(--fg);
         border-color: var(--fg-dim);
+      }
+
+      .run-detail-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px 0 16px;
+        flex-wrap: wrap;
       }
       
       @keyframes highlight-changed {
@@ -1276,6 +1382,14 @@
       ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
 
       /* LOG TAIL */
+      main.tasks-layout {
+        align-items: stretch;
+      }
+      @media (max-width: 1250px) {
+        main.tasks-layout {
+          grid-template-columns: minmax(0, 2fr) minmax(280px, 1.15fr) !important;
+        }
+      }
       .col-log {
         display: flex;
         flex-direction: column;
@@ -1288,6 +1402,10 @@
         flex-direction: column;
         min-height: 0;
         min-width: 0;
+      }
+      #log-panel {
+        height: var(--log-panel-height, calc(100dvh - 224px));
+        max-height: var(--log-panel-height, calc(100dvh - 224px));
       }
       .col-log .panel > header .title {
         display: flex; align-items: center; gap: 10px;
@@ -1304,6 +1422,7 @@
       }
       .log-stream {
         flex: 1; overflow: auto; position: relative;
+        min-height: 0;
         background:
           linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 100% 22px,
           var(--bg-elev);
@@ -1430,7 +1549,7 @@
       </div>
     </section>
     <section class="tab-pane" data-tab="tasks">
-      <main style="grid-template-columns: minmax(0, 2fr) minmax(0, 1.15fr);">
+      <main class="tasks-layout" style="grid-template-columns: minmax(0, 2fr) minmax(0, 1.15fr);">
         <div class="col-tasks" style="display: flex; flex-direction: column; min-width: 0;">
           <section class="panel" id="tasks-panel">
             <header><span>Tasks</span><span class="count" id="tasks-count">-</span></header>
@@ -1547,6 +1666,7 @@
             <button class="subtab" data-subtab="runs" type="button">Recent Runs</button>
             <button class="subtab" data-subtab="metrics" type="button">Metrics</button>
             <button class="subtab" data-subtab="friction" type="button">Friction</button>
+            <button class="subtab" data-subtab="errors" type="button">Errors</button>
           </nav>
           <div class="body scoreboard-table-wrap" id="diag-body" style="display: none;">
             <div class="skeleton-state">

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-21
+**Last updated:** 2026-05-10 (aligned ADR metadata with recent Groundhog changes)
 
 This ADR log records the design choices that define Groundhog's current shape. Entries stay in place when they are superseded; new decisions append at the end. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for open questions that may force new ADRs.
 
@@ -101,7 +101,7 @@ This ADR log records the design choices that define Groundhog's current shape. E
 
 ## ADR-008 — Groundhog v1 excludes executor-authored deviation and retry critic
 
-**Status:** Proposed · 2026-04
+**Status:** Proposed · 2026-04 · [T20260420-0510-2], [T20260426-0603]
 
 **Context.** Earlier Groundhog drafts centered deviation stacks and retry critics. The current v1 goal is narrower: prove checkpoint + rewind + verifier + success-memory before reopening more complex control flow.
 
@@ -114,7 +114,7 @@ This ADR log records the design choices that define Groundhog's current shape. E
 
 ## ADR-009 — Separate prompt-facing memory from audit record
 
-**Status:** Proposed · 2026-04
+**Status:** Proposed · 2026-04 · [T20260420-0509], [T20260420-0510-2]
 
 **Context.** The current runtime persists a chronicle plus runner state. That works, but it does not cleanly separate "what later prompts should load" from "what operators should inspect after the fact."
 
@@ -135,5 +135,8 @@ This ADR log records the design choices that define Groundhog's current shape. E
 - **[T20260420-0509-4]** — Add Groundhog workspace snapshots and scratch-branch rewind mechanics.
 - **[T20260420-0510]** — Add the shared runtime checkpoint verifier.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260426-0603]** — Remove the public Groundhog checkpoint deviation verb from the tool surface.
+- **[T20260430-21]** — Shorten Groundhog design docs and add missing ADR task citations.
+- **[T20260509-19]** — Split the Groundhog activity runner into focused engine submodules.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

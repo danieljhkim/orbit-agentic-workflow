@@ -1,7 +1,12 @@
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use tree_sitter::{Node, Parser};
 
 use super::FileExtractor;
-use super::common::{ExtractedLeaf, ExtractionResult, compute_source_hash};
+use super::common::{
+    ExtractedLeaf, ExtractionResult, compute_source_hash, finalize_unique_qualified_names,
+};
 use super::language::{FileKind, Language};
 
 pub struct PythonExtractor;
@@ -24,6 +29,7 @@ impl FileExtractor for PythonExtractor {
 
         let mut leaves = Vec::new();
         extract_top_level(tree.root_node(), source, &mut leaves, None);
+        finalize_unique_qualified_names(&mut leaves);
         ExtractionResult {
             leaves,
             ..Default::default()
@@ -51,15 +57,21 @@ fn extract_top_level(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "function_definition" => extract_function(child, source, leaves, parent_class),
-            "class_definition" => extract_class(child, source, leaves),
+            "function_definition" => {
+                extract_function(child, source, leaves, parent_class);
+            }
+            "class_definition" => {
+                extract_class(child, source, leaves, parent_class);
+            }
             "decorated_definition" => {
                 if let Some(inner) = child.child_by_field_name("definition") {
                     match inner.kind() {
                         "function_definition" => {
-                            extract_function(inner, source, leaves, parent_class)
+                            extract_function(inner, source, leaves, parent_class);
                         }
-                        "class_definition" => extract_class(inner, source, leaves),
+                        "class_definition" => {
+                            extract_class(inner, source, leaves, parent_class);
+                        }
                         _ => {}
                     }
                 }
@@ -74,11 +86,8 @@ fn extract_function(
     source: &str,
     leaves: &mut Vec<ExtractedLeaf>,
     parent_class: Option<&str>,
-) {
-    let name = match get_name(node, source) {
-        Some(n) => n,
-        None => return,
-    };
+) -> Option<String> {
+    let name = get_name(node, source)?;
 
     let kind = if parent_class.is_some() {
         "method"
@@ -86,9 +95,10 @@ fn extract_function(
         "function"
     };
     let src = node_source(node, source);
+    let qualified_name = qualify_name(parent_class, &name);
 
     leaves.push(ExtractedLeaf {
-        qualified_name: name.clone(),
+        qualified_name: qualified_name.clone(),
         name,
         kind: kind.to_string(),
         start_line: node.start_position().row + 1,
@@ -99,15 +109,19 @@ fn extract_function(
         children_qualified_names: vec![],
         depth: None,
     });
+    Some(qualified_name)
 }
 
-fn extract_class(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {
-    let name = match get_name(node, source) {
-        Some(n) => n,
-        None => return,
-    };
+fn extract_class(
+    node: Node,
+    source: &str,
+    leaves: &mut Vec<ExtractedLeaf>,
+    parent_class: Option<&str>,
+) -> Option<String> {
+    let name = get_name(node, source)?;
 
     let src = node_source(node, source);
+    let qualified_name = qualify_name(parent_class, &name);
     let mut children = Vec::new();
 
     // Extract methods from the class body
@@ -116,19 +130,30 @@ fn extract_class(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {
         for child in body.children(&mut cursor) {
             match child.kind() {
                 "function_definition" => {
-                    if let Some(method_name) = get_name(child, source) {
-                        children.push(method_name.clone());
+                    if let Some(method_name) =
+                        extract_function(child, source, leaves, Some(&qualified_name))
+                    {
+                        children.push(method_name);
                     }
-                    extract_function(child, source, leaves, Some(&name));
+                }
+                "class_definition" => {
+                    extract_class(child, source, leaves, Some(&qualified_name));
                 }
                 "decorated_definition" => {
-                    if let Some(inner) = child.child_by_field_name("definition")
-                        && inner.kind() == "function_definition"
-                    {
-                        if let Some(method_name) = get_name(inner, source) {
-                            children.push(method_name.clone());
+                    if let Some(inner) = child.child_by_field_name("definition") {
+                        match inner.kind() {
+                            "function_definition" => {
+                                if let Some(method_name) =
+                                    extract_function(inner, source, leaves, Some(&qualified_name))
+                                {
+                                    children.push(method_name);
+                                }
+                            }
+                            "class_definition" => {
+                                extract_class(inner, source, leaves, Some(&qualified_name));
+                            }
+                            _ => {}
                         }
-                        extract_function(inner, source, leaves, Some(&name));
                     }
                 }
                 _ => {}
@@ -137,15 +162,23 @@ fn extract_class(node: Node, source: &str, leaves: &mut Vec<ExtractedLeaf>) {
     }
 
     leaves.push(ExtractedLeaf {
-        qualified_name: name.clone(),
+        qualified_name: qualified_name.clone(),
         name,
         kind: "class".to_string(),
         start_line: node.start_position().row + 1,
         end_line: node.end_position().row + 1,
         source: src.clone(),
         source_hash: compute_source_hash(&src),
-        parent_qualified_name: None,
+        parent_qualified_name: parent_class.map(str::to_string),
         children_qualified_names: children,
         depth: None,
     });
+    Some(qualified_name)
+}
+
+fn qualify_name(parent: Option<&str>, name: &str) -> String {
+    match parent {
+        Some(parent) => format!("{parent}.{name}"),
+        None => name.to_string(),
+    }
 }

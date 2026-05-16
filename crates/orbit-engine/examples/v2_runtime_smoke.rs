@@ -1,3 +1,12 @@
+#![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
+
 //! Phase 2b v2 runtime smoke, updated for Phase 2d + Phase 3:
 //!
 //! 1. Shell reference — self-contained via std::process::Command.
@@ -18,9 +27,9 @@ use orbit_agent::loop_engine::{InMemorySink, LoopAuditEvent};
 use orbit_common::types::activity_job::{
     ActivityV2, ActivityV2Spec, V2AuditEventKind, load_activity_asset,
 };
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, ResolvedCliExecutor, V2AuditWriter, V2DispatchInput, V2JsonlSink, V2RuntimeHost,
-    agent_loop_driver::drive_agent_loop, dispatch_v2_activity,
+    dispatch_v2_activity, drive_agent_loop,
 };
 use serde_json::Value;
 use std::env;
@@ -81,6 +90,7 @@ fn smoke_dispatch_shell(
     let _ = writer
         .emit(V2AuditEventKind::RunStarted {
             job_name: "smoke_shell".into(),
+            retry_source_run_id: None,
         })
         .map_err(|e| format!("audit: {e:?}"))?;
 
@@ -97,6 +107,11 @@ fn smoke_dispatch_shell(
 
     let _ = writer.emit(V2AuditEventKind::RunFinished {
         outcome: if outcome.success { "success" } else { "failed" }.into(),
+        error_message: if outcome.success {
+            None
+        } else {
+            outcome.message.clone()
+        },
     });
 
     if !outcome.success {
@@ -255,6 +270,7 @@ impl V2RuntimeHost for EchoHost {
 
     fn tool_context_for_activity(
         &self,
+        _run_id: Option<&str>,
         _fs_profile: Option<&str>,
         _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
     ) -> orbit_tools::ToolContext {

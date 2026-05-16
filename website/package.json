@@ -6,18 +6,20 @@
   "scripts": {
     "sync:design": "node ./scripts/sync-design-docs.mjs",
     "sync:benchmarks": "node ./scripts/sync-benchmarks.mjs",
-    "predev": "npm run sync:design && npm run sync:benchmarks",
+    "sync:scoreboard": "node ./scripts/sync-scoreboard.mjs",
+    "sync:tasks": "node ./scripts/sync-tasks.mjs",
+    "predev": "npm run sync:design && npm run sync:benchmarks && npm run sync:scoreboard && npm run sync:tasks",
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
-    "prebuild": "npm run sync:design && npm run sync:benchmarks",
+    "prebuild": "npm run sync:design && npm run sync:benchmarks && npm run sync:scoreboard && npm run sync:tasks",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
-    "prepreview": "npm run sync:design && npm run sync:benchmarks",
+    "prepreview": "npm run sync:design && npm run sync:benchmarks && npm run sync:scoreboard && npm run sync:tasks",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
-    "precheck": "npm run sync:design && npm run sync:benchmarks",
+    "precheck": "npm run sync:design && npm run sync:benchmarks && npm run sync:scoreboard && npm run sync:tasks",
     "check": "ASTRO_TELEMETRY_DISABLED=1 astro check"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.38.4",
-    "astro": "^6.1.9"
+    "astro": "^6.3.1"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.8",

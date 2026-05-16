@@ -53,12 +53,23 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE TABLE IF NOT EXISTS task_reservations (
     reservation_id TEXT PRIMARY KEY,
     workspace_orbit_dir TEXT NOT NULL,
+    workspace_id TEXT,
     task_ids_json TEXT NOT NULL,
     files_json TEXT NOT NULL,
     actor TEXT NOT NULL,
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
-    released_at TEXT
+    released_at TEXT,
+    owner_run_id TEXT,
+    owner_metadata_json TEXT,
+    release_reason TEXT,
+    release_metadata_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS task_tags (
+    task_id TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY(task_id, tag)
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_events_timestamp
@@ -79,8 +90,14 @@ ON audit_events(target_type, target_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_events_execution_id
 ON audit_events(execution_id);
 
+CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_owner_release
+ON task_reservations(workspace_orbit_dir, owner_run_id, released_at);
+
 CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_expires
 ON task_reservations(workspace_orbit_dir, expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_task_reservations_workspace_release
 ON task_reservations(workspace_orbit_dir, released_at);
+
+CREATE INDEX IF NOT EXISTS idx_task_tags_tag_task_id
+ON task_tags(tag, task_id);

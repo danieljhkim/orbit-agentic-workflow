@@ -1,0 +1,65 @@
+<starlight-theme-select>
+	<button
+		type="button"
+		class="canon-theme-toggle"
+		aria-label="Toggle theme"
+	>
+		<svg class="label-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"></svg>
+	</button>
+</starlight-theme-select>
+
+<style>
+	.canon-theme-toggle {
+		background: transparent;
+		border: 1px solid var(--sl-color-hairline-light);
+		border-radius: 4px;
+		color: var(--sl-color-gray-3);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 2rem;
+		width: 2rem;
+		padding: 0;
+		transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+	}
+	.canon-theme-toggle:hover {
+		color: var(--sl-color-white);
+		border-color: var(--sl-color-gray-3);
+		background: var(--sl-color-bg-inline-code);
+	}
+</style>
+
+<script>
+	type StarlightThemeProvider = {
+		updatePickers: (theme: string) => void;
+	};
+
+	const updateThemePickers = (theme: string) => {
+		(
+			window as Window & {
+				StarlightThemeProvider?: StarlightThemeProvider;
+			}
+		).StarlightThemeProvider?.updatePickers(theme);
+	};
+
+	class StarlightThemeSelect extends HTMLElement {
+		constructor() {
+			super();
+			const btn = this.querySelector('button');
+			if (btn) {
+				btn.addEventListener('click', () => {
+					const theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+					localStorage.setItem('starlight-theme', theme);
+					document.documentElement.dataset.theme = theme;
+					updateThemePickers(theme);
+				});
+			}
+		}
+		connectedCallback() {
+			const theme = document.documentElement.dataset.theme || 'dark';
+			updateThemePickers(theme);
+		}
+	}
+	customElements.define('starlight-theme-select', StarlightThemeSelect);
+</script>

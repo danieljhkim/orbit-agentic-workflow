@@ -34,6 +34,8 @@ Common event families are:
 - construct-level events for `parallel`, `fan_out`, and `loop`
 - policy/tool denial and CLI invocation events
 
+`cli.invocation.started` includes redacted argv, stdin blob ref, optional model, wall-clock timeout, and optional `cwd`. When present, `cwd` is the subprocess working directory selected by Activity/Job's workspace resolver.
+
 Loop-engine HTTP and tool-call events remain in the lower-level sink and are related to the envelope tree by parentage and shared run identity.
 
 ## Persistence Layout
@@ -47,7 +49,7 @@ Envelope events append to:
 Loop-engine events and blobs continue to use the sibling audit layout under:
 
 ```text
-.orbit/state/audit/loop/<run_id>.jsonl
+.orbit/state/audit/loop/<run_id>.jsonl      created on first loop event
 .orbit/state/audit/blobs/<hh>/<hash>
 ```
 
@@ -66,6 +68,7 @@ The v2 writer may also keep an in-memory snapshot for smoke assertions and CLI s
 - Envelope writes are append-only, one JSON object per line.
 - Disk persistence failure should not crash the run by itself; the in-memory event stream is still load-bearing.
 - `workspace_path` is attached when the caller has a meaningful repo identity.
+- CLI invocation start events include `cwd` when the runtime selected a subprocess working directory.
 - Parent stacks propagate into worker threads so nested branch/worker events remain traversable.
 
 ## Failure Modes
@@ -82,4 +85,4 @@ The v2 writer may also keep an in-memory snapshot for smoke assertions and CLI s
 
 ## Agent Signature
 
-Last revised by `codex`.
+Last revised by `codex` for [T20260508-8].

@@ -7,11 +7,13 @@ pub(super) struct RawRuntimeConfig {
     #[allow(dead_code)]
     pub(super) identity: Option<toml::Value>,
     pub(super) task: Option<RawTaskSection>,
+    pub(super) pr: Option<RawPrSection>,
     pub(super) scoring: Option<RawScoringConfig>,
     pub(super) graph: Option<RawGraphConfig>,
     pub(super) knowledge: Option<RawKnowledgeConfig>,
     pub(super) watch: Option<toml::Value>,
     pub(super) runtime: Option<RawRuntimeSection>,
+    pub(super) workflow: Option<RawWorkflowConfig>,
     /// `[agent.<role>]` tables, e.g. `[agent.reviewer]`. Keys are role names
     /// (`reviewer`, `implementer`, `planner`, or any free-form string the
     /// resolver chooses to honour). Values supply optional `provider`,
@@ -19,6 +21,15 @@ pub(super) struct RawRuntimeConfig {
     /// from interactive prompts (T20260428-9) and consumed at v2 dispatch
     /// time per ADR-029 / T20260428-12.
     pub(super) agent: Option<BTreeMap<String, RawAgentRoleConfig>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct RawWorkflowConfig {
+    /// `workflow.base_branch` — repo-level default base branch for ship,
+    /// ship-auto, and duel-plan workflows. When absent, defaults to `main`.
+    /// Repos that keep an `agent-main` buffer branch set this to
+    /// `"agent-main"`.
+    pub(super) base_branch: Option<String>,
 }
 
 /// Schema for a single `[agent.<role>]` table in `config.toml`. All fields
@@ -40,16 +51,15 @@ pub struct RawAgentRoleConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawKnowledgeConfig {
-    /// `knowledge.task_id_pattern` — workspace override for the task-ID
-    /// extraction regex used by `orbit graph build` and `orbit graph history`.
-    /// `None` falls back to the Orbit default.
-    pub(super) task_id_pattern: Option<String>,
+    /// Deprecated legacy key. Kept only so loaders can warn and ignore it.
+    pub(super) task_id_pattern: Option<toml::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawRuntimeSection {
     /// `runtime.backend` — persisted default for the v2 `agent_loop` execution
-    /// backend (§3.1). One of `http`, `cli`, `auto`.
+    /// backend (§3.1). One of `http`, `cli`, `auto`; validated by
+    /// `RuntimeConfig::load_layered`.
     pub(super) backend: Option<String>,
 }
 
@@ -84,6 +94,14 @@ pub(super) struct RawCodexExecutionConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawTaskSection {
     pub(super) approval: Option<RawTaskApprovalConfig>,
+    /// Removed pre-release selector. Kept here only so config loading can
+    /// reject stale keys with an explicit task-artifacts cutover message.
+    pub(super) artifact_store: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct RawPrSection {
+    pub(super) task_url_template: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

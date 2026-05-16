@@ -21,6 +21,9 @@ use thiserror::Error;
 use super::activity_v2::ActivityV2;
 use super::asset_loader::{AssetLoadError, load_activity_asset};
 use super::job_v2::{JobV2, JobV2Step, JobV2StepBody, LoopBlock, TargetRef, TargetStep};
+use super::tool_allowlist::{
+    ToolAllowlistError, validate_activity_tool_allowlist_against_registered_tools,
+};
 
 /// `activity:<name>` prefix for the `target:` field on a [`TargetRef`].
 pub const ACTIVITY_REF_PREFIX: &str = "activity:";
@@ -54,6 +57,11 @@ pub enum CatalogError {
         first: PathBuf,
         second: PathBuf,
     },
+    #[error("activity `{name}` tool allowlist invalid: {source}")]
+    ToolAllowlist {
+        name: String,
+        source: ToolAllowlistError,
+    },
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -81,13 +89,13 @@ impl V2ActivityCatalog {
             .map(|_| ())
     }
 
-    /// Variant of [`load_dir`] that skips retired schemaVersion 1 assets and
+    /// Variant of [`Self::load_dir`] that skips retired schemaVersion 1 assets and
     /// returns the file paths that were ignored.
     pub fn load_dir_skipping_retired(&mut self, dir: &Path) -> Result<Vec<PathBuf>, CatalogError> {
         self.load_dir_inner(dir, true, ExistingNamePolicy::Reject)
     }
 
-    /// Layered-catalog variant of [`load_dir_skipping_retired`]. Duplicate
+    /// Layered-catalog variant of [`Self::load_dir_skipping_retired`]. Duplicate
     /// names inside `dir` are still invalid, but names that already exist in
     /// the catalog are left untouched so callers can load directories from
     /// highest to lowest precedence.
@@ -113,7 +121,7 @@ impl V2ActivityCatalog {
             })?;
             let asset = match load_activity_asset(&yaml) {
                 Ok(asset) => asset,
-                Err(source @ AssetLoadError::RetiredVersion(_)) if skip_retired => {
+                Err(_source @ AssetLoadError::RetiredVersion(_)) if skip_retired => {
                     skipped.push(path.to_path_buf());
                     return Ok(());
                 }
@@ -178,6 +186,27 @@ impl V2ActivityCatalog {
 
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.entries.keys().map(String::as_str)
+    }
+
+    /// Validate every agent-facing activity tool allowlist against a caller
+    /// supplied registry snapshot. This keeps `orbit-common` registry-agnostic
+    /// while letting core/engine fail malformed assets before dispatch.
+    pub fn validate_tool_allowlists<'a, I>(&self, registered_tools: I) -> Result<(), CatalogError>
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        let registered_tools: Vec<&str> = registered_tools.into_iter().collect();
+        for (name, activity) in &self.entries {
+            validate_activity_tool_allowlist_against_registered_tools(
+                activity,
+                registered_tools.iter().copied(),
+            )
+            .map_err(|source| CatalogError::ToolAllowlist {
+                name: name.clone(),
+                source,
+            })?;
+        }
+        Ok(())
     }
 }
 

@@ -1,7 +1,12 @@
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use tree_sitter::{Node, Parser};
 
 use super::FileExtractor;
-use super::common::{ExtractedLeaf, ExtractionResult, compute_source_hash};
+use super::common::{
+    ExtractedLeaf, ExtractionResult, compute_source_hash, finalize_unique_qualified_names,
+};
 use super::language::{FileKind, Language};
 
 pub struct JavaScriptExtractor;
@@ -24,6 +29,7 @@ impl FileExtractor for JavaScriptExtractor {
 
         let mut leaves = Vec::new();
         extract_top_level(tree.root_node(), source, &mut leaves);
+        finalize_unique_qualified_names(&mut leaves);
         ExtractionResult {
             leaves,
             ..Default::default()

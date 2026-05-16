@@ -1,5 +1,6 @@
 use orbit_common::types::{
-    OrbitError, OrbitEvent, Task, TaskPriority, TaskStatus, normalize_optional_attribution_label,
+    ExternalRef, OrbitError, OrbitEvent, ReviewThread, Task, TaskComment, TaskHistoryEntry,
+    TaskPriority, TaskStatus, normalize_optional_attribution_label, push_external_ref_if_missing,
 };
 use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
 
@@ -19,14 +20,36 @@ impl TaskReadHost for OrbitRuntime {
         OrbitRuntime::get_task_artifacts(self, task_id)
     }
 
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        OrbitRuntime::get_task_comments(self, task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        OrbitRuntime::get_task_history(self, task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        OrbitRuntime::get_task_review_threads(self, task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        OrbitRuntime::list_tasks_filtered(self, status, priority, parent_id, batch_id)
+        OrbitRuntime::list_tasks_filtered(
+            self,
+            status,
+            priority,
+            parent_id,
+            job_run_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 
@@ -105,21 +128,29 @@ impl TaskWriteHost for OrbitRuntime {
                 )
             });
             let implemented_by = normalize_optional_attribution_label(
-                existing_task
-                    .model
+                model
                     .as_deref()
-                    .or(model.as_deref())
                     .or(existing_task.implemented_by.as_deref())
                     .or(explicit_attribution_label.as_deref())
                     .or(Some(actor_label.as_str())),
-                existing_task.model.as_deref().or(model.as_deref()),
+                model.as_deref(),
             );
+            let external_refs = if update.external_refs.is_empty() {
+                None
+            } else {
+                let mut refs = existing_task.external_refs.clone();
+                for external_ref in update.external_refs.clone() {
+                    push_external_ref_if_missing(&mut refs, external_ref);
+                }
+                Some(refs)
+            };
             let task = self.stores().tasks().update(
                 task_id,
                 StoreTaskUpdateParams {
                     actor: actor_label.clone(),
                     execution_summary: update.execution_summary.clone(),
                     plan: update.plan.clone(),
+                    context_files: update.context_files.clone(),
                     planned_by,
                     implemented_by: if matches!(
                         update.status,
@@ -129,13 +160,9 @@ impl TaskWriteHost for OrbitRuntime {
                     } else {
                         None
                     },
-                    agent: agent.clone().map(Some),
-                    model: model.clone().map(Some),
                     status: update.status,
-                    workspace_path: update.workspace_path.clone(),
-                    repo_root: update.repo_root.clone().map(Some),
-                    pr_number: update.pr_number.clone().map(Some),
-                    batch_id: update.batch_id.clone().map(Some),
+                    external_refs,
+                    job_run_id: update.job_run_id.clone().map(Some),
                     status_event: update.status_event.clone(),
                     status_note: update.status_note.clone(),
                     append_comments: update.append_comments.clone(),
@@ -164,7 +191,6 @@ mod tests {
     use std::process::Command;
 
     use crate::command::task::{TaskAddParams, TaskUpdateParams};
-    use orbit_common::types::TaskType;
     use serde_json::{Value, json};
     use tempfile::tempdir;
 
@@ -235,6 +261,86 @@ mod tests {
     }
 
     #[test]
+    fn apply_task_automation_update_does_not_touch_context_files_when_unset() {
+        let (root, runtime) = test_runtime();
+        // Pre-create files in the workspace so add_task does not prune the
+        // selectors as missing.
+        let repo = root.path().join("repo");
+        fs::write(repo.join("README.md"), "test\n").expect("write README.md");
+        fs::write(repo.join("CLAUDE.md"), "test\n").expect("write CLAUDE.md");
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Preserve context_files".to_string(),
+                description: "Exercise context_files preservation across automation updates."
+                    .to_string(),
+                workspace_path: Some(".".to_string()),
+                context_files: vec!["README.md".to_string(), "CLAUDE.md".to_string()],
+                ..Default::default()
+            })
+            .expect("add task");
+
+        let initial_context_files = runtime
+            .get_task(&task.id)
+            .expect("reload task")
+            .context_files;
+        assert!(
+            !initial_context_files.is_empty(),
+            "test precondition: add_task should keep existing context_files"
+        );
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    plan: Some("## Plan\nSome plan body.\n".to_string()),
+                    context_files: None,
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation update without context_files set");
+
+        let updated = runtime.get_task(&task.id).expect("reload task");
+        assert_eq!(
+            updated.context_files, initial_context_files,
+            "context_files: None should leave the field untouched"
+        );
+    }
+
+    #[test]
+    fn apply_task_automation_update_replaces_context_files_when_set() {
+        let (_root, runtime) = test_runtime();
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Replace context_files".to_string(),
+                description: "Exercise context_files replacement via automation update."
+                    .to_string(),
+                workspace_path: Some(".".to_string()),
+                context_files: vec!["Cargo.toml".to_string()],
+                ..Default::default()
+            })
+            .expect("add task");
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    context_files: Some(vec![
+                        "file:src/new.rs".to_string(),
+                        "dir:src/new_dir".to_string(),
+                    ]),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation update with new context_files");
+
+        let updated = runtime.get_task(&task.id).expect("reload task");
+        assert_eq!(
+            updated.context_files,
+            vec!["file:src/new.rs".to_string(), "dir:src/new_dir".to_string()]
+        );
+    }
+
+    #[test]
     fn automation_can_restamp_in_progress_task_without_plan() {
         let (_root, runtime) = test_runtime();
         let task = runtime
@@ -257,8 +363,7 @@ mod tests {
             .apply_task_automation_update(
                 &task.id,
                 TaskAutomationUpdate {
-                    batch_id: Some("jrun-test".to_string()),
-                    workspace_path: Some(Some("/tmp/orbit-worktree".to_string())),
+                    job_run_id: Some("jrun-test".to_string()),
                     status: Some(TaskStatus::InProgress),
                     ..TaskAutomationUpdate::default()
                 },
@@ -267,21 +372,14 @@ mod tests {
 
         let updated = runtime.get_task(&task.id).expect("reload task");
         assert_eq!(updated.status, TaskStatus::InProgress);
-        assert_eq!(updated.batch_id.as_deref(), Some("jrun-test"));
-        assert_eq!(
-            updated.workspace_path.as_deref(),
-            Some("/tmp/orbit-worktree")
-        );
+        assert_eq!(updated.job_run_id.as_deref(), Some("jrun-test"));
     }
 
     #[test]
-    fn worktree_setup_admits_unplanned_workflow_statuses_and_counts_friction_once() {
+    fn worktree_setup_admits_unplanned_workflow_statuses() {
         let (root, runtime) = test_runtime();
         let repo = root.path().join("repo");
         init_git_repo(&repo);
-        let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
-        fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
-
         let proposed = runtime
             .add_task(TaskAddParams {
                 title: "Proposed workflow task".to_string(),
@@ -290,19 +388,6 @@ mod tests {
                 ..Default::default()
             })
             .expect("create proposed task");
-        let friction = runtime
-            .add_task_with_identity(
-                TaskAddParams {
-                    title: "Friction workflow task".to_string(),
-                    description: "Starts from friction without a plan.".to_string(),
-                    task_type: Some(TaskType::Friction),
-                    workspace_path: Some(".".to_string()),
-                    ..Default::default()
-                },
-                Some("codex".to_string()),
-                Some("gpt-fixture".to_string()),
-            )
-            .expect("create friction task");
         let backlog = approve_for_execution(
             &runtime,
             &runtime
@@ -341,7 +426,6 @@ mod tests {
 
         let task_ids = vec![
             proposed.id.clone(),
-            friction.id.clone(),
             backlog.id.clone(),
             rejected.id.clone(),
             archived.id.clone(),
@@ -351,29 +435,18 @@ mod tests {
             .as_str()
             .expect("workspace path output")
             .to_string();
+        assert!(!workspace_path.is_empty());
 
         for task_id in &task_ids {
             let task = runtime.get_task(task_id).expect("reload admitted task");
             assert_eq!(task.status, TaskStatus::InProgress, "{task_id}");
-            assert_eq!(task.batch_id.as_deref(), Some("jrun-admit"));
-            assert_eq!(
-                task.workspace_path.as_deref(),
-                Some(workspace_path.as_str())
-            );
+            assert_eq!(task.job_run_id.as_deref(), Some("jrun-admit"));
         }
 
-        let scoreboard = read_friction_scoreboard(&scoreboard_dir);
-        assert_eq!(scoreboard["issues-accepted"]["gpt-fixture"], 1);
-
-        let friction_task = runtime
-            .get_task(&friction.id)
-            .expect("reload friction task");
         let admitted_again = runtime
-            .admit_task_for_workflow_as_system(&friction_task.id, "worktree_setup")
+            .admit_task_for_workflow_as_system(&proposed.id, "worktree_setup")
             .expect("idempotent workflow admission");
         assert_eq!(admitted_again.status, TaskStatus::InProgress);
-        let scoreboard = read_friction_scoreboard(&scoreboard_dir);
-        assert_eq!(scoreboard["issues-accepted"]["gpt-fixture"], 1);
     }
 
     #[test]
@@ -471,9 +544,8 @@ mod tests {
         )
         .expect("run update_task automation");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let status_entry = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let status_entry = history
             .iter()
             .rev()
             .find(|entry| {
@@ -542,11 +614,13 @@ mod tests {
             )
             .expect("activity update");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let comment = updated.comments.last().expect("activity comment");
+        let comments = runtime
+            .get_task_comments(&task.id)
+            .expect("reload comments");
+        let comment = comments.last().expect("activity comment");
         assert_eq!(comment.by, SYSTEM_ACTOR_LABEL);
-        let comment_history = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let comment_history = history
             .iter()
             .find(|entry| entry.event == "commented")
             .expect("comment history");
@@ -583,8 +657,8 @@ mod tests {
             .expect("automation update");
 
         let updated = runtime.get_task(&task.id).expect("reload task");
-        let status_entry = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let status_entry = history
             .iter()
             .rev()
             .find(|entry| {
@@ -617,11 +691,13 @@ mod tests {
             )
             .expect("update task");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let comment = updated.comments.last().expect("human comment");
+        let comments = runtime
+            .get_task_comments(&task.id)
+            .expect("reload comments");
+        let comment = comments.last().expect("human comment");
         assert_eq!(comment.by, "human");
-        let comment_history = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let comment_history = history
             .iter()
             .find(|entry| entry.event == "commented")
             .expect("comment history");
@@ -655,24 +731,19 @@ mod tests {
         )
         .expect("dispatch batch");
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let start_entry = updated
-            .history
+        let history = runtime.get_task_history(&task.id).expect("reload history");
+        let start_entry = history
             .iter()
             .find(|entry| entry.event == "started")
             .expect("start history");
         assert_eq!(start_entry.by, SYSTEM_ACTOR_LABEL);
-        let batch_comment = updated
-            .comments
+        let comments = runtime
+            .get_task_comments(&task.id)
+            .expect("reload comments");
+        let batch_comment = comments
             .iter()
             .find(|comment| comment.message.starts_with("Batch dispatched:"))
             .expect("batch dispatch comment");
         assert_eq!(batch_comment.by, SYSTEM_ACTOR_LABEL);
-    }
-
-    fn read_friction_scoreboard(scoreboard_dir: &Path) -> Value {
-        let raw = fs::read_to_string(scoreboard_dir.join("friction_bounty.json"))
-            .expect("read friction scoreboard");
-        serde_json::from_str(&raw).expect("parse friction scoreboard")
     }
 }

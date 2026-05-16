@@ -2,112 +2,65 @@
 
 Project instructions for agents working on Orbit.
 
-## Project Don'ts
+## Rules
 
-- Don't commit until the Orbit task has been explicitly approved by the human.
-- Don't invent task IDs — get them from `orbit.task.add`.
-- Don't edit task files directly — use `orbit.task.update`.
-- Don't add cross-crate dependencies without checking the architecture diagram below.
-- When you hit friction, ambiguity, naming drift, or duplicated sources of truth: file a self-reported friction task via the `orbit-track-issues` skill instead of working around it.
-- Reserve task type `friction` for agent self-reports only. Do not use `friction` for normal user-requested work, backlog shaping, or generic bug tracking.
+- **Don't commit** until the Orbit task has been explicitly approved by the human.
+- **Don't invent task IDs** — get them from `orbit.task.add`. Don't edit task files directly — use `orbit.task.update`.
+- **Don't add cross-crate dependencies** without checking [`ARCHITECTURE.md`](ARCHITECTURE.md). If a new edge is genuinely needed, file a task and an ADR before adding it.
+- **Use subagents** for large tasks to keep your context window clean.
 
-## Project Do's
+## Branching
 
-- Use subagents to support you through large tasks and keep your context window clean.
+- **`main`** is the release / production branch — only release merges and hotfixes land here. Default base for external install URLs, npm/Homebrew consumers, and the GitHub default-branch view.
+- **`agent-main`** is the dev integration branch — every task PR targets `agent-main`.
+- **Promotion**: each release tags on `agent-main`, then merges `agent-main → main` via a merge commit. See [`RELEASING.md`](RELEASING.md) §10b.
+- **Hotfixes** branch from `main`, merge to `main`, tag a patch release on `main`, then back-merge `main → agent-main` in the same session. See [`RELEASING.md`](RELEASING.md) §Hotfix flow.
 
 ## Build / Lint
 
-- Build: `make build`
-- Fmt:   `make fmt`
+`make ci-fast` (fmt-check + guardrail scripts; no compile) must pass before a task moves to `review`. The full `make ci` is the canonical merge gate via [`.github/workflows/ci.yml`](.github/workflows/ci.yml) on every PR — don't run it per task locally.
 
-All must pass before a task moves to `review`.
+Mechanical lint rules belong in `[workspace.lints]` in the root `Cargo.toml`, not in this file. If PR CI fails for reasons unrelated to the task, record evidence and surface to a reviewer rather than broadening scope.
 
-## Crate Architecture
+## Architecture
 
-```
-orbit-common → orbit-policy, orbit-exec, orbit-knowledge → orbit-tools → orbit-agent → orbit-engine → orbit-core → orbit-cli
-            ↘ orbit-store ──────────────────────────────────────────────────↗            ↗
-            ↘ orbit-mcp ─────────────────────────────────────────────────────────────────────────────────────────↗
-```
+Crate layering, per-crate responsibilities, and scoping rules live in [`ARCHITECTURE.md`](ARCHITECTURE.md). Read it before adding a new crate, a new dependency edge, or a new persisted artifact.
 
-- **orbit-common**: leaf — no internal deps. `types::` owns shared domain types, `OrbitError`, ID generation, and activity/job schemas; `utility::` owns generic helpers like fs, redaction, logging, and blob storage.
-- **orbit-policy**: filesystem-scoping policy engine. Owns `FsProfile` resolution and `denyRead` / `denyModify` evaluation. Depends only on `orbit-common`.
-- **orbit-exec**: process / sandbox / supervision primitives for shell-command execution under an `FsProfile`. Depends only on `orbit-common`.
-- **orbit-knowledge**: knowledge/graph parsing and storage helpers. Multi-language source parsing (Rust, Go, Java, JavaScript/TypeScript, Python). Depends on `orbit-common`; consumed by `orbit-tools`, which exposes graph tool and CLI-use-case facades upstream.
-- **orbit-store**: layered store pattern (YAML + SQLite). Match existing modules when adding new ones. Depends only on `orbit-common`.
-- **orbit-tools**: tool registry plus built-in graph, fs, and policy-aware exec tools. Depends on `orbit-common`, `orbit-exec`, `orbit-knowledge`, `orbit-policy`.
-- **orbit-mcp**: Model Context Protocol adapter using `rmcp`. Depends only on `orbit-common`; consumed by `orbit-cli` via `orbit mcp serve`.
-- **orbit-agent**: per-provider `AgentRuntime` implementations under `providers/<name>/<name>_runtime.rs` (claude, codex, gemini, openai_compat, anthropic, ollama, mock_agent). Implements `backend: cli`. Also hosts HTTP `LoopTransport` primitives.
-- **orbit-engine**: activity/job execution, template rendering, retry logic. Owns the `backend: cli` subprocess runner (`activity_job::cli_runner`), which references `orbit-agent::{Agent, AgentConfig}` directly so orbit-core stays clean of orbit-agent types.
-- **orbit-core**: runtime bootstrap, config layering, command dispatch, default asset seeding. Surfaces the `OrbitRuntime` API used by `orbit-cli`; does NOT depend on `orbit-agent`.
-- **orbit-cli**: clap-based CLI entry point.
+Reusable codebase-specific patterns (Command, RAII guard, newtype, crate-boundary error translation) live in [`docs/design-patterns/`](docs/design-patterns/). When you reach for one of those shapes, copy from the documented reference instead of inventing a new one.
 
-## Scoping Rules
+## Design Docs
 
-| Artifact        | Strategy           | Rationale                                        |
-|-----------------|--------------------|--------------------------------------------------|
-| Tasks           | WorkspaceOnly      | Per-repo backlog, no cross-project leaking       |
-| Activities/Jobs | MergeByKey         | Global defaults + workspace overrides            |
-| Policies        | MergeByKey         | Workspace overrides profiles by name; global `denyRead` / `denyModify` rules accumulate |
-| Job Runs        | WorkspaceOnly      | Execution artifacts are workspace-local          |
-| Skills          | MergeByKey         | Global defaults in `~/.orbit/skills`; workspace overrides by skill name |
-| Command Audit   | GlobalOnly         | Single authoritative SQLite event trail          |
-| Run Traces      | WorkspaceOnly      | Per-repo activity/job JSONL and blob artifacts   |
+- **Layout.** Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
+- **Same-PR updates.** Change the doc in the same PR as the code: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `**Last updated:**`, add a new ADR for any non-obvious decision the change embodies. Stale docs are a review blocker.
+- **Decay check.** `make check-design-docs` flags `docs/design/*` docs whose `**Last updated:**` date precedes the last commit on any `crates/...rs` file they reference. Run it before review; fix flagged docs or update their `Last updated`.
+
+## Rust Practices
+
+Lint-enforced rules:
+
+- **Panic surfaces:** `[workspace.lints.clippy].unwrap_used` and `[workspace.lints.clippy].expect_used` are `warn` and therefore fail under `make ci`'s `-D warnings`, except for scoped test/example/invariant allowlists with comments. Prefer `OrbitError` propagation at crate boundaries, and use `expect("<invariant>")` only when the invariant is local and documented. See [`docs/design-patterns/error_translation.md`](docs/design-patterns/error_translation.md) for the boundary-translator shape.
+- **Logging vs user output:** `[workspace.lints.clippy].print_stdout` and `[workspace.lints.clippy].print_stderr` are `warn` and therefore fail under `make ci`'s `-D warnings`, except for genuine CLI/example user-facing output allowlists. Use `tracing` for diagnostics, prefer structured fields (`tracing::info!(run_id, ...)`) over string interpolation, and rely on the default subscriber for redaction.
+- **Async locking:** `[workspace.lints.clippy].await_holding_lock` is `deny`; never hold a `std::sync::Mutex` / `RwLock` guard across `.await`. Scope the lock to a block, or use `tokio::sync` primitives when state is genuinely cross-task.
+
+Conventions (not lint-enforced):
+
+- **Errors:** reach for typed `thiserror` variants over ad-hoc strings when translating into `OrbitError`.
+- **Visibility:** default to `pub(crate)`; reserve `pub` for items in the crate's documented public surface (see `ARCHITECTURE.md`). Re-export at the crate root only for types genuinely part of the API.
+- **Channels:** bounded channels by default.
+- **Tests:** in-file unit tests under `#[cfg(test)] mod tests`; integration tests under `tests/`. Match nearby scaffolding (e.g. sibling `*_tests.rs` files in `orbit-engine::activity_job::job_executor`). Don't introduce a new test harness when an existing one fits.
+
+Related lint work:
+
+- **Public docs:** `[workspace.lints.rust].missing_docs` is owned by sibling task ORB-00004; keep that migration separate from this broader Rust Practices lint pass.
+
+## Commits & Authorship
+
+- Use the agent commit identity (e.g. `codex`, `claude`) as author/committer.
+- Include the Orbit task ID in commit messages when applicable (e.g. `[ORB-00042]`). Task IDs are allocation-authority search keys (`git log --grep '[ORB-00042]'`); when a task has a linked `external_ref`, include that tag too (`[ORB-00042] [ENG-1234] ...`) — cross-engineer reviewers resolve the external tag, not the Orbit one.
+- Use your model name (e.g. `claude-opus-4-7`, `gpt-5.5`, `gemini-3.1-pro`) when authoring tasks or docs. Cite relevant task IDs in any doc you write.
 
 ## Orbit Workflow
 
-For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs), invoke the relevant `orbit-*` skill. The `orbit` skill is the entry point and router.
+For any Orbit lifecycle work (creating tasks, executing, reviewing, raising PRs), invoke the relevant `orbit-*` skill. The `orbit` skill is the entry point and router. Task authoring quality standards live in `orbit-create-task`.
 
-## Friction Reports
-
-Friction reports are agent self-reports of Orbit tooling, workflow, skill, or seeded-instruction problems. File them with `type: friction`; Orbit auto-sets `status: friction` at creation. Passing only `status: friction` also infers `type: friction`, and passing both is valid.
-
-The type/status coupling exists only at creation. The task type remains `friction` for the record's lifetime, while triage moves status forward through normal lifecycle transitions such as `backlog`, `in-progress`, `done`, or `rejected`. A task that leaves `status: friction` must not return to it.
-
-The friction bounty scoreboard binds to that lifecycle history: reported counts come from tasks created with `type: friction`, accepted counts come from `friction → backlog | in-progress | done`, and rejected counts come from `friction → rejected`.
-
-## Activity / Job Model
-
-The full design lives under [docs/design/activity-job/](./docs/design/activity-job/), with the current implementation in [docs/design/activity-job/2_design.md](./docs/design/activity-job/2_design.md).
-
-### Activity YAML reference
-
-Activity and job YAMLs declare `schemaVersion: 2`. Job steps reference activities by name via `target: activity:<name>` or inline the full spec via `spec:`. `agent_loop` activities declare `backend:`, `provider:`, and `wall_clock_timeout_seconds:`. A step inside a `loop:` body with a `session:` binding must resolve to `backend: http` (enforced at load time).
-
-Policy is a filesystem-scoping surface only. Activities can declare `fsProfile: <name>` to select a named profile from the active policy; the policy layer contributes global `denyRead` / `denyModify` safety rails. If an activity omits `fsProfile:`, runtime resolves an implicit `unrestricted` profile (`read: [./**]`, `modify: [./**]`) before applying the global denies.
-
-### Durable workflow state
-
-Treat direct-agent stdout as an audit/diagnostic stream, not a workflow handoff channel. Jobs and activities should pass durable data through task artifacts, `orbit.state.*`, job-run state, or purpose-built tools such as `orbit.duel.plan.add` and `orbit.duel.plan.winner`; downstream steps should read those persisted records instead of parsing agent process output.
-
-## Task Authoring Quality
-
-Follow the `## Task Quality Standards` section in `orbit-create-task` skill: explicit observable definitions for summary fields (`purpose`, etc.), and testability-preserving implementation patterns.
-
-**Commits & Tasks & doc authorship**:
-
-- Use the agent commit identity (i.e. `codex` or `claude`) as author/committer when you make commits
-- Include the task ID in the commit message when the commit is associated with an Orbit task (e.g. `[T20260320-001234]`).
-- Use your model name (e.g. `claude-opus-4-7`, `gpt-5.5`, `gemini-3.1-pro`) when authoring tasks or docs.
-- When writing docs, cite relevant task IDs in the doc itself.
-- When your change touches an owned feature's implementation, update that feature's design docs in the same PR: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `Last updated`, and add a new ADR for any non-obvious decision the change embodies. Stale docs are treated as a review blocker.
-
-## Feature Ownership
-
-Feature design docs live under `docs/design/<feature>/` and follow [`docs/design/CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
-
-| Feature | Folder | Lead |
-|---------|--------|------|
-| Knowledge graph | `knowledge-graph/` | `claude` |
-| Policy & Sandboxing | `policy-sandbox/` | `claude` |
-| Activity / Job | `activity-job/` | `codex` |
-| Auditability | `auditability/` | `codex` |
-| Groundhog | `groundhog/` | `codex` |
-| User Interface | `user-interface/` | `gemini` |
-
-## Scoreboards
-
-Scoreboards live at `.orbit/state/scoreboard/`:
-
-- `friction_bounty.json` — self-reported agent friction reports (issues-reported, issues-accepted, issues-rejected) per agent/model. Rejected reports count against the reporter; quality over quantity.
-- `duel_plan.json` — planning-duel run results.
+Scoreboards live at `.orbit/state/scoreboard/` (e.g. `duel_plan.json` — planning-duel run results).

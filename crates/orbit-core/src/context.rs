@@ -2,11 +2,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use orbit_common::types::WorkspacePaths;
+use orbit_embed::{EmbedWorker, VectorStore};
+use orbit_engine::PrConfig;
 use orbit_policy::PolicyEngine;
 use orbit_store::{
-    AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunStoreBackend, PolicyDefStoreBackend,
-    TaskArtifactStoreBackend, TaskDocumentStoreBackend, TaskHistoryStoreBackend,
-    TaskReservationStoreBackend, TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
+    AdrStoreBackend, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunStoreBackend,
+    LearningStoreBackend, PolicyDefStoreBackend, TaskArtifactStoreBackend,
+    TaskDocumentStoreBackend, TaskHistoryStoreBackend, TaskReservationStoreBackend,
+    TaskReviewStoreBackend, TaskStoreBackend, ToolStoreBackend,
 };
 use orbit_tools::ToolRegistry;
 
@@ -76,6 +79,10 @@ pub(crate) struct OrbitStores {
     pub(crate) task_history: Arc<dyn TaskHistoryStoreBackend>,
     pub(crate) task_review: Arc<dyn TaskReviewStoreBackend>,
     pub(crate) task_artifact: Arc<dyn TaskArtifactStoreBackend>,
+    pub(crate) adr: Arc<dyn AdrStoreBackend>,
+    pub(crate) learning: Arc<dyn LearningStoreBackend>,
+    pub(crate) semantic_vector: Arc<VectorStore>,
+    pub(crate) semantic_worker: Arc<EmbedWorker>,
     pub(crate) task_reservation: Arc<dyn TaskReservationStoreBackend>,
     pub(crate) job_run: Arc<dyn JobRunStoreBackend>,
     pub(crate) tool: Arc<dyn ToolStoreBackend>,
@@ -92,6 +99,10 @@ impl OrbitStores {
         task_history: Arc<dyn TaskHistoryStoreBackend>,
         task_review: Arc<dyn TaskReviewStoreBackend>,
         task_artifact: Arc<dyn TaskArtifactStoreBackend>,
+        adr: Arc<dyn AdrStoreBackend>,
+        learning: Arc<dyn LearningStoreBackend>,
+        semantic_vector: Arc<VectorStore>,
+        semantic_worker: Arc<EmbedWorker>,
         task_reservation: Arc<dyn TaskReservationStoreBackend>,
         job_run: Arc<dyn JobRunStoreBackend>,
         tool: Arc<dyn ToolStoreBackend>,
@@ -105,6 +116,10 @@ impl OrbitStores {
             task_history,
             task_review,
             task_artifact,
+            adr,
+            learning,
+            semantic_vector,
+            semantic_worker,
             task_reservation,
             job_run,
             tool,
@@ -159,10 +174,12 @@ pub(crate) struct OrbitRuntimeSettings {
     task_delegate_approval: bool,
     scoring_enabled: bool,
     graph_editing: bool,
+    pr_config: PrConfig,
     /// Persisted default for the v2 `agent_loop` execution backend (§3.1).
     v2_backend: Option<String>,
-    /// Workspace-configured task-ID extraction regex (T20260426-0507).
-    task_id_pattern: Option<String>,
+    /// Default base branch for ship/ship-auto/duel-plan workflows
+    /// (`[workflow] base_branch` in `config.toml`, default `"main"`).
+    workflow_base_branch: String,
     /// `[agent.<role>]` overrides written by `orbit init` (ADR-027) and
     /// consumed at v2 dispatch time (ADR-029).
     agent_roles: std::collections::BTreeMap<String, crate::config::RawAgentRoleConfig>,
@@ -177,8 +194,9 @@ impl OrbitRuntimeSettings {
         task_delegate_approval: bool,
         scoring_enabled: bool,
         graph_editing: bool,
+        pr_config: PrConfig,
         v2_backend: Option<String>,
-        task_id_pattern: Option<String>,
+        workflow_base_branch: String,
         agent_roles: std::collections::BTreeMap<String, crate::config::RawAgentRoleConfig>,
     ) -> Self {
         Self {
@@ -188,18 +206,23 @@ impl OrbitRuntimeSettings {
             task_delegate_approval,
             scoring_enabled,
             graph_editing,
+            pr_config,
             v2_backend,
-            task_id_pattern,
+            workflow_base_branch,
             agent_roles,
         }
+    }
+
+    pub(crate) fn pr_config(&self) -> &PrConfig {
+        &self.pr_config
     }
 
     pub(crate) fn v2_backend(&self) -> Option<&str> {
         self.v2_backend.as_deref()
     }
 
-    pub(crate) fn task_id_pattern(&self) -> Option<&str> {
-        self.task_id_pattern.as_deref()
+    pub(crate) fn workflow_base_branch(&self) -> &str {
+        &self.workflow_base_branch
     }
 
     pub(crate) fn agent_role(&self, role: &str) -> Option<&crate::config::RawAgentRoleConfig> {
@@ -293,16 +316,21 @@ impl OrbitContext {
         self.runtime.graph_editing
     }
 
+    pub(crate) fn pr_config(&self) -> &PrConfig {
+        self.runtime.pr_config()
+    }
+
     /// Persisted default for the v2 `agent_loop` execution backend (§3.1
     /// resolution precedence step 3). `None` means "not configured".
     pub(crate) fn v2_backend(&self) -> Option<&str> {
         self.runtime.v2_backend()
     }
 
-    /// Workspace-configured task-ID extraction regex (T20260426-0507). `None`
-    /// means callers should use the Orbit default.
-    pub(crate) fn task_id_pattern(&self) -> Option<&str> {
-        self.runtime.task_id_pattern()
+    /// Default base branch for ship/ship-auto/duel-plan workflows. Sourced
+    /// from `[workflow] base_branch` in `config.toml`; falls back to
+    /// `"main"` when the key is absent.
+    pub(crate) fn workflow_base_branch(&self) -> &str {
+        self.runtime.workflow_base_branch()
     }
 
     /// `[agent.<role>]` lookup written by `orbit init` and consumed at v2

@@ -1,4 +1,13 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy knowledge-graph surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+// ORB-00013: Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Knowledge-graph parsing, storage, and query services for Orbit.
 //!
 //! The scan pipeline applies a built-in `.orbitignore` baseline before files
@@ -32,6 +41,7 @@ pub fn default_orbitignore_template() -> String {
     content
 }
 
+pub mod commands;
 mod error;
 pub mod extract;
 pub mod graph;
@@ -42,30 +52,21 @@ pub mod pipeline;
 mod selector;
 pub mod service;
 mod store;
-mod task_id_pattern;
+pub mod workflows;
 pub mod working_graph;
 
-#[doc(hidden)]
-pub mod task_commits {
-    //! Sidecar-index re-export so integration tests and downstream crates can
-    //! read the task-commits index without reaching into `store` directly.
-    pub use crate::store::task_commits::*;
-}
-
-pub use error::KnowledgeError;
+pub use commands::knowledge_error_to_orbit;
+pub use error::{KnowledgeError, KnowledgeErrorKind};
+pub use graph::GraphReadOptions;
 pub use selector::{Selector, SelectorParseError};
-pub use service::history::{
-    CommitSummary as HistoryCommitSummary, DEFAULT_STALENESS_THRESHOLD, HistoryQueryOptions,
-    HistorySource, StalenessInfo, TaskHistoryEntry, TaskHistoryResult, query_task_history,
-};
 pub use service::{TaskGraphScope, TaskGraphService, default_knowledge_dir};
 pub use store::{
     DEFAULT_BLOB_CACHE_CAPACITY, DEFAULT_OBJECT_CACHE_CAPACITY, GraphObjectCache,
-    KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry, KnowledgeStore, LeafData, NodeTaskInfo,
-    SymbolSummary, load_task_working_graph, overlay_pack_with_working_graph,
-    pack_from_working_graph, save_task_working_graph, task_working_graph_state_path,
+    KnowledgeEntryKind, KnowledgePack, KnowledgePackEntry, KnowledgePackTimeout, KnowledgeStore,
+    LeafData, SymbolSummary, UnresolvedSelectorReason, load_task_working_graph,
+    overlay_pack_with_working_graph, pack_from_working_graph, save_task_working_graph,
+    task_working_graph_state_path,
 };
-pub use task_id_pattern::{DEFAULT_TASK_ID_PATTERN, ORBIT_TASK_ID_PATTERN, TaskIdPattern};
 pub use working_graph::{
     LeafEdit, LeafVersionChain, MoveResult, WorkingGraph, WorkingLeaf, WriteError, WriteResult,
 };

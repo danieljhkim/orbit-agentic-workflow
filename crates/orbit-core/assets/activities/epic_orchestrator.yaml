@@ -5,19 +5,18 @@ metadata:
 spec:
   type: agent_loop
   description: >
-    Judgment-grade orchestrator for epic-sized tasks. One invocation =
-    one cycle: read state, decide READY subtasks, decide SEQUENTIAL vs
-    PARALLEL, dispatch `task_gate_pipeline` per bundle, wait for
-    results, and leave a concise audit note. The enclosing workflow
-    refreshes task state deterministically after this activity and uses
-    that snapshot to decide loop exit; this activity's final response is
-    not a workflow data handoff. Conversation history persists
-    across iterations when the enclosing workflow step declares
-    `session: <name>`, so the orchestrator can reference its own prior
-    reasoning.
+    Judgment-grade orchestrator for epic-sized tasks. One invocation = one
+    cycle: read state, decide READY subtasks, decide SEQUENTIAL vs PARALLEL,
+    dispatch `task_gate_pipeline` per bundle, emit the dispatched child run
+    IDs, and leave a concise audit note. The enclosing workflow waits on those
+    child runs and refreshes task state deterministically after this activity,
+    then uses that snapshot to decide loop exit.
+    Conversation history persists across iterations when the enclosing workflow
+    step declares `session: <name>`, so the orchestrator can reference its own
+    prior reasoning.
   input_schema_json:
     type: object
-    required: [epic, subtasks]
+    required: [ epic, subtasks ]
     properties:
       epic:
         type: object
@@ -27,33 +26,45 @@ spec:
         type: number
       mode:
         type: string
-        enum: [pr, local]
+        enum: [ pr, local ]
   output_schema_json:
     type: object
+    required: [cycle_notes, dispatched_run_ids]
     properties:
       cycle_notes:
         type: string
         description: One- or two-sentence summary of this cycle's dispatches.
+      dispatched_run_ids:
+        type: array
+        description: Child `task_gate_pipeline` run IDs dispatched in this cycle.
+        items:
+          type: string
   instruction: |
     You are the epic orchestrator. One activity invocation = one cycle.
 
     # Objective
 
-    Drive every subtask to a terminal state (`done`, `blocked`, or
-    `failed`). Use judgment on dependency ordering and on when to run
-    subtasks in parallel vs sequentially.
+    Drive every subtask to a state where automated shipment should stop:
+    shipped to `review`, already `done`, or unable to proceed
+    (`blocked`/`rejected`). Use judgment on dependency ordering and on
+    when to run subtasks in parallel vs sequentially.
 
     # Per-cycle procedure
 
     1. **Read state.** Use the `subtasks` input as the current
-       deterministic snapshot. It contains the non-terminal subtasks
-       after the workflow's latest `load_epic` refresh.
+       deterministic snapshot. It contains the subtasks still needing
+       automated shipment after the workflow's latest `load_epic`
+       refresh.
 
     2. **Decide READY subtasks.** A subtask is READY iff:
-       - its current task status is not terminal;
+       - its current task status still needs automated shipment;
        - its dependencies (inferred from descriptions) are all `done`;
        - it is not already represented by a child run you dispatched in
          this cycle.
+       When dependency direction is ambiguous from the descriptions alone,
+       `orbit.semantic.related` on a candidate subtask id (if available)
+       can surface prior tasks that establish ordering; skip if the
+       companion binary is not installed.
 
     3. **Decide SEQUENTIAL vs PARALLEL for this cycle.**
        - Read each READY subtask's description. Infer dependencies:
@@ -72,26 +83,30 @@ spec:
        each subtask `state: "in_flight", current_gate_run_id: <id>`
        in your audit notes for this cycle.
 
-    5. **Wait.** Call `orbit.pipeline.wait` with the dispatched
-       `run_ids`. On terminal responses:
-       - `status: succeeded` → mark subtask `state: "done"`.
-       - `status: failed` or `cancelled` or `timeout` → increment
-         note the failed run IDs and leave retry/blocking decisions for
-         the next cycle's deterministic task snapshot.
+    5. **Emit structured output and return.** Do not wait for child
+       runs. The deterministic workflow step after you performs the join.
+       Your final assistant turn MUST be exactly one JSON object and
+       nothing else:
 
-    6. **Emit an audit note.** Your final assistant turn is for audit only.
-       It may be plain text or JSON, but downstream workflow control must
-       not depend on it. The job refreshes task state with deterministic
-       `load_epic` after this step and uses that output for loop exit and
-       summary.
+       {
+         "cycle_notes": "one- or two-sentence summary of this cycle",
+         "dispatched_run_ids": ["<run_id>"]
+       }
 
-    # Read-only by construction
+       Include every run ID returned by `orbit.pipeline.invoke`. Use an
+       empty array when no bundle was dispatched.
 
-    You have `orbit.task.list`, `orbit.task.search`, and `orbit.task.show` for reading
-    descriptions and checking status changes, plus the pipeline tools.
+    # Narrow mutation surface
+
+    You have `orbit.task.list`, `orbit.task.search`, `orbit.task.show`,
+    `orbit.semantic.search`, and `orbit.semantic.related` for reading
+    descriptions, checking status changes, and surfacing related prior tasks
+    when dependency ordering is ambiguous, plus `orbit.pipeline.invoke`
+    for dispatch. You do NOT have `orbit.pipeline.wait`; the workflow does
+    the join in a deterministic activity.
     You do NOT have `orbit.task.update`, `orbit.task.approve`,
-    or any other mutating tool — requests for those will be rejected by
-    the HTTP backend allowlist enforcement (§6). Do not attempt them.
+    or any other task-mutating tool — requests for those will be rejected
+    by the HTTP backend allowlist enforcement (§6). Do not attempt them.
 
     # Resumability
 
@@ -103,9 +118,12 @@ spec:
     - orbit.task.search
     - orbit.task.show
     - orbit.pipeline.invoke
-    - orbit.pipeline.wait
+    - orbit.graph.*
+    - orbit.semantic.search
+    - orbit.semantic.related
   on_denial: terminate
   max_iterations: 8
+  role: planner
   backend: http
   provider: claude
-  wall_clock_timeout_seconds: 1800
+  wall_clock_timeout_seconds: 600

@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use orbit_common::types::{normalize_agent_family_for_model, normalize_optional_attribution_label};
+use orbit_common::types::{
+    audit_execution_id, normalize_agent_family_for_model, normalize_optional_attribution_label,
+};
 use orbit_core::command::tool::take_tool_audit_recorded;
 use orbit_core::{
     AuditEventInsertParams, AuditEventStatus, OrbitError, OrbitRuntime, redact_sensitive_env_text,
@@ -46,14 +48,9 @@ pub struct AuditGuard<'a> {
 
 impl<'a> AuditGuard<'a> {
     pub fn new(runtime: &'a OrbitRuntime, meta: CommandMeta) -> Self {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-
         Self {
             runtime,
-            execution_id: format!("exec-{nanos}"),
+            execution_id: audit_execution_id("exec"),
             meta,
             start: Instant::now(),
             status: AuditEventStatus::Failure,
@@ -296,6 +293,78 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 arguments_json: None,
             }
         }
+        Commands::Semantic(cmd) => {
+            use crate::command::semantic::SemanticSubcommand;
+            let sub = match &cmd.command {
+                SemanticSubcommand::Install(_) => "install",
+                SemanticSubcommand::Uninstall(_) => "uninstall",
+                SemanticSubcommand::Reindex(_) => "reindex",
+                SemanticSubcommand::Stats(_) => "stats",
+                SemanticSubcommand::Search(_) => "search",
+                SemanticSubcommand::Related(_) => "related",
+            };
+            CommandMeta {
+                command: "semantic".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("semantic_index".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
+        Commands::Adr(cmd) => {
+            use crate::command::adr::AdrSubcommand;
+            let sub = match &cmd.command {
+                AdrSubcommand::Migrate(_) => "migrate",
+            };
+            CommandMeta {
+                command: "adr".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("adr".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
+        Commands::Design(cmd) => {
+            use crate::command::design::DesignSubcommand;
+            let sub = match &cmd.command {
+                DesignSubcommand::Check(_) => "check",
+            };
+            CommandMeta {
+                command: "design".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("design_docs".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
+        Commands::Learning(cmd) => {
+            use crate::command::learning::LearningSubcommand;
+            let sub = match &cmd.command {
+                LearningSubcommand::Add(_) => "add",
+                LearningSubcommand::List(_) => "list",
+                LearningSubcommand::Search(_) => "search",
+                LearningSubcommand::Show(_) => "show",
+                LearningSubcommand::Update(_) => "update",
+                LearningSubcommand::Supersede(_) => "supersede",
+                LearningSubcommand::Reindex(_) => "reindex",
+                LearningSubcommand::Prune(_) => "prune",
+            };
+            CommandMeta {
+                command: "learning".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("learning".to_string()),
+                target_id: None,
+                role: "admin".to_string(),
+                arguments_json: None,
+            }
+        }
         Commands::Activity(cmd) => {
             use crate::command::activity::ActivitySubcommand;
             let (sub, target_id): (&str, Option<&str>) = match &cmd.command {
@@ -317,6 +386,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 JobSubcommand::List(_) => ("list", None),
                 JobSubcommand::Show(args) => ("show", Some(args.job_id.as_str())),
                 JobSubcommand::Run(args) => ("run", Some(args.job_id.as_str())),
+                JobSubcommand::Replay(args) => ("replay", Some(args.run_id.as_str())),
                 JobSubcommand::RunPipelineWorker(args) => {
                     ("run-pipeline-worker", Some(args.run_id.as_str()))
                 }
@@ -325,7 +395,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 command: "job".to_string(),
                 subcommand: Some(sub.to_string()),
                 tool_name: None,
-                target_type: Some(if sub == "run-pipeline-worker" {
+                target_type: Some(if matches!(sub, "replay" | "run-pipeline-worker") {
                     "job_run".to_string()
                 } else {
                     "job".to_string()
@@ -601,6 +671,7 @@ fn tool_run_input_identity(
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+    use serde_json::{Value, json};
 
     use crate::command::Cli;
 
@@ -713,6 +784,83 @@ mod tests {
         let meta = meta_for(&["orbit", "tool", "run", "orbit.graph.search"]);
 
         assert_eq!(meta.role, "agent");
+    }
+
+    #[test]
+    fn audit_guard_event_json_shapes_are_snapshotted() {
+        let events = vec![
+            audit_guard_event_json(AuditEventStatus::Success),
+            audit_guard_event_json(AuditEventStatus::Failure),
+            audit_guard_event_json(AuditEventStatus::Denied),
+        ];
+
+        let actual = serde_json::to_string_pretty(&events).expect("serialize audit snapshot");
+        assert_eq!(
+            actual,
+            include_str!("snapshots/audit_guard_event_json_shapes.json").trim_end()
+        );
+    }
+
+    fn audit_guard_event_json(status: AuditEventStatus) -> Value {
+        let _ = orbit_core::command::tool::take_tool_audit_recorded();
+        let runtime = OrbitRuntime::in_memory().expect("build in-memory runtime");
+        {
+            let mut guard = AuditGuard::new(&runtime, snapshot_meta());
+            match status {
+                AuditEventStatus::Success => guard.mark_success(),
+                AuditEventStatus::Failure => {
+                    let error = OrbitError::InvalidInput("snapshot failure".to_string());
+                    guard.mark_failure(&error);
+                }
+                AuditEventStatus::Denied => guard.mark_denied("snapshot denied"),
+            }
+        }
+
+        let events = runtime
+            .list_audit_events(
+                None,
+                Some("orbit.task.update".to_string()),
+                Some(status),
+                None,
+                8,
+            )
+            .expect("list audit events");
+        assert_eq!(events.len(), 1);
+        let mut value = serde_json::to_value(&events[0]).expect("serialize audit event");
+        normalize_audit_event_json(&mut value);
+        value
+    }
+
+    fn snapshot_meta() -> CommandMeta {
+        CommandMeta {
+            command: "tool".to_string(),
+            subcommand: Some("run".to_string()),
+            tool_name: Some("orbit.task.update".to_string()),
+            target_type: Some("tool".to_string()),
+            target_id: Some("orbit.task.update".to_string()),
+            role: "gpt-5.5".to_string(),
+            arguments_json: Some(r#"{"id":"ORB-00002","model":"gpt-5.5"}"#.to_string()),
+        }
+    }
+
+    fn normalize_audit_event_json(value: &mut Value) {
+        let object = value
+            .as_object_mut()
+            .expect("audit event serializes to object");
+        object.insert("id".to_string(), json!(1));
+        object.insert("execution_id".to_string(), json!("<execution_id>"));
+        object.insert("timestamp".to_string(), json!("<timestamp>"));
+        object.insert("duration_ms".to_string(), json!(0));
+        object.insert(
+            "working_directory".to_string(),
+            json!("<working_directory>"),
+        );
+        object.insert("host".to_string(), json!("<host>"));
+        object.insert("pid".to_string(), json!(0));
+        object.insert("task_id".to_string(), Value::Null);
+        object.insert("job_run_id".to_string(), Value::Null);
+        object.insert("activity_id".to_string(), Value::Null);
+        object.insert("step_index".to_string(), Value::Null);
     }
 
     /// Integration tests that exercise the real `AuditGuard::Drop` against an

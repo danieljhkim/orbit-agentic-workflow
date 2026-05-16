@@ -15,6 +15,7 @@ Command audit events are SQLite rows represented by `AuditEvent`.
 Required invariants:
 
 - `execution_id` is non-empty and unique within the command audit table.
+- Producer-generated `execution_id` values use the shared prefix + timestamp + process id + per-process sequence helper; new producers must not roll timestamp-only ids.
 - `timestamp`, `command`, `role`, `status`, `exit_code`, `duration_ms`, `working_directory`, and `pid` are always present.
 - `status` is one of `success`, `failure`, or `denied`.
 - A denied command uses `status: denied` and a non-zero exit code.
@@ -38,6 +39,7 @@ Required invariants:
 - Child events set `parent_event_id` when emitted under a parent context.
 - `workspace_path` remains optional; CLI/library callers with a real workspace should attach it, while smoke and stub hosts may omit it.
 - Body variants use the `body_kind` discriminator.
+- `cli.invocation.started` includes optional `cwd` when Activity/Job resolved a subprocess working directory.
 - A run starts with a run-start event and finishes with a run-finished event whenever execution reaches the dispatch wrapper.
 
 Failure modes:
@@ -81,4 +83,4 @@ Required invariants:
 
 ## Agent Signature
 
-Last revised by codex / gpt-5 for [T20260426-0605].
+Last revised by codex / gpt-5.5 for [T20260508-8].

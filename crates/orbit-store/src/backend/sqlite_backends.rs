@@ -3,8 +3,11 @@ use orbit_common::types::{AuditEvent, OrbitError, StoredTool};
 
 use super::contracts::{
     AuditEventStoreBackend, TaskReservationCheckParams, TaskReservationCheckResult,
-    TaskReservationReleaseParams, TaskReservationReleaseResult, TaskReservationReserveParams,
-    TaskReservationReserveResult, TaskReservationStoreBackend, ToolStoreBackend,
+    TaskReservationListResult, TaskReservationOwnedConflictsParams,
+    TaskReservationOwnedConflictsResult, TaskReservationReleaseByOwnerParams,
+    TaskReservationReleaseByOwnerResult, TaskReservationReleaseParams,
+    TaskReservationReleaseResult, TaskReservationReserveParams, TaskReservationReserveResult,
+    TaskReservationStoreBackend, ToolStoreBackend,
 };
 use crate::Store;
 use crate::scope::{ScopeStrategy, ScopedStore, resolve};
@@ -96,6 +99,22 @@ impl AuditEventStoreBackend for SqliteAuditEventStoreBackend {
         self.store.get_audit_tool_call_counts_by_role(since)
     }
 
+    fn get_audit_tool_call_counts_by_surface_and_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<crate::AuditToolCallCountsBySurfaceAndRole>, OrbitError> {
+        self.store
+            .get_audit_tool_call_counts_by_surface_and_role(since)
+    }
+
+    fn get_audit_top_tool_calls(
+        &self,
+        since: Option<&DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<Vec<crate::AuditTopToolCall>, OrbitError> {
+        self.store.get_audit_top_tool_calls(since, limit)
+    }
+
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         self.store.prune_audit_events(older_than)
     }
@@ -126,6 +145,15 @@ pub(crate) struct SqliteTaskReservationStoreBackend {
 }
 
 impl TaskReservationStoreBackend for SqliteTaskReservationStoreBackend {
+    fn list_active_task_reservations(
+        &self,
+        workspace_orbit_dir: &str,
+        workspace_id: Option<&str>,
+    ) -> Result<TaskReservationListResult, OrbitError> {
+        self.store
+            .list_active_task_reservations(workspace_orbit_dir, workspace_id)
+    }
+
     fn check_task_reservation_conflicts(
         &self,
         params: TaskReservationCheckParams,
@@ -145,5 +173,20 @@ impl TaskReservationStoreBackend for SqliteTaskReservationStoreBackend {
         params: TaskReservationReleaseParams,
     ) -> Result<TaskReservationReleaseResult, OrbitError> {
         self.store.release_task_reservation(&params)
+    }
+
+    fn release_task_reservations_by_owner_run_id(
+        &self,
+        params: TaskReservationReleaseByOwnerParams,
+    ) -> Result<TaskReservationReleaseByOwnerResult, OrbitError> {
+        self.store
+            .release_task_reservations_by_owner_run_id(&params)
+    }
+
+    fn list_owned_task_reservation_conflicts(
+        &self,
+        params: TaskReservationOwnedConflictsParams,
+    ) -> Result<TaskReservationOwnedConflictsResult, OrbitError> {
+        self.store.list_owned_task_reservation_conflicts(&params)
     }
 }

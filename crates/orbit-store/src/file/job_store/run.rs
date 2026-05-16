@@ -1,20 +1,23 @@
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    JobRun, JobRunState, JobRunStep, KnowledgeRunMetrics, OrbitError, PipelineState,
+    JobRun, JobRunState, JobRunStep, KnowledgeRunMetrics, NotFoundKind, OrbitError, PipelineState,
 };
 
 use crate::backend::JobRunStepParams;
 use crate::file::layout::validate_path_stem;
 use orbit_common::utility::fs::atomic_write_text_volatile as write_atomic;
+use orbit_common::utility::process_identity::process_start_identity_token;
 
 use super::{
     JobFileStore,
     doc::{JobRunFileDocument, JobRunStepFileDocument},
-    resource::process_start_time_token,
 };
 
 impl JobFileStore {
@@ -63,7 +66,7 @@ impl JobFileStore {
             .map_err(OrbitError::JobRunStateTransition)?;
         run.started_at = Some(started_at);
         run.pid = Some(pid);
-        run.pid_start_time = process_start_time_token(pid);
+        run.pid_start_time = process_start_identity_token(pid);
         self.write_run(&job_id, &run)?;
         Ok(true)
     }
@@ -88,7 +91,7 @@ impl JobFileStore {
         }
         run.started_at = run.started_at.or(Some(started_at));
         run.pid = Some(pid);
-        run.pid_start_time = process_start_time_token(pid);
+        run.pid_start_time = process_start_identity_token(pid);
         self.write_run(&job_id, &run)?;
         Ok(true)
     }
@@ -192,6 +195,34 @@ impl JobFileStore {
         run.duration_ms = duration_ms;
         self.write_run(&job_id, &run)?;
         Ok(true)
+    }
+
+    pub(crate) fn repair_terminal_job_run_timing(
+        &self,
+        run_id: &str,
+        finished_at: DateTime<Utc>,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OrbitError> {
+        let Some((job_id, run_dir)) = self.find_run_path(run_id)? else {
+            return Ok(false);
+        };
+        let mut run = self.read_run_at(&run_dir)?;
+        if !run.state.is_terminal() {
+            return Ok(false);
+        }
+        let mut changed = false;
+        if run.finished_at.is_none() {
+            run.finished_at = Some(finished_at);
+            changed = true;
+        }
+        if run.duration_ms.is_none() {
+            run.duration_ms = duration_ms;
+            changed = true;
+        }
+        if changed {
+            self.write_run(&job_id, &run)?;
+        }
+        Ok(changed)
     }
 
     pub(crate) fn read_runs_for_activity(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError> {
@@ -376,7 +407,10 @@ impl JobFileStore {
 
     pub(crate) fn archive_run(&self, run_id: &str) -> Result<String, OrbitError> {
         let Some((job_id, src)) = self.find_run_path(run_id)? else {
-            return Err(OrbitError::JobRunNotFound(run_id.to_string()));
+            return Err(OrbitError::not_found(
+                NotFoundKind::JobRun,
+                run_id.to_string(),
+            ));
         };
         let dst = self.archived_run_bundle_dir(&job_id, run_id);
         let parent = dst.parent().ok_or_else(|| {
@@ -411,7 +445,10 @@ impl JobFileStore {
         state: &PipelineState,
     ) -> Result<(), OrbitError> {
         let Some((_job_id, run_dir)) = self.find_run_path(run_id)? else {
-            return Err(OrbitError::JobRunNotFound(run_id.to_string()));
+            return Err(OrbitError::not_found(
+                NotFoundKind::JobRun,
+                run_id.to_string(),
+            ));
         };
         let content =
             serde_json::to_string_pretty(state).map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -427,7 +464,10 @@ impl JobFileStore {
             fs::remove_dir_all(&dir).map_err(|e| OrbitError::Io(e.to_string()))?;
             return Ok(job_id);
         }
-        Err(OrbitError::JobRunNotFound(run_id.to_string()))
+        Err(OrbitError::not_found(
+            NotFoundKind::JobRun,
+            run_id.to_string(),
+        ))
     }
 }
 

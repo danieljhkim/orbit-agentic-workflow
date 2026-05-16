@@ -5,7 +5,7 @@ use orbit_core::{JobRun, OrbitError, OrbitRuntime};
 use serde_json::{Value, json};
 
 use crate::command::Execute;
-use crate::command::run::{JobRunArgs, JobRunPipelineWorkerArgs};
+use crate::command::run::{JobReplayArgs, JobRunArgs, JobRunPipelineWorkerArgs};
 
 #[derive(Args)]
 #[command(about = "Define, list, and manage job workflows")]
@@ -28,6 +28,8 @@ pub enum JobSubcommand {
     Show(JobShowArgs),
     /// Execute a schemaVersion 2 job by ID or YAML path
     Run(JobRunArgs),
+    /// Replay a previous job run from step 0 using the current job definition
+    Replay(JobReplayArgs),
     /// Internal worker entrypoint for persisted pipeline runs
     #[command(name = "run-pipeline-worker", hide = true)]
     RunPipelineWorker(JobRunPipelineWorkerArgs),
@@ -39,6 +41,7 @@ impl Execute for JobSubcommand {
             JobSubcommand::List(args) => args.execute(runtime),
             JobSubcommand::Show(args) => args.execute(runtime),
             JobSubcommand::Run(args) => args.execute(runtime),
+            JobSubcommand::Replay(args) => args.execute(runtime),
             JobSubcommand::RunPipelineWorker(args) => args.execute(runtime),
         }
     }
@@ -382,5 +385,10 @@ mod tests {
     fn rejects_removed_job_run_inspection_aliases() {
         assert!(Cli::try_parse_from(["orbit", "job", "history", "task_auto_pipeline"]).is_err());
         assert!(Cli::try_parse_from(["orbit", "job", "run-state", "jrun-1"]).is_err());
+    }
+
+    #[test]
+    fn parses_job_replay_subcommand() {
+        assert!(Cli::try_parse_from(["orbit", "job", "replay", "jrun-1", "--json"]).is_ok());
     }
 }

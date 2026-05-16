@@ -1,3 +1,12 @@
+#![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
+
 //! Three-turn Anthropic session verifying (a) history replay and (b)
 //! prompt-cache hits on turn 2+. The system prompt is padded past Anthropic's
 //! 1024-token cacheable minimum so the `cache_read_input_tokens` assertion is

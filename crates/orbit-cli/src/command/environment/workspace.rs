@@ -1,6 +1,8 @@
 use chrono::Utc;
 use clap::{Args, Subcommand};
 use orbit_common::types::{Workspace, WorkspaceStatus};
+use orbit_core::command::agent_rules::{InjectionAction, inject_agent_rules};
+use orbit_core::command::design::seed_design_conventions;
 use orbit_core::command::init::{
     InitOptions, build_initial_graph, init_workspace_at_root, seed_default_orbitignore,
 };
@@ -38,9 +40,15 @@ pub struct WorkspaceInitArgs {
     /// Base branch for this workspace (default: main)
     #[arg(long, default_value = "main")]
     pub base_branch: String,
-    /// Skip automatic MCP client integration setup.
+    /// Set up MCP client integrations for auto-detected providers.
     #[arg(long)]
-    pub no_mcp: bool,
+    pub mcp: bool,
+    /// Seed docs/design/CONVENTIONS.md when it does not already exist.
+    #[arg(long)]
+    pub design: bool,
+    /// Inject (or refresh) an Orbit workflow-rules block in CLAUDE.md and AGENTS.md at the workspace root.
+    #[arg(long)]
+    pub inject_agent_rules: bool,
     /// No-op (kept for backwards compatibility — defaults are always refreshed on init)
     #[arg(long, hide = true)]
     pub refresh_defaults: bool,
@@ -89,7 +97,8 @@ impl WorkspaceInitArgs {
         let (global_root, orbit_dir) =
             OrbitRuntime::resolve_bootstrap_roots_for_cwd(&cwd, root_override)?;
         let registry_path = workspace_registry::registry_path_for(&global_root);
-        let no_mcp = self.no_mcp;
+        let mcp = self.mcp;
+        let inject_rules = self.inject_agent_rules;
         let init_result = self.execute_at_path(&cwd, &orbit_dir, &global_root, &registry_path)?;
 
         println!("workspace '{}' initialized", init_result.name);
@@ -97,9 +106,7 @@ impl WorkspaceInitArgs {
         println!("  root:      {}", init_result.root.display());
         println!("  orbit_dir: {}", init_result.orbit_dir.display());
 
-        if no_mcp {
-            println!("  mcp:       skipped (--no-mcp)");
-        } else {
+        if mcp {
             let providers = crate::command::mcp::init_auto_for_workspace(
                 &init_result.root,
                 &init_result.orbit_dir,
@@ -108,6 +115,25 @@ impl WorkspaceInitArgs {
                 println!("  mcp:       no providers auto-detected");
             } else {
                 println!("  mcp:       {}", providers.join(", "));
+            }
+        } else {
+            println!("  mcp:       skipped (pass --mcp to set up integrations)");
+        }
+
+        if inject_rules {
+            let outcome = inject_agent_rules(&init_result.root)?;
+            for entry in &outcome.outcomes {
+                let label = entry
+                    .path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| entry.path.display().to_string());
+                let verb = match entry.action {
+                    InjectionAction::Created => "created with Orbit rules block",
+                    InjectionAction::AppendedBlock => "Orbit rules block appended",
+                    InjectionAction::ReplacedBlock => "Orbit rules block refreshed",
+                };
+                println!("  rules:     {label}: {verb}");
             }
         }
 
@@ -142,7 +168,11 @@ impl WorkspaceInitArgs {
                 ..Default::default()
             },
         )?;
+        if self.design {
+            seed_design_conventions(cwd, "human")?;
+        }
         seed_default_orbitignore(cwd)?;
+        ensure_orbit_gitignore_entry(cwd, orbit_dir)?;
 
         let name = self.name.unwrap_or_else(|| dir_name_or_fallback(cwd));
 
@@ -224,7 +254,9 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: false,
+            mcp: true,
+            design: false,
+            inject_agent_rules: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -259,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_init_respects_no_mcp_flag() {
+    fn workspace_init_skips_mcp_by_default() {
         let _guard = ENV_LOCK.lock().expect("lock env");
         let workspace = tempdir().expect("workspace tempdir");
         let home = tempdir().expect("home tempdir");
@@ -283,7 +315,9 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -318,6 +352,186 @@ mod tests {
     }
 
     #[test]
+    fn workspace_init_under_home_with_global_orbit_creates_repo_orbit() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let home = tempdir().expect("home tempdir");
+        let workspace = home.path().join("work").join("repo");
+        std::fs::create_dir_all(workspace.join(".git")).expect("create workspace repo");
+        std::fs::create_dir_all(home.path().join(".orbit")).expect("create global orbit root");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(&workspace).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert!(workspace.join(".orbit").join("state").is_dir());
+        assert!(workspace.join(".orbit").join("knowledge").is_dir());
+        assert!(!home.path().join(".orbit").join("state").exists());
+        assert!(!home.path().join(".orbit").join("knowledge").exists());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join(".gitignore")).expect("read .gitignore"),
+            ".orbit\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_appends_orbit_to_existing_gitignore() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(workspace.path().join(".git")).expect("create .git");
+        std::fs::write(workspace.path().join(".gitignore"), "target/\n.DS_Store")
+            .expect("write .gitignore");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join(".gitignore")).expect("read .gitignore"),
+            "target/\n.DS_Store\n.orbit\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_does_not_duplicate_existing_orbit_gitignore_entry() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        std::fs::create_dir_all(workspace.path().join(".git")).expect("create .git");
+        std::fs::write(workspace.path().join(".gitignore"), "target/\n/.orbit/\n")
+            .expect("write .gitignore");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join(".gitignore")).expect("read .gitignore"),
+            "target/\n/.orbit/\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_from_git_subdir_gitignores_repo_orbit_dir() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let repo = tempdir().expect("repo tempdir");
+        let home = tempdir().expect("home tempdir");
+        let nested = repo.path().join("packages").join("demo");
+        std::fs::create_dir_all(repo.path().join(".git")).expect("create .git");
+        std::fs::create_dir_all(&nested).expect("create nested workspace");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(&nested).expect("enter nested workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(".gitignore")).expect("read repo .gitignore"),
+            ".orbit\n"
+        );
+        assert!(!nested.join(".gitignore").exists());
+    }
+
+    #[test]
     fn workspace_init_with_root_override_uses_custom_registry() {
         let _guard = ENV_LOCK.lock().expect("lock env");
         let workspace = tempdir().expect("workspace tempdir");
@@ -335,7 +549,9 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: Some("custom-root".to_string()),
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(Some(custom_root.as_path()));
@@ -399,7 +615,9 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -424,6 +642,98 @@ mod tests {
     }
 
     #[test]
+    fn workspace_init_design_flag_seeds_conventions() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: true,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        let conventions = std::fs::read_to_string(
+            workspace
+                .path()
+                .join("docs")
+                .join("design")
+                .join("CONVENTIONS.md"),
+        )
+        .expect("read conventions");
+        assert!(conventions.contains("**Owner:** human"));
+        assert!(!conventions.contains("**Owner:** daniel"));
+    }
+
+    #[test]
+    fn workspace_init_without_design_flag_leaves_conventions_absent() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: None,
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(None);
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init");
+        assert!(
+            !workspace
+                .path()
+                .join("docs")
+                .join("design")
+                .join("CONVENTIONS.md")
+                .exists()
+        );
+    }
+
+    #[test]
     fn workspace_init_preserves_existing_orbitignore() {
         let _guard = ENV_LOCK.lock().expect("lock env");
         let workspace = tempdir().expect("workspace tempdir");
@@ -444,7 +754,9 @@ mod tests {
         let result = WorkspaceInitArgs {
             name: None,
             base_branch: "main".to_string(),
-            no_mcp: true,
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
             refresh_defaults: false,
         }
         .execute_without_runtime(None);
@@ -465,6 +777,55 @@ mod tests {
             std::fs::read_to_string(workspace.path().join(".orbitignore"))
                 .expect("read .orbitignore"),
             "custom-output/\n!custom-output/keep.txt\n"
+        );
+    }
+
+    #[test]
+    fn workspace_init_with_root_override_does_not_modify_repo_gitignore() {
+        let _guard = ENV_LOCK.lock().expect("lock env");
+        let workspace = tempdir().expect("workspace tempdir");
+        let home = tempdir().expect("home tempdir");
+        let custom_root_parent = tempdir().expect("custom root parent");
+        let custom_root = custom_root_parent.path().join("custom-orbit");
+
+        // Seed the workspace as a git repo so the pre-fix code would have
+        // appended `.orbit` to <workspace>/.gitignore.
+        std::fs::create_dir_all(workspace.path().join(".git")).expect("seed git dir");
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cwd = std::env::current_dir().expect("capture cwd");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        std::env::set_current_dir(workspace.path()).expect("enter workspace");
+
+        let result = WorkspaceInitArgs {
+            name: Some("custom-root-git".to_string()),
+            base_branch: "main".to_string(),
+            mcp: false,
+            design: false,
+            inject_agent_rules: false,
+            refresh_defaults: false,
+        }
+        .execute_without_runtime(Some(custom_root.as_path()));
+
+        std::env::set_current_dir(previous_cwd).expect("restore cwd");
+
+        match previous_home {
+            Some(value) => unsafe {
+                std::env::set_var("HOME", value);
+            },
+            None => unsafe {
+                std::env::remove_var("HOME");
+            },
+        }
+
+        result.expect("workspace init with root override in a git repo");
+
+        let gitignore = workspace.path().join(".gitignore");
+        assert!(
+            !gitignore.exists(),
+            "`--root` outside the workspace must not create <workspace>/.gitignore",
         );
     }
 }
@@ -682,4 +1043,69 @@ fn detect_git_remote(cwd: &std::path::Path) -> Option<String> {
     } else {
         None
     }
+}
+
+fn ensure_orbit_gitignore_entry(
+    workspace_root: &std::path::Path,
+    orbit_dir: &std::path::Path,
+) -> Result<(), OrbitError> {
+    let Some(gitignore_root) = orbit_gitignore_root(workspace_root, orbit_dir) else {
+        return Ok(());
+    };
+    let gitignore_path = gitignore_root.join(".gitignore");
+    write_orbit_gitignore_entry(&gitignore_path)
+}
+
+fn orbit_gitignore_root<'a>(
+    workspace_root: &'a std::path::Path,
+    orbit_dir: &'a std::path::Path,
+) -> Option<&'a std::path::Path> {
+    // Legacy: walking up from a subdir, orbit_dir is `<repo>/.orbit` whose
+    // parent is a git repo root.
+    if orbit_dir.file_name().and_then(|name| name.to_str()) == Some(".orbit")
+        && let Some(repo_root) = orbit_dir.parent()
+        && is_git_repo_root(repo_root)
+    {
+        return Some(repo_root);
+    }
+
+    // Default: orbit_dir lives directly inside workspace_root as `.orbit`.
+    // If the user passed `--root` to relocate Orbit data outside the workspace
+    // (or to a non-`.orbit` basename), skip the gitignore write — there is no
+    // `<workspace>/.orbit` directory to ignore.
+    if is_git_repo_root(workspace_root) && orbit_dir == workspace_root.join(".orbit") {
+        return Some(workspace_root);
+    }
+
+    None
+}
+
+fn is_git_repo_root(path: &std::path::Path) -> bool {
+    path.join(".git").exists()
+}
+
+fn write_orbit_gitignore_entry(gitignore_path: &std::path::Path) -> Result<(), OrbitError> {
+    let content = match std::fs::read_to_string(gitignore_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(OrbitError::Io(error.to_string())),
+    };
+
+    if gitignore_has_orbit_entry(&content) {
+        return Ok(());
+    }
+
+    let mut next = content;
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(".orbit\n");
+    std::fs::write(gitignore_path, next).map_err(|error| OrbitError::Io(error.to_string()))
+}
+
+fn gitignore_has_orbit_entry(content: &str) -> bool {
+    content.lines().any(|line| {
+        let line = line.trim();
+        matches!(line, ".orbit" | ".orbit/" | "/.orbit" | "/.orbit/")
+    })
 }

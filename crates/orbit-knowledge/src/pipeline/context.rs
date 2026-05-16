@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::graph::nodes::CodebaseGraphV1;
 use crate::graph::object_store::RefName;
-use crate::task_id_pattern::TaskIdPattern;
+use crate::pipeline::GitCheckoutIdentity;
 
 /// Configuration for a build run.
 pub struct BuildConfig {
@@ -11,8 +11,6 @@ pub struct BuildConfig {
     pub output_dir: PathBuf,
     pub incremental: bool,
     pub ref_name: Option<RefName>,
-    /// Task-ID extraction pattern. `None` means "use the Orbit default".
-    pub task_id_pattern: Option<TaskIdPattern>,
 }
 
 /// Mutable state passed through the pipeline stages.
@@ -22,6 +20,7 @@ pub struct PipelineContext {
     pub incremental: bool,
     pub ref_name: RefName,
     pub default_ref_name: Option<RefName>,
+    pub(crate) checkout_identity: Option<GitCheckoutIdentity>,
     /// Relative file paths discovered by scan.
     pub file_paths: Vec<PathBuf>,
     /// SHA-256 hashes keyed by relative path string.
@@ -30,20 +29,17 @@ pub struct PipelineContext {
     pub changed_paths: Vec<String>,
     /// The assembled graph.
     pub graph: CodebaseGraphV1,
-    /// Resolved task-ID extraction pattern for this build (default Orbit when
-    /// the build config did not supply one).
-    pub task_id_pattern: TaskIdPattern,
 }
 
 impl PipelineContext {
     pub fn new(config: BuildConfig, ref_name: RefName, default_ref_name: Option<RefName>) -> Self {
-        let task_id_pattern = config.task_id_pattern.unwrap_or_default();
         Self {
             repo_path: config.repo_path,
             output_dir: config.output_dir,
             incremental: config.incremental,
             ref_name,
             default_ref_name,
+            checkout_identity: None,
             file_paths: Vec::new(),
             new_hashes: HashMap::new(),
             changed_paths: Vec::new(),
@@ -53,7 +49,6 @@ impl PipelineContext {
                 files: Vec::new(),
                 leaves: Vec::new(),
             },
-            task_id_pattern,
         }
     }
 

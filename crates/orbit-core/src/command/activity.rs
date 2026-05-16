@@ -17,6 +17,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/agent_implement.yaml"),
     ),
     (
+        "agent_review",
+        include_str!("../../assets/activities/agent_review.yaml"),
+    ),
+    (
         "dispatch_agent",
         include_str!("../../assets/activities/dispatch_agent.yaml"),
     ),
@@ -45,6 +49,14 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
         include_str!("../../assets/activities/invoke_and_wait.yaml"),
     ),
     (
+        "pipeline_wait",
+        include_str!("../../assets/activities/pipeline_wait.yaml"),
+    ),
+    (
+        "pipeline_success_guard",
+        include_str!("../../assets/activities/pipeline_success_guard.yaml"),
+    ),
+    (
         "list_backlog_tasks",
         include_str!("../../assets/activities/list_backlog_tasks.yaml"),
     ),
@@ -59,6 +71,10 @@ pub(crate) const DEFAULT_ACTIVITY_FILES: &[(&str, &str)] = &[
     (
         "reserve_locks",
         include_str!("../../assets/activities/reserve_locks.yaml"),
+    ),
+    (
+        "release_locks",
+        include_str!("../../assets/activities/release_locks.yaml"),
     ),
     (
         "run_planning_duel",
@@ -113,7 +129,7 @@ pub(crate) fn seed_default_activities(
 
 #[cfg(test)]
 mod tests {
-    use orbit_common::types::activity_job::{Backend, Provider};
+    use orbit_common::types::activity_job::AgentRole;
     use orbit_common::types::{ActivityV2Spec, load_activity_asset};
     use tempfile::tempdir;
 
@@ -181,14 +197,51 @@ mod tests {
         );
         match asset.spec.spec {
             ActivityV2Spec::AgentLoop(spec) => {
-                assert_eq!(spec.backend, Backend::Cli);
-                assert_eq!(spec.provider, Provider::Codex);
+                assert_eq!(spec.role, Some(AgentRole::Reviewer));
+                assert!(!yaml.contains("\n  backend:"));
+                assert!(!yaml.contains("\n  provider:"));
                 assert!(
                     spec.instruction
                         .contains("You are Orbit's step-failure recovery agent.")
                 );
             }
             other => panic!("expected agent_loop activity, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn seeded_activities_include_release_locks() {
+        let root = tempdir().expect("create tempdir");
+        let activities_dir = root.path().join("resources/activities");
+        seed_default_activities(&activities_dir, true).expect("seed default activities");
+
+        let yaml = std::fs::read_to_string(activities_dir.join("release_locks.yaml"))
+            .expect("read release locks activity");
+        let asset = load_activity_asset(&yaml).expect("parse release locks activity");
+        assert_eq!(asset.name, "release_locks");
+        match asset.spec.spec {
+            ActivityV2Spec::Deterministic(spec) => {
+                assert_eq!(spec.action, "release_locks");
+            }
+            other => panic!("expected deterministic activity, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn seeded_activities_include_pipeline_wait() {
+        let root = tempdir().expect("create tempdir");
+        let activities_dir = root.path().join("resources/activities");
+        seed_default_activities(&activities_dir, true).expect("seed default activities");
+
+        let yaml = std::fs::read_to_string(activities_dir.join("pipeline_wait.yaml"))
+            .expect("read pipeline wait activity");
+        let asset = load_activity_asset(&yaml).expect("parse pipeline wait activity");
+        assert_eq!(asset.name, "pipeline_wait");
+        match asset.spec.spec {
+            ActivityV2Spec::Deterministic(spec) => {
+                assert_eq!(spec.action, "pipeline_wait");
+            }
+            other => panic!("expected deterministic activity, got {other:?}"),
         }
     }
 }

@@ -11,7 +11,9 @@
 //! headings, fenced code blocks as their own leaves, links, tables.
 
 use super::FileExtractor;
-use super::common::{ExtractedLeaf, ExtractionResult, compute_source_hash};
+use super::common::{
+    ExtractedLeaf, ExtractionResult, compute_source_hash, finalize_unique_qualified_names,
+};
 use super::language::{DocFormat, FileKind};
 
 pub struct MarkdownExtractor;
@@ -54,6 +56,7 @@ impl FileExtractor for MarkdownExtractor {
             });
         }
 
+        finalize_unique_qualified_names(&mut leaves);
         ExtractionResult {
             leaves,
             ..Default::default()

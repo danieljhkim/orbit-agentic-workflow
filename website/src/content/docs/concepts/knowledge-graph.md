@@ -11,6 +11,13 @@ The knowledge graph is Orbit's parsed, content-addressed model of a repository. 
 
 Agents query the graph when they need code context. The graph gives structured selectors and bounded packs instead of large grep output.
 
+```mermaid
+graph TD
+    Agent[Agent Loop] -->|Queries for Context| Graph[(Knowledge Graph)]
+    Graph -->|Returns Bounded Pack| Agent
+    Agent -->|Executes Action| Worktree[Worktree Isolation]
+```
+
 ## Commands
 
 ```bash

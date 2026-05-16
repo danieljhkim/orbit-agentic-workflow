@@ -29,9 +29,9 @@ impl OrbitRuntime {
         );
 
         let now = Utc::now();
-        let nanos_suffix = now.timestamp_subsec_nanos() % 10000;
-        let thread_id = format!("rt-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
-        let message_id = format!("rm-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let nanos_suffix = now.timestamp_subsec_nanos();
+        let thread_id = format!("rt-{}-{:09}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let message_id = format!("rm-{}-{:09}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
 
         let thread = ReviewThread {
             thread_id: thread_id.clone(),
@@ -67,14 +67,11 @@ impl OrbitRuntime {
         task_id: &str,
         status_filter: Option<ReviewThreadStatus>,
     ) -> Result<Vec<ReviewThread>, OrbitError> {
-        let task = self.get_task(task_id)?;
+        let threads = self.get_task_review_threads(task_id)?;
         let threads = if let Some(status) = status_filter {
-            task.review_threads
-                .into_iter()
-                .filter(|t| t.status == status)
-                .collect()
+            threads.into_iter().filter(|t| t.status == status).collect()
         } else {
-            task.review_threads
+            threads
         };
         Ok(threads)
     }
@@ -89,9 +86,8 @@ impl OrbitRuntime {
     ) -> Result<ReviewThread, OrbitError> {
         let (canonical_agent, canonical_model) =
             self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
-        let task = self.get_task(task_id)?;
-        let existing = task
-            .review_threads
+        let threads = self.get_task_review_threads(task_id)?;
+        let existing = threads
             .iter()
             .find(|t| t.thread_id == thread_id)
             .ok_or_else(|| {
@@ -108,8 +104,8 @@ impl OrbitRuntime {
         );
 
         let now = Utc::now();
-        let nanos_suffix = now.timestamp_subsec_nanos() % 10000;
-        let message_id = format!("rm-{}-{:04}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
+        let nanos_suffix = now.timestamp_subsec_nanos();
+        let message_id = format!("rm-{}-{:09}", now.format("%Y%m%d-%H%M%S"), nanos_suffix);
 
         let reply_thread = ReviewThread {
             thread_id: thread_id.to_string(),
@@ -136,9 +132,7 @@ impl OrbitRuntime {
             canonical_model.clone(),
         )?;
 
-        let updated_task = self.get_task(task_id)?;
-        updated_task
-            .review_threads
+        self.get_task_review_threads(task_id)?
             .into_iter()
             .find(|t| t.thread_id == thread_id)
             .ok_or_else(|| {
@@ -153,9 +147,8 @@ impl OrbitRuntime {
         agent: Option<String>,
         model: Option<String>,
     ) -> Result<ReviewThread, OrbitError> {
-        let task = self.get_task(task_id)?;
-        let _existing = task
-            .review_threads
+        let threads = self.get_task_review_threads(task_id)?;
+        let _existing = threads
             .iter()
             .find(|t| t.thread_id == thread_id)
             .ok_or_else(|| {
@@ -183,9 +176,7 @@ impl OrbitRuntime {
             model,
         )?;
 
-        let updated_task = self.get_task(task_id)?;
-        updated_task
-            .review_threads
+        self.get_task_review_threads(task_id)?
             .into_iter()
             .find(|t| t.thread_id == thread_id)
             .ok_or_else(|| {
@@ -304,8 +295,10 @@ mod tests {
 
         let scoreboard = read_task_review_scoreboard(&runtime);
         assert_eq!(scoreboard["task-review-threads"]["gpt-5.4"], Value::from(1));
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        let first_message = updated.review_threads[0]
+        let updated_threads = runtime
+            .get_task_review_threads(&task.id)
+            .expect("reload review threads");
+        let first_message = updated_threads[0]
             .messages
             .first()
             .expect("first review message");
@@ -440,9 +433,11 @@ mod tests {
 
         assert!(!scoreboard_dir.join("task_review.json").exists());
 
-        let updated = runtime.get_task(&task.id).expect("reload task");
-        assert_eq!(updated.review_threads.len(), 2);
-        assert_eq!(updated.review_threads[0].messages[0].by, "human");
-        assert_eq!(updated.review_threads[1].messages[0].by, "daniel");
+        let updated_threads = runtime
+            .get_task_review_threads(&task.id)
+            .expect("reload review threads");
+        assert_eq!(updated_threads.len(), 2);
+        assert_eq!(updated_threads[0].messages[0].by, "human");
+        assert_eq!(updated_threads[1].messages[0].by, "daniel");
     }
 }

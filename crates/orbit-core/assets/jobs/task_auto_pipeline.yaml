@@ -7,7 +7,8 @@
 #
 # Empty-backlog behavior
 # - `list_backlog` returns `tasks: []` and `bundles: []`. The fan_out over an
-#   empty list is a no-op and the Run succeeds with zero child Runs.
+#   empty list is a no-op, the success guard is skipped, and the Run succeeds
+#   with zero child Runs.
 #
 # Concurrency cap (AC 7)
 # - `fan_out.max_workers` bounds the number of in-flight child gate
@@ -17,6 +18,11 @@
 #   structural placeholder callers can override by forking this YAML.
 #   A future amendment to `FanOutBlock` to accept templated numerics
 #   would let the top-level `concurrency` input flow through.
+#
+# Child-run status
+# - `invoke_and_wait` returns child status as data so gate workflows can run
+#   cleanup before failing. `require_gate_success` turns any non-succeeded
+#   child gate status into a failed auto-dispatch run.
 
 schemaVersion: 2
 kind: Job
@@ -29,10 +35,10 @@ spec:
   default_input:
     task_ids: []
     mode: pr
-    base_branch: agent-main
+    base_branch: main
     base_sync: remote
     max_bundles: 10
-    concurrency: 3
+    concurrency: 5
     max_bundle_size: 5
     max_tasks: 50
 
@@ -68,3 +74,10 @@ spec:
         join:
           mode: all
         collect: gate_results
+
+    - id: require_gate_success
+      when: "{{ steps.validate_bundles.output.bundle_count }} != 0"
+      target: activity:pipeline_success_guard
+      default_input:
+        context: task_auto_pipeline gate runs
+        results: "{{ steps.gate_results.output }}"

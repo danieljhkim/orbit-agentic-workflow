@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::error::KnowledgeError;
 use crate::extract::{self, FileKind, identity_key, leaf_location, node_id};
 use crate::graph::nodes::{BaseNodeFields, DirNode, FileNode, LeafKind, LeafNode, ReExport};
-use crate::graph::object_store::GraphObjectStore;
+use crate::graph::object_store::{GraphObjectStore, GraphReadOptions};
 use crate::pipeline::context::PipelineContext;
 use tracing::debug;
 
@@ -110,8 +110,6 @@ pub fn build_graph_dirs(ctx: &mut PipelineContext) -> Result<(), KnowledgeError>
                 lineage_locked: false,
                 lock_owner: None,
                 lock_reason: String::new(),
-                task_ids: Vec::new(),
-                structural_conflict: false,
             },
             dir_children: child_dir_ids,
             file_children: Vec::new(),
@@ -197,8 +195,6 @@ pub fn build_graph_files(ctx: &mut PipelineContext) -> Result<(), KnowledgeError
                 lineage_locked: false,
                 lock_owner: None,
                 lock_reason: String::new(),
-                task_ids: Vec::new(),
-                structural_conflict: false,
             },
             extension,
             source_blob_hash: None,
@@ -382,8 +378,6 @@ fn extracted_file_from_result(
                 lineage_locked: false,
                 lock_owner: None,
                 lock_reason: String::new(),
-                task_ids: Vec::new(),
-                structural_conflict: false,
             },
             kind,
             source: extracted.source.clone(),
@@ -433,7 +427,15 @@ fn load_prior_file_snapshots(ctx: &PipelineContext) -> Option<HashMap<String, Pr
     }
 
     let store = GraphObjectStore::new(ctx.graph_dir());
-    let prior_graph = match store.read_graph(&ctx.ref_name, None, ctx.default_ref_name.as_ref()) {
+    let prior_graph = match store.read_graph(
+        &ctx.ref_name,
+        None,
+        ctx.default_ref_name.as_ref(),
+        GraphReadOptions {
+            hydrate_file_source: true,
+            hydrate_leaf_source: true,
+        },
+    ) {
         Ok(graph) => graph,
         Err(error) => {
             debug!(
@@ -564,13 +566,29 @@ fn apply_extracted_file(ctx: &mut PipelineContext, file_idx: usize, extracted: E
 fn parse_leaf_kind(s: &str, depth: Option<u8>) -> LeafKind {
     match s {
         "function" => LeafKind::Function,
+        "function_declaration" => LeafKind::FunctionDeclaration,
         "method" => LeafKind::Method,
+        "singleton_method" => LeafKind::SingletonMethod,
         "class" => LeafKind::Class,
+        "singleton_class" => LeafKind::SingletonClass,
+        "package" => LeafKind::Package,
+        "object" => LeafKind::Object,
+        "companion_object" => LeafKind::CompanionObject,
+        "namespace" => LeafKind::Namespace,
+        "enum" => LeafKind::Enum,
         "struct" => LeafKind::Struct,
+        "record" => LeafKind::Record,
         "interface" => LeafKind::Interface,
+        "type_alias" => LeafKind::TypeAlias,
         "trait" => LeafKind::Trait,
         "impl" => LeafKind::Impl,
+        "property" => LeafKind::Property,
         "field" => LeafKind::Field,
+        "event" => LeafKind::Event,
+        "delegate" => LeafKind::Delegate,
+        "global" => LeafKind::Global,
+        "macro" => LeafKind::Macro,
+        "constant" => LeafKind::Constant,
         "module" => LeafKind::Module,
         "section" => LeafKind::Section {
             depth: depth.unwrap_or(1),
@@ -631,8 +649,6 @@ mod tests {
         let mut prior = fixture.build_context(false, &[]);
         let prior_reused_hash = leaf_by_name(&prior, "reused_symbol").source_hash.clone();
         let prior_fresh_hash = leaf_by_name(&prior, "fresh_symbol").source_hash.clone();
-        leaf_by_name_mut(&mut prior, "reused_symbol").base.task_ids =
-            vec!["T20260401-0001".to_string()];
         file_by_location_mut(&mut prior, "unchanged.rs")
             .exports
             .push("synthetic_prior_export".to_string());
@@ -643,10 +659,6 @@ mod tests {
 
         let reused_leaf = leaf_by_name(&incremental, "reused_symbol");
         assert_eq!(reused_leaf.source_hash, prior_reused_hash);
-        assert_eq!(
-            reused_leaf.base.task_ids,
-            vec!["T20260401-0001".to_string()]
-        );
         assert_eq!(
             reused_leaf.file_hash_at_capture.as_ref(),
             incremental.new_hashes.get("unchanged.rs")
@@ -659,7 +671,6 @@ mod tests {
 
         let fresh_leaf = leaf_by_name(&incremental, "fresh_symbol");
         assert_ne!(fresh_leaf.source_hash, prior_fresh_hash);
-        assert!(fresh_leaf.base.task_ids.is_empty());
         assert!(
             !file_by_location(&incremental, "changed.rs")
                 .exports
@@ -674,8 +685,6 @@ mod tests {
         fixture.write_file("changed.rs", "pub fn fresh_symbol() -> u8 { 1 }\n");
 
         let mut prior = fixture.build_context(false, &[]);
-        leaf_by_name_mut(&mut prior, "reused_symbol").base.task_ids =
-            vec!["T20260401-0001".to_string()];
         file_by_location_mut(&mut prior, "unchanged.rs")
             .exports
             .push("synthetic_prior_export".to_string());
@@ -683,11 +692,9 @@ mod tests {
 
         let rebuilt = fixture.build_context(false, &[]);
 
-        assert!(
-            leaf_by_name(&rebuilt, "reused_symbol")
-                .base
-                .task_ids
-                .is_empty()
+        assert_eq!(
+            leaf_by_name(&rebuilt, "reused_symbol").base.location,
+            "unchanged.rs#reused_symbol"
         );
         assert!(
             !file_by_location(&rebuilt, "unchanged.rs")
@@ -782,7 +789,6 @@ mod tests {
                 output_dir: self.knowledge.path().to_path_buf(),
                 incremental,
                 ref_name: Some(self.ref_name.clone()),
-                task_id_pattern: None,
             };
             let mut ctx = PipelineContext::new(config, self.ref_name.clone(), None);
             ctx.file_paths = file_paths;
@@ -829,14 +835,6 @@ mod tests {
         ctx.graph
             .leaves
             .iter()
-            .find(|leaf| leaf.base.name == name)
-            .unwrap_or_else(|| panic!("missing leaf {name}"))
-    }
-
-    fn leaf_by_name_mut<'a>(ctx: &'a mut PipelineContext, name: &str) -> &'a mut LeafNode {
-        ctx.graph
-            .leaves
-            .iter_mut()
             .find(|leaf| leaf.base.name == name)
             .unwrap_or_else(|| panic!("missing leaf {name}"))
     }

@@ -1,54 +1,20 @@
-pub mod duel_plan_add;
-pub mod duel_plan_winner;
+pub mod adr;
+pub mod design;
+pub mod duel;
+pub mod friction;
 pub mod graph_history;
-pub mod groundhog_checkpoint_deviate;
-pub mod groundhog_checkpoint_failure;
-pub mod groundhog_checkpoint_success;
-pub mod groundhog_side_effect;
-#[allow(dead_code)]
-mod knowledge_add;
-pub mod knowledge_callers;
-#[allow(dead_code)]
-mod knowledge_delete;
-pub mod knowledge_deps;
-pub mod knowledge_implementors;
-#[allow(dead_code)]
-mod knowledge_move;
-pub mod knowledge_overview;
-pub mod knowledge_pack;
-pub mod knowledge_refs;
-pub mod knowledge_search;
-pub mod knowledge_show;
-#[allow(dead_code)]
-mod knowledge_write;
-pub mod pipeline_invoke;
-pub mod pipeline_wait;
-pub mod review_thread_add;
-pub mod review_thread_list;
-pub mod review_thread_reply;
-pub mod review_thread_resolve;
-pub mod state_get;
-pub mod state_set;
-pub mod task_add;
-pub mod task_approve;
-pub mod task_artifact_put;
-pub mod task_delete;
-pub mod task_lint;
-pub mod task_list;
-pub mod task_locks;
-pub mod task_locks_release;
-pub mod task_locks_reserve;
-pub mod task_reject;
-pub mod task_search;
-pub mod task_show;
-pub mod task_start;
-pub mod task_update;
+pub mod groundhog;
+pub mod knowledge;
+pub mod learning;
+pub mod pipeline;
+pub mod review_thread;
+pub mod semantic;
+pub mod state;
+pub mod task;
 
 use orbit_common::types::{
     OrbitError, ToolParam, normalize_agent_family_for_model, normalize_optional_attribution_label,
 };
-use orbit_knowledge::TaskGraphService;
-use orbit_knowledge::graph::nodes::CodebaseGraphV1;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -66,42 +32,65 @@ pub(super) struct OrbitIdentity {
 }
 
 pub fn register(registry: &mut ToolRegistry) {
-    registry.register(groundhog_checkpoint_success::OrbitGroundhogCheckpointSuccessTool);
-    registry.register(groundhog_checkpoint_failure::OrbitGroundhogCheckpointFailureTool);
-    registry.register(groundhog_side_effect::OrbitGroundhogSideEffectTool);
-    registry.register(task_add::OrbitTaskAddTool);
-    registry.register(task_artifact_put::OrbitTaskArtifactPutTool);
-    registry.register(task_approve::OrbitTaskApproveTool);
-    registry.register(task_delete::OrbitTaskDeleteTool);
-    registry.register(task_lint::OrbitTaskLintTool);
-    registry.register(task_locks::OrbitTaskLocksTool);
-    registry.register(task_locks_reserve::OrbitTaskLocksReserveTool);
-    registry.register(task_locks_release::OrbitTaskLocksReleaseTool);
-    registry.register(task_start::OrbitTaskStartTool);
-    registry.register(task_reject::OrbitTaskRejectTool);
-    registry.register(task_show::OrbitTaskShowTool);
-    registry.register(task_list::OrbitTaskListTool);
-    registry.register(task_search::OrbitTaskSearchTool);
-    registry.register(task_update::OrbitTaskUpdateTool);
-    registry.register(duel_plan_add::OrbitDuelPlanAddTool);
-    registry.register(duel_plan_winner::OrbitDuelPlanWinnerTool);
+    registry.register(adr::add::OrbitAdrAddTool);
+    registry.register(adr::list::OrbitAdrListTool);
+    registry.register(adr::show::OrbitAdrShowTool);
+    registry.register(adr::supersede::OrbitAdrSupersedeTool);
+    registry.register(adr::update::OrbitAdrUpdateTool);
+    registry.register(design::check::OrbitDesignCheckTool);
+    registry.register(design::init::OrbitDesignInitTool);
+    registry.register(design::list::OrbitDesignListTool);
+    registry.register(design::show::OrbitDesignShowTool);
+    registry.register(groundhog::checkpoint_success::OrbitGroundhogCheckpointSuccessTool);
+    registry.register(groundhog::checkpoint_failure::OrbitGroundhogCheckpointFailureTool);
+    registry.register(groundhog::side_effect::OrbitGroundhogSideEffectTool);
+    registry.register(friction::add::OrbitFrictionAddTool);
+    registry.register(friction::list::OrbitFrictionListTool);
+    registry.register(friction::show::OrbitFrictionShowTool);
+    registry.register(friction::stats::OrbitFrictionStatsTool);
+    registry.register(task::add::OrbitTaskAddTool);
+    registry.register(task::artifact_put::OrbitTaskArtifactPutTool);
+    registry.register(task::approve::OrbitTaskApproveTool);
+    registry.register(task::delete::OrbitTaskDeleteTool);
+    registry.register(task::lint::OrbitTaskLintTool);
+    registry.register(task::locks::OrbitTaskLocksTool);
+    registry.register(task::locks_reserve::OrbitTaskLocksReserveTool);
+    registry.register(task::locks_release::OrbitTaskLocksReleaseTool);
+    registry.register(task::start::OrbitTaskStartTool);
+    registry.register(task::reject::OrbitTaskRejectTool);
+    registry.register(task::show::OrbitTaskShowTool);
+    registry.register(task::list::OrbitTaskListTool);
+    registry.register(task::search::OrbitTaskSearchTool);
+    registry.register(task::update::OrbitTaskUpdateTool);
+    registry.register(duel::plan_add::OrbitDuelPlanAddTool);
+    registry.register(duel::plan_winner::OrbitDuelPlanWinnerTool);
     registry.register(graph_history::OrbitGraphHistoryTool);
-    registry.register(knowledge_callers::OrbitKnowledgeCallersTool);
-    registry.register(knowledge_deps::OrbitKnowledgeDepsTool);
-    registry.register(knowledge_implementors::OrbitKnowledgeImplementorsTool);
-    registry.register(knowledge_overview::OrbitKnowledgeOverviewTool);
-    registry.register(knowledge_pack::OrbitKnowledgePackTool);
-    registry.register(knowledge_refs::OrbitKnowledgeRefsTool);
-    registry.register(knowledge_search::OrbitKnowledgeSearchTool);
-    registry.register(knowledge_show::OrbitKnowledgeShowTool);
-    registry.register(pipeline_invoke::OrbitPipelineInvokeTool);
-    registry.register(pipeline_wait::OrbitPipelineWaitTool);
-    registry.register(review_thread_add::OrbitReviewThreadAddTool);
-    registry.register(review_thread_list::OrbitReviewThreadListTool);
-    registry.register(review_thread_reply::OrbitReviewThreadReplyTool);
-    registry.register(review_thread_resolve::OrbitReviewThreadResolveTool);
-    registry.register(state_get::OrbitStateGetTool);
-    registry.register(state_set::OrbitStateSetTool);
+    registry.register(knowledge::callers::OrbitKnowledgeCallersTool);
+    registry.register(knowledge::deps::OrbitKnowledgeDepsTool);
+    registry.register(knowledge::implementors::OrbitKnowledgeImplementorsTool);
+    registry.register(knowledge::overview::OrbitKnowledgeOverviewTool);
+    registry.register(knowledge::pack::OrbitKnowledgePackTool);
+    registry.register(knowledge::refs::OrbitKnowledgeRefsTool);
+    registry.register(knowledge::search::OrbitKnowledgeSearchTool);
+    registry.register(knowledge::show::OrbitKnowledgeShowTool);
+    registry.register(learning::add::OrbitLearningAddTool);
+    registry.register(learning::list::OrbitLearningListTool);
+    registry.register(learning::prune::OrbitLearningPruneTool);
+    registry.register(learning::reindex::OrbitLearningReindexTool);
+    registry.register(learning::search::OrbitLearningSearchTool);
+    registry.register(learning::show::OrbitLearningShowTool);
+    registry.register(learning::supersede::OrbitLearningSupersedeTool);
+    registry.register(learning::update::OrbitLearningUpdateTool);
+    registry.register(pipeline::invoke::OrbitPipelineInvokeTool);
+    registry.register(pipeline::wait::OrbitPipelineWaitTool);
+    registry.register(review_thread::add::OrbitReviewThreadAddTool);
+    registry.register(review_thread::list::OrbitReviewThreadListTool);
+    registry.register(review_thread::reply::OrbitReviewThreadReplyTool);
+    registry.register(review_thread::resolve::OrbitReviewThreadResolveTool);
+    registry.register(semantic::search::OrbitSemanticSearchTool);
+    registry.register(semantic::related::OrbitSemanticRelatedTool);
+    registry.register(state::get::OrbitStateGetTool);
+    registry.register(state::set::OrbitStateSetTool);
 }
 
 fn build_actor_label(agent: Option<&str>, model: Option<&str>) -> Option<String> {
@@ -164,6 +153,29 @@ pub(super) fn identity_params() -> Vec<ToolParam> {
     ]
 }
 
+pub(super) fn model_identity_params() -> Vec<ToolParam> {
+    vec![ToolParam {
+        name: "model".to_string(),
+        description:
+            "Preferred provenance field. Exact LLM model identifier used to infer agent family when possible (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
+                .to_string(),
+        param_type: "string".to_string(),
+        required: false,
+    }]
+}
+
+pub(super) fn reject_agent_field(input: &Value, tool_name: &str) -> Result<(), OrbitError> {
+    if input
+        .as_object()
+        .is_some_and(|object| object.contains_key("agent"))
+    {
+        return Err(OrbitError::InvalidInput(format!(
+            "{tool_name} no longer accepts `agent`; use `model` for attribution"
+        )));
+    }
+    Ok(())
+}
+
 pub(super) fn scored_identity_params() -> Vec<ToolParam> {
     vec![
         ToolParam {
@@ -200,7 +212,13 @@ pub(super) fn execute_host_action(
     action: OrbitBuiltinAction,
 ) -> Result<Value, OrbitError> {
     let identity = resolve_identity(ctx, &input)?;
-    require_orbit_host(ctx)?.execute(action, input, identity.agent, identity.model)
+    require_orbit_host(ctx)?.execute(
+        action,
+        input,
+        identity.agent,
+        identity.model,
+        ctx.reservation_owner.clone(),
+    )
 }
 
 pub(super) fn task_scope(ctx: &ToolContext) -> OrbitTaskScope {
@@ -269,27 +287,6 @@ pub(super) fn require_groundhog_fields(
         "groundhog {label} input validation failed: missing required fields: {}",
         missing.join(", ")
     )))
-}
-
-pub(super) fn has_explicit_knowledge_dir(input: &Value) -> bool {
-    input
-        .get("knowledge_dir")
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.trim().is_empty())
-}
-
-pub(super) fn load_graph_for_read(
-    ctx: &ToolContext,
-    input: &Value,
-) -> Result<CodebaseGraphV1, OrbitError> {
-    let knowledge_dir = knowledge_write::resolve_knowledge_dir(ctx, input)?;
-    let service = TaskGraphService::new(knowledge_dir, knowledge_write::task_graph_scope(ctx));
-    let explicit_ref = optional_string(input, "ref")?;
-    service.read_graph(
-        ctx.workspace_root.as_deref(),
-        has_explicit_knowledge_dir(input),
-        explicit_ref.as_deref(),
-    )
 }
 
 /// Extract an optional string from the first matching key in `keys`.

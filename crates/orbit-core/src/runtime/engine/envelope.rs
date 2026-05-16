@@ -123,13 +123,11 @@ fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Pa
     let workspace_path = input
         .get("workspace_path")
         .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| task.workspace_path.clone());
+        .map(ToOwned::to_owned);
     let repo_root = input
         .get("repo_root")
         .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| task.repo_root.clone());
+        .map(ToOwned::to_owned);
 
     // Read-time safety net: drop any `context_files` entries whose resolved
     // paths no longer exist on disk. The authoritative fix lives at write-time
@@ -149,7 +147,7 @@ fn task_detail_envelope_json(task: &Task, input: &Value, fallback_repo_root: &Pa
         "acceptance_criteria": task.acceptance_criteria.clone(),
         "plan": task.plan.clone(),
         "context_files": kept_context_files,
-        "pr_number": task.pr_number.clone(),
+        "external_refs": task.external_refs.clone(),
         "workspace_path": workspace_path,
         "repo_root": repo_root,
     })
@@ -299,7 +297,6 @@ mod tests {
             job: None,
             agent_cli: "codex".to_string(),
             model: Some("test-model".to_string()),
-            model_tier: None,
             timeout_seconds: 5,
             env_extra: Vec::new(),
             env_set: HashMap::new(),

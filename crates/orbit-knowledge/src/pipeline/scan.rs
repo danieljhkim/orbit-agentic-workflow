@@ -97,8 +97,11 @@ fn walk_dir(
         let path = entry.path();
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| KnowledgeError::io(format!("metadata {}: {e}", path.display())))?;
 
-        if path.is_dir() {
+        if file_type.is_dir() {
             // Skip hidden directories
             if name.starts_with('.') {
                 continue;
@@ -109,7 +112,7 @@ fn walk_dir(
                 continue;
             }
             walk_dir(root, &path, orbitignore, out)?;
-        } else if path.is_file() {
+        } else if file_type.is_file() {
             if name.as_ref() == ORBITIGNORE_FILE_NAME {
                 continue;
             }
@@ -148,13 +151,16 @@ fn collect_orbitignore_files(
         let path = entry.path();
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| KnowledgeError::io(format!("metadata {}: {e}", path.display())))?;
 
-        if path.is_dir() {
+        if file_type.is_dir() {
             if name.starts_with('.') {
                 continue;
             }
             collect_orbitignore_files(root, &path, out)?;
-        } else if path.is_file() && name.as_ref() == ORBITIGNORE_FILE_NAME {
+        } else if file_type.is_file() && name.as_ref() == ORBITIGNORE_FILE_NAME {
             let relative = path
                 .strip_prefix(root)
                 .map_err(|e| KnowledgeError::io(format!("strip prefix: {e}")))?;

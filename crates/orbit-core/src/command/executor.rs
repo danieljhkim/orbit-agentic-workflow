@@ -27,7 +27,7 @@ pub(crate) fn seed_default_executors(
                 store.upsert_executor_def(&def)?;
                 created += 1;
             }
-            Some(existing) if overwrite => {
+            Some(_) if overwrite => {
                 store.upsert_executor_def(&def)?;
                 created += 1;
             }
@@ -81,18 +81,11 @@ fn parse_default_executor(name: &str, yaml: &str) -> Result<ExecutorDef, OrbitEr
         )));
     }
 
-    Ok(ExecutorDef {
-        name: resource.metadata.name,
-        executor_type: resource.spec.executor_type,
-        command: resource.spec.command,
-        args: resource.spec.args,
-        stdout_format: resource.spec.stdout_format,
-        models: resource.spec.models,
-        timeout_seconds: resource.spec.timeout_seconds,
-        env: resource.spec.env,
-        sandbox: resource.spec.sandbox,
-        allow_fallback: resource.spec.allow_fallback,
-        created_at: resource.spec.created_at,
-        updated_at: resource.spec.updated_at,
-    })
+    Ok(ExecutorDef::from_resource_spec(
+        resource.metadata.name,
+        resource.spec.clone(),
+        &format!("embedded:{name}"),
+        resource.spec.created_at,
+        resource.spec.updated_at,
+    ))
 }

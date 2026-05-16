@@ -2,17 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use orbit_common::types::OrbitError;
+use orbit_common::types::{OrbitError, activity_job::Backend};
 use orbit_common::utility::redaction::redact_home_dir;
+use orbit_engine::PrConfig;
 
 use crate::paths;
 
-use regex::Regex;
-
 use super::persistence::PersistenceConfig;
 use super::raw::{
-    RawAgentRoleConfig, RawCodexExecutionConfig, RawExecutionEnvConfig, RawRuntimeConfig,
-    RawTaskSection,
+    RawAgentRoleConfig, RawCodexExecutionConfig, RawExecutionEnvConfig, RawPrSection,
+    RawRuntimeConfig, RawRuntimeSection, RawTaskSection, RawWorkflowConfig,
 };
 
 const DEFAULT_ENV_INHERIT: bool = false;
@@ -22,6 +21,7 @@ const DEFAULT_TASK_APPROVAL_DELEGATE_APPROVAL: bool = false;
 // without an explicit Orbit config still record scoreboard metrics.
 const DEFAULT_SCORING_ENABLED: bool = true;
 const DEFAULT_GRAPH_EDITING: bool = false;
+const DEFAULT_WORKFLOW_BASE_BRANCH: &str = "main";
 
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeConfig {
@@ -29,16 +29,17 @@ pub(crate) struct RuntimeConfig {
     pub(crate) codex_execution: CodexExecutionPolicy,
     pub(crate) persistence: PersistenceConfig,
     pub(crate) task_approval: TaskApprovalConfig,
+    pub(crate) pr: PrConfig,
     pub(crate) scoring_enabled: bool,
     pub(crate) graph_editing: bool,
     /// Persisted default for the v2 `agent_loop` execution backend (§3.1).
     /// `None` means "not configured"; the resolver falls through to the hard-
-    /// coded `http` default.
+    /// coded `cli` default.
     pub(crate) v2_backend: Option<String>,
-    /// `knowledge.task_id_pattern` — workspace override for the task-ID
-    /// extraction regex (T20260426-0507). Validated at load time; raw source
-    /// string only (avoids forcing an `orbit-knowledge` dep on `orbit-core`).
-    pub(crate) task_id_pattern: Option<String>,
+    /// Default base branch for ship/ship-auto/duel-plan workflows. Sourced
+    /// from `[workflow] base_branch` in `config.toml`; defaults to `"main"`
+    /// when no key is set.
+    pub(crate) workflow_base_branch: String,
     /// `[agent.<role>]` role-keyed overrides written by `orbit init` per
     /// ADR-027 and consumed at v2 dispatch time per ADR-029. Empty when no
     /// `[agent.*]` block is present.
@@ -58,10 +59,11 @@ impl RuntimeConfig {
             codex_execution: CodexExecutionPolicy::default(),
             persistence: PersistenceConfig::default_for_data_root(data_root),
             task_approval: TaskApprovalConfig::default(),
+            pr: PrConfig::default(),
             scoring_enabled: DEFAULT_SCORING_ENABLED,
             graph_editing: DEFAULT_GRAPH_EDITING,
             v2_backend: None,
-            task_id_pattern: None,
+            workflow_base_branch: DEFAULT_WORKFLOW_BASE_BRANCH.to_string(),
             agent_roles: BTreeMap::new(),
         }
     }
@@ -131,32 +133,20 @@ impl RuntimeConfig {
             .and_then(|g| g.editing)
             .unwrap_or(DEFAULT_GRAPH_EDITING);
 
-        let v2_backend = parsed
-            .runtime
-            .as_ref()
-            .and_then(|section| section.backend.clone());
+        validate_task_artifact_store_from_raw(parsed.task.as_ref())?;
+        let v2_backend = runtime_backend_from_raw(parsed.runtime.as_ref())?;
 
-        let task_id_pattern = parsed
+        let workflow_base_branch = workflow_base_branch_from_raw(parsed.workflow.as_ref())?;
+        let pr = pr_config_from_raw(parsed.pr.as_ref());
+
+        if parsed
             .knowledge
             .as_ref()
-            .and_then(|section| section.task_id_pattern.clone())
-            .map(|raw| {
-                let trimmed = raw.trim().to_string();
-                if trimmed.is_empty() {
-                    return Err(OrbitError::InvalidInput(format!(
-                        "knowledge.task_id_pattern in '{}' must not be empty",
-                        redact_home_dir(&config_path.display().to_string())
-                    )));
-                }
-                Regex::new(&trimmed).map_err(|err| {
-                    OrbitError::InvalidInput(format!(
-                        "knowledge.task_id_pattern in '{}' is not a valid regex: {err}",
-                        redact_home_dir(&config_path.display().to_string())
-                    ))
-                })?;
-                Ok::<String, OrbitError>(trimmed)
-            })
-            .transpose()?;
+            .and_then(|section| section.task_id_pattern.as_ref())
+            .is_some()
+        {
+            warn_deprecated_task_id_pattern(&config_path);
+        }
 
         let agent_roles = parsed.agent.clone().unwrap_or_default();
 
@@ -169,10 +159,11 @@ impl RuntimeConfig {
             )?,
             persistence,
             task_approval: TaskApprovalConfig::from_raw(parsed.task.as_ref())?,
+            pr,
             scoring_enabled,
             graph_editing,
             v2_backend,
-            task_id_pattern,
+            workflow_base_branch,
             agent_roles,
         })
     }
@@ -182,11 +173,66 @@ impl RuntimeConfig {
         self.v2_backend.as_deref()
     }
 
-    /// Workspace-configured task-ID extraction regex (T20260426-0507). `None`
-    /// means callers should use the Orbit default.
-    pub(crate) fn task_id_pattern(&self) -> Option<&str> {
-        self.task_id_pattern.as_deref()
+    pub(crate) fn workflow_base_branch(&self) -> &str {
+        &self.workflow_base_branch
     }
+
+    pub(crate) fn pr_config(&self) -> &PrConfig {
+        &self.pr
+    }
+}
+
+fn pr_config_from_raw(raw: Option<&RawPrSection>) -> PrConfig {
+    PrConfig {
+        task_url_template: raw.and_then(|section| section.task_url_template.clone()),
+    }
+}
+
+fn runtime_backend_from_raw(raw: Option<&RawRuntimeSection>) -> Result<Option<String>, OrbitError> {
+    let Some(value) = raw.and_then(|section| section.backend.as_deref()) else {
+        return Ok(None);
+    };
+    let trimmed = value.trim();
+    let Some(backend) = Backend::parse(trimmed) else {
+        return Err(OrbitError::InvalidInput(format!(
+            "[runtime] backend has invalid value '{trimmed}'; expected one of: http, cli, auto"
+        )));
+    };
+    Ok(Some(backend.as_str().to_string()))
+}
+
+fn validate_task_artifact_store_from_raw(raw: Option<&RawTaskSection>) -> Result<(), OrbitError> {
+    let Some(value) = raw.and_then(|section| section.artifact_store.as_deref()) else {
+        return Ok(());
+    };
+    let trimmed = value.trim();
+    Err(OrbitError::InvalidInput(format!(
+        "[task] artifact_store is no longer supported; remove the key because v2 task artifacts are always enabled (found '{trimmed}')"
+    )))
+}
+
+fn workflow_base_branch_from_raw(raw: Option<&RawWorkflowConfig>) -> Result<String, OrbitError> {
+    let Some(raw) = raw else {
+        return Ok(DEFAULT_WORKFLOW_BASE_BRANCH.to_string());
+    };
+    let Some(value) = raw.base_branch.as_deref() else {
+        return Ok(DEFAULT_WORKFLOW_BASE_BRANCH.to_string());
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "workflow.base_branch must not be empty".to_string(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn warn_deprecated_task_id_pattern(config_path: &Path) {
+    let path = redact_home_dir(&config_path.display().to_string());
+    tracing::warn!(
+        config = %path,
+        "knowledge.task_id_pattern is deprecated and ignored",
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn task_id_pattern_loads_valid_regex_from_workspace_config() {
+    fn deprecated_task_id_pattern_loads_valid_regex_from_workspace_config() {
         let global = tempdir().expect("global tempdir");
         let workspace = tempdir().expect("workspace tempdir");
         write_config(
@@ -486,11 +532,11 @@ mod tests {
 
         let config =
             RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
-        assert_eq!(config.task_id_pattern(), Some(r"[A-Z]+-\d+"));
+        assert!(config.v2_backend().is_none());
     }
 
     #[test]
-    fn task_id_pattern_rejects_invalid_regex_at_load_time() {
+    fn deprecated_task_id_pattern_ignores_invalid_regex_at_load_time() {
         let global = tempdir().expect("global tempdir");
         let workspace = tempdir().expect("workspace tempdir");
         write_config(
@@ -498,38 +544,100 @@ mod tests {
             "[knowledge]\ntask_id_pattern = \"[unclosed\"\n",
         );
 
-        let err = RuntimeConfig::load_layered(global.path(), workspace.path())
-            .expect_err("invalid regex must error");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("knowledge.task_id_pattern") && msg.contains("not a valid regex"),
-            "unexpected error: {msg}"
-        );
+        RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect("deprecated invalid regex must load");
     }
 
     #[test]
-    fn task_id_pattern_rejects_empty_string() {
+    fn deprecated_task_id_pattern_ignores_empty_string() {
         let global = tempdir().expect("global tempdir");
         let workspace = tempdir().expect("workspace tempdir");
         write_config(workspace.path(), "[knowledge]\ntask_id_pattern = \"  \"\n");
 
-        let err = RuntimeConfig::load_layered(global.path(), workspace.path())
-            .expect_err("empty pattern must error");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("knowledge.task_id_pattern") && msg.contains("must not be empty"),
-            "unexpected error: {msg}"
-        );
+        RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect("deprecated empty pattern must load");
     }
 
     #[test]
-    fn task_id_pattern_defaults_to_none_when_section_absent() {
+    fn deprecated_task_id_pattern_absent_when_section_absent() {
         let global = tempdir().expect("global tempdir");
         let workspace = tempdir().expect("workspace tempdir");
         write_config(workspace.path(), "[scoring]\nenabled = true\n");
 
         let config =
             RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
-        assert_eq!(config.task_id_pattern(), None);
+        assert!(config.v2_backend().is_none());
+        assert_eq!(config.pr_config().task_url_template.as_deref(), None);
+    }
+
+    #[test]
+    fn pr_config_defaults_to_no_task_url_template_without_config() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+
+        let config =
+            RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
+
+        assert_eq!(config.pr_config().task_url_template.as_deref(), None);
+    }
+
+    #[test]
+    fn pr_task_url_template_loads_from_workspace_config() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(
+            workspace.path(),
+            "[pr]\ntask_url_template = \"https://orbit-cli.com/tasks/{task_id}\"\n",
+        );
+
+        let config =
+            RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
+
+        assert_eq!(
+            config.pr_config().task_url_template.as_deref(),
+            Some("https://orbit-cli.com/tasks/{task_id}")
+        );
+    }
+
+    #[test]
+    fn runtime_backend_loads_auto_from_workspace_config() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(workspace.path(), "[runtime]\nbackend = \"auto\"\n");
+
+        let config =
+            RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
+
+        assert_eq!(config.v2_backend(), Some("auto"));
+    }
+
+    #[test]
+    fn runtime_backend_rejects_invalid_value() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(workspace.path(), "[runtime]\nbackend = \"clii\"\n");
+
+        let error = RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect_err("invalid backend must fail config load");
+        let message = error.to_string();
+
+        assert!(message.contains("[runtime] backend"));
+        assert!(message.contains("clii"));
+        assert!(message.contains("http, cli, auto"));
+    }
+
+    #[test]
+    fn task_artifact_store_rejects_removed_key() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(workspace.path(), "[task]\nartifact_store = \"v2\"\n");
+
+        let error = RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect_err("artifact store selector must be rejected");
+        let message = error.to_string();
+
+        assert!(message.contains("[task] artifact_store"));
+        assert!(message.contains("no longer supported"));
+        assert!(message.contains("v2"));
     }
 }

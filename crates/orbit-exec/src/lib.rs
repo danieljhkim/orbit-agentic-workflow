@@ -1,4 +1,13 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy process-execution surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+// ORB-00013: Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Process spawning, sandboxing, and timeout handling for Orbit tool execution.
 //!
 //! Provides the low-level primitives for launching child processes with
@@ -28,7 +37,9 @@ pub mod sandbox;
 mod supervision;
 
 pub use macos_sandbox::{
-    compile_macos_sandbox_profile, sandbox_exec_available, spawn_under_macos_sandbox,
+    MacosSandboxSpawnRequest, claude_state_dir_from_env, compile_macos_sandbox_profile,
+    sandbox_exec_available, sandbox_exec_path, sandbox_exec_program_for_audit,
+    sandbox_exec_unavailable_message, spawn_under_macos_sandbox,
 };
 pub use result::ExecutionResult;
 pub use runner::{EnvironmentMode, ExecRequest, StdinMode, run_process};

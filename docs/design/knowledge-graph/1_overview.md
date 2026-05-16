@@ -2,13 +2,9 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-28 (current task-ID suffixes in graph attribution, [T20260428-1])
+**Last updated:** 2026-05-10 (post-[T20260509-64], [T20260510-7])
 
-> *"Grep finds strings. An LSP finds symbols. A knowledge graph remembers what those symbols are, where they live, who touched them, and how they relate — in a form an agent can page into a 200k context window."*
-
-The knowledge graph is Orbit's durable, queryable representation of a codebase. It sits between raw files on disk and the agent's prompt: a content-addressed, branch-scoped graph of directories, files, and extracted symbols, annotated with git history, lockable per-node, and overlaid with an ephemeral per-activity working copy during mutations.
-
-The graph exists so agents can answer questions like *"where is `AgentRuntime` defined and what implements it?"* or *"which symbols did task [T20260421-0528] touch?"* without re-reading the repo from scratch and without guessing. It is deliberately narrower than an LSP and deliberately broader than a filename index.
+The knowledge graph is Orbit's durable, queryable codebase map: a content-addressed, branch-scoped tree of directories, files, and extracted symbols. It sits between raw files and the agent prompt so agents can ask *"where is `AgentRuntime` defined?"* without re-reading the repo from scratch. Task attribution was removed in [T20260506-11]; task IDs now remain local commit-search keys rather than graph fields. This compaction pass [T20260430-22] keeps the overview focused on entry-point concepts and leaves mechanism detail to [2_design.md](./2_design.md).
 
 This document is the entry point. [2_design.md](./2_design.md) specifies the current implementation in detail; [3_vision.md](./3_vision.md) captures open questions and direction.
 
@@ -16,15 +12,15 @@ This document is the entry point. [2_design.md](./2_design.md) specifies the cur
 
 ## 1. Motivation
 
-Unassisted agents navigate codebases with three tools: `grep`, `find`, and reading files in full. Each has a failure mode:
+Unassisted agents mostly navigate with `grep`, `find`, and full-file reads. Each has a sharp edge:
 
-1. **Grep is string-level.** It cannot distinguish a call site from a comment, or a struct field from an unrelated variable of the same name. It scales in output volume, not precision.
-2. **Full-file reads bloat context.** Reading `mod.rs` to answer "where is `run_build` defined" pulls 400 lines to find 30. Repeated across a session, this dominates cache pressure.
-3. **Nothing remembers structure between sessions.** The agent re-derives the same module layout, the same trait hierarchy, the same import graph on every cold start. This is both slow and unstable — different sessions can reach different summaries of the same repo.
+1. **Grep is string-level.** It mixes call sites, comments, fields, and unrelated names.
+2. **Full-file reads bloat context.** A 30-line answer often arrives wrapped in hundreds of irrelevant lines.
+3. **Cold sessions forget structure.** Module layout, trait hierarchies, and import graphs get re-derived every turn.
 
 An LSP solves #1 and parts of #2 but is hostile to agent loops: it is stateful, process-local, and returns results tuned for IDE UX (hover text, rename previews) rather than for token-efficient prompt assembly.
 
-The knowledge graph addresses all three by precomputing a structural index once per branch, persisting it in a content-addressed store, and exposing it through query tools whose outputs are shaped for prompt consumption.
+The graph precomputes that structure once per branch, persists it, and exposes prompt-shaped query tools.
 
 ---
 
@@ -32,13 +28,13 @@ The knowledge graph addresses all three by precomputing a structural index once 
 
 ### 2.1 Node types
 
-The graph is a tree with three node kinds:
+The graph has three node kinds:
 
-- **`DirNode`** — a directory. Holds `dir_children` and `file_children`. The root dir's id derives from `"."`.
-- **`FileNode`** — a source file. Holds `leaf_children`, `extension`, `language`, and a `source_blob_hash` pointing at the file's full text in the blob store.
-- **`LeafNode`** — an extracted symbol (function, method, class, struct, interface, trait, impl, field, module). Holds its own `source`, `source_hash`, line range, input/output signature fields, and a history log.
+- **`DirNode`** — a directory with child dirs/files; the root id derives from `"."`.
+- **`FileNode`** — a source file with extracted leaves plus a `source_blob_hash`. Config (YAML/JSON/TOML) and table (CSV/TSV) files are leafless after [T20260509-64]; the file node still carries source for substring search and `show`.
+- **`LeafNode`** — an extracted code symbol or markdown ATX section with source span, hash, and signature fields.
 
-All three share `BaseNodeFields`: `id`, `identity_key`, `location`, `language`, `description`, `parent_id`, lock state, and a sorted, deduplicated `task_ids` list attributed from commit history ([T20260421-0528]).
+All three share `BaseNodeFields`: `id`, `identity_key`, `location`, `language`, `description`, `parent_id`, and lock state. Historical `task_ids` attribution fields were removed in [T20260506-11].
 
 The rename from `leaf` to `symbol` at the tool surface happened under [T20260411-0424]; the in-code type is still `LeafNode` because the internal vocabulary predates that decision and the rename has not yet reached the type name.
 
@@ -63,20 +59,21 @@ Storage follows a git-style split:
 ├── objects/<hh>/<hash>.json     immutable, content-addressed node bodies
 ├── blobs/<hh>/<hash>.txt        immutable, content-addressed file/symbol source
 ├── index/by-id/<root-graph-hash>.json   immutable per-build index
+├── graph_index.sqlite           mutable secondary index for current fast reads
 └── refs/heads/<branch>.json     mutable branch ref → active index
 ```
 
-A rebuild writes new immutable objects/blobs and a fresh index, then atomically swings the branch ref. Refs are the only mutable surface, so concurrent builds on different worktrees cannot corrupt each other ([T20260421-0358]). See [specs/refs.md](./specs/refs.md) for the full resolution rules.
+A rebuild writes new immutable objects/blobs and index, refreshes the SQLite sidecar for current fast reads, then atomically swings the branch ref. Refs are the only authoritative mutable pointer, so concurrent builds on different worktrees cannot corrupt each other ([T20260421-0358], [T20260509-70], [T20260509-72]). See [specs/refs.md](./specs/refs.md).
 
 ### 2.4 Working graph and write guards
 
-The current public graph surface is read-only. Agents use it to inspect, search, and pack context, while write coordination happens before dispatch through task `context_files` and `orbit.task.locks.reserve` preflight guards. Those guards operate at the workspace/task plane rather than inside a branch-local graph ref, which keeps them meaningful when agents work in separate worktrees.
+The current public graph surface is read-only. Agents use it to inspect, search, and pack context, while write coordination happens before dispatch in `task_gate_pipeline`: its `reserve_locks` activity reserves task `context_files` as a preflight guard. That guard operates at the workspace/task plane rather than inside a branch-local graph ref, which keeps it meaningful when agents work in separate worktrees.
 
-The in-memory **working graph** (`crates/orbit-knowledge/src/working_graph`) remains an internal/deferred mutation substrate. Keeping graph refs stable for the duration of an agent's reasoning window is still the desired property, but public graph write tools are not part of this version because branch-local graph locks do not coordinate independent worktrees.
+The in-memory **working graph** (`crates/orbit-knowledge/src/working_graph`) remains an internal/deferred mutation substrate. Public graph write tools are absent because branch-local graph locks do not coordinate independent worktrees.
 
-### 2.5 Attribution
+### 2.5 Task IDs
 
-Each node carries a `task_ids` list. These are populated by the history-walker stage (`pipeline::history`, introduced in [T20260421-0528]) which parses `\[T\d{8}-\d+(?:-\d+)*\]` tags out of commit messages, maps hunks to symbols at the commit's tree, and accumulates the result onto the current graph. A merge commit where both sides touched the same symbol sets `structural_conflict: true` — informational only; git already resolved the textual conflict.
+The graph no longer stores task attribution. `[T...]` commit tags remain useful for local forward lookup with `git log --grep`, but reverse lookup from graph node to task was removed in [T20260506-11] after a 10-day audit found 0 uses across 961 graph tool calls.
 
 ---
 
@@ -85,10 +82,12 @@ Each node carries a `task_ids` list. These are populated by the history-walker s
 | Concern | Where it lives | Primary task ID |
 |---------|----------------|-----------------|
 | Crate boundary | `crates/orbit-knowledge` | [T20260411-0008], [T20260411-0424] |
-| Storage layout | `src/graph/object_store.rs` | [T20260421-0358] |
-| Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139] |
-| History attribution | `src/pipeline/history.rs` | [T20260421-0528] |
-| Query services | `src/service/` | [T20260412-0645-2], [T20260412-0645-3] |
+| Storage layout | `src/graph/object_store.rs`, `src/graph/sqlite_index.rs` | [T20260421-0358], [T20260509-70] |
+| Build pipeline | `src/pipeline/` | [T20260411-0424], [T20260417-0639], [T20260426-0139], [T20260509-33] |
+| Historical task attribution removal | `src/pipeline/` | [T20260506-11] |
+| Query commands | `src/commands/` with lower-level `src/service/` helpers | [T20260412-0645-2], [T20260412-0645-3], [T20260509-72], [T20260509-73], [T20260509-74], [T20260510-5] |
+| SQLite read facade | `src/graph/sqlite_index.rs` | [T20260509-71] |
+| Extraction (code + markdown) | `src/extract/` | [T20260422-1540], [T20260509-64], [T20260510-7] |
 | Working graph | `src/working_graph/` | [T20260411-0424] |
 | Locking | `src/lock.rs` | [T20260411-0424], [T20260417-0301-2] |
 | Refresh safety | `src/pipeline/mod.rs` | [T20260417-0307], [T20260416-0719] |
@@ -106,9 +105,20 @@ Each node carries a `task_ids` list. These are populated by the history-walker s
 - **[T20260417-0307]** — Gate and guard graph refresh/search hot paths.
 - **[T20260417-0639]** — Speed up workspace-init graph persistence hot path.
 - **[T20260421-0358]** — Scope graph refs by branch.
-- **[T20260421-0528]** — `task_ids` schema on every node + git history walker for attribution.
+- **[T20260421-0528]** — Historical `task_ids` schema on every node + git history walker for attribution; removed by [T20260506-11].
 - **[T20260426-0139]** — Parallelize per-file hashing and leaf extraction while preserving deterministic graph output.
 - **[T20260426-0453]** — Remove graph write operations from the public tool/MCP surface and use task lock reservations as preflight write guards.
-- **[T20260428-1]** — Align graph task-ID attribution/search with current unpadded task IDs.
+- **[T20260428-1]** — Historical graph task-ID attribution/search alignment; superseded by [T20260506-11].
+- **[T20260506-11]** — Remove knowledge-graph task attribution; preserve task IDs as local commit-search keys.
+- **[T20260430-22]** — Compact the knowledge-graph design docs and remove duplicate top-level narrative.
+- **[T20260509-33]** — Skip symlinked directory entries during knowledge scanner traversal.
+- **[T20260509-64]** — Collapse YAML/JSON/TOML/CSV/TSV extraction to file-as-leaf.
+- **[T20260509-70]** — Build the SQLite secondary index sidecar during graph persistence.
+- **[T20260509-71]** — Add the read-side `GraphIndexReader` facade with version check and graceful fallback.
+- **[T20260509-72]** — Use the SQLite secondary index for current, unscoped `orbit.graph.overview` summary aggregation.
+- **[T20260509-73]** — Wire exact-name and path-prefix `orbit.graph.search` queries through the SQLite sidecar.
+- **[T20260509-74]** — Wire `orbit.graph.show` selector resolution through the SQLite unique-selector index.
+- **[T20260510-5]** — Move canonical knowledge-graph command semantics into `orbit_knowledge::commands::*`; keep `orbit-tools` as dispatch and envelope shaping.
+- **[T20260510-7]** — Make leaf IDs unique across extractors so SQL fast paths preserve every symbol.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

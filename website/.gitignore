@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .astro/
+.wrangler/
 src/content/docs/architecture/design/
 src/content/docs/benchmarks/
+src/content/docs/metrics/
+src/content/docs/tasks/
 !package-lock.json

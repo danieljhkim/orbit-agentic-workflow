@@ -3,6 +3,9 @@ members = [
   "crates/orbit-agent",
   "crates/orbit-cli",
   "crates/orbit-common",
+  "crates/orbit-embed",
+  "crates/orbit-embed-companion",
+  "crates/orbit-registry",
   "crates/orbit-core",
   "crates/orbit-engine",
   "crates/orbit-knowledge",
@@ -15,15 +18,29 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.5.4"
 edition = "2024"
 license = "MIT"
+
+# Workspace-wide lint config. Each crate opts in via `[lints] workspace = true`.
+# Keep this list short — only rules that are mechanically true everywhere.
+[workspace.lints.clippy]
+await_holding_lock = "deny"
+dbg_macro = "deny"
+expect_used = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+unwrap_used = "warn"
+
+[workspace.lints.rust]
+missing_docs = "warn"
 
 [workspace.dependencies]
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"
+git2 = { version = "0.20", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }
 jsonschema = { version = "0.18", default-features = false }
 libc = "0.2"
@@ -33,6 +50,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 regex = "1"
+blake3 = "1"
 sha2 = "0.10"
 tiktoken-rs = "0.11.0"
 thiserror = "2"
@@ -41,5 +59,6 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 unicode-normalization = "0.1"
+url = "2"
 wait-timeout = "0.2"
 proptest = "1"

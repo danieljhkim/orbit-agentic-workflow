@@ -8,6 +8,9 @@
 //! serde. [`Chronicle::serialize_at`] and [`Chronicle::deserialize_cache_bytes`]
 //! are cache-stream helpers for the append-only prefix format only.
 
+// ORB-00013: Existing expect calls in this module document local invariants; keep the allow scoped while the workspace lint is ratcheted.
+#![allow(clippy::expect_used)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;

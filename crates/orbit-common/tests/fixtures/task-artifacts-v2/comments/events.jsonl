@@ -1,0 +1,2 @@
+{"schema_version":1,"event_id":"EV-0001","at":"2026-05-11T00:02:00Z","by":"codex:gpt-5.5","type":"created","from_status":null,"to_status":"backlog","note":null}
+{"schema_version":1,"event_id":"EV-0002","at":"2026-05-11T00:03:00Z","by":"codex:gpt-5.5","type":"status_changed","from_status":"backlog","to_status":"in_progress","note":"started fixture"}

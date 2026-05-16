@@ -14,18 +14,21 @@ flowchart LR
   Common["orbit-common"] --> Policy["orbit-policy"]
   Common --> Exec["orbit-exec"]
   Common --> Knowledge["orbit-knowledge"]
+  Common --> Store["orbit-store"]
+  Common --> MCP["orbit-mcp"]
   Policy --> Tools["orbit-tools"]
   Exec --> Tools
   Knowledge --> Tools
-  Tools --> Store["orbit-store"]
   Tools --> Agent["orbit-agent"]
-  Store --> Engine["orbit-engine"]
+  Tools --> Engine["orbit-engine"]
+  Store --> Engine
   Agent --> Engine
   Engine --> Core["orbit-core"]
-  Tools --> MCP["orbit-mcp"]
-  MCP --> CLI["orbit-cli"]
-  Core --> CLI
+  Core --> CLI["orbit-cli"]
+  MCP --> CLI
 ```
+
+`orbit-store` and `orbit-mcp` depend only on `orbit-common`. `orbit-mcp` is consumed by `orbit-cli` directly via `orbit mcp serve`. `orbit-core` does **not** depend on `orbit-agent`; the bridge is `orbit-engine`'s `backend: cli` subprocess runner.
 
 ## Boundaries
 
@@ -40,6 +43,19 @@ flowchart LR
 | `orbit-mcp` | MCP adapter over the tool registry. |
 | `orbit-core` | Runtime bootstrap, config, command dispatch, default asset seeding. |
 | `orbit-cli` | Clap-based CLI entrypoint. |
+
+## Feature Ownership
+
+Feature design docs live under `docs/design/<feature>/` and follow `docs/design/CONVENTIONS.md`.
+
+| Feature | Folder | Lead |
+|---------|--------|------|
+| Knowledge graph | `knowledge-graph/` | `claude` |
+| Policy & Sandboxing | `policy-sandbox/` | `claude` |
+| Activity / Job | `activity-job/` | `codex` |
+| Auditability | `auditability/` | `codex` |
+| Groundhog | `groundhog/` | `codex` |
+| User Interface | `user-interface/` | `gemini` |
 
 ## Design Mirror
 

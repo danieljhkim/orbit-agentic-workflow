@@ -1,22 +1,27 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    ExecutorDef, JobRun, KnowledgeRunMetrics, OrbitError, PipelineState, PolicyDef, Task,
-    TaskArtifact, TaskPriority, TaskStatus,
+    Adr, AdrStatus, ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, Learning,
+    LearningStatus, OrbitError, PipelineState, PolicyDef, ReviewThread, Task, TaskArtifact,
+    TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus,
 };
 
 use super::contracts::{
-    ExecutorDefStoreBackend, JobRunQuery, JobRunStepParams, JobRunStoreBackend,
-    PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams,
-    TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
-    TaskHistoryUpdateParams, TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
+    AdrCreateParams, AdrDocumentUpdateParams, AdrStoreBackend, ExecutorDefStoreBackend,
+    JobRunQuery, JobRunStepParams, JobRunStoreBackend, LearningCreateParams, LearningSearchParams,
+    LearningSearchResult, LearningStoreBackend, LearningUpdateParams, PolicyDefStoreBackend,
+    TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend,
+    TaskDocumentUpdateParams, TaskHistoryStoreBackend, TaskHistoryUpdateParams,
+    TaskReviewStoreBackend, TaskReviewUpdateParams, TaskStoreBackend,
 };
+use crate::file::adr_store::AdrFileStore;
 use crate::file::executor_def_store::ExecutorDefFileStore;
 use crate::file::job_store::JobFileStore;
+use crate::file::learning_store::LearningFileStore;
 use crate::file::policy_def_store::PolicyDefFileStore;
-use crate::file::task_store::TaskFileStore;
+use crate::file::task_store::TaskV2Store;
 use crate::scope::{ScopeStrategy, ScopedStore, resolve};
 
-impl TaskStoreBackend for TaskFileStore {
+impl TaskStoreBackend for TaskV2Store {
     fn create_task(&self, params: TaskCreateParams) -> Result<Task, OrbitError> {
         self.create_task(params)
     }
@@ -25,18 +30,30 @@ impl TaskStoreBackend for TaskFileStore {
         self.list_tasks()
     }
 
+    fn list_tasks_by_tags(&self, tags: &[String]) -> Result<Vec<Task>, OrbitError> {
+        self.list_tasks_by_tags(tags)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            job_run_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 
     fn get_task(&self, id: &str) -> Result<Option<Task>, OrbitError> {
-        // Tasks use the WorkspaceOnly strategy per `CLAUDE.md`.
         resolve::<Task, _>(self, id)
     }
 
@@ -44,12 +61,16 @@ impl TaskStoreBackend for TaskFileStore {
         self.search_tasks(query)
     }
 
+    fn search_tasks_filtered(&self, query: &str, tags: &[String]) -> Result<Vec<Task>, OrbitError> {
+        self.search_tasks_filtered(query, tags)
+    }
+
     fn delete_task(&self, id: &str) -> Result<bool, OrbitError> {
         self.delete_task(id)
     }
 }
 
-impl ScopedStore<Task> for TaskFileStore {
+impl ScopedStore<Task> for TaskV2Store {
     type Err = OrbitError;
 
     fn strategy(&self) -> ScopeStrategy {
@@ -65,7 +86,7 @@ impl ScopedStore<Task> for TaskFileStore {
     }
 }
 
-impl TaskDocumentStoreBackend for TaskFileStore {
+impl TaskDocumentStoreBackend for TaskV2Store {
     fn update_task_document(
         &self,
         id: &str,
@@ -75,7 +96,15 @@ impl TaskDocumentStoreBackend for TaskFileStore {
     }
 }
 
-impl TaskHistoryStoreBackend for TaskFileStore {
+impl TaskHistoryStoreBackend for TaskV2Store {
+    fn get_task_comments(&self, id: &str) -> Result<Option<Vec<TaskComment>>, OrbitError> {
+        self.get_task_comments(id)
+    }
+
+    fn get_task_history(&self, id: &str) -> Result<Option<Vec<TaskHistoryEntry>>, OrbitError> {
+        self.get_task_history(id)
+    }
+
     fn update_task_history(
         &self,
         id: &str,
@@ -85,7 +114,11 @@ impl TaskHistoryStoreBackend for TaskFileStore {
     }
 }
 
-impl TaskReviewStoreBackend for TaskFileStore {
+impl TaskReviewStoreBackend for TaskV2Store {
+    fn get_task_review_threads(&self, id: &str) -> Result<Option<Vec<ReviewThread>>, OrbitError> {
+        self.get_task_review_threads(id)
+    }
+
     fn update_task_reviews(
         &self,
         id: &str,
@@ -95,7 +128,7 @@ impl TaskReviewStoreBackend for TaskFileStore {
     }
 }
 
-impl TaskArtifactStoreBackend for TaskFileStore {
+impl TaskArtifactStoreBackend for TaskV2Store {
     fn get_task_artifacts(&self, id: &str) -> Result<Option<Vec<TaskArtifact>>, OrbitError> {
         self.get_task_artifacts(id)
     }
@@ -197,6 +230,15 @@ impl JobRunStoreBackend for JobFileStore {
         self.finalize_job_run(run_id, state, finished_at, duration_ms)
     }
 
+    fn repair_terminal_job_run_timing(
+        &self,
+        run_id: &str,
+        finished_at: DateTime<Utc>,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OrbitError> {
+        self.repair_terminal_job_run_timing(run_id, finished_at, duration_ms)
+    }
+
     fn archive_job_run(&self, run_id: &str) -> Result<String, OrbitError> {
         self.archive_run(run_id)
     }
@@ -243,5 +285,158 @@ impl PolicyDefStoreBackend for PolicyDefFileStore {
 
     fn upsert_policy_def(&self, def: &PolicyDef) -> Result<(), OrbitError> {
         self.upsert_policy_def(def)
+    }
+}
+
+impl AdrStoreBackend for AdrFileStore {
+    fn add_adr(&self, params: AdrCreateParams) -> Result<Adr, OrbitError> {
+        self.add_adr(params)
+    }
+
+    fn get_adr(&self, id: &str) -> Result<Option<Adr>, OrbitError> {
+        // ADRs use the WorkspaceOnly strategy per `CLAUDE.md`.
+        resolve::<Adr, _>(self, id)
+    }
+
+    fn list_adrs(&self) -> Result<Vec<Adr>, OrbitError> {
+        self.list_adrs()
+    }
+
+    fn list_adrs_filtered(
+        &self,
+        status: Option<AdrStatus>,
+        owner: Option<&str>,
+        feature: Option<&str>,
+        task_id: Option<&str>,
+        legacy_id: Option<&str>,
+        validation_warned: Option<bool>,
+    ) -> Result<Vec<Adr>, OrbitError> {
+        self.list_adrs_filtered(
+            status,
+            owner,
+            feature,
+            task_id,
+            legacy_id,
+            validation_warned,
+        )
+    }
+
+    fn update_adr_status(&self, id: &str, new_status: AdrStatus) -> Result<(), OrbitError> {
+        self.update_adr_status(id, new_status)
+    }
+
+    fn update_adr_document(
+        &self,
+        id: &str,
+        fields: &AdrDocumentUpdateParams,
+    ) -> Result<(), OrbitError> {
+        self.update_adr_document(id, fields)
+    }
+
+    fn delete_adr(&self, id: &str) -> Result<bool, OrbitError> {
+        self.delete_adr(id)
+    }
+
+    fn rebuild_index(&self) -> Result<(), OrbitError> {
+        self.rebuild_index()
+    }
+
+    fn supersede_adr(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError> {
+        self.supersede_adr(old_id, new_id)
+    }
+}
+
+impl LearningStoreBackend for LearningFileStore {
+    fn create_learning(&self, params: LearningCreateParams) -> Result<Learning, OrbitError> {
+        self.create_learning(params)
+    }
+
+    fn get_learning(&self, id: &str) -> Result<Option<Learning>, OrbitError> {
+        // Learnings use the WorkspaceOnly strategy per `CLAUDE.md` Scoping
+        // Rules and ADR-003.
+        resolve::<Learning, _>(self, id)
+    }
+
+    fn list_learnings(&self, status: Option<LearningStatus>) -> Result<Vec<Learning>, OrbitError> {
+        self.list_learnings(status)
+    }
+
+    fn search_learnings(
+        &self,
+        params: LearningSearchParams,
+    ) -> Result<Vec<LearningSearchResult>, OrbitError> {
+        self.search_learnings(params)
+    }
+
+    fn update_learning(
+        &self,
+        id: &str,
+        params: LearningUpdateParams,
+    ) -> Result<Learning, OrbitError> {
+        self.update_learning(id, params)
+    }
+
+    fn supersede_learning(&self, old_id: &str, new_id: &str) -> Result<(), OrbitError> {
+        self.supersede_learning(old_id, new_id)
+    }
+
+    fn archive_learning(&self, id: &str) -> Result<bool, OrbitError> {
+        self.archive_learning(id)
+    }
+
+    fn delete_learning(&self, id: &str) -> Result<bool, OrbitError> {
+        self.delete_learning(id)
+    }
+
+    fn reindex_learnings(&self) -> Result<(), OrbitError> {
+        self.reindex_learnings()
+    }
+}
+
+impl ScopedStore<Learning> for LearningFileStore {
+    type Err = OrbitError;
+
+    fn strategy(&self) -> ScopeStrategy {
+        ScopeStrategy::WorkspaceOnly
+    }
+
+    fn get_workspace(&self, key: &str) -> Result<Option<Learning>, OrbitError> {
+        self.get_learning(key)
+    }
+
+    fn get_global(&self, _key: &str) -> Result<Option<Learning>, OrbitError> {
+        Ok(None)
+    }
+}
+
+impl ScopedStore<Adr> for AdrFileStore {
+    type Err = OrbitError;
+
+    fn strategy(&self) -> ScopeStrategy {
+        ScopeStrategy::WorkspaceOnly
+    }
+
+    fn get_workspace(&self, key: &str) -> Result<Option<Adr>, OrbitError> {
+        self.get_adr(key)
+    }
+
+    fn get_global(&self, _key: &str) -> Result<Option<Adr>, OrbitError> {
+        Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn adr_file_store_returns_workspace_only_strategy() {
+        let store = AdrFileStore::new(PathBuf::from("/tmp/unused-adr-root"));
+        assert_eq!(
+            ScopedStore::<Adr>::strategy(&store),
+            ScopeStrategy::WorkspaceOnly
+        );
     }
 }

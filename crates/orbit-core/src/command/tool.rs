@@ -3,17 +3,19 @@ use std::path::Path;
 use std::time::Instant;
 
 use orbit_common::types::{
-    AuditEventStatus, OrbitError, OrbitEvent, Role, StoredTool, ToolParam,
-    normalize_agent_family_for_model, normalize_optional_attribution_label,
+    AuditEventStatus, NotFoundKind, OrbitError, OrbitEvent, Role, StoredTool, ToolParam,
+    audit_execution_id, normalize_agent_family_for_model, normalize_optional_attribution_label,
 };
 use orbit_store::AuditEventInsertParams;
-use orbit_tools::ToolContext;
+use orbit_tools::{ReservationOwnerContext, ToolContext};
 use serde_json::Value;
 
 use crate::OrbitRuntime;
 use crate::redact_sensitive_env_text;
 
 pub use crate::runtime::pipeline::DryRunResult;
+
+const ORBIT_MANAGED_RUN_CONTEXT_ENV: &str = "ORBIT_MANAGED_RUN_CONTEXT";
 
 #[derive(Debug, Clone)]
 pub struct ToolInfo {
@@ -64,7 +66,7 @@ thread_local! {
 }
 
 /// Mark that the runtime has already persisted an audit row for the current
-/// tool invocation on this thread. Higher layers (the CLI [`AuditGuard`]) call
+/// tool invocation on this thread. Higher layers (the CLI `AuditGuard`) call
 /// [`take_tool_audit_recorded`] during their own teardown to suppress a
 /// duplicate emission. The signal is per-thread and one-shot.
 pub fn mark_tool_audit_recorded() {
@@ -147,6 +149,7 @@ impl OrbitRuntime {
                 model_name,
                 workspace_root: None,
                 proc_allowed_programs,
+                reservation_owner: reservation_owner_from_env(),
                 ..Default::default()
             };
             self.run_tool_with_context_and_role(name, input, Role::Admin, tool_context)
@@ -168,13 +171,7 @@ impl OrbitRuntime {
         };
 
         let params = AuditEventInsertParams {
-            execution_id: format!(
-                "exec-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0)
-            ),
+            execution_id: audit_execution_id("exec"),
             command: "tool".to_string(),
             subcommand: Some(entry_point.audit_subcommand().to_string()),
             tool_name: Some(name.to_string()),
@@ -262,6 +259,29 @@ fn resolve_audit_context(input: &Value) -> AuditContext {
             .and_then(Value::as_i64)
             .or_else(|| env_str("ORBIT_STEP_INDEX").and_then(|s| s.parse().ok())),
     }
+}
+
+fn reservation_owner_from_env() -> Option<ReservationOwnerContext> {
+    let managed_context = std::env::var(ORBIT_MANAGED_RUN_CONTEXT_ENV)
+        .ok()
+        .is_some_and(|value| matches!(value.trim(), "1" | "true" | "TRUE"));
+    if !managed_context {
+        return None;
+    }
+
+    std::env::var("ORBIT_RUN_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(|owner_run_id| ReservationOwnerContext {
+            owner_metadata_json: Some(
+                serde_json::json!({
+                    "source": "orbit_cli",
+                })
+                .to_string(),
+            ),
+            owner_run_id,
+        })
 }
 
 fn read_agent_identity_from_env() -> (Option<String>, Option<String>) {
@@ -429,7 +449,7 @@ impl OrbitRuntime {
         let schema = self
             .tool_registry()
             .get_schema(name)
-            .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
+            .ok_or_else(|| OrbitError::not_found(NotFoundKind::Tool, name.to_string()))?;
 
         let stored = self.stores().tools().get(name)?;
         let enabled = stored.is_none_or(|s| s.enabled);
@@ -497,7 +517,7 @@ impl OrbitRuntime {
         self.with_mutation(|| {
             let deleted = self.stores().tools().delete(name)?;
             if !deleted {
-                return Err(OrbitError::ToolNotFound(name.to_string()));
+                return Err(OrbitError::not_found(NotFoundKind::Tool, name.to_string()));
             }
             Ok((
                 (),
@@ -566,7 +586,7 @@ impl OrbitRuntime {
 
     fn set_tool_enabled_state(&self, name: &str, enabled: bool) -> Result<(), OrbitError> {
         if !self.tool_registry().has(name) {
-            return Err(OrbitError::ToolNotFound(name.to_string()));
+            return Err(OrbitError::not_found(NotFoundKind::Tool, name.to_string()));
         }
 
         let existing = self.stores().tools().get(name)?;
@@ -574,7 +594,7 @@ impl OrbitRuntime {
             let schema = self
                 .tool_registry()
                 .get_schema(name)
-                .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
+                .ok_or_else(|| OrbitError::not_found(NotFoundKind::Tool, name.to_string()))?;
             let tool = StoredTool {
                 name: name.to_string(),
                 path: String::new(),
@@ -617,8 +637,11 @@ impl OrbitRuntime {
 #[cfg(test)]
 mod audit_tests {
     use super::*;
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Barrier, Mutex, MutexGuard, OnceLock};
+    use std::thread;
+
     use serde_json::json;
-    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     /// Serializes any test that mutates `ORBIT_AGENT_*` env vars or asserts on
     /// audit rows whose `role` depends on env-var precedence. Without this
@@ -775,6 +798,51 @@ mod audit_tests {
     }
 
     #[test]
+    fn concurrent_tool_dispatch_writes_distinct_execution_ids() {
+        let _g = env_guard();
+        let runtime = Arc::new(fresh_runtime());
+        let workers = 8;
+        let barrier = Arc::new(Barrier::new(workers));
+
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let runtime = Arc::clone(&runtime);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    runtime
+                        .execute_tool_command_dispatch(
+                            "orbit.task.search",
+                            json!({ "query": "anything", "model": "gpt-5.5" }),
+                            None,
+                            None,
+                            ToolEntryPoint::Cli,
+                        )
+                        .expect("dispatch ok");
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().expect("worker joined");
+        }
+
+        let events = runtime
+            .list_audit_events(
+                None,
+                Some("orbit.task.search".to_string()),
+                None,
+                None,
+                workers,
+            )
+            .expect("list audit events");
+        let execution_ids: BTreeSet<_> = events.iter().map(|event| &event.execution_id).collect();
+
+        assert_eq!(events.len(), workers);
+        assert_eq!(execution_ids.len(), workers);
+    }
+
+    #[test]
     fn dedup_signal_is_set_after_dispatch_and_cleared_on_take() {
         let _g = env_guard();
         let runtime = fresh_runtime();
@@ -847,6 +915,7 @@ mod audit_tests {
         unsafe {
             std::env::remove_var("ORBIT_TASK_ID");
             std::env::remove_var("ORBIT_RUN_ID");
+            std::env::remove_var(ORBIT_MANAGED_RUN_CONTEXT_ENV);
             std::env::remove_var("ORBIT_ACTIVITY_ID");
             std::env::remove_var("ORBIT_STEP_INDEX");
         }
@@ -899,6 +968,40 @@ mod audit_tests {
         clear_audit_context_env();
         let ctx = resolve_audit_context(&json!({ "run_id": "jrun-aliased" }));
         assert_eq!(ctx.job_run_id.as_deref(), Some("jrun-aliased"));
+    }
+
+    #[test]
+    fn reservation_owner_context_ignores_unmanaged_orbit_run_env() {
+        let _g = env_guard();
+        clear_audit_context_env();
+        // SAFETY: tests serialize through `env_guard()` before mutating env.
+        unsafe {
+            std::env::set_var("ORBIT_RUN_ID", "jrun-env-owner");
+        }
+
+        assert_eq!(reservation_owner_from_env(), None);
+        clear_audit_context_env();
+    }
+
+    #[test]
+    fn reservation_owner_context_comes_from_managed_orbit_run_env() {
+        let _g = env_guard();
+        clear_audit_context_env();
+        // SAFETY: tests serialize through `env_guard()` before mutating env.
+        unsafe {
+            std::env::set_var("ORBIT_RUN_ID", "jrun-env-owner");
+            std::env::set_var(ORBIT_MANAGED_RUN_CONTEXT_ENV, "1");
+        }
+        let owner = reservation_owner_from_env().expect("owner from managed env");
+        clear_audit_context_env();
+
+        assert_eq!(owner.owner_run_id, "jrun-env-owner");
+        assert!(
+            owner
+                .owner_metadata_json
+                .as_deref()
+                .is_some_and(|raw| { raw.contains("\"source\":\"orbit_cli\"") })
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-.PHONY: help graph-run graph-run-claude graph-run-codex graph-sweep graph-sweep-dry-run graph-sweep-claude graph-sweep-codex graph-aggregate graph-test
+.PHONY: help graph-run graph-run-claude graph-run-codex graph-sweep graph-sweep-dry-run graph-sweep-claude graph-sweep-codex graph-aggregate graph-test identity-key-run graph-latency-fetch graph-latency-run graph-latency-sweep graph-latency-aggregate
 
 PYTHON ?= python3
 BENCH_ROOT := $(CURDIR)
@@ -29,8 +29,25 @@ GRAPH_SWEEP_ID ?=
 GRAPH_RUN_ARGS ?=
 GRAPH_SWEEP_ARGS ?=
 
-# Export GRAPH_VERSION so the Python scripts resolve VERSION_ROOT correctly.
+IDENTITY_KEY_SCRIPTS ?= $(BENCH_ROOT)/identity-key/scripts
+
+# graph-latency is a perf benchmark (kind: perf). Same versioning rules as
+# graph; see benchmarks/CONVENTIONS.md.
+GRAPH_LATENCY_VERSION ?= v2
+GRAPH_LATENCY_SCRIPTS ?= $(BENCH_ROOT)/graph-latency/scripts
+GRAPH_LATENCY_DIR := $(BENCH_ROOT)/graph-latency/$(GRAPH_LATENCY_VERSION)
+
+GL_CORPUS ?=
+GL_TOOL ?=
+GL_PHASE ?= query
+GL_SEED ?= 1
+GL_RUN_ARGS ?=
+GL_SWEEP_ARGS ?=
+GL_FETCH_ARGS ?=
+
+# Export version vars so the Python scripts resolve VERSION_ROOT correctly.
 export GRAPH_VERSION
+export GRAPH_LATENCY_VERSION
 
 help:
 	@echo "Benchmark Make Targets"
@@ -57,10 +74,29 @@ help:
 	@echo "  make -C benchmarks graph-test"
 	@echo "    Run benchmark script unit tests (living scripts only)."
 	@echo ""
+	@echo "  make -C benchmarks identity-key-run"
+	@echo "    Rebuild the identity-key v1 scenario records."
+	@echo ""
+	@echo "  make -C benchmarks graph-latency-fetch"
+	@echo "    Populate ~/.cache/orbit-bench/<corpus> from pinned upstream SHAs."
+	@echo "    Vars: GRAPH_LATENCY_VERSION=v1 GL_FETCH_ARGS=\"--corpus python-medium\""
+	@echo ""
+	@echo "  make -C benchmarks graph-latency-run"
+	@echo "    Run one graph-latency cell (corpus x tool x phase x seed)."
+	@echo "    Vars: GL_CORPUS=python-medium GL_TOOL=graph.search GL_PHASE=query GL_SEED=1"
+	@echo ""
+	@echo "  make -C benchmarks graph-latency-sweep"
+	@echo "    Run the full graph-latency matrix (or a subset via GL_SWEEP_ARGS)."
+	@echo ""
+	@echo "  make -C benchmarks graph-latency-aggregate"
+	@echo "    Print primary + build-phase tables for GRAPH_LATENCY_VERSION."
+	@echo ""
 	@echo "Versioning:"
-	@echo "  GRAPH_VERSION=v3 (default)  targets benchmarks/graph/v3/ (living)."
-	@echo "  GRAPH_VERSION=v2            targets benchmarks/graph/v2/ (frozen)."
-	@echo "  GRAPH_VERSION=v1            targets benchmarks/graph/v1/ (frozen)."
+	@echo "  GRAPH_VERSION=v3 (default)          targets benchmarks/graph/v3/ (living)."
+	@echo "  GRAPH_VERSION=v2                    targets benchmarks/graph/v2/ (frozen)."
+	@echo "  GRAPH_VERSION=v1                    targets benchmarks/graph/v1/ (frozen)."
+	@echo "  GRAPH_LATENCY_VERSION=v2 (default)  targets benchmarks/graph-latency/v2/ (living)."
+	@echo "  GRAPH_LATENCY_VERSION=v1            targets benchmarks/graph-latency/v1/ (frozen)."
 	@echo "  See benchmarks/CONVENTIONS.md."
 
 graph-run:
@@ -102,3 +138,29 @@ graph-aggregate:
 
 graph-test:
 	$(PYTHON) -m unittest discover -s $(BENCH_ROOT)/graph/scripts -p 'test_*.py'
+
+identity-key-run:
+	$(IDENTITY_KEY_SCRIPTS)/run.sh
+
+graph-latency-fetch:
+	$(GRAPH_LATENCY_SCRIPTS)/fetch.sh \
+		--version $(GRAPH_LATENCY_VERSION) \
+		$(GL_FETCH_ARGS)
+
+graph-latency-run:
+	$(PYTHON) $(GRAPH_LATENCY_SCRIPTS)/run.py \
+		--version $(GRAPH_LATENCY_VERSION) \
+		--corpus $(GL_CORPUS) \
+		--phase $(GL_PHASE) \
+		--seed $(GL_SEED) \
+		$(if $(GL_TOOL),--tool $(GL_TOOL),) \
+		$(GL_RUN_ARGS)
+
+graph-latency-sweep:
+	$(PYTHON) $(GRAPH_LATENCY_SCRIPTS)/sweep.py \
+		--version $(GRAPH_LATENCY_VERSION) \
+		$(GL_SWEEP_ARGS)
+
+graph-latency-aggregate:
+	$(PYTHON) $(GRAPH_LATENCY_SCRIPTS)/aggregate.py \
+		--runs $(GRAPH_LATENCY_DIR)/runs

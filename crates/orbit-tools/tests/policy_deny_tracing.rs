@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -7,9 +11,7 @@ use chrono::Utc;
 use orbit_common::types::{FsProfile, OrbitError, PolicyDef};
 use orbit_common::utility::logging::init_default_subscriber;
 use orbit_policy::PolicyEngine;
-use orbit_tools::builtin::fs::read::FsReadTool;
-use orbit_tools::builtin::proc::spawn::ProcSpawnTool;
-use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, Tool, ToolContext};
+use orbit_tools::{FsAuditLogger, FsCallEvent, FsCallEventKind, ToolContext, ToolRegistry};
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
@@ -42,8 +44,12 @@ fn policy_denials_emit_redacted_jsonl_tracing_events() {
         .join("secrets")
         .join("Authorization: Bearer abc123.txt");
 
-    let err = FsReadTool
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    let err = registry
         .execute(
+            "fs.read",
             &fs_ctx,
             json!({
                 "path": denied_path.display().to_string(),
@@ -56,8 +62,8 @@ fn policy_denials_emit_redacted_jsonl_tracing_events() {
         proc_allowed_programs: vec!["echo".to_string()],
         ..Default::default()
     };
-    let err = ProcSpawnTool
-        .execute(&proc_ctx, json!({ "program": "sh" }))
+    let err = registry
+        .execute("proc.spawn", &proc_ctx, json!({ "program": "sh" }))
         .expect_err("proc spawn should be denied");
     assert!(matches!(err, OrbitError::PolicyDenied(_)));
 

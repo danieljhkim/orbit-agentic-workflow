@@ -50,7 +50,7 @@ pub enum TaskSubcommand {
     Start(TaskStartArgs),
     /// Approve a task (proposed → backlog, or review → done)
     Approve(TaskApproveArgs),
-    /// Reject a task (proposed → archived, or review → backlog)
+    /// Reject a task (proposed/friction/review/backlog/in-progress -> rejected)
     Reject(TaskRejectArgs),
     /// Archive a task
     Archive(TaskArchiveArgs),
@@ -58,7 +58,7 @@ pub enum TaskSubcommand {
     Unarchive(TaskUnarchiveArgs),
     /// Delete a task permanently
     Delete(TaskDeleteArgs),
-    /// Search tasks by title or description
+    /// Search tasks by title, description, or external ref ID
     Search(TaskSearchArgs),
     /// Manage task templates
     Templates(TaskTemplatesCommand),
@@ -92,5 +92,32 @@ impl Execute for TaskSubcommand {
             TaskSubcommand::ReviewThread(cmd) => cmd.execute(runtime),
             TaskSubcommand::PruneContext(args) => args.execute(runtime),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::{Parser, error::ErrorKind};
+
+    use crate::command::Cli;
+
+    #[test]
+    fn task_help_describes_reject_transition_to_rejected() {
+        let err = match Cli::try_parse_from(["orbit", "task", "--help"]) {
+            Ok(_) => panic!("task help should exit before parsing a subcommand"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), ErrorKind::DisplayHelp);
+
+        let help = err.to_string();
+        assert!(
+            help.contains(
+                "Reject a task (proposed/friction/review/backlog/in-progress -> rejected)"
+            ),
+            "{help}"
+        );
+        assert!(!help.contains("proposed → archived"), "{help}");
+        assert!(!help.contains("review → backlog"), "{help}");
     }
 }

@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use orbit_common::types::{OrbitEvent, Role};
+use orbit_common::types::{OrbitEvent, Role, activity_job::tool_allowed};
 use orbit_common::utility::redaction::{redact_sensitive_env_error, redact_sensitive_env_json};
 use orbit_tools::ToolContext;
 use serde_json::Value;
 
-use crate::{OrbitError, OrbitRuntime};
+use crate::{NotFoundKind, OrbitError, OrbitRuntime};
 
 impl OrbitRuntime {
     pub fn run_tool(&self, name: &str, input: Value) -> Result<Value, OrbitError> {
@@ -63,7 +63,7 @@ impl OrbitRuntime {
         self.check_tool_enabled(name)?;
 
         if !tool_context.allowed_tools.is_empty()
-            && !tool_context.allowed_tools.iter().any(|t| t == name)
+            && !tool_allowed(name, &tool_context.allowed_tools)
         {
             self.with_mutation(|| {
                 Ok((
@@ -117,7 +117,7 @@ impl OrbitRuntime {
         let schema = self
             .tool_registry()
             .get_schema(name)
-            .ok_or_else(|| OrbitError::ToolNotFound(name.to_string()))?;
+            .ok_or_else(|| OrbitError::not_found(NotFoundKind::Tool, name.to_string()))?;
 
         let mut tool_context = ToolContext {
             cwd: std::env::current_dir()
@@ -176,17 +176,12 @@ fn resolve_task_id_from_context(
         Err(_) => PathBuf::from(cwd),
     };
     let canonical_repo_root = canonical_repo_root(runtime);
+    if !task_workspace_matches(&canonical_repo_root, &canonical_cwd) {
+        return Ok(None);
+    }
 
     let tasks = runtime.stores().tasks().list()?;
-    Ok(tasks
-        .into_iter()
-        .filter_map(|task| {
-            let workspace =
-                validated_task_workspace(&canonical_repo_root, task.workspace_path.as_deref()?)?;
-            task_workspace_matches(&workspace, &canonical_cwd).then_some((task.id, workspace))
-        })
-        .max_by_key(|(_, workspace)| workspace.to_string_lossy().len())
-        .map(|(task_id, _)| task_id))
+    Ok(tasks.into_iter().next().map(|task| task.id))
 }
 
 fn resolve_workspace_root_from_context(
@@ -211,42 +206,10 @@ fn canonical_repo_root(runtime: &OrbitRuntime) -> PathBuf {
         .unwrap_or_else(|_| runtime.context.paths().repo_root.clone())
 }
 
-fn validated_task_workspace(repo_root: &Path, workspace_path: &str) -> Option<PathBuf> {
-    let candidate = if Path::new(workspace_path).is_absolute() {
-        PathBuf::from(workspace_path)
-    } else {
-        repo_root.join(workspace_path)
-    };
-    let canonical_workspace = candidate.canonicalize().ok()?;
-    if !canonical_workspace.is_dir() {
-        return None;
-    }
-    if canonical_workspace.starts_with(repo_root) {
-        return Some(canonical_workspace);
-    }
-
-    let worktree_root = configured_worktree_root()?;
-    canonical_workspace
-        .starts_with(worktree_root)
-        .then_some(canonical_workspace)
-}
-
-fn configured_worktree_root() -> Option<PathBuf> {
-    let value = std::env::var("ORBIT_WORKTREE_ROOT").ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let path = PathBuf::from(trimmed);
-    Some(path.canonicalize().unwrap_or(path))
-}
-
 fn resolve_task_workspace_root(runtime: &OrbitRuntime, task_id: &str) -> Option<PathBuf> {
     let repo_root = canonical_repo_root(runtime);
-    let task = runtime.get_task(task_id).ok()?;
-    let workspace_path = task.workspace_path.as_deref()?;
-    validated_task_workspace(&repo_root, workspace_path)
+    runtime.get_task(task_id).ok()?;
+    Some(repo_root)
 }
 
 fn task_workspace_matches(canonical_workspace: &Path, canonical_cwd: &Path) -> bool {
@@ -264,4 +227,65 @@ pub struct DryRunResult {
     pub tool_name: String,
     pub policy_allowed: bool,
     pub missing_params: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use orbit_common::types::{TaskPriority, TaskStatus, TaskType};
+    use orbit_store::TaskCreateParams;
+    use orbit_tools::ToolContext;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn run_tool_context_allowlist_honors_task_wildcard() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let task = runtime
+            .stores()
+            .tasks()
+            .create(TaskCreateParams {
+                actor: "test".to_string(),
+                parent_id: None,
+                title: "Wildcard task".to_string(),
+                description: "Exercise wildcard runtime allowlist".to_string(),
+                acceptance_criteria: Vec::new(),
+                dependencies: Vec::new(),
+                tags: Vec::new(),
+                plan: String::new(),
+                execution_summary: String::new(),
+                context_files: Vec::new(),
+                workspace_path: Some(runtime.paths().repo_root.to_string_lossy().into_owned()),
+                repo_root: None,
+                created_by: Some("test".to_string()),
+                planned_by: None,
+                implemented_by: None,
+                status: TaskStatus::Backlog,
+                priority: TaskPriority::Medium,
+                complexity: None,
+                task_type: TaskType::Chore,
+                external_refs: Vec::new(),
+                source_task_id: None,
+                comments: Vec::new(),
+            })
+            .expect("create task");
+
+        let output = runtime
+            .run_tool_with_context_and_role(
+                "orbit.task.show",
+                json!({ "id": task.id.clone() }),
+                Role::Admin,
+                ToolContext {
+                    allowed_tools: vec!["orbit.task.*".to_string()],
+                    orbit_host: Some(crate::runtime::build_orbit_tool_host(
+                        &runtime,
+                        Some(task.id.clone()),
+                    )),
+                    ..Default::default()
+                },
+            )
+            .expect("wildcard activity context should permit orbit.task.show");
+
+        assert_eq!(output["id"], task.id);
+    }
 }

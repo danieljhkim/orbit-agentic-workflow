@@ -1,0 +1,2 @@
+- Relation entries deserialize with explicit types.
+- Relation targets use canonical `ORB-00000` IDs.

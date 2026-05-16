@@ -1,4 +1,13 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy tool-registry surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+// ORB-00013: Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Builtin tool registry providing the standard Orbit toolset for agents and jobs.
 //!
 //! Implements and registers all built-in tools that agents can invoke during
@@ -28,10 +37,9 @@
 //! # Dependency direction
 //! `orbit-types` → `orbit-exec` → `orbit-tools` → orbit-engine, orbit-core
 
-pub mod builtin;
+pub(crate) mod builtin;
 pub mod external;
-pub mod graph;
-pub mod registry;
+mod registry;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -60,12 +68,35 @@ pub use registry::ToolRegistry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrbitBuiltinAction {
+    AdrAdd,
+    AdrShow,
+    AdrList,
+    AdrUpdate,
+    AdrSupersede,
+    DesignCheck,
+    DesignInit,
+    DesignList,
+    DesignShow,
+    FrictionAdd,
+    FrictionList,
+    FrictionShow,
+    FrictionStats,
+    LearningAdd,
+    LearningList,
+    LearningPrune,
+    LearningReindex,
+    LearningSearch,
+    LearningShow,
+    LearningSupersede,
+    LearningUpdate,
     PipelineInvoke,
     PipelineWait,
     ReviewThreadAdd,
     ReviewThreadList,
     ReviewThreadReply,
     ReviewThreadResolve,
+    SemanticRelated,
+    SemanticSearch,
     StateGet,
     StateSet,
     TaskAdd,
@@ -111,17 +142,10 @@ pub trait OrbitToolHost: Send + Sync {
         input: Value,
         agent: Option<String>,
         model: Option<String>,
+        reservation_owner: Option<ReservationOwnerContext>,
     ) -> Result<Value, OrbitError>;
 
     fn task_scope(&self) -> OrbitTaskScope;
-
-    /// Workspace-configured task-ID extraction regex (T20260426-0507). Returns
-    /// `None` when no workspace override is set, in which case callers should
-    /// fall back to the Orbit default. Default impl returns `None` so existing
-    /// host implementations (e.g. test mocks) compile unchanged.
-    fn task_id_pattern(&self) -> Option<String> {
-        None
-    }
 }
 
 pub trait GroundhogToolHost: Send + Sync {
@@ -151,6 +175,12 @@ pub trait FsAuditLogger: Send + Sync {
     fn emit(&self, event: FsCallEvent) -> Result<(), OrbitError>;
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReservationOwnerContext {
+    pub owner_run_id: String,
+    pub owner_metadata_json: Option<String>,
+}
+
 #[derive(Clone, Default)]
 pub struct ToolContext {
     pub cwd: Option<String>,
@@ -176,6 +206,9 @@ pub struct ToolContext {
     pub fs_profile: Option<String>,
     /// Optional audit hook for emitting per-fs-call envelope events.
     pub fs_audit: Option<Arc<dyn FsAuditLogger>>,
+    /// Trusted runtime-owned reservation metadata. Tool inputs cannot set this;
+    /// only Orbit dispatch context or Orbit-managed CLI environments can.
+    pub reservation_owner: Option<ReservationOwnerContext>,
     /// Narrow Orbit application host used by Orbit builtins instead of respawning
     /// the Orbit CLI or carrying task-specific state in the generic tool context.
     pub orbit_host: Option<Arc<dyn OrbitToolHost>>,
@@ -194,6 +227,7 @@ impl std::fmt::Debug for ToolContext {
             .field("proc_allowed_programs", &self.proc_allowed_programs)
             .field("has_policy_engine", &self.policy_engine.is_some())
             .field("fs_profile", &self.fs_profile)
+            .field("reservation_owner", &self.reservation_owner)
             .field("has_orbit_host", &self.orbit_host.is_some())
             .field("has_groundhog_host", &self.groundhog_host.is_some())
             .finish()

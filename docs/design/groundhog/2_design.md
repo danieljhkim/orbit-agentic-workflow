@@ -2,9 +2,9 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-26 (removed public deviation verb, [T20260426-0603])
+**Last updated:** 2026-05-12
 
-This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose, [implementation_status.md](./implementation_status.md) for the active gap ledger, and [3_vision.md](./3_vision.md) for forward-looking questions.
+This document describes Groundhog as it exists in the codebase today: the activity shape, plan schema, persisted artifacts, attempt lifecycle, builtin verbs, verifier path, and the current implementation gaps that still separate the runner from the intended v1 contract. See [1_overview.md](./1_overview.md) for the feature's purpose and [3_vision.md](./3_vision.md) for forward-looking questions.
 
 ---
 
@@ -57,7 +57,7 @@ One more legacy detail matters: the chronicle type still carries `deviation_stac
 
 ## 3. Attempt Lifecycle and Prompt Construction
 
-The dedicated runner in `crates/orbit-engine/src/activity_job/groundhog.rs` shipped in [T20260420-0510-2]. Its lifecycle today is:
+The dedicated runner is rooted at `crates/orbit-engine/src/activity_job/groundhog/mod.rs`, with attempt handling, persistence/state, and the local verifier in sibling submodules. The original runner shipped in [T20260420-0510-2], and the focused module split landed in [T20260509-19]. Its lifecycle today is:
 
 1. Load the task via `orbit.task.show`.
 2. Parse the task's structured plan.
@@ -134,7 +134,7 @@ The shared verifier module in `crates/orbit-engine/src/checkpoint_verifier.rs` l
 
 and it evaluates criteria in parallel.
 
-The Groundhog runner, however, does not currently call that shared verifier. `crates/orbit-engine/src/activity_job/groundhog.rs` still carries an inline `verify_checkpoint(...)` helper that:
+The Groundhog runner, however, does not currently call that shared verifier. `crates/orbit-engine/src/activity_job/groundhog/verifier.rs` still carries a local `verify_checkpoint(...)` helper that:
 
 - evaluates criteria sequentially
 - returns only an optional `FailureReport`
@@ -146,6 +146,8 @@ So the codebase already contains the richer verifier surface, but the Groundhog 
 ---
 
 ## 7. Concerns & Honest Limitations
+
+This section is the active gap ledger. Keep shipped behavior in the mechanism sections above, and keep cleanup, drift, and decision pressure here until a task or ADR resolves them.
 
 ### 7.1 Persistence still reflects older Groundhog vocabulary
 
@@ -159,9 +161,9 @@ The current runtime persists `Chronicle` + `groundhog/state.json`, not a cleanly
 
 Later attempts currently receive successful checkpoint summaries only. Side-effect summaries are persisted but not reloaded into the prompt. That means Groundhog remembers less about irreversible or notable prior changes than it claims to.
 
-### 7.4 Legacy deviation surface still ships
+### 7.4 Legacy deviation substrate still ships
 
-The current runner does not support deviation as part of Groundhog v1, but the chronicle types and tool registry still carry deviation-era leftovers. This is exactly the kind of doc/code drift that made the old Groundhog folder hard to trust.
+The current runner does not support deviation as part of Groundhog v1, and the public `checkpoint_deviate` verb has already been removed from the registered tool surface. What still remains is the older substrate: chronicle types, serializer vocabulary, tests, and internal modules that preserve deviation-era shapes. That cleanup is still worth doing because it keeps the persisted model and source tree more confusing than the shipped Groundhog contract needs them to be.
 
 ### 7.5 `attempt_budget_default` is not a true fallback yet
 
@@ -189,5 +191,8 @@ The runner can report success, blocked status, and checkpoint counts through its
 - **[T20260420-0509-4]** — Add Groundhog workspace snapshots and scratch-branch rewind mechanics.
 - **[T20260420-0510]** — Add the shared runtime checkpoint verifier.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260426-0603]** — Remove the public Groundhog checkpoint deviation verb from the tool surface.
+- **[T20260430-21]** — Shorten Groundhog design docs and fold the implementation status ledger into numbered docs.
+- **[T20260509-19]** — Split the Groundhog activity runner into focused engine submodules.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

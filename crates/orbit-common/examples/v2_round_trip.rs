@@ -1,3 +1,12 @@
+#![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
+
 //! Round-trip smoke for v2 reference YAMLs (closes T20260418-2010 AC1).
 //!
 //! For each v2 reference under `crates/orbit-core/assets/activities/`:

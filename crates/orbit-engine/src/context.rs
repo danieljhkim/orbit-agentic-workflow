@@ -2,9 +2,10 @@ use crate::executor::registry::ActivityExecutorRegistry;
 use orbit_agent::AgentConfig;
 use orbit_common::types::activity_job::{AgentRole, Backend, Provider};
 use orbit_common::types::{
-    Activity, AgentModelPair, ExecutorDef, InvocationTrace, Job, JobRun, JobRunState,
+    Activity, AgentModelPair, ExecutorDef, ExternalRef, InvocationTrace, Job, JobRun, JobRunState,
     JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, PipelineState, ReviewThread, Role,
-    Task, TaskArtifact, TaskComment, TaskPriority, TaskStatus, resolve_agent_model_pair,
+    Task, TaskArtifact, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus,
+    resolve_agent_model_pair,
 };
 use orbit_common::utility::redaction::{redact_sensitive_env_json, redact_sensitive_env_option};
 use orbit_exec::EnvironmentMode;
@@ -92,7 +93,6 @@ pub struct ExecutionContext {
     pub job: Option<Job>,
     pub agent_cli: String,
     pub model: Option<String>,
-    pub model_tier: Option<String>,
     pub timeout_seconds: u64,
     pub env_extra: Vec<String>,
     /// Explicit env var key-value pairs that override same-named vars from
@@ -186,9 +186,12 @@ pub struct ActivityInvocationResult {
 pub struct TaskAutomationUpdate {
     pub status: Option<TaskStatus>,
     pub plan: Option<String>,
-    pub workspace_path: Option<Option<String>>,
-    pub repo_root: Option<String>,
-    pub pr_number: Option<String>,
+    /// Default `None` = leave the task's `context_files` untouched. `Some(v)`
+    /// replaces the field wholesale (mirrors `TaskDocumentUpdateParams.context_files`
+    /// semantics in `orbit-store`). Only set deliberately — most automation
+    /// call sites should leave this at `None`.
+    pub context_files: Option<Vec<String>>,
+    pub external_refs: Vec<ExternalRef>,
     pub execution_summary: Option<String>,
     pub status_event: Option<String>,
     pub status_note: Option<String>,
@@ -196,7 +199,7 @@ pub struct TaskAutomationUpdate {
     pub agent: Option<String>,
     pub model: Option<String>,
     pub review_threads: Option<Vec<ReviewThread>>,
-    pub batch_id: Option<String>,
+    pub job_run_id: Option<String>,
 }
 
 pub trait JobRunHost {
@@ -254,12 +257,23 @@ pub trait JobRunHost {
 pub trait TaskReadHost {
     fn get_task(&self, task_id: &str) -> Result<Task, OrbitError>;
     fn get_task_artifacts(&self, task_id: &str) -> Result<Vec<TaskArtifact>, OrbitError>;
+    fn get_task_comments(&self, _task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        Ok(Vec::new())
+    }
+    fn get_task_history(&self, _task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        Ok(Vec::new())
+    }
+    fn get_task_review_threads(&self, _task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        Ok(Vec::new())
+    }
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError>;
 }
 
@@ -311,6 +325,11 @@ pub struct AgentRoleConfig {
     pub provider: Option<Provider>,
     pub model: Option<String>,
     pub backend: Option<Backend>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrConfig {
+    pub task_url_template: Option<String>,
 }
 
 pub trait EnvironmentHost {
@@ -384,6 +403,11 @@ pub trait RuntimeHost {
         input: Value,
         debug: bool,
     ) -> Result<JobRunResult, OrbitError>;
+    fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        Err(OrbitError::Execution(format!(
+            "cancel_job_run is not implemented for run '{run_id}'"
+        )))
+    }
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,
@@ -452,6 +476,14 @@ pub trait RuntimeHost {
     }
     fn scoring_enabled(&self) -> bool;
     fn graph_editing(&self) -> bool;
+    /// Return the current agent model identity when this runtime is operating
+    /// as an agent, or `None` when there is no model-bearing actor.
+    fn actor_model_identity(&self) -> Option<String> {
+        None
+    }
+    fn pr_config(&self) -> PrConfig {
+        PrConfig::default()
+    }
     fn scoreboard_dir(&self) -> &Path;
     fn persist_invocation_trace(
         &self,
@@ -544,15 +576,35 @@ impl TaskReadHost for AgentExecutorHost<'_> {
         self.task_reader.get_task_artifacts(task_id)
     }
 
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        self.task_reader.get_task_comments(task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        self.task_reader.get_task_history(task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        self.task_reader.get_task_review_threads(task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.task_reader
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.task_reader.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            job_run_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 
@@ -618,15 +670,35 @@ impl TaskReadHost for CliCommandExecutorHost<'_> {
         self.task_reader.get_task_artifacts(task_id)
     }
 
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        self.task_reader.get_task_comments(task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        self.task_reader.get_task_history(task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        self.task_reader.get_task_review_threads(task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.task_reader
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.task_reader.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            job_run_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 
@@ -678,15 +750,35 @@ impl TaskReadHost for AutomationExecutorHost<'_> {
         self.task_reader.get_task_artifacts(task_id)
     }
 
+    fn get_task_comments(&self, task_id: &str) -> Result<Vec<TaskComment>, OrbitError> {
+        self.task_reader.get_task_comments(task_id)
+    }
+
+    fn get_task_history(&self, task_id: &str) -> Result<Vec<TaskHistoryEntry>, OrbitError> {
+        self.task_reader.get_task_history(task_id)
+    }
+
+    fn get_task_review_threads(&self, task_id: &str) -> Result<Vec<ReviewThread>, OrbitError> {
+        self.task_reader.get_task_review_threads(task_id)
+    }
+
     fn list_tasks_filtered(
         &self,
         status: Option<TaskStatus>,
         priority: Option<TaskPriority>,
         parent_id: Option<&str>,
-        batch_id: Option<&str>,
+        job_run_id: Option<&str>,
+        external_ref: Option<&ExternalRef>,
+        has_external_ref_system: Option<&str>,
     ) -> Result<Vec<Task>, OrbitError> {
-        self.task_reader
-            .list_tasks_filtered(status, priority, parent_id, batch_id)
+        self.task_reader.list_tasks_filtered(
+            status,
+            priority,
+            parent_id,
+            job_run_id,
+            external_ref,
+            has_external_ref_system,
+        )
     }
 }
 
@@ -789,6 +881,10 @@ impl RuntimeHost for AutomationExecutorHost<'_> {
             .run_job_now_with_input_debug(job_id, input, debug)
     }
 
+    fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        self.runtime.cancel_job_run(run_id)
+    }
+
     fn validate_activity_target_exists(
         &self,
         target_type: JobTargetType,
@@ -868,6 +964,10 @@ impl RuntimeHost for AutomationExecutorHost<'_> {
         self.runtime.graph_editing()
     }
 
+    fn actor_model_identity(&self) -> Option<String> {
+        self.runtime.actor_model_identity()
+    }
+
     fn scoreboard_dir(&self) -> &Path {
         self.runtime.scoreboard_dir()
     }
@@ -904,17 +1004,10 @@ pub fn execution_working_directory(execution: &ExecutionContext) -> Option<Strin
 /// This is the preferred variant for agent_invoke and cli_command executors
 /// where a [`TaskHost`] is available.
 pub fn execution_working_directory_with_task<H: TaskReadHost + ?Sized>(
-    host: &H,
+    _host: &H,
     execution: &ExecutionContext,
 ) -> Option<String> {
-    execution_working_directory(execution).or_else(|| {
-        execution
-            .input
-            .get("task_id")
-            .and_then(Value::as_str)
-            .and_then(|task_id| host.get_task(task_id).ok())
-            .and_then(|task| task.workspace_path)
-    })
+    execution_working_directory(execution)
 }
 
 /// Resolve `${VAR}` references in a value string from the parent environment.
@@ -1005,6 +1098,7 @@ pub fn state_env_vars(execution: &ExecutionContext) -> Vec<(String, String)> {
         execution.state_dir.as_ref(),
     ) {
         vars.push(("ORBIT_RUN_ID".to_string(), run_id.clone()));
+        vars.push(("ORBIT_MANAGED_RUN_CONTEXT".to_string(), "1".to_string()));
         vars.push(("ORBIT_STEP_INDEX".to_string(), step_index.to_string()));
         vars.push((
             "ORBIT_STATE_DIR".to_string(),
@@ -1084,7 +1178,6 @@ mod state_env_var_tests {
             job: None,
             agent_cli: "claude".to_string(),
             model: None,
-            model_tier: None,
             timeout_seconds: 60,
             env_extra: Vec::new(),
             env_set: HashMap::new(),

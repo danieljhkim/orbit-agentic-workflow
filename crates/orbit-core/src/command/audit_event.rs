@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{AuditEvent, AuditEventStatus, AuditStats, OrbitError};
-use orbit_store::{AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole};
+use orbit_store::{
+    AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
+    AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
+};
 
 use crate::OrbitRuntime;
 
@@ -94,6 +97,28 @@ impl OrbitRuntime {
         since: Option<&DateTime<Utc>>,
     ) -> Result<Vec<AuditToolCallCountsByRole>, OrbitError> {
         self.stores().audit_events().tool_call_counts_by_role(since)
+    }
+
+    /// Per-(surface, role) tool-call counts where `tool_name` matches
+    /// `orbit.<surface>.<verb>`. Drives the public scoreboard's
+    /// per-Orbit-surface usage sections.
+    pub fn audit_tool_call_counts_by_surface_and_role(
+        &self,
+        since: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<AuditToolCallCountsBySurfaceAndRole>, OrbitError> {
+        self.stores()
+            .audit_events()
+            .tool_call_counts_by_surface_and_role(since)
+    }
+
+    /// Top (role, tool_name) pairs from the audit log, restricted to
+    /// `orbit.*` tool names. `limit` caps the result count after sorting.
+    pub fn audit_top_tool_calls(
+        &self,
+        since: Option<&DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<Vec<AuditTopToolCall>, OrbitError> {
+        self.stores().audit_events().top_tool_calls(since, limit)
     }
 }
 

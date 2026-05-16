@@ -1,4 +1,4 @@
-use orbit_common::types::OrbitError;
+use orbit_common::types::{NotFoundKind, OrbitError};
 use rmcp::model::CallToolResult;
 use serde_json::{Value, json};
 
@@ -14,34 +14,47 @@ pub(crate) fn tool_error_result(err: &OrbitError) -> CallToolResult {
 }
 
 fn error_payload(err: &OrbitError) -> Value {
-    json!({
+    let mut payload = json!({
         "code": error_code(err),
         "message": err.to_string(),
-    })
+    });
+    if let Some(did_you_mean) = err.did_you_mean()
+        && let Some(object) = payload.as_object_mut()
+    {
+        object.insert("did_you_mean".to_string(), json!(did_you_mean));
+    }
+    payload
 }
 
 fn error_code(err: &OrbitError) -> &'static str {
     match err {
-        OrbitError::ToolNotFound(_) => "tool_not_found",
-        OrbitError::TaskNotFound(_)
-        | OrbitError::SkillNotFound(_)
-        | OrbitError::JobNotFound(_)
-        | OrbitError::JobRunNotFound(_)
-        | OrbitError::ActivityNotFound(_)
-        | OrbitError::AgentSessionNotFound(_)
-        | OrbitError::WorkspaceNotFound(_) => "not_found",
+        OrbitError::NotFound { kind, .. } => match kind {
+            NotFoundKind::Tool => "tool_not_found",
+            NotFoundKind::Task
+            | NotFoundKind::Skill
+            | NotFoundKind::Job
+            | NotFoundKind::JobRun
+            | NotFoundKind::Activity
+            | NotFoundKind::Adr
+            | NotFoundKind::DesignFeature
+            | NotFoundKind::Learning
+            | NotFoundKind::AgentSession
+            | NotFoundKind::Workspace => "not_found",
+        },
+        OrbitError::CompanionNotInstalled(_) => "companion_not_installed",
         OrbitError::PolicyDenied(_) => "policy_denied",
         OrbitError::TaskApprovalRequired(_) => "approval_required",
-        OrbitError::InvalidInput(_) => "invalid_input",
+        OrbitError::InvalidInput(_) | OrbitError::InvalidInputDiagnostic { .. } => "invalid_input",
         OrbitError::SkillValidation(_) | OrbitError::JobValidation(_) => "validation_failed",
-        OrbitError::TaskStatusTransition(_) | OrbitError::JobRunStateTransition(_) => {
-            "invalid_transition"
-        }
+        OrbitError::TaskStatusTransition(_)
+        | OrbitError::JobRunStateTransition(_)
+        | OrbitError::AdrInvalidTransition(_) => "invalid_transition",
         OrbitError::AgentProtocolViolation(_) => "agent_protocol_violation",
         OrbitError::UnsupportedAgentProvider(_) => "unsupported_provider",
         OrbitError::Execution(_) => "execution_failed",
         OrbitError::Store(_) => "store_error",
         OrbitError::WorkspaceError(_) => "workspace_error",
         OrbitError::Io(_) => "io_error",
+        OrbitError::Migration(_) => "migration_failed",
     }
 }

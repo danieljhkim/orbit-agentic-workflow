@@ -3,13 +3,6 @@ use std::path::{Component, Path, PathBuf};
 
 use orbit_common::types::OrbitError;
 
-pub(crate) fn ensure_dirs(dirs: &[&Path]) -> Result<(), OrbitError> {
-    for dir in dirs {
-        fs::create_dir_all(dir).map_err(|e| OrbitError::Io(e.to_string()))?;
-    }
-    Ok(())
-}
-
 pub(crate) fn read_child_dirs(dir: &Path) -> Result<Vec<PathBuf>, OrbitError> {
     let mut child_dirs = fs::read_dir(dir)
         .map_err(|e| OrbitError::Io(e.to_string()))?

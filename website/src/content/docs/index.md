@@ -1,14 +1,14 @@
 ---
 title: What Orbit Is
-description: "Orbit is a self-hosted runtime for fleets of coding agents — scoped, replayable, and bounded by policies you wrote."
+description: "Orbit is a durable, intent-tracked, auditable task layer for developers driving AI coding agents at high volume — local-first by design."
 tableOfContents: false
 ---
 
 <section class="orbit-hero">
   <div class="orbit-hero-copy">
-    <div class="orbit-hero-eyebrow">v0.4 · early access</div>
-    <h1 class="orbit-hero-headline">An agent runtime for engineering work.</h1>
-    <p class="orbit-hero-lede">Define a task, attach activities, dispatch agents in parallel. Every run is sandboxed, replayable, and bounded by policies you wrote.</p>
+    <div class="orbit-hero-eyebrow">v0.3 · early access</div>
+    <h1 class="orbit-hero-headline">The audit log for your AI coding agents.</h1>
+    <p class="orbit-hero-lede">Durable task lifecycle. Every commit attributed to a task; every agent action recorded as a structured audit event. Local-first, bring your own model provider.</p>
     <div class="orbit-hero-install">
       <span class="orbit-hero-install-prompt">$</span>
       <code>curl -sSf https://raw.githubusercontent.com/danieljhkim/orbit/main/install.sh | sh</code>
@@ -42,7 +42,7 @@ tableOfContents: false
   <a class="orbit-card" data-tag="03" href="./concepts/activities-jobs/">
     <div class="orbit-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.91a1 1 0 0 0 0-1.83z"/><path d="M22 17.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="M22 12.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></div>
     <h3>Activities &amp; jobs</h3>
-    <p>The atomic unit of work. Composable, sandboxed, replayable.</p>
+    <p>The atomic unit of work. Composable, replayable, scoped by filesystem policy.</p>
   </a>
   <a class="orbit-card" data-tag="04" href="./concepts/knowledge-graph/">
     <div class="orbit-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="3"/><path d="M5 9v6"/><circle cx="5" cy="18" r="3"/><path d="M12 3v18"/><circle cx="19" cy="6" r="3"/></svg></div>
@@ -63,22 +63,22 @@ tableOfContents: false
 
 <div class="orbit-section-title">Why Orbit</div>
 
-<div class="orbit-design-notes">
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Self-hosted</div>
-    <div class="orbit-design-note-value">Source never leaves your infrastructure. Bring your own model provider.</div>
+<div class="orbit-card-grid">
+  <div class="orbit-card">
+    <h3>Auditable</h3>
+    <p>Every tool call, prompt, and task transition is a structured event with agent identity attached. Append-only, exportable.</p>
   </div>
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Auditable</div>
-    <div class="orbit-design-note-value">Every agent action is captured. Replay any run, any time.</div>
+  <div class="orbit-card">
+    <h3>Intent-attributed</h3>
+    <p>Every commit carries a <code>task_id</code>. <code>git log --grep</code> reaches the prompt, plan, and review threads months later.</p>
   </div>
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Scope-first</div>
-    <div class="orbit-design-note-value">Filesystem policies bound exactly what an agent can touch.</div>
+  <div class="orbit-card">
+    <h3>Local-first</h3>
+    <p>Source never leaves your infrastructure. Bring your own model provider; no phone-home.</p>
   </div>
-  <div class="orbit-design-note">
-    <div class="orbit-design-note-key">Concurrent</div>
-    <div class="orbit-design-note-value">Worktree isolation lets agents work in parallel without colliding.</div>
+  <div class="orbit-card">
+    <h3>Safe parallel</h3>
+    <p>Worktree isolation and filesystem policies (OS-level on macOS via <code>sandbox-exec</code>) keep parallel agents from colliding.</p>
   </div>
 </div>
 

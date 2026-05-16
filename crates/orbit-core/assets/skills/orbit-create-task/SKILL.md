@@ -21,7 +21,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 ## Workflow
 
 1. Confirm objective, constraints, and done criteria.
-2. Inspect codebase context before creating the task.
+2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.semantic.search` is available (hybrid BM25 + cosine over indexed task fields) — useful when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-semantic`.
 3. Write clear acceptance criteria that define observable success.
 4. Add assumptions, risks, and rollback notes to the description when they matter.
 5. Call the task-add tool (`orbit_task_add` over MCP, or `orbit tool run orbit.task.add` from the shell) with the description, acceptance criteria, workspace, and exact `model` field in the JSON input. Orbit infers the agent family from known model names. Leave `plan` blank unless you have a compelling reason to pre-seed it.
@@ -31,6 +31,9 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 
 - Prefer canonical task context selectors in `context_files`: `file:path`, `dir:path`, and `symbol:path#name:kind`.
 - Raw legacy paths are still accepted, but Orbit silently upgrades them to canonical selector form on write.
+- Add `context_files` entries only for existing files, directories, or symbols expected to be modified or deleted by the task.
+- Do not add entries solely for files that will be created later, or for files that are only relevant background context.
+- Prefer `file:` selectors over `dir:` selectors whenever the expected changes can be named at file level; use `dir:` only when the directory itself is the smallest honest scope.
 - When a task needs precise code context, prefer `symbol:` selectors over whole-file scopes.
 
 ## Operating Rules
@@ -42,7 +45,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 - Strongly prefer supplying `acceptance_criteria`.
 - Blank or missing task companion files (`plan.md`, `execution-summary.md`) are treated as blank task fields. Repair them through `orbit.task.update` (`plan` or `execution_summary`), not manual file edits.
 - Orbit fills `created_by`, `planned_by`, and `implemented_by` automatically from execution context when those roles are authored during the task lifecycle.
-- Reserve task type `friction` for agent self-reports via `orbit-track-issues`. Do not use `friction` for normal task authoring.
+- Valid task types are `feature`, `bug`, `refactor`, and `chore`. Use `orbit-track-issues` for agent self-reported friction instead of task types.
 
 ## Task Quality Standards
 
@@ -89,7 +92,7 @@ orbit tool run orbit.task.add --input '{
   "context_files": ["file:src/lib.rs", "dir:src/command", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
-  "type": "<task|feature|epic|issue|bug|chore|refactor>",
+  "type": "<feature|bug|refactor|chore>",
   "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
 }'
 ```
@@ -104,7 +107,7 @@ orbit_task_add({
   "context_files": ["file:src/lib.rs", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
-  "type": "<task|feature|epic|issue|bug|chore|refactor>",
+  "type": "<feature|bug|refactor|chore>",
   "model": "<model_name>"
 })
 ```

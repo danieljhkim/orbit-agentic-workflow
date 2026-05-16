@@ -1,9 +1,13 @@
+pub mod adr;
 pub mod definitions;
+pub mod design;
 pub mod environment;
+pub mod learning;
 pub mod log;
 pub mod mcp;
 pub mod observe;
 pub mod run;
+pub mod semantic;
 pub mod task;
 pub mod web;
 
@@ -44,13 +48,17 @@ Environment:
 Operate:
   run         Run a workflow (ship, ship-auto, duel-plan, job)
   task        Create, update, and manage tasks
+  adr         Architecture Decision Record operations
+  design      Design doc operations
+  learning    Create, search, and curate project learnings
+  semantic    Manage local semantic-search indexing
 
 Observe:
   graph       Query the knowledge graph
   audit       Query the audit event log
   log         Tail the unified Orbit log feed
   metrics     Show metrics
-  scoreboard  Show scoreboards (friction, duel-plan)
+  scoreboard  Show scoreboards (duel-plan, PR, task review)
 
 Definitions:
   activity    View activity definitions
@@ -85,6 +93,10 @@ pub enum Commands {
     // ── Operate ──
     Run(run::RunCommand),
     Task(task::TaskCommand),
+    Adr(adr::AdrCommand),
+    Design(design::DesignCommand),
+    Learning(learning::LearningCommand),
+    Semantic(semantic::SemanticCommand),
 
     // ── Observe ──
     Graph(graph::GraphCommand),
@@ -121,6 +133,10 @@ impl Execute for Commands {
             Commands::Config(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => cmd.execute(runtime),
+            Commands::Adr(cmd) => cmd.execute(runtime),
+            Commands::Design(cmd) => cmd.execute(runtime),
+            Commands::Learning(cmd) => cmd.execute(runtime),
+            Commands::Semantic(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Log(cmd) => cmd.execute(runtime),
@@ -144,7 +160,10 @@ impl Execute for Commands {
 mod tests {
     use clap::Parser;
 
-    use super::{Cli, Commands, mcp::McpSubcommand, web::WebSubcommand};
+    use super::{
+        Cli, Commands, design::DesignSubcommand, mcp::McpSubcommand, semantic::SemanticSubcommand,
+        web::WebSubcommand,
+    };
 
     #[test]
     fn cli_parses_mcp_init() {
@@ -178,6 +197,67 @@ mod tests {
                 WebSubcommand::Serve(_) => {}
             },
             _ => panic!("expected top-level web command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_semantic_install_force() {
+        let cli = Cli::parse_from(["orbit", "semantic", "install", "--force"]);
+        match cli.command {
+            Commands::Semantic(command) => match command.command {
+                SemanticSubcommand::Install(args) => assert!(args.force),
+                _ => panic!("expected semantic install"),
+            },
+            _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_semantic_stats() {
+        let cli = Cli::parse_from(["orbit", "semantic", "stats"]);
+        match cli.command {
+            Commands::Semantic(command) => match command.command {
+                SemanticSubcommand::Stats(_) => {}
+                _ => panic!("expected semantic stats"),
+            },
+            _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_semantic_search() {
+        let cli = Cli::parse_from(["orbit", "semantic", "search", "semantic search design"]);
+        match cli.command {
+            Commands::Semantic(command) => match command.command {
+                SemanticSubcommand::Search(args) => {
+                    assert_eq!(args.query, "semantic search design")
+                }
+                _ => panic!("expected semantic search"),
+            },
+            _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_semantic_related() {
+        let cli = Cli::parse_from(["orbit", "semantic", "related", "T20260510-3"]);
+        match cli.command {
+            Commands::Semantic(command) => match command.command {
+                SemanticSubcommand::Related(args) => assert_eq!(args.task_id, "T20260510-3"),
+                _ => panic!("expected semantic related"),
+            },
+            _ => panic!("expected top-level semantic command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_design_check() {
+        let cli = Cli::parse_from(["orbit", "design", "check", "--warn-only"]);
+        match cli.command {
+            Commands::Design(command) => match command.command {
+                DesignSubcommand::Check(args) => assert!(args.warn_only),
+            },
+            _ => panic!("expected top-level design command"),
         }
     }
 

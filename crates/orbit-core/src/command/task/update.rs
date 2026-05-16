@@ -1,6 +1,6 @@
 use orbit_common::types::{
     OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus, normalize_task_dependencies,
-    prune_missing_context_files, validate_task_dependencies,
+    normalize_task_tags, prune_missing_context_files, validate_task_dependencies,
 };
 
 use crate::OrbitRuntime;
@@ -66,8 +66,7 @@ impl OrbitRuntime {
         let (canonical_agent, canonical_model) =
             self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;
-        let prune_root =
-            context_workspace_root(&self.paths().repo_root, task.workspace_path.as_deref());
+        let prune_root = context_workspace_root(&self.paths().repo_root, None);
 
         let dropped_context_files: Vec<String> = if let Some(candidates) =
             params.context_files.take()
@@ -93,6 +92,9 @@ impl OrbitRuntime {
             validate_task_dependencies(&self.list_tasks()?, Some(id), &normalized_dependencies)?;
             params.dependencies = Some(normalized_dependencies);
         }
+        if let Some(tags) = params.tags.take() {
+            params.tags = Some(normalize_task_tags(tags));
+        }
         if params.has_any_mutation() && task.status == TaskStatus::Archived {
             return Err(OrbitError::InvalidInput(format!(
                 "task {id} is {} and cannot be modified; unarchive or reopen it first",
@@ -114,7 +116,12 @@ impl OrbitRuntime {
                 ));
             }
             if target_status == TaskStatus::Friction && task.status != TaskStatus::Friction {
-                return Err(OrbitError::InvalidInput(friction_reentry_error(id, &task)));
+                let history = self.get_task_history(id)?;
+                return Err(OrbitError::InvalidInput(friction_reentry_error(
+                    id,
+                    task.status,
+                    &history,
+                )));
             }
             task.status
                 .validate_transition(target_status)
@@ -169,8 +176,6 @@ impl OrbitRuntime {
             })
         });
 
-        let old_status = task.status;
-        let target_status = params.status;
         let mut append_history: Vec<TaskHistoryEntry> = if dropped_context_files.is_empty() {
             Vec::new()
         } else {
@@ -187,8 +192,6 @@ impl OrbitRuntime {
                     actor: effective_label.clone(),
                     planned_by,
                     implemented_by,
-                    agent: canonical_agent.clone().map(Some),
-                    model: canonical_model.clone().map(Some),
                     status_note,
                     append_comments: append_comments.clone(),
                     append_history: append_history.clone(),
@@ -198,19 +201,16 @@ impl OrbitRuntime {
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
         })?;
 
-        if let Some(new_status) = target_status
-            && new_status != old_status
-        {
-            self.try_record_friction_transition(&task, old_status, new_status);
-        }
-
         Ok(updated)
     }
 }
 
-fn friction_reentry_error(id: &str, task: &Task) -> String {
-    if let Some(entry) = task
-        .history
+fn friction_reentry_error(
+    id: &str,
+    current_status: TaskStatus,
+    history: &[TaskHistoryEntry],
+) -> String {
+    if let Some(entry) = history
         .iter()
         .rev()
         .find(|entry| entry.from_status == Some(TaskStatus::Friction))
@@ -226,6 +226,6 @@ fn friction_reentry_error(id: &str, task: &Task) -> String {
 
     format!(
         "status 'friction' can only be set at creation; task '{id}' is currently '{}'",
-        task.status
+        current_status
     )
 }

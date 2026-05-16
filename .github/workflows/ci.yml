@@ -2,11 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, agent-main]
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,16 +16,16 @@ jobs:
     name: Check / Clippy / Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (2026-05-07)
         with:
           components: rustfmt, clippy
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/registry
@@ -40,13 +40,26 @@ jobs:
 
       - name: Create orbit task on CI failure
         if: failure() && github.event_name == 'pull_request'
+        env:
+          WORKFLOW: ${{ format('{0}', github.workflow) }}
+          PR_NUMBER: ${{ format('{0}', github.event.pull_request.number) }}
+          BRANCH: ${{ format('{0}', github.head_ref) }}
+          SHA: ${{ format('{0}', github.sha) }}
+          RUN_ID: ${{ format('{0}', github.run_id) }}
         run: |
-          cargo run -p orbit-cli --bin orbit -- tool run orbit.task.add --input '{
-            "title": "CI failure: ${{ github.workflow }} on PR #${{ github.event.pull_request.number }}",
-            "description": "## Problem\nCI failed on PR #${{ github.event.pull_request.number }} (`${{ github.head_ref }}`).\n\nCommit: `${{ github.sha }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "acceptance_criteria": ["CI passes on branch ${{ github.head_ref }}"],
-            "context": ".github/workflows/ci.yml",
-            "workspace": ".",
-            "priority": "high",
-            "type": "issue"
-          }'
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
+          payload="$(jq -n \
+            --arg title "CI failure: $WORKFLOW on PR #$PR_NUMBER" \
+            --arg description "## Problem\nCI failed on PR #$PR_NUMBER (\`$BRANCH\`).\n\nCommit: \`$SHA\`\nRun: $run_url" \
+            --arg branch "$BRANCH" \
+            '{
+              title: $title,
+              description: $description,
+              acceptance_criteria: ["CI passes on branch \($branch)"],
+              context: ".github/workflows/ci.yml",
+              workspace: ".",
+              priority: "high",
+              type: "issue"
+            }'
+          )"
+          cargo run -p orbit-cli --bin orbit -- tool run orbit.task.add --input "$payload"

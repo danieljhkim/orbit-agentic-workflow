@@ -12,9 +12,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::{Args, Subcommand};
-use orbit_common::types::{AuditEventStatus, ToolSchema};
+use orbit_common::types::{AuditEventStatus, ToolSchema, audit_execution_id};
 use orbit_core::command::tool::{ToolEntryPoint, audit_role_label};
-use orbit_core::{AuditEventInsertParams, OrbitError, OrbitRuntime, redact_sensitive_env_text};
+use orbit_core::{
+    AuditEventInsertParams, NotFoundKind, OrbitError, OrbitRuntime, redact_sensitive_env_text,
+};
 use orbit_mcp::McpHost;
 use serde_json::Value;
 
@@ -46,6 +48,13 @@ pub(crate) const TASK_TOOL_NAMES: &[&str] = &[
     "orbit.task.update",
 ];
 
+pub(crate) const FRICTION_TOOL_NAMES: &[&str] = &[
+    "orbit.friction.add",
+    "orbit.friction.list",
+    "orbit.friction.show",
+    "orbit.friction.stats",
+];
+
 pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
     "orbit.graph.callers",
     "orbit.graph.deps",
@@ -58,22 +67,49 @@ pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
     "orbit.graph.show",
 ];
 
+pub(crate) const SEMANTIC_READ_TOOL_NAMES: &[&str] =
+    &["orbit.semantic.search", "orbit.semantic.related"];
+
+pub(crate) const LEARNING_TOOL_NAMES: &[&str] = &[
+    "orbit.learning.add",
+    "orbit.learning.list",
+    "orbit.learning.search",
+    "orbit.learning.show",
+    "orbit.learning.update",
+    "orbit.learning.supersede",
+    "orbit.learning.prune",
+    "orbit.learning.reindex",
+];
+
 pub(crate) fn safe_mcp_tool_names() -> Vec<&'static str> {
-    let mut names = Vec::with_capacity(TASK_TOOL_NAMES.len() + GRAPH_READ_TOOL_NAMES.len());
+    let mut names = Vec::with_capacity(
+        TASK_TOOL_NAMES.len()
+            + FRICTION_TOOL_NAMES.len()
+            + GRAPH_READ_TOOL_NAMES.len()
+            + SEMANTIC_READ_TOOL_NAMES.len()
+            + LEARNING_TOOL_NAMES.len(),
+    );
     names.extend_from_slice(TASK_TOOL_NAMES);
+    names.extend_from_slice(FRICTION_TOOL_NAMES);
     names.extend_from_slice(GRAPH_READ_TOOL_NAMES);
+    names.extend_from_slice(SEMANTIC_READ_TOOL_NAMES);
+    names.extend_from_slice(LEARNING_TOOL_NAMES);
     names
 }
 
 pub(crate) fn is_mcp_tool_exposed(name: &str) -> bool {
-    TASK_TOOL_NAMES.contains(&name) || GRAPH_READ_TOOL_NAMES.contains(&name)
+    TASK_TOOL_NAMES.contains(&name)
+        || FRICTION_TOOL_NAMES.contains(&name)
+        || GRAPH_READ_TOOL_NAMES.contains(&name)
+        || SEMANTIC_READ_TOOL_NAMES.contains(&name)
+        || LEARNING_TOOL_NAMES.contains(&name)
 }
 
 fn ensure_mcp_tool_exposed(name: &str) -> Result<(), OrbitError> {
     if is_mcp_tool_exposed(name) {
         Ok(())
     } else {
-        Err(OrbitError::ToolNotFound(name.to_string()))
+        Err(OrbitError::not_found(NotFoundKind::Tool, name.to_string()))
     }
 }
 
@@ -215,13 +251,7 @@ fn record_mcp_preflight_failure(
         .unwrap_or_else(|_| ".".to_string());
 
     let params = AuditEventInsertParams {
-        execution_id: format!(
-            "exec-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ),
+        execution_id: audit_execution_id("exec"),
         command: "tool".to_string(),
         subcommand: Some(ToolEntryPoint::Mcp.audit_subcommand().to_string()),
         tool_name: Some(name.to_string()),
@@ -280,7 +310,7 @@ impl McpHost for EmptyMcpHost {
     }
 
     fn call_tool(&self, name: &str, _input: Value) -> Result<Value, OrbitError> {
-        Err(OrbitError::ToolNotFound(name.to_string()))
+        Err(OrbitError::not_found(NotFoundKind::Tool, name.to_string()))
     }
 }
 
@@ -292,8 +322,8 @@ mod tests {
     use orbit_mcp::McpHost;
 
     use super::{
-        GRAPH_READ_TOOL_NAMES, RuntimeMcpHost, TASK_TOOL_NAMES, is_mcp_tool_exposed,
-        safe_mcp_tool_names,
+        GRAPH_READ_TOOL_NAMES, LEARNING_TOOL_NAMES, RuntimeMcpHost, SEMANTIC_READ_TOOL_NAMES,
+        TASK_TOOL_NAMES, is_mcp_tool_exposed, safe_mcp_tool_names,
     };
 
     #[test]
@@ -325,6 +355,32 @@ mod tests {
                 "missing runtime graph read tool: {name}"
             );
             assert!(is_mcp_tool_exposed(name));
+        }
+
+        for name in SEMANTIC_READ_TOOL_NAMES {
+            assert!(
+                names.contains(*name),
+                "missing runtime semantic read tool: {name}"
+            );
+            assert!(is_mcp_tool_exposed(name));
+        }
+
+        for name in LEARNING_TOOL_NAMES {
+            assert!(
+                names.contains(*name),
+                "missing runtime learning tool: {name}"
+            );
+            assert!(is_mcp_tool_exposed(name));
+        }
+
+        for name in names
+            .iter()
+            .filter(|name| name.starts_with("orbit.learning."))
+        {
+            assert!(
+                safe_names.contains(name.as_str()),
+                "runtime learning tool missing from safe MCP surface: {name}"
+            );
         }
 
         for name in [
@@ -361,6 +417,20 @@ mod tests {
             );
         }
 
+        for name in SEMANTIC_READ_TOOL_NAMES {
+            assert!(
+                listed.contains(*name),
+                "client-visible MCP tool list missing semantic read tool: {name}"
+            );
+        }
+
+        for name in LEARNING_TOOL_NAMES {
+            assert!(
+                listed.contains(*name),
+                "client-visible MCP tool list missing learning tool: {name}"
+            );
+        }
+
         for name in [
             "orbit.graph.add",
             "orbit.graph.delete",
@@ -377,10 +447,25 @@ mod tests {
     mod audited_mcp_call_tests {
         use orbit_common::types::AuditEventStatus;
         use orbit_core::OrbitRuntime;
+        use orbit_core::TaskStatus;
+        use orbit_core::command::task::TaskAddParams;
         use orbit_mcp::McpHost;
         use serde_json::json;
 
         use super::super::{RuntimeMcpHost, audited_mcp_call};
+
+        fn create_task(runtime: &OrbitRuntime, status: TaskStatus) -> String {
+            runtime
+                .add_task(TaskAddParams {
+                    title: format!("Delete {status}"),
+                    description: "Exercise MCP task deletion guard.".to_string(),
+                    workspace_path: Some(".".to_string()),
+                    status: Some(status),
+                    ..Default::default()
+                })
+                .expect("create task")
+                .id
+        }
 
         #[test]
         fn preflight_failure_for_unknown_tool_records_failure_audit_row() {
@@ -428,6 +513,105 @@ mod tests {
             assert_eq!(events.len(), 1, "exactly one audit row for happy path");
             assert_eq!(events[0].subcommand.as_deref(), Some("run-mcp"));
             assert_eq!(events[0].status, AuditEventStatus::Success);
+        }
+
+        #[test]
+        fn learning_search_is_exposed_to_mcp_dispatch() {
+            let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+            let value = audited_mcp_call(&runtime, "orbit.learning.search", json!({}))
+                .expect("learning search dispatch ok");
+            assert!(value.is_array(), "learning search returns an array");
+        }
+
+        #[test]
+        fn task_delete_rejects_unforced_protected_status_and_audits_failure() {
+            let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+            let task_id = create_task(&runtime, TaskStatus::Backlog);
+            let host = RuntimeMcpHost {
+                runtime: runtime.clone(),
+            };
+
+            let result = host.call_tool(
+                "orbit.task.delete",
+                json!({ "id": task_id, "model": "gpt-5.5" }),
+            );
+
+            let error = result.expect_err("unforced protected delete fails");
+            assert!(error.to_string().contains(
+                "use --force to delete tasks not in proposed, friction, or rejected status"
+            ));
+            runtime
+                .get_task(&task_id)
+                .expect("unforced protected task remains");
+
+            let events = runtime
+                .list_audit_events(None, Some("orbit.task.delete".to_string()), None, None, 16)
+                .expect("list audit events");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].subcommand.as_deref(), Some("run-mcp"));
+            assert_eq!(events[0].status, AuditEventStatus::Failure);
+            assert_eq!(events[0].exit_code, 1);
+            assert!(
+                events[0]
+                    .error_message
+                    .as_deref()
+                    .is_some_and(|message| message.contains("use --force"))
+            );
+        }
+
+        #[test]
+        fn task_delete_allows_unforced_proposed_and_rejected_tasks_over_mcp() {
+            let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+            let host = RuntimeMcpHost {
+                runtime: runtime.clone(),
+            };
+
+            for status in [TaskStatus::Proposed, TaskStatus::Rejected] {
+                let task_id = create_task(&runtime, status);
+                let value = host
+                    .call_tool(
+                        "orbit.task.delete",
+                        json!({ "id": task_id, "model": "gpt-5.5" }),
+                    )
+                    .expect("unprotected delete succeeds");
+                assert_eq!(value, json!({ "id": task_id, "deleted": true }));
+            }
+
+            let events = runtime
+                .list_audit_events(None, Some("orbit.task.delete".to_string()), None, None, 16)
+                .expect("list audit events");
+            assert_eq!(events.len(), 2);
+            assert!(events.iter().all(|event| {
+                event.subcommand.as_deref() == Some("run-mcp")
+                    && event.status == AuditEventStatus::Success
+            }));
+        }
+
+        #[test]
+        fn task_delete_allows_forced_protected_status_over_mcp_and_audits_success() {
+            let runtime = OrbitRuntime::in_memory().expect("build test runtime");
+            let task_id = create_task(&runtime, TaskStatus::InProgress);
+            let host = RuntimeMcpHost {
+                runtime: runtime.clone(),
+            };
+
+            let value = host
+                .call_tool(
+                    "orbit.task.delete",
+                    json!({ "id": task_id, "force": true, "model": "gpt-5.5" }),
+                )
+                .expect("forced protected delete succeeds");
+
+            assert_eq!(value, json!({ "id": task_id, "deleted": true }));
+            assert!(runtime.get_task(&task_id).is_err(), "task was deleted");
+
+            let events = runtime
+                .list_audit_events(None, Some("orbit.task.delete".to_string()), None, None, 16)
+                .expect("list audit events");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].subcommand.as_deref(), Some("run-mcp"));
+            assert_eq!(events[0].status, AuditEventStatus::Success);
+            assert_eq!(events[0].exit_code, 0);
         }
     }
 }

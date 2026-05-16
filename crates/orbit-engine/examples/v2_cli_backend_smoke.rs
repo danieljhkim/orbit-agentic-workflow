@@ -1,3 +1,12 @@
+#![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
+
 //! v2 `backend: cli` smoke suite — T20260419-0104.
 //!
 //! Exercises the new §3.1 dispatch path, the §7.6 envelope events, the §6
@@ -26,7 +35,7 @@ use orbit_common::types::activity_job::{
     JobV2StepBody, LoopBlock, OnDenial, Provider, TargetStep, load_activity_asset,
     resolve_job_backends, validate_job_loop_session_backends,
 };
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, ResolvedCliExecutor, V2AuditWriter, V2DispatchInput, V2RuntimeHost,
     dispatch_v2_activity,
 };
@@ -584,6 +593,7 @@ impl V2RuntimeHost for ScriptHost {
 
     fn tool_context_for_activity(
         &self,
+        _run_id: Option<&str>,
         _fs_profile: Option<&str>,
         _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
     ) -> orbit_tools::ToolContext {
@@ -615,6 +625,7 @@ impl V2RuntimeHost for NullCliHost {
 
     fn tool_context_for_activity(
         &self,
+        _run_id: Option<&str>,
         _fs_profile: Option<&str>,
         _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
     ) -> orbit_tools::ToolContext {

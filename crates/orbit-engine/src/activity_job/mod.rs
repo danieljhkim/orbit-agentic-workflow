@@ -14,6 +14,7 @@ pub mod job_executor;
 pub mod jsonl_sink;
 pub mod orbit_tool_executor;
 pub mod tool_enforcement;
+pub mod workspace;
 
 pub use agent_loop_driver::{
     drive_agent_loop, drive_agent_loop_with_session, drive_agent_loop_with_tool_context,
@@ -32,3 +33,4 @@ pub use job_executor::{
 pub use jsonl_sink::V2JsonlSink;
 pub use orbit_tool_executor::OrbitToolCallExecutor;
 pub use tool_enforcement::{EnforcedAuditSink, EnforcementDecision};
+pub use workspace::resolve_subprocess_cwd;

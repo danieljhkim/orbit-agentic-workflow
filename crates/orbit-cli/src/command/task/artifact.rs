@@ -66,7 +66,7 @@ impl Execute for TaskArtifactPutArgs {
             model,
             json,
         } = self;
-        let artifact = TaskArtifact::from_utf8_source_file(&source_path, artifact_path.as_deref())?;
+        let artifact = TaskArtifact::from_source_file(&source_path, artifact_path.as_deref())?;
         let artifact_path = artifact.path.clone();
         let task = runtime.update_task_with_identity(
             &id,
@@ -162,7 +162,7 @@ mod tests {
             .expect("read task artifacts");
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].path, "reports/summary.md");
-        assert_eq!(artifacts[0].content, "stored\n");
+        assert_eq!(artifacts[0].text_content(), Some("stored\n"));
     }
 
     fn test_runtime() -> (tempfile::TempDir, OrbitRuntime, PathBuf) {

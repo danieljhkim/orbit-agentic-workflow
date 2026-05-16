@@ -1,0 +1,7 @@
+[mcp_servers.orbit]
+args = [
+    "mcp",
+    "serve",
+]
+command = "orbit"
+enabled = true

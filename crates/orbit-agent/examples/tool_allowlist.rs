@@ -1,3 +1,12 @@
+#![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
+
 //! Tool-allowlist enforcement demonstrated against the real Anthropic
 //! transport: an allowlist of `["fs.read"]` with a user prompt that pressures
 //! the model to call `fs.delete`. The loop must emit a `PolicyDenial` audit

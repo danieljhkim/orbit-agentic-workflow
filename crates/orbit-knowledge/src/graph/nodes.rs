@@ -11,13 +11,29 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum LeafKind {
     Function,
+    FunctionDeclaration,
     Method,
+    SingletonMethod,
     Class,
+    SingletonClass,
+    Package,
+    Object,
+    CompanionObject,
+    Namespace,
+    Enum,
     Struct,
+    Record,
     Interface,
+    TypeAlias,
     Trait,
     Impl,
+    Property,
     Field,
+    Event,
+    Delegate,
+    Global,
+    Macro,
+    Constant,
     Module,
     /// Markdown ATX heading (`#`–`######`). `depth` is 1–6. Added T20260422-1540.
     Section {
@@ -34,13 +50,29 @@ impl fmt::Display for LeafKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::Function => "function",
+            Self::FunctionDeclaration => "function_declaration",
             Self::Method => "method",
+            Self::SingletonMethod => "singleton_method",
             Self::Class => "class",
+            Self::SingletonClass => "singleton_class",
+            Self::Package => "package",
+            Self::Object => "object",
+            Self::CompanionObject => "companion_object",
+            Self::Namespace => "namespace",
+            Self::Enum => "enum",
             Self::Struct => "struct",
+            Self::Record => "record",
             Self::Interface => "interface",
+            Self::TypeAlias => "type_alias",
             Self::Trait => "trait",
             Self::Impl => "impl",
+            Self::Property => "property",
             Self::Field => "field",
+            Self::Event => "event",
+            Self::Delegate => "delegate",
+            Self::Global => "global",
+            Self::Macro => "macro",
+            Self::Constant => "constant",
             Self::Module => "module",
             Self::Section { .. } => "section",
             Self::ConfigKey => "config_key",
@@ -104,19 +136,6 @@ pub struct BaseNodeFields {
     pub lock_owner: Option<String>,
     #[serde(default)]
     pub lock_reason: String,
-    /// Sorted, deduplicated task IDs (without surrounding brackets) parsed from
-    /// commit messages touching this node. Populated by the attribute-history
-    /// pipeline stage; see `pipeline::attribute` (T20260421-0528).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub task_ids: Vec<String>,
-    /// Set to `true` when both sides of a merge-commit touched this node.
-    /// Informational — git already resolved the text-level conflict.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub structural_conflict: bool,
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 // ---------------------------------------------------------------------------

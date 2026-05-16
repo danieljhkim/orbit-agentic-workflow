@@ -42,6 +42,10 @@ impl RuntimeHost for OrbitRuntime {
         )))
     }
 
+    fn cancel_job_run(&self, run_id: &str) -> Result<(), OrbitError> {
+        OrbitRuntime::cancel_job_run(self, run_id).map(|_| ())
+    }
+
     fn validate_activity_target_exists(
         &self,
         _target_type: JobTargetType,
@@ -52,8 +56,8 @@ impl RuntimeHost for OrbitRuntime {
         )))
     }
 
-    fn get_job(&self, _job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
-        Ok(None)
+    fn get_job(&self, job_id: &str) -> Result<Option<orbit_common::types::Job>, OrbitError> {
+        OrbitRuntime::get_job(self, job_id)
     }
 
     fn resolved_agent_model_pair(&self, agent_cli: &str) -> Option<AgentModelPair> {
@@ -108,7 +112,6 @@ impl RuntimeHost for OrbitRuntime {
             job: None,
             agent_cli: agent_cli.to_string(),
             model: model.map(ToOwned::to_owned),
-            model_tier: None,
             timeout_seconds,
             env_extra: Vec::new(),
             env_set: HashMap::new(),
@@ -160,6 +163,17 @@ impl RuntimeHost for OrbitRuntime {
         self.context.graph_editing()
     }
 
+    fn actor_model_identity(&self) -> Option<String> {
+        matches!(self.actor().kind, crate::context::ActorKind::Agent)
+            .then(|| self.actor_label().trim())
+            .filter(|label| !label.is_empty())
+            .map(ToOwned::to_owned)
+    }
+
+    fn pr_config(&self) -> orbit_engine::PrConfig {
+        OrbitRuntime::pr_config(self).clone()
+    }
+
     fn scoreboard_dir(&self) -> &std::path::Path {
         &self.context.paths().scoreboard_dir
     }
@@ -170,10 +184,7 @@ impl RuntimeHost for OrbitRuntime {
         execution: &ExecutionContext,
         trace: &InvocationTrace,
     ) -> Result<(), OrbitError> {
-        let requested_model = execution
-            .model
-            .as_deref()
-            .or(execution.model_tier.as_deref());
+        let requested_model = execution.model.as_deref();
         let (agent, model) =
             self.canonical_agent_model_identity(Some(&execution.agent_cli), requested_model);
         let store = open_invocation_store(self)?;
@@ -247,7 +258,7 @@ mod tests {
                 command: Some(fake_agent.display().to_string()),
                 args: Vec::new(),
                 stdout_format: None,
-                models: HashMap::new(),
+                model_pair_override: None,
                 timeout_seconds: None,
                 env: HashMap::new(),
                 sandbox: None,

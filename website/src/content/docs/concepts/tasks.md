@@ -16,10 +16,34 @@ Use tasks for work an agent can execute and a human can review. Do not use a tas
 The common path is:
 
 ```text
-proposed -> backlog -> in_progress -> review -> done
+proposed -> backlog -> in-progress -> review -> done
 ```
 
 Human-created direct tasks may enter the backlog immediately. Proposed tasks must be approved before normal execution. Review tasks are approved or rejected after the agent produces work.
+
+### Statuses
+
+| Status        | Purpose |
+|---------------|---------|
+| `proposed`    | Awaiting human approval before entering the backlog. |
+| `friction`    | Agent self-reported friction awaiting triage. Creation-only — a task cannot return to `friction` after triage. |
+| `backlog`     | Approved and queued for work. |
+| `someday`     | Future-scoped — wanted but not yet actionable. Agents skip `someday` tasks. |
+| `in-progress` | Actively being worked on. |
+| `review`      | Implementation complete; awaiting review/merge. Requires an `execution_summary`. |
+| `done`        | Accepted and closed. **Terminal** — no further transitions. |
+| `blocked`     | Temporarily paused (waiting on a dependency or decision). |
+| `archived`    | Soft-deleted. Restorable to `backlog` via the dedicated `orbit task archive` command. |
+| `rejected`    | Declined. Can be re-opened to `backlog` or `in-progress`. |
+
+### Transition rules
+
+Transitions are permissive by default — any move is allowed unless it violates one of these invariants:
+
+1. **Done is terminal.** No transitions out of `done`.
+2. **Archived requires `orbit task archive`.** A bare `--status archived` update is rejected.
+3. **Friction is creation-only.** A task that leaves `friction` cannot return.
+4. **`in-progress → review` requires an `execution_summary`.**
 
 ## Quality Bar
 

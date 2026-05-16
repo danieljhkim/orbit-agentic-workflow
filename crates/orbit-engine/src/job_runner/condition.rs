@@ -3,7 +3,7 @@
 //! Evaluates `StepCondition::Expr` strings against a `TemplateContext`.
 //!
 //! Expression syntax (post template resolution):
-//!   `<lhs> == <rhs>` | `<lhs> != <rhs>`
+//!   `true` | `false` | `<lhs> == <rhs>` | `<lhs> != <rhs>`
 //!   Combined with `&&` (AND, higher precedence) and `||` (OR).
 //!
 //! Examples:
@@ -51,7 +51,8 @@ pub fn evaluate_bool_expr(expr: &str, ctx: &TemplateContext) -> Result<bool, Orb
 ///   expr     = or_expr
 ///   or_expr  = and_expr ('||' and_expr)*
 ///   and_expr = atom ('&&' atom)*
-///   atom     = value ('==' | '!=') value
+///   atom     = boolean-literal | value ('==' | '!=') value
+///   boolean-literal = 'true' | 'false'
 ///   value    = non-whitespace token (unquoted)
 fn evaluate_expr(resolved: &str) -> Result<bool, OrbitError> {
     let or_groups: Vec<&str> = split_keep_delim(resolved, "||");
@@ -82,7 +83,11 @@ fn split_keep_delim<'a>(input: &'a str, delim: &str) -> Vec<&'a str> {
 
 /// Evaluate a single comparison atom: `<lhs> == <rhs>` or `<lhs> != <rhs>`.
 fn evaluate_atom(atom: &str) -> Result<bool, OrbitError> {
-    if let Some((lhs, rhs)) = atom.split_once("!=") {
+    if atom == "true" {
+        Ok(true)
+    } else if atom == "false" {
+        Ok(false)
+    } else if let Some((lhs, rhs)) = atom.split_once("!=") {
         // Check != before == to avoid matching the = inside !=
         // But we need to be careful: "a != b" should match here, not "a !" + "= b"
         // split_once on "!=" is correct since != is a 2-char sequence.
@@ -91,7 +96,7 @@ fn evaluate_atom(atom: &str) -> Result<bool, OrbitError> {
         Ok(lhs.trim() == rhs.trim())
     } else {
         Err(OrbitError::InvalidInput(format!(
-            "condition atom must contain '==' or '!=', got: '{atom}'"
+            "condition atom must be 'true', 'false', or contain '==' or '!=', got: '{atom}'"
         )))
     }
 }
@@ -110,6 +115,42 @@ mod tests {
     fn test_simple_neq() {
         assert!(evaluate_expr("success != failed").unwrap());
         assert!(!evaluate_expr("success != success").unwrap());
+    }
+
+    #[test]
+    fn test_neq_numeric_string_zero() {
+        assert!(!evaluate_expr("0 != 0").unwrap());
+        assert!(evaluate_expr("3 != 0").unwrap());
+    }
+
+    #[test]
+    fn test_rendered_bundle_count_skip_guard() {
+        let mut ctx = TemplateContext::default();
+        ctx.steps.insert(
+            "validate_bundles".to_string(),
+            serde_json::json!({
+                "output": {
+                    "bundle_count": 0
+                }
+            }),
+        );
+
+        let result = evaluate_bool_expr(
+            "{{ steps.validate_bundles.output.bundle_count }} != 0",
+            &ctx,
+        )
+        .unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_boolean_literals() {
+        let ctx = TemplateContext::default();
+
+        assert!(evaluate_bool_expr("true", &ctx).unwrap());
+        assert!(!evaluate_bool_expr("false", &ctx).unwrap());
+        assert!(evaluate_expr("false || true && true").unwrap());
+        assert!(!evaluate_expr("true && false || false").unwrap());
     }
 
     #[test]

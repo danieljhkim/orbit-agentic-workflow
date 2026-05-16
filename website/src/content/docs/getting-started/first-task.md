@@ -9,6 +9,8 @@ sidebar:
 
 Tasks are the durable unit of work. Create one with concrete acceptance criteria.
 
+Tasks require explicit acceptance criteria because agents use them to self-evaluate completion and determine when their work is actually done.
+
 ```bash
 TASK_ID=$(orbit task add \
   --title "Create orbit-hello.txt" \
@@ -18,6 +20,9 @@ TASK_ID=$(orbit task add \
   --workspace .)
 
 echo "$TASK_ID"
+
+# or ask an agent to create a task
+"create an orbit task for ..."
 ```
 
 ## Inspect It

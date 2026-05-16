@@ -39,6 +39,7 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
       components: {
         ThemeProvider: './src/components/ThemeProvider.astro',
+        ThemeSelect: './src/components/ThemeSelect.astro',
         Footer: './src/components/Footer.astro',
       },
       editLink: {
@@ -56,7 +57,7 @@ export default defineConfig({
             { slug: 'getting-started', label: 'Overview' },
             { slug: 'getting-started/install', label: 'Install Orbit' },
             { slug: 'getting-started/first-task', label: 'First Task' },
-            { slug: 'getting-started/first-activity-run', label: 'First Activity Run' },
+            { slug: 'getting-started/workflows', label: 'Default Workflows' },
           ],
         },
         {
@@ -112,6 +113,26 @@ export default defineConfig({
               label: 'Graph Benchmarks',
               autogenerate: {
                 directory: 'benchmarks/graph',
+                collapsed: true,
+              },
+              collapsed: true,
+            },
+          ],
+        },
+        {
+          label: 'Metrics',
+          items: [
+            { slug: 'metrics/operations', label: 'Operations' },
+            { slug: 'metrics/scoreboard', label: 'Scoreboard' },
+          ],
+        },
+        {
+          label: 'Tasks',
+          items: [
+            {
+              label: 'By ID',
+              autogenerate: {
+                directory: 'tasks',
                 collapsed: true,
               },
               collapsed: true,

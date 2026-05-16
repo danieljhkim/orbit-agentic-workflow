@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-22
+**Last updated:** 2026-05-12
 
 > *"The agent gets to retry each checkpoint like Bill Murray in Groundhog Day — it wakes up fresh but remembers what it learned."*
 
@@ -10,7 +10,7 @@ Groundhog is Orbit's checkpoint-oriented execution mode for HTTP-backed coding a
 
 > **v1 release scope.** Groundhog is **not** part of the v1 release surface. v1 ships `backend: cli` as the only supported agent invocation path; Groundhog requires the HTTP `LoopTransport` and is therefore preview-only in v1. This document continues to describe Groundhog for design continuity — expect it to land as a supported surface in a v2 release once HTTP coverage is complete.
 
-Today Groundhog exists as a partial but load-bearing implementation across `orbit-common`, `orbit-engine`, and `orbit-tools`. [2_design.md](./2_design.md) describes that implementation as it exists now, including the places where the current runner still carries legacy shapes. [implementation_status.md](./implementation_status.md) tracks the remaining cleanup and implementation gaps. [3_vision.md](./3_vision.md) captures the next design questions and the longer arc.
+Today Groundhog exists as a partial but load-bearing implementation across `orbit-common`, `orbit-engine`, and `orbit-tools`. Read this overview first, then [2_design.md](./2_design.md) for the current contract and gap ledger, [3_vision.md](./3_vision.md) for open questions, [4_decisions.md](./4_decisions.md) for ADRs, and the focused `specs/` and `references/` files only when you need subsystem detail.
 
 ---
 
@@ -55,7 +55,7 @@ Mechanical success criteria belong to the runtime, not the agent's self-report. 
 | Concern | Where it lives | Primary task ID |
 |---------|----------------|-----------------|
 | Structured checkpoint plan parsing | `crates/orbit-common/src/types/task_plan.rs` | [T20260420-0509-2] |
-| Groundhog activity runner | `crates/orbit-engine/src/activity_job/groundhog.rs` | [T20260420-0510-2] |
+| Groundhog activity runner | `crates/orbit-engine/src/activity_job/groundhog/mod.rs` plus sibling submodules | [T20260420-0510-2], [T20260509-19] |
 | Git-backed snapshots and rewind | `crates/orbit-engine/src/workspace_snapshot.rs` | [T20260420-0509-4] |
 | Chronicle types and serializer helpers | `crates/orbit-common/src/groundhog.rs` | [T20260420-0509] |
 | Groundhog builtin verbs | `crates/orbit-tools/src/builtin/orbit/groundhog_*` | [T20260420-0509-3] |
@@ -71,5 +71,7 @@ Mechanical success criteria belong to the runtime, not the agent's self-report. 
 - **[T20260420-0509-4]** — Add Groundhog workspace snapshots and scratch-branch rewind mechanics.
 - **[T20260420-0510]** — Add the shared runtime checkpoint verifier.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260430-21]** — Shorten Groundhog design docs and remove obsolete top-level duplicates.
+- **[T20260509-19]** — Split the Groundhog activity runner into focused engine submodules.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

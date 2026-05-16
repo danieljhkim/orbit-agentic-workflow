@@ -10,13 +10,16 @@
 # Cycle semantics
 # - `orchestrate_loop` wraps the `epic_orchestrator` activity. Each
 #   iteration is one cycle: refresh task state, decide READY, dispatch
-#   bundles, wait, then refresh task state again.
+#   bundles, wait deterministically on the dispatched child runs, then refresh
+#   task state again.
 # - The inner step declares `session: epic_session`, so the agent's
 #   conversation history persists across iterations (executor session
 #   map, job_v2.rs TargetStep.session). The orchestrator can therefore
 #   reference its own prior reasoning.
 # - `break_when: "{{ steps.refresh_epic.output.all_terminal }} == true"`
 #   keys off deterministic task state, not the agent's final response.
+#   `review` counts as terminal for this pipeline because the normal
+#   PR/local child workflows stop at that human handoff state.
 # - `max_iterations: 20` is the structural ceiling on cycles — a
 #   literal because `LoopBlock.max_iterations` is `u32` (not templated).
 #   Callers who need a different ceiling must fork this YAML.
@@ -45,6 +48,7 @@ spec:
   default_input:
     max_cycles: 20
     max_parallel_bundles: 3
+    iteration_wait_seconds: 7200
     mode: pr
 
   steps:
@@ -71,6 +75,13 @@ spec:
               subtasks: "{{ steps.current_epic.output.subtasks }}"
               max_parallel_bundles: "{{ input.max_parallel_bundles }}"
               mode: "{{ input.mode }}"
+
+          - id: wait_dispatched
+            when: "{{ steps.orchestrator_iter.output.dispatched_run_ids }} != []"
+            target: activity:pipeline_wait
+            default_input:
+              run_ids: "{{ steps.orchestrator_iter.output.dispatched_run_ids }}"
+              timeout_seconds: "{{ input.iteration_wait_seconds }}"
 
           - id: refresh_epic
             target: activity:load_epic

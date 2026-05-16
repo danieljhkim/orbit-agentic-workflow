@@ -6,13 +6,11 @@ use orbit_exec::{EnvironmentMode, ExecRequest, NoSandbox, StdinMode, run_process
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use serde_json::Value as JsonValue;
-
 use super::ActivityExecutor;
 use super::helpers::{execution_template_context_with_env, validate_activity_output_schema};
 use crate::context::{
     ACTIVITY_EXECUTION_FAILED, AttemptOutcome, EnvironmentHost, ExecutionContext, ExecutorHost,
-    TaskReadHost, state_env_vars,
+    state_env_vars,
 };
 use crate::template::{TemplateContext, render};
 use orbit_common::types::InvocationTrace;
@@ -52,16 +50,7 @@ impl ActivityExecutor for CliCommandExecutor {
                 cli_env.push((key.clone(), value.clone()));
             }
         }
-        let mut template_context = execution_template_context_with_env(execution, cli_env);
-        // When a cli_command step has task_id in its input, load the task and
-        // inject its fields into the template context so {{workspace_path}}
-        // resolves from the task without explicit pipeline input.
-        if template_context.workspace_path.is_none()
-            && let Some(task_id) = execution.input.get("task_id").and_then(JsonValue::as_str)
-            && let Ok(task) = cli_host.get_task(task_id)
-        {
-            template_context.workspace_path = task.workspace_path;
-        }
+        let template_context = execution_template_context_with_env(execution, cli_env);
         match execute(
             execution,
             &execution.activity.spec_config,

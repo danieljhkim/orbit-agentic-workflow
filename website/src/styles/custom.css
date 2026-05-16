@@ -58,6 +58,22 @@ html {
   scroll-padding-top: 5rem;
 }
 
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sl-color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sl-color-hairline-light);
+  border: 2px solid var(--sl-color-bg);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sl-color-gray-4);
+}
+
 body {
   background: var(--sl-color-bg);
   letter-spacing: 0;
@@ -79,24 +95,8 @@ body {
 }
 
 .sl-markdown-content h2 {
-  border-top: 0px solid var(--sl-color-hairline-light);
   margin-top: 5rem;
   padding-top: 2rem;
-  position: relative;
-}
-
-.sl-markdown-content h2::before {
-  background: var(--sl-color-bg);
-  border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 999px;
-  box-shadow: 0 0 0 4px var(--sl-color-bg);
-  content: "";
-  height: 0.52rem;
-  left: 50%;
-  position: absolute;
-  top: -0.3rem;
-  transform: translateX(-50%);
-  width: 0.52rem;
 }
 
 .sl-markdown-content :is(p, li) {
@@ -195,8 +195,8 @@ body {
 
 .orbit-hero-install {
   align-items: center;
-  background: var(--sl-color-bg-inline-code);
-  border: 1px solid var(--sl-color-hairline-light);
+  background: transparent;
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 8px;
   display: flex;
   font-family: var(--sl-font-mono);
@@ -342,6 +342,8 @@ body {
   border-radius: 999px;
   height: 0.55rem;
   width: 0.55rem;
+  animation: orbit-pulse 3s ease-in-out infinite;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--sl-color-text) 50%, transparent);
 }
 
 .orbit-section-title {
@@ -367,19 +369,19 @@ body {
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 0 0 2rem;
+  margin: 1.5rem 0 2rem;
 }
 
 .orbit-card {
   background: var(--sl-color-bg-inline-code);
   border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--sl-color-text);
   display: block;
   padding: 1.25rem;
   position: relative;
   text-decoration: none;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
 }
 
 .orbit-card[data-tag]::before {
@@ -406,9 +408,10 @@ body {
 
 .orbit-card:hover,
 .orbit-card:focus-visible {
-  background: color-mix(in srgb, var(--sl-color-accent) 5%, transparent);
+  background: var(--sl-color-accent-low);
   border-color: var(--sl-color-accent);
   outline: none;
+  transform: translateY(-1px);
 }
 
 .orbit-card:hover h3,
@@ -431,48 +434,13 @@ body {
   margin: 0;
 }
 
-.orbit-design-notes {
-  align-items: stretch;
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 0 0 2rem;
-}
-
 /* Starlight applies `margin-top: var(--sl-content-gap-y)` to any
    element preceded by a sibling inside `.sl-markdown-content`. In a
    grid, that pushes every item except the first one down inside its
    cell, breaking row alignment. Zero it out for our grid children. */
-.orbit-card-grid > *,
-.orbit-design-notes > * {
+.orbit-card-grid > * {
   margin-top: 0;
 }
-
-.orbit-design-note {
-  background: var(--sl-color-bg-inline-code);
-  border: 1px solid var(--sl-color-hairline-light);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 1rem;
-}
-
-.orbit-design-note-key {
-  color: var(--sl-color-text-accent);
-  font-family: var(--sl-font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
-  margin-bottom: 0.5rem;
-  text-transform: uppercase;
-}
-
-.orbit-design-note-value {
-  color: var(--sl-color-gray-3);
-  font-size: 0.92rem;
-  line-height: 1.55;
-}
-
 .orbit-footer {
   border-top: 1px solid var(--sl-color-hairline-light);
   color: var(--sl-color-gray-3);
@@ -521,6 +489,17 @@ body {
   }
 }
 
+@keyframes orbit-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .orbit-hero-diagram::after,
   .orbit-dot {
@@ -529,8 +508,14 @@ body {
 }
 
 @media (max-width: 54rem) {
+  .sl-markdown-content table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
   .orbit-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .orbit-hero-headline {
@@ -543,9 +528,5 @@ body {
 
   .orbit-card-grid {
     grid-template-columns: 1fr;
-  }
-
-  .orbit-design-notes {
-    grid-template-columns: 1fr;
-  }
+}
 }

@@ -2,13 +2,15 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-30 (folded status-priority notes, [T20260430-21])
 
 This document captures where Groundhog should go next. It starts from the implementation built in [T20260420-0509], [T20260420-0509-2], [T20260420-0509-3], [T20260420-0509-4], [T20260420-0510], and [T20260420-0510-2], and treats everything below as a hypothesis rather than a promise. [2_design.md](./2_design.md) is the current contract; this file is the place to pressure-test that contract before we harden more of it.
 
 ---
 
 ## 1. Open Questions
+
+The highest-pressure questions are still deviation-era cleanup, shared-verifier adoption, persistence separation, approval-safe checkpoint materialization, and only-when-useful observability.
 
 ### 1.1 Separate prompt memory from audit record
 
@@ -136,5 +138,6 @@ None of these amount to a research contribution. If Groundhog earns its keep, it
 - **[T20260420-0509-4]** — Add Groundhog workspace snapshots and scratch-branch rewind mechanics.
 - **[T20260420-0510]** — Add the shared runtime checkpoint verifier.
 - **[T20260420-0510-2]** — Add the Groundhog v1 activity runner.
+- **[T20260430-21]** — Shorten Groundhog design docs and fold status-priority notes into numbered docs.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

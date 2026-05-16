@@ -6,13 +6,15 @@ const STATUS_ORDER = [
   "review",
   "blocked",
   "proposed",
-  "friction",
   "backlog",
   "someday",
   "rejected",
 ];
 
 const DEFAULT_INACTIVE_STATUSES = new Set(["someday"]);
+const STATUS_UPDATE_TARGETS = STATUS_ORDER
+  .filter((status) => !["friction", "rejected", "archived"].includes(status))
+  .concat(["done"]);
 
 const params = new URLSearchParams(window.location.search);
 function positiveIntParam(name, fallback) {
@@ -25,6 +27,7 @@ const AUDIT_LIMIT = positiveIntParam("audit", 50);
 const RUN_EVENTS_LIMIT = positiveIntParam("events", 100);
 
 const AUDIT_STATUSES = ["success", "failure", "denied"];
+const CANCELLABLE_RUN_STATES = new Set(["pending", "running"]);
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,11 +37,12 @@ let activeStatuses = new Set(
 );
 let lastTasks = [];
 let lastRuns = [];
-let lastDiagnostics = { metrics: [], friction: [] };
+let lastDiagnostics = { metrics: [], friction: [], errors: [] };
 let activeTab = "tasks";
 let activeDiagSubtab = "runs";
 let expandedTaskIds = new Set();
 let isRefreshing = false;
+let taskActionNotice = null;
 
 // Audit tab state
 let lastAudit = [];
@@ -70,6 +74,7 @@ let lastSummary = null;
 let activeRunId = null;
 let activeRunDetail = null;
 let activeRunEvents = [];
+let activeRunLogs = [];
 let activeRunSubtab = "steps";
 let expandedStepIndices = new Set();
 
@@ -112,6 +117,103 @@ function fetchJson(path) {
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
       return res.json();
     });
+}
+
+function postJson(path) {
+  return fetch(path, {
+    method: "POST",
+    headers: { accept: "application/json" },
+  }).then(async (res) => {
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new Error(body.error || `${path}: HTTP ${res.status}`);
+    }
+    return body;
+  });
+}
+
+function runIsCancellable(run) {
+  return CANCELLABLE_RUN_STATES.has(run && run.state);
+}
+
+function buildCancelRunButton(run, host) {
+  const btn = el("button", {
+    class: "action reject run-cancel",
+    text: "cancel",
+    title: `Cancel ${run.run_id}`,
+  });
+  btn.disabled = !runIsCancellable(run);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cancelRun(run.run_id, btn, host);
+  });
+  return btn;
+}
+
+function buildReplayRunButton(run, host) {
+  const btn = el("button", {
+    class: "action approve run-replay",
+    text: "Replay run",
+    title: `Replay ${run.run_id}`,
+  });
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    replayRun(run, btn, host);
+  });
+  return btn;
+}
+
+async function cancelRun(runId, btn, host) {
+  if (!runId) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>cancel`;
+  if (host) {
+    for (const node of host.querySelectorAll(".action-error")) node.remove();
+  }
+  try {
+    await postJson(`/api/runs/${encodeURIComponent(runId)}/cancel`);
+    await Promise.all([
+      fetchAndRenderRuns(),
+      activeRunId === runId ? fetchAndRenderRunDetail() : Promise.resolve(),
+      activeRunId === runId ? fetchAndRenderRunEvents() : Promise.resolve(),
+    ]);
+  } catch (e) {
+    if (host) {
+      host.appendChild(el("div", { class: "action-error", text: e.message || "cancel failed" }));
+    }
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+async function replayRun(run, btn, host) {
+  const runId = run && run.run_id;
+  if (!runId) return;
+  if (run.state === "running" && !window.confirm(`Replay still-running run ${runId}?`)) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>Replay run`;
+  if (host) {
+    for (const node of host.querySelectorAll(".action-error")) node.remove();
+  }
+  try {
+    const payload = await postJson(`/api/runs/${encodeURIComponent(runId)}/replay`);
+    if (!payload.run_id) throw new Error("replay response did not include run_id");
+    navigateToRun(payload.run_id);
+    fetchAndRenderRuns().catch(console.error);
+  } catch (e) {
+    if (host) {
+      host.appendChild(el("div", { class: "action-error", text: e.message || "replay failed" }));
+    }
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 }
 
 function syncNodes(container, newNodesArr) {
@@ -299,8 +401,8 @@ function buildTaskDetail(task) {
   return detail;
 }
 
-const APPROVE_STATUSES = new Set(["proposed", "friction", "review"]);
-const REJECT_STATUSES = new Set(["proposed", "friction", "review", "backlog"]);
+const APPROVE_STATUSES = new Set(["proposed", "review"]);
+const REJECT_STATUSES = new Set(["proposed", "review", "backlog"]);
 
 function buildActionsRow(task, detail) {
   const actions = el("div", { class: "actions" });
@@ -330,7 +432,56 @@ function buildActionsRow(task, detail) {
     });
     actions.appendChild(btn);
   }
+  const statusSelect = buildStatusUpdateControl(task, detail);
+  if (statusSelect) actions.appendChild(statusSelect);
   return actions;
+}
+
+function buildStatusUpdateControl(task, detail) {
+  const targets = STATUS_UPDATE_TARGETS.filter((status) => status !== task.status);
+  if (targets.length === 0) return null;
+
+  const select = el("select", {
+    class: "action status-update",
+    title: `Update status for ${task.id}`,
+  });
+  const placeholder = el("option", { text: "set status" });
+  placeholder.value = "";
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.appendChild(placeholder);
+
+  for (const status of targets) {
+    const option = el("option", { text: status });
+    option.value = status;
+    select.appendChild(option);
+  }
+
+  select.addEventListener("click", (e) => e.stopPropagation());
+  select.addEventListener("change", (e) => {
+    e.stopPropagation();
+    const targetStatus = select.value;
+    if (!targetStatus) return;
+    runAction(
+      task,
+      "status",
+      detail,
+      { status: targetStatus },
+      select,
+      {
+        method: "PATCH",
+        path: `/api/tasks/${encodeURIComponent(task.id)}`,
+        collapseOnSuccess: targetStatus === "done",
+        successNotice: targetStatus === "done"
+          ? `Task ${task.id} marked done; it is no longer shown in the default dashboard list.`
+          : null,
+        onFailure: () => {
+          select.value = "";
+        },
+      },
+    );
+  });
+  return select;
 }
 
 function showRejectForm(task, detail, actions) {
@@ -362,11 +513,11 @@ function showRejectForm(task, detail, actions) {
   ta.focus();
 }
 
-async function runAction(task, kind, detail, body, btnNode) {
-  // Disable buttons while in flight to prevent double-clicks
-  for (const b of detail.querySelectorAll("button.action")) b.disabled = true;
+async function runAction(task, kind, detail, body, btnNode, opts = {}) {
+  // Disable action controls while in flight to prevent double-clicks.
+  for (const b of detail.querySelectorAll(".action")) b.disabled = true;
   let oldText = "";
-  if (btnNode) {
+  if (btnNode && btnNode.tagName === "BUTTON") {
     oldText = btnNode.textContent;
     btnNode.innerHTML = `<span class="spinner"></span>wait`;
   }
@@ -374,8 +525,8 @@ async function runAction(task, kind, detail, body, btnNode) {
   const prior = detail.querySelector(".action-error");
   if (prior) prior.remove();
   try {
-    const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/${kind}`, {
-      method: "POST",
+    const res = await fetch(opts.path || `/api/tasks/${encodeURIComponent(task.id)}/${kind}`, {
+      method: opts.method || "POST",
       headers: body ? { "content-type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -389,19 +540,31 @@ async function runAction(task, kind, detail, body, btnNode) {
       }
       throw new Error(msg);
     }
-    expandedTaskIds.delete(task.id);
+    if (opts.collapseOnSuccess !== false) expandedTaskIds.delete(task.id);
+    if (opts.successNotice) taskActionNotice = opts.successNotice;
     await refreshDashboard();
   } catch (err) {
-    for (const b of detail.querySelectorAll("button.action")) b.disabled = false;
-    if (btnNode) btnNode.textContent = oldText;
+    for (const b of detail.querySelectorAll(".action")) b.disabled = false;
+    if (btnNode && btnNode.tagName === "BUTTON") btnNode.textContent = oldText;
+    if (opts.onFailure) opts.onFailure();
     const errEl = el("div", { class: "action-error", text: String(err.message || err) });
     detail.prepend(errEl);
   }
 }
 
+function takeTaskActionNotice() {
+  if (!taskActionNotice) return null;
+  const notice = el("div", { class: "task-action-notice", text: taskActionNotice });
+  notice.dataset.key = "task-action-notice";
+  notice.dataset.hash = taskActionNotice;
+  taskActionNotice = null;
+  return notice;
+}
+
 function renderTasks(tasks) {
   const body = $("tasks-body");
   const frag = document.createDocumentFragment();
+  const notice = takeTaskActionNotice();
   
   const filtered = filterTasks(tasks);
   $("tasks-count").textContent =
@@ -410,13 +573,15 @@ function renderTasks(tasks) {
       : `${filtered.length}/${tasks.length}`;
   if (filtered.length === 0) {
     const defaultText = tasks.length === 0 ? "No tasks available." : "No tasks match filter.";
-    syncNodes(body, [el("div", { class: "empty-state" }, [
+    const emptyState = el("div", { class: "empty-state" }, [
       el("div", { class: "icon", text: "✧" }),
       el("div", { class: "text", text: defaultText })
-    ])]);
+    ]);
+    syncNodes(body, notice ? [notice, emptyState] : [emptyState]);
     return;
   }
   const groups = new Map();
+  if (notice) frag.appendChild(notice);
   for (const t of filtered) {
     if (!groups.has(t.status)) groups.set(t.status, []);
     groups.get(t.status).push(t);
@@ -526,8 +691,12 @@ function fmtScoreboardCount(value) {
 }
 
 function formatScoreboardPair(agent, col) {
-  const left = asScoreboardNumber(readPath(agent, col.left));
-  const right = asScoreboardNumber(readPath(agent, col.right));
+  const left = asScoreboardNumber(
+    col.leftCompute ? col.leftCompute(agent) : readPath(agent, col.left),
+  );
+  const right = asScoreboardNumber(
+    col.rightCompute ? col.rightCompute(agent) : readPath(agent, col.right),
+  );
   return {
     text: `${fmtScoreboardCount(left)}/${fmtScoreboardCount(right)}`,
     zero: left === 0 && right === 0,
@@ -556,6 +725,7 @@ function renderRuns(runs) {
     el("span", { text: "run id" }),
     el("span", { text: "duration", style: { textAlign: "right" } }),
     el("span", { text: "state", style: { textAlign: "right" } }),
+    el("span", { text: "" }),
   ]);
   header.dataset.key = "runs-header";
   header.dataset.hash = "header";
@@ -580,6 +750,7 @@ function renderRuns(runs) {
       runIdSpan,
       el("span", { class: "duration", text: fmtDuration(r.duration_ms) }),
       el("span", { class: "state" }, [stateCell(r.state)]),
+      el("span", { class: "run-actions" }, runIsCancellable(r) ? [buildCancelRunButton(r, body)] : []),
     ]);
     row.dataset.key = `run-${r.run_id}`;
     row.dataset.hash = `${r.run_id}-${ts}-${r.duration_ms}-${r.state}`;
@@ -592,17 +763,24 @@ function renderRuns(runs) {
 
 const SCOREBOARD_COLUMNS = [
   { key: "agent", label: "agent", num: false },
-  { key: "tasks_completed", label: "tasks", num: true },
+  { key: "tasks_created", label: "created", num: true },
+  { key: "tasks_planned", label: "planned", num: true },
+  { key: "tasks_completed", label: "completed", num: true },
   { key: "task_review.threads", label: "review threads", num: true },
   { key: "pr.review_comments", label: "pr rev", num: true },
   {
-    key: "tokens",
-    label: "tokens",
+    key: "graph_calls",
+    label: "graph calls",
     num: true,
-    format: "pair",
-    left: "tokens.total",
-    right: "tokens.output",
-    title: "total / output tokens",
+    compute: (agent) => agent?.tool_calls_by_surface?.graph ?? 0,
+    title: "orbit.graph.* calls",
+  },
+  {
+    key: "task_calls",
+    label: "task calls",
+    num: true,
+    compute: (agent) => agent?.tool_calls_by_surface?.task ?? 0,
+    title: "orbit.task.* calls",
   },
   {
     key: "tools",
@@ -619,8 +797,9 @@ const SCOREBOARD_COLUMNS = [
     num: true,
     format: "pair",
     left: "duels.wins",
-    right: "duels.participated",
-    title: "wins / participated duels",
+    rightCompute: (agent) =>
+      (agent?.duels?.wins ?? 0) + (agent?.duels?.losses ?? 0),
+    title: "wins / decided duels (wins + losses)",
   },
   { key: "friction.reported", label: "frict r", num: true },
   { key: "avg_step_duration_ms", label: "avg step", num: true, format: "duration" },
@@ -698,8 +877,12 @@ function renderScoreboard(summary) {
           cellText = num === 0 ? "0" : fmtDuration(num);
           if (num === 0) extra = " zero";
         } else {
-          const num = asScoreboardNumber(readPath(agent, col.key));
+          const value = col.compute
+            ? col.compute(agent)
+            : readPath(agent, col.key);
+          const num = asScoreboardNumber(value);
           cellText = fmtScoreboardCount(num);
+          titleText = col.title || titleText;
           if (num === 0) extra = " zero";
         }
       }
@@ -770,7 +953,7 @@ function wireSearch() {
 }
 
 const TABS = ["tasks", "scoreboard", "audit", "diagnostics", "run-detail"];
-const DIAG_SUBTABS = ["runs", "metrics", "friction"];
+const DIAG_SUBTABS = ["runs", "metrics", "friction", "errors"];
 const RUN_DETAIL_SUBTABS = ["steps", "events"];
 const AUDIT_SUBTABS = ["events", "policy"];
 
@@ -790,7 +973,16 @@ function setActiveTab(raw, opts = {}) {
   let top;
   if (head === "runs" && segments[1]) {
     top = "run-detail";
-    activeRunId = decodeURIComponent(segments[1]);
+    const nextRunId = decodeURIComponent(segments[1]);
+    if (activeRunId !== nextRunId) {
+      activeRunLogs = [];
+      expandedStepIndices.clear();
+    }
+    activeRunId = nextRunId;
+    const expandStep = query.get("step");
+    if (expandStep != null && /^\d+$/.test(expandStep)) {
+      expandedStepIndices.add(Number(expandStep));
+    }
     const sub = RUN_DETAIL_SUBTABS.includes(segments[2]) ? segments[2] : activeRunSubtab;
     activeRunSubtab = sub;
   } else if (TABS.includes(head)) {
@@ -805,6 +997,7 @@ function setActiveTab(raw, opts = {}) {
   for (const pane of document.querySelectorAll(".tab-pane")) {
     pane.classList.toggle("active", pane.dataset.tab === top);
   }
+  if (top === "tasks") requestAnimationFrame(fitLogPanelToViewport);
 
   const indicator = $("tab-indicator") || el("div", {id: "tab-indicator", class: "tab-indicator"});
   if (!indicator.parentNode) document.querySelector(".tabs").appendChild(indicator);
@@ -844,6 +1037,7 @@ function setActiveTab(raw, opts = {}) {
     setRunDetailSubtab(activeRunSubtab);
     hash = `#runs/${encodeURIComponent(activeRunId || "")}` +
       (activeRunSubtab !== "steps" ? `/${activeRunSubtab}` : "");
+    if (query.get("step") != null) hash += `?step=${encodeURIComponent(query.get("step"))}`;
   } else {
     hash = `#${top}`;
   }
@@ -1042,6 +1236,24 @@ const DIAG_FRICTION_COLUMNS = [
   },
 ];
 
+const DIAG_ERRORS_COLUMNS = [
+  { key: "ts", label: "time", num: false, render: (v) => fmtRelative(v) },
+  { key: "source", label: "source", num: false },
+  { key: "provider", label: "provider", num: false, render: (v) => v || "-" },
+  { key: "step", label: "step", num: false, render: (v) => v || "-" },
+  {
+    key: "message",
+    label: "message",
+    num: false,
+    cellClass: "stderr",
+    render: (v, row, td) => {
+      const full = v || "";
+      td.title = row.target ? `${row.target}: ${full}` : full;
+      return truncate(full, 220);
+    },
+  },
+];
+
 function renderDiagnosticsTable(rows, columns) {
   const body = $("diag-body");
   
@@ -1088,6 +1300,14 @@ function renderDiagnosticsTable(rows, columns) {
     }
     tr.dataset.key = `diag-${row.ts || ''}-${row.step || i}-${row.command || row.actor_identity || ''}`;
     tr.dataset.hash = JSON.stringify(row);
+    if (row.job_run) {
+      tr.classList.add("clickable");
+      tr.title = "Open owning run";
+      tr.addEventListener("click", () => {
+        const stepQuery = row.step_index == null ? "" : `?step=${encodeURIComponent(row.step_index)}`;
+        setActiveTab(`runs/${encodeURIComponent(row.job_run)}${stepQuery}`);
+      });
+    }
     frag.appendChild(tr);
   }
   
@@ -1098,9 +1318,15 @@ function renderDiagnostics() {
   const sub = activeDiagSubtab;
   const rows = lastDiagnostics[sub] || [];
   $("diag-count").textContent = `${rows.length}`;
+  const columns =
+    sub === "metrics"
+      ? DIAG_METRICS_COLUMNS
+      : sub === "errors"
+        ? DIAG_ERRORS_COLUMNS
+        : DIAG_FRICTION_COLUMNS;
   renderDiagnosticsTable(
     rows,
-    sub === "metrics" ? DIAG_METRICS_COLUMNS : DIAG_FRICTION_COLUMNS,
+    columns,
   );
 }
 
@@ -1137,42 +1363,17 @@ function activeRefreshJobs() {
       renderRunDetailEmpty("No run selected.");
       return jobs;
     }
-    jobs.push(
-      fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
-        activeRunDetail = data;
-        renderRunDetailMeta();
-        renderRunKnowledge();
-        renderRunGantt();
-        renderRunSteps();
-      }).catch((e) => {
-        renderRunDetailEmpty(`Run not found: ${activeRunId}`);
-        throw e;
-      }),
-    );
+    jobs.push(fetchAndRenderRunDetail());
     // Events power both the Events sub-tab and the Gantt's retry markers, so
     // they're fetched on every run-detail refresh regardless of which sub-tab
     // is active.
-    jobs.push(
-      fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
-        activeRunEvents = events;
-        renderRunEvents();
-        renderRunGantt();
-      }).catch(() => {
-        // Missing v2 events file is non-fatal — run detail still renders.
-        activeRunEvents = [];
-        renderRunGantt();
-      }),
-    );
+    jobs.push(fetchAndRenderRunEvents());
+    jobs.push(fetchAndRenderRunLogs());
     return jobs;
   }
 
   if (activeDiagSubtab === "runs") {
-    jobs.push(
-      fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
-        lastRuns = runs;
-        renderRuns(runs);
-      }),
-    );
+    jobs.push(fetchAndRenderRuns());
     return jobs;
   }
 
@@ -1186,6 +1387,16 @@ function activeRefreshJobs() {
     return jobs;
   }
 
+  if (activeDiagSubtab === "errors") {
+    jobs.push(
+      fetchJson(`/api/diagnostics/errors?limit=${DIAG_LIMIT}`).then((rows) => {
+        lastDiagnostics.errors = rows;
+        renderDiagnostics();
+      }),
+    );
+    return jobs;
+  }
+
   jobs.push(
     fetchJson(`/api/diagnostics/friction?limit=${DIAG_LIMIT}`).then((rows) => {
       lastDiagnostics.friction = rows;
@@ -1193,6 +1404,51 @@ function activeRefreshJobs() {
     }),
   );
   return jobs;
+}
+
+function fetchAndRenderRuns() {
+  return fetchJson(`/api/job-runs?limit=${JOB_RUN_LIMIT}`).then((runs) => {
+    lastRuns = runs;
+    renderRuns(runs);
+  });
+}
+
+function fetchAndRenderRunDetail() {
+  if (!activeRunId) return Promise.resolve();
+  return fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}`).then((data) => {
+    activeRunDetail = data;
+    renderRunDetailMeta();
+    renderRunKnowledge();
+    renderRunGantt();
+    renderRunSteps();
+  }).catch((e) => {
+    renderRunDetailEmpty(`Run not found: ${activeRunId}`);
+    throw e;
+  });
+}
+
+function fetchAndRenderRunEvents() {
+  if (!activeRunId) return Promise.resolve();
+  return fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/events?limit=${RUN_EVENTS_LIMIT}`).then((events) => {
+    activeRunEvents = events;
+    renderRunEvents();
+    renderRunGantt();
+  }).catch(() => {
+    // Missing v2 events file is non-fatal — run detail still renders.
+    activeRunEvents = [];
+    renderRunGantt();
+  });
+}
+
+function fetchAndRenderRunLogs() {
+  if (!activeRunId) return Promise.resolve();
+  return fetchJson(`/api/runs/${encodeURIComponent(activeRunId)}/logs?limit=${RUN_EVENTS_LIMIT}`).then((logs) => {
+    activeRunLogs = logs;
+    renderRunSteps();
+  }).catch(() => {
+    activeRunLogs = [];
+    renderRunSteps();
+  });
 }
 
 function fetchAndRenderAudit() {
@@ -1656,7 +1912,20 @@ function renderRunDetailMeta() {
   const wrap = el("div");
   const back = el("button", { class: "back-action", text: "← back to runs" });
   back.addEventListener("click", () => setActiveTab("diagnostics/runs"));
-  wrap.appendChild(el("div", { style: { padding: "8px 16px 0 16px" } }, [back]));
+  const actions = el("div", { class: "run-detail-actions" }, [back]);
+  if (run.retry_source_run_id) {
+    const sourceId = run.retry_source_run_id;
+    const lineage = el("button", {
+      class: "back-action replay-source",
+      text: `Replayed from ${sourceId}`,
+      title: `Open ${sourceId}`,
+    });
+    lineage.addEventListener("click", () => navigateToRun(sourceId));
+    actions.appendChild(lineage);
+  }
+  if (run.run_id) actions.appendChild(buildReplayRunButton(run, wrap));
+  if (runIsCancellable(run)) actions.appendChild(buildCancelRunButton(run, wrap));
+  wrap.appendChild(actions);
   wrap.appendChild(grid);
   syncNodes(meta, [wrap]);
 }
@@ -1921,6 +2190,41 @@ function hideGanttTooltip() {
   tip.setAttribute("aria-hidden", "true");
 }
 
+function logsForStep(step) {
+  const stepId = step.target_id == null ? null : String(step.target_id);
+  return (activeRunLogs || []).filter((record) => {
+    if (record.step_index != null && Number(record.step_index) === Number(step.step_index)) return true;
+    return stepId != null && record.step_id === stepId;
+  });
+}
+
+function buildLogBlock(record, stream) {
+  const isErr = stream === "stderr";
+  const preview = record[`${stream}_preview`] || "";
+  if (!preview) return null;
+  const block = el("div", { class: `step-log-block ${isErr ? "stderr" : "stdout"}` });
+  const meta = [
+    record.provider || "cli",
+    record.exit_code == null ? "exit -" : `exit ${record.exit_code}`,
+    record.timed_out ? "timeout" : null,
+    record[`${stream}_truncated`] ? "truncated" : null,
+  ].filter(Boolean).join(" · ");
+  block.appendChild(el("div", { class: "step-log-head" }, [
+    el("span", { class: "label", text: stream }),
+    el("span", { class: "meta", text: meta }),
+  ]));
+  const pre = el("pre");
+  for (const line of preview.split("\n")) {
+    const row = el("span", {
+      class: isErr && /\bERROR\s+[^:]+:/.test(line) ? "log-line error-line" : "log-line",
+      text: line || " ",
+    });
+    pre.appendChild(row);
+  }
+  block.appendChild(pre);
+  return block;
+}
+
 function buildStepDetail(step) {
   const wrap = el("div", { class: "step-detail" });
   wrap.dataset.key = `step-detail-${step.step_index}`;
@@ -1938,6 +2242,18 @@ function buildStepDetail(step) {
 
   if (step.error_message) addBlock("error", `${step.error_code || ""} ${step.error_message}`);
   addBlock("agent_response", step.agent_response_json);
+  const logs = logsForStep(step);
+  if (logs.length > 0) {
+    const section = el("div", { class: "step-log-section" });
+    section.appendChild(el("div", { class: "label", text: "agent logs" }));
+    for (const record of logs) {
+      const stdout = buildLogBlock(record, "stdout");
+      const stderr = buildLogBlock(record, "stderr");
+      if (stdout) section.appendChild(stdout);
+      if (stderr) section.appendChild(stderr);
+    }
+    wrap.appendChild(section);
+  }
   const km = activeRunDetail && activeRunDetail.run && activeRunDetail.run.knowledge_metrics;
   if (km && step.step_index === 0) addBlock("knowledge_metrics (run)", km);
   return wrap;
@@ -2047,8 +2363,9 @@ async function refreshDashboard() {
   }
   if (btn) btn.disabled = false;
   isRefreshing = false;
+  if (activeTab === "tasks") fitLogPanelToViewport();
   
-  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,scoreboard,diagnostics/{metrics,friction,denials?since|kind|profile|agent}}`;
+  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,runs/:id/logs?limit,scoreboard,diagnostics/{metrics,errors,friction,denials?since|kind|profile|agent}}`;
 }
 
 buildChips();
@@ -2064,6 +2381,26 @@ let logBuffered = [];
 let logFollowTail = true;
 let logRows = []; // Keep track to enforce max 200 after 250 limit
 let activeLogFilters = new Set(["all"]);
+let logPanelResizeWired = false;
+
+function fitLogPanelToViewport() {
+  const panel = $("log-panel");
+  if (!panel) return;
+  const top = panel.getBoundingClientRect().top;
+  const available = Math.floor(window.innerHeight - top - 24);
+  if (available <= 0) return;
+  panel.style.setProperty("--log-panel-height", `${available}px`);
+}
+
+function wireLogPanelResize() {
+  if (logPanelResizeWired) return;
+  logPanelResizeWired = true;
+  const scheduleFit = () => requestAnimationFrame(fitLogPanelToViewport);
+  window.addEventListener("resize", scheduleFit);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", scheduleFit);
+  }
+}
 
 function getLogClass(level, code) {
   if (code === "DENY") return "deny";
@@ -2105,6 +2442,8 @@ function renderLogEvent(ev, isFresh) {
 }
 
 function initLogTail() {
+  wireLogPanelResize();
+  fitLogPanelToViewport();
   fetchJson("/api/log?limit=50").then((events) => {
     const inner = $("logInner");
     if (!inner) return;

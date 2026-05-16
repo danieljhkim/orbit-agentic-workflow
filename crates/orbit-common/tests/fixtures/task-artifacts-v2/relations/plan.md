@@ -1,0 +1,1 @@
+- Validate relation shape only.

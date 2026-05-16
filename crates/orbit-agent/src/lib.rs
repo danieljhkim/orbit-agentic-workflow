@@ -1,4 +1,13 @@
 #![deny(clippy::print_stderr, clippy::print_stdout)]
+// ORB-00004: legacy public provider surfaces still need a focused documentation pass.
+#![allow(missing_docs)]
+// ORB-00013: Unit tests use unwrap/expect for fixture setup; production call sites remain linted.
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags,
+    rustdoc::private_intra_doc_links
+)]
 //! Agent provider abstraction for Orbit. Two transport families coexist:
 //!
 //! - **CLI transports** — drive `claude`, `codex`, `gemini`, `ollama`, or
@@ -49,4 +58,4 @@ pub use agent::{Agent, AgentConfig, ProviderOptions};
 pub use orbit_common::types::{InvocationTrace, TokenUsage, ToolCallTrace};
 pub use runtime::AgentRuntime;
 pub use types::{AgentInvocationSpec, AgentOperation, AgentRequest, AgentResponseStatus};
-pub use types::{is_timeout, parse_and_validate_response};
+pub use types::{is_timeout, parse_and_validate_response, peek_response_status};

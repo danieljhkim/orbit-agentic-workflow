@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::collections::BTreeSet;
 
 use orbit_tools::ToolRegistry;
@@ -51,6 +55,10 @@ fn workflow_critical_tools_remain_registered() {
         "github.pr.review",
         "github.pr.review.comment",
         "github.pr.view",
+        "orbit.design.check",
+        "orbit.design.init",
+        "orbit.design.list",
+        "orbit.design.show",
         "orbit.graph.callers",
         "orbit.graph.deps",
         "orbit.graph.history",
@@ -65,12 +73,63 @@ fn workflow_critical_tools_remain_registered() {
         "orbit.groundhog.side_effect",
         "orbit.pipeline.invoke",
         "orbit.pipeline.wait",
+        "orbit.semantic.related",
+        "orbit.semantic.search",
         "orbit.task.artifact.put",
         "proc.spawn",
     ] {
         assert!(
             names.contains(retained),
             "workflow-critical tool missing: {retained}"
+        );
+    }
+}
+
+#[test]
+fn semantic_search_schema_uses_v2_task_field_names() {
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    let schema = registry
+        .get_schema("orbit.semantic.search")
+        .expect("semantic search schema");
+    let field = schema
+        .parameters
+        .iter()
+        .find(|param| param.name == "field")
+        .expect("field parameter");
+
+    assert_eq!(
+        field.description,
+        "Optional indexed task field filter, such as title, description, plan, acceptance, or execution_summary."
+    );
+}
+
+#[test]
+fn friction_surface_is_append_only() {
+    let names = registered_tool_names();
+
+    for retained in [
+        "orbit.friction.add",
+        "orbit.friction.list",
+        "orbit.friction.show",
+        "orbit.friction.stats",
+    ] {
+        assert!(
+            names.contains(retained),
+            "friction tool missing: {retained}"
+        );
+    }
+
+    for removed in [
+        "orbit.friction.update",
+        "orbit.friction.delete",
+        "orbit.friction.resolve",
+        "orbit.friction.reject",
+    ] {
+        assert!(
+            !names.contains(removed),
+            "non-append-only friction tool registered: {removed}"
         );
     }
 }
@@ -93,6 +152,44 @@ fn task_dependency_params_remain_in_agent_tool_schemas() {
         assert_eq!(dependency_param.param_type, "string_list");
         assert!(!dependency_param.required);
     }
+}
+
+#[test]
+fn task_add_update_schemas_use_model_only_identity() {
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    for tool_name in ["orbit.task.add", "orbit.task.update"] {
+        let schema = registry
+            .get_schema(tool_name)
+            .unwrap_or_else(|| panic!("{tool_name} schema"));
+        assert!(
+            schema.parameters.iter().any(|param| param.name == "model"),
+            "{tool_name} should expose model attribution"
+        );
+        assert!(
+            schema.parameters.iter().all(|param| param.name != "agent"),
+            "{tool_name} should not expose agent attribution"
+        );
+    }
+}
+
+#[test]
+fn task_delete_schema_exposes_optional_force_boolean() {
+    let mut registry = ToolRegistry::new();
+    registry.register_builtins();
+
+    let schema = registry
+        .get_schema("orbit.task.delete")
+        .expect("task delete schema");
+    let force_param = schema
+        .parameters
+        .iter()
+        .find(|param| param.name == "force")
+        .expect("force param");
+
+    assert_eq!(force_param.param_type, "boolean");
+    assert!(!force_param.required);
 }
 
 fn registered_tool_names() -> BTreeSet<String> {

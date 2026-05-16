@@ -81,10 +81,11 @@ impl V2AuditWriter {
 
     /// High-level constructor for CLI / library callers that don't want to
     /// name the loop-level sink types directly (orbit-core's primary use
-    /// case). Creates a `JsonlFileSink` at
-    /// `audit_root/loop/{run_id}.jsonl` with blobs under `audit_root/blobs/`
-    /// and a `V2JsonlSink` at `audit_root/v2_loop/{run_id}.jsonl`, wires them
-    /// together, and returns a ready-to-dispatch writer.
+    /// case). Creates a lazy `JsonlFileSink` for loop events under
+    /// `audit_root/loop/{run_id}.jsonl`, configures blobs under
+    /// `audit_root/blobs/`, and creates a `V2JsonlSink` at
+    /// `audit_root/v2_loop/{run_id}.jsonl`, wires them together, and returns a
+    /// ready-to-dispatch writer.
     ///
     /// Callers that need a custom sink configuration use `new` +
     /// `with_envelope_sink` directly.
@@ -113,7 +114,7 @@ impl V2AuditWriter {
     }
 
     /// Run identifier carried in every emitted envelope. Exposed so dual-write
-    /// helpers (e.g. `job_executor::emit_job_event`) can stamp `run_id` onto
+    /// helpers (e.g. `job_executor::audit::emit_job_event`) can stamp `run_id` onto
     /// paired tracing events without re-threading the value from call sites.
     pub fn run_id(&self) -> &str {
         &self.run_id

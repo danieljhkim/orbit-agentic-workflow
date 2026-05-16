@@ -13,7 +13,7 @@ Supported activity types:
 
 | Type | Use |
 |------|-----|
-| `agent_loop` | Run an agent with an instruction, provider, backend, and tool allowlist. v1 only supports `backend: cli`. |
+| `agent_loop` | Run an agent with an instruction, provider, backend, and tool allowlist. v1 only supports `backend: cli`, but the schema default for `backend:` is `http` — pin `cli` explicitly. |
 | `groundhog` | Run checkpointed HTTP agent attempts with reset and retry behavior. *Not part of the v1 release surface — depends on the HTTP transport.* |
 | `deterministic` | Run a registered deterministic action. |
 | `shell` | Run an allowlisted shell program. |
@@ -33,3 +33,26 @@ Step bodies can reference an activity, inline an activity spec, or compose contr
 ## Why Both Exist
 
 Activities make execution behavior reusable. Jobs make orchestration explicit. This keeps the dispatch surface inspectable and avoids hiding agent behavior inside code.
+
+**Example:** A job step referencing a reusable activity.
+
+```yaml
+# .orbit/activities/analyze_code.yaml
+schemaVersion: 2
+kind: Activity
+name: analyze_code
+spec:
+  backend: cli
+  provider: gemini
+  model: gemini-3.1-pro
+  instruction: "Analyze the provided code."
+
+---
+# .orbit/jobs/review_pr.yaml
+schemaVersion: 2
+kind: Job
+name: review_pr
+steps:
+  - id: analysis
+    target: activity:analyze_code
+```

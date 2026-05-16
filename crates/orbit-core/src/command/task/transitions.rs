@@ -1,8 +1,7 @@
 use orbit_common::types::{
-    OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus, build_task_status_index,
-    normalize_optional_attribution_label, unmet_task_dependencies,
+    NotFoundKind, OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus,
+    build_task_status_index, unmet_task_dependencies,
 };
-use orbit_store::friction_bounty;
 
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams as StoreTaskUpdateParams;
@@ -95,13 +94,6 @@ impl OrbitRuntime {
                 "task '{id}' is in status '{other}'; approve requires 'proposed', 'friction', or 'review'"
             ))),
         }?;
-
-        let approved_to = if matches!(task.status, TaskStatus::Proposed | TaskStatus::Friction) {
-            TaskStatus::Backlog
-        } else {
-            TaskStatus::Done
-        };
-        self.try_record_friction_transition(&task, task.status, approved_to);
 
         Ok(result)
     }
@@ -199,8 +191,6 @@ impl OrbitRuntime {
                             actor: effective_label.clone(),
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
-                            agent: canonical_agent.clone().map(Some),
-                            model: canonical_model.clone().map(Some),
                             append_history: vec![TaskHistoryEntry {
                                 at,
                                 by: effective_label.clone(),
@@ -222,7 +212,6 @@ impl OrbitRuntime {
                         },
                     ))
                 })?;
-                self.try_record_friction_transition(&task, task.status, TaskStatus::InProgress);
                 Ok(result)
             }
             TaskStatus::Backlog | TaskStatus::Someday | TaskStatus::Blocked => {
@@ -235,8 +224,6 @@ impl OrbitRuntime {
                             status: Some(TaskStatus::InProgress),
                             status_event: Some("started".to_string()),
                             status_note: note.clone(),
-                            agent: canonical_agent.clone().map(Some),
-                            model: canonical_model.clone().map(Some),
                             append_comments: append_comments.clone(),
                             ..Default::default()
                         },
@@ -333,8 +320,6 @@ impl OrbitRuntime {
                 },
             ))
         })?;
-
-        self.try_record_friction_transition(&task, task.status, TaskStatus::InProgress);
 
         Ok(updated)
     }
@@ -465,8 +450,6 @@ impl OrbitRuntime {
             ))),
         }?;
 
-        self.try_record_friction_transition(&task, task.status, TaskStatus::Rejected);
-
         Ok(result)
     }
 
@@ -521,11 +504,32 @@ impl OrbitRuntime {
         self.with_mutation(|| {
             let deleted = self.stores().tasks().delete(id)?;
             if !deleted {
-                return Err(OrbitError::TaskNotFound(id.to_string()));
+                return Err(OrbitError::not_found(NotFoundKind::Task, id.to_string()));
             }
             Ok(((), OrbitEvent::TaskDeleted { id: id.to_string() }))
         })
     }
+
+    pub fn delete_task_guarded(&self, id: &str, force: bool) -> Result<(), OrbitError> {
+        let task = self.get_task(id)?;
+        ensure_task_delete_allowed(&task.id, task.status, force)?;
+        self.delete_task(id)
+    }
+}
+
+fn ensure_task_delete_allowed(id: &str, status: TaskStatus, force: bool) -> Result<(), OrbitError> {
+    if force
+        || matches!(
+            status,
+            TaskStatus::Proposed | TaskStatus::Friction | TaskStatus::Rejected
+        )
+    {
+        return Ok(());
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "task '{id}' is in status '{status}'; use --force to delete tasks not in proposed, friction, or rejected status"
+    )))
 }
 
 pub(crate) fn ensure_task_has_execution_plan(id: &str, plan: &str) -> Result<(), OrbitError> {
@@ -540,37 +544,4 @@ pub(crate) fn ensure_task_has_execution_plan(id: &str, plan: &str) -> Result<(),
 
 pub(crate) fn in_progress_transition_requires_plan(from_status: TaskStatus) -> bool {
     !matches!(from_status, TaskStatus::Backlog | TaskStatus::InProgress)
-}
-
-impl OrbitRuntime {
-    /// Best-effort friction bounty scoreboard update after a status transition.
-    pub(crate) fn try_record_friction_transition(
-        &self,
-        task: &Task,
-        from: TaskStatus,
-        to: TaskStatus,
-    ) {
-        if !self.scoring_enabled() || !task.task_type.counts_toward_friction_bounty() {
-            return;
-        }
-        let Some(model) =
-            normalize_optional_attribution_label(task.created_by.as_deref(), task.model.as_deref())
-        else {
-            return;
-        };
-        let scoreboard_dir = &self.paths().scoreboard_dir;
-
-        let is_approval = matches!(
-            (from, to),
-            (TaskStatus::Friction, TaskStatus::Backlog)
-                | (TaskStatus::Friction, TaskStatus::InProgress)
-                | (TaskStatus::Friction, TaskStatus::Done)
-        );
-
-        if is_approval {
-            let _ = friction_bounty::record_friction_accepted(scoreboard_dir, &model);
-        } else if from == TaskStatus::Friction && to == TaskStatus::Rejected {
-            let _ = friction_bounty::record_friction_rejected(scoreboard_dir, &model);
-        }
-    }
 }

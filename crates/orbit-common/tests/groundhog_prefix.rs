@@ -1,3 +1,7 @@
+#![allow(missing_docs)]
+// ORB-00013: Tests use unwrap/expect to keep fixture setup readable.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use chrono::{Duration, Utc};
 use orbit_common::groundhog::{
     Attempt, CheckpointId, Chronicle, Day, DayOutcome, FailureReport, SideEffect, SideEffectKind,

@@ -31,6 +31,35 @@ pub fn atomic_write_text(path: &Path, content: &str) -> io::Result<()> {
     staged.commit()
 }
 
+/// Atomically write `content` bytes to `path`, then fsync the parent directory
+/// so the rename survives a crash. Creates parent directories as needed.
+pub fn atomic_write_bytes(path: &Path, content: &[u8]) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("no parent dir for {}", path.display()),
+        )
+    })?;
+    fs::create_dir_all(parent)?;
+
+    let temp_path = temp_path_for(path);
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .truncate(true)
+        .write(true)
+        .open(&temp_path)?;
+
+    if let Ok(metadata) = fs::metadata(path) {
+        fs::set_permissions(&temp_path, metadata.permissions())?;
+    }
+
+    file.write_all(content)?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&temp_path, path)?;
+    sync_parent_dir(path)
+}
+
 /// Atomically write `content` to `path` without fsyncing the parent.
 /// Cheaper than [`atomic_write_text`] but post-crash the rename may be lost.
 pub fn atomic_write_text_volatile(path: &Path, content: &str) -> io::Result<()> {

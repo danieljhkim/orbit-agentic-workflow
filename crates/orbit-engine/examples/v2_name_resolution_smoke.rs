@@ -1,3 +1,12 @@
+#![allow(missing_docs)]
+// ORB-00013: Examples are user-facing smoke binaries that print progress and unwrap setup invariants.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
+
 //! Phase 4 prerequisite smoke — T20260418-2019.
 //!
 //! Exercises:
@@ -26,7 +35,7 @@ use orbit_common::types::activity_job::{
     LoopBlock, OnDenial, Provider, ResolveError, TargetRef, V2ActivityCatalog, load_job_asset,
     resolve_job_backends, resolve_job_target_refs, validate_job_loop_session_backends,
 };
-use orbit_engine::activity_job::{
+use orbit_engine::{
     DispatchError, ResolvedCliExecutor, V2AuditWriter, V2DispatchInput, V2RuntimeHost,
     dispatch_v2_activity,
 };
@@ -359,6 +368,7 @@ impl V2RuntimeHost for PipelineHost {
 
     fn tool_context_for_activity(
         &self,
+        _run_id: Option<&str>,
         _fs_profile: Option<&str>,
         _fs_audit: Option<std::sync::Arc<dyn orbit_tools::FsAuditLogger>>,
     ) -> orbit_tools::ToolContext {

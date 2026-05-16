@@ -20,7 +20,7 @@ pub struct JobRunArgs {
     #[arg(long)]
     pub input: Vec<String>,
     /// Explicit execution backend override for `agent_loop` steps (§3.1).
-    /// Precedence: this flag > `ORBIT_BACKEND` > `[runtime] backend` > `http`.
+    /// Precedence: this flag > `ORBIT_BACKEND` > `[runtime] backend` > `cli`.
     /// Accepted values: `http`, `cli`, `auto`.
     #[arg(long)]
     pub backend: Option<String>,
@@ -133,6 +133,60 @@ impl Execute for JobRunArgs {
     }
 }
 
+#[derive(Args)]
+#[command(after_help = "Examples:\n  orbit job replay jrun-task_auto_pipeline-20260505T061300.000")]
+pub struct JobReplayArgs {
+    /// Source job run ID to replay from step 0.
+    pub run_id: String,
+    /// Output replay result as JSON.
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl Execute for JobReplayArgs {
+    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
+        let source_run_id = self.run_id;
+        let result = runtime.replay_job_run(&source_run_id)?;
+        let audit_jsonl_str = result
+            .audit_jsonl
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let backend_str = result.resolved_backend.as_str();
+        if self.json {
+            return crate::output::json::print_pretty(&json!({
+                "run_id": result.run_id,
+                "source_run_id": source_run_id,
+                "job_name": result.job_name,
+                "resolved_backend": backend_str,
+                "success": result.success,
+                "message": result.message,
+                "pipeline": result.pipeline,
+                "audit_jsonl": audit_jsonl_str,
+                "events_emitted": result.events_emitted,
+            }));
+        }
+        println!(
+            "run_id={};replayed_from={};job={};backend={};success={};events={};audit_jsonl={}",
+            result.run_id,
+            source_run_id,
+            result.job_name,
+            backend_str,
+            result.success,
+            result.events_emitted,
+            audit_jsonl_str,
+        );
+        if let Some(msg) = &result.message {
+            println!("message: {msg}");
+        }
+        println!(
+            "pipeline: {}",
+            serde_json::to_string_pretty(&result.pipeline).unwrap_or_default()
+        );
+        Ok(())
+    }
+}
+
 pub(crate) fn job_run_to_json(run: &JobRun) -> Value {
     let last = run.steps.last();
     json!({
@@ -144,6 +198,7 @@ pub(crate) fn job_run_to_json(run: &JobRun) -> Value {
         "started_at": run.started_at.map(|v| v.to_rfc3339()),
         "finished_at": run.finished_at.map(|v| v.to_rfc3339()),
         "duration_ms": run.duration_ms,
+        "retry_source_run_id": run.retry_source_run_id,
         "exit_code": last.and_then(|s| s.exit_code),
         "agent_response_json": last.and_then(|s| s.agent_response_json.as_ref()),
         "error_code": last.and_then(|s| s.error_code.as_deref()),
@@ -203,4 +258,80 @@ fn build_job_run_input(pairs: &[String]) -> Result<Value, OrbitError> {
         map.insert(key.to_string(), Value::String(value.to_string()));
     }
     Ok(Value::Object(map))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orbit_core::NotFoundKind;
+
+    fn write_replay_job(runtime: &OrbitRuntime, name: &str) -> PathBuf {
+        let jobs_dir = runtime.data_root().join("resources/jobs");
+        std::fs::create_dir_all(&jobs_dir).expect("create jobs dir");
+        let path = jobs_dir.join(format!("{name}.yaml"));
+        std::fs::write(
+            &path,
+            format!(
+                r#"schemaVersion: 2
+kind: Job
+metadata:
+  name: {name}
+spec:
+  state: enabled
+  kind: workflow
+  steps:
+    - id: nap
+      spec:
+        type: deterministic
+        action: sleep
+        config: {{}}
+"#
+            ),
+        )
+        .expect("write replay job");
+        path
+    }
+
+    #[test]
+    fn job_replay_args_execute_creates_linked_run() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let job_path = write_replay_job(&runtime, "cli_replay_success");
+        let source = runtime
+            .run_job_v2_from_yaml(&job_path, json!({ "seconds": 0 }), None)
+            .expect("source run");
+
+        JobReplayArgs {
+            run_id: source.run_id.clone(),
+            json: true,
+        }
+        .execute(&runtime)
+        .expect("replay run");
+
+        let history = runtime
+            .job_history("cli_replay_success")
+            .expect("job history");
+        assert!(history.iter().any(|run| {
+            run.retry_source_run_id.as_deref() == Some(source.run_id.as_str())
+                && run.state == orbit_common::types::JobRunState::Success
+        }));
+    }
+
+    #[test]
+    fn job_replay_args_execute_unknown_run_returns_error() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let error = JobReplayArgs {
+            run_id: "jrun-missing".to_string(),
+            json: true,
+        }
+        .execute(&runtime)
+        .expect_err("unknown source run should fail");
+
+        assert!(matches!(
+            error,
+            OrbitError::NotFound {
+                kind: NotFoundKind::JobRun,
+                ..
+            }
+        ));
+    }
 }

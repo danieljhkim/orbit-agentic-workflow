@@ -251,7 +251,7 @@ fn load_knowledge_summary(
     runtime: &OrbitRuntime,
     limit: Option<usize>,
 ) -> Result<KnowledgeStatsSummary, OrbitError> {
-    let runs = runtime.list_job_runs(orbit_core::command::job_run::JobRunListParams {
+    let runs = runtime.list_job_runs(orbit_core::command::job::JobRunListParams {
         limit,
         ..Default::default()
     })?;

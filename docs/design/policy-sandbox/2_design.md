@@ -2,31 +2,26 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-04-28
+**Last updated:** 2026-05-14
 
-This document describes Orbit's shipped policy and sandboxing implementation: the v2 `PolicyDef` schema, profile resolution and the implicit `unrestricted` fallback, deny-rule injection, last-match-wins path evaluation, the `orbit-policy` engine facade, tool-layer enforcement in `orbit-tools`, the activity/job binding that threads an `fsProfile` through every dispatcher path, the `orbit-exec` spawn primitive, and the process supervision layer that handles timeouts, signals, and orphan reaping. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for forward-looking gaps.
+This document describes Orbit's shipped policy and sandboxing implementation: v2 `PolicyDef`, profile resolution, last-match-wins path evaluation, HTTP-tool enforcement, activity/job `fsProfile` binding, macOS CLI sandbox wrapping, and `orbit-exec` supervision. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for forward-looking gaps.
 
 ---
 
 ## 1. Policy Schema
 
-The policy schema lives on `PolicyDef` in `crates/orbit-common/src/types/policy_def.rs`. A v2 policy declares:
+`PolicyDef` in `crates/orbit-common/src/types/policy_def.rs` is v2-only. `crates/orbit-common/src/types/resource.rs` rejects schema v1 with a migration message that names `spec.denyRead`, `spec.denyModify`, and `spec.fsProfiles`.
 
-- `name`
-- optional `description`
-- `denyRead` — global read-denial rules applied to every profile
-- `denyModify` — global modify-denial rules applied to every profile
-- `fsProfiles` — a map of profile name to `FsProfile { read, modify }`
+A valid policy declares `name`, optional `description`, global `denyRead` / `denyModify`, and `fsProfiles` mapping names to `FsProfile { read, modify }`. The policy name must also pass the centralized resource-name validator in `crates/orbit-common/src/types/resource.rs`: it is a non-empty single file stem, not a hidden dot name, and contains no separators, traversal markers, drive-prefix characters, extension dots, or control characters ([T20260509-28]). File-backed stores validate before constructing `<name>.yaml` paths.
 
-`crates/orbit-common/src/types/resource.rs` rejects `schemaVersion: 1` at load time with an explicit migration message ("policy schemaVersion 1 is no longer supported; migrate to schemaVersion 2 with `spec.denyRead`, `spec.denyModify`, and `spec.fsProfiles`"). v2 is the only accepted shape.
+`PolicyDef::validate` enforces:
 
-`PolicyDef::validate` enforces three structural invariants beyond rule normalization:
+1. The policy name is a safe resource file stem.
+2. Every profile name is non-empty.
+3. Every positive `modify` rule is covered by a positive `read` rule in the same profile.
+4. Profile rules do not exactly duplicate global deny entries.
 
-1. Every profile name is non-empty.
-2. A profile's `modify` rule must be covered by at least one `read` rule in the same profile. The validator rejects modify-only writeable paths because a tool needs to read a path to make a meaningful modification, and granting modify without read produces a confusing audit story.
-3. A profile rule that exactly duplicates a global `denyRead` or `denyModify` entry is rejected. Profiles can use negations to refine globals, but cannot copy a denied rule and effectively re-allow it by ordering.
-
-`PolicyDef::merged(global, workspace)` is the merge contract: workspace `fsProfiles` overwrite global entries by name, while global `denyRead` / `denyModify` accumulate (workspace cannot remove a global deny). Merging always re-runs `validate`.
+`PolicyDef::merged(global, workspace)` lets workspace `fsProfiles` overwrite globals by name while global denies accumulate. The merged policy is revalidated.
 
 ---
 
@@ -34,11 +29,11 @@ The policy schema lives on `PolicyDef` in `crates/orbit-common/src/types/policy_
 
 `PolicyDef::effective_profile(profile_name)` returns a `ResolvedFsProfile { name, read, modify }` after applying three transformations:
 
-1. **Lookup.** If `fs_profiles` contains `profile_name`, that profile's rule lists are the base. If not and `profile_name == "unrestricted"`, the resolver synthesizes `FsProfile { read: ["./**"], modify: ["./**"] }`. Any other missing profile name returns `OrbitError::InvalidInput`.
-2. **Normalization.** Each rule is trimmed, backslashes are flipped to forward slashes, leading `./` segments are stripped, and the rule is rejected if it escapes the workspace (`~`, `~/`, absolute paths, parent traversals). Rules also compile to a glob-equivalent regex for evaluation.
-3. **Deny injection.** Every entry in `denyRead` is appended to the profile's `read` list as a negated rule (`!<rule>`); every entry in `denyModify` is appended to the profile's `modify` list as a negated rule. This is the mechanism that makes deny rules global without a separate evaluation pass.
+1. **Lookup.** Use the named profile. If the missing name is `unrestricted`, synthesize `read: ["./**"]` and `modify: ["./**"]`; other missing profiles return `OrbitError::InvalidInput`.
+2. **Normalization.** Trim, convert backslashes, strip leading `./`, reject absolute, `~`, and parent-traversal rules, then compile the narrow glob syntax to regex.
+3. **Deny injection.** Append `denyRead` to `read` and `denyModify` to `modify` as negated rules (`!<rule>`), so global denies participate in the same ordered list.
 
-The implicit `unrestricted` profile only materializes if both conditions hold: the activity omitted `fsProfile:` *and* the policy did not define a profile named `unrestricted`. A policy author who defines `unrestricted` shadows the implicit fallback, which is the intended escape hatch for narrowing a workspace's "unrestricted" mode.
+The implicit `unrestricted` profile appears only when an activity omitted `fsProfile:` and the policy did not define `unrestricted`. A real profile with that name shadows the fallback.
 
 ---
 
@@ -49,49 +44,38 @@ The implicit `unrestricted` profile only materializes if both conditions hold: t
 1. Resolve the profile (via §2).
 2. Pick the rule list by operation (`read` or `modify`).
 3. If the list is empty, deny with `matched_rule = "[]"`.
-4. Walk every rule in order, recording the most recent match. The rule is split into negated/positive form, compiled to a regex, and matched against the normalized workspace-relative path. Later matches override earlier ones — this is **last-match-wins**, not first-match.
-5. After the walk, if any rule matched, the decision uses the last match's negation flag. If no rule matched but the list contained at least one positive rule, deny with `matched_rule = "<no matching rule>"`. If the list contained only negated rules, treat that as an empty positive set and deny with `matched_rule = "[]"`.
+4. Walk rules in order and record the most recent match against the normalized workspace-relative path. Later matches override earlier ones.
+5. Use the last match's negation flag. If no rule matched but a positive rule exists, deny with `<no matching rule>`; if only negated rules exist, deny with `[]`.
 
-Path normalization (`normalize_path`) trims, flips slashes, strips `./` prefixes, and rejects absolute paths or `~`-anchored paths. Tool callers are expected to canonicalize first and then express the path workspace-relative — `crates/orbit-tools/src/builtin/fs/mod.rs::workspace_relative_path` handles that on the call site.
+Path normalization (`normalize_path`) trims, flips slashes, strips `./` prefixes, and rejects absolute paths, `~`-anchored paths, and parent-directory traversal anywhere in the component list ([T20260509-27]). Tool callers are expected to canonicalize first and then express the path workspace-relative — `crates/orbit-tools/src/builtin/fs/mod.rs::workspace_relative_path` handles that on the call site.
 
-The glob-to-regex translator supports `*` (single-segment wildcard), `**` (cross-segment wildcard), `?` (single character within a segment), and `<prefix>/**` (directory subtree match). The translator is intentionally narrow; it is not a full POSIX glob.
+The glob translator supports `*`, `**`, `?`, and `<prefix>/**`. It is intentionally narrower than POSIX glob syntax.
 
 ---
 
 ## 4. PolicyEngine Facade
 
-`crates/orbit-policy/src/lib.rs` re-exports `PolicyEngine`, `FsPolicyEvaluation`, and `PolicyDecision`. The engine wraps a validated `PolicyDef` and exposes one operational method:
+`crates/orbit-policy/src/lib.rs` re-exports `PolicyEngine`, `FsPolicyEvaluation`, and `PolicyDecision`. `PolicyEngine` wraps a validated `PolicyDef` and exposes:
 
 ```
 PolicyEngine::check(profile, operation, path) -> FsPolicyEvaluation
 ```
 
-`FsPolicyEvaluation` is the struct callers receive: `{ profile, operation, path, allowed, matched_rule }`. The evaluator module (`evaluator.rs`) is a thin pass-through to `PolicyDef::check_path`; the indirection exists so future evaluators (e.g. caching, layered profiles) can replace the implementation without changing the engine surface.
+`FsPolicyEvaluation` carries `{ profile, operation, path, allowed, matched_rule }`. `evaluator.rs` currently passes through to `PolicyDef::check_path`; the indirection leaves room for caching or layered evaluators later.
 
-`PolicyDecision` (`crates/orbit-common/src/types/policy_decision.rs`) is a separate `Allow | Deny { reason }` enum used by the broader policy/RBAC framing. It is currently a re-export from `orbit-policy::decision` and is not generated by `PolicyEngine::check` — that path returns the richer `FsPolicyEvaluation` instead. The decision enum exists for non-fs callers and for future allow/deny answers that do not carry `matched_rule` semantics.
+`PolicyDecision` (`crates/orbit-common/src/types/policy_decision.rs`) is a separate `Allow | Deny { reason }` enum for broader policy/RBAC callers. `PolicyEngine::check` does not produce it; fs callers use `FsPolicyEvaluation`.
 
 ---
 
 ## 5. Tool-Layer Enforcement
 
-`crates/orbit-tools/src/builtin/fs/mod.rs::enforce_fs_policy` is the only place fs operations consult the policy engine today. The flow:
-
-1. Read `ctx.fs_profile` (the profile name string set by the runtime when constructing the `ToolContext`).
-2. Read `ctx.policy_engine` (the `Arc<PolicyEngine>` set by the runtime).
-3. If either is missing, return `Ok(None)` — fs work proceeds unguarded. This is the "no policy installed" path used in unit tests and is not reachable from a real v2 host.
-4. Convert the canonical filesystem path to a workspace-relative form (`workspace_relative_path`).
-5. Call `policy_engine.check(profile, op, path)`.
-6. Build an `FsPolicyAllowance` carrying `{ profile, op, path, matched_rule }`.
-7. If allowed, emit `FsCallEvent { kind: Request, allowed: true, ... }` through `ctx.fs_audit` and return the allowance so the caller can later emit `FsCallEvent::Result`.
-8. If denied, emit `FsCallEvent { kind: Denied, allowed: false, ... }` and return `OrbitError::PolicyDenied("fs.<op> denied for <path> under fsProfile <profile> (matched rule <rule>)")`.
+`crates/orbit-tools/src/builtin/fs/mod.rs::enforce_fs_policy` is the only place fs operations consult the policy engine today. It reads `ctx.fs_profile` and `ctx.policy_engine`; if either is missing, it returns `Ok(None)` so fs work proceeds unguarded. That path is for unit tests / no-policy contexts, not the real v2 host path. Otherwise the helper converts the canonical path to workspace-relative form, calls `policy_engine.check`, emits a request or denied `FsCallEvent`, and returns either an `FsPolicyAllowance { profile, op, path, matched_rule }` or `OrbitError::PolicyDenied`.
 
 The audit emission goes through `ctx.fs_audit: Option<Arc<dyn FsAuditLogger>>` (`crates/orbit-tools/src/lib.rs`). The v2 dispatcher wires this to `v2_fs_audit_logger(audit.clone())`, which converts each `FsCallEvent` into a `V2AuditEvent` filesystem entry. The full audit-channel description belongs to [auditability](../auditability/2_design.md#3-tool-driven-and-runtime-audit-records); this folder owns the *enforcement* contract, not the storage contract.
 
-`FsCallEvent` itself carries `{ kind, profile, op, path, allowed, matched_rule }`. There is no separately persisted negation flag — `allowed = false` is the only structural signal that a match was a deny. Consumers that need to distinguish "denied by an explicit deny rule" from "denied because no rule matched" must compare `matched_rule` against the policy's deny lists themselves.
+`FsCallEvent` carries `{ kind, profile, op, path, allowed, matched_rule }`. There is no persisted negation flag; consumers that need to distinguish explicit deny matches from "no rule matched" must compare `matched_rule` with the policy denies. The exec layer does not consult the policy engine, so there is no `proc.spawn` policy gate today.
 
-The exec layer does not consult the policy engine at all. There is no `proc.spawn` policy gate today — exec is sandboxed only by what the calling tool has already validated and by the supervision contract in §8.
-
-**Backend scope.** Tool-layer enforcement only fires when an activity runs under `backend: http` and reaches an Orbit fs builtin. `backend: cli` activities spawn an external CLI agent (Claude Code, Codex CLI, etc.) via `cli_runner.rs`; that path emits a `tool_allowlist.harness_delegated` envelope event and trusts the harness for tool allowlist behavior. On macOS, executors that declare `sandbox: macos-sandbox-exec` are additionally wrapped by the OS-level profile described in §7, so `fsProfile:` narrows CLI filesystem writes even though no Orbit fs builtin runs inside that subprocess.
+**Backend scope.** This enforcement fires only under `backend: http` when a builtin fs tool runs. `backend: cli` spawns Claude Code, Codex CLI, Gemini, or another harness via `cli_runner.rs`, emits `tool_allowlist.harness_delegated`, and trusts that harness for tool allowlists. On macOS, executors declaring `sandbox: macos-sandbox-exec` also get the OS-level wrapper in §7, so `fsProfile:` can still narrow CLI filesystem writes.
 
 ---
 
@@ -103,15 +87,15 @@ The `fsProfile:` field on an activity flows through `crates/orbit-engine/src/act
 - `job_executor.rs` reads `t.fs_profile.as_deref()` from the activity spec at the call site of every step type.
 - `agent_loop_driver.rs` and `groundhog.rs` invoke `host.tool_context_for_activity(fs_profile, audit_logger)` to construct the `ToolContext` that fs builtins read from.
 
-`crates/orbit-core/src/runtime/v2_host.rs::tool_context_for_activity` is the single materialization point:
+`crates/orbit-core/src/runtime/v2_host/mod.rs::tool_context_for_activity` is the single materialization point:
 
 ```
 fs_profile: Some(fs_profile.unwrap_or(UNRESTRICTED_FS_PROFILE).to_string())
 ```
 
-This is the implicit-`unrestricted` rule from §2.2 in code form. Every dispatcher path that constructs a `ToolContext` for an activity reaches this line, so omitting `fsProfile:` always means "unrestricted within whatever the policy says about unrestricted" — never "no policy at all."
+This is the implicit-`unrestricted` rule from §2.2 in code form. Every v2 dispatcher path that constructs a `ToolContext` reaches this line, so omitting `fsProfile:` means "unrestricted within policy," not "no policy."
 
-`crates/orbit-core/src/runtime/pipeline.rs` runs a different fallback for legacy pipeline contexts. If a `ToolContext` arrives without `fs_profile`, the pipeline calls `read_activity_fs_profile_from_env()`, which returns the value of `ORBIT_ACTIVITY_FS_PROFILE` or `None` if the variable is unset or empty. This is **not** equivalent to the v2 host's behavior: when the env var is unset, `ctx.fs_profile` stays `None`, and `enforce_fs_policy` returns `Ok(None)` so fs work proceeds unguarded. The pipeline path is documented here as a real gap rather than as a fallback that mirrors `unrestricted`. See [§9](#9-concerns--honest-limitations).
+Legacy pipeline contexts are different. `crates/orbit-core/src/runtime/pipeline.rs` fills a missing profile from `ORBIT_ACTIVITY_FS_PROFILE`; if the variable is unset, `ctx.fs_profile` stays `None` and `enforce_fs_policy` returns `Ok(None)`. That unguarded path is a real gap, not another spelling of `unrestricted` (see §9).
 
 ---
 
@@ -119,41 +103,36 @@ This is the implicit-`unrestricted` rule from §2.2 in code form. Every dispatch
 
 `orbit-exec` is the process-spawn layer. The public surface is in `crates/orbit-exec/src/lib.rs`:
 
-- `ExecRequest { program, args, current_dir, timeout_ms, stdin_mode, environment_mode, debug }` — the request shape.
-- `EnvironmentMode::Inherit` (default) or `ClearAndSet(Vec<(String, String)>)`. The `Debug` impl redacts values whose keys match `is_sensitive_env_name`, so debug-printed `ExecRequest` does not leak provider keys.
+- `ExecRequest { program, args, current_dir, timeout_ms, stdin_mode, environment_mode, debug }`.
+- `EnvironmentMode::Inherit` or `ClearAndSet(Vec<(String, String)>)`; debug output redacts sensitive env values.
 - `StdinMode::Inherit` / `Null` / `Bytes(Vec<u8>)`.
-- `Sandbox` trait (`crates/orbit-exec/src/sandbox.rs`) with one method `validate(req) -> Result<()>`. The default `NoSandbox` always returns `Ok`.
+- `Sandbox::validate(req) -> Result<()>`; the default `NoSandbox` always returns `Ok`.
 - `run_process(req, sandbox) -> ExecutionResult`.
 
-`run_process` orders the work as: `sandbox.validate` first, then `process::spawn` (`crates/orbit-exec/src/process.rs`), then `supervision::wait_with_optional_timeout`. Spawn applies `EnvironmentMode` (clear + set when requested), wires stdout/stderr to piped descriptors, and on Unix calls `command.process_group(0)` so the child becomes its own process-group leader. That single setting is what allows the cleanup layer to kill orphan subprocesses later.
+`run_process` calls `sandbox.validate`, then `process::spawn`, then `supervision::wait_with_optional_timeout`. Spawn applies the requested environment, pipes stdout/stderr, and on Unix calls `command.process_group(0)` so cleanup can kill orphan subprocesses.
 
-`ExecutionResult { success, stdout, stderr, exit_code, duration_ms, output }` is the result shape (defined in `orbit-common`). The runner converts captured bytes via `String::from_utf8_lossy`, so non-UTF-8 output is preserved as replacement characters rather than failing the call.
+`ExecutionResult { success, stdout, stderr, exit_code, duration_ms, output }` is defined in `orbit-common`. Captured bytes use `String::from_utf8_lossy`, so non-UTF-8 output becomes replacement characters instead of failing the call.
 
-The `Sandbox` trait is still the seam for `run_process` callers and its default impl remains `NoSandbox`. CLI-backed `agent_loop` invocations use a separate executor-level wrapper when the executor declares `sandbox: macos-sandbox-exec` (shipped in [T20260427-51]). The v2 host resolves the activity `fsProfile`, converts workspace-relative rules to absolute roots under the workspace, and the engine compiles those roots to SBPL just before spawning the provider CLI.
+The `Sandbox` trait remains the seam for generic `run_process` callers, but CLI-backed `agent_loop` invocations use a separate executor wrapper when the executor declares `sandbox: macos-sandbox-exec` ([T20260427-51]). The v2 host resolves the activity `fsProfile`; the engine converts workspace-relative rules to absolute roots and compiles SBPL before spawning the provider CLI.
+
+The macOS wrapper resolves `sandbox-exec` from trusted absolute locations only, currently `/usr/bin/sandbox-exec`; it does not consult `PATH` for either availability checks or process spawn. If the trusted binary is missing, the runner fails closed unless the executor declares `allow_fallback: true`, and the error names the trusted location that was probed ([T20260509-30]).
 
 The compiled macOS profile denies by default, allows broad reads required by agent CLIs and system libraries, allows process/signal/ipc/network/sysctl/iokit operations, and allows writes to:
 
-- scratch/cache roots (`/tmp`, `/private/tmp`, `/private/var/folders`, `/dev`, and `$HOME/Library/Caches`)
-- `$HOME/.orbit`, so inherited `orbit mcp serve` and other Orbit subprocesses can persist audit/state
-- per-provider state directories: Codex (`$CODEX_HOME` when set, otherwise `$HOME/.codex` — [T20260428-10]), Claude (`$CLAUDE_CONFIG_DIR` when set, otherwise `$HOME/.claude` — [T20260428-14]), and Gemini (`$HOME/.gemini` — [T20260428-14]). All three are emitted unconditionally because the active provider is not threaded through SBPL compilation; per-provider allowances are narrow and do not widen attack surface
-- every positive `modify` root from the resolved profile
-- Codex side-write roots from runtime provider config (the same roots passed as `--add-dir`, today workspace `.orbit` and global `.orbit`), appended after policy denies so workflow state remains writable under the outer sandbox ([T20260428-10]). This branch stays Codex-specific because Claude and Gemini have no analogous CLI surface — neither accepts `--add-dir`-style flags, and their startup-time writes are confined to the per-provider state directories listed above ([T20260428-14])
+- scratch/cache roots (`/tmp`, `/private/tmp`, `/private/var/folders`, `/dev`, `$HOME/Library/Caches`)
+- `$HOME/.orbit` for inherited Orbit subprocess audit/state
+- provider state dirs: Codex (`$CODEX_HOME` or `$HOME/.codex`), Claude (`$CLAUDE_CONFIG_DIR` or `$HOME/.claude`), and Gemini (`$HOME/.gemini`)
+- Claude `$HOME/.claude.json` sibling files (`.claude.json`, `.claude.json.lock`, atomic-write `.claude.json.tmp.<pid>.<ms_ts>`) when `CLAUDE_CONFIG_DIR` is unset, since these live at the home root rather than under `$HOME/.claude/` ([T20260508-13])
+- positive `modify` roots from the resolved profile
+- Codex side-write roots from runtime provider config, appended after policy denies so workflow state remains writable under the outer sandbox
 
-Negated `read` / `modify` rules become explicit SBPL deny clauses after ordinary profile allows so they retain last-match-wins semantics. Simple path denials and `/**` subtree denials compile to `subpath`; non-subpath globs such as `**/*.env` compile to `regex` so they do not collapse into a repo-wide deny. Host-owned provider side roots are the explicit exception: Orbit appends those write roots after the policy-derived denials because the provider CLI and inherited Orbit subprocesses need the same workflow-state roots to be writable.
+Negated `read` / `modify` rules become explicit SBPL denies after ordinary profile allows to preserve last-match-wins. Simple path and `/**` subtree denials compile to `subpath`; non-subpath globs such as `**/*.env` compile to `regex`. Host-owned provider side roots are the exception because the provider CLI and inherited Orbit subprocesses must write workflow state.
 
 ---
 
 ## 8. Process Supervision
 
-`crates/orbit-exec/src/supervision/wait.rs::wait_with_optional_timeout` orchestrates child lifetime. The contract:
-
-1. Spawn background threads to drain stdout and stderr (`spawn_stdout_drain`, `spawn_stderr_drain` from `tee.rs`). These prevent the child from blocking on a full pipe buffer, which is the canonical "stuck child" failure mode for naive subprocess code.
-2. If `StdinMode::Bytes` is set, spawn an additional stdin-writer thread (`spawn_stdin_write`).
-3. On Unix, install a `SignalHandlerGuard` that captures SIGINT and SIGTERM via `libc::sigaction`. The handler writes a single byte to a non-blocking pipe; the wait loop reads from that pipe to learn that a parent-side signal arrived.
-4. Loop with `WAIT_POLL_INTERVAL = 100ms`, calling `child.wait_timeout(slice)`. The slice is the smaller of the poll interval and the remaining deadline.
-5. When the child exits cleanly, call `kill_process_group(child.id())` to reap any orphan subprocesses still holding the pipe write ends, then join the reader threads.
-6. When a parent-side signal arrives, call `terminate_process_group(child, signal, poll_interval)` and report `exit_code = Some(128 + signal)` with a `process interrupted by signal SIG…` line appended to stderr.
-7. When the deadline expires, call `terminate_process_group(child, SIGTERM, poll_interval)` and append `process timed out` to stderr.
+`crates/orbit-exec/src/supervision/wait.rs::wait_with_optional_timeout` drains stdout/stderr in background threads, writes stdin bytes when requested, installs Unix SIGINT/SIGTERM handling, and polls `child.wait_timeout` every `WAIT_POLL_INTERVAL = 100ms`. Clean exits still call `kill_process_group(child.id())` to reap orphans. Parent signals terminate the group and report `exit_code = Some(128 + signal)` with annotated stderr; deadlines terminate with SIGTERM and append `process timed out`.
 
 `crates/orbit-exec/src/supervision/cleanup.rs` is the termination layer. The escalation policy:
 
@@ -162,30 +141,68 @@ Negated `read` / `modify` rules become explicit SBPL deny clauses after ordinary
 3. If the group is gone, return success.
 4. Otherwise send `SIGKILL` to the group, then call `child.kill()` and `child.wait()` to reap.
 
-`process_group_is_alive` uses `killpg(pid, 0)` and treats `ESRCH` as "all gone." Any other errno is treated as "still alive" so we err on the side of escalating to SIGKILL.
+`process_group_is_alive` uses `killpg(pid, 0)`, treats `ESRCH` as "all gone," and treats other errno values as "still alive" so cleanup errs toward SIGKILL.
 
-`crates/orbit-exec/src/supervision/signal.rs::SignalHandlerGuard` is an RAII guard. Install acquires a global `Mutex` (so only one wait loop installs handlers at a time), creates a non-blocking pipe, swaps in the orbit-exec handler for SIGINT and SIGTERM, and remembers the previous `sigaction` structs. Drop reverses every step in order — restore previous handlers, close the pipe, release the mutex. The handler itself is `unsafe extern "C"` and only does an atomic load and a single-byte `write`, both of which are async-signal-safe.
+`SignalHandlerGuard` is RAII: install acquires a global `Mutex`, creates a pipe, swaps in handlers, and stores prior `sigaction` structs; Drop restores handlers, closes the pipe, and releases the mutex. The handler performs only an atomic load plus one-byte `write`, both async-signal-safe.
 
 Non-Unix builds use a fallback `terminate_process_group` that just calls `child.kill().ok(); child.wait().ok();` — process-group semantics do not apply on Windows, so orphan reaping is best-effort.
 
 ---
 
-## 9. Concerns & Honest Limitations
+## 9. Test surfaces
 
-1. **OS-level CLI sandboxing is macOS-only.** `backend: cli` executors can be wrapped by `sandbox-exec` on macOS. Linux (`bwrap`), Docker, and other sandbox implementations remain future work, and non-agent `run_process` callers still use the `Sandbox` trait's `NoSandbox` default unless they add their own guard.
-2. **Tool allowlists are still delegated for CLI backends.** The macOS wrapper narrows filesystem writes, but Orbit still does not enforce declared `tools:` inside Claude/Codex/Gemini CLI harnesses. The `tool_allowlist.harness_delegated` event remains the audit signal for that gap.
-3. **Provider state directories are trusted write roots.** `$HOME/.orbit`, the Codex state directory, the Claude state directory, and the Gemini state directory are allowed so each provider CLI and inherited Orbit subprocesses can initialize and persist state. Those allowances are intentionally narrow, but they are outside the activity workspace, and they are emitted unconditionally rather than gated on the active provider.
-4. **Codex side-root appends are config-coupled.** The extra workspace/global `.orbit` side roots come from Codex `writable_dirs_json`, which Orbit currently populates for the default `execution.codex.sandbox = "workspace-write"` mode. If an operator configures Codex itself to `danger-full-access` while keeping the outer `macos-sandbox-exec` wrapper, those side roots are absent and inherited Orbit subprocesses may again hit workspace `.orbit` write denials.
-5. **macOS provenance syscall allowances are private.** The `vnguard` and `Sandbox`/67 MAC-syscall allowances mirror Codex's own seatbelt profile and unblock current macOS startup behavior. They are Apple-internal details; if Codex startup returns a bare `Operation not permitted` after an OS update, inspect those clauses first.
-6. **Pipeline env-fallback can leave `fs_profile = None`.** `crates/orbit-core/src/runtime/pipeline.rs` reads `ORBIT_ACTIVITY_FS_PROFILE` to fill a missing `fs_profile`. If the env var is unset, the `ToolContext` keeps `fs_profile: None`, `enforce_fs_policy` returns `Ok(None)`, and fs work proceeds unguarded. This diverges from the v2 host's `tool_context_for_activity`, which always materializes `unrestricted`. Callers that construct contexts outside the v2 dispatcher must set `fs_profile` explicitly or accept the unguarded path.
-7. **Policy enforcement is not centralized within HTTP-backed runs either.** `enforce_fs_policy` is called from `orbit-tools::builtin::fs`, but a future tool (or a non-builtin tool) that performs fs work without going through that helper would not be guarded. There is no fs-trait-level policy interception.
-8. **Exec has no policy hook.** `proc.spawn` and similar shell-invoking tools do not consult the `PolicyEngine`. Program allowlists are recorded at the activity layer (`activity.rs` notes that `spec.allowed_programs` is consulted by the proc.spawn tool), but those allowlists are not part of the `PolicyDef` and do not flow through `effective_profile`.
-9. **Symlink semantics are not specified.** `workspace_relative_path` canonicalizes via `Path::canonicalize`, which follows symlinks and rejects out-of-workspace targets. The deny semantics for a symlink that points outside the workspace are "denied because the resolved path is not workspace-relative," but this is not currently spelled out as an invariant.
-10. **Glob translator is narrow.** It supports `*`, `**`, `?`, and `<prefix>/**`. It does not support character classes (`[abc]`), brace expansion (`{a,b}`), or POSIX bracket expressions. New profile shapes that need richer matching will hit translator gaps before they hit the evaluator.
-11. **`PolicyDecision` and `FsPolicyEvaluation` are parallel surfaces.** The fs path uses the evaluation struct; the broader RBAC plumbing uses the simple Allow/Deny enum. There is no current bridge that converts one to the other, which means future non-fs policy evaluators have to pick a return shape rather than reuse one.
-12. **Empty-rule-set semantics are conservative but non-obvious.** A profile with no `read` rules denies every read with `matched_rule = "[]"`. This is the safe default, but a user who declares a profile with only `denyRead` rules and no positive rules will see "[]" denials, not the "matched the deny rule" denial they may expect.
-13. **Signal handler installation is process-global.** `SignalHandlerGuard` uses a global `Mutex` to serialize installs, so two concurrent `run_process` calls in the same process must take turns installing handlers. This is currently fine because v2 dispatch is single-threaded per process, but it is a real constraint if exec ever moves into a worker pool.
-14. **Workspace canonicalization can deny legitimate paths.** If `workspace_root.canonicalize()` fails (e.g., the directory was just deleted), the helper falls back to the non-canonical root, which can cause `strip_prefix` to fail and surface as a `PolicyDenied("path is outside workspace")` error rather than a clearer "workspace missing" error.
+Risk-weighted regression tests sit beside the implementations they guard
+([T20260509-7]):
+
+- `crates/orbit-policy/src/engine.rs#tests` — `PolicyEngine::check` boundary
+  semantics: positive read-rule matches return `allowed=true` with the rule
+  recorded in `matched_rule`; modify paths outside any positive rule resolve
+  to `allowed=false`; global `denyRead` / `denyModify` rules override
+  profile-level positive rules under last-match-wins; an unknown profile name
+  errors structurally (with the documented `unrestricted` exception); and the
+  `matched_rule` field is populated for audit attribution. Traversal inputs
+  such as `../secret.txt`, `src/../secret.txt`, and their backslash-normalized
+  equivalents are rejected as `OrbitError::InvalidInput` for both read and
+  modify checks ([T20260509-27]).
+- `crates/orbit-exec/src/macos_sandbox.rs#tests` — trusted wrapper
+  resolution ignores `PATH`, including a macOS runtime test that places a fake
+  `sandbox-exec` earlier on `PATH` and verifies the fake wrapper is not
+  executed ([T20260509-30]). SBPL compilation tests
+  cover `denyRead` / `denyModify` clause emission (`subpath` for simple
+  rules, `regex` for non-trivial globs) and the deny-after-allow ordering
+  required for last-match-wins. macOS-gated runtime tests
+  (`compiled_profile_denies_reads_to_negated_read_path` and
+  `compiled_profile_for_realistic_agent_loop_profile_allows_repo_writes_denies_dotenv`)
+  exercise an `agent_loop`-shaped profile end-to-end against the kernel
+  sandbox.
+- `crates/orbit-store/src/file/policy_def_store.rs#tests` — policy resource
+  name tests reject traversal-shaped names such as `../x` before path
+  construction and assert no file is written outside the policy store
+  ([T20260509-28]).
+
+Tests skip on non-macOS (and on macOS hosts where `sandbox-exec` cannot
+apply) via the existing `cfg(target_os = "macos")` + `sandbox_exec_can_apply()`
+gate. SBPL-text assertions paired with each runtime case keep coverage
+non-empty on Linux CI.
+
+---
+
+## 10. Concerns & Honest Limitations
+
+1. **OS-level CLI sandboxing is macOS-only.** Linux (`bwrap`), Docker, and other wrappers remain future work; generic `run_process` still defaults to `NoSandbox`.
+2. **CLI tool allowlists are delegated.** The macOS wrapper narrows writes, but Orbit still trusts Claude/Codex/Gemini harnesses for declared `tools:`.
+3. **Provider state directories are trusted write roots.** `$HOME/.orbit` plus Codex, Claude, and Gemini state dirs are outside the activity workspace and emitted unconditionally.
+4. **Codex side-root appends are config-coupled.** If Codex is configured without the workspace-write side roots, inherited Orbit subprocesses can hit `.orbit` write denials.
+5. **macOS provenance syscall allowances are private.** `vnguard` and `Sandbox`/67 mirror current Codex startup needs and may require review after OS changes.
+6. **Pipeline env fallback can leave `fs_profile = None`.** Legacy contexts without `ORBIT_ACTIVITY_FS_PROFILE` still bypass `enforce_fs_policy`.
+7. **HTTP enforcement is helper-based.** A future builtin or non-builtin tool that skips `enforce_fs_policy` is unguarded.
+8. **Exec has no policy hook.** `proc.spawn` program allowlists are activity-layer data, not part of `PolicyDef` or `effective_profile`.
+9. **Symlink semantics are implicit.** `workspace_relative_path` follows symlinks and rejects out-of-workspace targets, but no spec states that invariant.
+10. **Glob syntax is narrow.** Character classes, brace expansion, and POSIX bracket expressions are unsupported.
+11. **Policy result shapes are parallel.** `PolicyDecision` and `FsPolicyEvaluation` have no bridge for future non-fs evaluators.
+12. **Empty rule sets are safe but opaque.** A profile with only deny rules reports `matched_rule = "[]"`, not the matching deny rule.
+13. **Signal handling is process-global.** `SignalHandlerGuard` serializes installs with a global `Mutex`, which constrains future worker-pool exec.
+14. **Workspace canonicalization errors collapse to denial.** A missing workspace root can surface as `PolicyDenied("path is outside workspace")` rather than a clearer root-missing error.
 
 ---
 
@@ -202,5 +219,10 @@ Non-Unix builds use a fallback `terminate_process_group` that just calls `child.
 - **[T20260427-51]** — Wrap cli-backend agent invocations in `sandbox-exec` on macOS.
 - **[T20260428-10]** — Allow Codex CLI state writes under the macOS sandbox.
 - **[T20260428-14]** — Extend the macOS sandbox state-dir allowance to Claude (`~/.claude` / `$CLAUDE_CONFIG_DIR`) and Gemini (`~/.gemini`), and document why side-write roots remain Codex-only.
+- **[T20260430-23]** — Shorten the policy sandbox design docs while preserving the shipped contract and ADR history.
+- **[T20260508-13]** — Allow Claude's `$HOME/.claude.json` sibling files (`.json`, `.lock`, atomic-write `.tmp.<pid>.<ms_ts>`) under the macOS sandbox.
+- **[T20260509-7]** — Add `PolicyEngine::check` boundary tests and macOS sandbox `denyRead` / realistic agent-loop profile tests.
+- **[T20260509-28]** — Validate policy and executor resource names as safe file stems before file-store path construction.
+- **[T20260509-30]** — Resolve `sandbox-exec` from trusted absolute locations and keep availability errors fail-closed and explicit.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
