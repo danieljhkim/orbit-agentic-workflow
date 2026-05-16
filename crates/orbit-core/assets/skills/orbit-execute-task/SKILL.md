@@ -92,6 +92,13 @@ First persist the execution summary (see template below):
 orbit tool run orbit.task.update --input '{"id": "<task-id>", "execution_summary": "<summary>", "model": "<model_name>"}'
 ```
 
+Learning checkpoint: after persisting the summary, consider whether the task
+surfaced a contradicted assumption, recurring failure mode, non-obvious gotcha
+that took more than 10 minutes to debug, or incident-style root cause. If so,
+follow the `orbit-learning` skill and call `orbit.learning.add` (or use that
+skill's update/supersede flow when it points to existing guidance). Skip if
+none apply.
+
 Then choose the lifecycle handoff path:
 
 - **Under an activity envelope** (for example, `agent_implement`): persist the
@@ -157,6 +164,8 @@ Recommended follow-ups:
 - Requested change implemented and validated.
 - Task started via `orbit.task.start` before execution.
 - Execution summary persisted via `orbit.task.update`.
+- Learning checkpoint considered; if a load-bearing insight was identified,
+  `orbit.learning.add` was called per the `orbit-learning` skill.
 - For direct execution, task advanced to `review`.
 - For envelope-driven execution, task left for the pipeline-owned review
   transition after commit/merge or PR steps succeed.
