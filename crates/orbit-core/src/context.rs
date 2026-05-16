@@ -177,7 +177,7 @@ pub(crate) struct OrbitRuntimeSettings {
     pr_config: PrConfig,
     /// Persisted default for the v2 `agent_loop` execution backend (§3.1).
     v2_backend: Option<String>,
-    /// Default base branch for ship/ship-auto/duel-plan workflows
+    /// Default base branch for ship/duel-plan workflows
     /// (`[workflow] base_branch` in `config.toml`, default `"main"`).
     workflow_base_branch: String,
     crews: std::collections::BTreeMap<String, Crew>,
@@ -338,7 +338,7 @@ impl OrbitContext {
         self.runtime.v2_backend()
     }
 
-    /// Default base branch for ship/ship-auto/duel-plan workflows. Sourced
+    /// Default base branch for ship/duel-plan workflows. Sourced
     /// from `[workflow] base_branch` in `config.toml`; falls back to
     /// `"main"` when the key is absent.
     pub(crate) fn workflow_base_branch(&self) -> &str {

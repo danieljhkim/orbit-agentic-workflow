@@ -39,7 +39,7 @@ pub(crate) struct RuntimeConfig {
     /// `None` means "not configured"; the resolver falls through to the hard-
     /// coded `cli` default.
     pub(crate) v2_backend: Option<String>,
-    /// Default base branch for ship/ship-auto/duel-plan workflows. Sourced
+    /// Default base branch for ship/duel-plan workflows. Sourced
     /// from `[workflow] base_branch` in `config.toml`; defaults to `"main"`
     /// when no key is set.
     pub(crate) workflow_base_branch: String,

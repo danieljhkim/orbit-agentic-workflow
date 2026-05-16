@@ -282,7 +282,7 @@ function renderPrsTable(agents) {
   const headline = `**${num(total)} PRs landed via the Orbit ship workflow.**`;
   return section(
     'PRs landed',
-    'Pull requests merged through `orbit run ship` / `orbit run ship-auto`. Clean rate = `merged_clean / (merged_clean + merged_with_revision)`. Sorted by total.',
+    'Pull requests merged through `orbit run ship`. Clean rate = `merged_clean / (merged_clean + merged_with_revision)`. Sorted by total.',
     headline,
     ['Agent', 'Total', 'Clean', 'With revision', 'Clean rate'],
     sortRows(rows),

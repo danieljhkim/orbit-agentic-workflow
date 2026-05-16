@@ -28,7 +28,7 @@ The constraints are the point — they're what keep agent-assisted code shippabl
 
 - **Knowledge-graph–aware tooling.** Agents query a parsed, content-addressed graph (symbols, imports, callers, implementors) instead of grep. Branch-scoped and safe for parallel rebuild; numbers in [`benchmarks/graph/`](benchmarks/graph/). → [docs/design/knowledge-graph/](docs/design/knowledge-graph/)
 
-- **Conflict-aware parallel execution.** For `orbit run ship-auto`, each agent run lands in its own git worktree per task, and the gate pipeline reserves task `context_files` as locks before fanning out, rejecting overlapping reservations up front instead of producing merge conflicts later (see [merge throughput chart](docs/assets/merge-throughput.png)). → [docs/design/activity-job/](docs/design/activity-job/)
+- **Conflict-aware parallel execution.** For `orbit run ship`, each agent run lands in its own git worktree per task, and the gate pipeline reserves task `context_files` as locks before fanning out, rejecting overlapping reservations up front instead of producing merge conflicts later (see [merge throughput chart](docs/assets/merge-throughput.png)). → [docs/design/activity-job/](docs/design/activity-job/)
 
 - **Sandboxed-by-default execution.** Dispatched agent CLIs run under an OS-level sandbox out of the box — FS access scoped to the worktree, network egress gated by per-activity policy. **macOS only today** (via `sandbox-exec`); on Linux/Windows the agent subprocess runs unsandboxed, with in-process FS guards still covering HTTP tools. → [docs/design/policy-sandbox](docs/design/policy-sandbox/)
 
@@ -74,7 +74,7 @@ Paste the prompt below into your agent (Claude Code, Codex CLI, or Gemini CLI) *
 
 Not recommended unless you're a contrarian or you're in a highly restricted environment where you can't clone things. This way is harder and less flexible - really makes little sense to choose this route. But if you must:
 
-**Prerequisites:** at least one supported agent CLI (Codex, Claude Code, or Gemini CLI), authenticated. For PR-based workflows (i.e., `orbit run ship-auto`), `gh` installed and authenticated; otherwise use `--mode local`.
+**Prerequisites:** at least one supported agent CLI (Codex, Claude Code, or Gemini CLI), authenticated. For PR-based workflows (i.e., `orbit run ship` in the default `--mode pr`), `gh` installed and authenticated; otherwise use `--mode local`.
 
 <details>
 <summary><strong>Manual setup commands</strong> — copy these into your terminal (click to expand)</summary>
@@ -107,7 +107,7 @@ orbit task approve "$TASK_ID"
 orbit web serve
 
 # conflict-aware, parallel flush of the backlog tasks to PRs
-orbit run ship-auto
+orbit run ship
 ```
 
 </details>
@@ -152,7 +152,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | MCP registration | Automatic | Manual: `orbit workspace init --mcp` per workspace |
 | Web dashboard (`orbit web serve`) | No | Yes |
 | Works with Codex / Gemini CLI | No (Claude Code only) | Yes |
-| workflows (i.e. `orbit run ship-auto`) | No | Yes |
+| workflows (i.e. `orbit run ship`) | No | Yes |
 
 </details>
 

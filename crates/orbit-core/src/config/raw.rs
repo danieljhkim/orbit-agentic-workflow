@@ -25,8 +25,8 @@ pub(super) struct RawRuntimeConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct RawWorkflowConfig {
-    /// `workflow.base_branch` — repo-level default base branch for ship,
-    /// ship-auto, and duel-plan workflows. When absent, defaults to `main`.
+    /// `workflow.base_branch` — repo-level default base branch for ship and
+    /// duel-plan workflows. When absent, defaults to `main`.
     /// Repos that keep an `agent-main` buffer branch set this to
     /// `"agent-main"`.
     pub(super) base_branch: Option<String>,

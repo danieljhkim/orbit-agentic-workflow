@@ -18,9 +18,8 @@ sidebar:
 | Command | Purpose |
 |---------|---------|
 | `orbit run job <job_id>` | Run an arbitrary job by ID. |
-| `orbit run ship <task_id> ...` | Ship explicitly selected tasks through the PR pipeline by default. |
-| `orbit run ship --mode local <task_id> ...` | Run the local-only task path for explicitly selected tasks. |
-| `orbit run ship-auto` | Auto-select backlog tasks, print a human-readable status summary, and support structured details with `--json`. |
+| `orbit run ship [task_id ...]` | Submit backlog or explicitly selected tasks through the gated shipment pipeline and return a run ID immediately. |
+| `orbit run ship --mode local [task_id ...]` | Run the local-only task path for backlog or explicitly selected tasks. |
 | `orbit run duel-plan <task_id>` | Run a planning duel for one task. |
 | `orbit task` | Create, update, and manage tasks. |
 | `orbit task artifact put <task_id> <source_path>` | Store a UTF-8 file under a task's artifacts directory. |
