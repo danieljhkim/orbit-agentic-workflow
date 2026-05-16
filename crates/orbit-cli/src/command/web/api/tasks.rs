@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use super::{bad_request, map_runtime_error, server_error, validate_id};
 use crate::command::task::output::task_to_json_with_sidecars;
+use crate::command::task::task_locks_json;
 
 const DASHBOARD_TASK_STATUSES: &[TaskStatus] = &[
     TaskStatus::InProgress,
@@ -134,6 +135,13 @@ pub(super) async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Resp
             }
             Err(e) => server_error(e),
         },
+        Err(e) => server_error(e),
+    }
+}
+
+pub(super) async fn list_task_locks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
+    match task_locks_json(&runtime) {
+        Ok(value) => Json(value).into_response(),
         Err(e) => server_error(e),
     }
 }

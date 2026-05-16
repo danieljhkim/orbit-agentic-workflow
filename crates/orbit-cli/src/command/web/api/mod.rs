@@ -297,6 +297,7 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
             "/tasks",
             get(tasks::list_tasks).post(tasks::create_task_action),
         )
+        .route("/tasks/locks", get(tasks::list_task_locks))
         .route(
             "/tasks/:id",
             get(tasks::get_task).patch(tasks::update_task_action),

@@ -936,6 +936,71 @@ function renderTasks(tasks) {
   syncNodes(body, Array.from(frag.children));
 }
 
+function renderLocksPanel(payload) {
+  const body = $("locks-body");
+  const count = $("locks-count");
+  if (!body || !count) return;
+  const byTask = Array.isArray(payload && payload.by_task) ? payload.by_task : [];
+  const totalLocked = Number.isFinite(Number(payload && payload.total_locked))
+    ? Number(payload.total_locked)
+    : 0;
+  const totalTasks = Number.isFinite(Number(payload && payload.total_tasks))
+    ? Number(payload.total_tasks)
+    : byTask.length;
+  count.textContent = `${totalLocked} files / ${totalTasks} tasks`;
+
+  if (byTask.length === 0) {
+    const empty = el("div", { class: "locks-empty", text: "No files currently locked." });
+    empty.dataset.key = "locks-empty";
+    empty.dataset.hash = "locks-empty";
+    syncNodes(body, [empty]);
+    return;
+  }
+
+  const nodes = byTask.map((task) => {
+    const taskId = String(task.id || "");
+    const group = el("div", { class: "lock-task-group" });
+    group.dataset.key = `lock-task-${taskId}`;
+    group.dataset.hash = JSON.stringify(task);
+
+    const idButton = el("button", {
+      class: "lock-task-id mono",
+      text: `[${taskId}]`,
+      title: `Open ${taskId} in the task list`,
+    });
+    idButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openVisibleTask(taskId);
+    });
+
+    const header = el("div", { class: "lock-task-header" }, [
+      idButton,
+      el("span", { class: "lock-separator", text: "·" }),
+      statusPill(task.status || "unknown"),
+    ]);
+    if (task.job_run_id) {
+      header.appendChild(el("span", { class: "lock-separator", text: "·" }));
+      header.appendChild(el("span", {
+        class: "lock-job mono",
+        text: `job_run=${task.job_run_id}`,
+        title: task.job_run_id,
+      }));
+    }
+    group.appendChild(header);
+
+    const files = Array.isArray(task.context_files) ? task.context_files : [];
+    for (const path of files) {
+      group.appendChild(el("div", {
+        class: "lock-file-row mono",
+        text: String(path),
+        title: String(path),
+      }));
+    }
+    return group;
+  });
+  syncNodes(body, nodes);
+}
+
 function fmtTimestamp(iso) {
   if (!iso) return "-";
   const d = new Date(iso);
@@ -2535,6 +2600,7 @@ function activeRefreshJobs() {
         renderTasks(tasks);
       }),
     );
+    if (!document.hidden) jobs.push(fetchAndRenderTaskLocks());
     return jobs;
   }
 
@@ -2612,6 +2678,10 @@ function fetchAndRenderRuns() {
     lastRuns = mergeRunsWithFriction(runs, frictionRows);
     renderRuns(lastRuns);
   });
+}
+
+function fetchAndRenderTaskLocks() {
+  return fetchJson("/api/tasks/locks").then(renderLocksPanel);
 }
 
 function fetchAndRenderRunDetail() {
@@ -3770,7 +3840,7 @@ async function refreshDashboard() {
   isRefreshing = false;
   if (activeTab === "tasks") fitLogPanelToViewport();
   
-  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,learnings,adrs,frictions,frictions/stats,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,runs/:id/logs?limit,scoreboard,diagnostics/{metrics,errors,friction,denials?since|kind|profile|agent}}`;
+  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,tasks/locks,learnings,adrs,frictions,frictions/stats,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,runs/:id/logs?limit,scoreboard,diagnostics/{metrics,errors,friction,denials?since|kind|profile|agent}}`;
 }
 
 buildChips();

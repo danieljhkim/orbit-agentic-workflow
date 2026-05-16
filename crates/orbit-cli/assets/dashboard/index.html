@@ -1738,6 +1738,7 @@
       .col-log {
         display: flex;
         flex-direction: column;
+        gap: 8px;
         min-height: 0;
         min-width: 0;
       }
@@ -1748,9 +1749,68 @@
         min-height: 0;
         min-width: 0;
       }
+      #locks-panel {
+        flex: 0 0 auto;
+      }
+      #locks-body {
+        max-height: 180px;
+        overflow: auto;
+      }
+      .locks-empty {
+        padding: 10px 16px;
+        color: var(--fg-dim);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-style: italic;
+      }
+      .lock-task-group {
+        padding: 8px 12px 9px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+      .lock-task-group:last-child {
+        border-bottom: none;
+      }
+      .lock-task-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        margin-bottom: 4px;
+      }
+      .lock-task-id {
+        border: 0;
+        background: transparent;
+        color: var(--accent);
+        cursor: pointer;
+        padding: 0;
+        font-size: 11px;
+      }
+      .lock-task-id:hover {
+        color: var(--accent-hover);
+        text-decoration: underline;
+      }
+      .lock-separator {
+        color: var(--fg-dim);
+        font-size: 11px;
+      }
+      .lock-job {
+        color: var(--fg-dim);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .lock-file-row {
+        padding: 2px 0 2px 16px;
+        color: var(--fg-dim);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       #log-panel {
-        height: var(--log-panel-height, calc(100dvh - 224px));
-        max-height: var(--log-panel-height, calc(100dvh - 224px));
+        height: var(--log-panel-height, calc(100dvh - 420px));
+        max-height: var(--log-panel-height, calc(100dvh - 420px));
       }
       .col-log .panel > header .title {
         display: flex; align-items: center; gap: 10px;
@@ -1913,6 +1973,10 @@
           </section>
         </div>
         <div class="col-log">
+          <section class="panel" id="locks-panel">
+            <header><span>Locked files</span><span class="count" id="locks-count">0 files / 0 tasks</span></header>
+            <div class="body" id="locks-body"></div>
+          </section>
           <section class="panel" id="log-panel">
             <header class="head">
               <div class="title"><span class="live-dot"></span>orbit.log <span style="color: var(--fg-dim); font-family: var(--font-mono); font-weight: 400; letter-spacing: 0; text-transform: none;">— tail -F</span></div>
