@@ -53,6 +53,6 @@ sidebar:
 
 | Command | Purpose |
 |---------|---------|
-| `orbit mcp init` / `orbit mcp remove` | Register or unregister MCP client integration for Claude, Codex, and Gemini. |
+| `orbit mcp init` / `orbit mcp remove` | Register or unregister MCP client integration for Claude Code, Codex, Gemini, and Grok Build. |
 | `orbit mcp serve` | Serve the safe default MCP tool surface. |
 | `orbit web serve` | Serve the Orbit dashboard. |
