@@ -311,7 +311,7 @@ pub trait AgentProtocolHost {
     ) -> Result<Vec<u8>, OrbitError>;
 }
 
-/// Resolved `[agent.<role>]` block from `config.toml` (ADR-029). Each field
+/// Resolved crew role assignment from `config.toml`. Each field
 /// is independently optional — the resolver in
 /// `crate::activity_job::agent_role` falls back to the inline activity value
 /// for any field the config does not specify.
@@ -345,12 +345,12 @@ pub trait EnvironmentHost {
     fn cli_command_environment(&self, env_extra: &[String]) -> Vec<(String, String)>;
     fn missing_required_environment_vars(&self, required_env_vars: &[&str]) -> Vec<String>;
 
-    /// Resolved `[agent.<role>]` block from the active workspace's
-    /// `config.toml`, if any (ADR-029). The default returns `None`, which
-    /// means dispatch falls back to the inline `provider`/`model`/`backend`
-    /// on the activity. orbit-core's implementation reads
-    /// `RawRuntimeConfig.agent` (written by `orbit init` per ADR-027) and
-    /// parses the string fields into the strongly-typed activity-job enums.
+    /// Resolved crew role assignment from the active workspace's
+    /// `config.toml`, if any. The default returns `None`, which means
+    /// dispatch falls back to the inline `provider`/`model`/`backend` on the
+    /// activity. orbit-core's implementation reads the selected
+    /// `[crews.<name>]` entry and parses the string fields into the
+    /// strongly-typed activity-job enums.
     fn agent_role_config(&self, _role: AgentRole) -> Option<AgentRoleConfig> {
         None
     }

@@ -104,7 +104,7 @@ impl OrbitRuntime {
         note: Option<String>,
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
-        self.start_task_with_actor_label_override(id, note, comment, None, None, None)
+        self.start_task_with_actor_label_override(id, note, comment, None, None, None, None)
     }
 
     pub fn start_task_with_identity(
@@ -115,7 +115,27 @@ impl OrbitRuntime {
         agent: Option<String>,
         model: Option<String>,
     ) -> Result<Task, OrbitError> {
-        self.start_task_with_actor_label_override(id, note, comment, agent, model, None)
+        self.start_task_with_identity_and_crew(id, note, comment, agent, model, None)
+    }
+
+    pub fn start_task_with_identity_and_crew(
+        &self,
+        id: &str,
+        note: Option<String>,
+        comment: Option<String>,
+        agent: Option<String>,
+        model: Option<String>,
+        crew_override: Option<String>,
+    ) -> Result<Task, OrbitError> {
+        self.start_task_with_actor_label_override(
+            id,
+            note,
+            comment,
+            agent,
+            model,
+            None,
+            crew_override,
+        )
     }
 
     pub(crate) fn start_task_as_system(
@@ -131,6 +151,7 @@ impl OrbitRuntime {
             None,
             None,
             Some(SYSTEM_ACTOR_LABEL.to_string()),
+            None,
         )
     }
 
@@ -142,10 +163,36 @@ impl OrbitRuntime {
         agent: Option<String>,
         model: Option<String>,
         actor_label_override: Option<String>,
+        crew_override: Option<String>,
     ) -> Result<Task, OrbitError> {
         let (canonical_agent, canonical_model) =
             self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;
+        // Validate status before crew resolution so a misleading
+        // "no crew selected" error can't mask the real problem
+        // (e.g. trying to restart a task that's already in-progress).
+        match task.status {
+            TaskStatus::Proposed
+            | TaskStatus::Friction
+            | TaskStatus::Backlog
+            | TaskStatus::Someday
+            | TaskStatus::Blocked => {}
+            TaskStatus::InProgress => {
+                return Err(OrbitError::InvalidInput(format!(
+                    "task '{id}' is already in-progress"
+                )));
+            }
+            other => {
+                return Err(OrbitError::InvalidInput(format!(
+                    "task '{id}' is in status '{other}'; start requires 'proposed', 'friction', 'backlog', 'someday', or 'blocked'"
+                )));
+            }
+        }
+        self.resolve_and_log_crew_for_task_start(
+            id,
+            crew_override.as_deref(),
+            task.crew.as_deref(),
+        )?;
         let dependency_status_index = build_task_status_index(&self.list_tasks()?);
         let unmet_dependencies = unmet_task_dependencies(&task, &dependency_status_index);
         if in_progress_transition_requires_plan(task.status) {

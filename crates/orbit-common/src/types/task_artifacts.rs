@@ -65,6 +65,8 @@ pub struct TaskEnvelopeV2 {
     pub complexity: Option<TaskComplexity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crew: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<TaskRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -674,6 +676,7 @@ updated_at: 2026-05-10T12:00:00Z
             priority: TaskPriority::Medium,
             complexity: None,
             job_run_id: None,
+            crew: None,
             relations: Vec::new(),
             tags: Vec::new(),
             context_files: Vec::new(),

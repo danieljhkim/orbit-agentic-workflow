@@ -86,6 +86,7 @@ impl TaskV2Store {
                 priority: params.priority,
                 complexity: params.complexity,
                 job_run_id: None,
+                crew: params.crew,
                 relations,
                 tags: normalize_task_tags(params.tags),
                 context_files: params.context_files,
@@ -323,6 +324,10 @@ impl TaskV2Store {
             }
             if let Some(value) = &fields.job_run_id {
                 bundle.envelope.job_run_id = value.clone();
+                envelope_changed = true;
+            }
+            if let Some(value) = &fields.crew {
+                bundle.envelope.crew = value.clone();
                 envelope_changed = true;
             }
             if let Some(value) = &fields.external_refs {
@@ -750,6 +755,7 @@ impl TaskV2Store {
             external_refs: bundle.envelope.external_refs,
             relations: bundle.envelope.relations,
             job_run_id: bundle.envelope.job_run_id,
+            crew: bundle.envelope.crew,
             created_at: bundle.envelope.created_at,
             updated_at: bundle.envelope.updated_at,
         })
@@ -1234,6 +1240,7 @@ mod tests {
                 ExternalRef::try_new("linear".to_string(), "ENG-123".to_string(), None).unwrap(),
             ],
             source_task_id: None,
+            crew: None,
             comments: vec![TaskComment {
                 at: now,
                 by: "daniel".to_string(),

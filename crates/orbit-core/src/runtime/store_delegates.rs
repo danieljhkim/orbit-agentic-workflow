@@ -44,6 +44,7 @@ pub(crate) struct TaskRecordUpdateParams {
     pub(crate) pr_status: Option<Option<String>>,
     pub(crate) source_task_id: Option<Option<String>>,
     pub(crate) job_run_id: Option<Option<String>>,
+    pub(crate) crew: Option<Option<String>>,
     pub(crate) status_event: Option<String>,
     pub(crate) status_note: Option<String>,
     pub(crate) append_history: Vec<TaskHistoryEntry>,
@@ -73,6 +74,7 @@ impl TaskRecordUpdateParams {
             || self.pr_status.is_some()
             || self.source_task_id.is_some()
             || self.job_run_id.is_some()
+            || self.crew.is_some()
     }
 
     fn has_history_changes(&self) -> bool {
@@ -256,6 +258,7 @@ impl TaskRecords<'_> {
                     pr_status: params.pr_status.clone(),
                     source_task_id: params.source_task_id.clone(),
                     job_run_id: params.job_run_id.clone(),
+                    crew: params.crew.clone(),
                 },
             )?;
         }
@@ -459,6 +462,14 @@ impl JobRecords<'_> {
         metrics: KnowledgeRunMetrics,
     ) -> Result<bool, OrbitError> {
         self.run.record_job_run_knowledge_metrics(run_id, metrics)
+    }
+
+    pub(crate) fn record_run_crew(
+        &self,
+        run_id: &str,
+        crew: &orbit_common::types::Crew,
+    ) -> Result<bool, OrbitError> {
+        self.run.record_job_run_crew(run_id, crew)
     }
 
     pub(crate) fn finalize_run(

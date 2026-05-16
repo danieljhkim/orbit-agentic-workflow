@@ -51,6 +51,7 @@ impl OrbitRuntime {
             normalize_workspace_path(&self.paths().repo_root, params.workspace_path.as_deref())?;
         let dependencies = normalize_task_dependencies(params.dependencies.clone())?;
         validate_task_dependencies(&self.list_tasks()?, None, &dependencies)?;
+        self.validate_crew_name(params.crew.as_deref())?;
 
         let prune_root = context_workspace_root(&self.paths().repo_root, workspace_path.as_deref());
         let normalized_context_files =
@@ -82,6 +83,7 @@ impl OrbitRuntime {
                 task_type,
                 external_refs: params.external_refs.clone(),
                 source_task_id: params.source_task_id.clone(),
+                crew: params.crew.clone(),
                 comments: comments.clone(),
             })?;
             Ok((

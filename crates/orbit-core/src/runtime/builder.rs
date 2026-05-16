@@ -107,7 +107,8 @@ pub(crate) fn build_context_from_roots(
     let pr_config = runtime_config.pr_config().clone();
     let v2_backend = runtime_config.v2_backend().map(ToString::to_string);
     let workflow_base_branch = runtime_config.workflow_base_branch().to_string();
-    let agent_roles = runtime_config.agent_roles.clone();
+    let crews = runtime_config.crews.clone();
+    let default_crew = runtime_config.default_crew.clone();
 
     Ok(OrbitContext::new(
         paths,
@@ -144,7 +145,8 @@ pub(crate) fn build_context_from_roots(
             pr_config,
             v2_backend,
             workflow_base_branch,
-            agent_roles,
+            crews,
+            default_crew,
         ),
     ))
 }

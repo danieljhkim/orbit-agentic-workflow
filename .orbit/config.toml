@@ -22,23 +22,19 @@ enabled = true
 [graph]
 editing = false
 
-[agent.implementer]
-backend = "cli"
-model = "gpt-5.5"
-provider = "codex"
+[crews.opus-codex]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
 
-[agent.planner]
-backend = "cli"
-model = "claude-opus-4-7"
-provider = "claude"
-
-[agent.reviewer]
-backend = "cli"
-model = "gpt-5.5"
-provider = "codex"
+[crews.all-claude]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "claude-sonnet-4-6", provider = "claude", backend = "cli" }
+reviewer = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
 
 [workflow]
 base_branch = "agent-main"
+default_crew = "opus-codex"
 
 [pr]
 task_url_template = "https://orbit-cli.com/tasks/{task_id}"

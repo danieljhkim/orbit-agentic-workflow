@@ -95,6 +95,9 @@ impl OrbitRuntime {
         if let Some(tags) = params.tags.take() {
             params.tags = Some(normalize_task_tags(tags));
         }
+        if let Some(crew) = &params.crew {
+            self.validate_crew_name(crew.as_deref())?;
+        }
         if params.has_any_mutation() && task.status == TaskStatus::Archived {
             return Err(OrbitError::InvalidInput(format!(
                 "task {id} is {} and cannot be modified; unarchive or reopen it first",

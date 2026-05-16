@@ -183,6 +183,7 @@ mod tests {
                 task_type: TaskType::Chore,
                 external_refs: Vec::new(),
                 source_task_id: None,
+                crew: None,
                 comments: Vec::new(),
             })
             .expect("create task");

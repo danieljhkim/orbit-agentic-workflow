@@ -78,6 +78,7 @@ pub(super) fn add(
                 &input,
                 &["source_task_id", "source_task", "sourceTaskId"],
             )?,
+            crew: optional_string(&input, "crew")?,
         },
         agent,
         model,
@@ -197,12 +198,13 @@ pub(super) fn start(
     model: Option<String>,
 ) -> Result<Value, OrbitError> {
     let id = required_string(&input, &["id"], "id")?;
-    let task = runtime.start_task_with_identity(
+    let task = runtime.start_task_with_identity_and_crew(
         &id,
         optional_string(&input, "note")?,
         optional_string(&input, "comment")?,
         agent,
         model,
+        optional_string(&input, "crew")?,
     )?;
     serialize_task(runtime, &task)
 }
@@ -257,6 +259,7 @@ pub(super) fn update(
                 .map(empty_string_to_none),
             pr_status: optional_raw_string(&input, "pr_status")?.map(empty_string_to_none),
             job_run_id: optional_raw_string(&input, "job_run_id")?.map(empty_string_to_none),
+            crew: optional_raw_string(&input, "crew")?.map(empty_string_to_none),
             context_files: optional_csv_or_string_list_alias(
                 &input,
                 &["context_files", "context"],

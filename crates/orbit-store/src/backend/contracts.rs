@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Adr, AdrStatus, AuditEvent, ExecutorDef, ExternalRef, JobRun, JobRunState, KnowledgeRunMetrics,
-    Learning, LearningEvidence, LearningScope, LegacyValidation, OrbitError, OrbitId,
-    PipelineState, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
+    Adr, AdrStatus, AuditEvent, Crew, ExecutorDef, ExternalRef, JobRun, JobRunState,
+    KnowledgeRunMetrics, Learning, LearningEvidence, LearningScope, LegacyValidation, OrbitError,
+    OrbitId, PipelineState, PolicyDef, ReviewThread, StoredTool, Task, TaskArtifact, TaskComment,
     TaskComplexity, TaskHistoryEntry, TaskPriority, TaskStatus, TaskType, normalize_task_tags,
     task_matches_tags,
 };
@@ -72,6 +72,7 @@ pub struct TaskCreateParams {
     pub task_type: TaskType,
     pub external_refs: Vec<ExternalRef>,
     pub source_task_id: Option<String>,
+    pub crew: Option<String>,
     pub comments: Vec<TaskComment>,
 }
 
@@ -103,6 +104,7 @@ pub struct TaskDocumentUpdateParams {
     pub pr_status: Option<Option<String>>,
     pub source_task_id: Option<Option<String>>,
     pub job_run_id: Option<Option<String>>,
+    pub crew: Option<Option<String>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -473,6 +475,7 @@ pub trait JobRunStoreBackend: Send + Sync {
         run_id: &str,
         metrics: KnowledgeRunMetrics,
     ) -> Result<bool, OrbitError>;
+    fn record_job_run_crew(&self, run_id: &str, crew: &Crew) -> Result<bool, OrbitError>;
     fn finalize_job_run(
         &self,
         run_id: &str,

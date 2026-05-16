@@ -82,6 +82,7 @@ pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStat
         "relations": task.relations,
         "source_task_id": task.source_task_id(),
         "job_run_id": task.job_run_id,
+        "crew": task.crew,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
@@ -107,6 +108,7 @@ pub(super) fn serialize_task(runtime: &OrbitRuntime, task: &Task) -> Result<Valu
         serde_json::to_value(runtime.get_task_review_threads(&task.id)?)
             .map_err(serialize_error("serialize review threads"))?,
     );
+    insert_resolved_crew(runtime, task, object)?;
     Ok(value)
 }
 
@@ -116,8 +118,33 @@ pub(super) fn task_lock_to_json(task: &Task) -> Value {
         "title": task.title,
         "status": task.status.to_string(),
         "job_run_id": task.job_run_id,
+        "crew": task.crew,
         "context_files": task.context_files,
     })
+}
+
+fn insert_resolved_crew(
+    runtime: &OrbitRuntime,
+    task: &Task,
+    object: &mut Map<String, Value>,
+) -> Result<(), OrbitError> {
+    let Some(projection) = runtime.resolved_crew_projection(task)? else {
+        return Ok(());
+    };
+    object.insert("resolved_crew".to_string(), Value::String(projection.name));
+    object.insert(
+        "planner_model".to_string(),
+        Value::String(projection.planner_model),
+    );
+    object.insert(
+        "implementer_model".to_string(),
+        Value::String(projection.implementer_model),
+    );
+    object.insert(
+        "reviewer_model".to_string(),
+        Value::String(projection.reviewer_model),
+    );
+    Ok(())
 }
 
 pub(super) fn serialize_task_lint_report(report: &TaskLintReport) -> Result<Value, OrbitError> {

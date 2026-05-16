@@ -47,6 +47,7 @@ pub(crate) fn task_to_json(
         "relations": task.relations,
         "source_task_id": task.source_task_id(),
         "job_run_id": task.job_run_id,
+        "crew": task.crew,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
@@ -84,6 +85,21 @@ pub(crate) fn task_to_json_with_sidecars(
         serde_json::to_value(runtime.get_task_review_threads(&task.id)?)
             .map_err(|e| OrbitError::Io(e.to_string()))?,
     );
+    if let Some(projection) = runtime.resolved_crew_projection(task)? {
+        object.insert("resolved_crew".to_string(), Value::String(projection.name));
+        object.insert(
+            "planner_model".to_string(),
+            Value::String(projection.planner_model),
+        );
+        object.insert(
+            "implementer_model".to_string(),
+            Value::String(projection.implementer_model),
+        );
+        object.insert(
+            "reviewer_model".to_string(),
+            Value::String(projection.reviewer_model),
+        );
+    }
     Ok(value)
 }
 
@@ -93,6 +109,7 @@ pub(super) fn task_lock_to_json(task: &orbit_core::Task) -> Value {
         "title": task.title,
         "status": task.status.to_string(),
         "job_run_id": task.job_run_id,
+        "crew": task.crew,
         "context_files": task.context_files,
     })
 }

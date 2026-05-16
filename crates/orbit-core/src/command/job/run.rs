@@ -1527,6 +1527,10 @@ mod tests {
             created_at: Utc::now(),
             steps: Vec::new(),
             knowledge_metrics: None,
+            resolved_crew: None,
+            planner_model: None,
+            implementer_model: None,
+            reviewer_model: None,
         };
         // We can't override the probe at this seam (production wrapper), but
         // we can assert the lower-level helper agrees: ProbeUnavailable is
@@ -1562,6 +1566,10 @@ mod tests {
             created_at: Utc::now(),
             steps: Vec::new(),
             knowledge_metrics: None,
+            resolved_crew: None,
+            planner_model: None,
+            implementer_model: None,
+            reviewer_model: None,
         };
         let mismatch_message = stale_job_run_message(&run, Some(OwnerIdentity::Mismatch));
         let missing_message = stale_job_run_message(&run, Some(OwnerIdentity::Missing));

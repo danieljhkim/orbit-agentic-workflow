@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use orbit_common::types::{OrbitError, activity_job::Backend};
+use orbit_common::types::{
+    Crew, CrewRoleAssignment, OrbitError, activity_job::Backend, resolve_crew,
+};
 use orbit_common::utility::redaction::redact_home_dir;
 use orbit_engine::PrConfig;
 
@@ -10,7 +12,7 @@ use crate::paths;
 
 use super::persistence::PersistenceConfig;
 use super::raw::{
-    RawAgentRoleConfig, RawCodexExecutionConfig, RawExecutionEnvConfig, RawPrSection,
+    RawAgentRoleConfig, RawCodexExecutionConfig, RawCrewEntry, RawExecutionEnvConfig, RawPrSection,
     RawRuntimeConfig, RawRuntimeSection, RawTaskSection, RawWorkflowConfig,
 };
 
@@ -40,10 +42,9 @@ pub(crate) struct RuntimeConfig {
     /// from `[workflow] base_branch` in `config.toml`; defaults to `"main"`
     /// when no key is set.
     pub(crate) workflow_base_branch: String,
-    /// `[agent.<role>]` role-keyed overrides written by `orbit init` per
-    /// ADR-027 and consumed at v2 dispatch time per ADR-029. Empty when no
-    /// `[agent.*]` block is present.
-    pub(crate) agent_roles: BTreeMap<String, RawAgentRoleConfig>,
+    /// Named planner/implementer/reviewer lineups from `[crews.<name>]`.
+    pub(crate) crews: BTreeMap<String, Crew>,
+    pub(crate) default_crew: Option<String>,
 }
 
 impl Default for RuntimeConfig {
@@ -64,7 +65,8 @@ impl RuntimeConfig {
             graph_editing: DEFAULT_GRAPH_EDITING,
             v2_backend: None,
             workflow_base_branch: DEFAULT_WORKFLOW_BASE_BRANCH.to_string(),
-            agent_roles: BTreeMap::new(),
+            crews: default_crews(),
+            default_crew: Some("opus-codex".to_string()),
         }
     }
 
@@ -136,7 +138,11 @@ impl RuntimeConfig {
         validate_task_artifact_store_from_raw(parsed.task.as_ref())?;
         let v2_backend = runtime_backend_from_raw(parsed.runtime.as_ref())?;
 
+        reject_stale_agent_role_tables(parsed.agent.as_ref())?;
+
         let workflow_base_branch = workflow_base_branch_from_raw(parsed.workflow.as_ref())?;
+        let crews = crews_from_raw(parsed.crews.as_ref())?;
+        let default_crew = workflow_default_crew_from_raw(parsed.workflow.as_ref(), &crews)?;
         let pr = pr_config_from_raw(parsed.pr.as_ref());
 
         if parsed
@@ -147,8 +153,6 @@ impl RuntimeConfig {
         {
             warn_deprecated_task_id_pattern(&config_path);
         }
-
-        let agent_roles = parsed.agent.clone().unwrap_or_default();
 
         Ok(Self {
             execution_env: ExecutionEnvPolicy::from_raw(
@@ -164,7 +168,8 @@ impl RuntimeConfig {
             graph_editing,
             v2_backend,
             workflow_base_branch,
-            agent_roles,
+            crews,
+            default_crew,
         })
     }
 
@@ -182,10 +187,148 @@ impl RuntimeConfig {
     }
 }
 
+pub(crate) fn default_crews() -> BTreeMap<String, Crew> {
+    let mut crews = BTreeMap::new();
+    crews.insert(
+        "opus-codex".to_string(),
+        Crew {
+            name: "opus-codex".to_string(),
+            planner: crew_role("claude-opus-4-7", "claude", "cli"),
+            implementer: crew_role("gpt-5.5", "codex", "cli"),
+            reviewer: crew_role("gpt-5.5", "codex", "cli"),
+        },
+    );
+    crews.insert(
+        "all-claude".to_string(),
+        Crew {
+            name: "all-claude".to_string(),
+            planner: crew_role("claude-opus-4-7", "claude", "cli"),
+            implementer: crew_role("claude-sonnet-4-6", "claude", "cli"),
+            reviewer: crew_role("claude-opus-4-7", "claude", "cli"),
+        },
+    );
+    crews
+}
+
+fn crew_role(model: &str, provider: &str, backend: &str) -> CrewRoleAssignment {
+    CrewRoleAssignment {
+        model: model.to_string(),
+        provider: provider.to_string(),
+        backend: backend.to_string(),
+    }
+}
+
 fn pr_config_from_raw(raw: Option<&RawPrSection>) -> PrConfig {
     PrConfig {
         task_url_template: raw.and_then(|section| section.task_url_template.clone()),
     }
+}
+
+fn reject_stale_agent_role_tables(
+    raw: Option<&BTreeMap<String, RawAgentRoleConfig>>,
+) -> Result<(), OrbitError> {
+    if raw.is_some() {
+        return Err(OrbitError::InvalidInput(
+            "config schema changed in ORB-00058; remove [agent.<role>] tables and migrate to [crews.<name>] with [workflow].default_crew".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn crews_from_raw(
+    raw: Option<&BTreeMap<String, RawCrewEntry>>,
+) -> Result<BTreeMap<String, Crew>, OrbitError> {
+    let Some(raw_crews) = raw else {
+        return Ok(default_crews());
+    };
+    let mut crews = BTreeMap::new();
+    for (name, entry) in raw_crews {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(OrbitError::InvalidInput(
+                "[crews] names must not be empty".to_string(),
+            ));
+        }
+        let crew = Crew {
+            name: trimmed.to_string(),
+            planner: required_role_assignment(trimmed, "planner", entry.planner.as_ref())?,
+            implementer: required_role_assignment(
+                trimmed,
+                "implementer",
+                entry.implementer.as_ref(),
+            )?,
+            reviewer: required_role_assignment(trimmed, "reviewer", entry.reviewer.as_ref())?,
+        };
+        crews.insert(trimmed.to_string(), crew);
+    }
+    if crews.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "[crews] must define at least one crew".to_string(),
+        ));
+    }
+    Ok(crews)
+}
+
+fn required_role_assignment(
+    crew: &str,
+    role: &str,
+    raw: Option<&RawAgentRoleConfig>,
+) -> Result<CrewRoleAssignment, OrbitError> {
+    let raw = raw.ok_or_else(|| {
+        OrbitError::InvalidInput(format!(
+            "[crews.{crew}] must define {role} = {{ model, provider, backend }}"
+        ))
+    })?;
+    Ok(CrewRoleAssignment {
+        model: required_role_field(crew, role, "model", raw.model.as_deref())?,
+        provider: required_role_field(crew, role, "provider", raw.provider.as_deref())?,
+        backend: required_role_field(crew, role, "backend", raw.backend.as_deref())?,
+    })
+}
+
+fn required_role_field(
+    crew: &str,
+    role: &str,
+    field: &str,
+    value: Option<&str>,
+) -> Result<String, OrbitError> {
+    let value = value.map(str::trim).filter(|value| !value.is_empty());
+    value.map(ToOwned::to_owned).ok_or_else(|| {
+        OrbitError::InvalidInput(format!("[crews.{crew}].{role}.{field} must not be empty"))
+    })
+}
+
+fn workflow_default_crew_from_raw(
+    raw: Option<&RawWorkflowConfig>,
+    crews: &BTreeMap<String, Crew>,
+) -> Result<Option<String>, OrbitError> {
+    let value = raw.and_then(|workflow| workflow.default_crew.as_deref());
+    let Some(value) = value else {
+        // No explicit [workflow].default_crew. Fall back to the seeded default
+        // when its crew is still present; otherwise demand the user pick one
+        // explicitly so downstream `start`/`show` calls don't surprise them
+        // with a generic "no crew selected" error.
+        if crews.contains_key("opus-codex") {
+            return Ok(Some("opus-codex".to_string()));
+        }
+        if crews.is_empty() {
+            return Ok(None);
+        }
+        let mut names: Vec<&str> = crews.keys().map(String::as_str).collect();
+        names.sort();
+        return Err(OrbitError::InvalidInput(format!(
+            "[workflow].default_crew must be set when defining [crews.*]; choose one of: {}",
+            names.join(", ")
+        )));
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "workflow.default_crew must not be empty".to_string(),
+        ));
+    }
+    resolve_crew(trimmed, crews)?;
+    Ok(Some(trimmed.to_string()))
 }
 
 fn runtime_backend_from_raw(raw: Option<&RawRuntimeSection>) -> Result<Option<String>, OrbitError> {
@@ -624,6 +767,127 @@ mod tests {
         assert!(message.contains("[runtime] backend"));
         assert!(message.contains("clii"));
         assert!(message.contains("http, cli, auto"));
+    }
+
+    #[test]
+    fn crews_load_when_present_and_well_formed() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(
+            workspace.path(),
+            r#"
+[crews.opus-codex]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+
+[workflow]
+default_crew = "opus-codex"
+"#,
+        );
+
+        let config =
+            RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
+
+        assert_eq!(config.default_crew.as_deref(), Some("opus-codex"));
+        assert_eq!(
+            config
+                .crews
+                .get("opus-codex")
+                .expect("crew exists")
+                .implementer
+                .model,
+            "gpt-5.5"
+        );
+    }
+
+    #[test]
+    fn default_crew_must_reference_defined_crew() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(
+            workspace.path(),
+            r#"
+[crews.opus-codex]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+
+[workflow]
+default_crew = "missing"
+"#,
+        );
+
+        let error = RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect_err("unknown default crew fails");
+
+        assert!(matches!(error, OrbitError::InvalidInputDiagnostic { .. }));
+        assert_eq!(error.did_you_mean(), Some(&["opus-codex".to_string()][..]));
+    }
+
+    #[test]
+    fn default_crew_unset_with_custom_crews_fails_load() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        // Only a non-"opus-codex" crew defined; no [workflow] table at all.
+        write_config(
+            workspace.path(),
+            r#"
+[crews.my-team]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+"#,
+        );
+
+        let error = RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect_err("missing default_crew with non-seeded crews must fail");
+
+        let message = error.to_string();
+        assert!(matches!(error, OrbitError::InvalidInput(_)), "{message}");
+        assert!(message.contains("[workflow].default_crew"), "{message}");
+        assert!(message.contains("my-team"), "{message}");
+    }
+
+    #[test]
+    fn default_crew_unset_with_seeded_crew_still_loads() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        // opus-codex is still present, so the historical fallback applies.
+        write_config(
+            workspace.path(),
+            r#"
+[crews.opus-codex]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+"#,
+        );
+
+        let config =
+            RuntimeConfig::load_layered(global.path(), workspace.path()).expect("config loads");
+        assert_eq!(config.default_crew.as_deref(), Some("opus-codex"));
+    }
+
+    #[test]
+    fn crews_with_incomplete_role_fail_load() {
+        let global = tempdir().expect("global tempdir");
+        let workspace = tempdir().expect("workspace tempdir");
+        write_config(
+            workspace.path(),
+            r#"
+[crews.opus-codex]
+planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+"#,
+        );
+
+        let error = RuntimeConfig::load_layered(global.path(), workspace.path())
+            .expect_err("incomplete crew fails");
+
+        assert!(matches!(error, OrbitError::InvalidInput(_)));
+        assert!(error.to_string().contains("[crews.opus-codex]"));
+        assert!(error.to_string().contains("reviewer"));
     }
 
     #[test]

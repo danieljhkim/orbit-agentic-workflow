@@ -204,7 +204,7 @@ pub(super) fn role_overridden_spec(t: &TargetStep, ctx: &ExecCtx<'_>) -> Option<
         return None;
     };
     let effective_role = t.role.or(inline_spec.role)?;
-    let resolved = resolve_agent_settings(effective_role, ctx.host, inline_spec);
+    let resolved = resolve_agent_settings(effective_role, ctx.host, inline_spec, &ctx.input);
     let mut spec = inline_spec.clone();
     apply_resolved_settings(&mut spec, &resolved);
     Some(spec)

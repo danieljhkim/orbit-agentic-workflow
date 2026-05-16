@@ -1304,6 +1304,7 @@ mod tests {
             priority: TaskPriority::High,
             complexity: None,
             job_run_id: None,
+            crew: None,
             relations,
             tags,
             context_files: Vec::new(),

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use orbit_common::types::WorkspacePaths;
+use orbit_common::types::{Crew, WorkspacePaths};
 use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_engine::PrConfig;
 use orbit_policy::PolicyEngine;
@@ -180,9 +180,8 @@ pub(crate) struct OrbitRuntimeSettings {
     /// Default base branch for ship/ship-auto/duel-plan workflows
     /// (`[workflow] base_branch` in `config.toml`, default `"main"`).
     workflow_base_branch: String,
-    /// `[agent.<role>]` overrides written by `orbit init` (ADR-027) and
-    /// consumed at v2 dispatch time (ADR-029).
-    agent_roles: std::collections::BTreeMap<String, crate::config::RawAgentRoleConfig>,
+    crews: std::collections::BTreeMap<String, Crew>,
+    default_crew: Option<String>,
 }
 
 impl OrbitRuntimeSettings {
@@ -197,7 +196,8 @@ impl OrbitRuntimeSettings {
         pr_config: PrConfig,
         v2_backend: Option<String>,
         workflow_base_branch: String,
-        agent_roles: std::collections::BTreeMap<String, crate::config::RawAgentRoleConfig>,
+        crews: std::collections::BTreeMap<String, Crew>,
+        default_crew: Option<String>,
     ) -> Self {
         Self {
             persistence,
@@ -209,7 +209,8 @@ impl OrbitRuntimeSettings {
             pr_config,
             v2_backend,
             workflow_base_branch,
-            agent_roles,
+            crews,
+            default_crew,
         }
     }
 
@@ -225,8 +226,12 @@ impl OrbitRuntimeSettings {
         &self.workflow_base_branch
     }
 
-    pub(crate) fn agent_role(&self, role: &str) -> Option<&crate::config::RawAgentRoleConfig> {
-        self.agent_roles.get(role)
+    pub(crate) fn crews(&self) -> &std::collections::BTreeMap<String, Crew> {
+        &self.crews
+    }
+
+    pub(crate) fn default_crew(&self) -> Option<&str> {
+        self.default_crew.as_deref()
     }
 }
 
@@ -333,11 +338,12 @@ impl OrbitContext {
         self.runtime.workflow_base_branch()
     }
 
-    /// `[agent.<role>]` lookup written by `orbit init` and consumed at v2
-    /// dispatch time (ADR-029). `None` means no `[agent.<role>]` block was
-    /// present for this role name.
-    pub(crate) fn agent_role(&self, role: &str) -> Option<&crate::config::RawAgentRoleConfig> {
-        self.runtime.agent_role(role)
+    pub(crate) fn crews(&self) -> &std::collections::BTreeMap<String, Crew> {
+        self.runtime.crews()
+    }
+
+    pub(crate) fn default_crew(&self) -> Option<&str> {
+        self.runtime.default_crew()
     }
 }
 

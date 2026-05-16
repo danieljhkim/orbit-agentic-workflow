@@ -151,6 +151,10 @@ fn task_dependency_params_remain_in_agent_tool_schemas() {
 
         assert_eq!(dependency_param.param_type, "string_list");
         assert!(!dependency_param.required);
+        assert!(
+            schema.parameters.iter().any(|param| param.name == "crew"),
+            "{tool_name} should expose crew"
+        );
     }
 }
 
