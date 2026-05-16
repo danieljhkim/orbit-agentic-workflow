@@ -237,7 +237,7 @@ impl OrbitRuntime {
         self.context.v2_backend()
     }
 
-    /// Default base branch for ship/ship-auto/duel-plan workflows. Sourced
+    /// Default base branch for ship/duel-plan workflows. Sourced
     /// from `[workflow] base_branch` in the active `config.toml`; defaults
     /// to `"main"` when no key is present.
     pub fn workflow_base_branch(&self) -> &str {

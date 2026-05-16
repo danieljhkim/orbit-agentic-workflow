@@ -46,7 +46,7 @@ Environment:
   config      Show or update Orbit configuration
 
 Operate:
-  run         Run a workflow (ship, ship-auto, duel-plan, job)
+  run         Run a workflow (ship, duel-plan, job)
   task        Create, update, and manage tasks
   adr         Architecture Decision Record operations
   design      Design doc operations

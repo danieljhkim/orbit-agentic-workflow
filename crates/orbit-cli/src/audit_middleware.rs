@@ -579,17 +579,11 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
 
 fn run_command_meta(cmd: &crate::command::run::RunCommand) -> CommandMeta {
     use crate::command::run::RunSubcommand;
-    use crate::command::run::ship::ShipMode;
 
     let (subcommand, target_type, target_id) = match &cmd.command {
-        RunSubcommand::Ship(command) => {
-            let target_id = match command.mode {
-                ShipMode::Pr => "ship",
-                ShipMode::Local => "ship-local",
-            };
-            ("ship", Some("workflow"), Some(target_id))
-        }
+        RunSubcommand::Ship(_) => ("ship", Some("workflow"), Some("ship")),
         RunSubcommand::ShipAuto(_) => ("ship-auto", Some("workflow"), Some("ship-auto")),
+        RunSubcommand::ShipLocal(_) => ("ship-local", Some("workflow"), Some("ship-local")),
         RunSubcommand::DuelPlan(args) => ("duel-plan", Some("task"), Some(args.task_id.as_str())),
         RunSubcommand::History(args) => ("history", Some("job_run"), args.job_id.as_deref()),
         RunSubcommand::Show(args) => ("show", Some("job_run"), args.run_id.as_deref()),
@@ -683,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn run_ship_audit_meta_uses_selected_mode_alias() {
+    fn run_ship_audit_meta_uses_unified_workflow_alias() {
         let pr = meta_for(&["orbit", "run", "ship", "T1"]);
         assert_eq!(pr.command, "run");
         assert_eq!(pr.subcommand.as_deref(), Some("ship"));
@@ -693,16 +687,25 @@ mod tests {
         let local = meta_for(&["orbit", "run", "ship", "-m", "local", "T1"]);
         assert_eq!(local.subcommand.as_deref(), Some("ship"));
         assert_eq!(local.target_type.as_deref(), Some("workflow"));
-        assert_eq!(local.target_id.as_deref(), Some("ship-local"));
+        assert_eq!(local.target_id.as_deref(), Some("ship"));
     }
 
     #[test]
-    fn run_ship_auto_audit_meta_uses_new_top_level_command() {
+    fn run_ship_auto_audit_meta_uses_deprecated_top_level_command() {
         let meta = meta_for(&["orbit", "run", "ship-auto"]);
         assert_eq!(meta.command, "run");
         assert_eq!(meta.subcommand.as_deref(), Some("ship-auto"));
         assert_eq!(meta.target_type.as_deref(), Some("workflow"));
         assert_eq!(meta.target_id.as_deref(), Some("ship-auto"));
+    }
+
+    #[test]
+    fn run_ship_local_audit_meta_uses_deprecated_top_level_command() {
+        let meta = meta_for(&["orbit", "run", "ship-local", "T1"]);
+        assert_eq!(meta.command, "run");
+        assert_eq!(meta.subcommand.as_deref(), Some("ship-local"));
+        assert_eq!(meta.target_type.as_deref(), Some("workflow"));
+        assert_eq!(meta.target_id.as_deref(), Some("ship-local"));
     }
 
     #[test]

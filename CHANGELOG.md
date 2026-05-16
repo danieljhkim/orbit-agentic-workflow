@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- **Unified async shipment command**: `orbit run ship` now handles both auto backlog flushing and explicit task IDs, dispatching `task_auto_pipeline` asynchronously and returning a run ID immediately. `ship-auto` now points to the unified command, and `ship-local` is no longer a workflow alias. ([ORB-00075])
+
 ### Chores
 
 - **Branching model flipped**: `main` is now the release/production branch; `agent-main` is the dev integration branch where task PRs land. Each release tags on `agent-main` then promotes to `main` via merge commit; hotfixes branch from `main` and back-merge to `agent-main`. Install URLs in `README.md` and the website now point at `main`. Retired stub `crates/orbit-core/assets/activities/examples/promote_agent_main.yaml` removed. See `RELEASING.md` §10b and §Hotfix flow. ([ORB-00054])

@@ -27,7 +27,7 @@ enabled = true
 editing = false
 
 [workflow]
-# Default base branch for `orbit run ship`, `ship-auto`, and `duel-plan`.
+# Default base branch for `orbit run ship` and `duel-plan`.
 # Override per-invocation with `--base <branch>`. The Orbit repo itself uses
 # this two-branch pattern: `main` is the release/production branch, and
 # `agent-main` is the dev integration branch where task PRs land — set
