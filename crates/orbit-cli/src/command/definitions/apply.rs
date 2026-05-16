@@ -119,26 +119,18 @@ fn apply_executor(
 ) -> Result<(), OrbitError> {
     let doc: ExecutorResource = parse_resource(content, path, "Executor resource")?;
     let existing = runtime.get_executor_def(name)?;
-    let mut def = ExecutorDef {
-        name: name.to_string(),
-        executor_type: doc.spec.executor_type,
-        command: doc.spec.command,
-        args: doc.spec.args,
-        stdout_format: doc.spec.stdout_format,
-        models: doc.spec.models,
-        timeout_seconds: doc.spec.timeout_seconds,
-        env: doc.spec.env,
-        sandbox: doc.spec.sandbox,
-        allow_fallback: doc.spec.allow_fallback,
-        created_at: existing
-            .as_ref()
-            .map(|executor| executor.created_at)
-            .unwrap_or(doc.spec.created_at),
-        updated_at: Utc::now(),
-    };
-    if existing.is_none() {
-        def.created_at = doc.spec.created_at;
-    }
+    let created_at = existing
+        .as_ref()
+        .map(|executor| executor.created_at)
+        .unwrap_or(doc.spec.created_at);
+    let source_label = format!("{}: Executor resource", path.display());
+    let def = ExecutorDef::from_resource_spec(
+        name.to_string(),
+        doc.spec,
+        &source_label,
+        created_at,
+        Utc::now(),
+    );
     runtime.upsert_executor_def(&def)?;
     println!("executor/{name} applied");
     Ok(())

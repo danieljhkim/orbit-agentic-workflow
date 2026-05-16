@@ -1,20 +1,18 @@
 schemaVersion: 2
 kind: Executor
 metadata:
-  name: gemini
+  name: legacy-gemini
 spec:
   executor_type: direct_agent
   command: gemini
   args:
     - --approval-mode
     - yolo
-    - --allowed-mcp-server-names
-    - orbit
     - -o
     - json
   stdout_format: envelope
   sandbox: macos-sandbox-exec
-  model_pair_override:
+  models:
     strong: gemini-3.1-pro
     weak: gemini-3-flash
   env: {}

@@ -93,7 +93,6 @@ pub struct ExecutionContext {
     pub job: Option<Job>,
     pub agent_cli: String,
     pub model: Option<String>,
-    pub model_tier: Option<String>,
     pub timeout_seconds: u64,
     pub env_extra: Vec<String>,
     /// Explicit env var key-value pairs that override same-named vars from
@@ -1179,7 +1178,6 @@ mod state_env_var_tests {
             job: None,
             agent_cli: "claude".to_string(),
             model: None,
-            model_tier: None,
             timeout_seconds: 60,
             env_extra: Vec::new(),
             env_set: HashMap::new(),

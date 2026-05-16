@@ -303,8 +303,6 @@ pub struct JobStep {
     pub executor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_tier: Option<String>,
     pub timeout_seconds: u64,
     /// Additional env var names to pass through in hermetic mode, on top of the global allowlist.
     #[serde(default)]
@@ -340,7 +338,6 @@ impl Default for JobStep {
             agent_cli: String::new(),
             executor: None,
             model: None,
-            model_tier: None,
             timeout_seconds: 0,
             env_extra: Vec::new(),
             env_set: HashMap::new(),
