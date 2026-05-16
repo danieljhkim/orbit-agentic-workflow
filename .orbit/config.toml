@@ -38,3 +38,11 @@ default_crew = "opus-codex"
 
 [pr]
 task_url_template = "https://orbit-cli.com/tasks/{task_id}"
+
+[duel]
+candidates = ["codex", "claude", "gemini", "grok"]
+
+[duel.models]                             
+codex  = "gpt-5.5"
+claude = "claude-opus-4.7"
+gemini = "pro"
