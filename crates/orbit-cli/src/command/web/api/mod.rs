@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
+use axum::http::{Method, Request, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
@@ -22,6 +22,7 @@ mod audit;
 mod denials;
 mod diagnostics;
 mod jobs;
+mod learnings;
 mod log;
 mod runs;
 mod scoreboard;
@@ -234,6 +235,10 @@ pub(super) fn map_runtime_error(e: orbit_core::OrbitError) -> Response {
             kind: orbit_core::NotFoundKind::JobRun,
             id,
         } => not_found(format!("run not found: {id}")),
+        orbit_core::OrbitError::NotFound {
+            kind: orbit_core::NotFoundKind::Learning,
+            id,
+        } => not_found(format!("learning not found: {id}")),
         other => server_error(other),
     }
 }
@@ -255,22 +260,24 @@ pub(super) fn server_error(e: orbit_core::OrbitError) -> Response {
 }
 
 async fn require_localhost_origin(request: Request<Body>, next: Next) -> Response {
-    if let Some(origin) = request.headers().get(header::ORIGIN) {
-        let allowed = origin
-            .to_str()
-            .ok()
-            .and_then(|origin| Url::parse(origin).ok())
-            .is_some_and(|origin| {
-                origin.scheme() == "http"
-                    && matches!(origin.host_str(), Some("localhost" | "127.0.0.1"))
-            });
-        if !allowed {
-            return (
-                StatusCode::FORBIDDEN,
-                Json(json!({"error": "cross-origin requests not allowed"})),
-            )
-                .into_response();
-        }
+    let unsafe_method = matches!(
+        *request.method(),
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+    );
+    let origin = request.headers().get(header::ORIGIN);
+    let allowed = origin
+        .and_then(|origin| origin.to_str().ok())
+        .and_then(|origin| Url::parse(origin).ok())
+        .is_some_and(|origin| {
+            origin.scheme() == "http"
+                && matches!(origin.host_str(), Some("localhost" | "127.0.0.1"))
+        });
+    if !allowed && (unsafe_method || origin.is_some()) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "cross-origin requests not allowed"})),
+        )
+            .into_response();
     }
     next.run(request).await
 }
@@ -288,6 +295,12 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
         .route("/tasks/:id/approve", post(tasks::approve_task_action))
         .route("/tasks/:id/reject", post(tasks::reject_task_action))
         .route("/tasks/:id/archive", post(tasks::archive_task_action))
+        .route("/learnings", get(learnings::list_learnings))
+        .route("/learnings/:id", get(learnings::get_learning))
+        .route(
+            "/learnings/:id/supersede",
+            post(learnings::supersede_learning_action),
+        )
         .route("/jobs", get(jobs::list_jobs))
         .route("/job-runs", get(jobs::list_job_runs))
         .route("/runs/:id", get(runs::get_run))

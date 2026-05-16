@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** gemini
-**Last updated:** 2026-05-16 (ORB-00060)
+**Last updated:** 2026-05-16 (ORB-00061)
 
 This document describes the current Orbit UI implementation: the local dashboard assets, the Canon Refined visual rules they rely on, and the telemetry behaviors that must stay consistent with backend data.
 
@@ -32,6 +32,8 @@ Diagnostics has an Errors sub-tab after [T20260508-14]. It renders recent backen
 
 Diagnostics no longer has a Friction sub-tab after [ORB-00060]. The Friction name is reserved for append-only `.orbit/frictions/` artifacts, while audit-derived negative run signals stay visible in Recent Runs. Recent Runs joins `/api/job-runs` with `/api/diagnostics/friction` client-side by run id (`run_id`/`job_run`) and keeps the table sortable across `denials`, `tool fails`, and `duration`; the duration cell can carry the long-run flag when the diagnostics source supplies one. This preserves column continuity with the existing compact dashboard telemetry direction from [T20260428-15].
 
+Knowledge is now a top-level dashboard tab after [ORB-00061]. Its first sub-tab, Learnings, mirrors the dense task-list pattern: a left scan table backed by `/api/learnings`, a right detail panel backed by the same learning JSON shape as CLI/MCP output, and compact stats tiles for `total`, `superseded`, and `last indexed`. Supersession stays an explicit local action (`POST /api/learnings/:id/supersede`) guarded by the localhost-origin middleware, so curation can happen without leaving the dashboard.
+
 ## 6. Concerns & Honest Limitations
 
 Accessibility still needs a real WCAG pass; responsive behavior remains optimized for wide desktop viewports; raw HTML, CSS variables, and dashboard JavaScript keep the runtime simple but leave duplication across project surfaces.
@@ -45,5 +47,6 @@ Accessibility still needs a real WCAG pass; responsive behavior remains optimize
 - [T20260430-29] bounded the live `orbit.log` panel to the viewport.
 - [T20260508-14] added Run Detail agent-log previews and Diagnostics > Errors.
 - [ORB-00060] collapsed Diagnostics > Friction into Recent Runs diagnostics columns.
+- [ORB-00061] added the Knowledge tab and Learnings curation surface.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

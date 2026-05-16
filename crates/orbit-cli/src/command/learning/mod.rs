@@ -1,7 +1,7 @@
 mod add;
 mod command;
 mod list;
-mod output;
+pub(crate) mod output;
 mod prune;
 mod reindex;
 mod search;

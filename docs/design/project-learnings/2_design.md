@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-15
+**Last updated:** 2026-05-16 (ORB-00061)
 
 This document specifies phase-1 project-learnings: the placement of learning storage in `orbit-store`, the schema of a learning record, the phase-1 scope-matching algorithm (path globs + tags), the three-layer push-injection pipeline (engine pre-prompt + MCP sidecar + optional Claude Code hook), the pull surface (skill + tools), the curation lifecycle, and the concerns the design deliberately leaves to follow-ups.
 
@@ -290,6 +290,16 @@ The skill is the pull complement to push. Push handles the "agent doesn't know i
 
 Agents that don't load skills can call `orbit.learning.search` directly via MCP. The tool's input schema is documented; its output shape matches §5.3.
 
+### 6.3 Dashboard
+
+The local dashboard exposes learnings under Knowledge > Learnings. The HTTP surface is deliberately thin over the same runtime helpers used by CLI/MCP:
+
+- `GET /api/learnings` lists records with optional `q`, `scope`, `tag`, `limit`, and `offset` filters and returns dashboard stats (`total`, `superseded`, `last_indexed`).
+- `GET /api/learnings/:id` returns the full record.
+- `POST /api/learnings/:id/supersede` accepts `{ "by": "<replacement-learning-id>" }` and runs the same atomic supersession path described in §7.2.
+
+The dashboard is a pull and curation surface, not an injection layer. It lets operators scan stale or duplicate records before review without changing the phase-1 push semantics.
+
 ---
 
 ## 7. Curation Lifecycle
@@ -371,5 +381,6 @@ Learnings are workspace-scoped and checked into the repo. They travel exactly wh
 
 - [T20260510-11] — Design + build project-learnings system as native Orbit primitive. The task that produced this folder.
 - [T20260510-12] — Add `tags` field to `Task` schema. Hard prerequisite for Layer 1's tag-axis matching ([§4.1](#41-layer-1--engine-pre-prompt-injection-universal)).
+- [ORB-00061] — Add Knowledge tab and Learnings subtab to dashboard.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
