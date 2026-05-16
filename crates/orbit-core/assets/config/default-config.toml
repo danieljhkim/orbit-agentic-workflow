@@ -38,9 +38,29 @@ default_crew = "opus-codex"
 [crews.opus-codex]
 planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
 implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
-reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+
+[crews.silver]
+planner = { model = "pro", provider = "gemini", backend = "cli" }
+implementer = { model = "grok-build", provider = "grok", backend = "cli" }
+reviewer = { model = "pro", provider = "gemini", backend = "cli" }
 
 [crews.all-claude]
 planner = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
 implementer = { model = "claude-sonnet-4-6", provider = "claude", backend = "cli" }
 reviewer = { model = "claude-opus-4-7", provider = "claude", backend = "cli" }
+
+[crews.all-codex]
+planner = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+implementer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
+
+[crews.all-gemini]
+planner = { model = "pro", provider = "gemini", backend = "cli" }
+implementer = { model = "auto", provider = "gemini", backend = "cli" }
+reviewer = { model = "pro", provider = "gemini", backend = "cli" }
+
+[crews.all-grok]
+planner = { model = "grok-build", provider = "grok", backend = "cli" }
+implementer = { model = "grok-build", provider = "grok", backend = "cli" }
+reviewer = { model = "grok-build", provider = "grok", backend = "cli" }

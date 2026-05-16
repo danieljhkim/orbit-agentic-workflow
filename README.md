@@ -10,7 +10,7 @@
 
 **Orbit brings engineering rigor to AI-assisted coding. Tasks for every change, ADRs for load-bearing decisions, structured audit of every tool call and provider exchange, conflict-aware parallel dispatch — local-first.**
 
-You drive Claude Code, Codex, or Gemini CLI against real code, often in parallel. Agents make it easy to skip the disciplines that keep code maintainable — no plan, no decision record, no audit trail, just prompt-and-merge. Six months later you can't reconstruct why an agent wrote a given line. Orbit makes those disciplines cheap and enforces them by default: tasks before edits, ADRs for load-bearing decisions, every tool call landing in a structured audit log, parallel runs sandboxed into worktrees with file-level locks.
+You drive Claude Code, Codex, Grok Build, or Gemini CLI against real code, often in parallel. Agents make it easy to skip the disciplines that keep code maintainable — no plan, no decision record, no audit trail, just prompt-and-merge. Six months later you can't reconstruct why an agent wrote a given line. Orbit makes those disciplines cheap and enforces them by default: tasks before edits, ADRs for load-bearing decisions, every tool call landing in a structured audit log, parallel runs sandboxed into worktrees with file-level locks.
 
 The constraints are the point — they're what keep agent-assisted code shippable at volume. And the history of decisions lives right alongside the code, so that agents (and you) can reconstruct how the code came to be.
 
