@@ -2,7 +2,7 @@ use orbit_common::types::{
     ExternalRef, OrbitError, OrbitEvent, ReviewThread, Task, TaskComment, TaskHistoryEntry,
     TaskPriority, TaskStatus, normalize_optional_attribution_label, push_external_ref_if_missing,
 };
-use orbit_engine::{TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
+use orbit_engine::{RuntimeHost, TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
 
 use crate::OrbitRuntime;
 use crate::command::task::SYSTEM_ACTOR_LABEL;
@@ -109,6 +109,7 @@ impl TaskWriteHost for OrbitRuntime {
         }
         let (agent, model) = self
             .try_canonical_agent_model_identity(update.agent.as_deref(), update.model.as_deref())?;
+        let runtime_model_identity = <Self as RuntimeHost>::actor_model_identity(self);
         let _ = self.with_mutation(|| {
             let actor_label = SYSTEM_ACTOR_LABEL.to_string();
             let explicit_attribution_label = normalize_optional_attribution_label(
@@ -124,6 +125,7 @@ impl TaskWriteHost for OrbitRuntime {
                 Some(
                     explicit_attribution_label
                         .clone()
+                        .or_else(|| runtime_model_identity.clone())
                         .unwrap_or_else(|| actor_label.clone()),
                 )
             });
@@ -132,6 +134,7 @@ impl TaskWriteHost for OrbitRuntime {
                     .as_deref()
                     .or(existing_task.implemented_by.as_deref())
                     .or(explicit_attribution_label.as_deref())
+                    .or(runtime_model_identity.as_deref())
                     .or(Some(actor_label.as_str())),
                 model.as_deref(),
             );
@@ -625,6 +628,133 @@ mod tests {
             .find(|entry| entry.event == "commented")
             .expect("comment history");
         assert_eq!(comment_history.by, SYSTEM_ACTOR_LABEL);
+    }
+
+    #[test]
+    fn automation_update_under_agent_runtime_uses_model_identity_for_attribution() {
+        let (_root, runtime) = test_runtime();
+        let runtime = runtime.with_actor(crate::ActorIdentity::agent("gpt-agent-test"));
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Agent-driven automation".to_string(),
+                description: "Exercise agent runtime attribution.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("add task");
+        let task = approve_for_execution(&runtime, &task);
+        runtime
+            .start_task(&task.id, Some("start task".to_string()), None)
+            .expect("start task");
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    plan: Some("Implement the task through workflow automation.".to_string()),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation plan update");
+        let planned = runtime.get_task(&task.id).expect("reload planned task");
+        assert_eq!(planned.planned_by.as_deref(), Some("gpt-agent-test"));
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    status: Some(TaskStatus::Review),
+                    execution_summary: Some("Implemented through automation.".to_string()),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation review update");
+
+        let updated = runtime.get_task(&task.id).expect("reload task");
+        assert_eq!(updated.implemented_by.as_deref(), Some("gpt-agent-test"));
+    }
+
+    #[test]
+    fn automation_update_without_agent_runtime_falls_back_to_system_attribution() {
+        let (_root, runtime) = test_runtime();
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "System automation".to_string(),
+                description: "Exercise non-agent workflow attribution.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("add task");
+        let task = approve_for_execution(&runtime, &task);
+        runtime
+            .start_task(&task.id, Some("start task".to_string()), None)
+            .expect("start task");
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    status: Some(TaskStatus::Review),
+                    execution_summary: Some("Implemented through system automation.".to_string()),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation review update");
+
+        let updated = runtime.get_task(&task.id).expect("reload task");
+        assert_eq!(updated.implemented_by.as_deref(), Some(SYSTEM_ACTOR_LABEL));
+    }
+
+    #[test]
+    fn automation_review_done_transitions_preserve_existing_implemented_by_without_model() {
+        let (_root, runtime) = test_runtime();
+        let runtime = runtime.with_actor(crate::ActorIdentity::agent("gpt-agent-test"));
+        let task = runtime
+            .add_task(TaskAddParams {
+                title: "Preserve implementer".to_string(),
+                description: "Exercise existing implementer preservation.".to_string(),
+                workspace_path: Some(".".to_string()),
+                ..Default::default()
+            })
+            .expect("add task");
+        let task = approve_for_execution(&runtime, &task);
+        runtime
+            .start_task(&task.id, Some("start task".to_string()), None)
+            .expect("start task");
+        runtime
+            .update_task(
+                &task.id,
+                TaskUpdateParams {
+                    execution_summary: Some("Existing implementation summary.".to_string()),
+                    implemented_by: Some(Some("claude-opus-4-7".to_string())),
+                    ..Default::default()
+                },
+            )
+            .expect("seed existing implementation attribution");
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    status: Some(TaskStatus::Review),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation review update");
+        let reviewed = runtime.get_task(&task.id).expect("reload reviewed task");
+        assert_eq!(reviewed.implemented_by.as_deref(), Some("claude-opus-4-7"));
+
+        runtime
+            .apply_task_automation_update(
+                &task.id,
+                TaskAutomationUpdate {
+                    status: Some(TaskStatus::Done),
+                    ..TaskAutomationUpdate::default()
+                },
+            )
+            .expect("automation done update");
+        let done = runtime.get_task(&task.id).expect("reload done task");
+        assert_eq!(done.implemented_by.as_deref(), Some("claude-opus-4-7"));
     }
 
     #[test]
