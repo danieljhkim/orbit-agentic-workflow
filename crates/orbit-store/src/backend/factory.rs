@@ -166,6 +166,7 @@ mod tests {
                 task_type: TaskType::Feature,
                 external_refs: Vec::new(),
                 source_task_id: None,
+                crew: None,
                 comments: Vec::new(),
             })
             .expect("create task");

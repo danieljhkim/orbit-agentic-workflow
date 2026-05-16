@@ -589,6 +589,7 @@ mod tests {
             external_refs: vec![ExternalRef::github_pr("42").expect("github pr ref")],
             relations: Vec::new(),
             job_run_id: None,
+            crew: None,
             created_at: now,
             updated_at: now,
         }

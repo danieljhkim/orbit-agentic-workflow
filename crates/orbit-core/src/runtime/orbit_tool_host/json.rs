@@ -82,6 +82,7 @@ pub(super) fn task_to_json(task: &Task, status_by_id: &BTreeMap<String, TaskStat
         "relations": task.relations,
         "source_task_id": task.source_task_id(),
         "job_run_id": task.job_run_id,
+        "crew": task.crew,
         "created_at": task.created_at.to_rfc3339(),
         "updated_at": task.updated_at.to_rfc3339(),
     })
@@ -107,6 +108,7 @@ pub(super) fn serialize_task(runtime: &OrbitRuntime, task: &Task) -> Result<Valu
         serde_json::to_value(runtime.get_task_review_threads(&task.id)?)
             .map_err(serialize_error("serialize review threads"))?,
     );
+    insert_resolved_crew(runtime, task, object)?;
     Ok(value)
 }
 
@@ -116,8 +118,55 @@ pub(super) fn task_lock_to_json(task: &Task) -> Value {
         "title": task.title,
         "status": task.status.to_string(),
         "job_run_id": task.job_run_id,
+        "crew": task.crew,
         "context_files": task.context_files,
     })
+}
+
+fn insert_resolved_crew(
+    runtime: &OrbitRuntime,
+    task: &Task,
+    object: &mut Map<String, Value>,
+) -> Result<(), OrbitError> {
+    if let Some(run_id) = task.job_run_id.as_deref()
+        && let Some(run) = runtime.get_job_run_backend(run_id)?
+        && let (
+            Some(resolved_crew),
+            Some(planner_model),
+            Some(implementer_model),
+            Some(reviewer_model),
+        ) = (
+            run.resolved_crew,
+            run.planner_model,
+            run.implementer_model,
+            run.reviewer_model,
+        )
+    {
+        object.insert("resolved_crew".to_string(), Value::String(resolved_crew));
+        object.insert("planner_model".to_string(), Value::String(planner_model));
+        object.insert(
+            "implementer_model".to_string(),
+            Value::String(implementer_model),
+        );
+        object.insert("reviewer_model".to_string(), Value::String(reviewer_model));
+        return Ok(());
+    }
+
+    let crew = runtime.resolved_crew_for_task_projection(task)?;
+    object.insert("resolved_crew".to_string(), Value::String(crew.name));
+    object.insert(
+        "planner_model".to_string(),
+        Value::String(crew.planner.model),
+    );
+    object.insert(
+        "implementer_model".to_string(),
+        Value::String(crew.implementer.model),
+    );
+    object.insert(
+        "reviewer_model".to_string(),
+        Value::String(crew.reviewer.model),
+    );
+    Ok(())
 }
 
 pub(super) fn serialize_task_lint_report(report: &TaskLintReport) -> Result<Value, OrbitError> {

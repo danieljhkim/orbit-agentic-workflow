@@ -1,6 +1,7 @@
 mod agent_protocol_host;
+mod crew;
 mod envelope;
-mod environment_host;
+pub(crate) mod environment_host;
 mod identity;
 mod invocation;
 mod job_run_host;

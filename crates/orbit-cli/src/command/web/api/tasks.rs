@@ -72,6 +72,8 @@ pub(super) struct CreateTaskBody {
     parent_id: Option<String>,
     #[serde(default)]
     source_task_id: Option<String>,
+    #[serde(default)]
+    crew: Option<String>,
 }
 
 fn default_priority() -> TaskPriority {
@@ -109,6 +111,8 @@ pub(super) struct UpdateTaskBody {
     task_type: Option<TaskType>,
     #[serde(default)]
     context_files: Option<Vec<String>>,
+    #[serde(default)]
+    crew: Option<Option<String>>,
 }
 
 pub(super) async fn list_tasks(State(runtime): State<Arc<OrbitRuntime>>) -> Response {
@@ -187,6 +191,7 @@ pub(super) async fn create_task_action(
         system_created: false,
         external_refs: body.external_refs,
         source_task_id: body.source_task_id,
+        crew: body.crew,
     };
     match runtime.add_task_with_identity(params, None, None) {
         Ok(task) => match dashboard_status_index(&runtime) {
@@ -224,6 +229,7 @@ pub(super) async fn update_task_action(
         implemented_by: None,
         pr_status: None,
         job_run_id: None,
+        crew: body.crew,
         context_files: body.context_files,
         upsert_artifacts: Vec::new(),
         append_review_threads: Vec::new(),

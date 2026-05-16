@@ -26,6 +26,7 @@ pub struct TaskAddParams {
     pub system_created: bool,
     pub external_refs: Vec<ExternalRef>,
     pub source_task_id: Option<String>,
+    pub crew: Option<String>,
 }
 
 impl Default for TaskAddParams {
@@ -48,6 +49,7 @@ impl Default for TaskAddParams {
             system_created: false,
             external_refs: Vec::new(),
             source_task_id: None,
+            crew: None,
         }
     }
 }
@@ -68,6 +70,7 @@ pub struct TaskUpdateParams {
     pub implemented_by: Option<Option<String>>,
     pub pr_status: Option<Option<String>>,
     pub job_run_id: Option<Option<String>>,
+    pub crew: Option<Option<String>>,
     pub context_files: Option<Vec<String>>,
     pub upsert_artifacts: Vec<TaskArtifact>,
     pub append_review_threads: Vec<ReviewThread>,
@@ -92,6 +95,7 @@ impl TaskUpdateParams {
             || self.implemented_by.is_some()
             || self.pr_status.is_some()
             || self.job_run_id.is_some()
+            || self.crew.is_some()
             || self.context_files.is_some()
             || !self.upsert_artifacts.is_empty()
             || !self.append_review_threads.is_empty()
@@ -118,6 +122,7 @@ impl From<TaskUpdateParams> for TaskRecordUpdateParams {
             implemented_by: p.implemented_by,
             pr_status: p.pr_status,
             job_run_id: p.job_run_id,
+            crew: p.crew,
             context_files: p.context_files,
             upsert_artifacts: p.upsert_artifacts,
             append_review_threads: p.append_review_threads,

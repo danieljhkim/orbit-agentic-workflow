@@ -110,6 +110,7 @@ pub(crate) fn seed_list_backlog_task(
                 task_type,
                 external_refs: Vec::new(),
                 source_task_id: None,
+                crew: None,
                 comments: Vec::new(),
             })
             .expect("seed legacy friction task");

@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    JobRun, JobRunState, JobRunStep, KnowledgeRunMetrics, NotFoundKind, OrbitError, PipelineState,
+    Crew, JobRun, JobRunState, JobRunStep, KnowledgeRunMetrics, NotFoundKind, OrbitError,
+    PipelineState,
 };
 
 use crate::backend::JobRunStepParams;
@@ -45,6 +46,10 @@ impl JobFileStore {
             created_at: Utc::now(),
             steps: vec![],
             knowledge_metrics: None,
+            resolved_crew: None,
+            planner_model: None,
+            implementer_model: None,
+            reviewer_model: None,
         };
         self.write_run(job_id, &run)?;
         Ok(run)
@@ -156,6 +161,23 @@ impl JobFileStore {
         };
         let mut run = self.read_run_at(&run_dir)?;
         run.knowledge_metrics = Some(metrics);
+        self.write_run(&job_id, &run)?;
+        Ok(true)
+    }
+
+    pub(crate) fn record_job_run_crew(
+        &self,
+        run_id: &str,
+        crew: &Crew,
+    ) -> Result<bool, OrbitError> {
+        let Some((job_id, run_dir)) = self.find_run_path(run_id)? else {
+            return Ok(false);
+        };
+        let mut run = self.read_run_at(&run_dir)?;
+        run.resolved_crew = Some(crew.name.clone());
+        run.planner_model = Some(crew.planner.model.clone());
+        run.implementer_model = Some(crew.implementer.model.clone());
+        run.reviewer_model = Some(crew.reviewer.model.clone());
         self.write_run(&job_id, &run)?;
         Ok(true)
     }

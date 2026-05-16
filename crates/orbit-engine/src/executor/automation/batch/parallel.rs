@@ -1043,6 +1043,7 @@ mod tests {
             external_refs: Vec::new(),
             relations: Vec::new(),
             job_run_id: Some(batch_id.to_string()),
+            crew: None,
             created_at: now,
             updated_at: now,
         }

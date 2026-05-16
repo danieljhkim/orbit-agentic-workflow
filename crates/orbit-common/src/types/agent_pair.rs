@@ -1,5 +1,4 @@
-//! Authoritative mapping from an agent CLI family to the orchestrator/helper
-//! model pair that should drive bounded implementation work.
+//! Authoritative agent-family helpers and named crew resolution.
 //!
 //! This is the single source of truth Orbit consults whenever an activity needs
 //! to embed a model duo into its instructions. Splitting the heavy "judgment"
@@ -10,6 +9,7 @@
 //! `{{helper_model}}`, and `{{agent_family}}` placeholders, which the runtime
 //! substitutes into the instruction text before invoking the agent.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,51 @@ impl AgentModelPair {
             helper: helper.into(),
         }
     }
+}
+
+/// One role assignment inside a named crew.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrewRoleAssignment {
+    pub model: String,
+    pub provider: String,
+    pub backend: String,
+}
+
+/// A named planner/implementer/reviewer lineup.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Crew {
+    pub name: String,
+    pub planner: CrewRoleAssignment,
+    pub implementer: CrewRoleAssignment,
+    pub reviewer: CrewRoleAssignment,
+}
+
+impl Crew {
+    pub fn role(&self, role: &str) -> Option<&CrewRoleAssignment> {
+        match role {
+            "planner" => Some(&self.planner),
+            "implementer" => Some(&self.implementer),
+            "reviewer" => Some(&self.reviewer),
+            _ => None,
+        }
+    }
+}
+
+/// Resolve a named crew from the active registry.
+pub fn resolve_crew(name: &str, registry: &BTreeMap<String, Crew>) -> Result<Crew, OrbitError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(OrbitError::invalid_input_with_suggestions(
+            "crew name must not be empty",
+            registry.keys().cloned().collect(),
+        ));
+    }
+    registry.get(trimmed).cloned().ok_or_else(|| {
+        OrbitError::invalid_input_with_suggestions(
+            format!("crew '{trimmed}' is not defined in [crews.*]"),
+            registry.keys().cloned().collect(),
+        )
+    })
 }
 
 /// The full set of agent CLI families Orbit knows how to orchestrate.
@@ -150,5 +195,91 @@ pub fn resolve_agent_model_pair_or(
         "gemini" => Some(AgentModelPair::new("pro", "flash")),
         "grok" => Some(AgentModelPair::new("grok-4", "grok-3")),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assignment(model: &str, provider: &str) -> CrewRoleAssignment {
+        CrewRoleAssignment {
+            model: model.to_string(),
+            provider: provider.to_string(),
+            backend: "cli".to_string(),
+        }
+    }
+
+    fn registry() -> BTreeMap<String, Crew> {
+        let mut registry = BTreeMap::new();
+        registry.insert(
+            "opus-codex".to_string(),
+            Crew {
+                name: "opus-codex".to_string(),
+                planner: assignment("claude-opus-4-7", "claude"),
+                implementer: assignment("gpt-5.5", "codex"),
+                reviewer: assignment("claude-opus-4-7", "claude"),
+            },
+        );
+        registry.insert(
+            "all-claude".to_string(),
+            Crew {
+                name: "all-claude".to_string(),
+                planner: assignment("claude-opus-4-7", "claude"),
+                implementer: assignment("claude-sonnet-4-6", "claude"),
+                reviewer: assignment("claude-opus-4-7", "claude"),
+            },
+        );
+        registry
+    }
+
+    #[test]
+    fn resolve_crew_returns_assignments_for_known_name() {
+        let crew = resolve_crew("opus-codex", &registry()).expect("crew resolves");
+
+        assert_eq!(crew.name, "opus-codex");
+        assert_eq!(crew.planner.model, "claude-opus-4-7");
+        assert_eq!(crew.implementer.provider, "codex");
+        assert_eq!(crew.reviewer.backend, "cli");
+    }
+
+    #[test]
+    fn resolve_crew_lists_defined_names_on_unknown() {
+        let error = resolve_crew("missing", &registry()).expect_err("unknown crew fails");
+
+        match error {
+            OrbitError::InvalidInputDiagnostic { did_you_mean, .. } => {
+                assert_eq!(did_you_mean, vec!["all-claude", "opus-codex"]);
+            }
+            other => panic!("expected InvalidInputDiagnostic, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn infer_agent_family_from_model_handles_claude_gpt_gemini_grok_prefixes() {
+        assert_eq!(
+            infer_agent_family_from_model("claude-opus-4-7").as_deref(),
+            Some("claude")
+        );
+        assert_eq!(
+            infer_agent_family_from_model("gpt-5.5").as_deref(),
+            Some("codex")
+        );
+        assert_eq!(
+            infer_agent_family_from_model("o3-mini").as_deref(),
+            Some("codex")
+        );
+        assert_eq!(
+            infer_agent_family_from_model("gemini-3.1-pro").as_deref(),
+            Some("gemini")
+        );
+        assert_eq!(
+            infer_agent_family_from_model("grok-4").as_deref(),
+            Some("grok")
+        );
+        assert_eq!(
+            infer_agent_family_from_model("grok3").as_deref(),
+            Some("grok")
+        );
     }
 }

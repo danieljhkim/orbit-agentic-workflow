@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Adr, AdrStatus, ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, Learning,
+    Adr, AdrStatus, Crew, ExecutorDef, ExternalRef, JobRun, KnowledgeRunMetrics, Learning,
     LearningStatus, OrbitError, PipelineState, PolicyDef, ReviewThread, Task, TaskArtifact,
     TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus,
 };
@@ -218,6 +218,10 @@ impl JobRunStoreBackend for JobFileStore {
         metrics: KnowledgeRunMetrics,
     ) -> Result<bool, OrbitError> {
         self.record_job_run_knowledge_metrics(run_id, metrics)
+    }
+
+    fn record_job_run_crew(&self, run_id: &str, crew: &Crew) -> Result<bool, OrbitError> {
+        self.record_job_run_crew(run_id, crew)
     }
 
     fn finalize_job_run(

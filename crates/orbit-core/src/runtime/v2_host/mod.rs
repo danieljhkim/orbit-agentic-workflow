@@ -168,6 +168,30 @@ impl V2RuntimeHost for OrbitRuntime {
         EnvironmentHost::agent_role_config(self, role)
     }
 
+    fn agent_role_config_for_input(
+        &self,
+        role: AgentRole,
+        input: &serde_json::Value,
+    ) -> Option<AgentRoleConfig> {
+        let crew = self
+            .resolve_crew_for_run_input(input)
+            .or_else(|error| {
+                tracing::warn!(
+                    target: "orbit.config.crew",
+                    error = %error,
+                    "failed to resolve crew for activity input; falling back to default role config",
+                );
+                Err(error)
+            })
+            .ok()?;
+        let assignment = crew.role(role.as_str())?;
+        Some(
+            crate::runtime::engine::environment_host::typed_role_config_from_assignment(
+                role, assignment,
+            ),
+        )
+    }
+
     fn api_key_for(&self, provider: &str) -> Result<String, DispatchError> {
         match provider {
             "anthropic" => {

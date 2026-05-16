@@ -1035,6 +1035,7 @@ mod tests {
             external_refs: Vec::new(),
             relations: Vec::new(),
             job_run_id: None,
+            crew: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1061,6 +1062,10 @@ mod tests {
             input: None,
             retry_source_run_id: None,
             knowledge_metrics: None,
+            resolved_crew: None,
+            planner_model: None,
+            implementer_model: None,
+            reviewer_model: None,
             steps: Vec::new(),
         }
     }
