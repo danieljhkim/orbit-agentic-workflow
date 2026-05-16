@@ -145,8 +145,8 @@ pub fn resolve_agent_model_pair_or(
 
     let family = agent_family_from_cli(agent_cli);
     match family.as_str() {
-        "codex" => Some(AgentModelPair::new("gpt-5.4", "gpt-5.4-mini")),
-        "claude" => Some(AgentModelPair::new("opus-4.6", "sonnet-4.6")),
+        "codex" => Some(AgentModelPair::new("gpt-5.5", "gpt-5.4-mini")),
+        "claude" => Some(AgentModelPair::new("opus-4.7", "sonnet-4.6")),
         "gemini" => Some(AgentModelPair::new(
             "pro",
             "flash",
