@@ -8,7 +8,7 @@
 use orbit_core::{EvidenceKind, Learning, LearningSearchResult};
 use serde_json::{Value, json};
 
-pub(super) fn learning_to_json(learning: &Learning) -> Value {
+pub(crate) fn learning_to_json(learning: &Learning) -> Value {
     json!({
         "id": learning.id,
         "status": learning.status.as_str(),
@@ -34,7 +34,7 @@ pub(super) fn learning_to_json(learning: &Learning) -> Value {
     })
 }
 
-pub(super) fn learning_search_result_to_json(result: &LearningSearchResult) -> Value {
+pub(crate) fn learning_search_result_to_json(result: &LearningSearchResult) -> Value {
     let learning = &result.learning;
     json!({
         "id": learning.id,

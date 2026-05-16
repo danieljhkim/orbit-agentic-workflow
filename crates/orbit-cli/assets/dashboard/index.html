@@ -196,7 +196,9 @@
         background: var(--bg);
       }
       
-      #task-search {
+      #task-search,
+      #audit-search,
+      #learning-search {
         flex: 1 1 200px;
         min-width: 160px;
         background: var(--bg);
@@ -210,7 +212,9 @@
         transition: all 0.2s ease;
       }
       
-      #task-search:focus {
+      #task-search:focus,
+      #audit-search:focus,
+      #learning-search:focus {
         border-color: var(--accent);
       }
       
@@ -1438,6 +1442,100 @@
       .knowledge-grid .value.ratio { color: var(--accent-hover); }
       .knowledge-empty { color: var(--fg-dim); font-family: var(--font-mono); font-size: 12px; }
 
+      /* Knowledge tab */
+      .learning-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-bottom: 1px solid var(--border);
+      }
+      @media (max-width: 800px) {
+        .learning-stats { grid-template-columns: 1fr; }
+        .learning-row { grid-template-columns: 120px minmax(0, 1fr) 76px; }
+        .learning-row .evidence,
+        .learning-row .updated { display: none; }
+      }
+      .learning-row {
+        display: grid;
+        grid-template-columns: 140px minmax(180px, 1fr) 96px 110px 110px;
+        gap: 12px;
+        padding: 9px 16px;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .learning-row:hover { background: rgba(255, 255, 255, 0.03); }
+      .learning-row.active { background: rgba(110, 159, 255, 0.06); }
+      .learning-row.header {
+        color: var(--fg-dim);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        cursor: default;
+        position: sticky;
+        top: 0;
+        background: var(--bg-elev);
+        z-index: 1;
+      }
+      .learning-row .id,
+      .learning-row .updated {
+        color: var(--fg-dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .learning-row .scope {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+      }
+      .learning-row .evidence {
+        color: var(--fg-dim);
+        text-align: right;
+      }
+      #learning-detail {
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+      .learning-detail-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--fg-dim);
+      }
+      .learning-detail-meta .value {
+        color: var(--fg);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 2px 6px;
+        border-radius: 2px;
+      }
+      .learning-detail-scope {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .learning-detail-body {
+        margin: 0;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 2px;
+        padding: 10px 12px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--fg);
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 420px;
+        overflow: auto;
+      }
+
       /* Custom scrollbar */
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
@@ -1590,6 +1688,7 @@
       <button class="tab" data-tab="scoreboard" type="button">Scoreboard</button>
       <button class="tab" data-tab="audit" type="button">Audit</button>
       <button class="tab" data-tab="diagnostics" type="button">Diagnostics</button>
+      <button class="tab" data-tab="knowledge" type="button">Knowledge</button>
     </nav>
     <section class="health-strip" id="health-strip" aria-label="Audit health summary">
       <div class="tile" id="tile-events">
@@ -1743,6 +1842,52 @@
             <div class="skeleton-state">
               <div class="skeleton skeleton-row"></div>
               <div class="skeleton skeleton-row" style="width: 80%"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+    <section class="tab-pane" data-tab="knowledge">
+      <main style="grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);">
+        <section class="panel" id="knowledge-panel">
+          <header><span>Knowledge</span><span class="count" id="knowledge-count">-</span></header>
+          <nav class="subtabs" id="knowledge-subtabs">
+            <button class="subtab" data-subtab="learnings" type="button">Learnings</button>
+          </nav>
+          <div class="learning-stats" id="learning-stats">
+            <div class="tile">
+              <span class="label">Total</span>
+              <span class="value" id="learning-total-value">-</span>
+              <span class="glyph">LRN</span>
+            </div>
+            <div class="tile">
+              <span class="label">Superseded</span>
+              <span class="value" id="learning-superseded-value">-</span>
+              <span class="glyph">SUP</span>
+            </div>
+            <div class="tile">
+              <span class="label">Last Indexed</span>
+              <span class="value" id="learning-last-indexed-value">-</span>
+              <span class="glyph">IDX</span>
+            </div>
+          </div>
+          <div class="controls">
+            <input type="search" id="learning-search" placeholder="Search learnings..." autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="body scoreboard-table-wrap" id="learnings-body">
+            <div class="skeleton-state">
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row" style="width: 80%"></div>
+              <div class="skeleton skeleton-row" style="width: 70%"></div>
+            </div>
+          </div>
+        </section>
+        <section class="panel" id="learning-detail-panel">
+          <header><span>Learning Detail</span><span class="count" id="learning-detail-count">-</span></header>
+          <div class="body" id="learning-detail">
+            <div class="empty-state">
+              <div class="icon">✧</div>
+              <div class="text">No learning selected.</div>
             </div>
           </div>
         </section>

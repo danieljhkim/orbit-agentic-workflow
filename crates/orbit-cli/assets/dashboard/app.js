@@ -25,6 +25,7 @@ const JOB_RUN_LIMIT = positiveIntParam("runs", 25);
 const DIAG_LIMIT = positiveIntParam("diag", 50);
 const AUDIT_LIMIT = positiveIntParam("audit", 50);
 const RUN_EVENTS_LIMIT = positiveIntParam("events", 100);
+const LEARNING_LIMIT = positiveIntParam("learnings", 100);
 
 const AUDIT_STATUSES = ["success", "failure", "denied"];
 const CANCELLABLE_RUN_STATES = new Set(["pending", "running"]);
@@ -38,12 +39,16 @@ let activeStatuses = new Set(
 let lastTasks = [];
 let lastRuns = [];
 let lastDiagnostics = { metrics: [], errors: [] };
+let lastLearningPayload = { stats: {}, items: [] };
 let activeTab = "tasks";
 let activeDiagSubtab = "runs";
+let activeKnowledgeSubtab = "learnings";
 let runSort = { key: "when", dir: "desc" };
 let expandedTaskIds = new Set();
 let isRefreshing = false;
 let taskActionNotice = null;
+let activeLearningId = null;
+let learningSearchQuery = "";
 
 // Audit tab state
 let lastAudit = [];
@@ -126,11 +131,17 @@ function fetchJson(path) {
     });
 }
 
-function postJson(path) {
-  return fetch(path, {
+function postJson(path, body) {
+  const headers = { accept: "application/json" };
+  const opts = {
     method: "POST",
-    headers: { accept: "application/json" },
-  }).then(async (res) => {
+    headers,
+  };
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  return fetch(path, opts).then(async (res) => {
     const text = await res.text();
     const body = text ? JSON.parse(text) : {};
     if (!res.ok) {
@@ -1160,6 +1171,169 @@ function renderScoreboard(summary) {
   syncNodes(tbody, Array.from(frag.children));
 }
 
+function evidenceCount(learning) {
+  return Array.isArray(learning && learning.evidence) ? learning.evidence.length : 0;
+}
+
+function learningScopeNodes(learning) {
+  const scope = (learning && learning.scope) || {};
+  const paths = Array.isArray(scope.paths) ? scope.paths : [];
+  const tags = Array.isArray(scope.tags) ? scope.tags : [];
+  const chips = [];
+  for (const tag of tags.slice(0, 3)) {
+    chips.push(el("span", { class: "pill", text: `#${tag}`, title: tag }));
+  }
+  for (const path of paths.slice(0, Math.max(0, 4 - chips.length))) {
+    chips.push(el("span", { class: "pill", text: truncate(path, 28), title: path }));
+  }
+  if (paths.length + tags.length > chips.length) {
+    chips.push(el("span", { class: "pill", text: `+${paths.length + tags.length - chips.length}` }));
+  }
+  if (chips.length === 0) chips.push(el("span", { class: "pill", text: "global" }));
+  return chips;
+}
+
+function renderLearningStats(stats = {}) {
+  $("learning-total-value").textContent = formatBigInt(stats.total || 0);
+  $("learning-superseded-value").textContent = formatBigInt(stats.superseded || 0);
+  $("learning-last-indexed-value").textContent = stats.last_indexed
+    ? fmtTimestamp(stats.last_indexed)
+    : "-";
+}
+
+function renderLearnings(payload) {
+  const body = $("learnings-body");
+  if (!body) return;
+  const items = Array.isArray(payload && payload.items) ? payload.items : [];
+  const stats = (payload && payload.stats) || {};
+  renderLearningStats(stats);
+  $("knowledge-count").textContent = `${items.length}/${stats.total || items.length}`;
+
+  if (items.length > 0 && !items.some((item) => item.id === activeLearningId)) {
+    activeLearningId = items[0].id;
+  }
+  if (items.length === 0) activeLearningId = null;
+
+  if (items.length === 0) {
+    syncNodes(body, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No learnings match the current filter." }),
+    ])]);
+    renderLearningDetail(null);
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  const header = el("div", { class: "learning-row header" }, [
+    el("span", { text: "id" }),
+    el("span", { text: "scope" }),
+    el("span", { class: "evidence", text: "evidence" }),
+    el("span", { text: "status" }),
+    el("span", { class: "updated", text: "updated" }),
+  ]);
+  header.dataset.key = "learning-header";
+  header.dataset.hash = "learning-header";
+  frag.appendChild(header);
+
+  for (const learning of items) {
+    const row = el("div", { class: "learning-row", title: learning.summary || learning.id }, [
+      el("span", { class: "id", text: learning.id, title: learning.id }),
+      el("span", { class: "scope" }, learningScopeNodes(learning)),
+      el("span", { class: "evidence", text: String(evidenceCount(learning)) }),
+      statusPill(learning.status || "active"),
+      el("span", { class: "updated", text: fmtTimestamp(learning.updated_at), title: fmtAbsTime(learning.updated_at) }),
+    ]);
+    row.dataset.key = `learning-${learning.id}`;
+    row.dataset.hash = `${learning.id}-${learning.status}-${learning.updated_at}-${activeLearningId === learning.id}`;
+    if (activeLearningId === learning.id) row.classList.add("active");
+    row.addEventListener("click", () => {
+      activeLearningId = learning.id;
+      renderLearnings(lastLearningPayload);
+    });
+    frag.appendChild(row);
+  }
+
+  syncNodes(body, Array.from(frag.children));
+  renderLearningDetail(items.find((item) => item.id === activeLearningId) || items[0]);
+}
+
+function renderLearningDetail(learning) {
+  const detail = $("learning-detail");
+  if (!detail) return;
+  const count = $("learning-detail-count");
+  if (!learning) {
+    if (count) count.textContent = "-";
+    syncNodes(detail, [el("div", { class: "empty-state" }, [
+      el("div", { class: "icon", text: "✧" }),
+      el("div", { class: "text", text: "No learning selected." }),
+    ])]);
+    return;
+  }
+  if (count) count.textContent = learning.status || "active";
+
+  const title = el("div", { class: "field-block" }, [
+    el("h4", { text: learning.id }),
+    el("div", { class: "markdown-body", text: learning.summary || "" }),
+  ]);
+
+  const meta = el("div", { class: "learning-detail-meta" });
+  const addMeta = (label, value) => {
+    if (value == null || value === "") return;
+    meta.appendChild(el("span", {}, [
+      document.createTextNode(`${label}: `),
+      el("span", { class: "value", text: String(value) }),
+    ]));
+  };
+  addMeta("status", learning.status || "active");
+  addMeta("evidence", evidenceCount(learning));
+  addMeta("updated", fmtAbsTime(learning.updated_at));
+  addMeta("superseded_by", learning.superseded_by);
+  addMeta("supersedes", learning.supersedes);
+
+  const scopeBlock = el("div", { class: "field-block" }, [
+    el("h4", { text: "scope" }),
+    el("div", { class: "learning-detail-scope" }, learningScopeNodes(learning)),
+  ]);
+
+  const bodyBlock = el("div", { class: "field-block" }, [
+    el("h4", { text: "body" }),
+    el("pre", { class: "learning-detail-body", text: learning.body || "" }),
+  ]);
+
+  const actions = el("div", { class: "actions" });
+  const supersede = el("button", {
+    class: "action archive",
+    text: "Supersede",
+    title: `Supersede ${learning.id}`,
+  });
+  supersede.disabled = learning.status === "superseded";
+  supersede.addEventListener("click", () => {
+    const by = window.prompt(`Replacement learning ID for ${learning.id}`);
+    if (!by || !by.trim()) return;
+    supersedeLearning(learning, by.trim(), supersede, detail);
+  });
+  actions.appendChild(supersede);
+
+  syncNodes(detail, [title, meta, scopeBlock, bodyBlock, actions]);
+}
+
+async function supersedeLearning(learning, by, btn, detail) {
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>wait`;
+  for (const node of detail.querySelectorAll(".action-error")) node.remove();
+  try {
+    await postJson(`/api/learnings/${encodeURIComponent(learning.id)}/supersede`, { by });
+    activeLearningId = learning.id;
+    await fetchAndRenderLearnings();
+  } catch (e) {
+    detail.prepend(el("div", { class: "action-error", text: e.message || "supersede failed" }));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+}
+
 function refreshChips() {
   for (const chip of document.querySelectorAll("#task-filter .chip")) {
     const status = chip.dataset.status;
@@ -1206,10 +1380,24 @@ function wireSearch() {
   });
 }
 
-const TABS = ["tasks", "scoreboard", "audit", "diagnostics", "run-detail"];
+function wireLearningSearch() {
+  const input = $("learning-search");
+  if (!input) return;
+  let debounce = null;
+  input.addEventListener("input", (e) => {
+    learningSearchQuery = e.target.value.trim();
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      if (activeTab === "knowledge") fetchAndRenderLearnings().catch(console.error);
+    }, 200);
+  });
+}
+
+const TABS = ["tasks", "scoreboard", "audit", "diagnostics", "knowledge", "run-detail"];
 const DIAG_SUBTABS = ["runs", "metrics", "errors"];
 const RUN_DETAIL_SUBTABS = ["steps", "events"];
 const AUDIT_SUBTABS = ["events", "policy"];
+const KNOWLEDGE_SUBTABS = ["learnings"];
 
 function parseHashRoute(raw) {
   const trimmed = String(raw || "").replace(/^#/, "");
@@ -1292,6 +1480,10 @@ function setActiveTab(raw, opts = {}) {
     hash = `#runs/${encodeURIComponent(activeRunId || "")}` +
       (activeRunSubtab !== "steps" ? `/${activeRunSubtab}` : "");
     if (query.get("step") != null) hash += `?step=${encodeURIComponent(query.get("step"))}`;
+  } else if (top === "knowledge") {
+    const sub = KNOWLEDGE_SUBTABS.includes(segments[1]) ? segments[1] : activeKnowledgeSubtab;
+    setKnowledgeSubtab(sub);
+    hash = sub === "learnings" ? "#knowledge/learnings" : `#knowledge/${sub}`;
   } else {
     hash = `#${top}`;
   }
@@ -1392,6 +1584,14 @@ function setDiagSubtab(name) {
   }
 }
 
+function setKnowledgeSubtab(name) {
+  if (!KNOWLEDGE_SUBTABS.includes(name)) name = "learnings";
+  activeKnowledgeSubtab = name;
+  for (const btn of document.querySelectorAll("#knowledge-subtabs .subtab")) {
+    btn.classList.toggle("active", btn.dataset.subtab === name);
+  }
+}
+
 function initTabs() {
   for (const tab of document.querySelectorAll(".tab")) {
     tab.addEventListener("click", () => setActiveTab(tab.dataset.tab, { refresh: false }));
@@ -1421,6 +1621,11 @@ function initTabs() {
         refreshDashboard();
       }
     });
+  }
+  for (const btn of document.querySelectorAll("#knowledge-subtabs .subtab")) {
+    btn.addEventListener("click", () =>
+      setActiveTab(`knowledge/${btn.dataset.subtab}`, { refresh: false }),
+    );
   }
   window.addEventListener("hashchange", () => {
     setActiveTab(window.location.hash);
@@ -1583,6 +1788,11 @@ function activeRefreshJobs() {
     return jobs;
   }
 
+  if (activeTab === "knowledge") {
+    jobs.push(fetchAndRenderLearnings());
+    return jobs;
+  }
+
   if (activeTab === "run-detail") {
     if (!activeRunId) {
       renderRunDetailEmpty("No run selected.");
@@ -1704,6 +1914,16 @@ function fetchAndRenderPolicy() {
   return fetchJson(`/api/diagnostics/denials?${sp.toString()}`).then((data) => {
     lastAuditPolicy = data;
     renderPolicy(data);
+  });
+}
+
+function fetchAndRenderLearnings() {
+  const sp = new URLSearchParams();
+  sp.set("limit", String(LEARNING_LIMIT));
+  if (learningSearchQuery) sp.set("q", learningSearchQuery);
+  return fetchJson(`/api/learnings?${sp.toString()}`).then((payload) => {
+    lastLearningPayload = payload || { stats: {}, items: [] };
+    renderLearnings(lastLearningPayload);
   });
 }
 
@@ -2756,11 +2976,12 @@ async function refreshDashboard() {
   isRefreshing = false;
   if (activeTab === "tasks") fitLogPanelToViewport();
   
-  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,runs/:id/logs?limit,scoreboard,diagnostics/{metrics,errors,friction,denials?since|kind|profile|agent}}`;
+  $("footer").textContent = `orbit dashboard · auto-refresh 30s · GET /api/{tasks,learnings,jobs,job-runs,audit?since|tool|status|role|execution_id|profile|q|limit|offset,audit/summary?since|denial_threshold,runs/:id,runs/:id/events?kind|limit|offset,runs/:id/logs?limit,scoreboard,diagnostics/{metrics,errors,friction,denials?since|kind|profile|agent}}`;
 }
 
 buildChips();
 wireSearch();
+wireLearningSearch();
 buildAuditChips();
 wireAuditSearch();
 $("refresh-btn").addEventListener("click", refreshDashboard);
