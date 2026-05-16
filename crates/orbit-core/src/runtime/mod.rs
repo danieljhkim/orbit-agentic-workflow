@@ -20,6 +20,7 @@ pub(crate) mod orbit_tool_host;
 pub mod pipeline;
 mod resolve;
 pub mod run_audit;
+pub(crate) mod run_input;
 mod store_delegates;
 mod task_reservation_cleanup;
 mod v2_host;
