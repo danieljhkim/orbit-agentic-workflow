@@ -712,7 +712,9 @@
       
       .runs-row {
         display: grid;
-        grid-template-columns: 80px 1fr minmax(100px, 0.6fr) 70px 80px 72px;
+        grid-template-columns:
+          80px minmax(100px, 1fr) minmax(100px, 0.7fr)
+          58px 74px 86px 80px 72px;
         gap: 12px;
         padding: 8px 16px;
         font-family: var(--font-mono);
@@ -737,7 +739,17 @@
       }
       .runs-row .run-id:hover { color: var(--accent); }
       .runs-row .duration { color: var(--fg-dim); text-align: right; }
+      .runs-row .num { text-align: right; color: var(--fg-dim); }
+      .runs-row .num.hot { color: var(--state-failed); }
       .runs-row .state { text-align: right; }
+      .runs-row .long-run-flag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 6px;
+        color: var(--priority-medium);
+        font-weight: 700;
+      }
       .runs-row .run-actions {
         display: flex;
         justify-content: flex-end;
@@ -762,6 +774,18 @@
         background: var(--bg-elev);
         z-index: 1;
       }
+      .runs-sort {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        text-transform: inherit;
+        padding: 0;
+        cursor: pointer;
+      }
+      .runs-sort.active { color: var(--fg); }
       
       .scoreboard-row {
         display: grid;
@@ -1665,7 +1689,6 @@
           <nav class="subtabs" id="diag-subtabs">
             <button class="subtab" data-subtab="runs" type="button">Recent Runs</button>
             <button class="subtab" data-subtab="metrics" type="button">Metrics</button>
-            <button class="subtab" data-subtab="friction" type="button">Friction</button>
             <button class="subtab" data-subtab="errors" type="button">Errors</button>
           </nav>
           <div class="body scoreboard-table-wrap" id="diag-body" style="display: none;">
