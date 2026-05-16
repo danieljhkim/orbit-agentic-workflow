@@ -5,7 +5,7 @@
 //! dispatch layer. Tool-host and CLI both reach into
 //! `runtime.stores().learnings()`, which is the single source of truth.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use orbit_common::types::{EvidenceKind, Learning, LearningStatus, NotFoundKind, OrbitError};
 use orbit_store::{
@@ -37,6 +37,7 @@ impl OrbitRuntime {
         &self,
         params: LearningSearchParams,
     ) -> Result<Vec<LearningSearchResult>, OrbitError> {
+        let params = normalize_learning_search_params(&self.paths().repo_root, params)?;
         self.stores().learnings().search(params)
     }
 
@@ -159,4 +160,103 @@ fn commit_sha_known(repo_root: &Path, sha: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status();
     matches!(status, Ok(status) if status.success())
+}
+
+fn normalize_learning_search_params(
+    repo_root: &Path,
+    mut params: LearningSearchParams,
+) -> Result<LearningSearchParams, OrbitError> {
+    if let Some(path) = params.path.as_deref() {
+        params.path = Some(normalize_learning_search_path(repo_root, path)?);
+    }
+    Ok(params)
+}
+
+fn normalize_learning_search_path(repo_root: &Path, path: &str) -> Result<String, OrbitError> {
+    let trimmed = path.trim();
+    let candidate = Path::new(trimmed);
+    if !candidate.is_absolute() {
+        return Ok(path.to_string());
+    }
+
+    let canonical_repo_root = canonicalize_with_missing_tail(repo_root)?;
+    let canonical_candidate = canonicalize_with_missing_tail(candidate)?;
+    if let Ok(relative) = canonical_candidate.strip_prefix(&canonical_repo_root) {
+        return Ok(workspace_relative_path_string(relative));
+    }
+
+    if let Some(relative) =
+        linked_worktree_relative_path(&canonical_repo_root, candidate, &canonical_candidate)
+    {
+        return Ok(relative);
+    }
+
+    Err(OrbitError::InvalidInput(format!(
+        "filesystem path `{path}` must stay inside the workspace root"
+    )))
+}
+
+fn workspace_relative_path_string(relative: &Path) -> String {
+    if relative.as_os_str().is_empty() {
+        ".".to_string()
+    } else {
+        relative.to_string_lossy().replace('\\', "/")
+    }
+}
+
+fn linked_worktree_relative_path(
+    canonical_repo_root: &Path,
+    candidate: &Path,
+    canonical_candidate: &Path,
+) -> Option<String> {
+    let checkout_root = git_checkout_root(candidate)?;
+    let main_root = crate::paths::find_git_main_worktree_root(&checkout_root)?;
+    let canonical_main_root = canonicalize_with_missing_tail(&main_root).ok()?;
+    if canonical_main_root != canonical_repo_root {
+        return None;
+    }
+
+    let canonical_checkout_root = canonicalize_with_missing_tail(&checkout_root).ok()?;
+    let relative = canonical_candidate
+        .strip_prefix(canonical_checkout_root)
+        .ok()?;
+    Some(workspace_relative_path_string(relative))
+}
+
+fn git_checkout_root(start: &Path) -> Option<PathBuf> {
+    for ancestor in start.ancestors() {
+        let git_path = ancestor.join(".git");
+        if git_path.is_dir() || git_path.is_file() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
+}
+
+fn canonicalize_with_missing_tail(path: &Path) -> Result<PathBuf, OrbitError> {
+    if path.exists() {
+        return path
+            .canonicalize()
+            .map_err(|error| OrbitError::Io(format!("failed to canonicalize path: {error}")));
+    }
+
+    let mut missing_components = Vec::new();
+    let mut existing_ancestor = path;
+    while !existing_ancestor.exists() {
+        let name = existing_ancestor
+            .file_name()
+            .ok_or_else(|| OrbitError::InvalidInput("path has no file name".to_string()))?;
+        missing_components.push(name.to_os_string());
+        existing_ancestor = existing_ancestor.parent().ok_or_else(|| {
+            OrbitError::InvalidInput("path has no existing parent directory".to_string())
+        })?;
+    }
+
+    let mut canonical = existing_ancestor.canonicalize().map_err(|error| {
+        OrbitError::Io(format!("failed to canonicalize parent directory: {error}"))
+    })?;
+    for component in missing_components.iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
 }

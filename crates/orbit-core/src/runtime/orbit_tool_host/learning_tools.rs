@@ -93,7 +93,7 @@ pub(super) fn search(runtime: &OrbitRuntime, input: Value) -> Result<Value, Orbi
     let query = optional_string(&input, "query")?;
     let limit = optional_usize(&input, "limit")?;
 
-    let results = runtime.stores().learnings().search(LearningSearchParams {
+    let results = runtime.search_learnings(LearningSearchParams {
         path,
         tag,
         query,

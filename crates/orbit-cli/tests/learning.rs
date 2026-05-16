@@ -58,6 +58,28 @@ fn cli_search_returns_matched_by_annotation_array() {
 }
 
 #[test]
+fn cli_search_accepts_absolute_paths_inside_workspace() {
+    let workspace = TestWorkspace::new();
+    let learning = workspace.add_learning("path scope", &["foo/**"], &[]);
+    let target = workspace.work.join("foo/bar.rs");
+    fs::create_dir_all(target.parent().expect("target parent")).expect("create target dir");
+    fs::write(&target, "pub fn example() {}\n").expect("write target");
+    let absolute = target.to_string_lossy().to_string();
+
+    let path_hits = workspace.run_json(
+        &["learning", "search", "--path", &absolute, "--json"],
+        "search by absolute path",
+    );
+    let ids: Vec<&str> = path_hits
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|row| row["id"].as_str().expect("id"))
+        .collect();
+    assert!(ids.contains(&learning["id"].as_str().expect("learning id")));
+}
+
+#[test]
 fn cli_list_filters_by_status_and_returns_json_array() {
     let workspace = TestWorkspace::new();
     let _a = workspace.add_learning("a", &["a/**"], &[]);

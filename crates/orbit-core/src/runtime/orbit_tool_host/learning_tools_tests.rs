@@ -195,6 +195,36 @@ fn search_does_scope_or_with_dedup_on_combined_axes() {
     assert!(matched_by.iter().any(|axis| axis.starts_with("tag:")));
 }
 
+#[test]
+fn search_accepts_absolute_paths_inside_workspace() {
+    let (_guard, runtime, repo_root) = test_runtime();
+    let learning = create_minimal(&runtime, "paths only", &["foo/**"], &[]);
+    let absolute = repo_root.join("foo/bar.rs").to_string_lossy().to_string();
+
+    let by_path =
+        super::learning_tools::search(&runtime, json!({"path": absolute})).expect("by path");
+    let ids = ids_from_array(&by_path);
+    assert!(ids.contains(&learning.id));
+}
+
+#[test]
+fn search_accepts_absolute_paths_inside_linked_worktree() {
+    let (_guard, runtime, repo_root) = test_runtime();
+    let worktree = tempfile::tempdir().expect("worktree tempdir");
+    seed_fake_git_worktree(&repo_root, worktree.path());
+    let learning = create_minimal(&runtime, "paths only", &["foo/**"], &[]);
+    let absolute = worktree
+        .path()
+        .join("foo/bar.rs")
+        .to_string_lossy()
+        .to_string();
+
+    let by_path =
+        super::learning_tools::search(&runtime, json!({"path": absolute})).expect("by path");
+    let ids = ids_from_array(&by_path);
+    assert!(ids.contains(&learning.id));
+}
+
 // --- AC #5: matched_by always present on search results --------------
 
 #[test]
@@ -527,4 +557,14 @@ fn find_id<'a>(value: &'a Value, id: &str) -> Option<&'a Value> {
         .as_array()?
         .iter()
         .find(|item| item["id"].as_str() == Some(id))
+}
+
+fn seed_fake_git_worktree(main_repo: &std::path::Path, worktree: &std::path::Path) {
+    let worktree_git_dir = main_repo.join(".git").join("worktrees").join("orbit-test");
+    std::fs::create_dir_all(&worktree_git_dir).expect("create fake worktree git dir");
+    std::fs::write(
+        worktree.join(".git"),
+        format!("gitdir: {}\n", worktree_git_dir.display()),
+    )
+    .expect("write worktree gitfile");
 }
