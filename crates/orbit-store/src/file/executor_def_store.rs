@@ -70,7 +70,8 @@ impl ExecutorDefFileStore {
                 command: def.command.clone(),
                 args: def.args.clone(),
                 stdout_format: def.stdout_format,
-                models: def.models.clone(),
+                model_pair_override: def.model_pair_override.clone(),
+                legacy_models: None,
                 timeout_seconds: def.timeout_seconds,
                 env: def.env.clone(),
                 sandbox: def.sandbox,
@@ -100,20 +101,13 @@ fn parse_executor_def(content: &str, label: String) -> Result<ExecutorDef, Orbit
         )));
     }
     doc.metadata.validate_name()?;
-    Ok(ExecutorDef {
-        name: doc.metadata.name,
-        executor_type: doc.spec.executor_type,
-        command: doc.spec.command,
-        args: doc.spec.args,
-        stdout_format: doc.spec.stdout_format,
-        models: doc.spec.models,
-        timeout_seconds: doc.spec.timeout_seconds,
-        env: doc.spec.env,
-        sandbox: doc.spec.sandbox,
-        allow_fallback: doc.spec.allow_fallback,
-        created_at: doc.spec.created_at,
-        updated_at: doc.spec.updated_at,
-    })
+    Ok(ExecutorDef::from_resource_spec(
+        doc.metadata.name,
+        doc.spec.clone(),
+        &label,
+        doc.spec.created_at,
+        doc.spec.updated_at,
+    ))
 }
 
 #[cfg(test)]
@@ -133,7 +127,7 @@ mod tests {
             command: Some(name.to_string()),
             args: vec!["--flag".to_string()],
             stdout_format: None,
-            models: HashMap::new(),
+            model_pair_override: None,
             timeout_seconds: None,
             env: HashMap::new(),
             sandbox: None,

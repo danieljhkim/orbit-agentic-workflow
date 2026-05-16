@@ -644,7 +644,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
                 command: Some(fake_bin.display().to_string()),
                 args: Vec::new(),
                 stdout_format: None,
-                models: HashMap::new(),
+                model_pair_override: None,
                 timeout_seconds: None,
                 env: HashMap::new(),
                 sandbox: None,

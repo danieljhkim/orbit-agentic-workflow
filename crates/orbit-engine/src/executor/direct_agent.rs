@@ -21,7 +21,7 @@ fn inject_proc_allowed_programs(mode: EnvironmentMode, programs: &[String]) -> E
 fn inject_agent_identity(
     mode: EnvironmentMode,
     agent_label: &str,
-    resolved_model: Option<&str>,
+    execution: &ExecutionContext,
 ) -> EnvironmentMode {
     let agent = normalize_agent_label(agent_label);
     if agent.is_empty() {
@@ -30,7 +30,12 @@ fn inject_agent_identity(
 
     inject_environment(mode, |pairs| {
         pairs.push(("ORBIT_AGENT_NAME".to_string(), agent.clone()));
-        if let Some(model) = resolved_model.filter(|value| !value.is_empty()) {
+        if let Some(model) = execution
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
             pairs.push(("ORBIT_AGENT_MODEL".to_string(), model.to_string()));
         }
     })
@@ -109,9 +114,6 @@ impl ActivityExecutor for DirectAgentExecutor {
         };
         let args = self.bound_executor.args.clone();
 
-        // --- Resolve model (step.model → step.model_tier → executor def models) ---
-        let model = resolve_executor_model(&self.bound_executor, execution);
-
         // --- Assemble environment ---
         let label = self.bound_executor.name.clone();
         let mut env_set = self.bound_executor.env.clone();
@@ -125,7 +127,7 @@ impl ActivityExecutor for DirectAgentExecutor {
                             &execution.activity.tools,
                         ),
                         &label,
-                        model.as_deref(),
+                        execution,
                     ),
                     &execution.activity.proc_allowed_programs,
                 ),
@@ -153,34 +155,6 @@ impl ActivityExecutor for DirectAgentExecutor {
 
         map_exec_result_to_outcome(&exec_result)
     }
-}
-
-// ---------------------------------------------------------------------------
-// Model resolution
-// ---------------------------------------------------------------------------
-
-fn resolve_executor_model(
-    executor_def: &ExecutorDef,
-    execution: &ExecutionContext,
-) -> Option<String> {
-    // 1. Explicit model on the step
-    if let Some(model) = execution
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        return Some(model.to_string());
-    }
-
-    // 2. Model tier mapped through executor def
-    let tier = execution
-        .model_tier
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())?;
-
-    executor_def.model_for_tier(tier).map(|m| m.to_string())
 }
 
 fn is_timeout(exec_result: &orbit_common::types::ExecutionResult) -> bool {

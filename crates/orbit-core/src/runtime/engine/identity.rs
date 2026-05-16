@@ -21,10 +21,8 @@ impl OrbitRuntime {
             .ok()
             .flatten()
             .and_then(|def| {
-                Some(AgentModelPair::new(
-                    def.model_for_tier("strong")?.to_string(),
-                    def.model_for_tier("weak")?.to_string(),
-                ))
+                def.model_pair_override()
+                    .map(|pair| AgentModelPair::new(pair.strong.clone(), pair.weak.clone()))
             })
             .or_else(|| resolve_agent_model_pair(agent_cli))
     }

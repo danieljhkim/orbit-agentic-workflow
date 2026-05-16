@@ -112,7 +112,6 @@ impl RuntimeHost for OrbitRuntime {
             job: None,
             agent_cli: agent_cli.to_string(),
             model: model.map(ToOwned::to_owned),
-            model_tier: None,
             timeout_seconds,
             env_extra: Vec::new(),
             env_set: HashMap::new(),
@@ -185,10 +184,7 @@ impl RuntimeHost for OrbitRuntime {
         execution: &ExecutionContext,
         trace: &InvocationTrace,
     ) -> Result<(), OrbitError> {
-        let requested_model = execution
-            .model
-            .as_deref()
-            .or(execution.model_tier.as_deref());
+        let requested_model = execution.model.as_deref();
         let (agent, model) =
             self.canonical_agent_model_identity(Some(&execution.agent_cli), requested_model);
         let store = open_invocation_store(self)?;
@@ -262,7 +258,7 @@ mod tests {
                 command: Some(fake_agent.display().to_string()),
                 args: Vec::new(),
                 stdout_format: None,
-                models: HashMap::new(),
+                model_pair_override: None,
                 timeout_seconds: None,
                 env: HashMap::new(),
                 sandbox: None,

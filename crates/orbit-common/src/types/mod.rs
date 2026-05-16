@@ -78,7 +78,9 @@ pub use duel::{
 };
 pub use error::{NotFoundKind, OrbitError};
 pub use event::OrbitEvent;
-pub use executor_def::{ExecutorDef, ExecutorSandboxKind, ExecutorType, StdoutFormat};
+pub use executor_def::{
+    ExecutorDef, ExecutorSandboxKind, ExecutorType, ModelPairOverride, StdoutFormat,
+};
 pub use friction::{FrictionEntry, FrictionFrontmatter, FrictionRecord};
 pub use id::OrbitId;
 pub use invocation::{InvocationTrace, TokenUsage, ToolCallTrace};

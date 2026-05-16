@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ExecutorSandboxKind, ExecutorType, FsProfile, OrbitError, StdoutFormat};
+use crate::types::{
+    ExecutorSandboxKind, ExecutorType, FsProfile, ModelPairOverride, OrbitError, StdoutFormat,
+};
 
 pub const EXECUTOR_RESOURCE_SCHEMA_VERSION: u32 = 2;
 pub const POLICY_RESOURCE_SCHEMA_VERSION: u32 = 2;
@@ -174,8 +176,11 @@ pub struct ExecutorResourceSpec {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stdout_format: Option<StdoutFormat>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub models: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_pair_override: Option<ModelPairOverride>,
+    /// Deprecated alias for `model_pair_override`; remove after one release.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "models")]
+    pub legacy_models: Option<ModelPairOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_seconds: Option<u64>,
     #[serde(default)]

@@ -297,7 +297,6 @@ mod tests {
             job: None,
             agent_cli: "codex".to_string(),
             model: Some("test-model".to_string()),
-            model_tier: None,
             timeout_seconds: 5,
             env_extra: Vec::new(),
             env_set: HashMap::new(),

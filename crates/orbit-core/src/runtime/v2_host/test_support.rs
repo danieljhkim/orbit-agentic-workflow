@@ -24,7 +24,7 @@ pub(crate) fn seed_executor(
             command: Some(name.to_string()),
             args: vec!["exec".to_string(), "--json".to_string()],
             stdout_format: None,
-            models: HashMap::new(),
+            model_pair_override: None,
             timeout_seconds: None,
             env: HashMap::new(),
             sandbox,
