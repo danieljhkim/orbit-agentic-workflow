@@ -317,7 +317,6 @@ pub(in crate::activity_job::cli_runner) fn test_agent_loop_spec(
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::activity_job::cli_runner) fn test_agent_loop_spec_for(
     provider: &str,
     timeout: Duration,
@@ -326,6 +325,7 @@ pub(in crate::activity_job::cli_runner) fn test_agent_loop_spec_for(
         "claude" => Provider::Claude,
         "codex" => Provider::Codex,
         "gemini" => Provider::Gemini,
+        "grok" => Provider::Grok,
         other => panic!("unsupported provider for test: {other}"),
     };
     AgentLoopSpec {
