@@ -51,21 +51,36 @@ Paste the prompt below into your agent (Claude Code, Codex CLI, or Gemini CLI) *
 <details>
 <summary><strong>Agent setup prompt</strong> — copy this into your agent (click to expand)</summary>
 
-> Clone https://github.com/danieljhkim/orbit, build and install the `orbit` CLI from source, then set up Orbit on this current repo. Become an expert in Orbit's model along the way.
+> You are helping me set up Orbit, a local governance and audit layer for coding agents.
 >
-> 1. Ask me where to clone the Orbit repo (suggest something tweakable like `~/code/orbit`). Clone it there.
-> 2. From the cloned repo, run `make install`. This builds with cargo and copies the `orbit` binary to `$INSTALL_BIN_DIR` (default: `~/.cargo/bin`). Confirm the install path with me before running. Verify with `orbit --version`.
-> 3. Run `orbit init` to initialize global state at `~/.orbit`.
-> 4. From this current working directory (NOT the Orbit clone), run `orbit workspace init --mcp`. This creates `.orbit/` here and auto-registers Orbit's MCP server with installed agent CLIs (Claude Code, Codex, Gemini).
-> 5. Read these files in the cloned Orbit repo to internalize the model and conventions:
+> I am a staff/principal/founding engineer who already uses multiple coding agents heavily (Claude Code, Codex, Gemini, Aider, etc.) and has started to feel the long-term maintainability cost of moving fast without enough structure.
+>
+> Your job is to install and configure Orbit inside this repository so that I can keep using my existing agents while gaining durable tasks, structured audit, ADRs, safe parallel execution, and a code knowledge graph.
+>
+> Follow these steps carefully:
+>
+> 1. Ask me where I want to clone the Orbit repository (suggest something like `~/code/orbit` or `~/dev/orbit`).
+> 2. Verify the Rust toolchain. Run `cargo --version` and `rustc --version`. Orbit uses edition 2024, so I need Rust **1.85 or newer**. If cargo is missing, or rustc is older than 1.85, **stop and ask me before installing anything** — the canonical path is `rustup` (`curl https://sh.rustup.rs | sh`), but that modifies shell profile, so I want to confirm first. If rustup is already installed but the toolchain is old, suggest `rustup update stable` and confirm before running.
+> 3. Clone `https://github.com/danieljhkim/orbit` into the location from step 1, then run `make install`. This builds with cargo and copies the `orbit` binary to `$INSTALL_BIN_DIR` (default: `~/.cargo/bin`). Confirm the install path with me before running. Verify with `orbit --version`.
+> 4. Run `orbit init` to initialize global state at `~/.orbit`.
+> 5. From *this* repository (not the Orbit clone), run `orbit workspace init --mcp`. This creates `.orbit/` here and auto-registers Orbit's MCP server with installed agent CLIs (Claude Code, Codex, Gemini).
+> 6. Ask me whether to enable semantic search (**optional**). `orbit semantic install` downloads a small embedder companion plus the default bge-small model (lives under `~/.orbit/embed/`) and powers `orbit.semantic.search` / `orbit.semantic.related` over tasks. Don't install without my OK. If I accept and tasks already exist in this workspace, also run `orbit semantic reindex` to backfill the corpus.
+> 7. Read the key documents so you actually understand the model:
 >    - `README.md` — feature surface, install model, plugin vs CLI
->    - `docs/POSITIONING.md` — what Orbit is for, what it isn't
+>    - `docs/POSITIONING.md` — what Orbit is for, what it isn't (especially "who this is for")
 >    - `CLAUDE.md` — agent operating rules (commit timing, task ID convention, lint constraints)
 >    - `ARCHITECTURE.md` — crate layering and dependency rules
 >    - `docs/design/CONVENTIONS.md` — design-doc structure
-> 6. Report what you ran, what you read, and the output of `orbit task list` + `orbit semantic stats`. If any step failed, **stop and ask me** before continuing.
+>    - `docs/CONFIG.md` — config reference: crew/workflow/duel knobs and per-task crew override
+> 8. After setup, run `orbit task list` and `orbit semantic stats` and show me the output.
+> 9. Ask me what my first real task should be and create it properly using Orbit's task surface (use the `orbit-create-task` skill — it should be auto-discovered after step 5).
 >
-> Don't run anything destructive (overwriting files, modifying shell config) without confirming. If `make install` would write outside `~/.cargo/bin`, ask me first.
+> Rules:
+> - Never run destructive commands without explicit confirmation. Specifically: cloning, installing rustup, running `make install` outside `~/.cargo/bin`, and any shell-profile modification all need a confirmation prompt.
+> - If anything is unclear or fails, stop and ask me.
+> - Do not try to "make it simpler" or hide Orbit's conventions. I am choosing this because I want the discipline.
+>
+> Report back what you did and the current state of the workspace.
 
 </details>
 
