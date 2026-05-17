@@ -32,7 +32,7 @@ orbit tool run orbit.task.show --full --input '{"id": "<task-id>", "model": "<ag
 orbit tool run orbit.task.show --input '{"id": "<task-id>", "field": "plan", "model": "<agent-family>"}'
 # Valid fields: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
 
-# Start a task (proposed/backlog/someday/blocked -> in-progress)
+# Start a task (see Step 3 decision table: only for proposed/backlog/someday/blocked -> in-progress)
 orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why>", "model": "<agent-family>"}'
 
 # Update plan or add a comment
@@ -54,7 +54,7 @@ orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<agent-f
 - `description` and `acceptance_criteria` — these define the required outcome.
 - `plan` — if blank or placeholder, author a plan before starting.
 - `context_files` — treat these as selectors first. Prefer `file:`, `dir:`, or `symbol:` forms, use `orbit.graph.pack` when available, and fall back to `fs.read` only for unresolved selectors.
-- `status` — confirm the task is ready to start.
+- `status` — **required inspection before Step 3**: read the `status` field from the loaded task. Branch per the explicit decision table in Step 3 (proposed/backlog/someday/blocked → call start; in-progress → skip start and proceed to implement; review/terminal → stop and surface to human). Do not reach Step 3 without this check.
 
 Then, if `orbit.semantic.*` is available, call `orbit.semantic.related` on the task ID with `limit: 5`. Rationale: surface prior tasks the original author may not have linked via `context_files` — past decisions, prior attempts at the same problem, related review threads. Skim snippets; usually one hit is genuinely useful and the rest are noise. **This step is non-blocking** — if the companion binary is missing (install-pointer error) or no hit is relevant, continue. See `orbit-semantic`.
 
@@ -70,15 +70,23 @@ orbit tool run orbit.task.update --input '{"id": "<task-id>", "plan": "<markdown
 
 Replace placeholders like `To be authored by executing agent at start time.` Keep the plan concrete: target files, validation commands, risks.
 
-### Step 3: Start
+### Step 3: Start (status-gated)
+
+**Required: use the `status` inspected in Step 1.** Execute exactly one branch from this decision table:
+
+- `proposed`, `backlog`, `someday`, `blocked` → call the start command below, then proceed to Step 4.
+- `in-progress` → **skip the `orbit.task.start` call**; proceed directly to Step 4 (implement). Optionally append a resume comment via `orbit.task.update`. This covers multi-session, retried envelopes, and crash recovery.
+- `review`, `done`, `rejected` (and any other terminal/post-execution status) → **stop immediately and surface to the human** with the loaded status; do not call start or silently continue.
 
 ```bash
+# Only for transitional statuses per the table above (proposed/backlog/someday/blocked)
 orbit tool run orbit.task.start --input '{"id": "<task-id>", "note": "<why this is ready>", "model": "<agent-family>"}'
 ```
 
 - Moves `backlog -> in-progress` or `proposed -> in-progress` (records approval automatically).
 - Starting from `proposed` still requires a real plan; starting from `backlog` does not.
 - Use explicit `approve` + later status updates when approval and execution should stay separate.
+- **Never** call `orbit.task.start` when `status == in-progress` — the guard in `transitions.rs` will (correctly) reject it with "already in-progress". The table prevents the 41% failure class.
 
 ### Step 4: Implement and validate
 
@@ -162,7 +170,7 @@ Recommended follow-ups:
 ## Exit Criteria
 
 - Requested change implemented and validated.
-- Task started via `orbit.task.start` before execution.
+- Task is in `in-progress` status (via `orbit.task.start` for transitional states, or already `in-progress` on resume — see Step 3 table) before implementation.
 - Execution summary persisted via `orbit.task.update`.
 - Learning checkpoint considered; if a load-bearing insight was identified,
   `orbit.learning.add` was called per the `orbit-learning` skill.
