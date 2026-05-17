@@ -54,10 +54,22 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
   Behavior anchor: `crates/orbit-engine/src/executor/automation/batch/dispatch.rs` `task_prefers_single_batch`.
 - `dependencies: ["ORB-NNNN", ...]` trigger: set when prerequisite tasks must reach a dependency-satisfying status before this task starts.
   Behavior anchor: `crates/orbit-common/src/types/task.rs` `task_dependencies_ready`.
+- `relations: [{"type": "resolves", "target": "F<YYYY>-<MM>-<NNN>"}]` trigger: set when this task closes a tracked friction. On the Review → Done approval transition, the targeted friction is auto-resolved (`status: resolved`, `resolved_at: now`, `resolved_by_task: <this-task-id>`). Drop the structured relation at task-creation time so closure flows from the lifecycle, not a manual `orbit.friction.resolve` follow-up.
+  Behavior anchor: `crates/orbit-core/src/command/task/transitions.rs` `apply_resolves_side_effects`.
 
 ### Tier 2 - Mention
 - `parent_id: "ORB-NNNN"` metadata: only for real subtask-of relationships; display/list grouping and batch relatedness.
-- `source_task_id: "ORB-NNNN"` metadata: for `type: bug`, names the task that introduced the defect; display-only today.
+- `source_task_id: "ORB-NNNN"` metadata: for `type: bug`, names the task that introduced the defect. Settable at task-creation only — `orbit.task.update` currently silently drops this field on existing tasks (see friction `F2026-05-024` / task `ORB-00101`).
+
+### Cross-Artifact Relations
+
+The full `relations` array accepts these typed variants. Only the first two accept non-`ORB-` targets:
+
+- `produces` — this task created the target artifact during execution. Targets: `ORB-NNNNN`, `F<YYYY>-<MM>-<NNN>` (friction), `L<YYYYMMDD>-N` (learning), `ADR-NNNN`. Tracking-only in v1 (no lifecycle side-effect).
+- `resolves` — this task closes or supersedes the target artifact. Same target set as `produces`. **Side-effect when target is a friction**: auto-resolve on Review → Done (see Tier 1 above). Other target kinds are tracked but not state-mutated in v1.
+- `blocked_by`, `child_of`, `spawned_from`, `regression_from`, `supersedes`, `related_to` — task-only. Target must be `ORB-NNNNN`; cross-artifact targets are rejected by validation.
+
+Dangling targets (e.g., `resolves` pointing at a non-existent friction) succeed at approval time but emit a `TaskRelationDangling` audit event — they do not roll the task back.
 
 ### Tier 3 - Tags
 Tags are indexed by `orbit.semantic.search`; use existing tags where they fit before inventing new ones, because speculative tag soup is costly.
@@ -109,7 +121,7 @@ orbit tool run orbit.task.add --input '{
   "priority": "<low|medium|high|critical>",
   "type": "<feature|bug|refactor|chore>",
   "model": "<agent-family>" # codex | claude | gemini | grok
-  # Optional: complexity, dependencies, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
+  # Optional: complexity, dependencies, relations, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
 }'
 ```
 
@@ -125,7 +137,7 @@ orbit_task_add({
   "priority": "<low|medium|high|critical>",
   "type": "<feature|bug|refactor|chore>",
   "model": "<agent-family>"
-  # Optional: complexity, dependencies, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
+  # Optional: complexity, dependencies, relations, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
 })
 ```
 
