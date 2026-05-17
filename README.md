@@ -241,20 +241,28 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 `orbit workspace init` creates a `.orbit/` directory at the repo root. All workspace state lives here — the directory is the source of truth, and removing it returns the workspace to a pre-init state.
 
 ```
-.orbit/
-├── tasks/        # task bundles (projections of ~/.orbit/tasks/workspaces/<workspace-id>/)
-├── knowledge/    # parsed knowledge graph for this workspace
-├── state/        # runtime state — append-only and rebuildable
-│   ├── audit/         # append-only audit events (tool calls, transitions, provider I/O)
-│   ├── job-runs/      # per-run metadata for each agent dispatch
-│   ├── worktrees/     # worktree registry — tracks live agent sandboxes
-│   ├── logs/          # agent + tool logs
-│   ├── scoreboard/    # rolling counters (e.g. pr.json, task_review.json)
-│   └── diagnostics/
-├── resources/    # workflow definitions: activities, executors, jobs, policies
-├── frictions/    # local friction log + tags.yaml
-├── adrs/         # Architecture Decision Records (proposed/, accepted/, superseded/)
-└── learnings/    # durable project learnings — pull-surface knowledge for agents
+.orbit/                          # workspace-local (safe to delete → clean slate)
+├── config.yaml                  # workspace_id + config
+├── tasks/                       # symlinks → ~/.orbit/tasks/workspaces/<id>/
+├── adrs/                        # proposed/, accepted/, superseded/
+├── learnings/                   # your team's durable knowledge
+├── frictions/                   # local friction log + tags.yaml
+├── knowledge/                   # parsed graph artifacts
+├── resources/                   # activities, jobs, executors, policies (customizable)
+└── state/
+    ├── audit/                   # append-only JSONL events
+    ├── job-runs/                # per-run metadata + step traces
+    ├── worktrees/               # live git worktrees for agent runs
+    ├── logs/                    # captured agent stdout/stderr
+    └── scoreboard/              # rolling counters (PRs, reviews, etc.)
+
+~/.orbit/                        # global (machine-level, survives repo moves)
+├── tasks/
+│   ├── index.sqlite             # authority for ORB-XXXXX IDs
+│   └── workspaces/<workspace-id>/<task-id>/   # canonical task bundles
+├── skills/                      # SKILL.md files (routable via MCP)
+├── embed/                       # semantic companion binary + models
+└── config.toml                  # global settings
 ```
 
 Couple things to note:
