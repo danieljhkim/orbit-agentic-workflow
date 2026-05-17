@@ -82,6 +82,9 @@ spec:
     - orbit.learning.show
     - orbit.learning.list
     - orbit.learning.add
+    - orbit.learning.comment.add
+    - orbit.learning.comment.list
+    - orbit.learning.comment.delete
     - orbit.learning.update
     - orbit.learning.supersede
     - fs.read

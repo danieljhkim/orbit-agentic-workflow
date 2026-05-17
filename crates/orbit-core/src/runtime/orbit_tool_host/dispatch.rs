@@ -33,6 +33,15 @@ pub(super) fn execute(
         OrbitBuiltinAction::FrictionTags => super::friction_tools::tags(runtime),
         OrbitBuiltinAction::FrictionUpdate => super::friction_tools::update(runtime, input),
         OrbitBuiltinAction::LearningAdd => super::learning_tools::add(runtime, input, agent, model),
+        OrbitBuiltinAction::LearningCommentAdd => {
+            super::learning_tools::comment_add(runtime, input, agent, model)
+        }
+        OrbitBuiltinAction::LearningCommentDelete => {
+            super::learning_tools::comment_delete(runtime, input, agent, model)
+        }
+        OrbitBuiltinAction::LearningCommentList => {
+            super::learning_tools::comment_list(runtime, input)
+        }
         OrbitBuiltinAction::LearningList => super::learning_tools::list(runtime, input),
         OrbitBuiltinAction::LearningPrune => super::learning_tools::prune(runtime, input),
         OrbitBuiltinAction::LearningReindex => super::learning_tools::reindex(runtime, input),

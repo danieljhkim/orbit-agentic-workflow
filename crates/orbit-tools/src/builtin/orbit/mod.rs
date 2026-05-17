@@ -77,6 +77,9 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(knowledge::search::OrbitKnowledgeSearchTool);
     registry.register(knowledge::show::OrbitKnowledgeShowTool);
     registry.register(learning::add::OrbitLearningAddTool);
+    registry.register(learning::comment_add::OrbitLearningCommentAddTool);
+    registry.register(learning::comment_delete::OrbitLearningCommentDeleteTool);
+    registry.register(learning::comment_list::OrbitLearningCommentListTool);
     registry.register(learning::list::OrbitLearningListTool);
     registry.register(learning::prune::OrbitLearningPruneTool);
     registry.register(learning::reindex::OrbitLearningReindexTool);

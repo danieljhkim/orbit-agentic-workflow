@@ -68,6 +68,9 @@ fn registry_exposes_learning_tools_with_documented_schema_fields() {
         .collect();
     for expected in [
         "orbit.learning.add",
+        "orbit.learning.comment.add",
+        "orbit.learning.comment.delete",
+        "orbit.learning.comment.list",
         "orbit.learning.list",
         "orbit.learning.prune",
         "orbit.learning.reindex",
@@ -129,6 +132,22 @@ fn registry_exposes_learning_tools_with_documented_schema_fields() {
         assert!(
             upvote_field_names.contains(&required),
             "orbit.learning.upvote missing field: {required}"
+        );
+    }
+
+    let comment_add_schema = schemas
+        .iter()
+        .find(|s| s.name == "orbit.learning.comment.add")
+        .expect("comment add schema");
+    let comment_add_field_names: Vec<&str> = comment_add_schema
+        .parameters
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    for required in ["learning_id", "body", "model"] {
+        assert!(
+            comment_add_field_names.contains(&required),
+            "orbit.learning.comment.add missing field: {required}"
         );
     }
 }
@@ -203,6 +222,50 @@ fn upvote_records_vote_stats_on_show_but_not_list() {
     let row = find_id(&listed, &learning.id).expect("listed row");
     assert!(row.get("vote_count").is_none());
     assert!(row.get("last_voted_at").is_none());
+}
+
+#[test]
+fn comment_tools_add_list_and_delete() {
+    let (_guard, runtime, _repo_root) = test_runtime();
+    let learning = create_minimal(&runtime, "comment target", &["foo/**"], &[]);
+
+    let added = super::learning_tools::comment_add(
+        &runtime,
+        json!({
+            "learning_id": learning.id.clone(),
+            "body": "  note from tool  ",
+            "model": "codex",
+        }),
+        None,
+        None,
+    )
+    .expect("comment add");
+    let comment_id = added["id"].as_str().expect("comment id").to_string();
+
+    let listed =
+        super::learning_tools::comment_list(&runtime, json!({"learning_id": learning.id.clone()}))
+            .expect("comment list");
+    assert_eq!(listed.as_array().expect("array").len(), 1);
+    assert_eq!(listed[0]["id"], comment_id);
+    assert_eq!(listed[0]["body"], "note from tool");
+
+    super::learning_tools::comment_delete(
+        &runtime,
+        json!({"id": comment_id}),
+        None,
+        Some("codex".to_string()),
+    )
+    .expect("comment delete");
+    let active =
+        super::learning_tools::comment_list(&runtime, json!({"learning_id": learning.id.clone()}))
+            .expect("active comments");
+    assert!(active.as_array().expect("array").is_empty());
+    let deleted = super::learning_tools::comment_list(
+        &runtime,
+        json!({"learning_id": learning.id.clone(), "include_deleted": true}),
+    )
+    .expect("deleted comments");
+    assert_eq!(deleted.as_array().expect("array").len(), 1);
 }
 
 // --- AC #4: scope-OR with dedup --------------------------------------

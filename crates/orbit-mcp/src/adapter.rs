@@ -410,7 +410,11 @@ fn parse_learning_search_candidates(value: &Value) -> Vec<ReminderCandidate> {
                 .unwrap_or_default()
                 .to_string();
             Some(ReminderCandidate {
-                reminder: LearningReminder { id, summary },
+                reminder: LearningReminder {
+                    id,
+                    summary,
+                    comments: Vec::new(),
+                },
                 priority,
                 updated_at,
             })

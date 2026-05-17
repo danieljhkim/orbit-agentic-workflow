@@ -180,6 +180,40 @@ pub struct LearningVoteSummary {
     pub last_voted_at: Option<DateTime<Utc>>,
 }
 
+/// Append-only comment anchored to exactly one learning.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LearningComment {
+    pub id: OrbitId,
+    pub learning_id: OrbitId,
+    pub body: String,
+    pub author_model: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Tombstone event that soft-deletes a learning comment without rewriting the
+/// original create row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LearningCommentTombstone {
+    pub id: OrbitId,
+    pub learning_id: OrbitId,
+    #[serde(default = "learning_comment_delete_op")]
+    pub op: String,
+    pub deleted_at: DateTime<Utc>,
+    pub deleted_by: String,
+}
+
+fn learning_comment_delete_op() -> String {
+    "delete".to_string()
+}
+
+/// JSONL row stored in `.orbit/learnings/<L-id>/comments.jsonl`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum LearningCommentEvent {
+    Create(LearningComment),
+    Tombstone(LearningCommentTombstone),
+}
+
 /// Compute the decay-weighted score for vote timestamps at `now`.
 ///
 /// A half-life of `0.0` disables decay and returns the raw vote count.
@@ -204,13 +238,17 @@ pub fn decayed_vote_score(
 
 pub const DEFAULT_LEARNING_REMINDER_PER_CALL_CAP: usize = 5;
 pub const DEFAULT_LEARNING_REMINDER_SESSION_CAP: usize = 20;
+pub const DEFAULT_LEARNING_COMMENT_RENDER_CAP: usize = 3;
 
 /// Envelope projected into agent context by the project-learnings injection
-/// layers. It deliberately carries only the summary, never the body.
+/// layers. The learning itself carries only the summary; short anchored
+/// comments are optional footnotes rendered beneath it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LearningReminder {
     pub id: OrbitId,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<LearningComment>,
 }
 
 /// Budget controls for project-learning injection.
@@ -249,6 +287,10 @@ fn read_cap_env(name: &str) -> Option<usize> {
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|value| *value > 0)
+}
+
+pub fn read_comment_render_cap_env() -> usize {
+    read_cap_env("ORBIT_LEARNING_COMMENT_RENDER_CAP").unwrap_or(DEFAULT_LEARNING_COMMENT_RENDER_CAP)
 }
 
 /// Per-session deduplication state for all learning-injection layers.
@@ -317,8 +359,13 @@ pub fn render_reminder_block(reminders: &[LearningReminder]) -> String {
 
     let mut out = String::from("<system-reminder>\n");
     out.push_str("Project learnings relevant to this task:\n\n");
+    let comment_cap = read_comment_render_cap_env();
     for reminder in reminders {
         out.push_str(&format!("- [{}] {}\n", reminder.id, reminder.summary));
+        for comment in reminder.comments.iter().take(comment_cap) {
+            let first_line = comment.body.lines().next().unwrap_or("").trim();
+            out.push_str(&format!("  - [{}] {}\n", comment.id, first_line));
+        }
     }
     out.push('\n');
     out.push_str("Read full body via `orbit.learning.show <id>` if needed.\n");
@@ -475,6 +522,7 @@ updated_at: 2026-05-11T00:00:00Z
         let block = render_reminder_block(&[LearningReminder {
             id: "L20260509-0001".to_string(),
             summary: "Verify output equivalence before freezing a result.".to_string(),
+            comments: Vec::new(),
         }]);
 
         assert_eq!(
@@ -514,6 +562,7 @@ Read full body via `orbit.learning.show <id>` if needed.\n\
             .map(|idx| LearningReminder {
                 id: format!("L{idx}"),
                 summary: format!("summary {idx}"),
+                comments: Vec::new(),
             })
             .collect();
 
@@ -569,6 +618,25 @@ Read full body via `orbit.learning.show <id>` if needed.\n\
         ];
 
         assert_eq!(decayed_vote_score(&votes, now, 0.0), 3.0);
+    }
+
+    #[test]
+    fn render_reminder_block_renders_comments_under_learning() {
+        let ts = Utc.with_ymd_and_hms(2026, 5, 17, 0, 0, 0).unwrap();
+        let block = render_reminder_block(&[LearningReminder {
+            id: "L20260517-1".to_string(),
+            summary: "Remember the important thing.".to_string(),
+            comments: vec![LearningComment {
+                id: "C20260517-1".to_string(),
+                learning_id: "L20260517-1".to_string(),
+                body: "Use the narrow helper.\nExtra detail stays hidden.".to_string(),
+                author_model: "codex".to_string(),
+                created_at: ts,
+            }],
+        }]);
+
+        assert!(block.contains("- [L20260517-1] Remember the important thing.\n"));
+        assert!(block.contains("  - [C20260517-1] Use the narrow helper.\n"));
     }
 
     #[test]

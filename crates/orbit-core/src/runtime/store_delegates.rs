@@ -8,12 +8,12 @@ use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_store::{
     AdrCreateParams, AdrDocumentUpdateParams, AdrStoreBackend, AuditEventFilter,
     AuditEventInsertParams, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunQuery,
-    JobRunStepParams, JobRunStoreBackend, LearningCreateParams, LearningSearchParams,
-    LearningSearchResult, LearningStoreBackend, LearningUpdateParams, LearningUpvoteParams,
-    PolicyDefStoreBackend, TaskArtifactStoreBackend, TaskArtifactUpdateParams, TaskCreateParams,
-    TaskDocumentStoreBackend, TaskDocumentUpdateParams, TaskHistoryStoreBackend,
-    TaskHistoryUpdateParams, TaskReservationCheckParams, TaskReservationCheckResult,
-    TaskReservationListResult, TaskReservationOwnedConflictsParams,
+    JobRunStepParams, JobRunStoreBackend, LearningCommentAddParams, LearningCommentDeleteParams,
+    LearningCreateParams, LearningSearchParams, LearningSearchResult, LearningStoreBackend,
+    LearningUpdateParams, LearningUpvoteParams, PolicyDefStoreBackend, TaskArtifactStoreBackend,
+    TaskArtifactUpdateParams, TaskCreateParams, TaskDocumentStoreBackend, TaskDocumentUpdateParams,
+    TaskHistoryStoreBackend, TaskHistoryUpdateParams, TaskReservationCheckParams,
+    TaskReservationCheckResult, TaskReservationListResult, TaskReservationOwnedConflictsParams,
     TaskReservationOwnedConflictsResult, TaskReservationReleaseByOwnerParams,
     TaskReservationReleaseByOwnerResult, TaskReservationReleaseParams,
     TaskReservationReleaseResult, TaskReservationReserveParams, TaskReservationReserveResult,
@@ -784,6 +784,29 @@ impl LearningRecords<'_> {
         id: &str,
     ) -> Result<orbit_common::types::LearningVoteSummary, OrbitError> {
         self.store.learning_vote_summary(id)
+    }
+
+    pub(crate) fn add_comment(
+        &self,
+        params: LearningCommentAddParams,
+    ) -> Result<orbit_common::types::LearningComment, OrbitError> {
+        self.store.add_learning_comment(params)
+    }
+
+    pub(crate) fn list_comments(
+        &self,
+        learning_id: &str,
+        include_deleted: bool,
+    ) -> Result<Vec<orbit_common::types::LearningComment>, OrbitError> {
+        self.store
+            .list_learning_comments(learning_id, include_deleted)
+    }
+
+    pub(crate) fn delete_comment(
+        &self,
+        params: LearningCommentDeleteParams,
+    ) -> Result<(), OrbitError> {
+        self.store.delete_learning_comment(params)
     }
 
     pub(crate) fn update(

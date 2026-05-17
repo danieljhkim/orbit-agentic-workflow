@@ -1,5 +1,6 @@
 mod add;
 mod command;
+mod comment;
 mod list;
 mod migrate_layout;
 pub(crate) mod output;

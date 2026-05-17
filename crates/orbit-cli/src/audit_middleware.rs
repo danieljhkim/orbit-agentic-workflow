@@ -360,6 +360,7 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
             use crate::command::learning::LearningSubcommand;
             let sub = match &cmd.command {
                 LearningSubcommand::Add(_) => "add",
+                LearningSubcommand::Comment(_) => "comment",
                 LearningSubcommand::List(_) => "list",
                 LearningSubcommand::Search(_) => "search",
                 LearningSubcommand::Show(_) => "show",

@@ -66,7 +66,7 @@ pub use orbit_common::types::{
     resolve_task_dependencies, task_dependencies_ready, task_matches_tags, unmet_task_dependencies,
     validate_task_dependencies,
 };
-pub use orbit_common::types::{NotFoundKind, OrbitError};
+pub use orbit_common::types::{LearningComment, NotFoundKind, OrbitError};
 pub use orbit_common::utility::redaction::{
     redact_sensitive_env_error, redact_sensitive_env_json, redact_sensitive_env_option,
     redact_sensitive_env_text,
@@ -74,8 +74,8 @@ pub use orbit_common::utility::redaction::{
 pub use orbit_store::AuditEventInsertParams;
 pub use orbit_store::learning_layout::LearningLayoutMigrationReport;
 pub use orbit_store::{
-    LearningCreateParams, LearningSearchParams, LearningSearchResult, LearningUpdateParams,
-    LearningUpvoteParams,
+    LearningCommentAddParams, LearningCommentDeleteParams, LearningCreateParams,
+    LearningSearchParams, LearningSearchResult, LearningUpdateParams, LearningUpvoteParams,
 };
 pub use runtime::OrbitRuntime;
 pub use runtime::engine::{
