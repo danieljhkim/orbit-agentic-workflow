@@ -65,3 +65,4 @@ build/
 .direnv/
 .gstack/
 .locks
+*.lock
