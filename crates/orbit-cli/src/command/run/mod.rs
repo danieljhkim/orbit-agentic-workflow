@@ -212,6 +212,19 @@ mod tests {
             RunSubcommand::DuelPlan(args) => {
                 assert_eq!(args.task_id, "T1");
                 assert_eq!(args.base.as_deref(), Some("main"));
+                assert!(!args.wait);
+            }
+            _ => panic!("expected duel-plan"),
+        }
+    }
+
+    #[test]
+    fn parses_duel_plan_wait_flag() {
+        let command = parse_run(&["orbit", "run", "duel-plan", "T1", "--wait"]);
+        match command.command {
+            RunSubcommand::DuelPlan(args) => {
+                assert_eq!(args.task_id, "T1");
+                assert!(args.wait);
             }
             _ => panic!("expected duel-plan"),
         }
