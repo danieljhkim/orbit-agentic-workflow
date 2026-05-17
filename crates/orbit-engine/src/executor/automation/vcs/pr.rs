@@ -182,6 +182,33 @@ fn ship_done_attribution(task: &Task) -> Option<String> {
     )
 }
 
+fn pr_review_attribution<H: RuntimeHost + ?Sized>(
+    host: &H,
+    task: &Task,
+    batch_id: &str,
+) -> Result<Option<String>, OrbitError> {
+    if let Some(existing) =
+        normalize_optional_attribution_label(task.implemented_by.as_deref(), None)
+    {
+        return Ok(Some(existing));
+    }
+
+    let run_id = task.job_run_id.as_deref().unwrap_or(batch_id);
+    let identity_input = json!({
+        "task_id": task.id,
+        "run_id": run_id,
+    });
+    let (agent, model) = host.activity_implementer_identity(&identity_input)?;
+    Ok(normalize_optional_attribution_label(
+        model
+            .as_deref()
+            .or(agent.as_deref())
+            .or(task.planned_by.as_deref())
+            .or(task.created_by.as_deref()),
+        model.as_deref(),
+    ))
+}
+
 pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
     host: &H,
     input: &Value,
@@ -252,6 +279,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
 
     if freshness.commits_ahead == 0 {
         for task in &completed_tasks {
+            let model = pr_review_attribution(host, task, batch_id)?;
             host.apply_task_automation_update(
                 &task.id,
                 TaskAutomationUpdate {
@@ -260,6 +288,7 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
                     } else {
                         None
                     },
+                    model,
                     ..TaskAutomationUpdate::default()
                 },
             )?;
@@ -344,12 +373,14 @@ pub(super) fn open_batch_pr<H: RuntimeHost + TaskHost + ?Sized>(
             OrbitError::Execution("github.pr.view did not return a PR number".to_string())
         })?;
 
-    for task_id in &completed_task_ids {
+    for task in &completed_tasks {
+        let model = pr_review_attribution(host, task, batch_id)?;
         host.apply_task_automation_update(
-            task_id,
+            &task.id,
             TaskAutomationUpdate {
                 status: Some(TaskStatus::Review),
                 external_refs: vec![ExternalRef::github_pr(pr_number.clone())?],
+                model,
                 ..TaskAutomationUpdate::default()
             },
         )?;
@@ -688,6 +719,7 @@ mod tests {
         tasks: Mutex<Vec<Task>>,
         tool_calls: Mutex<Vec<ToolCall>>,
         automation_updates: Mutex<Vec<(String, TaskAutomationUpdate)>>,
+        activity_implementer: Option<(String, String)>,
         repo_root: PathBuf,
         data_root: PathBuf,
         scoreboard_dir: PathBuf,
@@ -702,11 +734,17 @@ mod tests {
                 tasks: Mutex::new(tasks),
                 tool_calls: Mutex::new(Vec::new()),
                 automation_updates: Mutex::new(Vec::new()),
+                activity_implementer: None,
                 repo_root,
                 data_root,
                 scoreboard_dir,
                 registry: ActivityExecutorRegistry::default(),
             }
+        }
+
+        fn with_activity_implementer(mut self, agent: &str, model: &str) -> Self {
+            self.activity_implementer = Some((agent.to_string(), model.to_string()));
+            self
         }
 
         fn tool_calls(&self) -> Vec<ToolCall> {
@@ -886,6 +924,17 @@ mod tests {
 
         fn activity_executor_registry(&self) -> &ActivityExecutorRegistry {
             &self.registry
+        }
+
+        fn activity_implementer_identity(
+            &self,
+            _input: &Value,
+        ) -> Result<(Option<String>, Option<String>), OrbitError> {
+            Ok(self
+                .activity_implementer
+                .clone()
+                .map(|(agent, model)| (Some(agent), Some(model)))
+                .unwrap_or((None, None)))
         }
 
         fn run_job_now_with_input_debug(
@@ -1561,7 +1610,7 @@ mod tests {
             workspace.repo.clone(),
         );
 
-        let error = pr_open(
+        let error = open_batch_pr(
             &host,
             &pr_open_input(&workspace.repo, vec!["T20260430-31A", "T20260430-31B"]),
         )
@@ -1588,7 +1637,8 @@ mod tests {
                 "Outcome: success\n\nChanges:\n- Created files outside the repository.",
             )],
             workspace.repo.clone(),
-        );
+        )
+        .with_activity_implementer("codex", "codex");
 
         let result = pr_open(&host, &pr_open_input(&workspace.repo, vec!["T20260513-16"]))
             .expect("pr_open should complete no-diff handoff without a GitHub PR");
@@ -1608,6 +1658,7 @@ mod tests {
 
         let task = host.get_task("T20260513-16").expect("updated task");
         assert_eq!(task.status, TaskStatus::Review);
+        assert_eq!(task.implemented_by.as_deref(), Some("codex"));
         assert!(task.external_refs.is_empty());
         assert_eq!(task.github_pr_number(), None);
     }
@@ -1625,9 +1676,10 @@ mod tests {
                 batch_task("T20260430-31B", "Second completed task", second_summary),
             ],
             workspace.repo.clone(),
-        );
+        )
+        .with_activity_implementer("codex", "codex");
 
-        let result = pr_open(
+        let result = open_batch_pr(
             &host,
             &pr_open_input(&workspace.repo, vec!["T20260430-31A", "T20260430-31B"]),
         )
@@ -1654,6 +1706,8 @@ mod tests {
         let second_task = host.get_task("T20260430-31B").expect("second task");
         assert_eq!(first_task.status, TaskStatus::Review);
         assert_eq!(second_task.status, TaskStatus::Review);
+        assert_eq!(first_task.implemented_by.as_deref(), Some("codex"));
+        assert_eq!(second_task.implemented_by.as_deref(), Some("codex"));
         assert_eq!(first_task.github_pr_number(), Some("42"));
         assert_eq!(second_task.github_pr_number(), Some("42"));
     }
