@@ -1791,6 +1791,72 @@ mod tests {
     }
 
     #[test]
+    fn document_update_sets_and_clears_source_task_id() {
+        let temp = TempDir::new().expect("tempdir");
+        let store = store(&temp);
+        let source = store
+            .create_task(create_params("Source", TaskStatus::Done))
+            .expect("create source");
+        store
+            .create_task(create_params("Bug", TaskStatus::Backlog))
+            .expect("create bug");
+
+        store
+            .update_task_document(
+                "ORB-00001",
+                &TaskDocumentUpdateParams {
+                    actor: "codex:gpt-5.5".to_string(),
+                    source_task_id: Some(Some(source.id.clone())),
+                    ..Default::default()
+                },
+            )
+            .expect("set source task");
+
+        let task = store
+            .get_task("ORB-00001")
+            .expect("get task")
+            .expect("task exists");
+        assert_eq!(task.source_task_id(), Some(source.id.as_str()));
+        let envelope = store
+            .bundle_store
+            .read_bundle("ORB-00001")
+            .expect("read bundle")
+            .envelope;
+        assert!(envelope.relations.iter().any(|relation| {
+            relation.relation_type == TaskRelationType::RegressionFrom
+                && relation.target == source.id
+        }));
+
+        store
+            .update_task_document(
+                "ORB-00001",
+                &TaskDocumentUpdateParams {
+                    actor: "codex:gpt-5.5".to_string(),
+                    source_task_id: Some(None),
+                    ..Default::default()
+                },
+            )
+            .expect("clear source task");
+
+        let task = store
+            .get_task("ORB-00001")
+            .expect("get task")
+            .expect("task exists");
+        assert_eq!(task.source_task_id(), None);
+        let envelope = store
+            .bundle_store
+            .read_bundle("ORB-00001")
+            .expect("read bundle")
+            .envelope;
+        assert!(
+            envelope
+                .relations
+                .iter()
+                .all(|relation| relation.relation_type != TaskRelationType::RegressionFrom)
+        );
+    }
+
+    #[test]
     fn history_update_appends_comments_and_status_events() {
         let temp = TempDir::new().expect("tempdir");
         let store = store(&temp);
