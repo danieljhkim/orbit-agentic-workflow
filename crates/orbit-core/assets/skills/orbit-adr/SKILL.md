@@ -50,7 +50,16 @@ Both produce orphan decisions invisible to `orbit.adr.list`, `orbit.adr.show`, a
 4. Include at least one consequences bullet starting with `Cost:`.
 5. Set `related_features` to feature folder names such as `task-artifacts`, `activity-job`, or `policy-sandbox`.
 6. Leave `related_tasks` empty for speculative proposed ADRs when no task exists yet. Do not create or invent a task just to satisfy an ADR proposal. Acceptance requires a real related task.
-7. Verify with `orbit.adr.show` or `orbit.adr.list`.
+7. **Close the loop with a source citation when the ADR has a code anchor.** If the ADR encodes a constraint enforced at a small set of code sites — a `ToolParam` requiring a field, a validation check, a guarded code path — drop a one-line citation comment at each enforcement site in the Rust source so the next reader of that line sees the rationale before they reason their way to weakening it:
+
+   ```rust
+   // ADR-NNNN: <one-line rationale>
+   ```
+
+   Use the literal ADR ID returned from `orbit.adr.add` (greppability is the point). If the constraint has no single anchor — pure architectural decision, cross-cutting style — record this in the `## Consequences` body as a single sentence (e.g. "No single code anchor; convention enforced via review.") and skip the citation step.
+
+   **Hard prohibition.** Never add the citation inside `crates/**/assets/**` (skill files, prompt assets, any shipped plugin asset) or other consumer-facing surfaces. Workspace-local artifact IDs become dangling references in other workspaces — this is the distribution-boundary rule for workspace-local artifact IDs. For guidance at those surfaces, author a project learning and let push-injection deliver it.
+8. Verify with `orbit.adr.show` or `orbit.adr.list`.
 
 ## Creation Rules
 
@@ -145,4 +154,4 @@ orbit tool run orbit.adr.supersede --input '{
 
 ## Exit Criteria
 
-The ADR artifact exists or is updated through `orbit.adr.*`, has a valid body, names the relevant features, preserves any meaningful legacy aliases, and can be read back with `orbit.adr.show`.
+The ADR artifact exists or is updated through `orbit.adr.*`, has a valid body, names the relevant features, preserves any meaningful legacy aliases, and can be read back with `orbit.adr.show`. When the ADR has a code anchor, a citation comment at each enforcement site in the Rust source ships in the same PR.

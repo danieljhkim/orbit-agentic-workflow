@@ -43,16 +43,26 @@ Run `orbit tool list | grep orbit.learning` if you suspect the local tool surfac
 
 2. **Add with tight scope.** A learning is only useful when its `scope` triggers the right injections — not too broad (noise) and not too narrow (never fires). `scope: { paths?, tags? }` matches as **paths OR tags** (a record fires when *any* path glob OR *any* tag hits). Include `evidence: [{ kind: "task"|"commit"|"external", ref: "..." }]` whenever the learning came from a real incident, PR, or task — future readers (and prune logic) lean on it. Use `priority` (0–255) sparingly; it is the secondary search ranking key, not a "this is important" badge.
 
-3. **List to audit.** `orbit learning list --status active` returns envelope-only records ordered by `updated_at desc`. Filter by `--tag` or `--path` to narrow. Use `orbit learning show --id <ID>` to inspect the full body and evidence.
+3. **Close the loop with a source citation when the learning has a code anchor.** If the learning captures a code-level convention — a defensive pattern, gotcha, non-obvious workaround, or specific default that survives in a single (or small set of) source location(s) — drop a one-line citation comment at each such location so the next reader sees the rationale before they reach for the change:
 
-4. **Update vs supersede:**
+   ```rust
+   // L-NNNNNNNN-N: <one-line rationale>
+   ```
+
+   Use the literal learning ID returned from `add` (greppability is the point). If the learning is workflow-only and has no single source-code anchor, skip the citation — push-injection covers it.
+
+   **Hard prohibition.** Never add the citation inside `crates/**/assets/**` (skill files, prompt assets, any shipped plugin asset) or other consumer-facing surfaces. Workspace-local artifact IDs become dangling references in other workspaces — this is the distribution-boundary rule for workspace-local artifact IDs. For guidance at those surfaces, the push-injected learning *is* the delivery mechanism.
+
+4. **List to audit.** `orbit learning list --status active` returns envelope-only records ordered by `updated_at desc`. Filter by `--tag` or `--path` to narrow. Use `orbit learning show --id <ID>` to inspect the full body and evidence.
+
+5. **Update vs supersede:**
    - **Update** when the learning is still substantively the same and you are refining the wording, narrowing the scope, or attaching new evidence. `update` *replaces* `scope` and `evidence` (it does not merge) — pass the full new arrays.
    - **Supersede** when the guidance has materially changed: the new advice contradicts or significantly extends the old one. `supersede` writes both pointers atomically (`old.superseded_by = new.id`, `new.supersedes = old.id`) and excludes the old record from default search.
    - `update` is rejected on already-superseded records — use `supersede` to chain another replacement.
 
-5. **Prune for stale.** Run `orbit learning prune --stale-only` periodically to surface learnings whose `scope.paths` no longer resolve to any tracked file (per the `§7.3` staleness rules in the design doc). Combine with `--delete` to archive flagged records by flipping their status to `superseded` with `superseded_by: null` — only do this after reading the candidates and deciding none are still load-bearing.
+6. **Prune for stale.** Run `orbit learning prune --stale-only` periodically to surface learnings whose `scope.paths` no longer resolve to any tracked file (per the `§7.3` staleness rules in the design doc). Combine with `--delete` to archive flagged records by flipping their status to `superseded` with `superseded_by: null` — only do this after reading the candidates and deciding none are still load-bearing.
 
-6. **Reindex when YAML is touched out-of-band.** YAML under `.orbit/learnings/` is the source of truth; SQLite is a rebuildable envelope index. If a merge, branch switch, or external script edits the YAML directly, run `orbit learning reindex` to re-sync the index — otherwise `list` and `search` will return stale results.
+7. **Reindex when YAML is touched out-of-band.** YAML under `.orbit/learnings/` is the source of truth; SQLite is a rebuildable envelope index. If a merge, branch switch, or external script edits the YAML directly, run `orbit learning reindex` to re-sync the index — otherwise `list` and `search` will return stale results.
 
 ## Operating Rules
 
@@ -132,4 +142,4 @@ orbit learning prune --stale-only
 
 ## Exit Criteria
 
-The learning artifact exists or is updated through `orbit.learning.*`, has a directive `summary`, has at least one `paths` or `tags` entry in `scope`, carries evidence when one exists, and can be retrieved with `orbit learning show --id <ID>`. Stale or contradicted predecessors are explicitly superseded, not silently overwritten.
+The learning artifact exists or is updated through `orbit.learning.*`, has a directive `summary`, has at least one `paths` or `tags` entry in `scope`, carries evidence when one exists, and can be retrieved with `orbit learning show --id <ID>`. Stale or contradicted predecessors are explicitly superseded, not silently overwritten. When the learning has a code anchor, a citation comment at the source location ships alongside the learning.
