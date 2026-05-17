@@ -55,7 +55,6 @@ fn workflow_critical_tools_remain_registered() {
         "github.pr.review",
         "github.pr.review.comment",
         "github.pr.view",
-        "orbit.design.check",
         "orbit.design.init",
         "orbit.design.list",
         "orbit.design.show",

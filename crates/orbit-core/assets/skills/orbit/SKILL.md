@@ -104,7 +104,7 @@ Command surface determines provenance by default:
 
 - `orbit-create-task`: Create a new task with description, acceptance criteria, and context.
 - `orbit-adr`: Create, update, inspect, accept, or supersede ADR artifacts through `orbit.adr.*`.
-- `orbit-design`: Scaffold, list, inspect, or decay-check `docs/design/<feature>/` folders through `orbit.design.*`. Use before authoring a new feature folder and before declaring a doc current.
+- `orbit-design`: Scaffold, list, or inspect `docs/design/<feature>/` folders through `orbit.design.*`. Use before authoring a new feature folder and before declaring a doc current.
 - `orbit-debug-job-failure`: Diagnose failed, stuck, cancelled, or suspicious Orbit job runs.
 - `orbit-execute-task`: Carry a change through implementation, validation, and review.
 - `orbit-review-task`: Review someone else's work and file findings as review threads, without transitioning the task.

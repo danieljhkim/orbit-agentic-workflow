@@ -32,7 +32,6 @@ Reusable codebase-specific patterns (Command, RAII guard, newtype, crate-boundar
 
 - **Layout.** Feature design docs live under `docs/design/<feature>/` and follow [`CONVENTIONS.md`](docs/design/CONVENTIONS.md) (folder layout, required sections, ADR format, glossary shape).
 - **Same-PR updates.** Change the doc in the same PR as the code: flip affected ADR statuses (`Proposed → Accepted` with task ID), bump `**Last updated:**`, add a new ADR for any non-obvious decision the change embodies. Stale docs are a review blocker.
-- **Decay check.** `make check-design-docs` flags `docs/design/*` docs whose `**Last updated:**` date precedes the last commit on any `crates/...rs` file they reference. Run it before review; fix flagged docs or update their `Last updated`.
 
 ## Rust Practices
 

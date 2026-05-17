@@ -251,11 +251,12 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_design_check() {
-        let cli = Cli::parse_from(["orbit", "design", "check", "--warn-only"]);
+    fn cli_parses_design_list() {
+        let cli = Cli::parse_from(["orbit", "design", "list"]);
         match cli.command {
             Commands::Design(command) => match command.command {
-                DesignSubcommand::Check(args) => assert!(args.warn_only),
+                DesignSubcommand::List(_) => {}
+                _ => panic!("expected design list"),
             },
             _ => panic!("expected top-level design command"),
         }

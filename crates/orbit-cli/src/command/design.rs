@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use orbit_core::command::design::{check_fails, check_workspace_path, format_check_report};
+use orbit_core::command::design::{
+    DesignDecayStatus, DesignFeatureSummary, init_feature, list_features, show_feature,
+};
 use orbit_core::{OrbitError, OrbitRuntime};
 
 use crate::command::Execute;
@@ -15,18 +17,37 @@ pub struct DesignCommand {
 
 #[derive(Subcommand)]
 pub enum DesignSubcommand {
-    /// Check design docs for decay against referenced code
-    Check(DesignCheckArgs),
+    /// Scaffold a design-doc feature folder
+    Init(DesignInitArgs),
+    /// List design-doc feature folders
+    List(DesignListArgs),
+    /// Show one design-doc feature folder
+    Show(DesignShowArgs),
 }
 
 #[derive(Args)]
-pub struct DesignCheckArgs {
-    /// Exit 0 even if stale docs are found
+pub struct DesignInitArgs {
+    /// Lowercase, hyphenated feature folder name
+    pub feature: String,
+    /// Owner written into scaffolded frontmatter
     #[arg(long)]
-    pub warn_only: bool,
-    /// Also fail when docs reference files that no longer exist
+    pub owner: Option<String>,
+    /// Override the workspace root containing docs/design/
     #[arg(long)]
-    pub include_missing: bool,
+    pub workspace: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub struct DesignListArgs {
+    /// Override the workspace root containing docs/design/
+    #[arg(long)]
+    pub workspace: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub struct DesignShowArgs {
+    /// Lowercase, hyphenated feature folder name
+    pub feature: String,
     /// Override the workspace root containing docs/design/
     #[arg(long)]
     pub workspace: Option<PathBuf>,
@@ -35,25 +56,89 @@ pub struct DesignCheckArgs {
 impl Execute for DesignCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self.command {
-            DesignSubcommand::Check(args) => check(runtime, args),
+            DesignSubcommand::Init(args) => init(runtime, args),
+            DesignSubcommand::List(args) => list(runtime, args),
+            DesignSubcommand::Show(args) => show(runtime, args),
         }
     }
 }
 
-fn check(_runtime: &OrbitRuntime, args: DesignCheckArgs) -> Result<(), OrbitError> {
-    let workspace = match args.workspace {
+fn init(_runtime: &OrbitRuntime, args: DesignInitArgs) -> Result<(), OrbitError> {
+    let workspace = workspace_path(args.workspace)?;
+    let owner = args.owner.unwrap_or_else(|| "human".to_string());
+    let summary = init_feature(&workspace, &args.feature, &owner)?;
+    println!("Created design feature: {}", summary.feature);
+    print_feature_summary(&summary);
+    Ok(())
+}
+
+fn list(_runtime: &OrbitRuntime, args: DesignListArgs) -> Result<(), OrbitError> {
+    let workspace = workspace_path(args.workspace)?;
+    let features = list_features(&workspace)?;
+    let mut table =
+        crate::output::table::build_table(&["FEATURE", "DOCS", "LAST_UPDATED", "STATUS"]);
+    for feature in features {
+        let last_updated = feature
+            .docs
+            .values()
+            .filter_map(|doc| doc.last_updated)
+            .max()
+            .map(|date| date.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let status = if feature
+            .docs
+            .values()
+            .any(|doc| doc.decay_status == DesignDecayStatus::Stale)
+        {
+            "stale"
+        } else {
+            "fresh"
+        };
+        table.add_row(vec![
+            feature.feature,
+            feature.docs.len().to_string(),
+            last_updated,
+            status.to_string(),
+        ]);
+    }
+    println!("{table}");
+    Ok(())
+}
+
+fn show(_runtime: &OrbitRuntime, args: DesignShowArgs) -> Result<(), OrbitError> {
+    let workspace = workspace_path(args.workspace)?;
+    let summary = show_feature(&workspace, &args.feature)?;
+    print_feature_summary(&summary);
+    Ok(())
+}
+
+fn workspace_path(workspace: Option<PathBuf>) -> Result<PathBuf, OrbitError> {
+    let workspace = match workspace {
         Some(workspace) => workspace,
         None => std::env::current_dir().map_err(|error| OrbitError::Io(error.to_string()))?,
     };
-    let report = check_workspace_path(&workspace, args.include_missing)?;
-    let output = format_check_report(&report);
-    if !output.is_empty() {
-        print!("{output}");
+    Ok(workspace)
+}
+
+fn print_feature_summary(summary: &DesignFeatureSummary) {
+    println!("Feature: {}", summary.feature);
+    println!("Specs:   {}", summary.specs_path.display());
+    println!("Refs:    {}", summary.references_path.display());
+    let mut table =
+        crate::output::table::build_table(&["DOC", "OWNER", "LAST_UPDATED", "STATUS", "PATH"]);
+    for (name, doc) in &summary.docs {
+        table.add_row(vec![
+            name.clone(),
+            doc.owner.clone().unwrap_or_else(|| "-".to_string()),
+            doc.last_updated
+                .map(|date| date.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            match doc.decay_status {
+                DesignDecayStatus::Fresh => "fresh".to_string(),
+                DesignDecayStatus::Stale => "stale".to_string(),
+            },
+            doc.path.display().to_string(),
+        ]);
     }
-    if check_fails(&report, args.warn_only, args.include_missing) {
-        return Err(OrbitError::Execution(
-            "design docs are stale; update Last updated or pass --warn-only".to_string(),
-        ));
-    }
-    Ok(())
+    println!("{table}");
 }

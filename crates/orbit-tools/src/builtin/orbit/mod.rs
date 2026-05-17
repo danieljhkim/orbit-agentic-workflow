@@ -37,7 +37,6 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(adr::show::OrbitAdrShowTool);
     registry.register(adr::supersede::OrbitAdrSupersedeTool);
     registry.register(adr::update::OrbitAdrUpdateTool);
-    registry.register(design::check::OrbitDesignCheckTool);
     registry.register(design::init::OrbitDesignInitTool);
     registry.register(design::list::OrbitDesignListTool);
     registry.register(design::show::OrbitDesignShowTool);

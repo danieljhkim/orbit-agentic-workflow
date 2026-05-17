@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Breaking Changes
+
+- **Design-doc decay-check surface removed**: `orbit design check`, the `orbit.design.check` MCP tool, the legacy wrapper script, and `make check-design-docs` are removed. Use `orbit design init/list/show` plus the same-PR design-doc update rule and review gate instead. ([ORB-00112])
+
 ## 0.6.0
 
 ### Release scope
