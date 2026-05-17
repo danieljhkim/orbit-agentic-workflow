@@ -1,3 +1,9 @@
+//! Audit-event SQL queries backing the `orbit audit list` CLI.
+//!
+//! L20260517-9: callers should reach audit data via `orbit audit list --json` —
+//! reading `.orbit/orbit.db` directly can yield a stale or partial mirror of the
+//! canonical store the CLI consults.
+
 use chrono::{DateTime, Utc};
 use orbit_common::types::{AuditEvent, AuditEventStatus, OrbitError};
 use rusqlite::params;

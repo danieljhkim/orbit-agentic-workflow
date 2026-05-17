@@ -56,6 +56,9 @@ impl Tool for OrbitTaskAddTool {
                 param_type: "string".to_string(),
                 required: false,
             },
+            // ADR-0149: `workspace` is the binding key for ~/.orbit/tasks/workspaces/<id>/
+            // home-store projection; defaulting to cwd would silently misroute tasks under
+            // worktrees, subdirectories, or non-default `workspace_id` in .orbit/config.yaml.
             ToolParam {
                 name: "workspace".to_string(),
                 description: "Workspace path for the task".to_string(),
