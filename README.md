@@ -178,6 +178,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 
 `orbit workspace init` seeds skill files under `~/.orbit/skills/` and symlinks them into `~/.claude/skills/` and `~/.agents/skills/`, so Claude Code, Codex, and Gemini CLI discover them at session start with no per-agent configuration. The router skill (`orbit`) classifies intent; workflow-specific skills do the work:
 
+- `orbit-guide` — onboard a first-time user when `.orbit/` is absent; also handles "what is orbit" tour requests
 - `orbit-create-task` — author a task with strong acceptance criteria
 - `orbit-execute-task` — carry an approved task through implementation and review
 - `orbit-review-task` — file findings on another agent's work without transitioning status

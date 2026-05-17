@@ -1,6 +1,6 @@
 ---
 name: orbit
-description: Entry point for Orbit workflow. Covers tool invocation surfaces, lifecycle, and skill routing. Load this for any Orbit-related work.
+description: Entry point for Orbit workflow once a workspace is initialized (`.orbit/` present). Covers tool invocation surfaces, lifecycle, and skill routing among workflow siblings (`orbit-create-task`, `orbit-execute-task`, `orbit-review-task`, etc.). For first-time setup, install, or "what is orbit" tour requests, defer to `orbit-guide`.
 ---
 
 # Orbit
@@ -112,6 +112,7 @@ Command surface determines provenance by default:
 - `orbit-track-issues`: Capture agent-discovered, self-reported friction as append-only reports.
 - `orbit-graph`: Navigate or inspect the codebase via the knowledge graph when the activity allowlist includes graph tools.
 - `orbit-semantic`: Find tasks by topic — pre-create dedup checks, related-task lookups, "didn't we have a task about X?" queries. Complementary to `orbit-graph` (code structure vs task content).
+- `orbit-guide`: First-time onboarding when `.orbit/` is absent, or feature-tour requests ("what is orbit", "give me a tour"). Walks setup paths and hands off to `orbit-create-task`.
 
 ## Voice Your Opinion
 
