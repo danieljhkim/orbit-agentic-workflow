@@ -257,6 +257,11 @@ pub(super) fn update(
             task_type: optional_string_alias(&input, &["type", "task_type", "taskType"])?
                 .map(|value| parse_task_type("type", &value))
                 .transpose()?,
+            source_task_id: optional_raw_string_alias(
+                &input,
+                &["source_task_id", "source_task", "sourceTaskId"],
+            )?
+            .map(empty_string_to_none),
             planned_by: optional_raw_string(&input, "planned_by")?.map(empty_string_to_none),
             implemented_by: optional_raw_string(&input, "implemented_by")?
                 .map(empty_string_to_none),
@@ -290,4 +295,19 @@ fn parse_task_id_list(task_ids: Vec<String>) -> Result<Vec<String>, OrbitError> 
         ));
     }
     Ok(deduped.into_iter().collect())
+}
+
+fn optional_raw_string_alias(input: &Value, keys: &[&str]) -> Result<Option<String>, OrbitError> {
+    for key in keys {
+        if let Some(value) = input.get(*key) {
+            return match value {
+                Value::Null => Ok(None),
+                Value::String(raw) => Ok(Some(raw.to_string())),
+                _ => Err(OrbitError::InvalidInput(format!(
+                    "`{key}` must be a string"
+                ))),
+            };
+        }
+    }
+    Ok(None)
 }

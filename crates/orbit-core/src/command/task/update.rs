@@ -180,6 +180,10 @@ impl OrbitRuntime {
                 }
             })
         });
+        let source_task_id_changed = params
+            .source_task_id
+            .as_ref()
+            .is_some_and(|source_task_id| task.source_task_id() != source_task_id.as_deref());
 
         let mut append_history: Vec<TaskHistoryEntry> = if dropped_context_files.is_empty() {
             Vec::new()
@@ -190,6 +194,16 @@ impl OrbitRuntime {
             )]
         };
         append_history.extend(task_comment_history_entries(&append_comments));
+        if source_task_id_changed {
+            append_history.push(TaskHistoryEntry {
+                at: chrono::Utc::now(),
+                by: effective_label.clone(),
+                event: "updated".to_string(),
+                note: Some("source_task_id changed".to_string()),
+                from_status: None,
+                to_status: None,
+            });
+        }
         let updated = self.with_mutation(|| {
             let task = self.stores().tasks().update(
                 id,

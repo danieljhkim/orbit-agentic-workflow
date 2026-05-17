@@ -700,6 +700,197 @@ fn task_update_tool_replaces_dependencies() {
 }
 
 #[test]
+fn task_update_tool_persists_source_task_id_and_history() {
+    let (_root, runtime, repo_root) = test_runtime();
+    let source = create_task(
+        &runtime,
+        &repo_root,
+        "Regression source",
+        "Existing task that introduced the defect.",
+        TaskStatus::Done,
+        &[],
+    );
+    let added = runtime
+        .execute_tool_command(
+            "orbit.task.add",
+            json!({
+                "title": "Bug without source",
+                "description": "A bug whose source is discovered later.",
+                "workspace": ".",
+                "type": "bug",
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("task add tool succeeds");
+    let task_id = added["id"].as_str().expect("task id").to_string();
+    let created_updated_at = added["updated_at"]
+        .as_str()
+        .expect("created updated_at")
+        .to_string();
+    assert_eq!(added.get("type").and_then(Value::as_str), Some("bug"));
+    assert_eq!(added.get("source_task_id"), Some(&Value::Null));
+
+    let output = runtime
+        .execute_tool_command(
+            "orbit.task.update",
+            json!({
+                "id": task_id,
+                "model": "claude",
+                "source_task_id": source.id.clone(),
+            }),
+            None,
+            None,
+        )
+        .expect("task update tool succeeds");
+
+    assert_eq!(
+        output.get("source_task_id").and_then(Value::as_str),
+        Some(source.id.as_str())
+    );
+    assert_ne!(
+        output.get("updated_at").and_then(Value::as_str),
+        Some(created_updated_at.as_str())
+    );
+    assert!(
+        output["history"]
+            .as_array()
+            .expect("history")
+            .iter()
+            .any(|event| {
+                event.get("event").and_then(Value::as_str) == Some("updated")
+                    && event
+                        .get("note")
+                        .and_then(Value::as_str)
+                        .is_some_and(|note| note.contains("source_task_id"))
+            })
+    );
+
+    let shown = runtime
+        .execute_tool_command(
+            "orbit.task.show",
+            json!({ "id": output["id"].as_str().expect("task id") }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("task show tool succeeds");
+    assert_eq!(
+        shown.get("source_task_id").and_then(Value::as_str),
+        Some(source.id.as_str())
+    );
+}
+
+#[test]
+fn task_update_tool_clears_source_task_id_with_empty_string() {
+    let (_root, runtime, repo_root) = test_runtime();
+    let source = create_task(
+        &runtime,
+        &repo_root,
+        "Regression source",
+        "Existing task that introduced the defect.",
+        TaskStatus::Done,
+        &[],
+    );
+    let added = runtime
+        .execute_tool_command(
+            "orbit.task.add",
+            json!({
+                "title": "Bug with source",
+                "description": "A bug whose source should be cleared.",
+                "workspace": ".",
+                "type": "bug",
+                "source_task_id": source.id,
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("task add tool succeeds");
+
+    let output = runtime
+        .execute_tool_command(
+            "orbit.task.update",
+            json!({
+                "id": added["id"].as_str().expect("task id"),
+                "source_task_id": "",
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("task update tool succeeds");
+
+    assert_eq!(output.get("source_task_id"), Some(&Value::Null));
+    assert!(
+        output["history"]
+            .as_array()
+            .expect("history")
+            .iter()
+            .any(|event| {
+                event.get("event").and_then(Value::as_str) == Some("updated")
+                    && event
+                        .get("note")
+                        .and_then(Value::as_str)
+                        .is_some_and(|note| note.contains("source_task_id"))
+            })
+    );
+}
+
+#[test]
+fn task_update_tool_stores_unresolved_source_task_id_matching_add() {
+    let (_root, runtime, _repo_root) = test_runtime();
+    let unresolved_from_update = "ORB-99999";
+    let unresolved_from_add = "ORB-99998";
+
+    let added = runtime
+        .execute_tool_command(
+            "orbit.task.add",
+            json!({
+                "title": "Bug without resolved source",
+                "description": "A bug whose source ID is known before its task exists.",
+                "workspace": ".",
+                "type": "bug",
+                "source_task_id": unresolved_from_add,
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("add stores a loose source reference");
+    assert_eq!(
+        added.get("source_task_id").and_then(Value::as_str),
+        Some(unresolved_from_add)
+    );
+
+    let update_target = runtime
+        .execute_tool_command(
+            "orbit.task.add",
+            json!({
+                "title": "Bug with later loose source",
+                "description": "Exercise update-side loose reference parity.",
+                "workspace": ".",
+                "type": "bug",
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("task add tool succeeds");
+    let output = runtime
+        .execute_tool_command(
+            "orbit.task.update",
+            json!({
+                "id": update_target["id"].as_str().expect("task id"),
+                "source_task_id": unresolved_from_update,
+            }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("update stores a loose source reference just like add");
+
+    assert_eq!(
+        output.get("source_task_id").and_then(Value::as_str),
+        Some(unresolved_from_update)
+    );
+}
+
+#[test]
 fn task_update_tool_replaces_tags() {
     let (_root, runtime, _repo_root) = test_runtime();
 
