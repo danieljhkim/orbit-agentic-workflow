@@ -82,6 +82,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
                 activity_id TEXT NOT NULL,
                 agent TEXT NOT NULL,
                 model TEXT,
+                slot TEXT,
                 duration_ms INTEGER NOT NULL DEFAULT 0,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 cache_read_tokens INTEGER NOT NULL DEFAULT 0,
@@ -393,6 +394,7 @@ fn ensure_audit_events_schema(conn: &Connection) -> Result<(), OrbitError> {
 }
 
 fn ensure_invocation_schema(conn: &Connection) -> Result<(), OrbitError> {
+    add_column_if_missing(conn, "ALTER TABLE invocations ADD COLUMN slot TEXT")?;
     conn.execute_batch(
         r#"
             CREATE INDEX IF NOT EXISTS idx_invocations_job_run_id

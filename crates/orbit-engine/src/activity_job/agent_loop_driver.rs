@@ -26,7 +26,9 @@ use orbit_agent::loop_engine::{
 };
 use orbit_agent::providers::anthropic::AnthropicMessagesTransport;
 use orbit_common::types::activity_job::AgentLoopSpec;
-use orbit_common::types::{LearningInjectionCaps, LearningReminder, prepend_reminder_block};
+use orbit_common::types::{
+    LearningInjectionCaps, LearningReminder, RoleSlot, prepend_reminder_block,
+};
 use orbit_common::utility::learning_session::{
     learning_session_state_path, write_learning_session_state,
 };
@@ -55,11 +57,12 @@ pub fn drive_agent_loop(
     let model = resolve_model(spec);
     let provider = expected_provider();
     let mut session = Session::new(provider, model.clone(), &spec.instruction, None);
-    let tool_ctx = host.tool_context_for_activity(
+    let mut tool_ctx = host.tool_context_for_activity(
         Some(run_id),
         fs_profile,
         Some(v2_fs_audit_logger(audit.clone())),
     );
+    tool_ctx.role_slot = role_slot_from_input(input);
     drive_inner(
         spec,
         api_key,
@@ -88,11 +91,12 @@ pub fn drive_agent_loop_with_session(
     host: &dyn V2RuntimeHost,
     fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
-    let tool_ctx = host.tool_context_for_activity(
+    let mut tool_ctx = host.tool_context_for_activity(
         Some(run_id),
         fs_profile,
         Some(v2_fs_audit_logger(audit.clone())),
     );
+    tool_ctx.role_slot = role_slot_from_input(input);
     drive_inner(
         spec,
         api_key,
@@ -103,6 +107,15 @@ pub fn drive_agent_loop_with_session(
         tool_ctx,
         Some(host),
     )
+}
+
+fn role_slot_from_input(input: &Value) -> Option<RoleSlot> {
+    input
+        .get("planning_duel_slot")
+        .or_else(|| input.get("role_slot"))
+        .or_else(|| input.get("slot"))
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse().ok())
 }
 
 /// Drive a v2 agent_loop activity with a caller-supplied ToolContext.

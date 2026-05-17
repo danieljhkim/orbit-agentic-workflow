@@ -5,7 +5,7 @@ use orbit_common::types::{
     Activity, AgentModelPair, ExecutorDef, ExternalRef, InvocationTrace, Job, JobRun, JobRunState,
     JobTargetType, KnowledgeRunMetrics, OrbitError, OrbitEvent, PipelineState, ReviewThread, Role,
     Task, TaskArtifact, TaskComment, TaskHistoryEntry, TaskPriority, TaskStatus,
-    all_agent_families, resolve_agent_model_pair,
+    all_agent_families,
 };
 use orbit_common::utility::redaction::{redact_sensitive_env_json, redact_sensitive_env_option};
 use orbit_exec::EnvironmentMode;
@@ -466,7 +466,8 @@ pub trait RuntimeHost {
         model: Option<&str>,
     ) -> Result<(), OrbitError>;
     fn resolved_agent_model_pair(&self, agent_cli: &str) -> Option<AgentModelPair> {
-        resolve_agent_model_pair(agent_cli)
+        let _ = agent_cli;
+        None
     }
     fn duel_candidate_families(&self) -> Vec<String> {
         all_agent_families()

@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** grok
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-17
 
 ADR entries are append-only and ordered ascending. New entries should follow the template in [../CONVENTIONS.md](../CONVENTIONS.md).
 
@@ -31,8 +31,8 @@ See full ADR-0151 for context, alternatives considered, and cost analysis.
 **Consequences.**
 - "Crew" was chosen over "profile" because profiles sound user-scoped, and over "pair" because the lineup contains planner, implementer, and reviewer.
 - Run records persist the resolved crew plus the three role model strings so audit trails survive later config edits.
-- The v2 `agent_loop` dispatch path reads role models from the crew registry (`crates/orbit-core/src/runtime/engine/environment_host.rs`). The v1 envelope/identity path and the orbit-store scoreboard/friction projections still resolve through `resolve_agent_model_pair*` in `crates/orbit-common/src/types/agent_pair.rs`; those callers do not yet have access to a crew-aware context, so this PR keeps the legacy resolver as a scoreboard-rendering shim. Migrating them is tracked as a follow-up.
-- Deferred: duel-plan participant configuration, per-role task overrides, planner-vs-executor workflow split, and the legacy-resolver migration noted above.
+- The v2 `agent_loop` dispatch path reads role models from the crew registry (`crates/orbit-core/src/runtime/engine/environment_host.rs`). Scoreboard and friction projections use family identity after ADR-0154; exact model strings remain visible through resolved crew/run configuration.
+- Deferred: duel-plan participant configuration, per-role task overrides, and planner-vs-executor workflow split.
 - Cost: old workspaces with only `[agent.planner]`, `[agent.implementer]`, and `[agent.reviewer]` must migrate before config load succeeds.
 
 ## ADR-0153 — Scope duel-plan candidate and model overrides to `[duel]`
@@ -48,10 +48,26 @@ See full ADR-0151 for context, alternatives considered, and cost analysis.
 - `[duel.models]` wins only for duel role-model lookup; helper models and non-duel model identity are unchanged.
 - The crew registry remains separate from duel participant selection. Reusing `[crews.*]` for duels was rejected because duels need a family pool, not a fixed planner/implementer/reviewer lineup.
 
+## ADR-0154 — Collapse agent identity to family and move model strings to configuration
+
+**Status:** Accepted · 2026-05 · [ORB-00080]
+
+**Context.** Planning-duel artifacts and scoreboards compared model strings even though model names drift across aliases, CLI shorthand, and self-reported tool payloads. A Gemini planner configured as `pro` could produce an artifact stamped `gemini-3.1-pro`; both values describe the same family but failed equality checks. Alias tables (`resolve_agent_model_pair*`, `matches_model_alias`, `canonical_model_for_agent`) treated the symptom and grew with every provider change.
+
+**Decision.** Family is identity, model is configuration, and slot is role. Orbit identity surfaces use exactly `codex`, `claude`, `gemini`, or `grok`. Planning-duel assignments persist `family`; `planner_a`, `planner_b`, and `arbiter` are explicit slots used in artifact paths and signatures. Exact model strings stay in crew config, `[duel.models]`, CLI invocation translation, and resolved-crew run records.
+
+**Consequences.**
+- New planning-duel artifacts are written as `planning-duel/{slot}.md` and signed `*authored by: {family} / {slot}*`; historical model-path artifacts remain a legacy read concern.
+- Runtime tool boundaries treat envelope identity as authoritative. Agent-supplied `model` fields are overwritten with the canonical family before persistence/comparison so self-report drift cannot affect validation.
+- Scoreboard and friction projections are family-keyed (`by_family`) when they answer "who actually ran?". Resolved-crew projections remain the source for "who was selected?" because they describe configured routing.
+- The legacy resolver and alias-canonicalization surfaces are deleted from production code. `infer_agent_family_from_model` remains for legacy artifact recovery and CLI invocation translation.
+- ORB-00079 and ORB-00071 are superseded by this structural identity change.
+
 ## Task References
 
 - ORB-00042: Onboard Grok (xAI) as a first-class supported agent family.
 - ORB-00058: Introduce per-task crew override for agent model selection.
 - ORB-00072: Make duel-plan agent pool and per-family model configurable via `[duel]`.
+- ORB-00080: Collapse agent identity to family; isolate model strings to invocation surface.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

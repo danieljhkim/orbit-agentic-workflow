@@ -32,7 +32,6 @@ use std::process::Command;
 
 use orbit_common::types::{
     Ambiguity, Decision, DuelRun, OrbitError, TaskScope, Verdict, all_agent_families,
-    resolve_agent_model_pair,
 };
 use serde::{Deserialize, Serialize};
 
@@ -393,9 +392,7 @@ pub fn aggregate(runs: &[DuelRun], filter: AggregateFilter) -> Aggregates {
 }
 
 fn default_orchestrator_model(family: &str) -> String {
-    resolve_agent_model_pair(family)
-        .map(|pair| pair.orchestrator)
-        .unwrap_or_else(|| family.to_string())
+    family.to_string()
 }
 
 fn segment_key_for(run: &DuelRun, axis: SegmentBy) -> String {
@@ -538,15 +535,15 @@ mod tests {
 
         assert!(aggregates.rows.iter().any(|row| row.role == "implementer"
             && row.agent == "grok"
-            && row.model == "grok-4"
+            && row.model == "grok"
             && row.runs == 0));
         assert!(aggregates.rows.iter().any(|row| row.role == "reviewer"
             && row.agent == "grok"
-            && row.model == "grok-4"
+            && row.model == "grok"
             && row.runs == 0));
         assert!(aggregates.rows.iter().any(|row| row.role == "arbiter"
             && row.agent == "grok"
-            && row.model == "grok-4"
+            && row.model == "grok"
             && row.runs == 0));
     }
 
