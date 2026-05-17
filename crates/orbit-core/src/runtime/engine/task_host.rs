@@ -2,7 +2,9 @@ use orbit_common::types::{
     ExternalRef, OrbitError, OrbitEvent, ReviewThread, Task, TaskComment, TaskHistoryEntry,
     TaskPriority, TaskStatus, normalize_optional_attribution_label, push_external_ref_if_missing,
 };
-use orbit_engine::{RuntimeHost, TaskAutomationUpdate, TaskReadHost, TaskWriteHost};
+use orbit_engine::{
+    RuntimeHost, TaskActivityUpdate, TaskAutomationUpdate, TaskReadHost, TaskWriteHost,
+};
 
 use crate::OrbitRuntime;
 use crate::command::task::SYSTEM_ACTOR_LABEL;
@@ -70,23 +72,9 @@ impl TaskWriteHost for OrbitRuntime {
     fn update_task_from_activity(
         &self,
         task_id: &str,
-        status: TaskStatus,
-        execution_summary: Option<String>,
-        comment: Option<String>,
-        note: Option<String>,
-        agent: Option<String>,
-        model: Option<String>,
+        update: TaskActivityUpdate,
     ) -> Result<Task, OrbitError> {
-        OrbitRuntime::update_task_from_activity(
-            self,
-            task_id,
-            status,
-            execution_summary,
-            comment,
-            note,
-            agent,
-            model,
-        )
+        OrbitRuntime::update_task_from_activity(self, task_id, update)
     }
 
     fn apply_task_automation_update(
@@ -805,12 +793,14 @@ reviewer = { model = "gpt-5.5", provider = "codex", backend = "cli" }
         runtime
             .update_task_from_activity(
                 &task.id,
-                TaskStatus::InProgress,
-                None,
-                Some("Automation left a note.".to_string()),
-                Some("automation start".to_string()),
-                None,
-                None,
+                TaskActivityUpdate {
+                    status: TaskStatus::InProgress,
+                    execution_summary: None,
+                    comment: Some("Automation left a note.".to_string()),
+                    note: Some("automation start".to_string()),
+                    agent: None,
+                    model: None,
+                },
             )
             .expect("activity update");
 

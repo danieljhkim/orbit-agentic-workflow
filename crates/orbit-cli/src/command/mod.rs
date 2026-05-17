@@ -92,7 +92,7 @@ pub enum Commands {
 
     // ── Operate ──
     Run(run::RunCommand),
-    Task(task::TaskCommand),
+    Task(Box<task::TaskCommand>),
     Adr(adr::AdrCommand),
     Design(design::DesignCommand),
     Learning(learning::LearningCommand),
@@ -132,7 +132,7 @@ impl Execute for Commands {
             Commands::Workspace(cmd) => cmd.execute(runtime),
             Commands::Config(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
-            Commands::Task(cmd) => cmd.execute(runtime),
+            Commands::Task(cmd) => (*cmd).execute(runtime),
             Commands::Adr(cmd) => cmd.execute(runtime),
             Commands::Design(cmd) => cmd.execute(runtime),
             Commands::Learning(cmd) => cmd.execute(runtime),

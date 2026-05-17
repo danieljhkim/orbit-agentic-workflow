@@ -672,7 +672,7 @@ mod tests {
         TaskPriority, TaskType,
     };
 
-    use crate::context::{TaskReadHost, TaskWriteHost};
+    use crate::context::{TaskActivityUpdate, TaskReadHost, TaskWriteHost};
     use crate::executor::registry::ActivityExecutorRegistry;
 
     #[test]
@@ -865,12 +865,7 @@ mod tests {
         fn update_task_from_activity(
             &self,
             _task_id: &str,
-            _status: TaskStatus,
-            _execution_summary: Option<String>,
-            _comment: Option<String>,
-            _note: Option<String>,
-            _agent: Option<String>,
-            _model: Option<String>,
+            _update: TaskActivityUpdate,
         ) -> Result<Task, OrbitError> {
             Err(OrbitError::Execution(
                 "update_task_from_activity is not needed by parallel timeout tests".to_string(),

@@ -1303,10 +1303,10 @@ mod tests {
             "object[] ",
         ] {
             let prop = property_for(token);
-            let any_of = prop
-                .get("anyOf")
-                .and_then(Value::as_array)
-                .expect(&format!("anyOf present for {token}"));
+            let any_of = match prop.get("anyOf").and_then(Value::as_array) {
+                Some(any_of) => any_of,
+                None => panic!("anyOf present for {token}"),
+            };
             let has_array_objects = any_of.iter().any(|s| {
                 s.get("type").and_then(Value::as_str) == Some("array")
                     && s.get("items")

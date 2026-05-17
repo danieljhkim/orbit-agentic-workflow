@@ -308,7 +308,9 @@ mod tests {
     use serde_json::Value;
     use tempfile::tempdir;
 
-    use crate::context::{JobRunResult, RuntimeHost, TaskReadHost, TaskWriteHost};
+    use crate::context::{
+        JobRunResult, RuntimeHost, TaskActivityUpdate, TaskReadHost, TaskWriteHost,
+    };
     use crate::executor::registry::ActivityExecutorRegistry;
 
     use super::*;
@@ -387,12 +389,7 @@ mod tests {
         fn update_task_from_activity(
             &self,
             _task_id: &str,
-            _status: TaskStatus,
-            _execution_summary: Option<String>,
-            _comment: Option<String>,
-            _note: Option<String>,
-            _agent: Option<String>,
-            _model: Option<String>,
+            _update: TaskActivityUpdate,
         ) -> Result<Task, OrbitError> {
             unimplemented!("not needed by review sync tests")
         }

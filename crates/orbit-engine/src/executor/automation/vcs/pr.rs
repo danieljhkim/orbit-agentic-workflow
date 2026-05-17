@@ -703,7 +703,9 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::{TempDir, tempdir};
 
-    use crate::context::{JobRunResult, RuntimeHost, TaskReadHost, TaskWriteHost};
+    use crate::context::{
+        JobRunResult, RuntimeHost, TaskActivityUpdate, TaskReadHost, TaskWriteHost,
+    };
     use crate::executor::registry::ActivityExecutorRegistry;
 
     use super::super::freshness::BranchFreshness;
@@ -854,12 +856,7 @@ mod tests {
         fn update_task_from_activity(
             &self,
             _task_id: &str,
-            _status: TaskStatus,
-            _execution_summary: Option<String>,
-            _comment: Option<String>,
-            _note: Option<String>,
-            _agent: Option<String>,
-            _model: Option<String>,
+            _update: TaskActivityUpdate,
         ) -> Result<Task, OrbitError> {
             Err(OrbitError::Execution(
                 "update_task_from_activity is not needed by pr_open tests".to_string(),

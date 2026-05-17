@@ -2,6 +2,7 @@ use orbit_common::types::{
     OrbitError, OrbitEvent, Task, TaskHistoryEntry, TaskStatus, normalize_task_dependencies,
     normalize_task_tags, prune_missing_context_files, validate_task_dependencies,
 };
+use orbit_engine::TaskActivityUpdate;
 
 use crate::OrbitRuntime;
 use crate::runtime::TaskRecordUpdateParams;
@@ -36,13 +37,16 @@ impl OrbitRuntime {
     pub fn update_task_from_activity(
         &self,
         id: &str,
-        status: TaskStatus,
-        execution_summary: Option<String>,
-        comment: Option<String>,
-        note: Option<String>,
-        agent: Option<String>,
-        model: Option<String>,
+        update: TaskActivityUpdate,
     ) -> Result<Task, OrbitError> {
+        let TaskActivityUpdate {
+            status,
+            execution_summary,
+            comment,
+            note,
+            agent,
+            model,
+        } = update;
         self.update_task_with_status_note_and_identity(
             id,
             TaskUpdateParams {

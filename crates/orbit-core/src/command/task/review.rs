@@ -1,7 +1,9 @@
 use chrono::Utc;
 use orbit_common::types::{
-    OrbitError, ReviewMessage, ReviewThread, ReviewThreadStatus, all_agent_families,
+    OrbitError, ReviewMessage, ReviewThread, ReviewThreadStatus, activity_job::AgentRole,
+    all_agent_families,
 };
+use orbit_engine::EnvironmentHost;
 use orbit_store::task_review_scoreboard;
 
 use crate::OrbitRuntime;
@@ -212,6 +214,13 @@ impl OrbitRuntime {
             return None;
         }
 
+        if let Some(role_config) = EnvironmentHost::agent_role_config(self, AgentRole::Reviewer)
+            && let Some(configured_model) = role_config.model
+            && model.eq_ignore_ascii_case(&configured_model)
+        {
+            return Some(configured_model);
+        }
+
         all_agent_families().into_iter().find_map(|family| {
             let pair = self.configured_agent_model_pair(family)?;
             if model.eq_ignore_ascii_case(&pair.orchestrator) {
@@ -242,6 +251,19 @@ mod tests {
         let workspace_root = repo_root.join(".orbit");
         std::fs::create_dir_all(&global_root).expect("create global root");
         std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+        let runtime =
+            OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
+        (root, runtime)
+    }
+
+    fn test_runtime_with_workspace_config(config: &str) -> (tempfile::TempDir, OrbitRuntime) {
+        let root = tempdir().expect("create tempdir");
+        let global_root = root.path().join("global");
+        let repo_root = root.path().join("repo");
+        let workspace_root = repo_root.join(".orbit");
+        std::fs::create_dir_all(&global_root).expect("create global root");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+        std::fs::write(workspace_root.join("config.toml"), config).expect("write workspace config");
         let runtime =
             OrbitRuntime::from_roots(&global_root, &workspace_root).expect("build test runtime");
         (root, runtime)
@@ -308,7 +330,7 @@ mod tests {
         let summary = runtime
             .generate_scoreboard_summary()
             .expect("generate scoreboard summary");
-        let reviewer = summary.agents.get("gpt-5.5").expect("reviewer summary");
+        let reviewer = summary.agents.get("codex").expect("reviewer summary");
         assert_eq!(reviewer.task_review.threads, 1);
         assert_eq!(reviewer.pr.review_comments, 0);
     }
@@ -369,7 +391,17 @@ mod tests {
 
     #[test]
     fn grok_review_threads_score_local_review_threads() {
-        let (_root, runtime) = test_runtime();
+        let (_root, runtime) = test_runtime_with_workspace_config(
+            r#"
+[crews.grok-review]
+planner = { model = "grok-4", provider = "grok", backend = "cli" }
+implementer = { model = "grok-4", provider = "grok", backend = "cli" }
+reviewer = { model = "grok-4", provider = "grok", backend = "cli" }
+
+[workflow]
+default_crew = "grok-review"
+"#,
+        );
         let scoreboard_dir = runtime.data_root().join("state").join("scoreboard");
         fs::create_dir_all(&scoreboard_dir).expect("create scoreboard dir");
         let task = runtime

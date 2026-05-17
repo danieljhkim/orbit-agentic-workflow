@@ -202,6 +202,16 @@ pub struct TaskAutomationUpdate {
     pub job_run_id: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TaskActivityUpdate {
+    pub status: TaskStatus,
+    pub execution_summary: Option<String>,
+    pub comment: Option<String>,
+    pub note: Option<String>,
+    pub agent: Option<String>,
+    pub model: Option<String>,
+}
+
 pub trait JobRunHost {
     fn list_all_pending_or_running_runs(&self) -> Result<Vec<JobRun>, OrbitError>;
     fn list_pending_or_running_job_runs(&self, job_id: &str) -> Result<Vec<JobRun>, OrbitError>;
@@ -288,12 +298,7 @@ pub trait TaskWriteHost {
     fn update_task_from_activity(
         &self,
         task_id: &str,
-        status: TaskStatus,
-        execution_summary: Option<String>,
-        comment: Option<String>,
-        note: Option<String>,
-        agent: Option<String>,
-        model: Option<String>,
+        update: TaskActivityUpdate,
     ) -> Result<Task, OrbitError>;
     fn apply_task_automation_update(
         &self,
@@ -817,22 +822,9 @@ impl TaskWriteHost for AutomationExecutorHost<'_> {
     fn update_task_from_activity(
         &self,
         task_id: &str,
-        status: TaskStatus,
-        execution_summary: Option<String>,
-        comment: Option<String>,
-        note: Option<String>,
-        agent: Option<String>,
-        model: Option<String>,
+        update: TaskActivityUpdate,
     ) -> Result<Task, OrbitError> {
-        self.task_writer.update_task_from_activity(
-            task_id,
-            status,
-            execution_summary,
-            comment,
-            note,
-            agent,
-            model,
-        )
+        self.task_writer.update_task_from_activity(task_id, update)
     }
 
     fn apply_task_automation_update(

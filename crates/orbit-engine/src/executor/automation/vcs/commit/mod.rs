@@ -246,7 +246,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::context::{
-        JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskReadHost, TaskWriteHost,
+        JobRunResult, RuntimeHost, TaskActivityUpdate, TaskAutomationUpdate, TaskReadHost,
+        TaskWriteHost,
     };
     use crate::executor::registry::ActivityExecutorRegistry;
 
@@ -353,12 +354,7 @@ mod tests {
         fn update_task_from_activity(
             &self,
             _task_id: &str,
-            _status: TaskStatus,
-            _execution_summary: Option<String>,
-            _comment: Option<String>,
-            _note: Option<String>,
-            _agent: Option<String>,
-            _model: Option<String>,
+            _update: TaskActivityUpdate,
         ) -> Result<Task, OrbitError> {
             Err(OrbitError::Execution(
                 "update_task_from_activity is not needed by commit tests".to_string(),

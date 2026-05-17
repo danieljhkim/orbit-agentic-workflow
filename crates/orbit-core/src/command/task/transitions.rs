@@ -15,6 +15,16 @@ use super::helpers::{
 const UNAUTHORED_TASK_PLAN_PLACEHOLDER: &str = "To be authored by executing agent at start time.";
 const RELATION_RESOLVES: &str = "resolves";
 
+#[derive(Debug, Default)]
+struct StartTaskOptions {
+    note: Option<String>,
+    comment: Option<String>,
+    agent: Option<String>,
+    model: Option<String>,
+    actor_label_override: Option<String>,
+    crew_override: Option<String>,
+}
+
 impl OrbitRuntime {
     pub fn approve_task(
         &self,
@@ -155,7 +165,14 @@ impl OrbitRuntime {
         note: Option<String>,
         comment: Option<String>,
     ) -> Result<Task, OrbitError> {
-        self.start_task_with_actor_label_override(id, note, comment, None, None, None, None)
+        self.start_task_with_actor_label_override(
+            id,
+            StartTaskOptions {
+                note,
+                comment,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn start_task_with_identity(
@@ -180,12 +197,14 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         self.start_task_with_actor_label_override(
             id,
-            note,
-            comment,
-            agent,
-            model,
-            None,
-            crew_override,
+            StartTaskOptions {
+                note,
+                comment,
+                agent,
+                model,
+                crew_override,
+                ..Default::default()
+            },
         )
     }
 
@@ -197,25 +216,28 @@ impl OrbitRuntime {
     ) -> Result<Task, OrbitError> {
         self.start_task_with_actor_label_override(
             id,
-            note,
-            comment,
-            None,
-            None,
-            Some(SYSTEM_ACTOR_LABEL.to_string()),
-            None,
+            StartTaskOptions {
+                note,
+                comment,
+                actor_label_override: Some(SYSTEM_ACTOR_LABEL.to_string()),
+                ..Default::default()
+            },
         )
     }
 
     fn start_task_with_actor_label_override(
         &self,
         id: &str,
-        note: Option<String>,
-        comment: Option<String>,
-        agent: Option<String>,
-        model: Option<String>,
-        actor_label_override: Option<String>,
-        crew_override: Option<String>,
+        options: StartTaskOptions,
     ) -> Result<Task, OrbitError> {
+        let StartTaskOptions {
+            note,
+            comment,
+            agent,
+            model,
+            actor_label_override,
+            crew_override,
+        } = options;
         let (canonical_agent, canonical_model) =
             self.try_canonical_agent_model_identity(agent.as_deref(), model.as_deref())?;
         let task = self.get_task(id)?;

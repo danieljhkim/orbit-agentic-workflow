@@ -284,6 +284,84 @@ pub(super) fn run_deterministic(
     }
 }
 
+fn unmet_dependency_ids_for_input(
+    runtime: &OrbitRuntime,
+    input: &Value,
+) -> Result<Vec<String>, OrbitError> {
+    let Some(raw_task_ids) =
+        optional_string_list_alias(input, &["task_ids", "taskIds", "task-ids"])?
+    else {
+        return Ok(Vec::new());
+    };
+    let task_ids = parse_task_ids(&serde_json::json!({ "task_ids": raw_task_ids }))?;
+    let tasks = runtime.stores().tasks().list()?;
+    let status_by_id = build_task_status_index(&tasks);
+    let task_by_id = tasks
+        .into_iter()
+        .map(|task| (task.id.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+    let mut unmet = BTreeSet::new();
+    for task_id in task_ids {
+        let task = task_by_id
+            .get(&task_id)
+            .ok_or_else(|| OrbitError::not_found(crate::NotFoundKind::Task, task_id.clone()))?;
+        for dependency in unmet_task_dependencies(task, &status_by_id) {
+            unmet.insert(dependency.id);
+        }
+    }
+    Ok(unmet.into_iter().collect())
+}
+
+fn waiting_locks_from_reserve_output(output: &Value) -> Vec<String> {
+    output
+        .get("conflicts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|conflict| conflict.get("file").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn update_run_waiting_reasons(
+    runtime: &OrbitRuntime,
+    input: &Value,
+    waiting_on_deps: Option<Vec<String>>,
+    waiting_on_locks: Option<Vec<String>>,
+    action: &str,
+) -> Result<(), DispatchError> {
+    let Some(run_id) = input.get("run_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let Some(mut state) =
+        runtime
+            .read_run_state(run_id)
+            .map_err(|err| DispatchError::DeterministicActionFailed {
+                action: action.to_string(),
+                message: format!("{err}"),
+            })?
+    else {
+        return Ok(());
+    };
+    state.set_waiting_reasons(waiting_on_deps, waiting_on_locks);
+    runtime
+        .stores()
+        .jobs()
+        .write_run_state(run_id, &state)
+        .map_err(|err| DispatchError::DeterministicActionFailed {
+            action: action.to_string(),
+            message: format!("{err}"),
+        })
+}
+
+fn non_empty(values: Vec<String>) -> Option<Vec<String>> {
+    (!values.is_empty()).then_some(values)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,82 +559,4 @@ mod tests {
             ]
         );
     }
-}
-
-fn unmet_dependency_ids_for_input(
-    runtime: &OrbitRuntime,
-    input: &Value,
-) -> Result<Vec<String>, OrbitError> {
-    let Some(raw_task_ids) =
-        optional_string_list_alias(input, &["task_ids", "taskIds", "task-ids"])?
-    else {
-        return Ok(Vec::new());
-    };
-    let task_ids = parse_task_ids(&serde_json::json!({ "task_ids": raw_task_ids }))?;
-    let tasks = runtime.stores().tasks().list()?;
-    let status_by_id = build_task_status_index(&tasks);
-    let task_by_id = tasks
-        .into_iter()
-        .map(|task| (task.id.clone(), task))
-        .collect::<BTreeMap<_, _>>();
-    let mut unmet = BTreeSet::new();
-    for task_id in task_ids {
-        let task = task_by_id
-            .get(&task_id)
-            .ok_or_else(|| OrbitError::not_found(crate::NotFoundKind::Task, task_id.clone()))?;
-        for dependency in unmet_task_dependencies(task, &status_by_id) {
-            unmet.insert(dependency.id);
-        }
-    }
-    Ok(unmet.into_iter().collect())
-}
-
-fn waiting_locks_from_reserve_output(output: &Value) -> Vec<String> {
-    output
-        .get("conflicts")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|conflict| conflict.get("file").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn update_run_waiting_reasons(
-    runtime: &OrbitRuntime,
-    input: &Value,
-    waiting_on_deps: Option<Vec<String>>,
-    waiting_on_locks: Option<Vec<String>>,
-    action: &str,
-) -> Result<(), DispatchError> {
-    let Some(run_id) = input.get("run_id").and_then(Value::as_str) else {
-        return Ok(());
-    };
-    let Some(mut state) =
-        runtime
-            .read_run_state(run_id)
-            .map_err(|err| DispatchError::DeterministicActionFailed {
-                action: action.to_string(),
-                message: format!("{err}"),
-            })?
-    else {
-        return Ok(());
-    };
-    state.set_waiting_reasons(waiting_on_deps, waiting_on_locks);
-    runtime
-        .stores()
-        .jobs()
-        .write_run_state(run_id, &state)
-        .map_err(|err| DispatchError::DeterministicActionFailed {
-            action: action.to_string(),
-            message: format!("{err}"),
-        })
-}
-
-fn non_empty(values: Vec<String>) -> Option<Vec<String>> {
-    (!values.is_empty()).then_some(values)
 }

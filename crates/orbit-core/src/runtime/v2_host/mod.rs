@@ -176,13 +176,13 @@ impl V2RuntimeHost for OrbitRuntime {
     ) -> Option<AgentRoleConfig> {
         let crew = self
             .resolve_crew_for_run_input(input)
-            .or_else(|error| {
+            .map_err(|error| {
                 tracing::warn!(
                     target: "orbit.config.crew",
                     error = %error,
                     "failed to resolve crew for activity input; falling back to default role config",
                 );
-                Err(error)
+                error
             })
             .ok()?;
         let assignment = crew.role(role.as_str())?;

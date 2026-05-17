@@ -217,6 +217,7 @@ mod tests {
     fn detect_reflects_probe_results() {
         let probe = MockAgentEnvProbe::new()
             .with_binary("claude")
+            .with_binary("grok")
             .with_binary("ollama")
             .with_env("ANTHROPIC_API_KEY", "sk-test");
         let detected = detect(&probe);

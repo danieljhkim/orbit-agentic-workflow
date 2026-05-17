@@ -1,7 +1,7 @@
 use orbit_common::types::{OrbitError, TaskStatus};
 use serde_json::{Value, json};
 
-use crate::context::{RuntimeHost, TaskHost};
+use crate::context::{RuntimeHost, TaskActivityUpdate, TaskHost};
 
 use super::StateExecutionContext;
 use super::input::{input_string_field, required_input_string};
@@ -33,7 +33,17 @@ pub(super) fn update_task<H: RuntimeHost + TaskHost + ?Sized>(
     let note = input_string_field(input, "note")
         .or_else(|| Some(format!("automation: update_task → {status}")));
     let (agent, model) = activity_identity(host, input, state_context)?;
-    host.update_task_from_activity(task_id, status, None, None, note, agent, model)?;
+    host.update_task_from_activity(
+        task_id,
+        TaskActivityUpdate {
+            status,
+            execution_summary: None,
+            comment: None,
+            note,
+            agent,
+            model,
+        },
+    )?;
     Ok(json!({}))
 }
 

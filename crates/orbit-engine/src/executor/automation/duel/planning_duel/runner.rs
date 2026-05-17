@@ -260,8 +260,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::context::{
-        ActivityInvocationResult, JobRunResult, RuntimeHost, TaskAutomationUpdate, TaskReadHost,
-        TaskWriteHost,
+        ActivityInvocationResult, JobRunResult, RuntimeHost, TaskActivityUpdate,
+        TaskAutomationUpdate, TaskReadHost, TaskWriteHost,
     };
     use crate::executor::registry::ActivityExecutorRegistry;
 
@@ -393,12 +393,7 @@ mod tests {
         fn update_task_from_activity(
             &self,
             _task_id: &str,
-            _status: TaskStatus,
-            _execution_summary: Option<String>,
-            _comment: Option<String>,
-            _note: Option<String>,
-            _agent: Option<String>,
-            _model: Option<String>,
+            _update: TaskActivityUpdate,
         ) -> Result<Task, orbit_common::types::OrbitError> {
             Err(orbit_common::types::OrbitError::Execution(
                 "planning duel must not update task status from activity".to_string(),
