@@ -149,7 +149,7 @@ pub(super) fn identity_params() -> Vec<ToolParam> {
         ToolParam {
             name: "agent".to_string(),
             description:
-                "Deprecated compatibility field. Prefer `model`; Orbit infers the agent family from known model names."
+                "Deprecated compatibility field. Prefer `model` with the agent family (`codex`, `claude`, `gemini`, or `grok`)."
                     .to_string(),
             param_type: "string".to_string(),
             required: false,
@@ -157,7 +157,7 @@ pub(super) fn identity_params() -> Vec<ToolParam> {
         ToolParam {
             name: "model".to_string(),
             description:
-                "Preferred provenance field. Exact LLM model identifier used to infer agent family when possible (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
+                "Preferred provenance field. Pass the canonical agent family (`codex`, `claude`, `gemini`, or `grok`); full model strings are accepted and auto-normalized."
                     .to_string(),
             param_type: "string".to_string(),
             required: false,
@@ -169,7 +169,7 @@ pub(super) fn model_identity_params() -> Vec<ToolParam> {
     vec![ToolParam {
         name: "model".to_string(),
         description:
-            "Preferred provenance field. Exact LLM model identifier used to infer agent family when possible (e.g. opus, gpt-5.4, gemini-3.1-pro-preview)."
+            "Preferred provenance field. Pass the canonical agent family (`codex`, `claude`, `gemini`, or `grok`); full model strings are accepted and auto-normalized."
                 .to_string(),
         param_type: "string".to_string(),
         required: false,
@@ -182,7 +182,7 @@ pub(super) fn reject_agent_field(input: &Value, tool_name: &str) -> Result<(), O
         .is_some_and(|object| object.contains_key("agent"))
     {
         return Err(OrbitError::InvalidInput(format!(
-            "{tool_name} no longer accepts `agent`; use `model` for attribution"
+            "{tool_name} no longer accepts `agent`; use `model` with the agent family for attribution"
         )));
     }
     Ok(())
@@ -193,7 +193,7 @@ pub(super) fn scored_identity_params() -> Vec<ToolParam> {
         ToolParam {
             name: "agent".to_string(),
             description:
-                "Deprecated compatibility field. Prefer `model`; Orbit infers the agent family from known model names."
+                "Deprecated compatibility field. Prefer `model` with the agent family (`codex`, `claude`, `gemini`, or `grok`)."
                     .to_string(),
             param_type: "string".to_string(),
             required: false,
@@ -201,7 +201,7 @@ pub(super) fn scored_identity_params() -> Vec<ToolParam> {
         ToolParam {
             name: "model".to_string(),
             description:
-                "Required provenance field. Exact LLM model identifier used to infer agent family (e.g. opus, gpt-5.4, gemini-3.1-pro-preview). Pass `human` for human-authored review feedback to opt out of scoreboard scoring."
+                "Required provenance field. Pass the canonical agent family (`codex`, `claude`, `gemini`, or `grok`), or `human` for human-authored review feedback to opt out of scoreboard scoring. Full model strings are accepted and auto-normalized."
                     .to_string(),
             param_type: "string".to_string(),
             required: true,

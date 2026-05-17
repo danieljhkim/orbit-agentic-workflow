@@ -38,7 +38,9 @@ impl Tool for OrbitFrictionAddTool {
                 },
                 ToolParam {
                     name: "model".to_string(),
-                    description: "Required model identifier for attribution".to_string(),
+                    description:
+                        "Required agent family for attribution (`codex`, `claude`, `gemini`, or `grok`)"
+                            .to_string(),
                     param_type: "string".to_string(),
                     required: true,
                 },

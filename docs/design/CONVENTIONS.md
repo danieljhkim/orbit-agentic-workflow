@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Owner:** daniel
-**Last updated:** 2026-05-05
+**Last updated:** 2026-05-17
 
 Rules feature leads follow when writing and maintaining design docs under `docs/design/<feature>/`. The goal is a set of feature folders that read as one coherent documentation system regardless of which agent authored them.
 
@@ -36,11 +36,11 @@ docs/design/<feature>/
 # <Feature> — <Doc Role>
 
 **Status:** <Draft | Accepted>
-**Owner:** <agent identity — `claude`, `codex`, etc.>
+**Owner:** <agent family — `codex`, `claude`, `gemini`, or `grok`>
 **Last updated:** YYYY-MM-DD
 ```
 
-Owner field is mandatory. It's the accountable agent, not a committer list.
+Owner field is mandatory. It's the accountable agent family, not a committer list or full model string.
 
 ---
 

@@ -26,7 +26,7 @@ Both surfaces accept the same JSON. Use the CLI examples when shell access is av
 | `orbit.learning.prune` | `orbit_learning_prune({...})` | `orbit learning prune --stale-only` |
 | `orbit.learning.reindex` | `orbit_learning_reindex({...})` | `orbit learning reindex` |
 
-Mapping rule: `orbit.learning.<verb>` ↔ `orbit_learning_<verb>`. Always include `model` in JSON inputs when the tool accepts it. Prefer `--body-file` for `add` and body-changing `update` calls so multi-line markdown is not mangled by shell quoting.
+Mapping rule: `orbit.learning.<verb>` ↔ `orbit_learning_<verb>`. Always include `model` in JSON inputs when the tool accepts it; pass your agent family (`codex`, `claude`, `gemini`, or `grok`). Prefer `--body-file` for `add` and body-changing `update` calls so multi-line markdown is not mangled by shell quoting.
 
 Run `orbit tool list | grep orbit.learning` if you suspect the local tool surface has drifted; do not assume tools beyond the eight above exist unless the registry shows them.
 

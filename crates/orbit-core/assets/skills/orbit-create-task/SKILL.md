@@ -24,7 +24,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.semantic.search` is available (hybrid BM25 + cosine over indexed task fields) — useful when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-semantic`.
 3. Write clear acceptance criteria that define observable success.
 4. Add assumptions, risks, and rollback notes to the description when they matter.
-5. Call the task-add tool (`orbit_task_add` over MCP, or `orbit tool run orbit.task.add` from the shell) with the description, acceptance criteria, workspace, and exact `model` field in the JSON input. Orbit infers the agent family from known model names. Leave `plan` blank unless you have a compelling reason to pre-seed it.
+5. Call the task-add tool (`orbit_task_add` over MCP, or `orbit tool run orbit.task.add` from the shell) with the description, acceptance criteria, workspace, and canonical `model` family in the JSON input. Use `codex`, `claude`, `gemini`, or `grok`; full model strings are accepted and auto-normalized. Leave `plan` blank unless you have a compelling reason to pre-seed it.
 6. Use the result as the default confirmation. If you need to re-fetch the canonical stored record, call `orbit_task_show({"id": "<returned-id>"})` (MCP) or `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'` (CLI).
 
 ## Selector-First Context
@@ -108,7 +108,7 @@ orbit tool run orbit.task.add --input '{
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
   "type": "<feature|bug|refactor|chore>",
-  "model": "<model_name>" # gpt-5.4, claude-opus-4-6, gemini-2.5-pro, etc
+  "model": "<agent-family>" # codex | claude | gemini | grok
   # Optional: complexity, dependencies, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
 }'
 ```
@@ -124,7 +124,7 @@ orbit_task_add({
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
   "type": "<feature|bug|refactor|chore>",
-  "model": "<model_name>"
+  "model": "<agent-family>"
   # Optional: complexity, dependencies, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
 })
 ```

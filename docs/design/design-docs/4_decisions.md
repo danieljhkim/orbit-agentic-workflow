@@ -1,8 +1,8 @@
 # Design Docs — Decisions
 
 **Status:** Draft
-**Owner:** claude-opus-4-7
-**Last updated:** 2026-05-14
+**Owner:** claude
+**Last updated:** 2026-05-17
 
 Append-only ADR log for the design-docs feature. Each entry follows the template in [CONVENTIONS.md §4](../CONVENTIONS.md). Numbers are append-only; superseded entries stay in place with status updated. Every ADR cites at least one cost.
 
@@ -113,5 +113,6 @@ ADR-001 through ADR-004 retroactively document load-bearing decisions encoded in
 
 - [ORB-00006] — Refresh of ARCHITECTURE.md and existing design folders that produced the layout codified in ADR-001.
 - [ORB-00019] — Promotion of the decay checker and scaffolder into first-class Rust + MCP tooling, documented in ADR-005 and ADR-006.
+- [ORB-00090] — Aligned design-doc ownership metadata with family-based agent identity.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

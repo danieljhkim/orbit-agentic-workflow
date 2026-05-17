@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** codex
-**Last updated:** 2026-05-10 (T20260510-13)
+**Last updated:** 2026-05-17 (ORB-00090)
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 
@@ -164,17 +164,17 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - CLI, dashboard backend, and dashboard UI share one log vocabulary and escaping boundary.
 - Cost: stream rotation/truncation handling is best-effort, and the visual panel ships separately under UI ownership.
 
-## ADR-014 — Tool-call provenance is model-first
+## ADR-014 — Tool-call provenance was model-first
 
-**Status:** Accepted · 2026-04 · [T20260427-52]
+**Status:** Superseded by [agent-families ADR-0154](../agent-families/4_decisions.md#adr-0154--collapse-agent-identity-to-family-and-move-model-strings-to-configuration) · 2026-05 · [ORB-00080]
 
 **Context.** Asking agents to pass both `agent` and `model` duplicated information and allowed exact models to be paired with the wrong family.
 
-**Decision.** Deprecate `agent` as a normal tool-call input, prefer exact `model`, infer the agent family from known model names, and reject inconsistent legacy pairs.
+**Decision.** Originally deprecated `agent` as a normal tool-call input and used `model` for provenance. [Agent-families ADR-0154](../agent-families/4_decisions.md#adr-0154--collapse-agent-identity-to-family-and-move-model-strings-to-configuration) superseded the exact-model convention: `model` now carries the canonical agent family, with full model strings accepted only as compatibility input that normalizes to family.
 
 **Consequences.**
-- Seeded skills and instructions can use shorter model-only tool calls while task records still retain both fields internally.
-- Cost: unknown or ambiguous models still need a compatible legacy `agent` value when family-specific dispatch matters.
+- Seeded skills and instructions still use a single `model` provenance field, but examples teach family values (`codex`, `claude`, `gemini`, `grok`).
+- Cost: compatibility normalization must remain for historical full-model inputs and external callers that have not migrated yet.
 
 ## ADR-015 — Task attribution can be corrected explicitly
 
@@ -334,5 +334,7 @@ This is the append-only ADR log for Auditability. Entries are ordered by ADR num
 - **[T20260508-22]** — Use `task.implemented_by` to set git commit authors for automated task commits.
 - **[T20260509-12]** — Scope workflow git author and committer identity to the spawned commit process without writing repo-local Git config.
 - **[T20260510-13]** — Move friction reports from task lifecycle state to append-only `.orbit/frictions/` records.
+- **[ORB-00080]** — Collapse Orbit agent identity to family and isolate exact model strings to invocation/configuration surfaces.
+- **[ORB-00090]** — Align agent-facing docs and tool descriptions with the family-as-identity convention.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

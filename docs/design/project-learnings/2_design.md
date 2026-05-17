@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** claude
-**Last updated:** 2026-05-16 (ORB-00061)
+**Last updated:** 2026-05-17 (ORB-00090)
 
 This document specifies phase-1 project-learnings: the placement of learning storage in `orbit-store`, the schema of a learning record, the phase-1 scope-matching algorithm (path globs + tags), the three-layer push-injection pipeline (engine pre-prompt + MCP sidecar + optional Claude Code hook), the pull surface (skill + tools), the curation lifecycle, and the concerns the design deliberately leaves to follow-ups.
 
@@ -47,7 +47,7 @@ schemaVersion: 1
 status: active                    # active | superseded
 created_at: 2026-05-09T18:00:00Z
 updated_at: 2026-05-09T18:00:00Z
-created_by: claude-opus-4-7
+created_by: claude
 
 scope:
   paths:
@@ -382,5 +382,6 @@ Learnings are workspace-scoped and checked into the repo. They travel exactly wh
 - [T20260510-11] — Design + build project-learnings system as native Orbit primitive. The task that produced this folder.
 - [T20260510-12] — Add `tags` field to `Task` schema. Hard prerequisite for Layer 1's tag-axis matching ([§4.1](#41-layer-1--engine-pre-prompt-injection-universal)).
 - [ORB-00061] — Add Knowledge tab and Learnings subtab to dashboard.
+- [ORB-00090] — Aligned learning identity examples with the agent-family convention.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

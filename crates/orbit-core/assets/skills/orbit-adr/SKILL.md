@@ -21,15 +21,15 @@ Both surfaces accept the same JSON. Use the CLI examples below when shell access
 | `orbit.adr.update` | `orbit_adr_update({...})` | `orbit tool run orbit.adr.update --input-file update.json` |
 | `orbit.adr.supersede` | `orbit_adr_supersede({...})` | `orbit tool run orbit.adr.supersede --input '{"old_id":"ADR-0041","new_id":"ADR-0042"}'` |
 
-Always include `model` in JSON inputs when the tool accepts it. Prefer `--input-file` for `add` and body-changing `update` calls so markdown does not get mangled by shell quoting.
+Always include `model` in JSON inputs when the tool accepts it. The value is your agent family (`codex`, `claude`, `gemini`, or `grok`); full model strings are accepted and auto-normalized, but the family is canonical. Prefer `--input-file` for `add` and body-changing `update` calls so markdown does not get mangled by shell quoting.
 
 Run `orbit tool show orbit.adr.add` or `orbit tool list` instead of guessing if the local tool surface has changed. Do not assume future surfaces such as `orbit.adr.search` or `orbit.adr.review_thread.*` exist unless `orbit tool list` shows them.
 
 ## Workflow
 
 1. Inspect nearby decisions before adding a new one.
-   - `orbit tool run orbit.adr.list --input '{"feature":"<feature>","model":"<model_name>"}'`
-   - `orbit tool run orbit.adr.show --input '{"id":"ADR-NNNN","model":"<model_name>"}'`
+   - `orbit tool run orbit.adr.list --input '{"feature":"<feature>","model":"<agent-family>"}'`
+   - `orbit tool run orbit.adr.show --input '{"id":"ADR-NNNN","model":"<agent-family>"}'`
    - Use `legacy_id` lookup for migrated per-feature references, for example `{"legacy_id":"activity-job/ADR-039"}`.
 2. Decide whether this is a new ADR, an update to a proposed ADR, or a supersession.
    - New decision: `orbit.adr.add`.
@@ -83,7 +83,7 @@ Create a proposed ADR:
   "owner": "codex",
   "related_features": ["task-artifacts"],
   "related_tasks": [],
-  "model": "<model_name>"
+  "model": "<agent-family>"
 }
 ```
 
@@ -97,7 +97,7 @@ Attach a legacy per-feature alias after creation:
 orbit tool run orbit.adr.update --input '{
   "id": "ADR-0143",
   "legacy_ids": ["task-artifacts/ADR-001"],
-  "model": "<model_name>"
+  "model": "<agent-family>"
 }'
 ```
 
@@ -108,7 +108,7 @@ orbit tool run orbit.adr.update --input '{
   "id": "ADR-0143",
   "status": "accepted",
   "related_tasks": ["T20260510-28"],
-  "model": "<model_name>"
+  "model": "<agent-family>"
 }'
 ```
 
@@ -118,7 +118,7 @@ Supersede an old ADR:
 orbit tool run orbit.adr.supersede --input '{
   "old_id": "ADR-0041",
   "new_id": "ADR-0042",
-  "model": "<model_name>"
+  "model": "<agent-family>"
 }'
 ```
 
