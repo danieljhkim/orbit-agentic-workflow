@@ -8,23 +8,28 @@ use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
 use orbit_common::types::{
-    Learning, LearningStatus, LearningVoteRow, LearningVoteSummary, NotFoundKind, OrbitError,
-    decayed_vote_score, normalize_learning_paths, normalize_learning_tags,
+    Learning, LearningComment, LearningCommentEvent, LearningCommentTombstone, LearningStatus,
+    LearningVoteRow, LearningVoteSummary, NotFoundKind, OrbitError, decayed_vote_score,
+    normalize_learning_paths, normalize_learning_tags,
 };
 use orbit_common::utility::glob::{compile_glob_regex, normalize_glob_path};
 
 use super::layout::{
-    learning_doc_path, locate_learning, next_learning_id, validate_learning_id, votes_jsonl_path,
+    comments_jsonl_path, learning_doc_path, locate_learning, next_learning_comment_id,
+    next_learning_id, validate_learning_comment_id, validate_learning_id, votes_jsonl_path,
 };
 use super::lock::{acquire_learning_allocation_lock, acquire_learning_lock};
-use super::record::{read_learning_file, write_learning_file};
+use super::record::{
+    append_jsonl_comment_row, lookup_learning_comment, read_comment_events, read_learning_file,
+    scan_learning_comments, write_learning_file,
+};
 use super::votes::{
     append_vote_row, deduped_vote_times, read_vote_rows, summarize_votes, validate_vote_files,
 };
 use crate::Store;
 use crate::backend::{
-    LearningCreateParams, LearningSearchParams, LearningSearchResult, LearningUpdateParams,
-    LearningUpvoteParams,
+    LearningCommentAddParams, LearningCommentDeleteParams, LearningCreateParams,
+    LearningSearchParams, LearningSearchResult, LearningUpdateParams, LearningUpvoteParams,
 };
 
 /// Workspace-scoped, filesystem-backed learning store.
@@ -429,12 +434,142 @@ impl LearningFileStore {
         Ok(summarize_votes(&rows))
     }
 
+    pub(crate) fn add_learning_comment(
+        &self,
+        params: LearningCommentAddParams,
+    ) -> Result<LearningComment, OrbitError> {
+        self.add_learning_comment_at(params, Utc::now())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_learning_comment_at(
+        &self,
+        params: LearningCommentAddParams,
+        now: DateTime<Utc>,
+    ) -> Result<LearningComment, OrbitError> {
+        self.add_learning_comment_at_impl(params, now)
+    }
+
+    #[cfg(not(test))]
+    fn add_learning_comment_at(
+        &self,
+        params: LearningCommentAddParams,
+        now: DateTime<Utc>,
+    ) -> Result<LearningComment, OrbitError> {
+        self.add_learning_comment_at_impl(params, now)
+    }
+
+    fn add_learning_comment_at_impl(
+        &self,
+        params: LearningCommentAddParams,
+        now: DateTime<Utc>,
+    ) -> Result<LearningComment, OrbitError> {
+        validate_learning_id(&params.learning_id)?;
+        let body = validate_learning_comment_body(&params.body)?;
+        let author_model = validate_learning_comment_model(&params.author_model)?;
+
+        let Some(path) = locate_learning(&self.root, &params.learning_id)? else {
+            return Err(OrbitError::not_found(
+                NotFoundKind::Learning,
+                params.learning_id,
+            ));
+        };
+        let learning = read_learning_file(&path)?;
+        if learning.status == LearningStatus::Superseded {
+            return Err(OrbitError::InvalidInput(format!(
+                "learning '{}' is superseded; use orbit.learning.supersede for the parent-replacement workflow",
+                learning.id
+            )));
+        }
+
+        let _allocation_lock = acquire_learning_allocation_lock(&self.root)?;
+        let _lock = acquire_learning_lock(&self.root, &learning.id)?;
+
+        let Some(path) = locate_learning(&self.root, &learning.id)? else {
+            return Err(OrbitError::not_found(NotFoundKind::Learning, learning.id));
+        };
+        let learning = read_learning_file(&path)?;
+        if learning.status == LearningStatus::Superseded {
+            return Err(OrbitError::InvalidInput(format!(
+                "learning '{}' is superseded; use orbit.learning.supersede for the parent-replacement workflow",
+                learning.id
+            )));
+        }
+
+        let comment = LearningComment {
+            id: next_learning_comment_id(&self.root, now)?,
+            learning_id: learning.id.clone(),
+            body,
+            author_model,
+            created_at: now,
+        };
+        append_jsonl_comment_row(
+            &comments_jsonl_path(&self.root, &learning.id),
+            &LearningCommentEvent::Create(comment.clone()),
+        )?;
+        Ok(comment)
+    }
+
+    pub(crate) fn list_learning_comments(
+        &self,
+        learning_id: &str,
+        include_deleted: bool,
+    ) -> Result<Vec<LearningComment>, OrbitError> {
+        validate_learning_id(learning_id)?;
+        if locate_learning(&self.root, learning_id)?.is_none() {
+            return Err(OrbitError::not_found(
+                NotFoundKind::Learning,
+                learning_id.to_string(),
+            ));
+        }
+        scan_learning_comments(
+            &comments_jsonl_path(&self.root, learning_id),
+            include_deleted,
+        )
+    }
+
+    pub(crate) fn delete_learning_comment(
+        &self,
+        params: LearningCommentDeleteParams,
+    ) -> Result<(), OrbitError> {
+        validate_learning_comment_id(&params.comment_id)?;
+        let deleted_by = validate_learning_comment_model(&params.deleted_by)?;
+        let Some(parent_id) = self.find_learning_for_comment(&params.comment_id)? else {
+            return Err(OrbitError::not_found(
+                NotFoundKind::LearningComment,
+                params.comment_id,
+            ));
+        };
+        let _lock = acquire_learning_lock(&self.root, &parent_id.learning_id)?;
+        let path = comments_jsonl_path(&self.root, &parent_id.learning_id);
+        let Some(lookup) = lookup_learning_comment(&path, &params.comment_id)? else {
+            return Err(OrbitError::not_found(
+                NotFoundKind::LearningComment,
+                params.comment_id,
+            ));
+        };
+        if lookup.deleted {
+            return Ok(());
+        }
+        append_jsonl_comment_row(
+            &path,
+            &LearningCommentEvent::Tombstone(LearningCommentTombstone {
+                id: params.comment_id,
+                learning_id: lookup.learning_id,
+                op: "delete".to_string(),
+                deleted_at: Utc::now(),
+                deleted_by,
+            }),
+        )
+    }
+
     /// Rebuild the SQLite index from the YAML source of truth.
     ///
     /// No-op when no index is attached; otherwise wipes
     /// `learnings_index` and reinserts every record found on disk.
     pub(crate) fn reindex_learnings(&self) -> Result<(), OrbitError> {
         validate_vote_files(&self.root)?;
+        validate_comment_files(&self.root)?;
         let Some(index) = &self.index else {
             self.invalidate_envelope_cache();
             return Ok(());
@@ -637,6 +772,35 @@ impl LearningFileStore {
             );
         }
     }
+
+    fn find_learning_for_comment(
+        &self,
+        comment_id: &str,
+    ) -> Result<Option<super::record::LearningCommentLookup>, OrbitError> {
+        if !self.root.exists() {
+            return Ok(None);
+        }
+        for entry in fs::read_dir(&self.root).map_err(|e| OrbitError::Io(e.to_string()))? {
+            let entry = entry.map_err(|e| OrbitError::Io(e.to_string()))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|e| OrbitError::Io(e.to_string()))?;
+            if !file_type.is_dir() {
+                continue;
+            }
+            let Some(id) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            if validate_learning_id(&id).is_err() {
+                continue;
+            }
+            let path = comments_jsonl_path(&self.root, &id);
+            if let Some(lookup) = lookup_learning_comment(&path, comment_id)? {
+                return Ok(Some(lookup));
+            }
+        }
+        Ok(None)
+    }
 }
 
 struct EnvelopeSnapshot {
@@ -701,6 +865,92 @@ fn vote_half_life_days() -> f64 {
         .unwrap_or(DEFAULT_HALF_LIFE_DAYS)
 }
 
+fn validate_learning_comment_body(raw: &str) -> Result<String, OrbitError> {
+    let body = raw.trim().to_string();
+    if body.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "learning comment body must not be empty".to_string(),
+        ));
+    }
+    let count = body.chars().count();
+    if count > 500 {
+        return Err(OrbitError::InvalidInput(format!(
+            "learning comment body must be at most 500 characters (got {count})"
+        )));
+    }
+    Ok(body)
+}
+
+fn validate_learning_comment_model(raw: &str) -> Result<String, OrbitError> {
+    let model = raw.trim().to_string();
+    if model.is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "learning comment requires a non-empty model".to_string(),
+        ));
+    }
+    Ok(model)
+}
+
+fn validate_comment_files(root: &std::path::Path) -> Result<(), OrbitError> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root).map_err(|err| OrbitError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| OrbitError::Io(err.to_string()))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|err| OrbitError::Io(err.to_string()))?;
+        if !file_type.is_dir() {
+            continue;
+        }
+        let Some(id) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if validate_learning_id(&id).is_err() {
+            continue;
+        }
+        let path = comments_jsonl_path(root, &id);
+        for event in read_comment_events(&path)? {
+            match event {
+                LearningCommentEvent::Create(comment) => {
+                    validate_learning_comment_id(&comment.id)?;
+                    if comment.learning_id != id {
+                        return Err(OrbitError::Store(format!(
+                            "invalid learning comment file {}: comment '{}' belongs to '{}'",
+                            path.display(),
+                            comment.id,
+                            comment.learning_id
+                        )));
+                    }
+                    validate_learning_comment_body(&comment.body)?;
+                    validate_learning_comment_model(&comment.author_model)?;
+                }
+                LearningCommentEvent::Tombstone(tombstone) => {
+                    validate_learning_comment_id(&tombstone.id)?;
+                    if tombstone.learning_id != id {
+                        return Err(OrbitError::Store(format!(
+                            "invalid learning comment file {}: tombstone '{}' belongs to '{}'",
+                            path.display(),
+                            tombstone.id,
+                            tombstone.learning_id
+                        )));
+                    }
+                    if tombstone.op != "delete" {
+                        return Err(OrbitError::Store(format!(
+                            "invalid learning comment file {}: tombstone '{}' has op '{}'",
+                            path.display(),
+                            tombstone.id,
+                            tombstone.op
+                        )));
+                    }
+                    validate_learning_comment_model(&tombstone.deleted_by)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -713,12 +963,13 @@ mod tests {
 
     use chrono::{DateTime, TimeZone, Utc};
     use orbit_common::types::{
-        EvidenceKind, LearningEvidence, LearningScope, LearningStatus, LearningVoteRow,
-        NotFoundKind, OrbitError,
+        EvidenceKind, LearningCommentEvent, LearningCommentTombstone, LearningEvidence,
+        LearningScope, LearningStatus, LearningVoteRow, NotFoundKind, OrbitError,
     };
     use tempfile::{TempDir, tempdir};
 
-    use super::super::layout::votes_jsonl_path;
+    use super::super::layout::{comments_jsonl_path, votes_jsonl_path};
+    use super::super::record::append_jsonl_comment_row;
     use super::super::votes::append_vote_row;
     use super::*;
 
@@ -749,6 +1000,14 @@ mod tests {
             learning_id: id.to_string(),
             voter_model: model.to_string(),
             task_id: task_id.map(str::to_string),
+        }
+    }
+
+    fn comment_params(id: &str, body: &str) -> LearningCommentAddParams {
+        LearningCommentAddParams {
+            learning_id: id.to_string(),
+            body: body.to_string(),
+            author_model: "codex".to_string(),
         }
     }
 
@@ -1631,6 +1890,274 @@ mod tests {
 
         std::fs::write(&votes_path, b"{not-json}\n").expect("write invalid");
         let error = store.reindex_learnings().expect_err("invalid vote line");
+        assert!(matches!(error, OrbitError::Store(message) if message.contains("line 1")));
+    }
+
+    #[test]
+    fn learning_comments_round_trip_and_create_file_lazily() {
+        let dir = tempdir().expect("tempdir");
+        let store = LearningFileStore::new(dir.path().to_path_buf());
+        let learning = store
+            .create_learning(create_params("target", vec![], vec![]))
+            .expect("create");
+        let comments_path = comments_jsonl_path(dir.path(), &learning.id);
+        assert!(!comments_path.exists());
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 17, 12, 0, 0).unwrap();
+        let comment = store
+            .add_learning_comment_at(comment_params(&learning.id, "  useful note  "), now)
+            .expect("comment");
+
+        assert_eq!(comment.id, "C20260517-1");
+        assert_eq!(comment.body, "useful note");
+        assert!(comments_path.exists());
+        let listed = store
+            .list_learning_comments(&learning.id, false)
+            .expect("list");
+        assert_eq!(listed, vec![comment]);
+    }
+
+    #[test]
+    fn learning_comment_validation_rejects_bad_bodies_and_missing_parent_before_file_creation() {
+        let dir = tempdir().expect("tempdir");
+        let store = LearningFileStore::new(dir.path().to_path_buf());
+        let learning = store
+            .create_learning(create_params("target", vec![], vec![]))
+            .expect("create");
+
+        let too_long = "x".repeat(501);
+        for body in ["", "   ", too_long.as_str()] {
+            let error = store
+                .add_learning_comment(comment_params(&learning.id, body))
+                .expect_err("invalid body");
+            assert!(matches!(error, OrbitError::InvalidInput(_)));
+        }
+
+        let missing = "L20260517-404";
+        let error = store
+            .add_learning_comment(comment_params(missing, "valid"))
+            .expect_err("missing parent");
+        assert!(matches!(
+            error,
+            OrbitError::NotFound {
+                kind: NotFoundKind::Learning,
+                ..
+            }
+        ));
+        assert!(!comments_jsonl_path(dir.path(), missing).exists());
+    }
+
+    #[test]
+    fn learning_comment_rejects_superseded_parent_before_append() {
+        let dir = tempdir().expect("tempdir");
+        let store = LearningFileStore::new(dir.path().to_path_buf());
+        let old = store
+            .create_learning(create_params("old", vec![], vec![]))
+            .expect("old");
+        let new = store
+            .create_learning(create_params("new", vec![], vec![]))
+            .expect("new");
+        store
+            .supersede_learning(&old.id, &new.id)
+            .expect("supersede");
+
+        let error = store
+            .add_learning_comment(comment_params(&old.id, "valid"))
+            .expect_err("superseded");
+        assert!(
+            matches!(error, OrbitError::InvalidInput(message) if message.contains("orbit.learning.supersede"))
+        );
+        assert!(!comments_jsonl_path(dir.path(), &old.id).exists());
+    }
+
+    #[test]
+    fn superseding_learning_leaves_comments_on_original_parent_only() {
+        let dir = tempdir().expect("tempdir");
+        let store = LearningFileStore::new(dir.path().to_path_buf());
+        let old = store
+            .create_learning(create_params("old", vec![], vec![]))
+            .expect("old");
+        let new = store
+            .create_learning(create_params("new", vec![], vec![]))
+            .expect("new");
+        let comment = store
+            .add_learning_comment(comment_params(&old.id, "old note"))
+            .expect("comment");
+
+        store
+            .supersede_learning(&old.id, &new.id)
+            .expect("supersede");
+
+        assert!(comments_jsonl_path(dir.path(), &old.id).exists());
+        assert_eq!(
+            store
+                .list_learning_comments(&old.id, false)
+                .expect("old comments"),
+            vec![comment]
+        );
+        assert!(
+            store
+                .list_learning_comments(&new.id, false)
+                .expect("new comments")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn learning_comment_delete_is_tombstone_idempotent_and_include_deleted_restores() {
+        let dir = tempdir().expect("tempdir");
+        let store = LearningFileStore::new(dir.path().to_path_buf());
+        let learning = store
+            .create_learning(create_params("target", vec![], vec![]))
+            .expect("create");
+        let comment = store
+            .add_learning_comment_at(
+                comment_params(&learning.id, "delete me"),
+                Utc.with_ymd_and_hms(2026, 5, 17, 12, 0, 0).unwrap(),
+            )
+            .expect("comment");
+        let path = comments_jsonl_path(dir.path(), &learning.id);
+
+        store
+            .delete_learning_comment(LearningCommentDeleteParams {
+                comment_id: comment.id.clone(),
+                deleted_by: "codex".to_string(),
+            })
+            .expect("delete");
+        store
+            .delete_learning_comment(LearningCommentDeleteParams {
+                comment_id: comment.id.clone(),
+                deleted_by: "codex".to_string(),
+            })
+            .expect("delete again");
+
+        assert!(
+            store
+                .list_learning_comments(&learning.id, false)
+                .expect("list active")
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .list_learning_comments(&learning.id, true)
+                .expect("list deleted"),
+            vec![comment]
+        );
+        assert_eq!(line_count(&path), 2);
+    }
+
+    #[test]
+    fn tombstone_before_create_suppresses_comment_on_read() {
+        let dir = tempdir().expect("tempdir");
+        let store = LearningFileStore::new(dir.path().to_path_buf());
+        let learning = store
+            .create_learning(create_params("target", vec![], vec![]))
+            .expect("create");
+        let path = comments_jsonl_path(dir.path(), &learning.id);
+        let ts = Utc.with_ymd_and_hms(2026, 5, 17, 12, 0, 0).unwrap();
+        append_jsonl_comment_row(
+            &path,
+            &LearningCommentEvent::Tombstone(LearningCommentTombstone {
+                id: "C20260517-1".to_string(),
+                learning_id: learning.id.clone(),
+                op: "delete".to_string(),
+                deleted_at: ts,
+                deleted_by: "codex".to_string(),
+            }),
+        )
+        .expect("append tombstone");
+        append_jsonl_comment_row(
+            &path,
+            &LearningCommentEvent::Create(orbit_common::types::LearningComment {
+                id: "C20260517-1".to_string(),
+                learning_id: learning.id.clone(),
+                body: "late create".to_string(),
+                author_model: "codex".to_string(),
+                created_at: ts,
+            }),
+        )
+        .expect("append create");
+
+        assert!(
+            store
+                .list_learning_comments(&learning.id, true)
+                .expect("list")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn concurrent_learning_comment_adds_persist_complete_lines() {
+        let dir = tempdir().expect("tempdir");
+        let store = Arc::new(LearningFileStore::new(dir.path().to_path_buf()));
+        let learning = store
+            .create_learning(create_params("target", vec![], vec![]))
+            .expect("create");
+        let mut handles = Vec::new();
+        for idx in 0..16 {
+            let store = Arc::clone(&store);
+            let learning_id = learning.id.clone();
+            handles.push(thread::spawn(move || {
+                store
+                    .add_learning_comment(comment_params(&learning_id, &format!("comment {idx}")))
+                    .expect("add comment")
+            }));
+        }
+        let comments: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("join"))
+            .collect();
+        let path = comments_jsonl_path(dir.path(), &learning.id);
+        let raw = std::fs::read_to_string(&path).expect("read comments");
+
+        assert_eq!(comments.len(), 16);
+        assert_eq!(raw.lines().count(), 16);
+        for line in raw.lines() {
+            let value: serde_json::Value = serde_json::from_str(line).expect("line json");
+            assert!(
+                value
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+            );
+        }
+        let listed = store
+            .list_learning_comments(&learning.id, false)
+            .expect("list");
+        assert_eq!(listed.len(), 16);
+    }
+
+    #[test]
+    fn reindex_validates_comments_and_external_valid_lines_are_visible() {
+        let (dir, store) = store_with_index();
+        let learning = store
+            .create_learning(create_params("target", vec![], vec![]))
+            .expect("create");
+        let path = comments_jsonl_path(dir.path(), &learning.id);
+        let ts = Utc.with_ymd_and_hms(2026, 5, 17, 12, 0, 0).unwrap();
+        append_jsonl_comment_row(
+            &path,
+            &LearningCommentEvent::Create(orbit_common::types::LearningComment {
+                id: "C20260517-1".to_string(),
+                learning_id: learning.id.clone(),
+                body: "external note".to_string(),
+                author_model: "codex".to_string(),
+                created_at: ts,
+            }),
+        )
+        .expect("append external");
+
+        store.reindex_learnings().expect("reindex");
+        assert_eq!(
+            store
+                .list_learning_comments(&learning.id, false)
+                .expect("list")[0]
+                .body,
+            "external note"
+        );
+
+        std::fs::write(&path, b"{not-json}\n").expect("write invalid");
+        let error = store.reindex_learnings().expect_err("invalid comment line");
         assert!(matches!(error, OrbitError::Store(message) if message.contains("line 1")));
     }
 

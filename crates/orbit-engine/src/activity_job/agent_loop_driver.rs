@@ -719,6 +719,7 @@ mod tests {
             reminders: vec![LearningReminder {
                 id: "L20260515-0001".to_string(),
                 summary: "Remember to validate the output.".to_string(),
+                comments: Vec::new(),
             }],
         };
         let mut session = Session::new("replay", "test-model", "test", None);
@@ -781,6 +782,7 @@ baseline prompt"
                 .map(|idx| LearningReminder {
                     id: format!("L20260515-{idx:04}"),
                     summary: format!("Learning {idx}"),
+                    comments: Vec::new(),
                 })
                 .collect(),
         };

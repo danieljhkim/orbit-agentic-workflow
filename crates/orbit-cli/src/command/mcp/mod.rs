@@ -75,11 +75,15 @@ pub(crate) const SEMANTIC_READ_TOOL_NAMES: &[&str] =
 
 pub(crate) const LEARNING_TOOL_NAMES: &[&str] = &[
     "orbit.learning.add",
+    "orbit.learning.comment.add",
+    "orbit.learning.comment.delete",
+    "orbit.learning.comment.list",
     "orbit.learning.list",
     "orbit.learning.search",
     "orbit.learning.show",
     "orbit.learning.update",
     "orbit.learning.supersede",
+    "orbit.learning.upvote",
     "orbit.learning.prune",
     "orbit.learning.reindex",
 ];

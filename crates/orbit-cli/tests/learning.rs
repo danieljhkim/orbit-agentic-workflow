@@ -116,6 +116,167 @@ fn cli_upvote_without_task_rejects_free_floating_vote_policy() {
 }
 
 #[test]
+fn cli_learning_comment_add_list_delete_round_trips_with_tombstone() {
+    let workspace = TestWorkspace::new();
+    let added = workspace.add_learning("rule one", &["foo/**"], &["perf"]);
+    let id = added["id"].as_str().expect("id");
+    let comments_path = workspace
+        .work
+        .join(".orbit/learnings")
+        .join(id)
+        .join("comments.jsonl");
+    assert!(!comments_path.exists());
+
+    let comment = workspace.run_json(
+        &[
+            "learning",
+            "comment",
+            "add",
+            "--learning-id",
+            id,
+            "--body",
+            "  keep this nearby  ",
+            "--model",
+            "claude",
+            "--json",
+        ],
+        "add comment",
+    );
+    let comment_id = comment["id"].as_str().expect("comment id");
+    assert_eq!(comment["learning_id"], id);
+    assert!(comment_id.starts_with('C'));
+
+    assert_eq!(
+        fs::read_to_string(&comments_path).unwrap().lines().count(),
+        1
+    );
+
+    let listed = workspace.run_json(
+        &["learning", "comment", "list", "--learning-id", id, "--json"],
+        "list comments",
+    );
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["id"], comment_id);
+    assert_eq!(listed[0]["body"], "keep this nearby");
+
+    workspace.run(
+        &[
+            "learning", "comment", "delete", "--id", comment_id, "--json",
+        ],
+        None,
+        "delete comment",
+    );
+    workspace.run(
+        &[
+            "learning", "comment", "delete", "--id", comment_id, "--json",
+        ],
+        None,
+        "delete comment again",
+    );
+
+    let active = workspace.run_json(
+        &["learning", "comment", "list", "--learning-id", id, "--json"],
+        "list active comments",
+    );
+    assert!(active.as_array().unwrap().is_empty());
+    let deleted = workspace.run_json(
+        &[
+            "learning",
+            "comment",
+            "list",
+            "--learning-id",
+            id,
+            "--include-deleted",
+            "--json",
+        ],
+        "list deleted comments",
+    );
+    assert_eq!(deleted.as_array().unwrap().len(), 1);
+    assert_eq!(
+        fs::read_to_string(&comments_path).unwrap().lines().count(),
+        2
+    );
+}
+
+#[test]
+fn cli_learning_comment_rejects_missing_and_superseded_parents_without_creating_file() {
+    let workspace = TestWorkspace::new();
+    let output = run_orbit(
+        &workspace.work,
+        &workspace.home,
+        &[
+            "learning",
+            "comment",
+            "add",
+            "--learning-id",
+            "L20260517-404",
+            "--body",
+            "valid",
+            "--model",
+            "claude",
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("learning not found"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !workspace
+            .work
+            .join(".orbit/learnings/L20260517-404/comments.jsonl")
+            .exists()
+    );
+
+    let old = workspace.add_learning("old", &["old/**"], &[]);
+    let new = workspace.add_learning("new", &["new/**"], &[]);
+    workspace.run(
+        &[
+            "learning",
+            "supersede",
+            old["id"].as_str().unwrap(),
+            "--with",
+            new["id"].as_str().unwrap(),
+            "--json",
+        ],
+        None,
+        "supersede",
+    );
+    let output = run_orbit(
+        &workspace.work,
+        &workspace.home,
+        &[
+            "learning",
+            "comment",
+            "add",
+            "--learning-id",
+            old["id"].as_str().unwrap(),
+            "--body",
+            "valid",
+            "--model",
+            "claude",
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("orbit.learning.supersede"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !workspace
+            .work
+            .join(".orbit/learnings")
+            .join(old["id"].as_str().unwrap())
+            .join("comments.jsonl")
+            .exists()
+    );
+}
+
+#[test]
 fn cli_search_returns_matched_by_annotation_array() {
     let workspace = TestWorkspace::new();
     workspace.add_learning("path scope", &["foo/**"], &[]);

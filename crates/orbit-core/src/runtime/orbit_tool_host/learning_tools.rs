@@ -21,8 +21,8 @@ use crate::OrbitRuntime;
 
 use super::input::optional_bool_alias;
 use super::json::{
-    learning_search_result_to_json, learning_show_to_json, learning_to_json,
-    learning_vote_summary_to_json,
+    learning_comment_to_json, learning_search_result_to_json, learning_show_to_json,
+    learning_to_json, learning_vote_summary_to_json,
 };
 
 pub(super) fn add(
@@ -128,6 +128,48 @@ pub(super) fn upvote(
         task_id,
     })?;
     Ok(learning_vote_summary_to_json(&summary))
+}
+
+pub(super) fn comment_add(
+    runtime: &OrbitRuntime,
+    input: Value,
+    _agent: Option<String>,
+    model: Option<String>,
+) -> Result<Value, OrbitError> {
+    let learning_id = required_string(&input, &["learning_id", "learningId", "id"], "learning_id")?;
+    let body = required_string(&input, &["body"], "body")?;
+    let author_model = optional_string(&input, "model")?.or(model).ok_or_else(|| {
+        OrbitError::InvalidInput("learning comment add requires `model`".to_string())
+    })?;
+    let comment = runtime.add_learning_comment(learning_id, body, author_model)?;
+    Ok(json!({
+        "id": comment.id,
+        "learning_id": comment.learning_id,
+        "created_at": comment.created_at.to_rfc3339(),
+    }))
+}
+
+pub(super) fn comment_list(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitError> {
+    let learning_id = required_string(&input, &["learning_id", "learningId", "id"], "learning_id")?;
+    let include_deleted =
+        optional_bool_alias(&input, &["include_deleted", "includeDeleted"])?.unwrap_or(false);
+    let comments = runtime.list_learning_comments(&learning_id, include_deleted)?;
+    Ok(Value::Array(
+        comments.iter().map(learning_comment_to_json).collect(),
+    ))
+}
+
+pub(super) fn comment_delete(
+    runtime: &OrbitRuntime,
+    input: Value,
+    _agent: Option<String>,
+    model: Option<String>,
+) -> Result<Value, OrbitError> {
+    let id = required_string(&input, &["id"], "id")?;
+    let deleted_by =
+        optional_string_alias(&input, &["deleted_by", "deletedBy", "model"])?.or(model);
+    runtime.delete_learning_comment(id.clone(), deleted_by)?;
+    Ok(json!({ "id": id, "deleted": true }))
 }
 
 pub(super) fn update(

@@ -4,6 +4,7 @@ use orbit_core::{OrbitError, OrbitRuntime};
 use crate::command::Execute;
 
 use super::add::LearningAddArgs;
+use super::comment::LearningCommentCommand;
 use super::list::LearningListArgs;
 use super::migrate_layout::LearningMigrateLayoutArgs;
 use super::prune::LearningPruneArgs;
@@ -31,6 +32,8 @@ impl Execute for LearningCommand {
 pub enum LearningSubcommand {
     /// Create a new active learning
     Add(LearningAddArgs),
+    /// Add, list, or delete comments anchored to a learning
+    Comment(LearningCommentCommand),
     /// List learnings filtered by status, tag, or path
     List(LearningListArgs),
     /// Search active learnings by path glob OR tag OR substring
@@ -55,6 +58,7 @@ impl Execute for LearningSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
             LearningSubcommand::Add(args) => args.execute(runtime),
+            LearningSubcommand::Comment(args) => args.execute(runtime),
             LearningSubcommand::List(args) => args.execute(runtime),
             LearningSubcommand::Search(args) => args.execute(runtime),
             LearningSubcommand::Show(args) => args.execute(runtime),

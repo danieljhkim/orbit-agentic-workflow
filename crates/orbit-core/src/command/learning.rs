@@ -7,13 +7,16 @@
 
 use std::path::{Path, PathBuf};
 
-use orbit_common::types::{EvidenceKind, Learning, LearningStatus, NotFoundKind, OrbitError};
+use orbit_common::types::{
+    EvidenceKind, Learning, LearningComment, LearningStatus, NotFoundKind, OrbitError,
+};
 use orbit_common::types::{
     LearningVoteSummary, all_agent_families, normalize_agent_family_for_model,
 };
 use orbit_store::{
-    LearningCreateParams, LearningSearchParams, LearningSearchResult, LearningUpdateParams,
-    LearningUpvoteParams, learning_layout::LearningLayoutMigrationReport,
+    LearningCommentAddParams, LearningCommentDeleteParams, LearningCreateParams,
+    LearningSearchParams, LearningSearchResult, LearningUpdateParams, LearningUpvoteParams,
+    learning_layout::LearningLayoutMigrationReport,
 };
 
 use crate::OrbitRuntime;
@@ -58,6 +61,49 @@ impl OrbitRuntime {
 
     pub fn learning_vote_summary(&self, id: &str) -> Result<LearningVoteSummary, OrbitError> {
         self.stores().learnings().vote_summary(id)
+    }
+
+    pub fn add_learning_comment(
+        &self,
+        learning_id: String,
+        body: String,
+        model: String,
+    ) -> Result<LearningComment, OrbitError> {
+        let author_model = normalize_learning_agent_model(&model)?;
+        self.stores()
+            .learnings()
+            .add_comment(LearningCommentAddParams {
+                learning_id,
+                body,
+                author_model,
+            })
+    }
+
+    pub fn list_learning_comments(
+        &self,
+        learning_id: &str,
+        include_deleted: bool,
+    ) -> Result<Vec<LearningComment>, OrbitError> {
+        self.stores()
+            .learnings()
+            .list_comments(learning_id, include_deleted)
+    }
+
+    pub fn delete_learning_comment(
+        &self,
+        comment_id: String,
+        deleted_by: Option<String>,
+    ) -> Result<(), OrbitError> {
+        let deleted_by = match deleted_by {
+            Some(model) => normalize_learning_agent_model(&model)?,
+            None => "unknown".to_string(),
+        };
+        self.stores()
+            .learnings()
+            .delete_comment(LearningCommentDeleteParams {
+                comment_id,
+                deleted_by,
+            })
     }
 
     pub fn update_learning(
@@ -229,10 +275,14 @@ fn normalize_learning_search_path(repo_root: &Path, path: &str) -> Result<String
 }
 
 fn normalize_learning_voter_model(raw: &str) -> Result<String, OrbitError> {
+    normalize_learning_agent_model(raw)
+}
+
+fn normalize_learning_agent_model(raw: &str) -> Result<String, OrbitError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(OrbitError::InvalidInput(
-            "learning upvote requires a non-empty model".to_string(),
+            "learning action requires a non-empty model".to_string(),
         ));
     }
     if let Some(family) = normalize_agent_family_for_model(None, Some(trimmed))? {
