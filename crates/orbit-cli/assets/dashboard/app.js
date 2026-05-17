@@ -341,6 +341,23 @@ function syncNodes(container, newNodesArr) {
   }
 }
 
+function renderBodyBlock(body, fallbackClass) {
+  if (!body || !body.trim()) return null;
+  const isMarked = typeof marked !== "undefined";
+  const view = el(isMarked ? "div" : "pre", {
+    class: isMarked ? "markdown-body" : fallbackClass,
+  });
+  if (isMarked) {
+    view.innerHTML = marked.parse(body);
+  } else {
+    view.textContent = body;
+  }
+  return el("div", { class: "field-block" }, [
+    el("h4", { text: "body" }),
+    view,
+  ]);
+}
+
 function filterTasks(tasks) {
   const q = searchQuery;
   return tasks.filter((t) => {
@@ -1766,10 +1783,7 @@ function renderLearningDetail(learning) {
     el("div", { class: "learning-detail-scope" }, learningScopeNodes(learning)),
   ]);
 
-  const bodyBlock = el("div", { class: "field-block" }, [
-    el("h4", { text: "body" }),
-    el("pre", { class: "learning-detail-body", text: learning.body || "" }),
-  ]);
+  const bodyBlock = renderBodyBlock(learning.body, "learning-detail-body");
 
   const actions = el("div", { class: "actions" });
   const supersede = el("button", {
@@ -1785,7 +1799,10 @@ function renderLearningDetail(learning) {
   });
   actions.appendChild(supersede);
 
-  syncNodes(detail, [title, meta, scopeBlock, bodyBlock, actions]);
+  const nodes = [title, meta, scopeBlock];
+  if (bodyBlock) nodes.push(bodyBlock);
+  nodes.push(actions);
+  syncNodes(detail, nodes);
 }
 
 async function supersedeLearning(learning, by, btn, detail) {
@@ -2179,10 +2196,7 @@ function renderAdrDetail(adr) {
       ...(adr.superseded_by ? [`superseded_by ${adr.superseded_by}`] : []),
     ]),
   ]);
-  const bodyBlock = el("div", { class: "field-block" }, [
-    el("h4", { text: "body" }),
-    el("pre", { class: "adr-detail-body", text: adr.body || "" }),
-  ]);
+  const bodyBlock = renderBodyBlock(adr.body, "adr-detail-body");
 
   const actions = el("div", { class: "actions" });
   if (adr.status === "proposed") {
@@ -2208,7 +2222,8 @@ function renderAdrDetail(adr) {
     actions.appendChild(supersede);
   }
 
-  const nodes = [title, meta, featuresBlock, tasksBlock, edgesBlock, bodyBlock];
+  const nodes = [title, meta, featuresBlock, tasksBlock, edgesBlock];
+  if (bodyBlock) nodes.push(bodyBlock);
   if (actions.children.length > 0) nodes.push(actions);
   syncNodes(detail, nodes);
 }
