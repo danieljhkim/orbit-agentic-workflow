@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use orbit_agent::loop_engine::audit::AuditSink;
-use orbit_common::types::activity_job::V2AuditEventKind;
+use orbit_common::types::activity_job::{AgentRole, V2AuditEventKind};
 use tempfile::tempdir;
 
+use super::super::super::agent_role::{apply_resolved_settings, resolve_agent_settings};
 use super::super::super::audit_writer::V2AuditWriter;
 use super::super::super::dispatcher::DispatchError;
 use super::super::run_cli_backend;
@@ -546,5 +547,138 @@ fn run_cli_backend_keeps_success_when_envelope_reports_success() {
     assert!(
         outcome.success,
         "envelope status=success must keep dispatch success on exit 0"
+    );
+}
+
+/// Crew-driven regression test for ORB-00080 AC #15: `opus-codex` crew must
+/// produce `--model claude-opus-4-7` for planner and `--model gpt-5.5` for
+/// implementer (identity attribution stays family; no leakage of family name
+/// into the --model flag that reaches the CLI).
+#[test]
+fn crew_opus_codex_drives_exact_models_to_planner_and_implementer() {
+    let temp = tempdir().expect("tempdir");
+    let claude_script = temp.path().join("claude");
+    let codex_script = temp.path().join("codex");
+    write_executable(
+        &claude_script,
+        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\"}\\n'\n",
+    );
+    write_executable(
+        &codex_script,
+        "#!/bin/sh\nprintf '{\"schemaVersion\":1,\"status\":\"success\"}\\n'\n",
+    );
+
+    // planner leg via opus-codex crew
+    let sink_for_writer_p: Arc<dyn AuditSink> = Arc::new(RecordingSink::default());
+    let audit_p = Arc::new(V2AuditWriter::new(
+        "job-crew-planner",
+        "claude:claude-opus-4-7",
+        sink_for_writer_p,
+    ));
+    let host_p = TestHost::with_command(claude_script.display().to_string());
+    let mut spec_p = test_agent_loop_spec_for("claude", Duration::from_secs(5));
+    spec_p.role = Some(AgentRole::Planner);
+    let input_p = serde_json::json!({
+        "prompt": "draft plan",
+        "crew": "opus-codex",
+        "task_id": "T-crew"
+    });
+    let resolved_p = resolve_agent_settings(AgentRole::Planner, &host_p, &spec_p, &input_p);
+    assert_eq!(resolved_p.model.as_deref(), Some("claude-opus-4-7"));
+    let mut spec_p_run = spec_p.clone();
+    apply_resolved_settings(&mut spec_p_run, &resolved_p);
+    let _ = run_cli_backend(
+        &host_p,
+        &spec_p_run,
+        "job-crew-planner",
+        audit_p.clone(),
+        &input_p,
+        None,
+    )
+    .expect("planner cli run");
+
+    let events_p = audit_p.events_snapshot().expect("planner events");
+    let argv_p = events_p
+        .iter()
+        .find_map(|e| match &e.kind {
+            V2AuditEventKind::CliInvocationStarted {
+                argv_redacted,
+                provider,
+                ..
+            } => {
+                assert_eq!(
+                    provider, "claude",
+                    "identity attribution must be claude family"
+                );
+                Some(argv_redacted.clone())
+            }
+            _ => None,
+        })
+        .expect("planner started event");
+    let model_idx_p = argv_p
+        .iter()
+        .position(|a| a == "--model")
+        .expect("planner argv has --model");
+    assert_eq!(
+        argv_p.get(model_idx_p + 1).map(String::as_str),
+        Some("claude-opus-4-7"),
+        "planner --model must be exact claude-opus-4-7, not family"
+    );
+
+    // implementer leg via same crew
+    let sink_for_writer_i: Arc<dyn AuditSink> = Arc::new(RecordingSink::default());
+    let audit_i = Arc::new(V2AuditWriter::new(
+        "job-crew-impl",
+        "codex:gpt-5.5",
+        sink_for_writer_i,
+    ));
+    let host_i = TestHost::with_command(codex_script.display().to_string());
+    let mut spec_i = test_agent_loop_spec_for("codex", Duration::from_secs(5));
+    spec_i.role = Some(AgentRole::Implementer);
+    let input_i = serde_json::json!({
+        "prompt": "implement",
+        "crew": "opus-codex",
+        "task_id": "T-crew"
+    });
+    let resolved_i = resolve_agent_settings(AgentRole::Implementer, &host_i, &spec_i, &input_i);
+    assert_eq!(resolved_i.model.as_deref(), Some("gpt-5.5"));
+    let mut spec_i_run = spec_i.clone();
+    apply_resolved_settings(&mut spec_i_run, &resolved_i);
+    let _ = run_cli_backend(
+        &host_i,
+        &spec_i_run,
+        "job-crew-impl",
+        audit_i.clone(),
+        &input_i,
+        None,
+    )
+    .expect("implementer cli run");
+
+    let events_i = audit_i.events_snapshot().expect("impl events");
+    let argv_i = events_i
+        .iter()
+        .find_map(|e| match &e.kind {
+            V2AuditEventKind::CliInvocationStarted {
+                argv_redacted,
+                provider,
+                ..
+            } => {
+                assert_eq!(
+                    provider, "codex",
+                    "identity attribution must be codex family"
+                );
+                Some(argv_redacted.clone())
+            }
+            _ => None,
+        })
+        .expect("impl started event");
+    let model_idx_i = argv_i
+        .iter()
+        .position(|a| a == "--model")
+        .expect("impl argv has --model");
+    assert_eq!(
+        argv_i.get(model_idx_i + 1).map(String::as_str),
+        Some("gpt-5.5"),
+        "implementer --model must be exact gpt-5.5, not family"
     );
 }
