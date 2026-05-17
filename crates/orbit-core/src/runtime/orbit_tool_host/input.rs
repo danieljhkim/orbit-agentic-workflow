@@ -161,6 +161,7 @@ fn parse_artifact_array_entry(item: &Value) -> Result<TaskArtifact, OrbitError> 
         path: path.to_string(),
         content,
         media_type,
+        created_by: None,
     })
 }
 

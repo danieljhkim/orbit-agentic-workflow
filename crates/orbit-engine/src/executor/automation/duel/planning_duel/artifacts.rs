@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use orbit_common::types::{
     AgentFamily, OrbitError, OrbitEvent, PlanningRoleAssignment, PlanningRoles, Role, RoleSlot,
-    TaskArtifact, TaskComment,
+    TaskArtifact, TaskComment, infer_agent_family_from_model,
 };
 use orbit_tools::ToolContext;
 use serde_json::{Value, json};
@@ -32,26 +32,27 @@ pub(super) struct PlanningDuelSignature {
     pub slot: RoleSlot,
 }
 
+fn first_non_empty_line(content: &str) -> Option<&str> {
+    content.lines().map(str::trim).find(|line| !line.is_empty())
+}
+
 pub(super) fn parse_planning_duel_signature(
     content: &str,
 ) -> Result<PlanningDuelSignature, OrbitError> {
-    let first_line = content
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "planning duel artifact must start with an authored-by signature line".to_string(),
-            )
-        })?;
+    let first_line = first_non_empty_line(content).ok_or_else(|| {
+        OrbitError::InvalidInput(
+            "planning duel artifact must start with an authored-by signature line".to_string(),
+        )
+    })?;
     let signature = first_line
         .strip_prefix(AUTHOR_SIGNATURE_PREFIX)
         .and_then(|value| value.strip_suffix('*'))
         .ok_or_else(|| {
-            OrbitError::InvalidInput(format!(
-                "planning duel artifact signature must match `{AUTHOR_SIGNATURE_PREFIX}<family> / <slot>*`"
-            ))
+            OrbitError::InvalidInput(
+                format!(
+                    "planning duel artifact signature must match `{AUTHOR_SIGNATURE_PREFIX}<family> / <slot>*`"
+                ),
+            )
         })?;
     let (family, slot) = signature
         .split_once(AUTHOR_SIGNATURE_SEPARATOR)
@@ -74,16 +75,11 @@ pub(super) fn parse_planning_duel_signature(
 fn parse_legacy_planning_duel_signature(
     content: &str,
 ) -> Result<PlanningRoleAssignment, OrbitError> {
-    let first_line = content
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .ok_or_else(|| {
-            OrbitError::InvalidInput(
-                "planning duel artifact must start with an authored-by signature line".to_string(),
-            )
-        })?;
+    let first_line = first_non_empty_line(content).ok_or_else(|| {
+        OrbitError::InvalidInput(
+            "planning duel artifact must start with an authored-by signature line".to_string(),
+        )
+    })?;
     let signature = first_line
         .strip_prefix(AUTHOR_SIGNATURE_PREFIX)
         .and_then(|value| value.strip_suffix('*'))
@@ -92,13 +88,18 @@ fn parse_legacy_planning_duel_signature(
                 "legacy planning duel artifact signature is malformed".to_string(),
             )
         })?;
-    let (agent, _) = signature
+    let (agent, model) = signature
         .split_once(AUTHOR_SIGNATURE_SEPARATOR)
         .ok_or_else(|| {
             OrbitError::InvalidInput(
                 "legacy planning duel artifact signature must contain agent and model".to_string(),
             )
         })?;
+    if agent.trim().is_empty() || model.trim().is_empty() {
+        return Err(OrbitError::InvalidInput(
+            "legacy planning duel artifact signature must include both agent and model".to_string(),
+        ));
+    }
     Ok(PlanningRoleAssignment {
         family: agent.trim().parse()?,
     })
@@ -109,6 +110,68 @@ fn role_slot_from_artifact_path(path: &str) -> Option<RoleSlot> {
         .strip_prefix(PLANNING_DUEL_ARTIFACT_PREFIX)?
         .strip_suffix(PLANNING_DUEL_PLAN_EXTENSION)?;
     name.parse().ok()
+}
+
+fn artifact_invalid_input(path: &str, message: impl Into<String>) -> OrbitError {
+    OrbitError::InvalidInput(format!(
+        "planning duel artifact '{path}': {}",
+        message.into()
+    ))
+}
+
+fn artifact_parse_error(path: &str, error: OrbitError) -> OrbitError {
+    match error {
+        OrbitError::InvalidInput(message) => artifact_invalid_input(path, message),
+        other => other,
+    }
+}
+
+fn family_from_created_by_metadata(artifact: &TaskArtifact) -> Result<AgentFamily, OrbitError> {
+    let created_by = artifact
+        .created_by
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            artifact_invalid_input(
+                &artifact.path,
+                "missing trusted metadata field `created_by`",
+            )
+        })?;
+
+    if let Ok(family) = created_by.parse() {
+        return Ok(family);
+    }
+
+    if let Some(family) = infer_agent_family_from_model(created_by) {
+        return family
+            .parse()
+            .map_err(|error| artifact_parse_error(&artifact.path, error));
+    }
+
+    if let Some((family, _)) = created_by.split_once(':')
+        && let Ok(family) = family.parse()
+    {
+        return Ok(family);
+    }
+
+    Err(artifact_invalid_input(
+        &artifact.path,
+        format!("unusable trusted metadata field `created_by`: `{created_by}`"),
+    ))
+}
+
+fn planning_duel_identity_from_metadata(
+    artifact: &TaskArtifact,
+) -> Result<(PlanningRoleAssignment, Option<RoleSlot>), OrbitError> {
+    let slot = role_slot_from_artifact_path(&artifact.path).ok_or_else(|| {
+        artifact_invalid_input(
+            &artifact.path,
+            "cannot derive planning duel slot from artifact path",
+        )
+    })?;
+    let family = family_from_created_by_metadata(artifact)?;
+    Ok((PlanningRoleAssignment { family }, Some(slot)))
 }
 
 pub(super) fn planning_duel_plan_artifacts(
@@ -135,10 +198,16 @@ pub(super) fn planning_duel_plan_artifacts(
                     },
                     Some(signature.slot),
                 ),
-                Err(_) => (
-                    parse_legacy_planning_duel_signature(content)?,
-                    role_slot_from_artifact_path(&artifact.path),
-                ),
+                Err(error)
+                    if first_non_empty_line(content)
+                        .is_some_and(|line| line.starts_with(AUTHOR_SIGNATURE_PREFIX)) =>
+                {
+                    match parse_legacy_planning_duel_signature(content) {
+                        Ok(author) => (author, role_slot_from_artifact_path(&artifact.path)),
+                        Err(_) => return Err(artifact_parse_error(&artifact.path, error)),
+                    }
+                }
+                Err(_) => planning_duel_identity_from_metadata(artifact)?,
             };
             Ok(PlanningDuelPlanArtifact {
                 path: artifact.path.clone(),
@@ -603,6 +672,12 @@ mod tests {
         TaskArtifact::from_text(path, content)
     }
 
+    fn task_artifact_created_by(path: &str, content: &str, created_by: &str) -> TaskArtifact {
+        let mut artifact = TaskArtifact::from_text(path, content);
+        artifact.created_by = Some(created_by.to_string());
+        artifact
+    }
+
     fn plan_artifact(path: &str, family: &str, slot: &str) -> TaskArtifact {
         task_artifact(
             path,
@@ -653,6 +728,134 @@ mod tests {
         assert!(parse_planning_duel_signature("*authored by: gemini*\n").is_err());
         assert!(parse_planning_duel_signature("*authored by: / planner_a*\n").is_err());
         assert!(parse_planning_duel_signature("*authored by: pro / planner_a*\n").is_err());
+    }
+
+    #[test]
+    fn planning_duel_plan_artifact_derives_planner_a_identity_from_metadata() {
+        let artifacts = planning_duel_plan_artifacts(&[task_artifact_created_by(
+            "planning-duel/planner_a.md",
+            "## Plan\nGrok authored this plan without a signature.\n",
+            "grok",
+        )])
+        .expect("metadata fallback should parse");
+
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].author.family, AgentFamily::Grok);
+        assert_eq!(artifacts[0].slot, Some(RoleSlot::PlannerA));
+    }
+
+    #[test]
+    fn planning_duel_plan_artifacts_derives_both_planner_slots_from_path_and_metadata() {
+        let artifacts = planning_duel_plan_artifacts(&[
+            task_artifact_created_by(
+                "planning-duel/planner_a.md",
+                "## Plan\nPlanner A body.\n",
+                "grok",
+            ),
+            task_artifact_created_by(
+                "planning-duel/planner_b.md",
+                "## Plan\nPlanner B body.\n",
+                "codex",
+            ),
+        ])
+        .expect("metadata fallback should parse both planners");
+
+        assert_eq!(artifacts.len(), 2);
+        assert_eq!(artifacts[0].path, "planning-duel/planner_a.md");
+        assert_eq!(artifacts[0].author.family, AgentFamily::Grok);
+        assert_eq!(artifacts[0].slot, Some(RoleSlot::PlannerA));
+        assert_eq!(artifacts[1].path, "planning-duel/planner_b.md");
+        assert_eq!(artifacts[1].author.family, AgentFamily::Codex);
+        assert_eq!(artifacts[1].slot, Some(RoleSlot::PlannerB));
+    }
+
+    #[test]
+    fn planning_duel_plan_artifacts_preserves_current_and_legacy_signatures() {
+        let artifacts = planning_duel_plan_artifacts(&[
+            plan_artifact("planning-duel/planner_a.md", "gemini", "planner_a"),
+            task_artifact(
+                "planning-duel/planner_b.md",
+                "*authored by: claude / claude-opus-4-7*\n## Plan\nLegacy shape.\n".to_string(),
+            ),
+        ])
+        .expect("current and legacy signatures should parse");
+
+        assert_eq!(artifacts[0].author.family, AgentFamily::Gemini);
+        assert_eq!(artifacts[0].slot, Some(RoleSlot::PlannerA));
+        assert_eq!(artifacts[1].author.family, AgentFamily::Claude);
+        assert_eq!(artifacts[1].slot, Some(RoleSlot::PlannerB));
+    }
+
+    #[test]
+    fn planning_duel_plan_artifacts_rejects_malformed_authored_by_line_with_path() {
+        let message = invalid_input_message(
+            planning_duel_plan_artifacts(&[task_artifact_created_by(
+                "planning-duel/planner_a.md",
+                "*authored by: grok / *\n## Plan\nMalformed explicit signature.\n",
+                "grok",
+            )])
+            .expect_err("malformed authored-by lines must not fall back to metadata"),
+        );
+
+        assert!(message.contains("planning-duel/planner_a.md"), "{message}");
+        assert!(
+            message.contains("signature must include both family and slot"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn planning_duel_plan_artifacts_requires_usable_created_by_metadata_without_signature() {
+        let missing_message = invalid_input_message(
+            planning_duel_plan_artifacts(&[task_artifact(
+                "planning-duel/planner_a.md",
+                "## Plan\nNo signature and no metadata.\n".to_string(),
+            )])
+            .expect_err("missing created_by should fail"),
+        );
+        assert!(
+            missing_message.contains("planning-duel/planner_a.md"),
+            "{missing_message}"
+        );
+        assert!(
+            missing_message.contains("missing trusted metadata field `created_by`"),
+            "{missing_message}"
+        );
+
+        let unusable_message = invalid_input_message(
+            planning_duel_plan_artifacts(&[task_artifact_created_by(
+                "planning-duel/planner_b.md",
+                "## Plan\nNo signature and unusable metadata.\n",
+                "system",
+            )])
+            .expect_err("unusable created_by should fail"),
+        );
+        assert!(
+            unusable_message.contains("planning-duel/planner_b.md"),
+            "{unusable_message}"
+        );
+        assert!(
+            unusable_message.contains("unusable trusted metadata field `created_by`"),
+            "{unusable_message}"
+        );
+    }
+
+    #[test]
+    fn plan_artifact_for_assignment_accepts_orb_00120_metadata_fallback_shape() {
+        let artifacts = planning_duel_plan_artifacts(&[task_artifact_created_by(
+            "planning-duel/planner_a.md",
+            "## Plan\nGrok plan from ORB-00120 shape.\n",
+            "grok",
+        )])
+        .expect("metadata fallback should parse ORB-00120 shape");
+        let assignment = PlanningRoleAssignment {
+            family: AgentFamily::Grok,
+        };
+
+        let artifact = plan_artifact_for_assignment(&artifacts, &assignment, RoleSlot::PlannerA)
+            .expect("metadata-derived identity should match recorded assignment");
+
+        assert_eq!(artifact.path, "planning-duel/planner_a.md");
     }
 
     #[test]

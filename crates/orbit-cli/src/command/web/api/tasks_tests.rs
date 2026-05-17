@@ -29,6 +29,7 @@ fn seed_task_with_artifact(runtime: &OrbitRuntime) -> orbit_core::Task {
                     path: "subdir/file.json".to_string(),
                     media_type: "application/json".to_string(),
                     content: br#"{"ok":true}"#.to_vec(),
+                    created_by: None,
                 }],
                 ..Default::default()
             },

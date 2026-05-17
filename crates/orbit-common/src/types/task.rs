@@ -378,6 +378,8 @@ pub struct TaskArtifact {
     pub content: Vec<u8>,
     #[serde(default = "default_task_artifact_media_type")]
     pub media_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
 }
 
 impl TaskArtifact {
@@ -388,6 +390,7 @@ impl TaskArtifact {
             media_type: media_type_for_artifact_path(&path).to_string(),
             path,
             content: content.into_bytes(),
+            created_by: None,
         }
     }
 
@@ -435,6 +438,7 @@ impl TaskArtifact {
             media_type: media_type_for_artifact_path(&path).to_string(),
             path,
             content,
+            created_by: None,
         })
     }
 }

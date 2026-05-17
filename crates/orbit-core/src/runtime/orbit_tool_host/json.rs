@@ -264,6 +264,9 @@ pub(super) fn serialize_task_artifacts(artifacts: &[TaskArtifact]) -> Value {
                     "media_type".to_string(),
                     Value::String(artifact.media_type.clone()),
                 );
+                if let Some(created_by) = &artifact.created_by {
+                    object.insert("created_by".to_string(), Value::String(created_by.clone()));
+                }
                 object.insert(
                     "size".to_string(),
                     Value::Number(serde_json::Number::from(artifact.content.len())),

@@ -531,6 +531,7 @@ impl TaskV2Store {
                 path: file.path,
                 media_type: file.media_type,
                 content,
+                created_by: Some(file.created_by),
             });
         }
         artifacts.sort_by(|left, right| left.path.cmp(&right.path));
@@ -588,6 +589,7 @@ impl TaskV2Store {
             path: file.path,
             media_type: file.media_type,
             content,
+            created_by: Some(file.created_by),
         }))
     }
 
