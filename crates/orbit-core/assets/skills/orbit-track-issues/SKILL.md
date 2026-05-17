@@ -55,7 +55,7 @@ orbit tool run orbit.friction.add --input '{
   "body": "<what happened, where, and why it caused friction>",
   "tags": ["<tooling|skill-guidance|docs|lifecycle|build|naming|policy|other>"],
   "during_task": "<optional task id>",
-  "model": "<model_name>" # codex, claude, gemini, grok (full strings accepted)
+  "model": "<family>" # codex | claude | gemini | grok (full model strings are accepted and auto-normalized)
 }'
 ```
 
@@ -66,7 +66,7 @@ orbit_friction_add({
   "body": "<what happened, where, and why it caused friction>",
   "tags": ["<tooling|skill-guidance|docs|lifecycle|build|naming|policy|other>"],
   "during_task": "<optional task id>",
-  "model": "<model_name>"  # codex, claude, gemini, grok (full strings accepted)
+  "model": "<family>"  // codex | claude | gemini | grok
 })
 ```
 
