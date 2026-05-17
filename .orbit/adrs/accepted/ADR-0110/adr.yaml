@@ -1,10 +1,11 @@
 schema_version: 1
 id: ADR-0110
 title: Workspace-scoped, checked into git (not workspace-private state)
-status: proposed
+status: accepted
 owner: legacy:project-learnings
 created_at: 2026-05-11T02:06:39.413866Z
-last_updated: 2026-05-11T02:06:39.414169Z
+accepted_at: 2026-05-17T06:07:29.267069Z
+last_updated: 2026-05-17T06:07:29.267069Z
 related_features:
 - project-learnings
 related_tasks:

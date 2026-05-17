@@ -1,10 +1,11 @@
 schema_version: 1
 id: ADR-0111
 title: Phase-1 scope = path globs + tags, ranked by recency; semantic and symbol-aware deferred
-status: proposed
+status: accepted
 owner: legacy:project-learnings
 created_at: 2026-05-11T02:06:39.414658Z
-last_updated: 2026-05-11T02:06:39.414971Z
+accepted_at: 2026-05-17T06:07:29.352690Z
+last_updated: 2026-05-17T06:07:29.352690Z
 related_features:
 - project-learnings
 related_tasks:

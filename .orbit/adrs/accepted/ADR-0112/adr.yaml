@@ -1,10 +1,11 @@
 schema_version: 1
 id: ADR-0112
 title: Three-layer push pipeline (engine pre-prompt + MCP sidecar + Claude Code hook), not single-layer
-status: proposed
+status: accepted
 owner: legacy:project-learnings
 created_at: 2026-05-11T02:06:39.415495Z
-last_updated: 2026-05-11T02:06:39.415840Z
+accepted_at: 2026-05-17T06:07:29.436411Z
+last_updated: 2026-05-17T06:07:29.436411Z
 related_features:
 - project-learnings
 related_tasks:
