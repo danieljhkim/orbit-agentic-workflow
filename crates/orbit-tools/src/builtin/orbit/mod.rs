@@ -112,19 +112,28 @@ pub(super) fn resolve_identity(
 ) -> Result<OrbitIdentity, OrbitError> {
     let input_agent = optional_string_alias(input, &["agent"])?;
     let input_model = optional_string_alias(input, &["model"])?;
+    let context_agent = trimmed_optional(ctx.agent_name.clone());
+    let context_model = trimmed_optional(ctx.model_name.clone());
+    let context_has_identity = context_agent.is_some() || context_model.is_some();
     let input_has_identity = input_agent
         .as_deref()
         .is_some_and(|value| !value.trim().is_empty())
         || input_model
             .as_deref()
             .is_some_and(|value| !value.trim().is_empty());
-    let (agent, model) = if input_has_identity {
+    let (agent, model) = if context_has_identity {
+        let agent =
+            normalize_agent_family_for_model(context_agent.as_deref(), context_model.as_deref())?;
+        // Runtime-provided identity is authoritative at the tool boundary. If
+        // an agent self-reports a `model` argument, Orbit overwrites it with
+        // the canonical family string so downstream persistence compares
+        // family identity, not unstable model aliases.
+        let model = agent.clone();
+        (agent, model)
+    } else if input_has_identity {
         (trimmed_optional(input_agent), trimmed_optional(input_model))
     } else {
-        (
-            trimmed_optional(ctx.agent_name.clone()),
-            trimmed_optional(ctx.model_name.clone()),
-        )
+        (None, None)
     };
     let agent = normalize_agent_family_for_model(agent.as_deref(), model.as_deref())?;
     let actor_label = build_actor_label(agent.as_deref(), model.as_deref());
@@ -222,6 +231,43 @@ pub(super) fn execute_host_action(
         identity.model,
         ctx.reservation_owner.clone(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn runtime_identity_overwrites_self_reported_model_at_tool_boundary() {
+        let ctx = tool_context("claude", "claude-opus-4-7");
+
+        let identity =
+            resolve_identity(&ctx, &json!({ "model": "opus-4.7" })).expect("identity resolves");
+
+        assert_eq!(identity.agent.as_deref(), Some("claude"));
+        assert_eq!(identity.model.as_deref(), Some("claude"));
+        assert_eq!(identity.actor_label.as_deref(), Some("claude"));
+    }
+
+    fn tool_context(agent: &str, model: &str) -> ToolContext {
+        ToolContext {
+            cwd: None,
+            allowed_tools: Vec::new(),
+            workspace_root: None,
+            agent_name: Some(agent.to_string()),
+            model_name: Some(model.to_string()),
+            role_slot: None,
+            proc_allowed_programs: Vec::new(),
+            policy_engine: None,
+            fs_profile: None,
+            fs_audit: None,
+            reservation_owner: None,
+            orbit_host: None,
+            groundhog_host: None,
+        }
+    }
 }
 
 pub(super) fn task_scope(ctx: &ToolContext) -> OrbitTaskScope {

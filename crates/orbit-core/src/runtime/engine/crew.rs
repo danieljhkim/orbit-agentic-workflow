@@ -120,9 +120,10 @@ impl OrbitRuntime {
 
     /// Resolve a crew/role-model projection for `orbit.task.show` consumers.
     ///
-    /// Audit-trail truth comes first: when the task points at a run record that
+    /// Selection truth comes first: when the task points at a run record that
     /// persisted the resolved crew, those four strings win — they reflect what
-    /// actually ran, even if the workspace registry has been edited since.
+    /// was selected for routing, even if the workspace registry has been edited
+    /// since. "Who actually ran?" projections read invocation records instead.
     ///
     /// Best-effort otherwise: if neither the task nor the workspace can name a
     /// crew, `Ok(None)` so readers (CLI, MCP) can omit the fields instead of

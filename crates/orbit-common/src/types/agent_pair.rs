@@ -14,7 +14,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::OrbitError;
+use super::{AgentFamily, OrbitError};
 
 /// A resolved (orchestrator, helper) duo for a given agent family.
 ///
@@ -92,7 +92,12 @@ pub fn resolve_crew(name: &str, registry: &BTreeMap<String, Crew>) -> Result<Cre
 /// changing the array size, which in turn surfaces any call site that
 /// made assumptions about the previous number of families.
 pub const fn all_agent_families() -> [&'static str; 4] {
-    ["codex", "claude", "gemini", "grok"]
+    [
+        AgentFamily::Codex.as_str(),
+        AgentFamily::Claude.as_str(),
+        AgentFamily::Gemini.as_str(),
+        AgentFamily::Grok.as_str(),
+    ]
 }
 
 /// Normalize an `agent_cli` value into a stable, lowercased family identifier
@@ -163,39 +168,6 @@ pub fn normalize_agent_family_for_model(
     }
 
     Ok(agent.or(inferred))
-}
-
-/// Resolve the orchestrator/helper model pair for an `agent_cli`.
-///
-/// Returns `None` for unknown agent families. Callers that need a fallback
-/// (for example, the runtime envelope renderer) decide what placeholder text
-/// to inject when no mapping is registered.
-pub fn resolve_agent_model_pair(agent_cli: &str) -> Option<AgentModelPair> {
-    resolve_agent_model_pair_or(agent_cli, None)
-}
-
-/// Resolve the orchestrator/helper model pair for an `agent_cli`, allowing a
-/// caller-supplied override to replace the built-in defaults.
-///
-/// This is the config-aware hook used by upstream crates that have access to
-/// runtime configuration. `orbit-common::types` remains the fallback source of
-/// truth for default model pairs.
-pub fn resolve_agent_model_pair_or(
-    agent_cli: &str,
-    config_override: Option<&AgentModelPair>,
-) -> Option<AgentModelPair> {
-    if let Some(override_pair) = config_override {
-        return Some(override_pair.clone());
-    }
-
-    let family = agent_family_from_cli(agent_cli);
-    match family.as_str() {
-        "codex" => Some(AgentModelPair::new("gpt-5.5", "gpt-5.4-mini")),
-        "claude" => Some(AgentModelPair::new("opus-4.7", "sonnet-4.6")),
-        "gemini" => Some(AgentModelPair::new("pro", "flash")),
-        "grok" => Some(AgentModelPair::new("grok-4", "grok-3")),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

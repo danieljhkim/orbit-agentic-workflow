@@ -5,7 +5,8 @@ use std::path::Path;
 use chrono::{DateTime, Duration, Utc};
 use orbit_common::types::{
     JobRun, JobRunState, OrbitError, PlannerSlot, Task, TaskStatus, all_agent_families,
-    normalize_attribution_label, normalize_optional_attribution_label, resolve_agent_model_pair,
+    infer_agent_family_from_model, normalize_attribution_label,
+    normalize_optional_attribution_label,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,7 +24,7 @@ const TASK_REVIEW_THREADS_METRIC: &str = "task-review-threads";
 const LEGACY_TASK_REVIEW_MESSAGES_METRIC: &str = "task-review-messages";
 const RECENT_WINDOW_DAYS: i64 = 7;
 
-type ModelScoreboard = BTreeMap<String, BTreeMap<String, u64>>;
+type FamilyScoreboard = BTreeMap<String, BTreeMap<String, u64>>;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenSummary {
@@ -237,7 +238,7 @@ pub fn generate_summary_with_inputs(
         let Some(model) = token_row
             .model
             .as_deref()
-            .map(model_key)
+            .map(family_key)
             .filter(|value| !value.is_empty())
         else {
             continue;
@@ -256,38 +257,41 @@ pub fn generate_summary_with_inputs(
     overlay_audit_tool_calls(&mut agents, audit_tool_calls);
     overlay_audit_tool_calls_by_surface(&mut agents, inputs.audit_tool_calls_by_surface);
 
+    // Planning-duel rows are the "who actually ran?" scoreboard projection:
+    // metrics are recorded from invocation family + slot, while the stored
+    // roles identify the selected family for each slot.
     for run in planning_duel_scoreboard::load_runs(scoreboard_dir)? {
         let planner_a = agents
-            .entry(model_key(&run.roles.planner_a.model))
+            .entry(run.roles.planner_a.family.to_string())
             .or_default();
         planner_a.duels.participated = planner_a.duels.participated.saturating_add(1);
         let planner_b = agents
-            .entry(model_key(&run.roles.planner_b.model))
+            .entry(run.roles.planner_b.family.to_string())
             .or_default();
         planner_b.duels.participated = planner_b.duels.participated.saturating_add(1);
         let arbiter = agents
-            .entry(model_key(&run.roles.arbiter.model))
+            .entry(run.roles.arbiter.family.to_string())
             .or_default();
         arbiter.duels.participated = arbiter.duels.participated.saturating_add(1);
 
         match run.outcome.winner {
             PlannerSlot::PlannerA => {
                 let planner_a = agents
-                    .entry(model_key(&run.roles.planner_a.model))
+                    .entry(run.roles.planner_a.family.to_string())
                     .or_default();
                 planner_a.duels.wins = planner_a.duels.wins.saturating_add(1);
                 let planner_b = agents
-                    .entry(model_key(&run.roles.planner_b.model))
+                    .entry(run.roles.planner_b.family.to_string())
                     .or_default();
                 planner_b.duels.losses = planner_b.duels.losses.saturating_add(1);
             }
             PlannerSlot::PlannerB => {
                 let planner_b = agents
-                    .entry(model_key(&run.roles.planner_b.model))
+                    .entry(run.roles.planner_b.family.to_string())
                     .or_default();
                 planner_b.duels.wins = planner_b.duels.wins.saturating_add(1);
                 let planner_a = agents
-                    .entry(model_key(&run.roles.planner_a.model))
+                    .entry(run.roles.planner_a.family.to_string())
                     .or_default();
                 planner_a.duels.losses = planner_a.duels.losses.saturating_add(1);
             }
@@ -301,7 +305,7 @@ pub fn generate_summary_with_inputs(
                 task.implemented_by.as_deref(),
             )
         {
-            let summary = agents.entry(model_key(&model)).or_default();
+            let summary = agents.entry(family_key(&model)).or_default();
             summary.tasks_completed = summary.tasks_completed.saturating_add(1);
         }
 
@@ -313,7 +317,7 @@ pub fn generate_summary_with_inputs(
             .map(|raw| normalize_attribution_label(raw, None))
             .filter(|value| !value.is_empty())
         {
-            let summary = agents.entry(label).or_default();
+            let summary = agents.entry(family_key(&label)).or_default();
             summary.tasks_created = summary.tasks_created.saturating_add(1);
         }
         if let Some(label) = task
@@ -322,7 +326,7 @@ pub fn generate_summary_with_inputs(
             .map(|raw| normalize_attribution_label(raw, None))
             .filter(|value| !value.is_empty())
         {
-            let summary = agents.entry(label).or_default();
+            let summary = agents.entry(family_key(&label)).or_default();
             summary.tasks_planned = summary.tasks_planned.saturating_add(1);
         }
     }
@@ -442,15 +446,15 @@ pub fn summary_path(scoreboard_dir: &Path) -> std::path::PathBuf {
 fn read_model_scoreboard(
     scoreboard_dir: &Path,
     file_name: &str,
-) -> Result<ModelScoreboard, OrbitError> {
+) -> Result<FamilyScoreboard, OrbitError> {
     let path = scoreboard_dir.join(file_name);
     if !path.exists() {
-        return Ok(ModelScoreboard::new());
+        return Ok(FamilyScoreboard::new());
     }
     let raw =
         fs::read_to_string(&path).map_err(|e| OrbitError::Io(format!("read {file_name}: {e}")))?;
     if raw.trim().is_empty() {
-        return Ok(ModelScoreboard::new());
+        return Ok(FamilyScoreboard::new());
     }
     let parsed: Value = serde_json::from_str(&raw)
         .map_err(|e| OrbitError::Io(format!("parse {file_name}: {e}")))?;
@@ -474,16 +478,16 @@ fn read_token_agents(scoreboard_dir: &Path) -> Result<Vec<TokenAgentEntry>, Orbi
 
 fn overlay_nested_metric(
     agents: &mut BTreeMap<String, AgentSummary>,
-    scoreboard: &ModelScoreboard,
+    scoreboard: &FamilyScoreboard,
     metric: &str,
     mut apply: impl FnMut(&mut AgentSummary, u64),
 ) {
-    let Some(by_model) = scoreboard.get(metric) else {
+    let Some(by_family) = scoreboard.get(metric) else {
         return;
     };
 
-    for (model, value) in by_model {
-        let summary = agents.entry(model_key(model)).or_default();
+    for (family, value) in by_family {
+        let summary = agents.entry(family_key(family)).or_default();
         apply(summary, *value);
     }
 }
@@ -493,11 +497,11 @@ fn overlay_audit_tool_calls_by_surface(
     rows: &[AuditToolCallCountsBySurfaceAndRole],
 ) {
     for row in rows {
-        let model = model_key(&row.role);
-        if model.is_empty() {
+        let family = family_key(&row.role);
+        if family.is_empty() {
             continue;
         }
-        let summary = agents.entry(model).or_default();
+        let summary = agents.entry(family).or_default();
         let entry = summary
             .tool_calls_by_surface
             .entry(row.surface.clone())
@@ -510,43 +514,38 @@ fn overlay_audit_tool_calls(
     agents: &mut BTreeMap<String, AgentSummary>,
     audit_tool_calls: &[AuditToolCallCountsByRole],
 ) {
-    let mut by_model: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    let mut by_family: BTreeMap<String, (u64, u64)> = BTreeMap::new();
     for row in audit_tool_calls {
-        let model = model_key(&row.role);
-        if model.is_empty() {
+        let family = family_key(&row.role);
+        if family.is_empty() {
             continue;
         }
-        let entry = by_model.entry(model).or_default();
+        let entry = by_family.entry(family).or_default();
         entry.0 = entry.0.saturating_add(row.total);
         entry.1 = entry.1.saturating_add(row.failed);
     }
 
-    for (model, (total, failed)) in by_model {
-        let summary = agents.entry(model).or_default();
+    for (family, (total, failed)) in by_family {
+        let summary = agents.entry(family).or_default();
         // Total competes with token scoreboard data; failures only exist in audit rows.
         summary.tool_calls = summary.tool_calls.max(total);
         summary.failed_tool_calls = summary.failed_tool_calls.saturating_add(failed);
     }
 }
 
-fn model_key(model: &str) -> String {
-    normalize_attribution_label(model, None)
+fn family_key(label: &str) -> String {
+    let normalized = normalize_attribution_label(label, None);
+    infer_agent_family_from_model(&normalized).unwrap_or(normalized)
 }
 
 fn seed_known_family_agents(agents: &mut BTreeMap<String, AgentSummary>) {
     for family in all_agent_families() {
-        let model = resolve_agent_model_pair(family)
-            .map(|pair| pair.orchestrator)
-            .unwrap_or_else(|| family.to_string());
-        let key = model_key(&model);
-        if !key.is_empty() {
-            agents.entry(key).or_default();
-        }
+        agents.entry(family.to_string()).or_default();
     }
 }
 
-fn normalize_model_scoreboard(parsed: Value) -> Result<ModelScoreboard, OrbitError> {
-    let mut normalized = ModelScoreboard::new();
+fn normalize_model_scoreboard(parsed: Value) -> Result<FamilyScoreboard, OrbitError> {
+    let mut normalized = FamilyScoreboard::new();
     let Value::Object(metrics) = parsed else {
         return Err(OrbitError::Io(
             "scoreboard json must be an object".to_string(),
@@ -557,7 +556,7 @@ fn normalize_model_scoreboard(parsed: Value) -> Result<ModelScoreboard, OrbitErr
         let Value::Object(entries) = metric_value else {
             continue;
         };
-        let model_entries = normalized
+        let family_entries = normalized
             .entry(canonical_scoreboard_metric(&metric).to_string())
             .or_default();
         for (first_key, first_value) in entries {
@@ -566,17 +565,17 @@ fn normalize_model_scoreboard(parsed: Value) -> Result<ModelScoreboard, OrbitErr
                     let value = number.as_u64().ok_or_else(|| {
                         OrbitError::Io("scoreboard counter must be u64".to_string())
                     })?;
-                    *model_entries.entry(first_key).or_insert(0) += value;
+                    *family_entries.entry(family_key(&first_key)).or_insert(0) += value;
                 }
                 Value::Object(inner) => {
-                    for (model, value) in inner {
+                    for (family, value) in inner {
                         let Value::Number(number) = value else {
                             continue;
                         };
                         let count = number.as_u64().ok_or_else(|| {
                             OrbitError::Io("scoreboard counter must be u64".to_string())
                         })?;
-                        *model_entries.entry(model).or_insert(0) += count;
+                        *family_entries.entry(family_key(&family)).or_insert(0) += count;
                     }
                 }
                 _ => {}
@@ -620,9 +619,9 @@ mod tests {
         )
         .expect("generate summary");
 
-        let gpt5 = summary.agents.get("gpt-5").expect("gpt-5 summary");
-        assert_eq!(gpt5.tool_calls, 3);
-        assert_eq!(gpt5.failed_tool_calls, 2);
+        let codex = summary.agents.get("codex").expect("codex summary");
+        assert_eq!(codex.tool_calls, 3);
+        assert_eq!(codex.failed_tool_calls, 2);
     }
 
     #[test]
@@ -631,10 +630,38 @@ mod tests {
 
         let summary = generate_summary(temp.path(), &[]).expect("generate summary");
 
-        let grok = summary.agents.get("grok-4").expect("grok summary");
+        let grok = summary.agents.get("grok").expect("grok summary");
         assert_eq!(grok.tasks_completed, 0);
         assert_eq!(grok.duels.participated, 0);
         assert_eq!(grok.task_review.threads, 0);
+    }
+
+    #[test]
+    fn summary_agent_keys_are_families_not_models() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(temp.path()).expect("create scoreboard dir");
+        fs::write(
+            temp.path().join("tokens.json"),
+            r#"{
+              "agents": [
+                { "agent": "codex", "model": "gpt-5.5", "total_tokens": 1 },
+                { "agent": "claude", "model": "claude-opus-4-7", "total_tokens": 1 },
+                { "agent": "grok", "model": "grok-4", "total_tokens": 1 }
+              ]
+            }"#,
+        )
+        .expect("write tokens scoreboard");
+
+        let summary = generate_summary(temp.path(), &[]).expect("generate summary");
+        for forbidden in ["grok-4", "claude-opus-4-7", "gpt-5.5"] {
+            assert!(
+                !summary.agents.contains_key(forbidden),
+                "model key leaked into summary agents: {forbidden}"
+            );
+        }
+        for family in ["codex", "claude", "gemini", "grok"] {
+            assert!(summary.agents.contains_key(family));
+        }
     }
 
     #[test]
@@ -668,11 +695,11 @@ mod tests {
         )
         .expect("generate summary");
 
-        let gpt5 = summary.agents.get("gpt-5").expect("gpt-5 summary");
-        assert_eq!(gpt5.tokens.total, 10);
-        assert_eq!(gpt5.tokens.output, 4);
-        assert_eq!(gpt5.tool_calls, 5);
-        assert_eq!(gpt5.failed_tool_calls, 2);
+        let codex = summary.agents.get("codex").expect("codex summary");
+        assert_eq!(codex.tokens.total, 10);
+        assert_eq!(codex.tokens.output, 4);
+        assert_eq!(codex.tool_calls, 5);
+        assert_eq!(codex.failed_tool_calls, 2);
     }
 
     #[test]
@@ -706,11 +733,11 @@ mod tests {
         )
         .expect("generate summary");
 
-        let gpt5 = summary.agents.get("gpt-5").expect("gpt-5 summary");
-        assert_eq!(gpt5.tokens.total, 10);
-        assert_eq!(gpt5.tokens.output, 4);
-        assert_eq!(gpt5.tool_calls, 7);
-        assert_eq!(gpt5.failed_tool_calls, 3);
+        let codex = summary.agents.get("codex").expect("codex summary");
+        assert_eq!(codex.tokens.total, 10);
+        assert_eq!(codex.tokens.output, 4);
+        assert_eq!(codex.tool_calls, 7);
+        assert_eq!(codex.failed_tool_calls, 3);
     }
 
     #[test]
@@ -731,10 +758,7 @@ mod tests {
         let summary = generate_summary(temp.path(), &[]).expect("generate summary");
 
         assert_eq!(summary.schema_version, CURRENT_SCHEMA_VERSION);
-        let reviewer = summary
-            .agents
-            .get("gpt-reviewer")
-            .expect("reviewer summary");
+        let reviewer = summary.agents.get("codex").expect("reviewer summary");
         assert_eq!(reviewer.task_review.threads, 2);
         assert_eq!(reviewer.pr.review_comments, 1);
     }
@@ -759,10 +783,7 @@ mod tests {
 
         let summary = generate_summary(temp.path(), &tasks).expect("generate summary");
 
-        let claude = summary
-            .agents
-            .get("claude-opus-4-7")
-            .expect("claude summary");
+        let claude = summary.agents.get("claude").expect("claude summary");
         // Three tasks were created by claude (Done, Backlog, Rejected).
         assert_eq!(claude.tasks_created, 3);
         // Two were planned by claude (Done, Rejected).
@@ -774,7 +795,7 @@ mod tests {
         // attribute to Completed.
         assert_eq!(claude.tasks_completed, 0);
 
-        let codex = summary.agents.get("gpt-5.5").expect("codex summary");
+        let codex = summary.agents.get("codex").expect("codex summary");
         assert_eq!(codex.tasks_created, 1); // T4
         assert_eq!(codex.tasks_planned, 2); // T2, T4
 
@@ -818,14 +839,11 @@ mod tests {
         )
         .expect("generate summary");
 
-        let claude = summary
-            .agents
-            .get("claude-opus-4-7")
-            .expect("claude summary");
+        let claude = summary.agents.get("claude").expect("claude summary");
         assert_eq!(claude.tool_calls_by_surface.get("graph").copied(), Some(56));
         assert_eq!(claude.tool_calls_by_surface.get("task"), None);
 
-        let codex = summary.agents.get("gpt-5.5").expect("codex summary");
+        let codex = summary.agents.get("codex").expect("codex summary");
         assert_eq!(codex.tool_calls_by_surface.get("graph").copied(), Some(697));
         assert_eq!(codex.tool_calls_by_surface.get("task").copied(), Some(410));
     }
@@ -1082,10 +1100,7 @@ mod tests {
 
         let summary = generate_summary(temp.path(), &[]).expect("generate summary");
 
-        let reviewer = summary
-            .agents
-            .get("gpt-reviewer")
-            .expect("reviewer summary");
+        let reviewer = summary.agents.get("codex").expect("reviewer summary");
         assert_eq!(reviewer.task_review.threads, 2);
     }
 }

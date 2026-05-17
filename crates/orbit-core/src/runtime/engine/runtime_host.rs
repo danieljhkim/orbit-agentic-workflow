@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use orbit_common::types::{
     Activity, AgentModelPair, InvocationTrace, JobRunState, JobTargetType, OrbitError, OrbitEvent,
-    Role,
+    Role, RoleSlot,
 };
 use orbit_engine::{ActivityInvocationResult, ExecutionContext, ExecutorHost, RuntimeHost};
 use orbit_store::{InvocationInsertParams, InvocationQuery, InvocationRecord, token_scoreboard};
@@ -74,7 +74,11 @@ impl RuntimeHost for OrbitRuntime {
     }
 
     fn canonical_model_name(&self, agent_cli: &str, model: Option<&str>) -> Option<String> {
-        self.canonical_model_for_agent(agent_cli, model)
+        let _ = agent_cli;
+        model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
     }
 
     fn invocation_records(
@@ -202,6 +206,7 @@ impl RuntimeHost for OrbitRuntime {
             activity_id: execution.activity.id.clone(),
             agent: agent.unwrap_or_else(|| normalize_agent_name(&execution.agent_cli)),
             model,
+            slot: role_slot_from_input(&execution.input),
             task_ids: associated_task_ids(&execution.input),
             trace: trace.clone(),
         })?;
@@ -218,6 +223,15 @@ impl RuntimeHost for OrbitRuntime {
 
         Ok(())
     }
+}
+
+fn role_slot_from_input(input: &Value) -> Option<RoleSlot> {
+    input
+        .get("planning_duel_slot")
+        .or_else(|| input.get("role_slot"))
+        .or_else(|| input.get("slot"))
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse().ok())
 }
 
 fn is_planning_duel_agent_activity(activity_id: &str) -> bool {

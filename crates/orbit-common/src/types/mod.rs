@@ -24,6 +24,7 @@ pub mod activity;
 pub mod activity_job;
 pub mod actor;
 pub mod adr;
+pub mod agent_family;
 pub mod agent_pair;
 pub mod audit;
 pub mod audit_event;
@@ -64,18 +65,18 @@ pub use actor::{
     normalize_optional_attribution_label, provider_from_model,
 };
 pub use adr::{Adr, AdrStatus, LegacyValidation, legacy_id_for, validate_adr_id};
+pub use agent_family::AgentFamily;
 pub use agent_pair::{
     AgentModelPair, Crew, CrewRoleAssignment, agent_family_from_cli, all_agent_families,
-    infer_agent_family_from_model, normalize_agent_family_for_model, resolve_agent_model_pair,
-    resolve_crew,
+    infer_agent_family_from_model, normalize_agent_family_for_model, resolve_crew,
 };
 pub use audit::Audit;
 pub use audit_event::{AuditEvent, AuditEventStatus, AuditStats, audit_execution_id};
 pub use duel::{
     Ambiguity, ArbiterVerdict, Cost, Decision, DuelRun, EfficiencyMetrics, ImplementerStats,
     Outcome, PerCommentVerdict, PlannerSlot, PlanningDuelRun, PlanningEfficiency, PlanningOutcome,
-    PlanningRoleAssignment, PlanningRoles, ReviewerStats, RoleAssignment, Roles, Scores, Severity,
-    TaskClass, TaskScope, ValidIssuesBySeverity, Verdict,
+    PlanningRoleAssignment, PlanningRoles, ReviewerStats, RoleAssignment, RoleSlot, Roles, Scores,
+    Severity, TaskClass, TaskScope, ValidIssuesBySeverity, Verdict,
 };
 pub use error::{NotFoundKind, OrbitError};
 pub use event::OrbitEvent;

@@ -3,7 +3,9 @@ use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use orbit_common::types::{Activity, OrbitError, PlanningRoleAssignment, PlanningRoles};
+use orbit_common::types::{
+    Activity, AgentFamily, OrbitError, PlanningRoleAssignment, PlanningRoles, RoleSlot,
+};
 use serde_json::{Value, json};
 
 use crate::context::RuntimeHost;
@@ -17,7 +19,7 @@ pub(super) const ARBITER_ACTIVITY_ID: &str = "arbitrate_duel_plan";
 pub(super) const PLANNER_TIMEOUT_SECONDS: u64 = 1800;
 pub(super) const ARBITER_TIMEOUT_SECONDS: u64 = 900;
 
-const PLANNING_DUEL_INSTRUCTION: &str = r#"Only use skills listed in this activity's skill_refs. Ignore all others.
+const PLANNING_DUEL_INSTRUCTION: &str = r###"Only use skills listed in this activity's skill_refs. Ignore all others.
 You are a PLANNER in an Orbit planning duel. Inspect the task and surrounding
 code, draft one implementation-ready proposal, and persist it to the task's
 `artifacts/` directory. Do not edit source files, open PRs, or rely on your
@@ -28,11 +30,10 @@ Steps:
    - Call orbit.task.show with input: {"id": "<task_id>"} to fetch the task title,
      description, plan, acceptance_criteria, context_files, and workspace_path.
 
-2. Determine your artifact path from the active agent signature:
+2. Determine your artifact path from the active slot:
    - Your active agent family is `{{agent_family}}`.
-   - Your active orchestrator model is `{{orchestrator_model}}`.
-   - Your plan artifact path must be `planning-duel/{{agent_family}}-{{orchestrator_model}}.md`.
-   - Do not invent a role-specific filename such as `planner_a.md` or `planner_b.md`.
+   - Your active planning-duel slot is in input.planning_duel_slot.
+   - Your plan artifact path must be `planning-duel/<slot>.md`.
 
 3. Gather context with the graph surface first:
    - Build graph selectors from task.context_files and call orbit.graph.pack.
@@ -44,8 +45,7 @@ Steps:
      the graph has the needed knowledge.
 
 4. Draft exactly one proposal as markdown:
-   - The first line must be exactly: `*authored by: {{agent_family}} / {{orchestrator_model}}*`
-   - Then include these sections:
+   - Include these sections:
      ## Plan
      ## Context Files
      ## Risks
@@ -53,16 +53,16 @@ Steps:
    - Ignore any existing planner artifact for the other role. Your proposal must be independently reasoned.
 
 5. Persist the proposal as a task artifact:
-   - Use orbit.duel.plan.add to write the artifact under the signature-derived path.
+   - Use orbit.duel.plan.add to write the artifact under the slot-derived path. Orbit stamps the signature line.
    - Exact example:
-     {"id":"<task_id>","content":"*authored by: {{agent_family}} / {{orchestrator_model}}*\n## Plan\n..."}
+     {"id":"<task_id>","planning_duel_slot":"planner_a","content":"## Plan\n..."}
 
 6. Stay narrowly scoped:
    - Do not edit source files, update task.plan, or touch PR state.
    - The only permitted mutation is writing your own planner artifact via orbit.duel.plan.add.
 
 7. Structured output is optional:
-   - The workflow does not depend on your response payload. Persist the artifact correctly even if you return null."#;
+   - The workflow does not depend on your response payload. Persist the artifact correctly even if you return null."###;
 const ARBITER_INSTRUCTION: &str = r#"Only use skills listed in this activity's skill_refs. Ignore all others.
 You are the ARBITER in an Orbit planning duel. Your job is to compare the
 two submitted planner artifacts, choose the better one, and persist the
@@ -80,8 +80,8 @@ Steps:
    - Treat both planner artifacts as read-only inputs. Do not invent a third plan.
 
 3. Infer planner identity from the artifact signatures:
-   - The first line of each planner artifact must be `*authored by: <agent> / <model>*`.
-   - Parse those lines to recover each planner's agent CLI family and model.
+   - The first line of each planner artifact must be `*authored by: <family> / <slot>*`.
+   - Parse those lines to recover each planner's family and slot.
    - The artifact signature is the canonical planner identity source.
 
 4. Use the graph surface to verify claims:
@@ -97,7 +97,7 @@ Steps:
 6. Persist the winner marker:
    - Use orbit.duel.plan.winner to write `planning-duel/winner.json`.
    - Exact example:
-     {"id":"<task_id>","winner_agent_cli":"codex","winner_model":"gpt-5.4","arbiter_rationale":"More concrete writeback and test coverage."}
+     {"id":"<task_id>","winner_slot":"planner_a","arbiter_rationale":"More concrete writeback and test coverage."}
 
 7. Stay narrowly scoped:
    - Do not edit source files, update task.plan directly, or open PRs.
@@ -142,9 +142,9 @@ fn build_role_assignment<H: RuntimeHost + ?Sized>(
     host: &H,
     family: &str,
 ) -> Result<PlanningRoleAssignment, OrbitError> {
+    let _ = orchestrator_model_for(host, family)?;
     Ok(PlanningRoleAssignment {
-        agent: family.to_string(),
-        model: orchestrator_model_for(host, family)?,
+        family: AgentFamily::parse(family)?,
     })
 }
 
@@ -249,12 +249,12 @@ pub(super) fn arbiter_activity() -> Activity {
     )
 }
 
-pub(super) fn planner_input(task_id: &str) -> Value {
-    json!({ "task_id": task_id })
+pub(super) fn planner_input_for_slot(task_id: &str, slot: RoleSlot) -> Value {
+    json!({ "task_id": task_id, "planning_duel_slot": slot.as_str() })
 }
 
 pub(super) fn arbiter_input(task_id: &str) -> Value {
-    json!({ "task_id": task_id })
+    json!({ "task_id": task_id, "planning_duel_slot": RoleSlot::Arbiter.as_str() })
 }
 
 pub(super) fn parse_planning_duel_roles(input: &Value) -> Result<PlanningRoles, OrbitError> {
@@ -314,6 +314,7 @@ pub(super) fn select_planning_duel_roles<H: RuntimeHost + ?Sized>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
     use orbit_common::types::{Activity, AgentModelPair, Job, JobTargetType, OrbitEvent, Role};
@@ -329,7 +330,7 @@ mod tests {
         data_root: PathBuf,
         scoreboard_dir: PathBuf,
         registry: ActivityExecutorRegistry,
-        duel_model: Option<String>,
+        duel_models: BTreeMap<String, String>,
     }
 
     impl TestHost {
@@ -338,12 +339,26 @@ mod tests {
         }
 
         fn with_duel_model(duel_model: Option<&str>) -> Self {
+            let mut duel_models = BTreeMap::new();
+            if let Some(duel_model) = duel_model {
+                duel_models.insert("codex".to_string(), duel_model.to_string());
+            }
+            Self::with_duel_models(duel_models)
+        }
+
+        fn with_family_duel_model(family: &str, model: &str) -> Self {
+            let mut duel_models = BTreeMap::new();
+            duel_models.insert(family.to_string(), model.to_string());
+            Self::with_duel_models(duel_models)
+        }
+
+        fn with_duel_models(duel_models: BTreeMap<String, String>) -> Self {
             let temp_root = std::env::temp_dir().join("orbit-planning-duel-role-test");
             Self {
                 scoreboard_dir: temp_root.join("scoreboard"),
                 data_root: temp_root,
                 registry: ActivityExecutorRegistry::default(),
-                duel_model: duel_model.map(ToOwned::to_owned),
+                duel_models,
             }
         }
     }
@@ -426,11 +441,7 @@ mod tests {
         }
 
         fn duel_orchestrator_model(&self, family: &str) -> Option<String> {
-            if family == "codex" {
-                self.duel_model.clone()
-            } else {
-                None
-            }
+            self.duel_models.get(family).cloned()
         }
 
         fn scoring_enabled(&self) -> bool {
@@ -453,11 +464,8 @@ mod tests {
 
         assert_eq!(output["planner_a_agent_cli"], "grok");
         assert_eq!(output["planner_a_model"], "grok-4");
-        assert_eq!(output["planning_duel_roles"]["planner_a"]["agent"], "grok");
-        assert_eq!(
-            output["planning_duel_roles"]["planner_a"]["model"],
-            "grok-4"
-        );
+        assert_eq!(output["planning_duel_roles"]["planner_a"]["family"], "grok");
+        assert!(output["planning_duel_roles"]["planner_a"]["model"].is_null());
         assert_eq!(output["planner_b_agent_cli"], "codex");
         assert_eq!(output["arbiter_agent_cli"], "claude");
     }
@@ -476,18 +484,34 @@ mod tests {
         let host = TestHost::with_duel_model(Some("M_duel"));
         let output = select_planning_duel_roles(&host, &json!({ "task_id": "ORB-TEST" }))
             .expect("planning role selection uses duel model");
+        assert_eq!(output["planner_a_model"], "M_duel");
         assert_eq!(
-            output["planning_duel_roles"]["planner_a"]["model"],
-            "M_duel"
+            output["planning_duel_roles"]["planner_a"]["family"],
+            "codex"
         );
 
         queue_permutation([0, 1, 2]);
         let host = TestHost::with_duel_model(None);
         let output = select_planning_duel_roles(&host, &json!({ "task_id": "ORB-TEST" }))
             .expect("planning role selection falls back to resolved pair");
-        assert_eq!(
-            output["planning_duel_roles"]["planner_a"]["model"],
-            "M_exec"
-        );
+        assert_eq!(output["planner_a_model"], "M_exec");
+    }
+
+    #[test]
+    fn planning_duel_role_selection_keeps_family_identity_for_model_aliases() {
+        for model in ["pro", "gemini-3.1-pro"] {
+            queue_permutation([2, 0, 1]);
+            let host = TestHost::with_family_duel_model("gemini", model);
+            let output = select_planning_duel_roles(&host, &json!({ "task_id": "ORB-TEST" }))
+                .expect("planning role selection uses configured gemini model");
+
+            assert_eq!(output["planner_a_agent_cli"], "gemini");
+            assert_eq!(output["planner_a_model"], model);
+            assert_eq!(
+                output["planning_duel_roles"]["planner_a"]["family"],
+                "gemini"
+            );
+            assert!(output["planning_duel_roles"]["planner_a"]["model"].is_null());
+        }
     }
 }

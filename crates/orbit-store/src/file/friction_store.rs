@@ -6,7 +6,7 @@ use chrono::{DateTime, Datelike, TimeZone, Utc};
 use orbit_common::friction::DEFAULT_FRICTION_TAGS;
 use orbit_common::types::{
     FrictionFrontmatter, FrictionRecord, FrictionStatus, OrbitError, Task, TaskStatus,
-    all_agent_families, normalize_optional_attribution_label, resolve_agent_model_pair,
+    all_agent_families, infer_agent_family_from_model, normalize_optional_attribution_label,
 };
 use orbit_common::utility::fs::{atomic_write_text, with_exclusive_file_lock};
 use serde_json::{Value, json};
@@ -243,41 +243,40 @@ pub fn friction_stats(frictions_root: &Path, tasks: &[Task]) -> Result<Value, Or
             resolved_at >= month_start && resolved_at < next_month_start
         })
         .count() as u64;
-    let tasks_done = completed_tasks_by_model(tasks);
-    let mut frictions_by_model: BTreeMap<String, u64> = BTreeMap::new();
-    let mut frictions_by_tag_model: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
-    let mut models = BTreeSet::new();
+    let tasks_done = completed_tasks_by_family(tasks);
+    let mut frictions_by_family: BTreeMap<String, u64> = BTreeMap::new();
+    let mut frictions_by_tag_family: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    let mut families = BTreeSet::new();
 
     for stored in &records {
-        models.insert(stored.record.model.clone());
-        *frictions_by_model
-            .entry(stored.record.model.clone())
-            .or_insert(0) += 1;
+        let family = friction_family_key(&stored.record.model);
+        families.insert(family.clone());
+        *frictions_by_family.entry(family.clone()).or_insert(0) += 1;
         for tag in &stored.record.tags {
-            *frictions_by_tag_model
+            *frictions_by_tag_family
                 .entry(tag.clone())
                 .or_default()
-                .entry(stored.record.model.clone())
+                .entry(family.clone())
                 .or_insert(0) += 1;
         }
     }
-    models.extend(tasks_done.keys().cloned());
-    models.extend(known_family_model_keys());
+    families.extend(tasks_done.keys().cloned());
+    families.extend(known_family_keys());
 
-    let mut by_model = serde_json::Map::new();
-    for model in &models {
-        let frictions = frictions_by_model.get(model).copied().unwrap_or(0);
-        let done = tasks_done.get(model).copied().unwrap_or(0);
-        by_model.insert(model.clone(), rate_row(frictions, done));
+    let mut by_family = serde_json::Map::new();
+    for family in &families {
+        let frictions = frictions_by_family.get(family).copied().unwrap_or(0);
+        let done = tasks_done.get(family).copied().unwrap_or(0);
+        by_family.insert(family.clone(), rate_row(frictions, done));
     }
 
     let mut by_tag = serde_json::Map::new();
-    for (tag, by_model_counts) in frictions_by_tag_model {
+    for (tag, by_family_counts) in frictions_by_tag_family {
         let mut tag_map = serde_json::Map::new();
-        for model in &models {
-            let frictions = by_model_counts.get(model).copied().unwrap_or(0);
-            let done = tasks_done.get(model).copied().unwrap_or(0);
-            tag_map.insert(model.clone(), rate_row(frictions, done));
+        for family in &families {
+            let frictions = by_family_counts.get(family).copied().unwrap_or(0);
+            let done = tasks_done.get(family).copied().unwrap_or(0);
+            tag_map.insert(family.clone(), rate_row(frictions, done));
         }
         by_tag.insert(tag, Value::Object(tag_map));
     }
@@ -288,7 +287,7 @@ pub fn friction_stats(frictions_root: &Path, tasks: &[Task]) -> Result<Value, Or
         "triaged": triaged,
         "resolved": resolved,
         "resolved_this_month": resolved_this_month,
-        "by_model": Value::Object(by_model),
+        "by_family": Value::Object(by_family),
         "by_tag": Value::Object(by_tag),
     }))
 }
@@ -536,7 +535,7 @@ fn validate_friction_id(id: &str) -> Result<(), OrbitError> {
     }
 }
 
-fn completed_tasks_by_model(tasks: &[Task]) -> BTreeMap<String, u64> {
+fn completed_tasks_by_family(tasks: &[Task]) -> BTreeMap<String, u64> {
     let mut counts = BTreeMap::new();
     for task in tasks {
         if !matches!(task.status, TaskStatus::Done | TaskStatus::Archived) {
@@ -548,17 +547,20 @@ fn completed_tasks_by_model(tasks: &[Task]) -> BTreeMap<String, u64> {
         ) else {
             continue;
         };
-        *counts.entry(model).or_insert(0) += 1;
+        *counts.entry(friction_family_key(&model)).or_insert(0) += 1;
     }
     counts
 }
 
-fn known_family_model_keys() -> impl Iterator<Item = String> {
-    all_agent_families().into_iter().map(|family| {
-        resolve_agent_model_pair(family)
-            .map(|pair| pair.orchestrator)
-            .unwrap_or_else(|| family.to_string())
-    })
+fn friction_family_key(value: &str) -> String {
+    let normalized = normalize_optional_attribution_label(Some(value), None).unwrap_or_default();
+    infer_agent_family_from_model(&normalized).unwrap_or(normalized)
+}
+
+fn known_family_keys() -> impl Iterator<Item = String> {
+    all_agent_families()
+        .into_iter()
+        .map(|family| family.to_string())
 }
 
 fn rate_row(frictions: u64, tasks_done: u64) -> Value {
@@ -616,17 +618,17 @@ mod tests {
     fn stats_render_zero_task_model_rate_as_na() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
-        add_friction(root, params("gpt-zero", Utc::now(), vec!["tooling"])).expect("add friction");
+        add_friction(root, params("grok", Utc::now(), vec!["tooling"])).expect("add friction");
         let mut done = task("T1", TaskStatus::Done);
-        done.implemented_by = Some("gpt-done".to_string());
+        done.implemented_by = Some("codex".to_string());
 
         let stats = friction_stats(root, &[done]).expect("stats");
         assert_eq!(
-            stats["by_model"]["gpt-zero"]["frictions_per_10_tasks"],
+            stats["by_family"]["grok"]["frictions_per_10_tasks"],
             json!("n/a")
         );
         assert_eq!(
-            stats["by_model"]["gpt-done"]["frictions_per_10_tasks"],
+            stats["by_family"]["codex"]["frictions_per_10_tasks"],
             json!(0.0)
         );
     }
@@ -638,10 +640,10 @@ mod tests {
 
         let stats = friction_stats(root, &[]).expect("stats");
 
-        assert_eq!(stats["by_model"]["grok-4"]["frictions"], json!(0));
-        assert_eq!(stats["by_model"]["grok-4"]["tasks_done"], json!(0));
+        assert_eq!(stats["by_family"]["grok"]["frictions"], json!(0));
+        assert_eq!(stats["by_family"]["grok"]["tasks_done"], json!(0));
         assert_eq!(
-            stats["by_model"]["grok-4"]["frictions_per_10_tasks"],
+            stats["by_family"]["grok"]["frictions_per_10_tasks"],
             json!("n/a")
         );
     }

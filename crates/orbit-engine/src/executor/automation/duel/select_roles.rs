@@ -105,7 +105,7 @@ fn orchestrator_model_for<H: RuntimeHost + ?Sized>(
         .ok_or_else(|| {
             OrbitError::Execution(format!(
                 "no registered model pair for agent family '{family}' — \
-                 update orbit_common::types::agent_pair::resolve_agent_model_pair"
+                 add [duel.models].{family} or configure an executor model-pair override"
             ))
         })
 }

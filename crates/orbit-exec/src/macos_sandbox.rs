@@ -1060,7 +1060,7 @@ mod tests {
         let db_wal_path = global.join("orbit.db-wal");
         let artifact_path = global
             .join("tasks/workspaces/orbit-test/ORB-00009/artifacts/files/planning-duel")
-            .join("gemini-gemini-3.1-pro.md");
+            .join("planner_a.md");
         let semantic_wal_path = workspace.join("state/semantic.db-wal");
         let denied_path = global.join("not-allowed.txt");
 
