@@ -4,6 +4,7 @@
 use chrono::{TimeZone, Utc};
 use orbit_common::types::{FrictionStatus, TaskStatus};
 use orbit_core::OrbitRuntime;
+use orbit_engine::{TaskAutomationUpdate, TaskWriteHost};
 use orbit_store::friction_store::{
     FrictionAddParams, add_friction, resolve_friction_by_task, show_friction,
 };
@@ -84,6 +85,15 @@ fn move_backlog_task_to_review(runtime: &OrbitRuntime, task_id: &str) {
         .expect("move task to review");
 }
 
+fn assert_friction_resolved_by(runtime: &OrbitRuntime, friction_id: &str, task_id: &str) {
+    let friction = runtime
+        .run_tool("orbit.friction.show", json!({ "id": friction_id }))
+        .expect("show friction");
+    assert_eq!(friction["status"], json!("resolved"));
+    assert!(friction["resolved_at"].as_str().is_some());
+    assert_eq!(friction["resolved_by_task"], json!(task_id));
+}
+
 #[test]
 fn review_approval_resolves_related_friction_and_surfaces_json_fields() {
     let (_root, runtime, repo_root) = test_runtime();
@@ -98,18 +108,53 @@ fn review_approval_resolves_related_friction_and_surfaces_json_fields() {
         )
         .expect("approve task");
 
-    let friction = runtime
-        .run_tool("orbit.friction.show", json!({ "id": friction_id }))
-        .expect("show friction");
-    assert_eq!(friction["status"], json!("resolved"));
-    assert!(friction["resolved_at"].as_str().is_some());
-    assert_eq!(friction["resolved_by_task"], json!(task_id));
+    assert_friction_resolved_by(&runtime, &friction_id, &task_id);
 
     let task = runtime
         .run_tool("orbit.task.show", json!({ "id": task_id }))
         .expect("show task");
     assert_eq!(task["relations"][0]["type"], json!("resolves"));
     assert_eq!(task["relations"][0]["target"], json!(friction_id));
+}
+
+#[test]
+fn task_update_to_done_resolves_related_friction() {
+    let (_root, runtime, repo_root) = test_runtime();
+    let friction_id = add_test_friction(&runtime);
+    let task_id = add_task_with_resolves(&runtime, &repo_root, &friction_id, "backlog");
+
+    let updated = runtime
+        .run_tool(
+            "orbit.task.update",
+            json!({
+                "id": task_id,
+                "status": "done",
+                "model": "codex"
+            }),
+        )
+        .expect("update task to done");
+    assert_eq!(updated["status"], json!("done"));
+
+    assert_friction_resolved_by(&runtime, &friction_id, &task_id);
+}
+
+#[test]
+fn automation_update_to_done_resolves_related_friction() {
+    let (_root, runtime, repo_root) = test_runtime();
+    let friction_id = add_test_friction(&runtime);
+    let task_id = add_task_with_resolves(&runtime, &repo_root, &friction_id, "backlog");
+
+    runtime
+        .apply_task_automation_update(
+            &task_id,
+            TaskAutomationUpdate {
+                status: Some(TaskStatus::Done),
+                ..TaskAutomationUpdate::default()
+            },
+        )
+        .expect("automation update task to done");
+
+    assert_friction_resolved_by(&runtime, &friction_id, &task_id);
 }
 
 #[test]

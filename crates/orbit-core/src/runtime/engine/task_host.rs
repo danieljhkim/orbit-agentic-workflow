@@ -102,7 +102,7 @@ impl TaskWriteHost for OrbitRuntime {
         let (agent, model) = self
             .try_canonical_agent_model_identity(update.agent.as_deref(), update.model.as_deref())?;
         let runtime_model_identity = <Self as RuntimeHost>::actor_model_identity(self);
-        let _ = self.with_mutation(|| {
+        let task = self.with_mutation(|| {
             let actor_label = SYSTEM_ACTOR_LABEL.to_string();
             let explicit_attribution_label = normalize_optional_attribution_label(
                 update
@@ -175,6 +175,9 @@ impl TaskWriteHost for OrbitRuntime {
                 },
             ))
         })?;
+        if task.status == TaskStatus::Done {
+            self.record_resolves_side_effects(&task)?;
+        }
         Ok(())
     }
 }

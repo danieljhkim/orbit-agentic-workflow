@@ -223,6 +223,9 @@ impl OrbitRuntime {
             )?;
             Ok((task.clone(), OrbitEvent::TaskUpdated { id: id.to_string() }))
         })?;
+        if updated.status == TaskStatus::Done {
+            self.record_resolves_side_effects(&updated)?;
+        }
 
         Ok(updated)
     }
