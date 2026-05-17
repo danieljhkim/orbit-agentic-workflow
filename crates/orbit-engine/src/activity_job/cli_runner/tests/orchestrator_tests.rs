@@ -448,6 +448,54 @@ fn run_cli_backend_passes_model_to_grok_and_captures_well_formed_stdout() {
     );
 }
 
+#[test]
+fn run_cli_backend_exports_runtime_identity_for_subprocess_tools() {
+    let temp = tempdir().expect("tempdir");
+    let script = temp.path().join("grok");
+    write_executable(
+        &script,
+        r#"#!/bin/sh
+cat > /dev/null
+if [ "$ORBIT_AGENT_NAME" = "grok" ] && [ "$ORBIT_AGENT_MODEL" = "grok-build" ]; then
+  printf '%s\n' '{"schemaVersion":1,"status":"success","result":{"identity":"ok"},"error":null}'
+else
+  printf '%s\n' '{"schemaVersion":1,"status":"failed","error":{"code":"identity_env_missing","message":"runtime identity env was not propagated","details":null}}'
+  exit 1
+fi
+"#,
+    );
+
+    let sink = Arc::new(RecordingSink::default());
+    let sink_for_writer: Arc<dyn AuditSink> = sink;
+    let audit = Arc::new(V2AuditWriter::new(
+        "job-grok-identity-env",
+        "grok:grok-build",
+        sink_for_writer,
+    ));
+    let host = TestHost {
+        command: script.display().to_string(),
+        executor_args: Vec::new(),
+        provider_config: HashMap::new(),
+        sandbox: None,
+        task_context: None,
+    };
+    let mut spec = test_agent_loop_spec_for("grok", Duration::from_secs(5));
+    spec.model = Some("grok-build".to_string());
+
+    let outcome = run_cli_backend(
+        &host,
+        &spec,
+        "job-grok-identity-env",
+        audit,
+        &serde_json::json!({"prompt": "hi"}),
+        None,
+    )
+    .expect("run succeeds");
+
+    assert!(outcome.success);
+    assert_eq!(outcome.output["provider"], "grok");
+}
+
 /// Regression for T20260508-17: a CLI subprocess that exits 0 but emits an
 /// embedded Orbit response envelope reporting `status: "failed"` must NOT
 /// be classified as success. Pre-fix, dispatch returned `success: true`

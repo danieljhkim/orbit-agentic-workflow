@@ -924,6 +924,42 @@ mod audit_tests {
     }
 
     #[test]
+    fn cli_tool_dispatch_env_identity_overwrites_task_update_self_reported_model() {
+        let _g = env_guard();
+        let runtime = fresh_runtime();
+        let task = runtime
+            .add_task(crate::command::task::TaskAddParams {
+                title: "identity regression".to_string(),
+                description: "exercise CLI tool identity overwrite".to_string(),
+                acceptance_criteria: vec!["implemented_by is canonical".to_string()],
+                plan: "Do the work.".to_string(),
+                status: Some(orbit_common::types::TaskStatus::InProgress),
+                ..Default::default()
+            })
+            .expect("seed in-progress task");
+        set_identity_env("grok", "grok-build");
+
+        runtime
+            .execute_tool_command_dispatch(
+                "orbit.task.update",
+                json!({
+                    "id": task.id.clone(),
+                    "status": "review",
+                    "execution_summary": "Done.",
+                    "model": "claude-opus-4-7"
+                }),
+                None,
+                None,
+                ToolEntryPoint::Cli,
+            )
+            .expect("task update succeeds");
+        clear_identity_env();
+
+        let updated = runtime.get_task(&task.id).expect("read updated task");
+        assert_eq!(updated.implemented_by.as_deref(), Some("grok"));
+    }
+
+    #[test]
     fn audit_role_label_defaults_to_agent_when_no_identity_available() {
         let _g = env_guard();
         clear_identity_env();
