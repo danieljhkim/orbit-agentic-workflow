@@ -8,7 +8,6 @@ const STATUS_ORDER = [
   "proposed",
   "backlog",
   "someday",
-  "rejected",
 ];
 
 const DEFAULT_INACTIVE_STATUSES = new Set(["someday"]);
