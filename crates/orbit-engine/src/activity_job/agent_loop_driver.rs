@@ -55,13 +55,15 @@ pub fn drive_agent_loop(
     fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
     let model = resolve_model(spec);
-    let provider = expected_provider();
+    let provider = spec.provider.as_str();
     let mut session = Session::new(provider, model.clone(), &spec.instruction, None);
     let mut tool_ctx = host.tool_context_for_activity(
         Some(run_id),
         fs_profile,
         Some(v2_fs_audit_logger(audit.clone())),
     );
+    tool_ctx.agent_name = Some(provider.to_string());
+    tool_ctx.model_name = Some(model);
     tool_ctx.role_slot = role_slot_from_input(input);
     drive_inner(
         spec,
@@ -91,11 +93,15 @@ pub fn drive_agent_loop_with_session(
     host: &dyn V2RuntimeHost,
     fs_profile: Option<&str>,
 ) -> Result<LoopOutcome, DispatchError> {
+    let model = resolve_model(spec);
+    let provider = spec.provider.as_str();
     let mut tool_ctx = host.tool_context_for_activity(
         Some(run_id),
         fs_profile,
         Some(v2_fs_audit_logger(audit.clone())),
     );
+    tool_ctx.agent_name = Some(provider.to_string());
+    tool_ctx.model_name = Some(model);
     tool_ctx.role_slot = role_slot_from_input(input);
     drive_inner(
         spec,
@@ -131,8 +137,15 @@ pub fn drive_agent_loop_with_tool_context(
     tool_ctx: ToolContext,
 ) -> Result<LoopOutcome, DispatchError> {
     let model = resolve_model(spec);
-    let provider = expected_provider();
+    let provider = spec.provider.as_str();
     let mut session = Session::new(provider, model.clone(), &spec.instruction, None);
+    let mut tool_ctx = tool_ctx;
+    if tool_ctx.agent_name.is_none() {
+        tool_ctx.agent_name = Some(provider.to_string());
+    }
+    if tool_ctx.model_name.is_none() {
+        tool_ctx.model_name = Some(model);
+    }
     drive_inner(
         spec,
         api_key,
@@ -262,14 +275,6 @@ fn resolve_model(spec: &AgentLoopSpec) -> String {
     spec.model
         .clone()
         .unwrap_or_else(|| DEFAULT_ANTHROPIC_MODEL.to_string())
-}
-
-fn expected_provider() -> &'static str {
-    if replay_active() {
-        "replay"
-    } else {
-        "anthropic"
-    }
 }
 
 fn replay_active() -> bool {
