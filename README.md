@@ -114,6 +114,8 @@ orbit web serve
 
 Full command reference: `orbit --help` and [orbit-cli.com](https://orbit-cli.com).
 
+Customizing crews (which model runs planner/implementer/reviewer), the base branch, and `duel-plan` candidates: see [docs/CONFIG.md](docs/CONFIG.md).
+
 ---
 
 ## Semantic Search (optional)
