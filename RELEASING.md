@@ -150,7 +150,49 @@ gh pr create --base main --head agent-main \
   --body "Promotes v<X.Y.Z>. See CHANGELOG.md."
 ```
 
-Merge with a **merge commit** (not squash) so the release tag remains reachable from `main`'s history. The PR is a fast-forward unless a hotfix landed on `main` since the last release — in that case resolve via merge, not rebase. See [Hotfix flow](#hotfix-flow) for the inverse direction.
+Merge with a **merge commit** (`gh pr merge <N> --merge --admin`), not squash or rebase, so the release tag remains reachable from `main`'s history. The merge always creates a new commit on `main` — even with no hotfix on `main` — because `agent-main` carries the back-merge commit from the prior release (see §10c).
+
+If `gh pr merge --merge` errors with `Merge commits are not allowed on this repository`, the repo's `allow_merge_commit` setting is off. Flip it on, merge, restore:
+
+```sh
+gh api -X PATCH repos/danieljhkim/orbit -f allow_merge_commit=true
+gh pr merge <N> --merge --admin
+gh api -X PATCH repos/danieljhkim/orbit -f allow_merge_commit=false
+```
+
+### 10c. Post-merge: back-merge to `agent-main`
+
+After the release PR merges, `main` carries the merge commit that `agent-main` doesn't have. Back-merge `main` → `agent-main` in the same session — never defer — so the dev branch stays reachability-equivalent with prod:
+
+```sh
+git checkout agent-main
+git pull --ff-only origin agent-main      # safety
+git merge --no-ff origin/main \
+  -m "chore: back-merge main into agent-main after v<X.Y.Z>"
+git push origin agent-main
+```
+
+`agent-main` has GitHub branch protection blocking deletion (`allow_deletions: false`), so the repo-wide `delete_branch_on_merge: true` won't remove it when the PR merges — the branch is always there to back-merge into. If you find `agent-main` missing from origin (protection got dropped), recreate it from `main` and reapply the minimal protection:
+
+```sh
+git push origin origin/main:refs/heads/agent-main
+cat <<'EOF' | gh api -X PUT repos/danieljhkim/orbit/branches/agent-main/protection --input -
+{
+  "required_status_checks": null,
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null,
+  "allow_deletions": false,
+  "allow_force_pushes": true
+}
+EOF
+```
+
+If a release ever ships without the back-merge, drift compounds (N commits behind `main` after N skipped releases). Recover by either running the same back-merge above (resolves cleanly regardless of N) or, if `agent-main` has no in-flight work, reset it to `main` directly:
+
+```sh
+git push origin origin/main:refs/heads/agent-main --force-with-lease
+```
 
 ### 11. Mark the Orbit task done
 
