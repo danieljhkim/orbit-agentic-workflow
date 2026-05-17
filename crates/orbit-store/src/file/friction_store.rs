@@ -40,6 +40,7 @@ pub struct FrictionUpdateParams {
 }
 
 #[derive(Debug, Clone)]
+/// Persisted friction record wrapper. The identity in `record.model` is per-invocation actual execution (sourced from the friction add call site).
 pub struct StoredFrictionRecord {
     pub record: FrictionRecord,
     pub path: PathBuf,

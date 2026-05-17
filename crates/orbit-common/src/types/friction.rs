@@ -47,6 +47,7 @@ impl FromStr for FrictionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FrictionRecord {
     pub id: String,
+    /// Model identifier for this friction record (per-invocation actual execution).
     pub model: String,
     pub created_at: DateTime<Utc>,
     #[serde(default)]

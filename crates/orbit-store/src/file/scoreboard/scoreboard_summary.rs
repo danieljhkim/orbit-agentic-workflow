@@ -136,6 +136,7 @@ struct TokenScoreboardFile {
 struct TokenAgentEntry {
     #[serde(rename = "agent")]
     _agent: String,
+    /// Model key used for this token scoreboard row; per-invocation actual execution (from audit/token metrics, not run-level lineup).
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
