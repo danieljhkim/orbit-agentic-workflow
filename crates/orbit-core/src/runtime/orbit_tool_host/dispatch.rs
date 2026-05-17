@@ -13,7 +13,10 @@ pub(super) fn execute(
     model: Option<String>,
     reservation_owner: Option<ReservationOwnerContext>,
 ) -> Result<Value, OrbitError> {
-    match action {
+    let (input, redaction_report) = super::artifact_redaction::sanitize_tool_input(action, input)?;
+    let agent_for_audit = agent.clone();
+    let model_for_audit = model.clone();
+    let mut response = match action {
         OrbitBuiltinAction::AdrAdd => super::adr_tools::add(runtime, input, agent, model),
         OrbitBuiltinAction::AdrShow => super::adr_tools::show(runtime, input),
         OrbitBuiltinAction::AdrList => super::adr_tools::list(runtime, input),
@@ -92,5 +95,14 @@ pub(super) fn execute(
         OrbitBuiltinAction::TaskShow => super::task_tools::show(runtime, input),
         OrbitBuiltinAction::TaskStart => super::task_tools::start(runtime, input, agent, model),
         OrbitBuiltinAction::TaskUpdate => super::task_tools::update(runtime, input, agent, model),
-    }
+    }?;
+    super::artifact_redaction::finish_tool_response(
+        runtime,
+        action,
+        &mut response,
+        &redaction_report,
+        agent_for_audit.as_deref(),
+        model_for_audit.as_deref(),
+    )?;
+    Ok(response)
 }

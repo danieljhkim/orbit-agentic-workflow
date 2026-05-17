@@ -52,6 +52,8 @@ pub enum OrbitError {
     CompanionNotInstalled(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
+    #[error("sensitive input rejected for `{field}`: {reason}")]
+    SensitiveInput { field: String, reason: String },
     #[error("invalid input: {message}")]
     InvalidInputDiagnostic {
         message: String,

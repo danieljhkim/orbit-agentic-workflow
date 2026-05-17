@@ -38,6 +38,7 @@ pub struct FrictionListFilter {
 pub struct FrictionUpdateParams {
     pub status: Option<FrictionStatus>,
     pub tags: Option<Vec<String>>,
+    pub body: Option<String>,
     pub resolved_by_task: Option<String>,
     pub updated_at: DateTime<Utc>,
 }
@@ -180,6 +181,9 @@ pub fn update_friction(
             let taxonomy = load_tag_taxonomy(frictions_root)?;
             stored.record.tags = normalize_and_validate_tags(tags, &taxonomy)?;
         }
+        if let Some(body) = params.body {
+            stored.record.body = body;
+        }
         if let Some(status) = params.status {
             stored.record.status = status;
             stored.record.resolved_at = match status {
@@ -216,6 +220,7 @@ pub fn resolve_friction(
         FrictionUpdateParams {
             status: Some(FrictionStatus::Resolved),
             tags: None,
+            body: None,
             resolved_by_task: None,
             updated_at: resolved_at,
         },
@@ -234,6 +239,7 @@ pub fn resolve_friction_by_task(
         FrictionUpdateParams {
             status: Some(FrictionStatus::Resolved),
             tags: None,
+            body: None,
             resolved_by_task: Some(task_id.to_string()),
             updated_at: resolved_at,
         },
