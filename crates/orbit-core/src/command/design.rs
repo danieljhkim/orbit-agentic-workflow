@@ -10,8 +10,6 @@ use orbit_common::utility::fs::atomic_write_text;
 use regex::{NoExpand, Regex};
 use serde::Serialize;
 
-use crate::OrbitRuntime;
-
 pub const DESIGN_CONVENTIONS_TEMPLATE: &str =
     include_str!("../../../../docs/design/CONVENTIONS.md");
 
@@ -22,38 +20,6 @@ const NUMBERED_DOCS: [(&str, &str); 4] = [
     ("3_vision.md", "Vision"),
     ("4_decisions.md", "Decisions"),
 ];
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct DesignCheckReport {
-    pub findings: Vec<DesignDecayFinding>,
-    pub missing_references: Vec<DesignMissingReference>,
-    pub stale_found: bool,
-    pub missing_found: bool,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct DesignDecayFinding {
-    pub feature: String,
-    pub doc_path: PathBuf,
-    pub last_updated: NaiveDate,
-    pub last_updated_source: String,
-    pub last_referenced_code_commit: NaiveDate,
-    pub days_stale: i64,
-    pub newer_references: Vec<DesignCodeReference>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct DesignCodeReference {
-    pub path: String,
-    pub last_commit: NaiveDate,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct DesignMissingReference {
-    pub feature: String,
-    pub doc_path: PathBuf,
-    pub references: Vec<String>,
-}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DesignFeatureSummary {
@@ -76,114 +42,6 @@ pub struct DesignDocInfo {
 pub enum DesignDecayStatus {
     Fresh,
     Stale,
-}
-
-pub fn check_workspace(
-    runtime: &OrbitRuntime,
-    include_missing: bool,
-) -> Result<DesignCheckReport, OrbitError> {
-    check_workspace_path(&runtime.paths().repo_root, include_missing)
-}
-
-pub fn check_workspace_path(
-    repo_root: &Path,
-    _include_missing: bool,
-) -> Result<DesignCheckReport, OrbitError> {
-    let docs = design_markdown_docs(repo_root)?;
-    let mut findings = Vec::new();
-    let mut missing_references = Vec::new();
-
-    for doc in docs {
-        let rel_doc = relative_to_root(repo_root, &doc);
-        let Some(last_updated) = doc_last_updated(repo_root, &doc)? else {
-            continue;
-        };
-
-        let refs = extract_refs(&doc)?;
-        let mut newer_references = Vec::new();
-        let mut missing = Vec::new();
-        for reference in refs {
-            let ref_path = repo_root.join(&reference);
-            if !ref_path.exists() {
-                missing.push(reference);
-                continue;
-            }
-            if let Some(ref_date) = git_last_commit_date(repo_root, &ref_path)?
-                && ref_date > last_updated.date
-            {
-                newer_references.push(DesignCodeReference {
-                    path: reference,
-                    last_commit: ref_date,
-                });
-            }
-        }
-
-        if !newer_references.is_empty() {
-            let last_referenced_code_commit = newer_references
-                .iter()
-                .map(|reference| reference.last_commit)
-                .max()
-                .unwrap_or(last_updated.date);
-            findings.push(DesignDecayFinding {
-                feature: feature_from_relative_doc(&rel_doc),
-                doc_path: rel_doc.clone(),
-                last_updated: last_updated.date,
-                last_updated_source: last_updated.source.to_string(),
-                last_referenced_code_commit,
-                days_stale: (last_referenced_code_commit - last_updated.date).num_days(),
-                newer_references,
-            });
-        }
-
-        if !missing.is_empty() {
-            missing_references.push(DesignMissingReference {
-                feature: feature_from_relative_doc(&rel_doc),
-                doc_path: rel_doc,
-                references: missing,
-            });
-        }
-    }
-
-    let stale_found = !findings.is_empty();
-    let missing_found = !missing_references.is_empty();
-    Ok(DesignCheckReport {
-        findings,
-        missing_references,
-        stale_found,
-        missing_found,
-    })
-}
-
-pub fn check_fails(report: &DesignCheckReport, warn_only: bool, include_missing: bool) -> bool {
-    !warn_only && (report.stale_found || (include_missing && report.missing_found))
-}
-
-pub fn format_check_report(report: &DesignCheckReport) -> String {
-    let mut output = String::new();
-    for finding in &report.findings {
-        output.push_str(&format!(
-            "STALE   {}  ({} {}) — newer code:\n",
-            finding.doc_path.display(),
-            finding.last_updated_source,
-            finding.last_updated
-        ));
-        for reference in &finding.newer_references {
-            output.push_str(&format!(
-                "          {}  {}\n",
-                reference.last_commit, reference.path
-            ));
-        }
-    }
-    for missing in &report.missing_references {
-        output.push_str(&format!(
-            "MISSING {} references files that no longer exist:\n",
-            missing.doc_path.display()
-        ));
-        for reference in &missing.references {
-            output.push_str(&format!("          {reference}\n"));
-        }
-    }
-    output
 }
 
 pub fn init_feature(
@@ -253,7 +111,7 @@ pub fn show_feature(repo_root: &Path, feature: &str) -> Result<DesignFeatureSumm
     for (file_name, _role) in NUMBERED_DOCS {
         let path = feature_dir.join(file_name);
         let owner = doc_owner(&path)?;
-        let last_updated = doc_last_updated(repo_root, &path)?.map(|date| date.date);
+        let last_updated = doc_last_updated(repo_root, &path)?;
         let decay_status = if doc_is_stale(repo_root, &path, last_updated)? {
             DesignDecayStatus::Stale
         } else {
@@ -290,68 +148,11 @@ pub fn seed_design_conventions(repo_root: &Path, owner: &str) -> Result<bool, Or
     Ok(true)
 }
 
-fn design_markdown_docs(repo_root: &Path) -> Result<Vec<PathBuf>, OrbitError> {
-    let design_root = repo_root.join(DESIGN_DIR);
-    let mut docs = Vec::new();
-    if design_root.exists() {
-        collect_markdown_docs(&design_root, &mut docs)?;
-    }
-    docs.sort_by(|left, right| {
-        relative_to_root(repo_root, left)
-            .to_string_lossy()
-            .cmp(&relative_to_root(repo_root, right).to_string_lossy())
-    });
-    Ok(docs)
-}
-
-fn collect_markdown_docs(dir: &Path, docs: &mut Vec<PathBuf>) -> Result<(), OrbitError> {
-    for entry in fs::read_dir(dir).map_err(|error| OrbitError::Io(error.to_string()))? {
-        let entry = entry.map_err(|error| OrbitError::Io(error.to_string()))?;
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| OrbitError::Io(error.to_string()))?;
-        if file_type.is_dir() {
-            collect_markdown_docs(&path, docs)?;
-        } else if path.extension().is_some_and(|extension| extension == "md") {
-            docs.push(path);
-        }
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-struct DocDate {
-    date: NaiveDate,
-    source: DateSource,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DateSource {
-    Declared,
-    Git,
-}
-
-impl std::fmt::Display for DateSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Declared => f.write_str("declared"),
-            Self::Git => f.write_str("git"),
-        }
-    }
-}
-
-fn doc_last_updated(repo_root: &Path, doc: &Path) -> Result<Option<DocDate>, OrbitError> {
+fn doc_last_updated(repo_root: &Path, doc: &Path) -> Result<Option<NaiveDate>, OrbitError> {
     if let Some(date) = declared_last_updated(doc)? {
-        return Ok(Some(DocDate {
-            date,
-            source: DateSource::Declared,
-        }));
+        return Ok(Some(date));
     }
-    Ok(git_last_commit_date(repo_root, doc)?.map(|date| DocDate {
-        date,
-        source: DateSource::Git,
-    }))
+    git_last_commit_date(repo_root, doc)
 }
 
 fn declared_last_updated(doc: &Path) -> Result<Option<NaiveDate>, OrbitError> {
@@ -486,23 +287,6 @@ fn titleize_feature(feature: &str) -> String {
         .join(" ")
 }
 
-fn feature_from_relative_doc(path: &Path) -> String {
-    let mut components = path.components();
-    if components.next().is_none() || components.next().is_none() {
-        return "(unknown)".to_string();
-    }
-    components
-        .next()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .unwrap_or_else(|| "(root)".to_string())
-}
-
-fn relative_to_root(repo_root: &Path, path: &Path) -> PathBuf {
-    path.strip_prefix(repo_root)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|_| path.to_path_buf())
-}
-
 fn absolute_path(path: &Path) -> Result<PathBuf, OrbitError> {
     if let Ok(canonical) = path.canonicalize() {
         return Ok(canonical);
@@ -633,35 +417,5 @@ mod tests {
         let conventions = fs::read_to_string(root.path().join(DESIGN_DIR).join("CONVENTIONS.md"))
             .expect("read conventions again");
         assert!(conventions.contains("**Owner:** codex"));
-    }
-
-    #[test]
-    fn format_check_report_matches_legacy_text_shape() {
-        let report = DesignCheckReport {
-            findings: vec![DesignDecayFinding {
-                feature: "task-artifacts".to_string(),
-                doc_path: PathBuf::from("docs/design/task-artifacts/1_overview.md"),
-                last_updated: NaiveDate::from_ymd_opt(2026, 5, 11).unwrap(),
-                last_updated_source: "declared".to_string(),
-                last_referenced_code_commit: NaiveDate::from_ymd_opt(2026, 5, 12).unwrap(),
-                days_stale: 1,
-                newer_references: vec![DesignCodeReference {
-                    path: "crates/orbit-common/src/types/task.rs".to_string(),
-                    last_commit: NaiveDate::from_ymd_opt(2026, 5, 12).unwrap(),
-                }],
-            }],
-            missing_references: vec![DesignMissingReference {
-                feature: "task-artifacts".to_string(),
-                doc_path: PathBuf::from("docs/design/task-artifacts/2_design.md"),
-                references: vec!["crates/missing/src/lib.rs".to_string()],
-            }],
-            stale_found: true,
-            missing_found: true,
-        };
-
-        assert_eq!(
-            format_check_report(&report),
-            "STALE   docs/design/task-artifacts/1_overview.md  (declared 2026-05-11) — newer code:\n          2026-05-12  crates/orbit-common/src/types/task.rs\nMISSING docs/design/task-artifacts/2_design.md references files that no longer exist:\n          crates/missing/src/lib.rs\n"
-        );
     }
 }

@@ -73,7 +73,6 @@ pub enum OrbitBuiltinAction {
     AdrList,
     AdrUpdate,
     AdrSupersede,
-    DesignCheck,
     DesignInit,
     DesignList,
     DesignShow,

@@ -343,7 +343,9 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
         Commands::Design(cmd) => {
             use crate::command::design::DesignSubcommand;
             let sub = match &cmd.command {
-                DesignSubcommand::Check(_) => "check",
+                DesignSubcommand::Init(_) => "init",
+                DesignSubcommand::List(_) => "list",
+                DesignSubcommand::Show(_) => "show",
             };
             CommandMeta {
                 command: "design".to_string(),

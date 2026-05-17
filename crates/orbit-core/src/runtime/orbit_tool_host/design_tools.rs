@@ -1,7 +1,7 @@
 use orbit_common::types::{
     OrbitError, normalize_optional_attribution_label, optional_string, required_string,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::OrbitRuntime;
 use crate::command::design;
@@ -38,21 +38,6 @@ pub(super) fn show(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitE
         .map_err(|error| OrbitError::Execution(format!("serialize design show response: {error}")))
 }
 
-pub(super) fn check(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitError> {
-    let include_missing =
-        super::input::optional_bool_alias(&input, &["include_missing", "includeMissing"])?
-            .unwrap_or(false);
-    let _ = runtime;
-    let workspace = workspace_root(&input)?;
-    let report = design::check_workspace_path(&workspace, include_missing)?;
-    Ok(json!({
-        "findings": report.findings,
-        "missing_references": report.missing_references,
-        "stale_found": report.stale_found,
-        "missing_found": report.missing_found,
-    }))
-}
-
 fn actor_label(runtime: &OrbitRuntime, agent: Option<&str>, model: Option<&str>) -> String {
     normalize_optional_attribution_label(model.or(agent), model)
         .unwrap_or_else(|| runtime.actor_label().to_string())
@@ -68,6 +53,7 @@ fn workspace_root(input: &Value) -> Result<std::path::PathBuf, OrbitError> {
 #[cfg(test)]
 mod tests {
     use orbit_common::types::NotFoundKind;
+    use serde_json::json;
     use serde_json::json;
 
     use super::*;
