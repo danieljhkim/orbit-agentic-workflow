@@ -22,7 +22,7 @@ The constraints are the point — they're what keep agent-assisted code shippabl
 
 - **ADRs as first-class state.** Capture load-bearing decisions as ADR artifacts with status lifecycle (`proposed → accepted → superseded`), owner, related_tasks/features, and supersession chains — authored and queried via `orbit.adr.*`, cross-referenced from task IDs and commit messages. → [docs/design/adr-artifact/](docs/design/adr-artifact/)
 
-- **Design docs with decay checks.** Scaffold, inspect, and lint `docs/design/<feature>/` folders through `orbit.design.*`; `orbit design check` flags docs whose `**Last updated:**` predates referenced `crates/...rs` code, with conventions anchored in [docs/design/CONVENTIONS.md](docs/design/CONVENTIONS.md).
+- **Shared learnings, smarter agents.** Non-obvious knowledge — gotchas, root causes, validated approaches — captured once as scoped `L<date>-N` records that inject into any agent's context automatically when relevant code is touched (engine pre-prompt, MCP sidecar, optional `PreToolUse` hook). Authored via `orbit.learning.*`, checked into git so what one agent learns the next one inherits. → [docs/design/project-learnings/](docs/design/project-learnings/)
 
 - **Structured audit log.** Every tool call, provider request/response, and task transition becomes a queryable event with agent identity attached — append-only, tamper-evident, exportable. → [docs/design/auditability/](docs/design/auditability/)
 
