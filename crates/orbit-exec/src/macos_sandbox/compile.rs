@@ -151,7 +151,8 @@ pub(super) fn compile_macos_sandbox_profile_with_env(
 #[cfg(test)]
 mod tests {
     use super::super::test_support::*;
-    use super::*;
+    #[cfg(target_os = "macos")]
+    use super::compile_macos_sandbox_profile;
     #[cfg(target_os = "macos")]
     use orbit_common::types::ResolvedFsProfile;
     #[test]
