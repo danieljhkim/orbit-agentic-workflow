@@ -35,22 +35,51 @@ Steps:
    - Your active planning-duel slot is in input.planning_duel_slot.
    - Your plan artifact path must be `planning-duel/<slot>.md`.
 
-3. Gather context with the graph surface first:
-   - Build graph selectors from task.context_files and call orbit.graph.pack.
-   - If pack returns knowledge_unavailable, use orbit.graph.overview to map the
-     affected area, then orbit.graph.search, orbit.graph.refs, and orbit.graph.show
-     to discover the relevant symbols and relationships.
-   - If pack returns unresolved selectors, fall back to fs.read only for those paths.
-   - Prefer orbit.graph.pack/search/show/overview/refs over raw file reads whenever
-     the graph has the needed knowledge.
+3. Gather context with the graph surface BEFORE drafting. A single orbit.graph.pack
+   is NOT sufficient — pack returns bodies; refs and search return the import graph
+   that pack misses. You must:
+   - Start with orbit.graph.pack over task.context_files for breadth.
+   - For every symbol the task proposes to move, rename, remove, or add: call
+     orbit.graph.refs on it to enumerate callers and consumers BY NAME.
+   - For every module boundary you are drawing (new crate, new module, extracted
+     file, renamed type): call orbit.graph.search to find call sites of moved
+     types and helpers across the workspace.
+   - Use orbit.graph.show for full symbol bodies you need to read.
+   - Use orbit.graph.overview when pack returns knowledge_unavailable or you
+     need to map an unfamiliar area first.
+   - fs.read is a fallback only for selectors the graph cannot resolve (raw
+     YAML, Markdown, assets the graph does not index, or unresolved selectors
+     pack reports).
+   - If you discover pub(crate) imports, helper coupling, call sites, or
+     dependency edges not reflected in the task description, treat them as
+     hidden coupling — they belong in step 1 of your plan body.
 
 4. Draft exactly one proposal as markdown:
    - Include these sections:
      ## Plan
      ## Context Files
      ## Risks
-   - Keep the plan concise, implementation-ready, and specific to the current codebase.
-   - Ignore any existing planner artifact for the other role. Your proposal must be independently reasoned.
+   - Ignore any existing planner artifact for the other role. Your proposal must
+     be independently reasoned.
+   - The plan MUST:
+     - Name every symbol being moved, renamed, removed, or added (functions,
+       types, modules, constants) BY IDENTIFIER, not by category.
+     - Enumerate the consumers and call sites discovered via orbit.graph.refs
+       and orbit.graph.search BY NAME.
+     - Specify exact verification commands the implementer should run — e.g.
+       `cargo build -p <crate>`, `cargo test -p <crate> <test_name>`,
+       `make ci-fast`, `rg '<symbol>' <path>`, or
+       `curl -s http://localhost:<port>/<route>` — that prove the change works.
+     - If hidden coupling exists (imports, helpers, call sites the task
+       description did not name), open the plan with step 1 enumerating it.
+   - The plan MUST NOT:
+     - Use hedge language: "this should just work", "should compile", "verify
+       it continues to compile", "we must verify", "this just works", or
+       similar. Replace each with the exact command above that proves it.
+     - Defer evidence to the implementer ("the implementer will discover X")
+       when orbit.graph.* could have surfaced X now.
+   - Length is not the goal. Named identifiers, enumerated consumers, and exact
+     verification commands are.
 
 5. Persist the proposal as a task artifact:
    - Use orbit.duel.plan.add to write the artifact under the slot-derived path. Orbit stamps the signature line.
