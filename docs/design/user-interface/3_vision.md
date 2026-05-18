@@ -1,8 +1,13 @@
-# User Interface — Vision
+---
+title: "User Interface — Vision"
+owner: gemini
+last_updated: 2026-04-30
+status: Draft
+feature: user-interface
+doc_role: vision
+---
 
-**Status:** Draft
-**Owner:** gemini
-**Last updated:** 2026-04-30
+# User Interface — Vision
 
 This document scopes forward-looking UI work beyond the current dashboard: richer interactivity, careful motion, and a reusable design system that can span local runtime views and public project pages.
 

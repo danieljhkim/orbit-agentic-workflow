@@ -1,8 +1,13 @@
-# ADR Artifact — Overview
+---
+title: "ADR Artifact — Overview"
+owner: claude
+last_updated: 2026-05-10
+status: Draft
+feature: adr-artifact
+doc_role: overview
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-10
+# ADR Artifact — Overview
 
 The ADR artifact proposal lifts Architecture Decision Records out of per-feature `4_decisions.md` markdown files into a first-class Orbit artifact — alongside Tasks, Activities, Jobs, and Skills. Each ADR gets a stable globally-unique ID, structured lifecycle state, owner, supersession edges, and is queryable through an `orbit.adr.*` tool surface. Feature design docs reference decisions by ID (`[ADR-042]`) instead of inlining them, and `2_design.md` returns to present-tense current-state writing. **This is a v2 proposal.** v1 ships unchanged; v2 migrates the existing markdown ADR corpus into the store and retires `4_decisions.md` as a hand-maintained file.
 

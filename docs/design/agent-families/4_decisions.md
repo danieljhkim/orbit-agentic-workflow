@@ -1,8 +1,13 @@
-# Agent Families — Decisions
+---
+title: "Agent Families — Decisions"
+owner: grok
+last_updated: 2026-05-17
+status: Draft
+feature: agent-families
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** grok
-**Last updated:** 2026-05-17
+# Agent Families — Decisions
 
 ADR entries are append-only and ordered ascending by global ID. New entries are allocated via `orbit.adr.add` *before* the local heading is written — see [../CONVENTIONS.md §4](../CONVENTIONS.md) and the `orbit-adr` skill. The local heading uses the allocated global ID verbatim.
 

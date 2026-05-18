@@ -1,8 +1,13 @@
-# Project Learnings — Design
+---
+title: "Project Learnings — Design"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: project-learnings
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17 (ORB-00095)
+# Project Learnings — Design
 
 This document specifies phase-1 project-learnings: the placement of learning storage in `orbit-store`, the schema of a learning record plus sidecars, the phase-1 scope-matching algorithm (path globs + tags), the three-layer push-injection pipeline (engine pre-prompt + MCP sidecar + optional Claude Code hook), the pull surface (skill + tools), the curation lifecycle, and the concerns the design deliberately leaves to follow-ups.
 

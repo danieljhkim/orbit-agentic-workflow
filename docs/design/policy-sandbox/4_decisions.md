@@ -1,8 +1,13 @@
-# Policy & Sandboxing — Decisions
+---
+title: "Policy & Sandboxing — Decisions"
+owner: claude
+last_updated: 2026-05-16
+status: Draft
+feature: policy-sandbox
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-16
+# Policy & Sandboxing — Decisions
 
 This is the append-only ADR log for Policy & Sandboxing. Entries are ordered by ADR number. New entries follow the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 

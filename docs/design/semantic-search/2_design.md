@@ -1,8 +1,13 @@
-# Semantic Search — Design
+---
+title: "Semantic Search — Design"
+owner: claude
+last_updated: 2026-05-17
+status: Accepted
+feature: semantic-search
+doc_role: design
+---
 
-**Status:** Accepted
-**Owner:** claude
-**Last updated:** 2026-05-17
+# Semantic Search — Design
 
 This document specifies phase-1 semantic search: the two new `orbit-embed*` crates and their place in the architecture, the companion-binary inference model, the SQLite vector storage schema, the per-field embedding strategy, the hybrid (BM25 + cosine) retrieval pipeline, the MCP and CLI surface, the index-maintenance lifecycle, and the concerns the design deliberately leaves to follow-ups.
 

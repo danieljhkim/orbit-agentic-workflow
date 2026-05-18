@@ -1,8 +1,13 @@
-# Activity / Job — Decisions
+---
+title: "Activity / Job — Decisions"
+owner: codex
+last_updated: 2026-05-16
+status: Draft
+feature: activity-job
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** codex
-**Last updated:** 2026-05-16
+# Activity / Job — Decisions
 
 This ADR log records the decisions that define the current Activity / Job substrate. Entries are append-only and stay in place when later ADRs supersede or fold them. See [1_overview.md](./1_overview.md) for the feature summary, [2_design.md](./2_design.md) for the current implementation, and [3_vision.md](./3_vision.md) for the questions that may force more decisions.
 

@@ -1,8 +1,13 @@
-# Task Artifacts — Vision
+---
+title: "Task Artifacts — Vision"
+owner: codex
+last_updated: 2026-05-11
+status: Draft
+feature: task-artifacts
+doc_role: vision
+---
 
-**Status:** Draft
-**Owner:** codex
-**Last updated:** 2026-05-11
+# Task Artifacts — Vision
 
 This document captures open questions for the task-artifacts reset, prior work that should inform the design, what may be distinctive about Orbit's task model, and references for future implementers. The near-term design is in [2_design.md](./2_design.md); this file is deliberately forward-looking.
 

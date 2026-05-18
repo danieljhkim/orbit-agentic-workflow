@@ -1,8 +1,13 @@
-# ADR Artifact — Decisions
+---
+title: "ADR Artifact — Decisions"
+owner: claude
+last_updated: 2026-05-10
+status: Draft
+feature: adr-artifact
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-10 ([T20260510-28] — codex P1/P2 review fixes; ADR-002 and ADR-006 amended in place; ADR-010 and ADR-011 added)
+# ADR Artifact — Decisions
 
 Append-only ADR log for the ADR-artifact feature. Each entry follows the template in [CONVENTIONS.md §4](../CONVENTIONS.md). Numbers are append-only; superseded entries stay in place with status updated. Every ADR cites at least one cost.
 

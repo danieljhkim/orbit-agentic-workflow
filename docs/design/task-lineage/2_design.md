@@ -1,8 +1,13 @@
-# Task Lineage — Design
+---
+title: "Task Lineage — Design"
+owner: claude
+last_updated: 2026-05-12
+status: Draft
+feature: task-lineage
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-12
+# Task Lineage — Design
 
 This is the **minimal first-draft design**. It specifies only the primitives required to make the "oral history for agents" vision in [1_overview.md §1](./1_overview.md) real: the edge schema, three derivers, the bipartite task↔code bridge, the `feature` closure substrate, the symbol-biography renderer, and the load-bearing assumption that KG `stable_id` survives structural change.
 

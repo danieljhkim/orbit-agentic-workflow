@@ -1,8 +1,13 @@
-# ADR Artifact — Vision
+---
+title: "ADR Artifact — Vision"
+owner: claude
+last_updated: 2026-05-10
+status: Draft
+feature: adr-artifact
+doc_role: vision
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-10
+# ADR Artifact — Vision
 
 This document captures open questions that the v2 implementation should resolve, prior art that informed the proposal, and what — if anything — is distinctive about doing ADRs this way inside an agent-first system. See [1_overview.md](./1_overview.md) for motivation and [2_design.md](./2_design.md) for the mechanism.
 

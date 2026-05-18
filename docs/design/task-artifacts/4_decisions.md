@@ -1,8 +1,13 @@
-# Task Artifacts — Decisions
+---
+title: "Task Artifacts — Decisions"
+owner: codex
+last_updated: 2026-05-17
+status: Draft
+feature: task-artifacts
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** codex
-**Last updated:** 2026-05-17 (codex)
+# Task Artifacts — Decisions
 
 ADR log for the task-artifacts feature. Format follows [docs/design/CONVENTIONS.md §4](../CONVENTIONS.md): each entry is `Context · Decision · Consequences`, every entry names at least one Cost, and numbers are append-only.
 

@@ -1,8 +1,13 @@
-# Project Learnings — Vision
+---
+title: "Project Learnings — Vision"
+owner: claude
+last_updated: 2026-05-12
+status: Draft
+feature: project-learnings
+doc_role: vision
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-12
+# Project Learnings — Vision
 
 This document captures the questions phase 1 deliberately defers, the prior work the design draws on or rejects, what is specific to Orbit's situation, and external references for further reading. The questions in §1 are the most likely sources of post-phase-1 design pressure.
 

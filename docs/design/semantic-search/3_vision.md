@@ -1,8 +1,13 @@
-# Semantic Search — Vision
+---
+title: "Semantic Search — Vision"
+owner: claude
+last_updated: 2026-05-10
+status: Draft
+feature: semantic-search
+doc_role: vision
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-10
+# Semantic Search — Vision
 
 This document captures the questions phase 1 deliberately does not answer, the prior work this design builds on or rejects, what is specific to Orbit's situation, and external references for readers who want to dig deeper. The questions in §1 are the most likely sources of post-phase-1 design pressure.
 

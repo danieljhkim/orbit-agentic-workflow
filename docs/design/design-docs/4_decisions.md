@@ -1,8 +1,13 @@
-# Design Docs — Decisions
+---
+title: "Design Docs — Decisions"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: design-docs
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17 (ORB-00112)
+# Design Docs — Decisions
 
 Append-only ADR log for the design-docs feature. Each entry follows the template in [CONVENTIONS.md §4](../CONVENTIONS.md). Numbers are append-only; superseded entries stay in place with status updated. Every ADR cites at least one cost. New entries are allocated via `orbit.adr.add` *before* the local heading is written — see [CONVENTIONS.md §4](../CONVENTIONS.md) and the `orbit-adr` skill.
 

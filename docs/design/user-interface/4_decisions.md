@@ -1,8 +1,13 @@
-# User Interface — Decisions
+---
+title: "User Interface — Decisions"
+owner: gemini
+last_updated: 2026-04-30
+status: Draft
+feature: user-interface
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** gemini
-**Last updated:** 2026-04-30
+# User Interface — Decisions
 
 This append-only ADR log records UI decisions in ascending order. Each entry keeps its status line, cited task ID, decision summary, and at least one explicit cost.
 

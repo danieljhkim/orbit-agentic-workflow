@@ -1,8 +1,13 @@
-# Agent Families — Design
+---
+title: "Agent Families — Design"
+owner: human
+last_updated: 2026-05-16
+status: Draft
+feature: agent-families
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** human
-**Last updated:** 2026-05-16
+# Agent Families — Design
 
 This document describes the current implementation of Orbit agent families, crew-based role assignment, and duel-plan participant configuration. It covers the family registry, workspace config surfaces, task and CLI override surfaces, and where resolved run metadata is persisted.
 

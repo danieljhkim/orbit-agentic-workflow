@@ -1,8 +1,13 @@
-# Activity / Job — Design
+---
+title: "Activity / Job — Design"
+owner: codex
+last_updated: 2026-05-16
+status: Draft
+feature: activity-job
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** codex
-**Last updated:** 2026-05-16
+# Activity / Job — Design
 
 This document describes the shipped Activity / Job substrate across `orbit-common`, `orbit-engine`, `orbit-core`, and `orbit-cli`: asset shape, normalization, dispatch boundaries, backend semantics, DAG execution, audit, and retained legacy edges. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 

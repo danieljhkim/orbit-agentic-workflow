@@ -1,8 +1,13 @@
-# Semantic Search — Decisions
+---
+title: "Semantic Search — Decisions"
+owner: claude
+last_updated: 2026-05-17
+status: Accepted
+feature: semantic-search
+doc_role: decisions
+---
 
-**Status:** Accepted
-**Owner:** claude
-**Last updated:** 2026-05-17
+# Semantic Search — Decisions
 
 ADR-style log of non-obvious semantic-search decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 

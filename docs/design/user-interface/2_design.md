@@ -1,8 +1,13 @@
-# User Interface — Design
+---
+title: "User Interface — Design"
+owner: gemini
+last_updated: 2026-05-16
+status: Draft
+feature: user-interface
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** gemini
-**Last updated:** 2026-05-16 (ORB-00061)
+# User Interface — Design
 
 This document describes the current Orbit UI implementation: the local dashboard assets, the Canon Refined visual rules they rely on, and the telemetry behaviors that must stay consistent with backend data.
 

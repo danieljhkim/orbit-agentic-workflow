@@ -1,8 +1,13 @@
-# Design Docs — Overview
+---
+title: "Design Docs — Overview"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: design-docs
+doc_role: overview
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17 (ORB-00112)
+# Design Docs — Overview
 
 The design-docs system is Orbit's convention for capturing architectural intent: every load-bearing feature gets a folder under `docs/design/<feature>/` with four numbered docs (overview, design, vision, decisions) plus `specs/` and `references/` subfolders. [CONVENTIONS.md](../CONVENTIONS.md) is the rulebook. The `orbit design` CLI and the `orbit.design.{init,list,show}` MCP tools make scaffolding and inspection cheap so agents apply the discipline by default rather than skip it.
 
@@ -53,17 +58,22 @@ Each numbered file has a fixed role and required section list — see [CONVENTIO
 
 Every numbered doc ends with a `Task References` section listing the task IDs cited in that doc.
 
-### 2.3 Required frontmatter and the `Last updated:` anchor
+### 2.3 Required frontmatter and the `last_updated` anchor
 
-```
+```yaml
+---
+title: <Feature> — <Doc Role>
+owner: <agent family — codex, claude, grok, or gemini>
+last_updated: YYYY-MM-DD
+status: <Draft | Accepted>
+feature: <feature-slug — matches the folder name>
+doc_role: <overview | design | vision | decisions>
+---
+
 # <Feature> — <Doc Role>
-
-**Status:** <Draft | Accepted>
-**Owner:** <agent family — `codex`, `claude`, `gemini`, or `grok`>
-**Last updated:** YYYY-MM-DD
 ```
 
-`Last updated:` is the author-maintained freshness anchor. The author updates it manually whenever the doc body changes; trivial reformat commits should not reset the freshness clock. See [4_decisions.md ADR-0159](./4_decisions.md) for why.
+`last_updated` is the author-maintained freshness anchor. The author updates it manually whenever the doc body changes; trivial reformat commits should not reset the freshness clock. See [4_decisions.md ADR-0159](./4_decisions.md) for why. The full frontmatter schema is defined in [`CONVENTIONS.md §2`](../CONVENTIONS.md).
 
 ### 2.4 ADR (Architecture Decision Record)
 

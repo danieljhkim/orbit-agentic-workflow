@@ -1,8 +1,13 @@
-# ADR Artifact — Design
+---
+title: "ADR Artifact — Design"
+owner: claude
+last_updated: 2026-05-10
+status: Draft
+feature: adr-artifact
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-10 ([T20260510-28] — codex P1/P2 review fixes)
+# ADR Artifact — Design
 
 This document specifies the v2 implementation: artifact shape, storage layout, tool contracts, lifecycle transitions, migration mechanics, and the boundaries that keep `orbit-store` and `orbit-tools` cleanly scoped. v1 ships none of this; the design is captured now so the migration and tooling are not invented under deadline pressure. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 

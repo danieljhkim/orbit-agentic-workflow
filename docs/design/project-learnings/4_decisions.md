@@ -1,8 +1,13 @@
-# Project Learnings — Decisions
+---
+title: "Project Learnings — Decisions"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: project-learnings
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17 (ORB-00098)
+# Project Learnings — Decisions
 
 ADR-style log of non-obvious project-learnings decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are keyed by global ADR ID and ordered ascending. New entries are allocated via `orbit.adr.add` *before* the local heading is written — see [../CONVENTIONS.md §4](../CONVENTIONS.md) and the `orbit-adr` skill.
 

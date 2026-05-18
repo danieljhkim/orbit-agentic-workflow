@@ -1,8 +1,13 @@
-# Auditability — Decisions
+---
+title: "Auditability — Decisions"
+owner: codex
+last_updated: 2026-05-17
+status: Draft
+feature: auditability
+doc_role: decisions
+---
 
-**Status:** Draft
-**Owner:** codex
-**Last updated:** 2026-05-17 (ORB-00106)
+# Auditability — Decisions
 
 This is the append-only ADR log for Auditability. Entries are ordered by ADR number. New entries should use the template in [../CONVENTIONS.md](../CONVENTIONS.md) and cite the task that made the decision real.
 

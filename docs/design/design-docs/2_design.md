@@ -1,8 +1,13 @@
-# Design Docs — Design
+---
+title: "Design Docs — Design"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: design-docs
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17 (ORB-00112)
+# Design Docs — Design
 
 This document specifies the design-docs convention as currently shipped: the per-feature folder layout, the required frontmatter and sections per numbered doc, the ADR template and earning rules, the same-PR update gate, and the CLI + MCP tool surface introduced by [ORB-00019]. The convention itself is in [CONVENTIONS.md](../CONVENTIONS.md); this design doc explains the *implementation* of the convention — what lives where in the Rust crates and how the pieces fit together.
 

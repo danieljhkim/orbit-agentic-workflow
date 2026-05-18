@@ -1,8 +1,13 @@
-# Knowledge Graph — Design
+---
+title: "Knowledge Graph — Design"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: knowledge-graph
+doc_role: design
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17
+# Knowledge Graph — Design
 
 This document specifies the current knowledge graph: storage, build pipeline, query services, Orbit integration, locking, and limitations. The [T20260430-22] cleanup removes duplicated rationale already covered by [1_overview.md](./1_overview.md), [3_vision.md](./3_vision.md), and ADRs.
 

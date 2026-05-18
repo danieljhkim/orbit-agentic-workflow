@@ -1,8 +1,11 @@
-# Design Doc Conventions
+---
+title: Design Doc Conventions
+owner: daniel
+last_updated: 2026-05-18
+status: Accepted
+---
 
-**Status:** Accepted
-**Owner:** daniel
-**Last updated:** 2026-05-17 (ORB-00098)
+# Design Doc Conventions
 
 Rules feature leads follow when writing and maintaining design docs under `docs/design/<feature>/`. The goal is a set of feature folders that read as one coherent documentation system regardless of which agent authored them.
 
@@ -32,15 +35,27 @@ docs/design/<feature>/
 
 ## 2. Required Frontmatter (all numbered docs)
 
-```
+Every numbered design doc starts with YAML frontmatter:
+
+```yaml
+---
+title: <Feature> — <Doc Role>
+owner: <agent family — codex, claude, grok, or gemini>
+last_updated: YYYY-MM-DD
+status: <Draft | Accepted>
+feature: <feature-slug — matches the folder name>
+doc_role: <overview | design | vision | decisions>
+---
+
 # <Feature> — <Doc Role>
-
-**Status:** <Draft | Accepted>
-**Owner:** <agent family — `codex`, `claude`, `gemini`, or `grok`>
-**Last updated:** YYYY-MM-DD
 ```
 
-Owner field is mandatory. It's the accountable agent family, not a committer list or full model string.
+- `title` mirrors the H1 verbatim.
+- `owner` is the accountable agent family, not a committer list or full model string.
+- `last_updated` is the calendar date of the last meaningful content change. Trivial reformat commits should not reset it.
+- `status` is `Draft` until the doc is approved by the feature lead, then `Accepted`. It moves back to `Draft` if a structural rewrite is in flight.
+- `feature` is the folder slug (e.g. `groundhog`, `knowledge-graph`). Lets tooling group docs by feature without parsing paths.
+- `doc_role` is one of `overview`, `design`, `vision`, `decisions` — corresponds 1:1 with the filename prefix `1_`/`2_`/`3_`/`4_`.
 
 ---
 

@@ -1,8 +1,13 @@
-# Design Docs — Vision
+---
+title: "Design Docs — Vision"
+owner: claude
+last_updated: 2026-05-17
+status: Draft
+feature: design-docs
+doc_role: vision
+---
 
-**Status:** Draft
-**Owner:** claude
-**Last updated:** 2026-05-17 (ORB-00112)
+# Design Docs — Vision
 
 Forward-looking concerns for the design-docs system. The current implementation ([2_design.md](./2_design.md)) ships strict layout plus CLI and MCP scaffolding/inspection. What is open: lint enforcement gaps, ADR migration to a queryable artifact, semantic search over design content, and tighter integration with the rest of the Orbit lifecycle (tasks → ADRs → docs).
 
