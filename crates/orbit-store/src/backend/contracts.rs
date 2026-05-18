@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::sqlite::audit_event_store::{
-    AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
-    AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
+    AuditEventFilter, AuditEventInsertParams, AuditRoleAggregate, AuditToolAggregate,
+    AuditToolCallCountsByRole, AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
 };
 
 #[derive(Debug, Clone)]
@@ -552,6 +552,10 @@ pub trait AuditEventStoreBackend: Send + Sync {
         since: Option<&DateTime<Utc>>,
         tool: Option<&str>,
     ) -> Result<Vec<i64>, OrbitError>;
+    fn get_audit_event_durations_null_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<i64>, OrbitError>;
     fn get_audit_event_hourly_buckets(
         &self,
         since: &DateTime<Utc>,
@@ -573,6 +577,14 @@ pub trait AuditEventStoreBackend: Send + Sync {
         since: Option<&DateTime<Utc>>,
         limit: usize,
     ) -> Result<Vec<AuditTopToolCall>, OrbitError>;
+    fn get_audit_event_aggregates_by_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<AuditToolAggregate>, OrbitError>;
+    fn get_audit_event_aggregates_by_role(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<AuditRoleAggregate>, OrbitError>;
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError>;
 }
 

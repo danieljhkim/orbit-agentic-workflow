@@ -74,6 +74,33 @@ pub struct AuditTopToolCall {
     pub total: u64,
 }
 
+/// Per-tool aggregate of audit events across the full event population
+/// (not just `command='tool'`). NULL `tool_name` rows are folded into a
+/// synthetic `"unknown"` bucket so the dashboard never has to render a
+/// blank tool name. Backs the Failures / Duration / Failure-rate cards
+/// in the audit-summary side panel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuditToolAggregate {
+    pub tool_name: String,
+    pub total: i64,
+    pub failures: i64,
+    pub mcp_total: i64,
+    pub cli_total: i64,
+    pub mcp_failures: i64,
+    pub cli_failures: i64,
+    pub avg_duration_ms: f64,
+}
+
+/// Per-role aggregate of audit events with MCP/CLI surface split. Backs
+/// the Role split and MCP-vs-CLI cards in the audit-summary side panel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditRoleAggregate {
+    pub role: String,
+    pub total: i64,
+    pub mcp: i64,
+    pub cli: i64,
+}
+
 impl Store {
     pub fn insert_audit_event_record(
         &self,
@@ -668,6 +695,123 @@ impl Store {
         rows.map_err(|e| OrbitError::Store(e.to_string()))
     }
 
+    /// Sorted `duration_ms` values for audit events with NULL `tool_name`
+    /// at or after `since`. Mirror of [`Self::get_audit_event_durations`]
+    /// for the synthetic `"unknown"` bucket that
+    /// [`Self::get_audit_event_aggregates_by_tool`] surfaces — that aggregate
+    /// folds NULL tool names into `"unknown"` for counts, and this method
+    /// lets the caller compute the same bucket's percentiles.
+    pub fn get_audit_event_durations_null_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<i64>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let sql = "SELECT duration_ms FROM audit_events \
+                   WHERE tool_name IS NULL AND timestamp >= ?1 \
+                   ORDER BY duration_ms ASC";
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![since.to_rfc3339()], |row| row.get::<_, i64>(0))
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    /// Per-tool aggregate of audit events with `timestamp >= since`. Folds
+    /// NULL `tool_name` into a synthetic `"unknown"` bucket so callers don't
+    /// have to guard against missing values. The `mcp_*` / `cli_*` columns
+    /// only count rows where `subcommand` is `'run-mcp'` or `'run'` respectively;
+    /// other subcommands contribute to `total` and `failures` but not to the
+    /// split.
+    pub fn get_audit_event_aggregates_by_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<AuditToolAggregate>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let sql = "SELECT COALESCE(tool_name, 'unknown') AS tool, \
+                   COUNT(*), \
+                   COALESCE(SUM(CASE WHEN status = 'failure' THEN 1 ELSE 0 END), 0), \
+                   COALESCE(SUM(CASE WHEN subcommand = 'run-mcp' THEN 1 ELSE 0 END), 0), \
+                   COALESCE(SUM(CASE WHEN subcommand = 'run' THEN 1 ELSE 0 END), 0), \
+                   COALESCE(SUM(CASE WHEN status = 'failure' AND subcommand = 'run-mcp' THEN 1 ELSE 0 END), 0), \
+                   COALESCE(SUM(CASE WHEN status = 'failure' AND subcommand = 'run' THEN 1 ELSE 0 END), 0), \
+                   COALESCE(AVG(duration_ms), 0.0) \
+                   FROM audit_events WHERE timestamp >= ?1 GROUP BY tool";
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![since.to_rfc3339()], |row| {
+                Ok(AuditToolAggregate {
+                    tool_name: row.get(0)?,
+                    total: row.get(1)?,
+                    failures: row.get(2)?,
+                    mcp_total: row.get(3)?,
+                    cli_total: row.get(4)?,
+                    mcp_failures: row.get(5)?,
+                    cli_failures: row.get(6)?,
+                    avg_duration_ms: row.get(7)?,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
+    /// Per-role aggregate of audit events with `timestamp >= since`, including
+    /// the MCP-vs-CLI surface split. Rows where `subcommand` is neither `'run'`
+    /// nor `'run-mcp'` still count toward `total` but neither `mcp` nor `cli`.
+    pub fn get_audit_event_aggregates_by_role(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<AuditRoleAggregate>, OrbitError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| OrbitError::Store(format!("mutex poisoned: {e}")))?;
+
+        let sql = "SELECT role, \
+                   COUNT(*), \
+                   COALESCE(SUM(CASE WHEN subcommand = 'run-mcp' THEN 1 ELSE 0 END), 0), \
+                   COALESCE(SUM(CASE WHEN subcommand = 'run' THEN 1 ELSE 0 END), 0) \
+                   FROM audit_events WHERE timestamp >= ?1 \
+                   GROUP BY role ORDER BY COUNT(*) DESC, role ASC";
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![since.to_rfc3339()], |row| {
+                Ok(AuditRoleAggregate {
+                    role: row.get(0)?,
+                    total: row.get(1)?,
+                    mcp: row.get(2)?,
+                    cli: row.get(3)?,
+                })
+            })
+            .map_err(|e| OrbitError::Store(e.to_string()))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| OrbitError::Store(e.to_string()))
+    }
+
     pub fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
         let conn = self
             .conn
@@ -1064,5 +1208,100 @@ mod tests {
         assert_eq!(limited.len(), 2);
         assert_eq!(limited[0].tool_name, "orbit.graph.show");
         assert_eq!(limited[1].tool_name, "orbit.graph.search");
+    }
+
+    #[test]
+    fn audit_event_aggregates_by_tool_splits_failures_by_surface() {
+        let store = Store::open_in_memory().expect("open store");
+        let since = chrono::Utc::now() - chrono::Duration::hours(1);
+
+        let mut cli_ok = sample_params_with("exec-cli-ok", "codex", AuditEventStatus::Success);
+        cli_ok.subcommand = Some("run".to_string());
+        cli_ok.tool_name = Some("orbit.graph.search".to_string());
+        cli_ok.duration_ms = 50;
+        store.insert_audit_event_record(&cli_ok).expect("insert");
+
+        let mut cli_fail = sample_params_with("exec-cli-fail", "codex", AuditEventStatus::Failure);
+        cli_fail.subcommand = Some("run".to_string());
+        cli_fail.tool_name = Some("orbit.graph.search".to_string());
+        cli_fail.duration_ms = 150;
+        store.insert_audit_event_record(&cli_fail).expect("insert");
+
+        let mut mcp_fail = sample_params_with("exec-mcp-fail", "codex", AuditEventStatus::Failure);
+        mcp_fail.subcommand = Some("run-mcp".to_string());
+        mcp_fail.tool_name = Some("orbit.graph.search".to_string());
+        mcp_fail.duration_ms = 250;
+        store.insert_audit_event_record(&mcp_fail).expect("insert");
+
+        // Event with NULL tool_name folds into "unknown".
+        let mut no_tool =
+            sample_params_with("exec-no-tool", "codex", AuditEventStatus::Success);
+        no_tool.subcommand = None;
+        no_tool.tool_name = None;
+        no_tool.duration_ms = 10;
+        store.insert_audit_event_record(&no_tool).expect("insert");
+
+        let rows = store
+            .get_audit_event_aggregates_by_tool(&since)
+            .expect("aggregates by tool");
+
+        let search = rows
+            .iter()
+            .find(|r| r.tool_name == "orbit.graph.search")
+            .expect("orbit.graph.search row");
+        assert_eq!(search.total, 3);
+        assert_eq!(search.failures, 2);
+        assert_eq!(search.mcp_total, 1);
+        assert_eq!(search.cli_total, 2);
+        assert_eq!(search.mcp_failures, 1);
+        assert_eq!(search.cli_failures, 1);
+        assert_eq!(search.avg_duration_ms.round() as i64, 150);
+
+        let unknown = rows
+            .iter()
+            .find(|r| r.tool_name == "unknown")
+            .expect("unknown bucket");
+        assert_eq!(unknown.total, 1);
+        assert_eq!(unknown.failures, 0);
+        assert_eq!(unknown.mcp_total, 0);
+        assert_eq!(unknown.cli_total, 0);
+    }
+
+    #[test]
+    fn audit_event_aggregates_by_role_splits_subcommand_surface() {
+        let store = Store::open_in_memory().expect("open store");
+        let since = chrono::Utc::now() - chrono::Duration::hours(1);
+
+        let mut codex_cli = sample_params_with("exec-codex-cli", "codex", AuditEventStatus::Success);
+        codex_cli.subcommand = Some("run".to_string());
+        store.insert_audit_event_record(&codex_cli).expect("insert");
+
+        let mut codex_mcp = sample_params_with("exec-codex-mcp", "codex", AuditEventStatus::Success);
+        codex_mcp.subcommand = Some("run-mcp".to_string());
+        store.insert_audit_event_record(&codex_mcp).expect("insert");
+
+        let mut codex_other =
+            sample_params_with("exec-codex-other", "codex", AuditEventStatus::Success);
+        codex_other.subcommand = Some("show".to_string());
+        store.insert_audit_event_record(&codex_other).expect("insert");
+
+        let mut human =
+            sample_params_with("exec-human", "human", AuditEventStatus::Success);
+        human.subcommand = Some("run".to_string());
+        store.insert_audit_event_record(&human).expect("insert");
+
+        let rows = store
+            .get_audit_event_aggregates_by_role(&since)
+            .expect("aggregates by role");
+
+        let codex = rows.iter().find(|r| r.role == "codex").expect("codex row");
+        assert_eq!(codex.total, 3);
+        assert_eq!(codex.mcp, 1);
+        assert_eq!(codex.cli, 1);
+
+        let human = rows.iter().find(|r| r.role == "human").expect("human row");
+        assert_eq!(human.total, 1);
+        assert_eq!(human.mcp, 0);
+        assert_eq!(human.cli, 1);
     }
 }

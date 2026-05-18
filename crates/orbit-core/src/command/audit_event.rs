@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orbit_common::types::{AuditEvent, AuditEventStatus, AuditStats, OrbitError};
 use orbit_store::{
-    AuditEventFilter, AuditEventInsertParams, AuditToolCallCountsByRole,
-    AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
+    AuditEventFilter, AuditEventInsertParams, AuditRoleAggregate, AuditToolAggregate,
+    AuditToolCallCountsByRole, AuditToolCallCountsBySurfaceAndRole, AuditTopToolCall,
 };
 
 use crate::OrbitRuntime;
@@ -120,9 +120,43 @@ impl OrbitRuntime {
     ) -> Result<Vec<AuditTopToolCall>, OrbitError> {
         self.stores().audit_events().top_tool_calls(since, limit)
     }
+
+    /// Per-tool aggregate of audit events at or after `since`. One row per
+    /// distinct `tool_name` (NULL folded into `"unknown"`), each carrying
+    /// `total`, `failures`, MCP/CLI surface counts, and `avg_duration_ms`.
+    /// Backs the audit-summary side panel.
+    pub fn audit_event_aggregates_by_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<AuditToolAggregate>, OrbitError> {
+        self.stores().audit_events().aggregates_by_tool(since)
+    }
+
+    /// Per-role aggregate of audit events at or after `since`, with the
+    /// MCP-vs-CLI surface split (`mcp` = `subcommand='run-mcp'`, `cli` =
+    /// `subcommand='run'`). Drives the Role-split and MCP-vs-CLI cards.
+    pub fn audit_event_aggregates_by_role(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<AuditRoleAggregate>, OrbitError> {
+        self.stores().audit_events().aggregates_by_role(since)
+    }
+
+    /// Sorted `duration_ms` values for audit events with NULL `tool_name`
+    /// at or after `since`. Companion to [`Self::audit_event_aggregates_by_tool`]
+    /// for computing percentiles of the synthetic `"unknown"` bucket.
+    pub fn audit_event_durations_null_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<i64>, OrbitError> {
+        self.stores().audit_events().durations_null_tool(since)
+    }
 }
 
-pub(crate) fn compute_p95(sorted_durations: &[i64]) -> i64 {
+/// Nearest-rank p95 over a slice of `duration_ms` values that the caller has
+/// already sorted ascending. Returns 0 for an empty slice. Shared with
+/// callers that fetch `audit_event_durations_*` directly.
+pub fn compute_p95(sorted_durations: &[i64]) -> i64 {
     if sorted_durations.is_empty() {
         return 0;
     }

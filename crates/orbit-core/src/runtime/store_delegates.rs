@@ -606,6 +606,13 @@ impl AuditEventRecords<'_> {
         self.store.get_audit_event_durations(since, tool)
     }
 
+    pub(crate) fn durations_null_tool(
+        &self,
+        since: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<i64>, OrbitError> {
+        self.store.get_audit_event_durations_null_tool(since)
+    }
+
     pub(crate) fn hourly_buckets(
         &self,
         since: &chrono::DateTime<chrono::Utc>,
@@ -641,6 +648,20 @@ impl AuditEventRecords<'_> {
         limit: usize,
     ) -> Result<Vec<orbit_store::AuditTopToolCall>, OrbitError> {
         self.store.get_audit_top_tool_calls(since, limit)
+    }
+
+    pub(crate) fn aggregates_by_tool(
+        &self,
+        since: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<orbit_store::AuditToolAggregate>, OrbitError> {
+        self.store.get_audit_event_aggregates_by_tool(since)
+    }
+
+    pub(crate) fn aggregates_by_role(
+        &self,
+        since: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<orbit_store::AuditRoleAggregate>, OrbitError> {
+        self.store.get_audit_event_aggregates_by_role(since)
     }
 
     pub(crate) fn insert(&self, params: &AuditEventInsertParams) -> Result<(), OrbitError> {

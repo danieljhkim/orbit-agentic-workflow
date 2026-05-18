@@ -546,19 +546,39 @@ pub(super) async fn list_diagnostics_friction(
 pub(super) async fn diagnostics_implement_one(
     State(runtime): State<Arc<OrbitRuntime>>,
 ) -> Response {
-    let now = chrono::Utc::now();
-    let since = now - chrono::Duration::days(30);
+    let runtime_clone = runtime.clone();
+    let actor_vec = match tokio::task::spawn_blocking(move || {
+        compute_implement_one_by_actor(&runtime_clone)
+    })
+    .await
+    {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return map_runtime_error(e),
+        Err(join_err) => {
+            return map_runtime_error(orbit_core::OrbitError::Execution(format!(
+                "implement_one aggregation panicked: {join_err}"
+            )));
+        }
+    };
 
-    let records = match runtime.invocation_records(orbit_core::InvocationQuery {
+    Json(json!({
+        "implement_one_by_actor": actor_vec,
+    }))
+    .into_response()
+}
+
+fn compute_implement_one_by_actor(
+    runtime: &OrbitRuntime,
+) -> Result<Vec<serde_json::Value>, orbit_core::OrbitError> {
+    let since = chrono::Utc::now() - chrono::Duration::days(30);
+
+    let records = runtime.invocation_records(orbit_core::InvocationQuery {
         since: Some(since),
         until: None,
         activity_id: Some("implement_one".to_string()),
         limit: 100_000,
         ..Default::default()
-    }) {
-        Ok(r) => r,
-        Err(e) => return map_runtime_error(e),
-    };
+    })?;
 
     let mut durations_by_actor: std::collections::HashMap<String, Vec<i64>> =
         std::collections::HashMap::new();
@@ -602,10 +622,7 @@ pub(super) async fn diagnostics_implement_one(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    Json(json!({
-        "implement_one_by_actor": actor_vec,
-    }))
-    .into_response()
+    Ok(actor_vec)
 }
 
 #[cfg(test)]

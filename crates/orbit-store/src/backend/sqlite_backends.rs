@@ -78,6 +78,13 @@ impl AuditEventStoreBackend for SqliteAuditEventStoreBackend {
         self.store.get_audit_event_durations(since, tool)
     }
 
+    fn get_audit_event_durations_null_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<i64>, OrbitError> {
+        self.store.get_audit_event_durations_null_tool(since)
+    }
+
     fn get_audit_event_hourly_buckets(
         &self,
         since: &DateTime<Utc>,
@@ -113,6 +120,20 @@ impl AuditEventStoreBackend for SqliteAuditEventStoreBackend {
         limit: usize,
     ) -> Result<Vec<crate::AuditTopToolCall>, OrbitError> {
         self.store.get_audit_top_tool_calls(since, limit)
+    }
+
+    fn get_audit_event_aggregates_by_tool(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<crate::AuditToolAggregate>, OrbitError> {
+        self.store.get_audit_event_aggregates_by_tool(since)
+    }
+
+    fn get_audit_event_aggregates_by_role(
+        &self,
+        since: &DateTime<Utc>,
+    ) -> Result<Vec<crate::AuditRoleAggregate>, OrbitError> {
+        self.store.get_audit_event_aggregates_by_role(since)
     }
 
     fn prune_audit_events(&self, older_than: &DateTime<Utc>) -> Result<usize, OrbitError> {
